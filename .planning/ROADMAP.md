@@ -1,0 +1,161 @@
+# Roadmap: Kodiai
+
+## Overview
+
+Kodiai delivers AI-powered PR auto-review and conversational code assistance as a GitHub App, replacing per-repo workflow YAML with a single app installation. The roadmap follows the natural dependency chain: webhook infrastructure and safety must exist before any feature handler, the job execution shell must exist before wiring Claude CLI, and the core review capability must work before adding mention handling, security hardening, operational resilience, and deployment.
+
+## Phases
+
+**Phase Numbering:**
+- Integer phases (1, 2, 3): Planned milestone work
+- Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
+
+Decimal phases appear between their surrounding integers in numeric order.
+
+- [ ] **Phase 1: Webhook Foundation** - Server receives, verifies, and routes GitHub events safely
+- [ ] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces
+- [ ] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers
+- [ ] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open
+- [ ] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces
+- [ ] **Phase 6: Content Safety** - Sanitization and TOCTOU protections
+- [ ] **Phase 7: Operational Resilience** - Timeout enforcement and error reporting
+- [ ] **Phase 8: Deployment** - Docker packaging and Azure Container Apps
+
+## Phase Details
+
+### Phase 1: Webhook Foundation
+**Goal**: The server receives GitHub webhook events, verifies their authenticity, authenticates as a GitHub App, and routes events to the correct handlers -- while filtering bot-generated noise and processing asynchronously to avoid webhook timeouts.
+**Depends on**: Nothing (first phase)
+**Requirements**: INFRA-01, INFRA-02, INFRA-03, INFRA-04, INFRA-06, INFRA-07, INFRA-08
+**Success Criteria** (what must be TRUE):
+  1. A GitHub webhook POST to `/webhooks/github` with valid signature returns 200 and the event payload is available for processing
+  2. A webhook with invalid or missing signature is rejected with 401/403
+  3. The server authenticates as a GitHub App via JWT and can mint installation access tokens for any installation
+  4. Events from bot accounts (including the app's own comments) are silently dropped and never reach handlers
+  5. The health endpoint at `/health` returns 200 for Azure liveness probes
+**Plans**: TBD
+
+Plans:
+- [ ] 01-01: HTTP server, webhook endpoint, and signature verification
+- [ ] 01-02: GitHub App authentication (JWT + installation tokens)
+- [ ] 01-03: Event router, bot filtering, and async dispatch
+
+### Phase 2: Job Infrastructure
+**Goal**: Webhook handlers can enqueue jobs that clone a target repo into an ephemeral workspace, enforce per-installation concurrency limits, and clean up after themselves.
+**Depends on**: Phase 1
+**Requirements**: INFRA-05, EXEC-01, EXEC-02, EXEC-05
+**Success Criteria** (what must be TRUE):
+  1. Jobs are queued and execute with per-installation concurrency limits (one active job per installation at a time)
+  2. Each job gets a fresh shallow clone of the target repo in a temporary directory with git auth configured via installation token
+  3. After job completion (success or failure), the temporary workspace directory is deleted and no orphaned resources remain
+**Plans**: TBD
+
+Plans:
+- [ ] 02-01: Job queue with per-installation concurrency
+- [ ] 02-02: Workspace manager (clone, git auth, cleanup)
+
+### Phase 3: Execution Engine
+**Goal**: The system can invoke Claude Code CLI against a workspace with MCP servers providing GitHub interaction tools, using sensible defaults when no per-repo config exists.
+**Depends on**: Phase 2
+**Requirements**: EXEC-03, EXEC-04, OPS-03
+**Success Criteria** (what must be TRUE):
+  1. Claude Code CLI is invoked via Agent SDK `query()` with a prompt, MCP server config, and working directory pointing to the cloned repo
+  2. MCP servers for posting comments, posting inline review comments, and reading CI status are available to the CLI during execution
+  3. The system operates with sensible defaults when no `.kodiai.yml` exists in the target repo (zero-config works)
+**Plans**: TBD
+
+Plans:
+- [ ] 03-01: Config loader with defaults and Zod validation
+- [ ] 03-02: MCP servers (comment, inline-comment, CI status)
+- [ ] 03-03: Claude Code CLI executor (Agent SDK query invocation)
+
+### Phase 4: PR Auto-Review
+**Goal**: When a PR is opened or marked ready for review, the bot automatically posts inline review comments anchored to specific diff lines with suggestion blocks -- or silently approves clean PRs.
+**Depends on**: Phase 3
+**Requirements**: REVIEW-01, REVIEW-02, REVIEW-03, REVIEW-04, REVIEW-05
+**Success Criteria** (what must be TRUE):
+  1. Opening a non-draft PR or marking a draft PR as ready triggers an automatic review within 2 minutes
+  2. Review comments are anchored to specific changed lines in the diff (not posted as general PR comments)
+  3. Review comments include GitHub suggestion blocks that the PR author can apply with one click
+  4. A PR with no issues receives a silent approval (no comment posted, no noise)
+  5. Fork PRs are reviewed natively without any workarounds or special configuration
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: Review handler and PR context builder (GraphQL queries, diff fetching)
+- [ ] 04-02: Review prompt engineering and response-to-inline-comment mapping
+- [ ] 04-03: Fork PR support and silent approval logic
+
+### Phase 5: Mention Handling
+**Goal**: Users can @kodiai in any comment surface (issue comments, PR comments, PR review comments, PR review bodies) and receive a contextual response, with a tracking comment showing progress during long-running jobs.
+**Depends on**: Phase 3
+**Requirements**: MENTION-01, MENTION-02, MENTION-03, MENTION-04, MENTION-05
+**Success Criteria** (what must be TRUE):
+  1. Typing `@kodiai` followed by a question in an issue comment produces a contextual response as a reply
+  2. Typing `@kodiai` in a PR comment, PR review comment, or PR review body produces a contextual response
+  3. A tracking comment appears within seconds showing the job is in progress, and updates when the response is ready
+  4. The bot's response demonstrates awareness of the surrounding conversation context (prior comments, PR diff if applicable)
+**Plans**: TBD
+
+Plans:
+- [ ] 05-01: Mention detection and handler dispatch across all four surfaces
+- [ ] 05-02: Conversation context builder (comment history, PR context)
+- [ ] 05-03: Tracking comment lifecycle (create, update, finalize)
+
+### Phase 6: Content Safety
+**Goal**: Content passed to the LLM is sanitized to prevent prompt injection, and comment filtering uses timestamps to prevent time-of-check-to-time-of-use attacks.
+**Depends on**: Phase 5
+**Requirements**: MENTION-06, MENTION-07
+**Success Criteria** (what must be TRUE):
+  1. Invisible unicode characters, HTML comments, and embedded tokens are stripped from all user content before it reaches the LLM
+  2. Only comments that existed at or before the trigger timestamp are included in conversation context (comments added after the trigger are excluded)
+**Plans**: TBD
+
+Plans:
+- [ ] 06-01: Content sanitizer (invisible chars, HTML comments, token stripping)
+- [ ] 06-02: TOCTOU timestamp filtering for comment context
+
+### Phase 7: Operational Resilience
+**Goal**: Jobs that exceed their timeout are killed with a user-visible error comment, and any execution failure results in a clear error message posted to the PR or issue (never silent failure).
+**Depends on**: Phase 4, Phase 5
+**Requirements**: OPS-01, OPS-02
+**Success Criteria** (what must be TRUE):
+  1. A job that exceeds the configured timeout is terminated and an error comment is posted explaining the timeout
+  2. Any unhandled execution failure (crash, API error, resource exhaustion) results in a user-visible error comment on the originating PR or issue
+  3. Error comments are clear and actionable (not stack traces or generic "something went wrong")
+**Plans**: TBD
+
+Plans:
+- [ ] 07-01: Timeout enforcement with process cleanup
+- [ ] 07-02: Error handling pipeline and user-facing error comments
+
+### Phase 8: Deployment
+**Goal**: The application is packaged as a Docker container and deployed to Azure Container Apps with proper secrets management, running end-to-end in production.
+**Depends on**: Phase 7
+**Requirements**: OPS-04, OPS-05
+**Success Criteria** (what must be TRUE):
+  1. The application builds as a Docker container using `oven/bun:1-alpine` (or debian-slim if Alpine fails with Claude CLI)
+  2. The container is deployed to Azure Container Apps with GitHub App secrets (private key, webhook secret, app ID) managed via Azure secrets
+  3. A real PR opened on an installed repo triggers a review and the response appears as inline comments
+**Plans**: TBD
+
+Plans:
+- [ ] 08-01: Dockerfile and container build
+- [ ] 08-02: Azure Container Apps provisioning and deployment
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
+Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoretically run in parallel. The roadmap sequences them for simplicity.
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 1. Webhook Foundation | 0/3 | Not started | - |
+| 2. Job Infrastructure | 0/2 | Not started | - |
+| 3. Execution Engine | 0/3 | Not started | - |
+| 4. PR Auto-Review | 0/3 | Not started | - |
+| 5. Mention Handling | 0/3 | Not started | - |
+| 6. Content Safety | 0/2 | Not started | - |
+| 7. Operational Resilience | 0/2 | Not started | - |
+| 8. Deployment | 0/2 | Not started | - |
