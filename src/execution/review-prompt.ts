@@ -1,3 +1,5 @@
+import { sanitizeContent } from "../lib/sanitizer.ts";
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -23,14 +25,14 @@ export function buildReviewPrompt(context: {
   lines.push(
     `You are reviewing pull request #${context.prNumber} in ${context.owner}/${context.repo}.`,
     "",
-    `Title: ${context.prTitle}`,
+    `Title: ${sanitizeContent(context.prTitle)}`,
     `Author: ${context.prAuthor}`,
     `Branches: ${context.headBranch} -> ${context.baseBranch}`,
   );
 
   // --- PR body ---
   if (context.prBody && context.prBody.trim().length > 0) {
-    lines.push("", "PR description:", "---", context.prBody.trim(), "---");
+    lines.push("", "PR description:", "---", sanitizeContent(context.prBody.trim()), "---");
   }
 
   // --- Changed files ---
