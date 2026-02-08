@@ -10,6 +10,7 @@ import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { buildReviewPrompt } from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { trackEvent } from "../lib/analytics.ts";
 import { $ } from "bun";
 
 /**
@@ -84,6 +85,13 @@ export function createReviewHandler(deps: {
       },
       "Processing PR review",
     );
+
+    // Track analytics event
+    trackEvent("pr_review_triggered", event.installationId, `${owner}/${repo}`, {
+      prNumber: pr.number,
+      action: payload.action,
+      isFork,
+    });
 
     // Add eyes reaction to PR description for immediate acknowledgment
     try {
