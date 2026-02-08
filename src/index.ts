@@ -9,6 +9,8 @@ import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createWorkspaceManager } from "./jobs/workspace.ts";
+import { createExecutor } from "./execution/executor.ts";
+import { createReviewHandler } from "./handlers/review.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -34,13 +36,18 @@ if (staleCount > 0) {
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
 
-// Phase 3+ plans will register handlers that use jobQueue and workspaceManager.
-// Example: eventRouter.register("pull_request.opened", async (event) => {
-//   await jobQueue.enqueue(event.installationId, async () => {
-//     const ws = await workspaceManager.create(event.installationId, { owner, repo, ref });
-//     try { /* run job */ } finally { await ws.cleanup(); }
-//   });
-// });
+// Execution engine
+const executor = createExecutor({ githubApp, logger });
+
+// Register event handlers
+createReviewHandler({
+  eventRouter,
+  jobQueue,
+  workspaceManager,
+  githubApp,
+  executor,
+  logger,
+});
 
 const app = new Hono();
 
