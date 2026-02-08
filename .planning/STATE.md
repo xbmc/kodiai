@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 2 in progress - Job Infrastructure (plan 1 of 2 complete)
+**Current focus:** Phase 2 complete - Job Infrastructure. Ready for Phase 3 (Review Execution).
 
 ## Current Position
 
 Phase: 2 of 8 (Job Infrastructure)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 02-01-PLAN.md (job queue with per-installation concurrency)
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-08 -- Completed 02-02-PLAN.md (workspace manager with ephemeral cloning)
 
-Progress: [####----------------] 13% (4/30 plans)
+Progress: [#####---------------] 17% (5/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
+- Total plans completed: 5
 - Average duration: 4min
-- Total execution time: 15min
+- Total execution time: 19min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01-webhook-foundation | 3/3 | 11min | 4min |
-| 02-job-infrastructure | 1/2 | 4min | 4min |
+| 02-job-infrastructure | 2/2 | 8min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 5min, 3min, 3min, 4min
+- Last 5 plans: 3min, 3min, 4min, 4min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -61,6 +61,11 @@ Recent decisions affecting current work:
 - [02-01]: Lazy queue creation + idle pruning prevents unbounded Map growth
 - [02-01]: getInstallationToken uses createAppAuth directly (not Octokit) for raw token access
 - [02-01]: queue.add() return cast to Promise<T> since void only occurs with throwOnTimeout
+- [02-02]: Branch validation rejects leading dash, control chars, .., .lock, @{, //, trailing / to prevent git injection
+- [02-02]: Token redacted from error messages/stack traces before re-throw to prevent credential leakage
+- [02-02]: Stale cleanup threshold is 1 hour for kodiai-* temp dirs
+- [02-02]: jobQueue and workspaceManager are local constants in index.ts (not module exports) until Phase 3 wiring
+- [02-02]: git clone uses --single-branch --depth=N and .quiet() to suppress token in error output
 
 ### Pending Todos
 
@@ -75,5 +80,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 02-01-PLAN.md (job queue). Ready for 02-02-PLAN.md (workspace manager with ephemeral cloning)
-Resume file: .planning/phases/02-job-infrastructure/02-02-PLAN.md
+Stopped at: Completed 02-02-PLAN.md (workspace manager). Phase 2 complete. Ready for Phase 3 (Review Execution).
+Resume file: .planning/phases/03-review-execution/
