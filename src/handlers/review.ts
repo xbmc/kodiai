@@ -9,6 +9,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { buildReviewPrompt } from "../execution/review-prompt.ts";
+import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { $ } from "bun";
 
 /**
@@ -192,6 +193,23 @@ export function createReviewHandler(deps: {
           "Review execution completed",
         );
 
+        // Post error comment if execution failed or timed out
+        if (result.conclusion === "error") {
+          const category = result.isTimeout
+            ? "timeout"
+            : classifyError(new Error(result.errorMessage ?? "Unknown error"), false);
+          const errorBody = formatErrorComment(
+            category,
+            result.errorMessage ?? "An unexpected error occurred during review.",
+          );
+          const octokit = await githubApp.getInstallationOctokit(event.installationId);
+          await postOrUpdateErrorComment(octokit, {
+            owner: apiOwner,
+            repo: apiRepo,
+            issueNumber: pr.number,
+          }, errorBody, logger);
+        }
+
         // Silent approval: only when autoApprove is enabled and execution succeeded
         if (config.review.autoApprove && result.conclusion === "success") {
           try {
@@ -239,6 +257,21 @@ export function createReviewHandler(deps: {
           { err, prNumber: pr.number },
           "Review handler failed",
         );
+
+        // Post error comment to PR so the user knows something went wrong
+        const category = classifyError(err, false);
+        const detail = err instanceof Error ? err.message : "An unexpected error occurred";
+        const errorBody = formatErrorComment(category, detail);
+        try {
+          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          await postOrUpdateErrorComment(errOctokit, {
+            owner: apiOwner,
+            repo: apiRepo,
+            issueNumber: pr.number,
+          }, errorBody, logger);
+        } catch (commentErr) {
+          logger.error({ err: commentErr }, "Failed to post error comment to PR");
+        }
       } finally {
         if (workspace) {
           await workspace.cleanup();
