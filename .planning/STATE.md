@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 8 in progress. Dockerfile and .dockerignore created, image builds on Alpine. Next: Plan 02 (Azure deployment).
+**Current focus:** MILESTONE COMPLETE. All 8 phases done. Application deployed and live on Azure Container Apps.
 
 ## Current Position
 
 Phase: 8 of 8 (Deployment)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 08-01-PLAN.md (Dockerfile and .dockerignore).
+Plan: 2 of 2 in current phase
+Status: Milestone complete
+Last activity: 2026-02-08 -- Completed 08-02-PLAN.md (Azure deployment, end-to-end verified).
 
-Progress: [##################--] 60% (18/30 plans)
+Progress: [####################] 100% (19/19 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 18
-- Average duration: 3min
-- Total execution time: 51min
+- Total plans completed: 19
+- Average duration: 4min
+- Total execution time: 66min
 
 **By Phase:**
 
@@ -34,108 +34,43 @@ Progress: [##################--] 60% (18/30 plans)
 | 05-mention-handling | 2/2 | 6min | 3min |
 | 06-content-safety | 2/2 | 4min | 2min |
 | 07-operational-resilience | 2/2 | 5min | 3min |
-| 08-deployment | 1/2 | 1min | 1min |
-
-**Recent Trend:**
-- Last 5 plans: 2min, 2min, 3min, 2min, 1min
-- Trend: stable
+| 08-deployment | 2/2 | 16min | 8min |
 
 *Updated after each plan completion*
+
+## Deployment Info
+
+- **FQDN:** ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io
+- **Webhook URL:** https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/webhooks/github
+- **GitHub App ID:** 2822869
+- **GitHub App slug:** kodiai
+- **GitHub repo:** https://github.com/xbmc/kodiai (private)
+- **Azure resources:** rg-kodiai (resource group), kodiairegistry (ACR), ca-kodiai (container app), cae-kodiai (environment)
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Roadmap]: 8 phases derived from dependency chain (webhook -> job infra -> execution -> features -> safety -> ops -> deploy)
-- [Roadmap]: Phases 4 and 5 both depend on Phase 3 (could parallelize but sequenced for simplicity)
-- [Roadmap]: Content safety (sanitization, TOCTOU) split into own phase for independent verification
-- [01-01]: Zod v4 used (latest); backward-compatible with v3 schema patterns
-- [01-01]: loadConfig() is async to support file-based private key loading
-- [01-01]: Deduplicator uses insert-count-based cleanup (every 1000) not timer-based
-- [01-01]: Factory function pattern established for all module exports (createLogger, createDeduplicator, etc.)
-- [01-02]: Rely on @octokit/auth-app built-in token caching (up to 15K tokens, auto-refresh) -- no custom cache
-- [01-02]: Fresh Octokit instance per getInstallationOctokit() call to avoid stale state
-- [01-02]: Connectivity check uses 30-second timestamp cache to avoid rate limiting
-- [01-02]: App-level Octokit is a singleton; installation-level Octokit is per-call
-- [01-03]: Both "event.action" and "event" handlers fire for the same event (specific + catch-all)
-- [01-03]: No wildcard handler -- unhandled events silently dropped with debug logging
-- [01-03]: installationId defaults to 0 when payload lacks installation field
-- [02-01]: PQueue(concurrency: 1) per installation ensures sequential execution within an installation
-- [02-01]: Lazy queue creation + idle pruning prevents unbounded Map growth
-- [02-01]: getInstallationToken uses createAppAuth directly (not Octokit) for raw token access
-- [02-01]: queue.add() return cast to Promise<T> since void only occurs with throwOnTimeout
-- [02-02]: Branch validation rejects leading dash, control chars, .., .lock, @{, //, trailing / to prevent git injection
-- [02-02]: Token redacted from error messages/stack traces before re-throw to prevent credential leakage
-- [02-02]: Stale cleanup threshold is 1 hour for kodiai-* temp dirs
-- [02-02]: jobQueue and workspaceManager are local constants in index.ts (not module exports) until Phase 3 wiring
-- [02-02]: git clone uses --single-branch --depth=N and .quiet() to suppress token in error output
-- [03-01]: Zod v4 `.default({})` on nested objects with inner defaults requires full default value
-- [03-01]: js-yaml used for YAML parsing; explicit error messages for parse and validation failures
-- [03-01]: loadRepoConfig is a standalone async function (not factory) consistent with loadConfig()
-- [03-02]: In-process MCP servers via createSdkMcpServer + tool pattern (no stdio child processes)
-- [03-02]: All MCP servers receive getOctokit function (not cached instance) for token freshness
-- [03-02]: download_job_log tool not ported (GitHub Actions specific)
-- [03-02]: buildMcpServers includes 3 servers for PRs, 1 (comment only) for issues
-- [03-03]: permissionMode "bypassPermissions" + allowDangerouslySkipPermissions for headless execution
-- [03-03]: settingSources ["project"] loads repo CLAUDE.md
-- [03-03]: env spread passes CLAUDE_CODE_OAUTH_TOKEN through process.env
-- [03-03]: Read-only tools for Phase 3; Phase 5 adds write tools for mentions
-- [03-03]: Executor catches all errors, returns conclusion "error" -- never crashes server
-- [04-01]: Review prompt uses (1), (2), (3) format to avoid GitHub auto-linking #N as issue links
-- [04-01]: Silent approval pattern: prompt tells Claude to do nothing on clean PRs, handler manages approval
-- [04-01]: Empty PR body omitted from prompt rather than showing empty section
-- [04-02]: Handler uses prompt override (ExecutionContext.prompt) instead of triggerBody wrapping for review-specific prompts
-- [04-02]: Silent approval gated by config.review.autoApprove (defaults false) -- safe default, user opts in
-- [04-02]: skipPaths matching uses simple string matching: suffix for extensions (*.lock), prefix for directories (vendor/)
-- [04-02]: Clone depth 50 for review workspaces to provide adequate diff context
-- [04-02]: Deleted fork repos fall back to git fetch origin pull/N/head:pr-review
-- [04-02]: Handler factory pattern established: createXxxHandler(deps) registers events via eventRouter.register()
-- [05-01]: create_comment MCP tool follows same error handling pattern as update_comment
-- [05-01]: MentionEvent.headRef/baseRef left undefined for issue_comment on PR (must be fetched by handler via pulls.get)
-- [05-01]: containsMention uses case-insensitive includes check with @appSlug
-- [05-01]: buildConversationContext fetches max 30 comments -- sufficient context without rate limit risk
-- [05-01]: Bot tracking comments filtered by checking body starts with "> **Kodiai**"
-- [05-02]: Tracking comment posted BEFORE jobQueue.enqueue for immediate user feedback
-- [05-02]: containsMention check outside job (fast); mention.enabled check inside job (reads repo config)
-- [05-02]: Pure issue mentions clone default branch with depth 1; PR mentions use depth 50
-- [05-02]: Error paths update tracking comment so user always sees a result
-- [05-02]: mention.prompt optional config field mirrors review.prompt for custom instructions
-- [06-01]: REST API updated_at used as conservative edit timestamp (more strict than GraphQL lastEditedAt)
-- [06-01]: Strict >= comparison in TOCTOU filter excludes trigger comment itself
-- [06-01]: Zero external dependencies for sanitization -- pure regex/string manipulation
-- [06-02]: diffHunk intentionally NOT sanitized (git-generated code, not user input)
-- [06-02]: customInstructions intentionally NOT sanitized (controlled by repo owner via .kodiai.yml)
-- [06-02]: changedFiles intentionally NOT sanitized (file paths from git diff, not user-editable)
-- [06-02]: TOCTOU filter applied immediately after API fetch, before any iteration over comments
-- [06-02]: conversationContext not re-sanitized in buildMentionPrompt since already sanitized in buildConversationContext
-- [07-01]: API error patterns checked before clone patterns in classifyError -- "rate limit" contains "git"
-- [07-01]: postOrUpdateErrorComment never throws -- error reporting must not mask original error (Pitfall 6)
-- [07-01]: Manual setTimeout + AbortController used instead of AbortSignal.timeout() for clearTimeout on success (Pitfall 5)
-- [07-01]: timeoutId/controller/timeoutSeconds hoisted outside try block for catch block access
-- [07-02]: Review handler creates new error comments (no tracking comment) -- the review itself is the output
-- [07-02]: Mention handler passes trackingCommentId to postOrUpdateErrorComment for update-or-create behavior
-- [07-02]: Both handlers catch error comment posting failures separately so they never mask the original error
-- [08-01]: Alpine base image confirmed working -- agent-sdk bundles cli.js with musl support, no debian-slim fallback needed
-- [08-01]: No Claude CLI installation in Docker -- agent-sdk bundles cli.js which runs under bun
-- [08-01]: git installed via apk as only additional Alpine package for workspace manager clone operations
-- [08-01]: USER bun for non-root execution; /tmp writable by default for workspaces
-- [08-01]: 274MB final image size (production deps only, no devDependencies)
+- [08-02]: ACR remote build used instead of local docker build + push
+- [08-02]: Managed identity with AcrPull role for registry auth
+- [08-02]: min-replicas 1 to prevent webhook timeouts from cold starts
+- [08-02]: Health probe YAML must include full container spec (image + env vars)
+- [08-02]: Explicit git refspec needed for base branch fetch in single-branch clones
+- [08-02]: Microsoft.ContainerRegistry provider must be pre-registered
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- GitHub App not yet registered (needed before Phase 1 can be tested with real webhooks)
-- Azure Container Apps not yet provisioned (needed for Phase 8)
-- Claude CLI on Alpine: RESOLVED -- agent-sdk bundles cli.js, Docker image builds successfully on oven/bun:1-alpine
+All resolved:
+- ~~GitHub App not yet registered~~ RESOLVED: App ID 2822869, slug "kodiai"
+- ~~Azure Container Apps not yet provisioned~~ RESOLVED: deployed to ca-kodiai
+- ~~Claude CLI on Alpine~~ RESOLVED: agent-sdk bundles cli.js, works on Alpine
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 08-01 (Dockerfile and .dockerignore). Next: 08-02 (Azure deployment).
-Resume file: .planning/phases/08-deployment/08-02-PLAN.md
+Stopped at: Milestone complete. All 8 phases done.
+Resume file: None

@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces (completed 2026-02-08)
 - [x] **Phase 6: Content Safety** - Sanitization and TOCTOU protections (completed 2026-02-08)
 - [x] **Phase 7: Operational Resilience** - Timeout enforcement and error reporting (completed 2026-02-08)
-- [ ] **Phase 8: Deployment** - Docker packaging and Azure Container Apps
+- [x] **Phase 8: Deployment** - Docker packaging and Azure Container Apps (completed 2026-02-08)
 
 ## Phase Details
 
@@ -139,7 +139,7 @@ Plans:
 
 Plans:
 - [x] 08-01-PLAN.md -- Dockerfile and .dockerignore creation, local image build verification
-- [ ] 08-02-PLAN.md -- Azure deployment script, provisioning, GitHub App registration, end-to-end verification
+- [x] 08-02-PLAN.md -- Azure deployment script, provisioning, GitHub App registration, end-to-end verification
 
 ## Progress
 
@@ -156,4 +156,4 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 5. Mention Handling | 2/2 | Complete | 2026-02-08 |
 | 6. Content Safety | 2/2 | Complete | 2026-02-08 |
 | 7. Operational Resilience | 2/2 | Complete | 2026-02-08 |
-| 8. Deployment | 1/2 | In progress | - |
+| 8. Deployment | 2/2 | Complete | 2026-02-08 |
