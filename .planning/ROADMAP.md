@@ -135,11 +135,11 @@ Plans:
   1. The application builds as a Docker container using `oven/bun:1-alpine` (or debian-slim if Alpine fails with Claude CLI)
   2. The container is deployed to Azure Container Apps with GitHub App secrets (private key, webhook secret, app ID) managed via Azure secrets
   3. A real PR opened on an installed repo triggers a review and the response appears as inline comments
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 08-01: Dockerfile and container build
-- [ ] 08-02: Azure Container Apps provisioning and deployment
+- [ ] 08-01-PLAN.md -- Dockerfile and .dockerignore creation, local image build verification
+- [ ] 08-02-PLAN.md -- Azure deployment script, provisioning, GitHub App registration, end-to-end verification
 
 ## Progress
 
