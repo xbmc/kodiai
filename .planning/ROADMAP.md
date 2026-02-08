@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces (completed 2026-02-08)
 - [x] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers (completed 2026-02-07)
 - [x] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open (completed 2026-02-08)
-- [ ] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces
+- [x] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces (completed 2026-02-08)
 - [ ] **Phase 6: Content Safety** - Sanitization and TOCTOU protections
 - [ ] **Phase 7: Operational Resilience** - Timeout enforcement and error reporting
 - [ ] **Phase 8: Deployment** - Docker packaging and Azure Container Apps
@@ -97,8 +97,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md -- MCP write tool extension, MentionEvent types with normalizers, conversation context builder, mention prompt
-- [ ] 05-02-PLAN.md -- Mention handler (event registration, tracking comment, execution orchestration) and server wiring
+- [x] 05-01-PLAN.md -- MCP write tool extension, MentionEvent types with normalizers, conversation context builder, mention prompt
+- [x] 05-02-PLAN.md -- Mention handler (event registration, tracking comment, execution orchestration) and server wiring
 
 ### Phase 6: Content Safety
 **Goal**: Content passed to the LLM is sanitized to prevent prompt injection, and comment filtering uses timestamps to prevent time-of-check-to-time-of-use attacks.
@@ -107,11 +107,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Invisible unicode characters, HTML comments, and embedded tokens are stripped from all user content before it reaches the LLM
   2. Only comments that existed at or before the trigger timestamp are included in conversation context (comments added after the trigger are excluded)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 06-01: Content sanitizer (invisible chars, HTML comments, token stripping)
-- [ ] 06-02: TOCTOU timestamp filtering for comment context
+- [ ] 06-01-PLAN.md -- Content sanitizer module (7-step pipeline) and TOCTOU comment filter with unit tests
+- [ ] 06-02-PLAN.md -- Integrate sanitization and TOCTOU filtering into all prompt builders
 
 ### Phase 7: Operational Resilience
 **Goal**: Jobs that exceed their timeout are killed with a user-visible error comment, and any execution failure results in a clear error message posted to the PR or issue (never silent failure).
@@ -153,7 +153,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 2. Job Infrastructure | 2/2 | Complete | 2026-02-08 |
 | 3. Execution Engine | 3/3 | Complete | 2026-02-07 |
 | 4. PR Auto-Review | 2/2 | Complete | 2026-02-08 |
-| 5. Mention Handling | 0/2 | Not started | - |
+| 5. Mention Handling | 2/2 | Complete | 2026-02-08 |
 | 6. Content Safety | 0/2 | Not started | - |
 | 7. Operational Resilience | 0/2 | Not started | - |
 | 8. Deployment | 0/2 | Not started | - |
