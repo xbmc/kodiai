@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Gap closure plans for Phase 9 UAT feedback. Plan 09-03 complete, 09-04 remaining.
+**Current focus:** All gap closure plans complete. Phase 9 fully shipped with conditional summary, always-collapse, eyes reaction.
 
 ## Current Position
 
 Phase: 9 of 9 (Review UX Improvements)
-Plan: 3 of 4 in current phase
-Status: In progress (gap closure)
-Last activity: 2026-02-08 -- Completed 09-03 (eyes reaction on PR open, autoApprove default true).
+Plan: 4 of 4 in current phase
+Status: Milestone complete (all gap closure plans done)
+Last activity: 2026-02-08 -- Completed 09-04 (conditional summary, always-collapse details tags).
 
-Progress: [####################] 100% (23/25 plans)
+Progress: [####################] 100% (24/25 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
+- Total plans completed: 24
 - Average duration: 3min
-- Total execution time: 69min
+- Total execution time: 71min
 
 **By Phase:**
 
@@ -35,7 +35,7 @@ Progress: [####################] 100% (23/25 plans)
 | 06-content-safety | 2/2 | 4min | 2min |
 | 07-operational-resilience | 2/2 | 5min | 3min |
 | 08-deployment | 2/2 | 16min | 8min |
-| 09-review-ux-improvements | 3/4 | 3min | 1min |
+| 09-review-ux-improvements | 4/4 | 5min | 1min |
 
 *Updated after each plan completion*
 
@@ -60,6 +60,9 @@ Progress: [####################] 100% (23/25 plans)
 - [09-02]: 500-character threshold triggers details wrapping for long summaries
 - [09-03]: autoApprove defaults to true so clean PRs get APPROVE review without config
 - [09-03]: reactions.createForIssue for PR description (PR is an issue, not a comment)
+- [09-04]: Removed 500-char COLLAPSE_THRESHOLD -- all bot comments now wrapped unconditionally
+- [09-04]: Review summary conditional on finding actionable issues (clean PRs = zero comments)
+- [09-04]: Tracking comment uses <details> with 'Kodiai is thinking...' as summary text
 - [08-02]: ACR remote build used instead of local docker build + push
 - [08-02]: Managed identity with AcrPull role for registry auth
 - [08-02]: min-replicas 1 to prevent webhook timeouts from cold starts
@@ -85,5 +88,5 @@ All resolved:
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 09-03-PLAN.md
+Stopped at: Completed 09-04-PLAN.md
 Resume file: None
