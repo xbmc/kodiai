@@ -52,6 +52,9 @@ Progress: [####################] 100% (21/21 plans)
 
 ### Decisions
 
+- [09-01]: 500-character threshold for wrapInDetails() (matches UX-03 spec)
+- [09-01]: pr_review_body skipped for reactions (review ID is not a comment ID)
+- [09-01]: Fire-and-forget pattern for reactions -- failure never blocks processing
 - [09-02]: Summary comment posted FIRST before inline comments to appear at top of PR conversation
 - [09-02]: Trivial PR threshold: fewer than 3 files AND under 50 lines changed
 - [09-02]: 500-character threshold triggers details wrapping for long summaries
