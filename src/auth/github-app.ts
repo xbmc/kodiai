@@ -12,6 +12,8 @@ export interface GitHubApp {
   initialize(): Promise<void>;
   /** Check GitHub API connectivity. Caches result for 30 seconds. */
   checkConnectivity(): Promise<boolean>;
+  /** Get a raw installation access token for git URL auth. */
+  getInstallationToken(installationId: number): Promise<string>;
 }
 
 export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
@@ -83,6 +85,24 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
 
       lastCheckTime = Date.now();
       return lastCheckResult;
+    },
+
+    async getInstallationToken(installationId: number): Promise<string> {
+      // Use createAppAuth directly to get a raw token (not an Octokit client).
+      // auth-app internally caches tokens and refreshes before expiry.
+      const auth = createAppAuth({
+        appId: config.githubAppId,
+        privateKey: config.githubPrivateKey,
+      });
+
+      const result = await auth({
+        type: "installation",
+        installationId,
+      });
+
+      logger.debug({ installationId }, "Obtained installation token");
+
+      return result.token;
     },
   };
 }
