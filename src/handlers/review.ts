@@ -85,6 +85,20 @@ export function createReviewHandler(deps: {
       "Processing PR review",
     );
 
+    // Add eyes reaction to PR description for immediate acknowledgment
+    try {
+      const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+      await reactionOctokit.rest.reactions.createForIssue({
+        owner: apiOwner,
+        repo: apiRepo,
+        issue_number: pr.number,
+        content: "eyes",
+      });
+    } catch (err) {
+      // Non-fatal: don't block processing if reaction fails
+      logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
+    }
+
     await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
       try {

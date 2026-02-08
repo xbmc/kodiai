@@ -9,14 +9,14 @@ const repoConfigSchema = z.object({
   review: z
     .object({
       enabled: z.boolean().default(true),
-      autoApprove: z.boolean().default(false),
+      autoApprove: z.boolean().default(true),
       prompt: z.string().optional(),
       skipAuthors: z.array(z.string()).default([]),
       skipPaths: z.array(z.string()).default([]),
     })
     .default({
       enabled: true,
-      autoApprove: false,
+      autoApprove: true,
       skipAuthors: [],
       skipPaths: [],
     }),

@@ -11,7 +11,7 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.model).toBe("claude-sonnet-4-5-20250929");
     expect(config.maxTurns).toBe(25);
     expect(config.review.enabled).toBe(true);
-    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.autoApprove).toBe(true);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();
@@ -103,7 +103,7 @@ test("parses review.prompt from YAML", async () => {
     const config = await loadRepoConfig(dir);
     expect(config.review.prompt).toBe("Focus on security issues");
     expect(config.review.enabled).toBe(true);
-    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.autoApprove).toBe(true);
   } finally {
     await rm(dir, { recursive: true });
   }
