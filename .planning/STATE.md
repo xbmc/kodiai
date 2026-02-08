@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 7 in progress. Error classification and timeout done. Next: wire error reporting into handlers.
+**Current focus:** Phase 7 complete. All error paths report actionable user-visible messages. Next: Phase 8 (Deployment).
 
 ## Current Position
 
 Phase: 7 of 8 (Operational Resilience)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 07-01-PLAN.md (error classification and timeout enforcement).
+Plan: 2 of 2 in current phase
+Status: Phase complete
+Last activity: 2026-02-08 -- Completed 07-02-PLAN.md (error reporting wiring into handlers).
 
-Progress: [################----] 53% (16/30 plans)
+Progress: [#################---] 57% (17/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 16
+- Total plans completed: 17
 - Average duration: 3min
-- Total execution time: 48min
+- Total execution time: 50min
 
 **By Phase:**
 
@@ -33,10 +33,10 @@ Progress: [################----] 53% (16/30 plans)
 | 04-pr-auto-review | 2/2 | 5min | 3min |
 | 05-mention-handling | 2/2 | 6min | 3min |
 | 06-content-safety | 2/2 | 4min | 2min |
-| 07-operational-resilience | 1/2 | 3min | 3min |
+| 07-operational-resilience | 2/2 | 5min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 2min, 2min, 2min, 3min
+- Last 5 plans: 2min, 2min, 2min, 3min, 2min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -114,6 +114,9 @@ Recent decisions affecting current work:
 - [07-01]: postOrUpdateErrorComment never throws -- error reporting must not mask original error (Pitfall 6)
 - [07-01]: Manual setTimeout + AbortController used instead of AbortSignal.timeout() for clearTimeout on success (Pitfall 5)
 - [07-01]: timeoutId/controller/timeoutSeconds hoisted outside try block for catch block access
+- [07-02]: Review handler creates new error comments (no tracking comment) -- the review itself is the output
+- [07-02]: Mention handler passes trackingCommentId to postOrUpdateErrorComment for update-or-create behavior
+- [07-02]: Both handlers catch error comment posting failures separately so they never mask the original error
 
 ### Pending Todos
 
@@ -128,5 +131,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 07-01 (Error Classification and Timeout). Next: 07-02 (Wire error reporting into handlers).
-Resume file: .planning/phases/07-operational-resilience/07-02-PLAN.md
+Stopped at: Completed Phase 7 (Operational Resilience). Next: Phase 8 (Deployment).
+Resume file: .planning/ROADMAP.md (Phase 8 planning)
