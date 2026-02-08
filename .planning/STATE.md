@@ -5,33 +5,33 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 1 - Webhook Foundation
+**Current focus:** Phase 1 complete, ready for Phase 2 - Job Infrastructure
 
 ## Current Position
 
 Phase: 1 of 8 (Webhook Foundation)
-Plan: 2 of 3 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 01-02-PLAN.md (GitHub App authentication)
+Plan: 3 of 3 in current phase
+Status: Phase complete
+Last activity: 2026-02-08 -- Completed 01-03-PLAN.md (event router and bot filtering)
 
-Progress: [####----------------] 7% (2/30 plans)
+Progress: [###-----------------] 10% (3/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 2
+- Total plans completed: 3
 - Average duration: 4min
-- Total execution time: 8min
+- Total execution time: 11min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-webhook-foundation | 2/3 | 8min | 4min |
+| 01-webhook-foundation | 3/3 | 11min | 4min |
 
 **Recent Trend:**
-- Last 5 plans: 5min, 3min
-- Trend: --
+- Last 5 plans: 5min, 3min, 3min
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -53,6 +53,9 @@ Recent decisions affecting current work:
 - [01-02]: Fresh Octokit instance per getInstallationOctokit() call to avoid stale state
 - [01-02]: Connectivity check uses 30-second timestamp cache to avoid rate limiting
 - [01-02]: App-level Octokit is a singleton; installation-level Octokit is per-call
+- [01-03]: Both "event.action" and "event" handlers fire for the same event (specific + catch-all)
+- [01-03]: No wildcard handler -- unhandled events silently dropped with debug logging
+- [01-03]: installationId defaults to 0 when payload lacks installation field
 
 ### Pending Todos
 
@@ -67,5 +70,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 01-02-PLAN.md, ready for 01-03-PLAN.md (event handler registry and bot filtering)
-Resume file: .planning/phases/01-webhook-foundation/01-03-PLAN.md
+Stopped at: Completed Phase 1 (all 3 plans). Ready for Phase 2 planning (02-01-PLAN.md: Job queue with per-installation concurrency)
+Resume file: .planning/ROADMAP.md (Phase 2)

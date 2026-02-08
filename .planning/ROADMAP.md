@@ -12,7 +12,7 @@ Kodiai delivers AI-powered PR auto-review and conversational code assistance as 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Webhook Foundation** - Server receives, verifies, and routes GitHub events safely
+- [x] **Phase 1: Webhook Foundation** - Server receives, verifies, and routes GitHub events safely (completed 2026-02-08)
 - [ ] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces
 - [ ] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers
 - [ ] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open
@@ -38,7 +38,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md -- Project init, Hono server, webhook endpoint, signature verification, delivery dedup, health endpoints
 - [x] 01-02-PLAN.md -- GitHub App authentication (JWT + installation tokens), app slug discovery, readiness probe
-- [ ] 01-03-PLAN.md -- Event handler registry, bot filtering pipeline, async dispatch wiring
+- [x] 01-03-PLAN.md -- Event handler registry, bot filtering pipeline, async dispatch wiring
 
 ### Phase 2: Job Infrastructure
 **Goal**: Webhook handlers can enqueue jobs that clone a target repo into an ephemeral workspace, enforce per-installation concurrency limits, and clean up after themselves.
@@ -151,7 +151,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Webhook Foundation | 2/3 | In progress | - |
+| 1. Webhook Foundation | 3/3 | Complete | 2026-02-08 |
 | 2. Job Infrastructure | 0/2 | Not started | - |
 | 3. Execution Engine | 0/3 | Not started | - |
 | 4. PR Auto-Review | 0/3 | Not started | - |
