@@ -75,15 +75,16 @@ export function createReviewHandler(deps: {
         "requested_team" in reviewRequestedPayload
           ? reviewRequestedPayload.requested_team?.name
           : undefined;
-      const appBotLogin = `${githubApp.getAppSlug()}[bot]`;
+      const appSlug = githubApp.getAppSlug();
+      const acceptedReviewerLogins = new Set([appSlug, `${appSlug}[bot]`]);
 
-      if (requestedReviewerLogin !== appBotLogin) {
+      if (!requestedReviewerLogin || !acceptedReviewerLogins.has(requestedReviewerLogin)) {
         logger.info(
           {
             prNumber: pr.number,
             requestedReviewer: requestedReviewerLogin ?? null,
             requestedTeam: requestedTeamName ?? null,
-            appBotLogin,
+            acceptedReviewerLogins: Array.from(acceptedReviewerLogins),
           },
           "Skipping review_requested event for non-kodiai reviewer",
         );
