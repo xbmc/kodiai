@@ -7,6 +7,8 @@ import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createHealthRoutes } from "./routes/health.ts";
+import { createJobQueue } from "./jobs/queue.ts";
+import { createWorkspaceManager } from "./jobs/workspace.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -18,12 +20,27 @@ const dedup = createDeduplicator();
 const githubApp = createGitHubApp(config, logger);
 await githubApp.initialize();
 
+// Job infrastructure
+const jobQueue = createJobQueue(logger);
+const workspaceManager = createWorkspaceManager(githubApp, logger);
+
+// Defense-in-depth: clean up any stale workspaces from previous runs
+const staleCount = await workspaceManager.cleanupStale();
+if (staleCount > 0) {
+  logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
+}
+
 // Event processing pipeline: bot filter -> event router
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
 
-// Phase 2+ plans will register real handlers via eventRouter.register().
-// Unhandled events are silently dropped (correct default behavior).
+// Phase 3+ plans will register handlers that use jobQueue and workspaceManager.
+// Example: eventRouter.register("pull_request.opened", async (event) => {
+//   await jobQueue.enqueue(event.installationId, async () => {
+//     const ws = await workspaceManager.create(event.installationId, { owner, repo, ref });
+//     try { /* run job */ } finally { await ws.cleanup(); }
+//   });
+// });
 
 const app = new Hono();
 
