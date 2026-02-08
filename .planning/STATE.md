@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 4 complete - PR Auto-Review. Ready for Phase 5 (Mention Handling).
+**Current focus:** Phase 6 in progress - Content Safety (sanitizer module complete, integration next).
 
 ## Current Position
 
-Phase: 5 of 8 (Mention Handling)
-Plan: 0 of 3 in current phase
-Status: Ready to start
-Last activity: 2026-02-08 -- Completed 04-02-PLAN.md (review handler + server wiring). Phase 4 complete.
+Phase: 6 of 8 (Content Safety)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-08 -- Completed 06-01-PLAN.md (content sanitizer and TOCTOU filter).
 
-Progress: [###########---------] 37% (11/30 plans)
+Progress: [##############------] 47% (14/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 11
+- Total plans completed: 14
 - Average duration: 3min
-- Total execution time: 35min
+- Total execution time: 43min
 
 **By Phase:**
 
@@ -31,9 +31,11 @@ Progress: [###########---------] 37% (11/30 plans)
 | 02-job-infrastructure | 2/2 | 8min | 4min |
 | 03-execution-engine | 3/3 | 9min | 3min |
 | 04-pr-auto-review | 2/2 | 5min | 3min |
+| 05-mention-handling | 2/2 | 6min | 3min |
+| 06-content-safety | 1/2 | 2min | 2min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 3min, 3min, 2min, 3min
+- Last 5 plans: 2min, 3min, 3min, 3min, 2min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -89,6 +91,19 @@ Recent decisions affecting current work:
 - [04-02]: Clone depth 50 for review workspaces to provide adequate diff context
 - [04-02]: Deleted fork repos fall back to git fetch origin pull/N/head:pr-review
 - [04-02]: Handler factory pattern established: createXxxHandler(deps) registers events via eventRouter.register()
+- [05-01]: create_comment MCP tool follows same error handling pattern as update_comment
+- [05-01]: MentionEvent.headRef/baseRef left undefined for issue_comment on PR (must be fetched by handler via pulls.get)
+- [05-01]: containsMention uses case-insensitive includes check with @appSlug
+- [05-01]: buildConversationContext fetches max 30 comments -- sufficient context without rate limit risk
+- [05-01]: Bot tracking comments filtered by checking body starts with "> **Kodiai**"
+- [05-02]: Tracking comment posted BEFORE jobQueue.enqueue for immediate user feedback
+- [05-02]: containsMention check outside job (fast); mention.enabled check inside job (reads repo config)
+- [05-02]: Pure issue mentions clone default branch with depth 1; PR mentions use depth 50
+- [05-02]: Error paths update tracking comment so user always sees a result
+- [05-02]: mention.prompt optional config field mirrors review.prompt for custom instructions
+- [06-01]: REST API updated_at used as conservative edit timestamp (more strict than GraphQL lastEditedAt)
+- [06-01]: Strict >= comparison in TOCTOU filter excludes trigger comment itself
+- [06-01]: Zero external dependencies for sanitization -- pure regex/string manipulation
 
 ### Pending Todos
 
@@ -103,5 +118,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed Phase 4 (PR Auto-Review). Next: Phase 5 (Mention Handling).
-Resume file: .planning/phases/05-mention-handling/
+Stopped at: Completed 06-01 (Content Sanitizer). Next: 06-02 (Integration into prompt builders).
+Resume file: .planning/phases/06-content-safety/06-02-PLAN.md
