@@ -88,6 +88,33 @@ export function createMentionHandler(deps: {
       "Processing @kodiai mention",
     );
 
+    // Add eyes reaction to trigger comment for immediate visual acknowledgment
+    try {
+      const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+      if (mention.surface === "pr_review_comment") {
+        await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
+          owner: mention.owner,
+          repo: mention.repo,
+          comment_id: mention.commentId,
+          content: "eyes",
+        });
+      } else if (mention.surface === "pr_review_body") {
+        // PR review bodies don't support reactions -- skip silently
+        // (the review ID is not a comment ID, so the reaction endpoints would 404)
+      } else {
+        // issue_comment and pr_comment both use the issue comment reaction endpoint
+        await reactionOctokit.rest.reactions.createForIssueComment({
+          owner: mention.owner,
+          repo: mention.repo,
+          comment_id: mention.commentId,
+          content: "eyes",
+        });
+      }
+    } catch (err) {
+      // Non-fatal: don't block processing if reaction fails
+      logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
+    }
+
     // Post tracking comment BEFORE enqueue (immediate user feedback)
     let trackingCommentId: number | undefined;
     try {
