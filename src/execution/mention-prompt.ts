@@ -75,9 +75,10 @@ export function buildMentionPrompt(params: {
   mention: MentionEvent;
   conversationContext: string;
   userQuestion: string;
+  trackingCommentId?: number;
   customInstructions?: string;
 }): string {
-  const { mention, conversationContext, userQuestion, customInstructions } = params;
+  const { mention, conversationContext, userQuestion, trackingCommentId, customInstructions } = params;
   const lines: string[] = [];
 
   // Context header
@@ -103,9 +104,15 @@ export function buildMentionPrompt(params: {
   // Response instructions
   lines.push("## How to respond");
   lines.push("");
-  lines.push(
-    "Write your response by updating the tracking comment using the `mcp__github_comment__update_comment` tool. The tracking comment ID will be provided in the system context.",
-  );
+  if (trackingCommentId) {
+    lines.push(
+      `Write your response by updating the tracking comment using the \`mcp__github_comment__update_comment\` tool with comment ID ${trackingCommentId}.`,
+    );
+  } else {
+    lines.push(
+      `Write your response by creating a new comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
+    );
+  }
   lines.push("");
   lines.push("Your response should be:");
   lines.push("- Direct and helpful -- answer the question with specific code references where possible");

@@ -177,6 +177,7 @@ export function createMentionHandler(deps: {
           mention,
           conversationContext,
           userQuestion,
+          trackingCommentId,
           customInstructions: config.mention.prompt,
         });
 
