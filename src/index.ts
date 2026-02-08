@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { loadConfig } from "./config.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createDeduplicator } from "./webhook/dedup.ts";
+import { createGitHubApp } from "./auth/github-app.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 
@@ -10,11 +11,16 @@ const config = await loadConfig();
 const logger = createLogger();
 const dedup = createDeduplicator();
 
+// Initialize GitHub App auth -- validates credentials and fetches app slug.
+// Crashes the process if credentials are invalid (fail-fast).
+const githubApp = createGitHubApp(config, logger);
+await githubApp.initialize();
+
 const app = new Hono();
 
 // Mount routes
-app.route("/webhooks", createWebhookRoutes({ config, logger, dedup }));
-app.route("/", createHealthRoutes());
+app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp }));
+app.route("/", createHealthRoutes({ githubApp, logger }));
 
 // Global error handler
 app.onError((err, c) => {

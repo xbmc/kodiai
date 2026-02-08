@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import type { Deduplicator } from "../webhook/dedup.ts";
+import type { GitHubApp } from "../auth/github-app.ts";
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -9,6 +10,7 @@ interface WebhookRouteDeps {
   config: AppConfig;
   logger: Logger;
   dedup: Deduplicator;
+  githubApp: GitHubApp;
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
