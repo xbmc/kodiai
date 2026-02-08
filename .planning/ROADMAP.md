@@ -138,7 +138,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 08-01-PLAN.md -- Dockerfile and .dockerignore creation, local image build verification
+- [x] 08-01-PLAN.md -- Dockerfile and .dockerignore creation, local image build verification
 - [ ] 08-02-PLAN.md -- Azure deployment script, provisioning, GitHub App registration, end-to-end verification
 
 ## Progress
@@ -156,4 +156,4 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 5. Mention Handling | 2/2 | Complete | 2026-02-08 |
 | 6. Content Safety | 2/2 | Complete | 2026-02-08 |
 | 7. Operational Resilience | 2/2 | Complete | 2026-02-08 |
-| 8. Deployment | 0/2 | Not started | - |
+| 8. Deployment | 1/2 | In progress | - |

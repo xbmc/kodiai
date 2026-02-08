@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 7 complete. All error paths report actionable user-visible messages. Next: Phase 8 (Deployment).
+**Current focus:** Phase 8 in progress. Dockerfile and .dockerignore created, image builds on Alpine. Next: Plan 02 (Azure deployment).
 
 ## Current Position
 
-Phase: 7 of 8 (Operational Resilience)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-08 -- Completed 07-02-PLAN.md (error reporting wiring into handlers).
+Phase: 8 of 8 (Deployment)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-08 -- Completed 08-01-PLAN.md (Dockerfile and .dockerignore).
 
-Progress: [#################---] 57% (17/30 plans)
+Progress: [##################--] 60% (18/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 17
+- Total plans completed: 18
 - Average duration: 3min
-- Total execution time: 50min
+- Total execution time: 51min
 
 **By Phase:**
 
@@ -34,9 +34,10 @@ Progress: [#################---] 57% (17/30 plans)
 | 05-mention-handling | 2/2 | 6min | 3min |
 | 06-content-safety | 2/2 | 4min | 2min |
 | 07-operational-resilience | 2/2 | 5min | 3min |
+| 08-deployment | 1/2 | 1min | 1min |
 
 **Recent Trend:**
-- Last 5 plans: 2min, 2min, 2min, 3min, 2min
+- Last 5 plans: 2min, 2min, 3min, 2min, 1min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -117,6 +118,11 @@ Recent decisions affecting current work:
 - [07-02]: Review handler creates new error comments (no tracking comment) -- the review itself is the output
 - [07-02]: Mention handler passes trackingCommentId to postOrUpdateErrorComment for update-or-create behavior
 - [07-02]: Both handlers catch error comment posting failures separately so they never mask the original error
+- [08-01]: Alpine base image confirmed working -- agent-sdk bundles cli.js with musl support, no debian-slim fallback needed
+- [08-01]: No Claude CLI installation in Docker -- agent-sdk bundles cli.js which runs under bun
+- [08-01]: git installed via apk as only additional Alpine package for workspace manager clone operations
+- [08-01]: USER bun for non-root execution; /tmp writable by default for workspaces
+- [08-01]: 274MB final image size (production deps only, no devDependencies)
 
 ### Pending Todos
 
@@ -126,10 +132,10 @@ None yet.
 
 - GitHub App not yet registered (needed before Phase 1 can be tested with real webhooks)
 - Azure Container Apps not yet provisioned (needed for Phase 8)
-- Claude CLI on Alpine may fail (research gap -- test during Phase 8, fall back to debian-slim)
+- Claude CLI on Alpine: RESOLVED -- agent-sdk bundles cli.js, Docker image builds successfully on oven/bun:1-alpine
 
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed Phase 7 (Operational Resilience). Next: Phase 8 (Deployment).
-Resume file: .planning/ROADMAP.md (Phase 8 planning)
+Stopped at: Completed 08-01 (Dockerfile and .dockerignore). Next: 08-02 (Azure deployment).
+Resume file: .planning/phases/08-deployment/08-02-PLAN.md
