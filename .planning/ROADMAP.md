@@ -48,11 +48,11 @@ Plans:
   1. Jobs are queued and execute with per-installation concurrency limits (one active job per installation at a time)
   2. Each job gets a fresh shallow clone of the target repo in a temporary directory with git auth configured via installation token
   3. After job completion (success or failure), the temporary workspace directory is deleted and no orphaned resources remain
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 02-01: Job queue with per-installation concurrency
-- [ ] 02-02: Workspace manager (clone, git auth, cleanup)
+- [ ] 02-01-PLAN.md -- Job queue with per-installation concurrency (p-queue), job/workspace types, getInstallationToken on GitHubApp
+- [ ] 02-02-PLAN.md -- Workspace manager (clone, git auth, cleanup, branch validation), server wiring, startup stale cleanup
 
 ### Phase 3: Execution Engine
 **Goal**: The system can invoke Claude Code CLI against a workspace with MCP servers providing GitHub interaction tools, using sensible defaults when no per-repo config exists.
