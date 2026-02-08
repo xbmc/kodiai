@@ -151,11 +151,25 @@ FQDN=$(az containerapp create \
 echo "==> Configuring health probes..."
 
 PROBE_YAML=$(mktemp)
-cat > "$PROBE_YAML" <<'YAML'
+cat > "$PROBE_YAML" <<YAML
 properties:
   template:
     containers:
       - name: ca-kodiai
+        image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        env:
+          - name: GITHUB_APP_ID
+            secretRef: github-app-id
+          - name: GITHUB_PRIVATE_KEY
+            secretRef: github-private-key
+          - name: GITHUB_WEBHOOK_SECRET
+            secretRef: github-webhook-secret
+          - name: CLAUDE_CODE_OAUTH_TOKEN
+            secretRef: claude-code-oauth-token
+          - name: PORT
+            value: "3000"
+          - name: LOG_LEVEL
+            value: info
         probes:
           - type: liveness
             httpGet:
