@@ -47,6 +47,7 @@ Progress: [####################] 100% (24/25 plans)
 - **GitHub App slug:** kodiai
 - **GitHub repo:** https://github.com/xbmc/kodiai (private)
 - **Azure resources:** rg-kodiai (resource group), kodiairegistry (ACR), ca-kodiai (container app), cae-kodiai (environment)
+- **Latest revision:** ca-kodiai--0000006 (deployed 2026-02-08, includes Phase 9 gap closure: eyes reaction on PR, auto-approve default, conditional summary, always-collapse)
 
 ## Accumulated Context
 
