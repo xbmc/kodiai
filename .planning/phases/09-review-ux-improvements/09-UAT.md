@@ -3,7 +3,7 @@ status: testing
 phase: 09-review-ux-improvements
 source: 09-01-SUMMARY.md, 09-02-SUMMARY.md
 started: 2026-02-08T19:31:00Z
-updated: 2026-02-08T19:58:00Z
+updated: 2026-02-08T19:59:00Z
 ---
 
 ## Current Test
@@ -70,11 +70,14 @@ skipped: 2
   severity: major
   test: 6
 
-- truth: "PR auto-review adds eyes emoji reaction to initial PR interaction to show it's processing"
+- truth: "PR auto-review adds eyes emoji reaction to the PR description (issue body) immediately when PR is opened"
   status: failed
-  reason: "User reported: need eyes reaction on initial PR interaction"
+  reason: "User reported: eyes can be posted on initial message (PR description) using createForIssue API"
   severity: major
   test: 4
+  artifacts:
+    - path: "src/handlers/review.ts"
+      issue: "Missing eyes reaction call to PR issue body before review starts"
 
 - truth: "Bot properly uses GitHub review API with APPROVE status when no issues found"
   status: failed
