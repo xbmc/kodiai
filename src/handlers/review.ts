@@ -13,16 +13,30 @@ import { buildReviewPrompt } from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { $ } from "bun";
 
+function isReviewTriggerEnabled(
+  action: string,
+  triggers: {
+    onOpened: boolean;
+    onReadyForReview: boolean;
+    onReviewRequested: boolean;
+  },
+): boolean {
+  if (action === "opened") return triggers.onOpened;
+  if (action === "ready_for_review") return triggers.onReadyForReview;
+  if (action === "review_requested") return triggers.onReviewRequested;
+  return false;
+}
+
 /**
  * Create the review handler and register it with the event router.
  *
  * Handles `pull_request.opened`, `pull_request.ready_for_review`, and
  * `pull_request.review_requested` events.
+ *
+ * Trigger model: initial review events plus explicit re-request only.
+ * Re-requested reviews run only when kodiai itself is the requested reviewer.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
- *
- * The handler automatically requests kodiai as a reviewer to enable the
- * "re-request review" button in GitHub's UI.
  */
 export function createReviewHandler(deps: {
   eventRouter: EventRouter;
@@ -49,6 +63,32 @@ export function createReviewHandler(deps: {
         "Skipping draft PR",
       );
       return;
+    }
+
+    if (payload.action === "review_requested") {
+      const reviewRequestedPayload = payload as PullRequestReviewRequestedEvent;
+      const requestedReviewerLogin =
+        "requested_reviewer" in reviewRequestedPayload
+          ? reviewRequestedPayload.requested_reviewer?.login
+          : undefined;
+      const requestedTeamName =
+        "requested_team" in reviewRequestedPayload
+          ? reviewRequestedPayload.requested_team?.name
+          : undefined;
+      const appBotLogin = `${githubApp.getAppSlug()}[bot]`;
+
+      if (requestedReviewerLogin !== appBotLogin) {
+        logger.info(
+          {
+            prNumber: pr.number,
+            requestedReviewer: requestedReviewerLogin ?? null,
+            requestedTeam: requestedTeamName ?? null,
+            appBotLogin,
+          },
+          "Skipping review_requested event for non-kodiai reviewer",
+        );
+        return;
+      }
     }
 
     // API target is always the base (upstream) repo
@@ -91,35 +131,6 @@ export function createReviewHandler(deps: {
       "Processing PR review",
     );
 
-    // Add eyes reaction to PR description for immediate acknowledgment
-    try {
-      const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-      await reactionOctokit.rest.reactions.createForIssue({
-        owner: apiOwner,
-        repo: apiRepo,
-        issue_number: pr.number,
-        content: "eyes",
-      });
-    } catch (err) {
-      // Non-fatal: don't block processing if reaction fails
-      logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
-    }
-
-    // Request kodiai as a reviewer to enable "re-request review" button
-    try {
-      const reviewerOctokit = await githubApp.getInstallationOctokit(event.installationId);
-      const appSlug = await githubApp.getAppSlug();
-      await reviewerOctokit.rest.pulls.requestReviewers({
-        owner: apiOwner,
-        repo: apiRepo,
-        pull_number: pr.number,
-        reviewers: [`${appSlug}[bot]`],
-      });
-    } catch (err) {
-      // Non-fatal: GitHub returns 422 if already requested or if app can't be requested
-      logger.debug({ err, prNumber: pr.number }, "Could not request kodiai as reviewer");
-    }
-
     await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
       try {
@@ -151,6 +162,29 @@ export function createReviewHandler(deps: {
             "Review disabled in config, skipping",
           );
           return;
+        }
+
+        // Check whether this event action is enabled in review.triggers
+        if (!isReviewTriggerEnabled(payload.action, config.review.triggers)) {
+          logger.info(
+            { prNumber: pr.number, action: payload.action, triggers: config.review.triggers },
+            "Review trigger disabled in config, skipping",
+          );
+          return;
+        }
+
+        // Add eyes reaction to PR description for immediate acknowledgment
+        try {
+          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          await reactionOctokit.rest.reactions.createForIssue({
+            owner: apiOwner,
+            repo: apiRepo,
+            issue_number: pr.number,
+            content: "eyes",
+          });
+        } catch (err) {
+          // Non-fatal: don't block processing if reaction fails
+          logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
         }
 
         // Check skipAuthors

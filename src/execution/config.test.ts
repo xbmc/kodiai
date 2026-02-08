@@ -11,6 +11,9 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.model).toBe("claude-sonnet-4-5-20250929");
     expect(config.maxTurns).toBe(25);
     expect(config.review.enabled).toBe(true);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+    expect(config.review.triggers.onReviewRequested).toBe(true);
     expect(config.review.autoApprove).toBe(true);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
@@ -34,6 +37,9 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.maxTurns).toBe(10);
     expect(config.review.autoApprove).toBe(true);
     expect(config.review.enabled).toBe(true); // default preserved
+    expect(config.review.triggers.onOpened).toBe(true); // default preserved
+    expect(config.review.triggers.onReadyForReview).toBe(true); // default preserved
+    expect(config.review.triggers.onReviewRequested).toBe(true); // default preserved
     expect(config.mention.enabled).toBe(true); // default preserved
   } finally {
     await rm(dir, { recursive: true });
@@ -104,6 +110,37 @@ test("parses review.prompt from YAML", async () => {
     expect(config.review.prompt).toBe("Focus on security issues");
     expect(config.review.enabled).toBe(true);
     expect(config.review.autoApprove).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.triggers from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: false\n    onReviewRequested: true\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers).toEqual({
+      onOpened: true,
+      onReadyForReview: false,
+      onReviewRequested: true,
+    });
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects unsupported review.triggers keys", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n    onSynchronize: true\n",
+    );
+    await expect(loadRepoConfig(dir)).rejects.toThrow("Invalid .kodiai.yml");
   } finally {
     await rm(dir, { recursive: true });
   }

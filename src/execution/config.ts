@@ -9,6 +9,18 @@ const repoConfigSchema = z.object({
   review: z
     .object({
       enabled: z.boolean().default(true),
+      triggers: z
+        .object({
+          onOpened: z.boolean().default(true),
+          onReadyForReview: z.boolean().default(true),
+          onReviewRequested: z.boolean().default(true),
+        })
+        .strict()
+        .default({
+          onOpened: true,
+          onReadyForReview: true,
+          onReviewRequested: true,
+        }),
       autoApprove: z.boolean().default(true),
       prompt: z.string().optional(),
       skipAuthors: z.array(z.string()).default([]),
@@ -16,6 +28,11 @@ const repoConfigSchema = z.object({
     })
     .default({
       enabled: true,
+      triggers: {
+        onOpened: true,
+        onReadyForReview: true,
+        onReviewRequested: true,
+      },
       autoApprove: true,
       skipAuthors: [],
       skipPaths: [],
