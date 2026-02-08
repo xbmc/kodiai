@@ -22,6 +22,7 @@ import {
   buildMentionPrompt,
 } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { wrapInDetails } from "../lib/formatting.ts";
 
 const TRACKING_INITIAL = [
   "> **Kodiai** is thinking...",
@@ -239,9 +240,12 @@ export function createMentionHandler(deps: {
           const category = result.isTimeout
             ? "timeout"
             : classifyError(new Error(result.errorMessage ?? "Unknown error"), false);
-          const errorBody = formatErrorComment(
-            category,
-            result.errorMessage ?? "An unexpected error occurred while processing your request.",
+          const errorBody = wrapInDetails(
+            formatErrorComment(
+              category,
+              result.errorMessage ?? "An unexpected error occurred while processing your request.",
+            ),
+            "Kodiai encountered an error",
           );
           const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
           await postOrUpdateErrorComment(errOctokit, {
@@ -260,7 +264,7 @@ export function createMentionHandler(deps: {
         // Post or update error comment with classified message
         const category = classifyError(err, false);
         const detail = err instanceof Error ? err.message : "An unexpected error occurred";
-        const errorBody = formatErrorComment(category, detail);
+        const errorBody = wrapInDetails(formatErrorComment(category, detail), "Kodiai encountered an error");
         try {
           const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
           await postOrUpdateErrorComment(errOctokit, {
