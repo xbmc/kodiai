@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 4 in progress - PR Auto-Review. Review config and prompt builder complete.
+**Current focus:** Phase 4 complete - PR Auto-Review. Ready for Phase 5 (Mention Handling).
 
 ## Current Position
 
-Phase: 4 of 8 (PR Auto-Review)
-Plan: 1 of 4 in current phase
-Status: In progress
-Last activity: 2026-02-08 -- Completed 04-01-PLAN.md (review config schema + prompt builder)
+Phase: 5 of 8 (Mention Handling)
+Plan: 0 of 3 in current phase
+Status: Ready to start
+Last activity: 2026-02-08 -- Completed 04-02-PLAN.md (review handler + server wiring). Phase 4 complete.
 
-Progress: [#########-----------] 30% (9/30 plans)
+Progress: [###########---------] 37% (11/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 11
 - Average duration: 3min
-- Total execution time: 30min
+- Total execution time: 35min
 
 **By Phase:**
 
@@ -30,11 +30,11 @@ Progress: [#########-----------] 30% (9/30 plans)
 | 01-webhook-foundation | 3/3 | 11min | 4min |
 | 02-job-infrastructure | 2/2 | 8min | 4min |
 | 03-execution-engine | 3/3 | 9min | 3min |
-| 04-pr-auto-review | 1/4 | 2min | 2min |
+| 04-pr-auto-review | 2/2 | 5min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 4min, 3min, 3min, 3min, 2min
-- Trend: stable/improving
+- Last 5 plans: 3min, 3min, 3min, 2min, 3min
+- Trend: stable
 
 *Updated after each plan completion*
 
@@ -83,6 +83,12 @@ Recent decisions affecting current work:
 - [04-01]: Review prompt uses (1), (2), (3) format to avoid GitHub auto-linking #N as issue links
 - [04-01]: Silent approval pattern: prompt tells Claude to do nothing on clean PRs, handler manages approval
 - [04-01]: Empty PR body omitted from prompt rather than showing empty section
+- [04-02]: Handler uses prompt override (ExecutionContext.prompt) instead of triggerBody wrapping for review-specific prompts
+- [04-02]: Silent approval gated by config.review.autoApprove (defaults false) -- safe default, user opts in
+- [04-02]: skipPaths matching uses simple string matching: suffix for extensions (*.lock), prefix for directories (vendor/)
+- [04-02]: Clone depth 50 for review workspaces to provide adequate diff context
+- [04-02]: Deleted fork repos fall back to git fetch origin pull/N/head:pr-review
+- [04-02]: Handler factory pattern established: createXxxHandler(deps) registers events via eventRouter.register()
 
 ### Pending Todos
 
@@ -97,5 +103,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 04-01 (review config + prompt builder). Next: 04-02 (PR review handler).
-Resume file: .planning/phases/04-pr-auto-review/04-02-PLAN.md
+Stopped at: Completed Phase 4 (PR Auto-Review). Next: Phase 5 (Mention Handling).
+Resume file: .planning/phases/05-mention-handling/
