@@ -157,7 +157,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 6. Content Safety | 2/2 | Complete | 2026-02-08 |
 | 7. Operational Resilience | 2/2 | Complete | 2026-02-08 |
 | 8. Deployment | 2/2 | Complete | 2026-02-08 |
-| 9. Review UX Improvements | 0/2 | Planned | - |
+| 9. Review UX Improvements | 2/2 | Complete | 2026-02-08 |
 
 ### Phase 9: Review UX Improvements
 
@@ -171,5 +171,5 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md -- Eyes emoji reaction on mention triggers, formatting utility (wrapInDetails), <details> wrapping in mention prompt and error comments
-- [ ] 09-02-PLAN.md -- Structured PR summary comment (what/why/files) in review prompt
+- [x] 09-01-PLAN.md -- Eyes emoji reaction on mention triggers, formatting utility (wrapInDetails), <details> wrapping in mention prompt and error comments
+- [x] 09-02-PLAN.md -- Structured PR summary comment (what/why/files) in review prompt

@@ -52,6 +52,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **OPS-04**: Application packaged as Docker container
 - [ ] **OPS-05**: Deployed to Azure Container Apps with secrets management
 
+### UX Enhancements
+
+- [ ] **UX-01**: PR summary comment (structured what/why/files)
+- [ ] **UX-02**: Eyes emoji reaction on trigger comments
+- [ ] **UX-03**: Collapse long responses in `<details>` tags
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -66,11 +72,6 @@ Deferred to future release. Tracked but not in current roadmap.
 - **MOD-01**: Code modification via @mention (branch creation, commit, push)
 - **MOD-02**: File ops MCP server for creating/updating files via Git Data API
 
-### UX Enhancements
-
-- **UX-01**: PR summary comment (structured what/why/files)
-- **UX-02**: Eyes emoji reaction on trigger comments
-- **UX-03**: Collapse long responses in `<details>` tags
 
 ### Advanced
 
@@ -130,10 +131,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-03 | Phase 3 | Pending |
 | OPS-04 | Phase 8 | Pending |
 | OPS-05 | Phase 8 | Pending |
+| UX-01 | Phase 9 | Pending |
+| UX-02 | Phase 9 | Pending |
+| UX-03 | Phase 9 | Pending |
 
 **Coverage:**
-- v1 requirements: 30 total
-- Mapped to phases: 30
+- v1 requirements: 33 total
+- Mapped to phases: 33
 - Unmapped: 0
 
 ---
