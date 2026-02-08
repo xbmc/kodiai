@@ -102,8 +102,9 @@ export function createReviewHandler(deps: {
           await $`git -C ${workspace.dir} checkout pr-review`.quiet();
         }
 
-        // Fetch base branch so git diff origin/BASE...HEAD works
-        await $`git -C ${workspace.dir} fetch origin ${pr.base.ref} --depth=1`.quiet();
+        // Fetch base branch so git diff origin/BASE...HEAD works.
+        // Explicit refspec needed because --single-branch clones don't track other branches.
+        await $`git -C ${workspace.dir} fetch origin ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
         // Load repo config (.kodiai.yml) with defaults
         const config = await loadRepoConfig(workspace.dir);
