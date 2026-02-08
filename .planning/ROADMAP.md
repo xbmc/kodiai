@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers (completed 2026-02-07)
 - [x] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open (completed 2026-02-08)
 - [x] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces (completed 2026-02-08)
-- [ ] **Phase 6: Content Safety** - Sanitization and TOCTOU protections
+- [x] **Phase 6: Content Safety** - Sanitization and TOCTOU protections (completed 2026-02-08)
 - [ ] **Phase 7: Operational Resilience** - Timeout enforcement and error reporting
 - [ ] **Phase 8: Deployment** - Docker packaging and Azure Container Apps
 
@@ -111,7 +111,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md -- Content sanitizer module (7-step pipeline) and TOCTOU comment filter with unit tests
-- [ ] 06-02-PLAN.md -- Integrate sanitization and TOCTOU filtering into all prompt builders
+- [x] 06-02-PLAN.md -- Integrate sanitization and TOCTOU filtering into all prompt builders
 
 ### Phase 7: Operational Resilience
 **Goal**: Jobs that exceed their timeout are killed with a user-visible error comment, and any execution failure results in a clear error message posted to the PR or issue (never silent failure).
@@ -154,6 +154,6 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 3. Execution Engine | 3/3 | Complete | 2026-02-07 |
 | 4. PR Auto-Review | 2/2 | Complete | 2026-02-08 |
 | 5. Mention Handling | 2/2 | Complete | 2026-02-08 |
-| 6. Content Safety | 1/2 | In progress | - |
+| 6. Content Safety | 2/2 | Complete | 2026-02-08 |
 | 7. Operational Resilience | 0/2 | Not started | - |
 | 8. Deployment | 0/2 | Not started | - |
