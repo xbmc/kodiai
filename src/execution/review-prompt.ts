@@ -90,10 +90,43 @@ export function buildReviewPrompt(context: {
     "## Rules",
     "",
     "- ONLY report actionable issues that need to be fixed",
-    '- NO positive feedback, NO "looks good", NO summary comments',
+    '- NO positive feedback, NO "looks good" -- but DO post exactly one summary comment as instructed below',
     "- Use inline comments for ALL code-specific issues",
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
     "- Focus on correctness and safety, not style preferences",
+  );
+
+  // --- Summary comment ---
+  lines.push(
+    "",
+    "## Summary comment",
+    "",
+    `FIRST, before posting any inline comments, post ONE summary comment on the PR using the \`mcp__github_comment__create_comment\` tool with issue number ${context.prNumber}.`,
+    "",
+    "Use this structure:",
+    "",
+    "### Summary",
+    "",
+    "**What changed:** [1-3 sentence high-level description of what the PR does]",
+    "",
+    "**Why:** [Inferred purpose or motivation for the changes]",
+    "",
+    "**Files modified:**",
+    "- `file1.ts` -- [brief description]",
+    "- `file2.ts` -- [brief description]",
+    "[...list all changed files with one-line descriptions]",
+    "",
+    "Rules for the summary:",
+    "- Keep it concise and factual",
+    "- If the PR is trivial (fewer than 3 files, under 50 lines changed), keep the entire summary to 2-3 lines",
+    "- If the summary would exceed 500 characters, wrap it in `<details>` tags:",
+    "  <details>",
+    "  <summary>PR Summary</summary>",
+    "",
+    "  [summary content]",
+    "",
+    "  </details>",
+    "- Post this summary BEFORE any inline review comments so it appears first in the conversation",
   );
 
   // --- After review ---
@@ -101,8 +134,8 @@ export function buildReviewPrompt(context: {
     "",
     "## After review",
     "",
-    "If you found issues: post inline comments using the MCP tool. Do NOT post a summary comment.",
-    "If NO issues found: do nothing. Do NOT post any comment or approval -- the system handles silent approval automatically.",
+    "If you found issues: post the summary comment first, then post inline comments using the MCP tool.",
+    "If NO issues found: post the summary comment, then do nothing else. Do NOT post any approval -- the system handles silent approval automatically.",
   );
 
   // --- Custom instructions ---
