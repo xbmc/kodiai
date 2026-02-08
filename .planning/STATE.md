@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** MILESTONE COMPLETE. All 9 phases done. Review UX improvements shipped and verified.
+**Current focus:** Gap closure plans for Phase 9 UAT feedback. Plan 09-03 complete, 09-04 remaining.
 
 ## Current Position
 
 Phase: 9 of 9 (Review UX Improvements)
-Plan: 2 of 2 in current phase
-Status: Milestone complete
-Last activity: 2026-02-08 -- Completed Phase 9 execution and verification (all must-haves verified).
+Plan: 3 of 4 in current phase
+Status: In progress (gap closure)
+Last activity: 2026-02-08 -- Completed 09-03 (eyes reaction on PR open, autoApprove default true).
 
-Progress: [####################] 100% (21/21 plans)
+Progress: [####################] 100% (23/25 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 21
+- Total plans completed: 23
 - Average duration: 3min
-- Total execution time: 68min
+- Total execution time: 69min
 
 **By Phase:**
 
@@ -35,7 +35,7 @@ Progress: [####################] 100% (21/21 plans)
 | 06-content-safety | 2/2 | 4min | 2min |
 | 07-operational-resilience | 2/2 | 5min | 3min |
 | 08-deployment | 2/2 | 16min | 8min |
-| 09-review-ux-improvements | 2/2 | 2min | 1min |
+| 09-review-ux-improvements | 3/4 | 3min | 1min |
 
 *Updated after each plan completion*
 
@@ -58,6 +58,8 @@ Progress: [####################] 100% (21/21 plans)
 - [09-02]: Summary comment posted FIRST before inline comments to appear at top of PR conversation
 - [09-02]: Trivial PR threshold: fewer than 3 files AND under 50 lines changed
 - [09-02]: 500-character threshold triggers details wrapping for long summaries
+- [09-03]: autoApprove defaults to true so clean PRs get APPROVE review without config
+- [09-03]: reactions.createForIssue for PR description (PR is an issue, not a comment)
 - [08-02]: ACR remote build used instead of local docker build + push
 - [08-02]: Managed identity with AcrPull role for registry auth
 - [08-02]: min-replicas 1 to prevent webhook timeouts from cold starts
@@ -83,5 +85,5 @@ All resolved:
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 09-02-PLAN.md
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
