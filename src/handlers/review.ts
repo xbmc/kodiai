@@ -1,6 +1,7 @@
 import type {
   PullRequestOpenedEvent,
   PullRequestReadyForReviewEvent,
+  PullRequestReviewRequestedEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -15,9 +16,13 @@ import { $ } from "bun";
 /**
  * Create the review handler and register it with the event router.
  *
- * Handles `pull_request.opened` and `pull_request.ready_for_review` events.
+ * Handles `pull_request.opened`, `pull_request.ready_for_review`, and
+ * `pull_request.review_requested` events.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
+ *
+ * The handler automatically requests kodiai as a reviewer to enable the
+ * "re-request review" button in GitHub's UI.
  */
 export function createReviewHandler(deps: {
   eventRouter: EventRouter;
@@ -32,7 +37,8 @@ export function createReviewHandler(deps: {
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
       | PullRequestOpenedEvent
-      | PullRequestReadyForReviewEvent;
+      | PullRequestReadyForReviewEvent
+      | PullRequestReviewRequestedEvent;
 
     const pr = payload.pull_request;
 
@@ -97,6 +103,21 @@ export function createReviewHandler(deps: {
     } catch (err) {
       // Non-fatal: don't block processing if reaction fails
       logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
+    }
+
+    // Request kodiai as a reviewer to enable "re-request review" button
+    try {
+      const reviewerOctokit = await githubApp.getInstallationOctokit(event.installationId);
+      const appSlug = await githubApp.getAppSlug();
+      await reviewerOctokit.rest.pulls.requestReviewers({
+        owner: apiOwner,
+        repo: apiRepo,
+        pull_number: pr.number,
+        reviewers: [`${appSlug}[bot]`],
+      });
+    } catch (err) {
+      // Non-fatal: GitHub returns 422 if already requested or if app can't be requested
+      logger.debug({ err, prNumber: pr.number }, "Could not request kodiai as reviewer");
     }
 
     await jobQueue.enqueue(event.installationId, async () => {
@@ -295,7 +316,8 @@ export function createReviewHandler(deps: {
     });
   }
 
-  // Register for both events
+  // Register for review trigger events
   eventRouter.register("pull_request.opened", handleReview);
   eventRouter.register("pull_request.ready_for_review", handleReview);
+  eventRouter.register("pull_request.review_requested", handleReview);
 }
