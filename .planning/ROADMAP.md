@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Webhook Foundation** - Server receives, verifies, and routes GitHub events safely (completed 2026-02-08)
 - [x] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces (completed 2026-02-08)
-- [ ] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers
+- [x] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers (completed 2026-02-07)
 - [ ] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open
 - [ ] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces
 - [ ] **Phase 6: Content Safety** - Sanitization and TOCTOU protections
@@ -65,9 +65,9 @@ Plans:
 **Plans:** 3 plans
 
 Plans:
-- [ ] 03-01-PLAN.md -- Execution types (ExecutionContext, ExecutionResult) and config loader (.kodiai.yml with Zod defaults)
-- [ ] 03-02-PLAN.md -- In-process MCP servers (comment, inline-review, CI status) via Agent SDK createSdkMcpServer
-- [ ] 03-03-PLAN.md -- Claude Code CLI executor (Agent SDK query invocation, prompt builder, config+MCP wiring)
+- [x] 03-01-PLAN.md -- Execution types (ExecutionContext, ExecutionResult) and config loader (.kodiai.yml with Zod defaults)
+- [x] 03-02-PLAN.md -- In-process MCP servers (comment, inline-review, CI status) via Agent SDK createSdkMcpServer
+- [x] 03-03-PLAN.md -- Claude Code CLI executor (Agent SDK query invocation, prompt builder, config+MCP wiring)
 
 ### Phase 4: PR Auto-Review
 **Goal**: When a PR is opened or marked ready for review, the bot automatically posts inline review comments anchored to specific diff lines with suggestion blocks -- or silently approves clean PRs.
@@ -79,12 +79,11 @@ Plans:
   3. Review comments include GitHub suggestion blocks that the PR author can apply with one click
   4. A PR with no issues receives a silent approval (no comment posted, no noise)
   5. Fork PRs are reviewed natively without any workarounds or special configuration
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 04-01: Review handler and PR context builder (GraphQL queries, diff fetching)
-- [ ] 04-02: Review prompt engineering and response-to-inline-comment mapping
-- [ ] 04-03: Fork PR support and silent approval logic
+- [ ] 04-01-PLAN.md -- Config extension (review.skipAuthors, skipPaths, prompt) and review prompt builder
+- [ ] 04-02-PLAN.md -- Review handler (event registration, fork PR support, silent approval) and server wiring
 
 ### Phase 5: Mention Handling
 **Goal**: Users can @kodiai in any comment surface (issue comments, PR comments, PR review comments, PR review bodies) and receive a contextual response, with a tracking comment showing progress during long-running jobs.
@@ -153,8 +152,8 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 |-------|----------------|--------|-----------|
 | 1. Webhook Foundation | 3/3 | Complete | 2026-02-08 |
 | 2. Job Infrastructure | 2/2 | Complete | 2026-02-08 |
-| 3. Execution Engine | 0/3 | Not started | - |
-| 4. PR Auto-Review | 0/3 | Not started | - |
+| 3. Execution Engine | 3/3 | Complete | 2026-02-07 |
+| 4. PR Auto-Review | 0/2 | Not started | - |
 | 5. Mention Handling | 0/3 | Not started | - |
 | 6. Content Safety | 0/2 | Not started | - |
 | 7. Operational Resilience | 0/2 | Not started | - |
