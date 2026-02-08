@@ -1,0 +1,110 @@
+import { test, expect } from "bun:test";
+import { loadRepoConfig } from "./config.ts";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+test("returns defaults when no .kodiai.yml exists", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const config = await loadRepoConfig(dir);
+    expect(config.model).toBe("claude-sonnet-4-5-20250929");
+    expect(config.maxTurns).toBe(25);
+    expect(config.review.enabled).toBe(true);
+    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.skipAuthors).toEqual([]);
+    expect(config.review.skipPaths).toEqual([]);
+    expect(config.review.prompt).toBeUndefined();
+    expect(config.mention.enabled).toBe(true);
+    expect(config.systemPromptAppend).toBeUndefined();
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("reads and validates .kodiai.yml when present", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "model: claude-opus-4-20250514\nmaxTurns: 10\nreview:\n  autoApprove: true\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.model).toBe("claude-opus-4-20250514");
+    expect(config.maxTurns).toBe(10);
+    expect(config.review.autoApprove).toBe(true);
+    expect(config.review.enabled).toBe(true); // default preserved
+    expect(config.mention.enabled).toBe(true); // default preserved
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects invalid YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "{{invalid yaml");
+    await expect(loadRepoConfig(dir)).rejects.toThrow("YAML parse error");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects invalid values", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "maxTurns: 999\n");
+    await expect(loadRepoConfig(dir)).rejects.toThrow("Invalid .kodiai.yml");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.skipAuthors from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      'review:\n  skipAuthors:\n    - "dependabot[bot]"\n    - "renovate[bot]"\n',
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.skipAuthors).toEqual([
+      "dependabot[bot]",
+      "renovate[bot]",
+    ]);
+    expect(config.review.skipPaths).toEqual([]);
+    expect(config.review.enabled).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.skipPaths from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  skipPaths:\n    - '*.lock'\n    - 'package-lock.json'\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.skipPaths).toEqual(["*.lock", "package-lock.json"]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.prompt from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      'review:\n  prompt: "Focus on security issues"\n',
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.prompt).toBe("Focus on security issues");
+    expect(config.review.enabled).toBe(true);
+    expect(config.review.autoApprove).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
