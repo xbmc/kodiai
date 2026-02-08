@@ -3,6 +3,8 @@ import { loadConfig } from "./config.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createDeduplicator } from "./webhook/dedup.ts";
 import { createGitHubApp } from "./auth/github-app.ts";
+import { createBotFilter } from "./webhook/filters.ts";
+import { createEventRouter } from "./webhook/router.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 
@@ -16,10 +18,17 @@ const dedup = createDeduplicator();
 const githubApp = createGitHubApp(config, logger);
 await githubApp.initialize();
 
+// Event processing pipeline: bot filter -> event router
+const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
+const eventRouter = createEventRouter(botFilter, logger);
+
+// Phase 2+ plans will register real handlers via eventRouter.register().
+// Unhandled events are silently dropped (correct default behavior).
+
 const app = new Hono();
 
 // Mount routes
-app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp }));
+app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter }));
 app.route("/", createHealthRoutes({ githubApp, logger }));
 
 // Global error handler

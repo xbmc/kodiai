@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import type { Deduplicator } from "../webhook/dedup.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
+import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -11,10 +12,11 @@ interface WebhookRouteDeps {
   logger: Logger;
   dedup: Deduplicator;
   githubApp: GitHubApp;
+  eventRouter: EventRouter;
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
-  const { config, logger, dedup } = deps;
+  const { config, logger, dedup, eventRouter } = deps;
   const app = new Hono();
 
   app.post("/github", async (c) => {
@@ -41,32 +43,24 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
     // Parse payload after verification passes
     const payload = JSON.parse(body) as Record<string, unknown>;
 
-    // Fire-and-forget: process event asynchronously without awaiting.
+    // Construct the WebhookEvent
+    const installation = payload.installation as { id: number } | undefined;
+    const event: WebhookEvent = {
+      id: deliveryId,
+      name: eventName,
+      payload,
+      installationId: installation?.id ?? 0,
+    };
+
+    // Fire-and-fork: dispatch event asynchronously without awaiting.
     // Return 200 immediately to avoid GitHub's 10-second webhook timeout.
-    // Plan 03 will replace this stub with the real event router dispatch.
     const childLogger = createChildLogger(logger, { deliveryId, eventName });
     Promise.resolve()
-      .then(() => processEvent(childLogger, eventName, payload))
-      .catch((err) => childLogger.error({ err }, "Event processing failed"));
+      .then(() => eventRouter.dispatch(event))
+      .catch((err) => childLogger.error({ err, deliveryId }, "Event dispatch failed"));
 
     return c.json({ received: true });
   });
 
   return app;
-}
-
-/**
- * Placeholder event processor. Logs the event and returns.
- * Plan 03 will replace this with the real event handler registry dispatch.
- */
-async function processEvent(
-  logger: Logger,
-  eventName: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  const action = typeof payload.action === "string" ? payload.action : undefined;
-  logger.info(
-    { action },
-    `Processing webhook event: ${eventName}${action ? `.${action}` : ""}`,
-  );
 }
