@@ -121,11 +121,11 @@ Plans:
   1. A job that exceeds the configured timeout is terminated and an error comment is posted explaining the timeout
   2. Any unhandled execution failure (crash, API error, resource exhaustion) results in a user-visible error comment on the originating PR or issue
   3. Error comments are clear and actionable (not stack traces or generic "something went wrong")
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 07-01: Timeout enforcement with process cleanup
-- [ ] 07-02: Error handling pipeline and user-facing error comments
+- [ ] 07-01-PLAN.md -- Error classification/formatting module, config timeoutSeconds, executor AbortController-based timeout
+- [ ] 07-02-PLAN.md -- Wire error reporting into review and mention handlers (never silent failure)
 
 ### Phase 8: Deployment
 **Goal**: The application is packaged as a Docker container and deployed to Azure Container Apps with proper secrets management, running end-to-end in production.
