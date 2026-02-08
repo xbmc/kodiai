@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 6 complete. Ready for Phase 7 (Operational Resilience).
+**Current focus:** Phase 7 in progress. Error classification and timeout done. Next: wire error reporting into handlers.
 
 ## Current Position
 
-Phase: 6 of 8 (Content Safety)
-Plan: 2 of 2 in current phase
-Status: Phase complete
-Last activity: 2026-02-08 -- Completed 06-02-PLAN.md (sanitization integration into prompt builders).
+Phase: 7 of 8 (Operational Resilience)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-08 -- Completed 07-01-PLAN.md (error classification and timeout enforcement).
 
-Progress: [###############-----] 50% (15/30 plans)
+Progress: [################----] 53% (16/30 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 15
+- Total plans completed: 16
 - Average duration: 3min
-- Total execution time: 45min
+- Total execution time: 48min
 
 **By Phase:**
 
@@ -33,9 +33,10 @@ Progress: [###############-----] 50% (15/30 plans)
 | 04-pr-auto-review | 2/2 | 5min | 3min |
 | 05-mention-handling | 2/2 | 6min | 3min |
 | 06-content-safety | 2/2 | 4min | 2min |
+| 07-operational-resilience | 1/2 | 3min | 3min |
 
 **Recent Trend:**
-- Last 5 plans: 3min, 3min, 2min, 2min, 2min
+- Last 5 plans: 3min, 2min, 2min, 2min, 3min
 - Trend: stable
 
 *Updated after each plan completion*
@@ -109,6 +110,10 @@ Recent decisions affecting current work:
 - [06-02]: changedFiles intentionally NOT sanitized (file paths from git diff, not user-editable)
 - [06-02]: TOCTOU filter applied immediately after API fetch, before any iteration over comments
 - [06-02]: conversationContext not re-sanitized in buildMentionPrompt since already sanitized in buildConversationContext
+- [07-01]: API error patterns checked before clone patterns in classifyError -- "rate limit" contains "git"
+- [07-01]: postOrUpdateErrorComment never throws -- error reporting must not mask original error (Pitfall 6)
+- [07-01]: Manual setTimeout + AbortController used instead of AbortSignal.timeout() for clearTimeout on success (Pitfall 5)
+- [07-01]: timeoutId/controller/timeoutSeconds hoisted outside try block for catch block access
 
 ### Pending Todos
 
@@ -123,5 +128,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-08
-Stopped at: Completed 06-02 (Sanitization Integration). Phase 6 complete. Next: Phase 7 (Operational Resilience).
-Resume file: .planning/phases/07-operational-resilience/
+Stopped at: Completed 07-01 (Error Classification and Timeout). Next: 07-02 (Wire error reporting into handlers).
+Resume file: .planning/phases/07-operational-resilience/07-02-PLAN.md
