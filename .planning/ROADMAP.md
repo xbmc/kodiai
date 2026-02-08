@@ -94,12 +94,11 @@ Plans:
   2. Typing `@kodiai` in a PR comment, PR review comment, or PR review body produces a contextual response
   3. A tracking comment appears within seconds showing the job is in progress, and updates when the response is ready
   4. The bot's response demonstrates awareness of the surrounding conversation context (prior comments, PR diff if applicable)
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 05-01: Mention detection and handler dispatch across all four surfaces
-- [ ] 05-02: Conversation context builder (comment history, PR context)
-- [ ] 05-03: Tracking comment lifecycle (create, update, finalize)
+- [ ] 05-01-PLAN.md -- MCP write tool extension, MentionEvent types with normalizers, conversation context builder, mention prompt
+- [ ] 05-02-PLAN.md -- Mention handler (event registration, tracking comment, execution orchestration) and server wiring
 
 ### Phase 6: Content Safety
 **Goal**: Content passed to the LLM is sanitized to prevent prompt injection, and comment filtering uses timestamps to prevent time-of-check-to-time-of-use attacks.
@@ -154,7 +153,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 2. Job Infrastructure | 2/2 | Complete | 2026-02-08 |
 | 3. Execution Engine | 3/3 | Complete | 2026-02-07 |
 | 4. PR Auto-Review | 2/2 | Complete | 2026-02-08 |
-| 5. Mention Handling | 0/3 | Not started | - |
+| 5. Mention Handling | 0/2 | Not started | - |
 | 6. Content Safety | 0/2 | Not started | - |
 | 7. Operational Resilience | 0/2 | Not started | - |
 | 8. Deployment | 0/2 | Not started | - |
