@@ -4,6 +4,7 @@ import yaml from "js-yaml";
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
+  timeoutSeconds: z.number().min(30).max(1800).default(300),
   systemPromptAppend: z.string().optional(),
   review: z
     .object({
@@ -22,6 +23,7 @@ const repoConfigSchema = z.object({
   mention: z
     .object({
       enabled: z.boolean().default(true),
+      prompt: z.string().optional(),
     })
     .default({ enabled: true }),
 });

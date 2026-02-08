@@ -28,4 +28,6 @@ export type ExecutionResult = {
   sessionId: string | undefined;
   /** Populated when conclusion is "error" */
   errorMessage: string | undefined;
+  /** Set to true when the execution was terminated by timeout */
+  isTimeout?: boolean;
 };
