@@ -25,9 +25,12 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { wrapInDetails } from "../lib/formatting.ts";
 
 const TRACKING_INITIAL = [
-  "> **Kodiai** is thinking...",
+  "<details>",
+  "<summary>Kodiai is thinking...</summary>",
   "",
   "_Working on your request. This comment will be updated with the response._",
+  "",
+  "</details>",
 ].join("\n");
 
 /**

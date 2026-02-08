@@ -2,14 +2,21 @@ import { test, expect, describe } from "bun:test";
 import { wrapInDetails } from "./formatting.ts";
 
 describe("wrapInDetails", () => {
-  test("short body (under 500 chars) returns unchanged", () => {
+  test("short body is wrapped in <details> tags", () => {
     const body = "This is a short response.";
-    expect(wrapInDetails(body)).toBe(body);
+    const result = wrapInDetails(body);
+    expect(result).toStartWith("<details>");
+    expect(result).toContain("<summary>");
+    expect(result).toContain(body);
+    expect(result).toEndWith("</details>");
   });
 
-  test("body of exactly 500 chars is NOT wrapped", () => {
+  test("body of exactly 500 chars IS wrapped", () => {
     const body = "x".repeat(500);
-    expect(wrapInDetails(body)).toBe(body);
+    const result = wrapInDetails(body);
+    expect(result).toStartWith("<details>");
+    expect(result).toContain("<summary>");
+    expect(result).toEndWith("</details>");
   });
 
   test("body of 501 chars IS wrapped", () => {
@@ -49,5 +56,12 @@ describe("wrapInDetails", () => {
   test("body starting with whitespace then <details> is NOT double-wrapped", () => {
     const body = `  <details>\n<summary>Existing</summary>\n\n${"E".repeat(600)}\n\n</details>`;
     expect(wrapInDetails(body)).toBe(body);
+  });
+
+  test("empty string is wrapped", () => {
+    const result = wrapInDetails("");
+    expect(result).toStartWith("<details>");
+    expect(result).toContain("<summary>Kodiai response (0 characters)</summary>");
+    expect(result).toEndWith("</details>");
   });
 });

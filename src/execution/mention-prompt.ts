@@ -122,7 +122,7 @@ export function buildMentionPrompt(params: {
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
   );
   lines.push(
-    "- If your response is longer than 500 characters, wrap the ENTIRE response body in `<details>` tags:",
+    "- ALWAYS wrap your ENTIRE response body in `<details>` tags to reduce noise in the thread:",
     "  ```",
     "  <details>",
     '  <summary>Click to expand response</summary>',
@@ -132,7 +132,6 @@ export function buildMentionPrompt(params: {
     "  </details>",
     "  ```",
     "- Important: include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
-    "- Short responses (under 500 characters) should NOT be wrapped",
   );
 
   // Custom instructions
