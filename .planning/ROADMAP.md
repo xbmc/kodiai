@@ -62,12 +62,12 @@ Plans:
   1. Claude Code CLI is invoked via Agent SDK `query()` with a prompt, MCP server config, and working directory pointing to the cloned repo
   2. MCP servers for posting comments, posting inline review comments, and reading CI status are available to the CLI during execution
   3. The system operates with sensible defaults when no `.kodiai.yml` exists in the target repo (zero-config works)
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 03-01: Config loader with defaults and Zod validation
-- [ ] 03-02: MCP servers (comment, inline-comment, CI status)
-- [ ] 03-03: Claude Code CLI executor (Agent SDK query invocation)
+- [ ] 03-01-PLAN.md -- Execution types (ExecutionContext, ExecutionResult) and config loader (.kodiai.yml with Zod defaults)
+- [ ] 03-02-PLAN.md -- In-process MCP servers (comment, inline-review, CI status) via Agent SDK createSdkMcpServer
+- [ ] 03-03-PLAN.md -- Claude Code CLI executor (Agent SDK query invocation, prompt builder, config+MCP wiring)
 
 ### Phase 4: PR Auto-Review
 **Goal**: When a PR is opened or marked ready for review, the bot automatically posts inline review comments anchored to specific diff lines with suggestion blocks -- or silently approves clean PRs.
