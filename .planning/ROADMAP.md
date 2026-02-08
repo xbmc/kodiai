@@ -33,12 +33,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The server authenticates as a GitHub App via JWT and can mint installation access tokens for any installation
   4. Events from bot accounts (including the app's own comments) are silently dropped and never reach handlers
   5. The health endpoint at `/health` returns 200 for Azure liveness probes
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01: HTTP server, webhook endpoint, and signature verification
-- [ ] 01-02: GitHub App authentication (JWT + installation tokens)
-- [ ] 01-03: Event router, bot filtering, and async dispatch
+- [ ] 01-01-PLAN.md -- Project init, Hono server, webhook endpoint, signature verification, delivery dedup, health endpoints
+- [ ] 01-02-PLAN.md -- GitHub App authentication (JWT + installation tokens), app slug discovery, readiness probe
+- [ ] 01-03-PLAN.md -- Event handler registry, bot filtering pipeline, async dispatch wiring
 
 ### Phase 2: Job Infrastructure
 **Goal**: Webhook handlers can enqueue jobs that clone a target repo into an ephemeral workspace, enforce per-installation concurrency limits, and clean up after themselves.
@@ -151,7 +151,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Webhook Foundation | 0/3 | Not started | - |
+| 1. Webhook Foundation | 0/3 | Planning complete | - |
 | 2. Job Infrastructure | 0/2 | Not started | - |
 | 3. Execution Engine | 0/3 | Not started | - |
 | 4. PR Auto-Review | 0/3 | Not started | - |
