@@ -1,0 +1,27 @@
+# Stage 1: Install production dependencies
+FROM oven/bun:1-alpine AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --production --frozen-lockfile
+
+# Stage 2: Production image
+FROM oven/bun:1-alpine
+
+# git is required for workspace manager (git clone)
+RUN apk add --no-cache git
+
+WORKDIR /app
+
+# Copy production dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy application source
+COPY package.json bun.lock tsconfig.json ./
+COPY src/ ./src/
+
+# Run as non-root user (oven/bun images include 'bun' user)
+USER bun
+
+EXPOSE 3000
+
+CMD ["bun", "run", "src/index.ts"]
