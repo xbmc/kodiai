@@ -13,7 +13,7 @@ Kodiai delivers AI-powered PR auto-review and conversational code assistance as 
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Webhook Foundation** - Server receives, verifies, and routes GitHub events safely (completed 2026-02-08)
-- [ ] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces
+- [x] **Phase 2: Job Infrastructure** - Queued job execution with ephemeral workspaces (completed 2026-02-08)
 - [ ] **Phase 3: Execution Engine** - Claude Code CLI invocation with MCP servers
 - [ ] **Phase 4: PR Auto-Review** - Inline review comments with suggestions on PR open
 - [ ] **Phase 5: Mention Handling** - Conversational responses to @kodiai across all surfaces
@@ -51,8 +51,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md -- Job queue with per-installation concurrency (p-queue), job/workspace types, getInstallationToken on GitHubApp
-- [ ] 02-02-PLAN.md -- Workspace manager (clone, git auth, cleanup, branch validation), server wiring, startup stale cleanup
+- [x] 02-01-PLAN.md -- Job queue with per-installation concurrency (p-queue), job/workspace types, getInstallationToken on GitHubApp
+- [x] 02-02-PLAN.md -- Workspace manager (clone, git auth, cleanup, branch validation), server wiring, startup stale cleanup
 
 ### Phase 3: Execution Engine
 **Goal**: The system can invoke Claude Code CLI against a workspace with MCP servers providing GitHub interaction tools, using sensible defaults when no per-repo config exists.
@@ -152,7 +152,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Webhook Foundation | 3/3 | Complete | 2026-02-08 |
-| 2. Job Infrastructure | 0/2 | Not started | - |
+| 2. Job Infrastructure | 2/2 | Complete | 2026-02-08 |
 | 3. Execution Engine | 0/3 | Not started | - |
 | 4. PR Auto-Review | 0/3 | Not started | - |
 | 5. Mention Handling | 0/3 | Not started | - |
