@@ -157,19 +157,21 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 6. Content Safety | 2/2 | Complete | 2026-02-08 |
 | 7. Operational Resilience | 2/2 | Complete | 2026-02-08 |
 | 8. Deployment | 2/2 | Complete | 2026-02-08 |
-| 9. Review UX Improvements | 2/2 | Complete | 2026-02-08 |
+| 9. Review UX Improvements | 2/4 | Gap Closure | 2026-02-08 |
 
 ### Phase 9: Review UX Improvements
 
-**Goal:** The bot provides clear visual feedback when triggered and formats responses for readability -- adding emoji reactions to acknowledge mentions, collapsing long responses to reduce noise, and posting structured PR summary comments.
+**Goal:** The bot provides clear visual feedback when triggered and formats responses for readability -- adding emoji reactions to acknowledge mentions and PR reviews, collapsing ALL bot comments to reduce noise, and conditionally posting summary comments only when actionable issues are found.
 **Depends on:** Phase 8
 **Requirements:** UX-01, UX-02, UX-03
 **Success Criteria** (what must be TRUE):
   1. When a user mentions @kodiai or a PR is opened for review, the trigger comment/event receives an eyes emoji reaction within seconds to show acknowledgment
-  2. Bot responses longer than a threshold (e.g., 500 characters) are automatically wrapped in `<details>` tags with a summary showing the collapsed content length
-  3. Each PR auto-review includes a structured summary comment at the top showing: what changed (high-level), why (inferred purpose), and which files were modified
-**Plans:** 2 plans
+  2. ALL bot comments are automatically wrapped in `<details>` tags to reduce noise in PR/issue threads
+  3. PR auto-review only posts a summary comment when there are actionable issues to report (clean PRs = silence + approval)
+**Plans:** 4 plans
 
 Plans:
 - [x] 09-01-PLAN.md -- Eyes emoji reaction on mention triggers, formatting utility (wrapInDetails), <details> wrapping in mention prompt and error comments
 - [x] 09-02-PLAN.md -- Structured PR summary comment (what/why/files) in review prompt
+- [ ] 09-03-PLAN.md -- Eyes reaction on PR open, autoApprove default to true (gap closure)
+- [ ] 09-04-PLAN.md -- Conditional summary (only when issues found), always-collapse all bot comments (gap closure)
