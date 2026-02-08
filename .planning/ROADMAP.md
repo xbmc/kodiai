@@ -36,8 +36,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Project init, Hono server, webhook endpoint, signature verification, delivery dedup, health endpoints
-- [ ] 01-02-PLAN.md -- GitHub App authentication (JWT + installation tokens), app slug discovery, readiness probe
+- [x] 01-01-PLAN.md -- Project init, Hono server, webhook endpoint, signature verification, delivery dedup, health endpoints
+- [x] 01-02-PLAN.md -- GitHub App authentication (JWT + installation tokens), app slug discovery, readiness probe
 - [ ] 01-03-PLAN.md -- Event handler registry, bot filtering pipeline, async dispatch wiring
 
 ### Phase 2: Job Infrastructure
@@ -151,7 +151,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Webhook Foundation | 0/3 | Planning complete | - |
+| 1. Webhook Foundation | 2/3 | In progress | - |
 | 2. Job Infrastructure | 0/2 | Not started | - |
 | 3. Execution Engine | 0/3 | Not started | - |
 | 4. PR Auto-Review | 0/3 | Not started | - |
