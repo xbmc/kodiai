@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 09-review-ux-improvements
 source: 09-01-SUMMARY.md, 09-02-SUMMARY.md
 started: 2026-02-08T19:31:00Z
-updated: 2026-02-08T19:59:00Z
+updated: 2026-02-08T20:00:00Z
 ---
 
 ## Current Test
 
-number: 4
-name: PR summary comment appears first
-expected: |
-  When a PR is opened or marked ready for review, kodiai posts a structured summary comment FIRST (before any inline review comments) showing "What changed", "Why", and "Files modified" sections. The summary appears at the top of the PR conversation timeline.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
