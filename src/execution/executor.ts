@@ -17,6 +17,11 @@ export function createExecutor(deps: {
     async execute(context: ExecutionContext): Promise<ExecutionResult> {
       const startTime = Date.now();
 
+      // Declared outside try so catch block can access them for cleanup
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let controller: AbortController | undefined;
+      let timeoutSeconds = 300; // default, updated from config
+
       try {
         // Load repo config (.kodiai.yml) with defaults
         const config = await loadRepoConfig(context.workspace.dir);
@@ -24,6 +29,17 @@ export function createExecutor(deps: {
           { model: config.model, maxTurns: config.maxTurns },
           "Loaded repo config",
         );
+
+        // Set up timeout enforcement via AbortController (not AbortSignal.timeout()
+        // because we need to clearTimeout on success -- Pitfall 5 from research)
+        timeoutSeconds = config.timeoutSeconds;
+        const timeoutMs = timeoutSeconds * 1000;
+        controller = new AbortController();
+        timeoutId = setTimeout(
+          () => controller!.abort(new Error("timeout")),
+          timeoutMs,
+        );
+        logger.info({ timeoutMs }, "Timeout enforcement configured");
 
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>
@@ -56,6 +72,7 @@ export function createExecutor(deps: {
         const sdkQuery = query({
           prompt,
           options: {
+            abortController: controller,
             cwd: context.workspace.dir,
             model: config.model,
             maxTurns: config.maxTurns,
@@ -97,6 +114,9 @@ export function createExecutor(deps: {
           }
         }
 
+        // Clear timeout on successful completion (no orphaned timers)
+        clearTimeout(timeoutId);
+
         // Build result
         const durationMs = Date.now() - startTime;
 
@@ -121,7 +141,26 @@ export function createExecutor(deps: {
           errorMessage: undefined,
         };
       } catch (err) {
+        if (timeoutId !== undefined) clearTimeout(timeoutId);
         const durationMs = Date.now() - startTime;
+
+        // Check if the abort signal fired (timeout)
+        if (controller?.signal.aborted) {
+          logger.warn(
+            { timeoutSeconds, durationMs },
+            "Execution timed out",
+          );
+          return {
+            conclusion: "error",
+            costUsd: undefined,
+            numTurns: undefined,
+            durationMs,
+            sessionId: undefined,
+            errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
+            isTimeout: true,
+          };
+        }
+
         const errorMessage =
           err instanceof Error ? err.message : String(err);
         logger.error({ err, durationMs }, "Execution failed");
