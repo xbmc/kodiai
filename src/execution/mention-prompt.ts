@@ -125,7 +125,7 @@ export function buildMentionPrompt(params: {
     "- ALWAYS wrap your ENTIRE response body in `<details>` tags to reduce noise in the thread:",
     "  ```",
     "  <details>",
-    '  <summary>Click to expand response</summary>',
+    '  <summary>kodiai response</summary>',
     "  ",
     "  Your response content here...",
     "  ",
