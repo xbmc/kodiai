@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 10 review-request reliability hardening committed, deployed, and log-correlated on production.
+**Current focus:** Phase 10 review-request reliability idempotency hardening completed; final regression/evidence plan pending.
 
 ## Current Position
 
 Phase: 10 of 10 (Review Request Reliability)
-Plan: 2 of 2 in current phase
-Status: Phase complete with one external-scope blocker
-Last activity: 2026-02-09 -- Completed 10-02 (commit + deploy + review_requested validation evidence).
+Plan: 3 of 4 in current phase
+Status: In progress with one external-scope blocker
+Last activity: 2026-02-09 -- Completed 10-03 (deterministic output keying + downstream publication idempotency guard).
 
-Progress: [####################] 100% (25/25 plans)
+Progress: [###################-] 96% (26/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 25
+- Total plans completed: 26
 - Average duration: 3min
-- Total execution time: 81min
+- Total execution time: 84min
 
 **By Phase:**
 
@@ -36,9 +36,10 @@ Progress: [####################] 100% (25/25 plans)
 | 07-operational-resilience | 2/2 | 5min | 3min |
 | 08-deployment | 2/2 | 16min | 8min |
 | 09-review-ux-improvements | 4/4 | 5min | 1min |
-| 10-review-request-reliability | 2/2 | 44min | 22min |
+| 10-review-request-reliability | 3/4 | 47min | 16min |
 
 *Updated after each plan completion*
+| Phase 10 P03 | 3 min | 2 tasks | 7 files |
 
 ## Deployment Info
 
@@ -72,6 +73,8 @@ Progress: [####################] 100% (25/25 plans)
 - [08-02]: Explicit git refspec needed for base branch fetch in single-branch clones
 - [08-02]: Microsoft.ContainerRegistry provider must be pre-registered
 - [Phase 10]: Recovered deploy env vars from existing ACA secrets when local shell vars were missing.
+- [Phase 10]: Delivery-scoped reviewOutputKey combines installation/repo/PR/action/delivery/head SHA for deterministic idempotency identity.
+- [Phase 10]: Inline review publication checks existing kodiai:review-output-key marker once per execution and logs published vs already-published-skip outcomes.
 
 ### Roadmap Evolution
 
@@ -94,5 +97,5 @@ Resolved:
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 10-02-PLAN.md
+Stopped at: Completed 10-03-PLAN.md
 Resume file: None
