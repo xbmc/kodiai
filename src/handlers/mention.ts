@@ -67,6 +67,19 @@ export function createMentionHandler(deps: {
     if (!containsMention(mention.commentBody, appSlug)) return;
 
     const userQuestion = stripMention(mention.commentBody, appSlug);
+    if (userQuestion.trim().length === 0) {
+      logger.info(
+        {
+          surface: mention.surface,
+          owner: mention.owner,
+          repo: mention.repo,
+          issueNumber: mention.issueNumber,
+          prNumber: mention.prNumber,
+        },
+        "Mention contained no question after stripping mention; skipping",
+      );
+      return;
+    }
 
     logger.info(
       {

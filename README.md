@@ -39,7 +39,7 @@ Triggers on:
 Behavior:
 
 - Adds an eyes reaction quickly ("tracking") where GitHub supports reactions
-- Posts a reply comment answering the question (no tracking comment update)
+- May post a reply comment when it has something concrete to add (no tracking comment)
 
 ## Architecture (High Level)
 

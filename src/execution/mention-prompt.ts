@@ -106,6 +106,16 @@ export function buildMentionPrompt(params: {
   lines.push("## How to respond");
   lines.push("");
   lines.push(
+    "Important: The handler already added an eyes reaction for tracking. Do not post a separate tracking/ack comment.",
+  );
+  lines.push(
+    "Only post a reply if you have something concrete to contribute (a direct answer, a specific suggestion, or a clear next step).",
+  );
+  lines.push(
+    "If you cannot provide a useful answer with the information available, DO NOT create a comment.",
+  );
+  lines.push("");
+  lines.push(
     `Write your response by creating a new comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
   );
   lines.push("");
