@@ -3,10 +3,12 @@ import type { Logger } from "pino";
 import { createCommentServer } from "./comment-server.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCIStatusServer } from "./ci-status-server.ts";
+import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
 export { createCIStatusServer } from "./ci-status-server.ts";
+export { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 
 export function buildMcpServers(deps: {
   getOctokit: () => Promise<Octokit>;
@@ -26,6 +28,14 @@ export function buildMcpServers(deps: {
       deps.reviewOutputKey,
     ),
   };
+
+  if (deps.prNumber !== undefined && deps.commentId !== undefined) {
+    servers.reviewCommentThread = createReviewCommentThreadServer(
+      deps.getOctokit,
+      deps.owner,
+      deps.repo,
+    );
+  }
 
   if (deps.prNumber !== undefined) {
     servers.github_inline_comment = createInlineReviewServer(

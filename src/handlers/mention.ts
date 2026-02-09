@@ -240,7 +240,9 @@ export function createMentionHandler(deps: {
           owner: mention.owner,
           repo: mention.repo,
           prNumber: mention.prNumber,
-          commentId: undefined,
+          // For inline review comment mentions, provide the triggering review comment id
+          // so the executor can enable the in-thread reply MCP tool.
+          commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
           eventType: `${event.name}.${(event.payload as Record<string, unknown>).action as string}`,
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,

@@ -23,6 +23,12 @@ export function buildMentionPrompt(params: {
   } else {
     lines.push(`This is about Issue #${mention.issueNumber}.`);
   }
+
+  if (mention.surface === "pr_review_comment") {
+    lines.push(
+      `This mention was triggered by an inline PR review comment (review comment id: ${mention.commentId}).`,
+    );
+  }
   lines.push("");
 
   // Context (optional)
@@ -51,9 +57,19 @@ export function buildMentionPrompt(params: {
     "If you cannot provide a useful answer with the information available, DO NOT create a comment (do not call any commenting tools).",
   );
   lines.push("");
-  lines.push(
-    `Write your response by creating a new comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
-  );
+
+  if (mention.surface === "pr_review_comment") {
+    lines.push(
+      "Write your response by replying in the same inline thread using the `mcp__reviewCommentThread__reply_to_pr_review_comment` tool.",
+    );
+    lines.push(
+      `Use: pullRequestNumber=${mention.prNumber} and commentId=${mention.commentId}.`,
+    );
+  } else {
+    lines.push(
+      `Write your response by creating a new top-level comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
+    );
+  }
   lines.push("");
   lines.push("Your response should be:");
   lines.push("- Direct and helpful -- answer the question with specific code references where possible");
