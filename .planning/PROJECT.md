@@ -12,21 +12,21 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Validated
 
-- ✓ Webhook server receives GitHub events and verifies signatures — v1.0
-- ✓ GitHub App authenticates via JWT and mints installation tokens — v1.0
-- ✓ Event router classifies webhooks and dispatches to handlers — v1.0
-- ✓ Per-repo `.kodiai.yml` config loaded with sensible defaults (zero-config works) — v1.0
-- ✓ PR auto-review on open/ready + manual re-request (`review_requested`) — v1.0
-- ✓ Inline review comments with suggestion blocks — v1.0
-- ✓ Fork PR support works natively — v1.0
-- ✓ `@kodiai` mention handling across issue/PR/review surfaces — v1.0
-- ✓ Tracking comments show progress and update on completion/error — v1.0
-- ✓ Content sanitization + TOCTOU protections — v1.0
-- ✓ Bot ignores its own comments (no infinite loops) — v1.0
-- ✓ Job queue with per-installation concurrency limits + ephemeral workspaces — v1.0
-- ✓ Review UX improvements (eyes reaction, `<details>` wrapping, conditional summaries) — v1.0
-- ✓ Production deployment to Azure Container Apps (Docker + probes + secrets) — v1.0
-- ✓ Review-request reliability hardening (delivery correlation, runbook, output idempotency) — v1.0
+- ✓ Webhook server receives GitHub events and verifies signatures — v0.1
+- ✓ GitHub App authenticates via JWT and mints installation tokens — v0.1
+- ✓ Event router classifies webhooks and dispatches to handlers — v0.1
+- ✓ Per-repo `.kodiai.yml` config loaded with sensible defaults (zero-config works) — v0.1
+- ✓ PR auto-review on open/ready + manual re-request (`review_requested`) — v0.1
+- ✓ Inline review comments with suggestion blocks — v0.1
+- ✓ Fork PR support works natively — v0.1
+- ✓ `@kodiai` mention handling across issue/PR/review surfaces — v0.1
+- ✓ Tracking comments show progress and update on completion/error — v0.1
+- ✓ Content sanitization + TOCTOU protections — v0.1
+- ✓ Bot ignores its own comments (no infinite loops) — v0.1
+- ✓ Job queue with per-installation concurrency limits + ephemeral workspaces — v0.1
+- ✓ Review UX improvements (eyes reaction, `<details>` wrapping, conditional summaries) — v0.1
+- ✓ Production deployment to Azure Container Apps (Docker + probes + secrets) — v0.1
+- ✓ Review-request reliability hardening (delivery correlation, runbook, output idempotency) — v0.1
 
 ### Active
 
@@ -55,7 +55,7 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ## Current State
 
-v1.0 ships an installable GitHub App that:
+v0.1 ships an installable GitHub App that:
 - Automatically reviews PRs (inline comments + suggestions; silent approvals for clean PRs)
 - Responds to `@kodiai` mentions across GitHub comment surfaces
 - Is deployable and running in production with observability and runbooks
@@ -80,4 +80,4 @@ v1.0 ships an installable GitHub App that:
 | `.kodiai.yml` config over env vars | Per-repo customization without touching the app server | ✓ Good |
 
 ---
-*Last updated: 2026-02-09 after v1.0 milestone*
+*Last updated: 2026-02-09 after v0.1 milestone*

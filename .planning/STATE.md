@@ -9,7 +9,7 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-Milestone: v1.0 MVP
+Milestone: v0.1 MVP
 Status: Shipped (archived)
 Last activity: 2026-02-09 -- Archived milestone artifacts and prepared planning docs for next milestone.
 
