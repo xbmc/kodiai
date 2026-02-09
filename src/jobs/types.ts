@@ -19,7 +19,17 @@ export interface Workspace {
 /** Job queue with per-installation concurrency control */
 export interface JobQueue {
   /** Enqueue a job for an installation. Returns a Promise resolving to the job result. */
-  enqueue<T>(installationId: number, fn: () => Promise<T>): Promise<T>;
+  enqueue<T>(
+    installationId: number,
+    fn: () => Promise<T>,
+    context?: {
+      deliveryId?: string;
+      eventName?: string;
+      action?: string;
+      jobType?: string;
+      prNumber?: number;
+    },
+  ): Promise<T>;
   /** Number of waiting (not yet running) jobs for an installation */
   getQueueSize(installationId: number): number;
   /** Number of currently running jobs for an installation */

@@ -27,6 +27,10 @@ function isReviewTriggerEnabled(
   return false;
 }
 
+function normalizeReviewerLogin(login: string): string {
+  return login.trim().toLowerCase().replace(/\[bot\]$/i, "");
+}
+
 /**
  * Create the review handler and register it with the event router.
  *
@@ -55,38 +59,100 @@ export function createReviewHandler(deps: {
       | PullRequestReviewRequestedEvent;
 
     const pr = payload.pull_request;
+    const action = payload.action;
+    const baseLog = {
+      deliveryId: event.id,
+      installationId: event.installationId,
+      action,
+      prNumber: pr.number,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+    };
 
     // Skip draft PRs (the opened event fires for drafts too)
     if (pr.draft) {
       logger.debug(
-        { prNumber: pr.number, owner: payload.repository.owner.login, repo: payload.repository.name },
+        baseLog,
         "Skipping draft PR",
       );
       return;
     }
 
-    if (payload.action === "review_requested") {
+    if (action === "review_requested") {
       const reviewRequestedPayload = payload as PullRequestReviewRequestedEvent;
-      const requestedReviewerLogin =
+      const requestedReviewer =
         "requested_reviewer" in reviewRequestedPayload
-          ? reviewRequestedPayload.requested_reviewer?.login
+          ? reviewRequestedPayload.requested_reviewer
+          : undefined;
+      const requestedTeam =
+        "requested_team" in reviewRequestedPayload
+          ? reviewRequestedPayload.requested_team
+          : undefined;
+      const requestedReviewerLogin =
+        typeof requestedReviewer?.login === "string"
+          ? requestedReviewer.login
           : undefined;
       const requestedTeamName =
-        "requested_team" in reviewRequestedPayload
-          ? reviewRequestedPayload.requested_team?.name
+        typeof requestedTeam?.name === "string"
+          ? requestedTeam.name
           : undefined;
       const appSlug = githubApp.getAppSlug();
-      const acceptedReviewerLogins = new Set([appSlug, `${appSlug}[bot]`]);
+      const normalizedAppSlug = normalizeReviewerLogin(appSlug);
 
-      if (!requestedReviewerLogin || !acceptedReviewerLogins.has(requestedReviewerLogin)) {
+      if (requestedReviewerLogin) {
+        const normalizedRequestedReviewer = normalizeReviewerLogin(requestedReviewerLogin);
+        if (normalizedRequestedReviewer !== normalizedAppSlug) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review_requested_reviewer",
+              gateResult: "skipped",
+              skipReason: "non-kodiai-reviewer",
+              requestedReviewer: requestedReviewerLogin,
+              normalizedRequestedReviewer,
+              normalizedAppSlug,
+              requestedTeam: requestedTeamName ?? null,
+            },
+            "Skipping review_requested event for non-kodiai reviewer",
+          );
+          return;
+        }
+
         logger.info(
           {
-            prNumber: pr.number,
-            requestedReviewer: requestedReviewerLogin ?? null,
-            requestedTeam: requestedTeamName ?? null,
-            acceptedReviewerLogins: Array.from(acceptedReviewerLogins),
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "accepted",
+            requestedReviewer: requestedReviewerLogin,
+            normalizedRequestedReviewer,
+            normalizedAppSlug,
           },
-          "Skipping review_requested event for non-kodiai reviewer",
+          "Accepted review_requested event for kodiai reviewer",
+        );
+      } else if (requestedTeamName) {
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "skipped",
+            skipReason: "team-only-request",
+            requestedReviewer: null,
+            requestedTeam: requestedTeamName,
+          },
+          "Skipping review_requested event because only a team was requested",
+        );
+        return;
+      } else {
+        logger.warn(
+          {
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "skipped",
+            skipReason: "missing-or-malformed-reviewer-payload",
+            hasRequestedReviewerField: "requested_reviewer" in reviewRequestedPayload,
+            hasRequestedTeamField: "requested_team" in reviewRequestedPayload,
+          },
+          "Skipping review_requested event due to missing reviewer payload",
         );
         return;
       }
@@ -127,9 +193,16 @@ export function createReviewHandler(deps: {
         cloneRef,
         isFork,
         usesPrRef,
-        action: payload.action,
+        action,
+        deliveryId: event.id,
+        installationId: event.installationId,
       },
       "Processing PR review",
+    );
+
+    logger.info(
+      { ...baseLog, gate: "enqueue", gateResult: "started" },
+      "Review enqueue started",
     );
 
     await jobQueue.enqueue(event.installationId, async () => {
@@ -156,19 +229,42 @@ export function createReviewHandler(deps: {
         // Load repo config (.kodiai.yml) with defaults
         const config = await loadRepoConfig(workspace.dir);
 
+        logger.info(
+          {
+            ...baseLog,
+            gate: "trigger-config",
+            reviewEnabled: config.review.enabled,
+            triggers: config.review.triggers,
+          },
+          "Evaluating review trigger configuration",
+        );
+
         // Check review.enabled
         if (!config.review.enabled) {
           logger.info(
-            { prNumber: pr.number, apiOwner, apiRepo },
+            {
+              ...baseLog,
+              gate: "review-enabled",
+              gateResult: "skipped",
+              skipReason: "review-disabled",
+              apiOwner,
+              apiRepo,
+            },
             "Review disabled in config, skipping",
           );
           return;
         }
 
         // Check whether this event action is enabled in review.triggers
-        if (!isReviewTriggerEnabled(payload.action, config.review.triggers)) {
+        if (!isReviewTriggerEnabled(action, config.review.triggers)) {
           logger.info(
-            { prNumber: pr.number, action: payload.action, triggers: config.review.triggers },
+            {
+              ...baseLog,
+              gate: "review-trigger",
+              gateResult: "skipped",
+              skipReason: "trigger-disabled",
+              triggers: config.review.triggers,
+            },
             "Review trigger disabled in config, skipping",
           );
           return;
@@ -348,7 +444,18 @@ export function createReviewHandler(deps: {
           await workspace.cleanup();
         }
       }
+    }, {
+      deliveryId: event.id,
+      eventName: event.name,
+      action,
+      jobType: "pull-request-review",
+      prNumber: pr.number,
     });
+
+    logger.info(
+      { ...baseLog, gate: "enqueue", gateResult: "completed" },
+      "Review enqueue completed",
+    );
   }
 
   // Register for review trigger events

@@ -12,6 +12,7 @@ import type { JobQueue } from "./types.ts";
  */
 export function createJobQueue(logger: Logger): JobQueue {
   const queues = new Map<number, PQueue>();
+  let nextJobId = 1;
 
   function getOrCreateQueue(installationId: number): PQueue {
     let queue = queues.get(installationId);
@@ -24,12 +25,30 @@ export function createJobQueue(logger: Logger): JobQueue {
   }
 
   return {
-    async enqueue<T>(installationId: number, fn: () => Promise<T>): Promise<T> {
+    async enqueue<T>(
+      installationId: number,
+      fn: () => Promise<T>,
+      context?: {
+        deliveryId?: string;
+        eventName?: string;
+        action?: string;
+        jobType?: string;
+        prNumber?: number;
+      },
+    ): Promise<T> {
       const queue = getOrCreateQueue(installationId);
+      const jobId = `${installationId}-${nextJobId++}`;
+      const queuedAt = Date.now();
 
-      logger.debug(
+      logger.info(
         {
+          jobId,
           installationId,
+          deliveryId: context?.deliveryId,
+          eventName: context?.eventName,
+          action: context?.action,
+          jobType: context?.jobType,
+          prNumber: context?.prNumber,
           queueSize: queue.size,
           pendingCount: queue.pending,
         },
@@ -37,14 +56,65 @@ export function createJobQueue(logger: Logger): JobQueue {
       );
 
       try {
-        const result = await (queue.add(fn) as Promise<T>);
+        const result = await (queue.add(async () => {
+          const startedAt = Date.now();
+          logger.info(
+            {
+              jobId,
+              installationId,
+              deliveryId: context?.deliveryId,
+              eventName: context?.eventName,
+              action: context?.action,
+              jobType: context?.jobType,
+              prNumber: context?.prNumber,
+              waitMs: startedAt - queuedAt,
+              queueSize: queue.size,
+              pendingCount: queue.pending,
+            },
+            "Job execution started",
+          );
+
+          try {
+            const value = await fn();
+            logger.info(
+              {
+                jobId,
+                installationId,
+                deliveryId: context?.deliveryId,
+                eventName: context?.eventName,
+                action: context?.action,
+                jobType: context?.jobType,
+                prNumber: context?.prNumber,
+                durationMs: Date.now() - startedAt,
+              },
+              "Job execution completed",
+            );
+            return value;
+          } catch (err) {
+            logger.error(
+              {
+                err,
+                jobId,
+                installationId,
+                deliveryId: context?.deliveryId,
+                eventName: context?.eventName,
+                action: context?.action,
+                jobType: context?.jobType,
+                prNumber: context?.prNumber,
+                durationMs: Date.now() - startedAt,
+              },
+              "Job execution failed",
+            );
+            throw err;
+          }
+        }) as Promise<T>);
         return result;
       } finally {
         // Prune idle queue after job completes
         if (queue.size === 0 && queue.pending === 0) {
           queues.delete(installationId);
           logger.debug(
-            { installationId },
+            { installationId, jobId },
             "Pruned idle job queue for installation",
           );
         }

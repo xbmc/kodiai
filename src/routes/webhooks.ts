@@ -42,6 +42,19 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
 
     // Parse payload after verification passes
     const payload = JSON.parse(body) as Record<string, unknown>;
+    const action = typeof payload.action === "string" ? payload.action : undefined;
+    const senderLogin =
+      typeof (payload.sender as { login?: unknown } | undefined)?.login === "string"
+        ? (payload.sender as { login: string }).login
+        : undefined;
+    const repository = payload.repository as
+      | { full_name?: string; owner?: { login?: string }; name?: string }
+      | undefined;
+    const repositoryName =
+      repository?.full_name ??
+      (repository?.owner?.login && repository.name
+        ? `${repository.owner.login}/${repository.name}`
+        : undefined);
 
     // Construct the WebhookEvent
     const installation = payload.installation as { id: number } | undefined;
@@ -51,6 +64,18 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
       payload,
       installationId: installation?.id ?? 0,
     };
+
+    logger.info(
+      {
+        deliveryId,
+        eventName,
+        action,
+        installationId: event.installationId,
+        repository: repositoryName,
+        sender: senderLogin,
+      },
+      "Webhook accepted and queued for dispatch",
+    );
 
     // Fire-and-fork: dispatch event asynchronously without awaiting.
     // Return 200 immediately to avoid GitHub's 10-second webhook timeout.

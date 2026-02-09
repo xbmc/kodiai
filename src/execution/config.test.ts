@@ -133,6 +133,35 @@ test("parses review.triggers from YAML", async () => {
   }
 });
 
+test("defaults review_requested trigger when triggers block is omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+    expect(config.review.triggers.onReviewRequested).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("allows explicitly disabling onReviewRequested", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: false\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers.onReviewRequested).toBe(false);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 test("rejects unsupported review.triggers keys", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {
