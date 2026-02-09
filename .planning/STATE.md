@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 10 review-request reliability completed with replay/retry idempotency regression coverage and gap-closure evidence.
+**Current focus:** Phase 10 review-request reliability completed with deterministic downstream idempotency and live delivery redelivery replay verification.
 
 ## Current Position
 
 Phase: 10 of 10 (Review Request Reliability)
 Plan: 4 of 4 in current phase
 Status: Complete (phase execution finished)
-Last activity: 2026-02-09 -- Completed 10-04 (replay/retry idempotency regression coverage + verification evidence).
+Last activity: 2026-02-09 -- Passed live GitHub delivery redelivery replay check on kodiai/xbmc#8.
 
 Progress: [####################] 100% (27/27 plans)
 
@@ -90,6 +90,8 @@ None.
 ### Blockers/Concerns
 
 - Active: GitHub webhook delivery API requires `admin:repo_hook` scope on `gh` token to fetch delivery status metadata (`status_code`, `delivered_at`) for forensic evidence.
+
+Note: Redelivery replay can be verified via GitHub App UI even without the delivery APIs.
 
 Resolved:
 - ~~GitHub App not yet registered~~ RESOLVED: App ID 2822869, slug "kodiai"

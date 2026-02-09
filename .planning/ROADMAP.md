@@ -20,6 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: Content Safety** - Sanitization and TOCTOU protections (completed 2026-02-08)
 - [x] **Phase 7: Operational Resilience** - Timeout enforcement and error reporting (completed 2026-02-08)
 - [x] **Phase 8: Deployment** - Docker packaging and Azure Container Apps (completed 2026-02-08)
+- [x] **Phase 10: Review Request Reliability** - Ensure one manual re-request triggers exactly one reliable, traceable review (completed 2026-02-09)
 
 ## Phase Details
 
@@ -144,7 +145,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoretically run in parallel. The roadmap sequences them for simplicity.
 
 | Phase | Plans Complete | Status | Completed |
@@ -158,6 +159,7 @@ Note: Phase 5 depends on Phase 3 (not Phase 4), so Phases 4 and 5 could theoreti
 | 7. Operational Resilience | 2/2 | Complete | 2026-02-08 |
 | 8. Deployment | 2/2 | Complete | 2026-02-08 |
 | 9. Review UX Improvements | 2/4 | Gap Closure | 2026-02-08 |
+| 10. Review Request Reliability | 0/2 | Planned | - |
 
 ### Phase 9: Review UX Improvements
 
@@ -175,3 +177,21 @@ Plans:
 - [x] 09-02-PLAN.md -- Structured PR summary comment (what/why/files) in review prompt
 - [ ] 09-03-PLAN.md -- Eyes reaction on PR open, autoApprove default to true (gap closure)
 - [ ] 09-04-PLAN.md -- Conditional summary (only when issues found), always-collapse all bot comments (gap closure)
+
+### Phase 10: Review Request Reliability
+
+**Goal:** A manual `pull_request.review_requested` event for kodiai results in exactly one review execution with full delivery-to-execution traceability, so re-review behavior is predictable and supportable in production.
+**Depends on:** Phase 9
+**Requirements:** REL-01, REL-02, REL-03
+**Success Criteria** (what must be TRUE):
+  1. A single manual re-request for `kodiai` triggers exactly one review execution and one review submission batch (no duplicate fan-out)
+  2. Every `review_requested` processing attempt is traceable by `delivery_id` across ingress, router, queue, handler, and completion logs
+  3. Duplicate webhook deliveries and retry scenarios are idempotently handled without duplicate review output
+  4. A production runbook exists for diagnosing `review_requested` failures with concrete command/query steps
+**Plans:** 4 plans
+
+Plans:
+- [x] 10-01-PLAN.md -- Observability and gating hardening for review_requested event path (ingress/router/queue/handler correlation)
+- [x] 10-02-PLAN.md -- Duplicate-review elimination, deployment validation, and production evidence capture on test PR
+- [x] 10-03-PLAN.md -- Deterministic downstream idempotency keying and publication guard for review_requested output
+- [x] 10-04-PLAN.md -- Regression coverage for duplicate/retry idempotency and gap-closure verification evidence
