@@ -31,6 +31,10 @@ export interface MentionEvent {
   headRepoName: string | undefined;
   /** Only for pr_review_comment surface */
   diffHunk: string | undefined;
+  /** Only for pr_review_comment surface */
+  filePath: string | undefined;
+  /** Only for pr_review_comment surface */
+  fileLine: number | undefined;
 }
 
 /**
@@ -59,6 +63,8 @@ export function normalizeIssueComment(
     headRepoOwner: undefined,
     headRepoName: undefined,
     diffHunk: undefined,
+    filePath: undefined,
+    fileLine: undefined,
   };
 }
 
@@ -85,6 +91,8 @@ export function normalizeReviewComment(
     headRepoOwner: payload.pull_request.head.repo?.owner.login,
     headRepoName: payload.pull_request.head.repo?.name,
     diffHunk: payload.comment.diff_hunk,
+    filePath: payload.comment.path,
+    fileLine: payload.comment.line ?? payload.comment.original_line ?? undefined,
   };
 }
 
@@ -112,6 +120,8 @@ export function normalizeReviewBody(
     headRepoOwner: payload.pull_request.head.repo?.owner.login,
     headRepoName: payload.pull_request.head.repo?.name,
     diffHunk: undefined,
+    filePath: undefined,
+    fileLine: undefined,
   };
 }
 
