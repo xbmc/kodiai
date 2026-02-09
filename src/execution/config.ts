@@ -40,9 +40,11 @@ const repoConfigSchema = z.object({
   mention: z
     .object({
       enabled: z.boolean().default(true),
+      acceptClaudeAlias: z.boolean().default(true),
       prompt: z.string().optional(),
     })
-    .default({ enabled: true }),
+    .strict()
+    .default({ enabled: true, acceptClaudeAlias: true }),
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
