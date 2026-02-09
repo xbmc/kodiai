@@ -30,8 +30,8 @@ patterns-established:
   - "Always record revision, image digest, and health/readiness responses after deploy"
 
 # Metrics
-duration: in-progress
-completed: in-progress
+duration: 10 min
+completed: 2026-02-09
 ---
 
 # Phase 10 Plan 2: Review Request Reliability Summary
@@ -41,8 +41,8 @@ Reliability-hardening code is committed and deployed to `ca-kodiai` with image d
 ## Performance
 
 - **Started:** 2026-02-09T04:48:55Z
-- **Completed:** in-progress
-- **Tasks:** 2/3
+- **Completed:** 2026-02-09T04:57:47Z
+- **Tasks:** 3/3
 
 ## Task Evidence
 
@@ -69,9 +69,44 @@ Reliability-hardening code is committed and deployed to `ca-kodiai` with image d
   - `image_ref`: `kodiairegistry.azurecr.io/kodiai:latest`
   - `image_digest`: `sha256:4546647547c15696a970f4451c7f7f1983d71909ab0635fedb41706c7eea92cc`
 
-## Task 3 Status
+### Task 3: Validate PR #8 review_requested flow and capture delivery/log correlation evidence
 
-- In progress. Validation evidence and final verdict will be appended after correlation capture.
+- Manual re-request run timestamp: `2026-02-09T04:55:26Z`.
+- Correlated `delivery_id`/GUID observed in app logs: `8d6cc610-0573-11f1-97f5-8781d0fd2526`.
+- Correlation chain for the same `delivery_id`:
+  - `Webhook accepted and queued for dispatch` (`eventName":"pull_request","action":"review_requested"`)
+  - `Router evaluated dispatch keys` (`specificKey":"pull_request.review_requested","matchedHandlerCount":1`)
+  - `Accepted review_requested event for kodiai reviewer`
+  - `Review enqueue started`
+  - `Job execution started` (`jobId":"108848524-1"`)
+  - `Job execution completed` (`durationMs":55448`)
+  - `Review enqueue completed`
+- Review outcome evidence:
+  - Pre-trigger review count: `7`
+  - Post-trigger review count: `10`
+  - Latest review timestamps by `kodiai`: `2026-02-09T04:56:15Z`, `2026-02-09T04:56:17Z`, `2026-02-09T04:56:18Z`
+
+### Validation Verdict
+
+- **Flow reliability:** PASS for webhook -> router -> review gate -> queue -> execution correlation using `delivery_id` `8d6cc610-0573-11f1-97f5-8781d0fd2526`.
+- **GitHub delivery API metadata capture:** BLOCKED (missing `admin:repo_hook` scope prevented listing hook deliveries).
+- **"Exactly one review" criterion:** FAIL (single review job completed, but PR review count increased by 3, not 1).
+
+### Rollback Readiness
+
+- Prior known revision during deploy preflight: `ca-kodiai--0000010`
+- Current active revision: `ca-kodiai--0000012`
+- Rollback command:
+  - `az containerapp revision activate --name ca-kodiai --resource-group rg-kodiai --revision "ca-kodiai--0000010"`
+- Post-rollback checks:
+  - `curl -fsS "https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/health"`
+  - `curl -fsS "https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/readiness"`
+
+## Task Commits
+
+1. **Task 1: Preflight and commit existing reliability hardening changes** - `abcff1d093` (fix)
+2. **Task 2: Deploy committed build to Azure Container Apps with preflight and revision tracking** - `580ca6f0d9` (chore)
+3. **Task 3: Validate PR #8 review_requested flow and capture delivery/log correlation evidence** - pending commit (this update)
 
 ## Deviations from Plan
 
@@ -82,3 +117,14 @@ Reliability-hardening code is committed and deployed to `ca-kodiai` with image d
 - **Issue:** Required env vars (`GITHUB_APP_ID`, `GITHUB_PRIVATE_KEY_BASE64`, `GITHUB_WEBHOOK_SECRET`, `CLAUDE_CODE_OAUTH_TOKEN`) were not set in this session.
 - **Fix:** Loaded current values from `az containerapp secret list --show-values` and exported for this deployment run.
 - **Verification:** `./deploy.sh` completed and active revision became `ca-kodiai--0000012` with healthy probes.
+
+## Authentication Gates
+
+- **Task 3:** GitHub webhook deliveries endpoint required `admin:repo_hook`; current `gh` token has `repo/read:org/workflow/gist` only.
+- **Observed failure:** `gh api repos/kodiai/xbmc/hooks ...` returned `404` plus scope guidance (`gh auth refresh -h github.com -s admin:repo_hook`).
+- **Impact:** Could not fetch authoritative GitHub delivery record (`status_code`, `delivered_at`) from hooks API; relied on ingress `delivery_id` logs for correlation.
+
+## Next Phase Readiness
+
+- Reliability hardening is committed and deployed on `ca-kodiai--0000012` with health/readiness green.
+- Remaining blocker for full forensic parity is `admin:repo_hook` access to retrieve GitHub delivery metadata directly.
