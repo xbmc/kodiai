@@ -106,7 +106,7 @@ export function normalizeReviewBody(
     commentId: payload.review.id,
     commentBody: payload.review.body ?? "",
     commentAuthor: payload.review.user.login,
-    commentCreatedAt: payload.review.submitted_at,
+    commentCreatedAt: payload.review.submitted_at ?? payload.pull_request.updated_at,
     headRef: payload.pull_request.head.ref,
     baseRef: payload.pull_request.base.ref,
     headRepoOwner: payload.pull_request.head.repo?.owner.login,
@@ -118,14 +118,35 @@ export function normalizeReviewBody(
 /** Case-insensitive check for @appSlug mention in a comment body. */
 export function containsMention(
   body: string | null | undefined,
-  appSlug: string,
+  acceptedHandles: string[],
 ): boolean {
   if (!body) return false;
-  return body.toLowerCase().includes(`@${appSlug.toLowerCase()}`);
+
+  const regex = buildMentionRegex(acceptedHandles, "i");
+  return regex.test(body);
 }
 
-/** Remove the @appSlug mention from the comment body and trim whitespace. */
-export function stripMention(body: string, appSlug: string): string {
-  const regex = new RegExp(`@${appSlug}\\b`, "gi");
+/** Remove any accepted mention handles from the comment body and trim whitespace. */
+export function stripMention(body: string, acceptedHandles: string[]): string {
+  const regex = buildMentionRegex(acceptedHandles, "gi");
   return body.replace(regex, "").trim();
+}
+
+function buildMentionRegex(handles: string[], flags: string): RegExp {
+  const cleaned = handles
+    .map((h) => (h.startsWith("@") ? h.slice(1) : h))
+    .map((h) => h.trim())
+    .filter((h) => h.length > 0)
+    .map(escapeRegExp);
+
+  if (cleaned.length === 0) {
+    // Never matches.
+    return new RegExp("$^", flags);
+  }
+
+  return new RegExp(`@(?:${cleaned.join("|")})\\b`, flags);
+}
+
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&");
 }

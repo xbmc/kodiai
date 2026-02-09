@@ -41,6 +41,7 @@ export function createMentionHandler(deps: {
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
+    const possibleHandles = [appSlug, "claude"];
 
     // Normalize payload based on event type
     let mention: MentionEvent;
@@ -63,62 +64,9 @@ export function createMentionHandler(deps: {
       return;
     }
 
-    // Check for @kodiai mention
-    if (!containsMention(mention.commentBody, appSlug)) return;
-
-    const userQuestion = stripMention(mention.commentBody, appSlug);
-    if (userQuestion.trim().length === 0) {
-      logger.info(
-        {
-          surface: mention.surface,
-          owner: mention.owner,
-          repo: mention.repo,
-          issueNumber: mention.issueNumber,
-          prNumber: mention.prNumber,
-        },
-        "Mention contained no question after stripping mention; skipping",
-      );
-      return;
-    }
-
-    logger.info(
-      {
-        surface: mention.surface,
-        owner: mention.owner,
-        repo: mention.repo,
-        issueNumber: mention.issueNumber,
-        prNumber: mention.prNumber,
-        commentAuthor: mention.commentAuthor,
-      },
-      "Processing @kodiai mention",
-    );
-
-    // Add eyes reaction to trigger comment for immediate visual acknowledgment
-    try {
-      const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-      if (mention.surface === "pr_review_comment") {
-        await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
-          owner: mention.owner,
-          repo: mention.repo,
-          comment_id: mention.commentId,
-          content: "eyes",
-        });
-      } else if (mention.surface === "pr_review_body") {
-        // PR review bodies don't support reactions -- skip silently
-        // (the review ID is not a comment ID, so the reaction endpoints would 404)
-      } else {
-        // issue_comment and pr_comment both use the issue comment reaction endpoint
-        await reactionOctokit.rest.reactions.createForIssueComment({
-          owner: mention.owner,
-          repo: mention.repo,
-          comment_id: mention.commentId,
-          content: "eyes",
-        });
-      }
-    } catch (err) {
-      // Non-fatal: don't block processing if reaction fails
-      logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
-    }
+    // Fast filter: ignore if neither @appSlug nor @claude appear.
+    // Repo config may opt out of @claude later; we verify inside the job after loading config.
+    if (!containsMention(mention.commentBody, possibleHandles)) return;
 
     // No tracking comment. Tracking is via eyes reaction only.
     // The response will be posted as a new comment.
@@ -187,6 +135,81 @@ export function createMentionHandler(deps: {
             "Mentions disabled in config, skipping",
           );
           return;
+        }
+
+        const acceptedHandles = [appSlug];
+        if (config.mention.acceptClaudeAlias) acceptedHandles.push("claude");
+
+        // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
+        if (!containsMention(mention.commentBody, acceptedHandles)) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              acceptClaudeAlias: config.mention.acceptClaudeAlias,
+            },
+            "Mention does not match accepted handles for repo; skipping",
+          );
+          return;
+        }
+
+        const userQuestion = stripMention(mention.commentBody, acceptedHandles);
+        if (userQuestion.trim().length === 0) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              acceptClaudeAlias: config.mention.acceptClaudeAlias,
+            },
+            "Mention contained no question after stripping mention; skipping",
+          );
+          return;
+        }
+
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            issueNumber: mention.issueNumber,
+            prNumber: mention.prNumber,
+            commentAuthor: mention.commentAuthor,
+            acceptClaudeAlias: config.mention.acceptClaudeAlias,
+          },
+          "Processing mention",
+        );
+
+        // Add eyes reaction to trigger comment for immediate visual acknowledgment
+        try {
+          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          if (mention.surface === "pr_review_comment") {
+            await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              comment_id: mention.commentId,
+              content: "eyes",
+            });
+          } else if (mention.surface === "pr_review_body") {
+            // PR review bodies don't support reactions -- skip silently
+            // (the review ID is not a comment ID, so the reaction endpoints would 404)
+          } else {
+            // issue_comment and pr_comment both use the issue comment reaction endpoint
+            await reactionOctokit.rest.reactions.createForIssueComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              comment_id: mention.commentId,
+              content: "eyes",
+            });
+          }
+        } catch (err) {
+          // Non-fatal: don't block processing if reaction fails
+          logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
         }
 
         // Build mention prompt
