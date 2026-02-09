@@ -6,6 +6,15 @@ out
 dist
 *.tgz
 
+# local scratch/reference repos (not part of shipped artifact)
+tmp/
+
+# secrets / keys
+*.pem
+*.key
+*.p12
+*.pfx
+
 # code coverage
 coverage
 *.lcov
