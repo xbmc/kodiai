@@ -106,7 +106,7 @@ Reliability-hardening code is committed and deployed to `ca-kodiai` with image d
 
 1. **Task 1: Preflight and commit existing reliability hardening changes** - `abcff1d093` (fix)
 2. **Task 2: Deploy committed build to Azure Container Apps with preflight and revision tracking** - `580ca6f0d9` (chore)
-3. **Task 3: Validate PR #8 review_requested flow and capture delivery/log correlation evidence** - pending commit (this update)
+3. **Task 3: Validate PR #8 review_requested flow and capture delivery/log correlation evidence** - `afd184d5cb` (fix)
 
 ## Deviations from Plan
 
@@ -128,3 +128,8 @@ Reliability-hardening code is committed and deployed to `ca-kodiai` with image d
 
 - Reliability hardening is committed and deployed on `ca-kodiai--0000012` with health/readiness green.
 - Remaining blocker for full forensic parity is `admin:repo_hook` access to retrieve GitHub delivery metadata directly.
+
+## Self-Check: PASSED
+
+- Verified summary file exists: `.planning/phases/10-review-request-reliability/10-02-SUMMARY.md`
+- Verified task commits exist: `abcff1d093`, `580ca6f0d9`, `afd184d5cb`

@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** All gap closure plans complete. Phase 9 fully shipped with conditional summary, always-collapse, eyes reaction.
+**Current focus:** Phase 10 review-request reliability hardening committed, deployed, and log-correlated on production.
 
 ## Current Position
 
-Phase: 9 of 9 (Review UX Improvements)
-Plan: 4 of 4 in current phase
-Status: Milestone complete (all gap closure plans done)
-Last activity: 2026-02-08 -- Completed 09-04 (conditional summary, always-collapse details tags).
+Phase: 10 of 10 (Review Request Reliability)
+Plan: 2 of 2 in current phase
+Status: Phase complete with one external-scope blocker
+Last activity: 2026-02-09 -- Completed 10-02 (commit + deploy + review_requested validation evidence).
 
-Progress: [####################] 100% (24/25 plans)
+Progress: [####################] 100% (25/25 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 24
+- Total plans completed: 25
 - Average duration: 3min
-- Total execution time: 71min
+- Total execution time: 81min
 
 **By Phase:**
 
@@ -36,6 +36,7 @@ Progress: [####################] 100% (24/25 plans)
 | 07-operational-resilience | 2/2 | 5min | 3min |
 | 08-deployment | 2/2 | 16min | 8min |
 | 09-review-ux-improvements | 4/4 | 5min | 1min |
+| 10-review-request-reliability | 2/2 | 44min | 22min |
 
 *Updated after each plan completion*
 
@@ -47,7 +48,7 @@ Progress: [####################] 100% (24/25 plans)
 - **GitHub App slug:** kodiai
 - **GitHub repo:** https://github.com/xbmc/kodiai (private)
 - **Azure resources:** rg-kodiai (resource group), kodiairegistry (ACR), ca-kodiai (container app), cae-kodiai (environment)
-- **Latest revision:** ca-kodiai--0000006 (deployed 2026-02-08, includes Phase 9 gap closure: eyes reaction on PR, auto-approve default, conditional summary, always-collapse)
+- **Latest revision:** ca-kodiai--0000012 (deployed 2026-02-09, includes review_requested reliability hardening and deliveryId correlation logs)
 
 ## Accumulated Context
 
@@ -70,6 +71,7 @@ Progress: [####################] 100% (24/25 plans)
 - [08-02]: Health probe YAML must include full container spec (image + env vars)
 - [08-02]: Explicit git refspec needed for base branch fetch in single-branch clones
 - [08-02]: Microsoft.ContainerRegistry provider must be pre-registered
+- [Phase 10]: Recovered deploy env vars from existing ACA secrets when local shell vars were missing.
 
 ### Roadmap Evolution
 
@@ -81,13 +83,16 @@ None.
 
 ### Blockers/Concerns
 
-All resolved:
+- Active: GitHub webhook delivery API requires `admin:repo_hook` scope on `gh` token to fetch delivery status metadata (`status_code`, `delivered_at`) for forensic evidence.
+
+Resolved:
 - ~~GitHub App not yet registered~~ RESOLVED: App ID 2822869, slug "kodiai"
 - ~~Azure Container Apps not yet provisioned~~ RESOLVED: deployed to ca-kodiai
 - ~~Claude CLI on Alpine~~ RESOLVED: agent-sdk bundles cli.js, works on Alpine
+- GitHub webhook delivery API requires gh token scope admin:repo_hook to capture status_code/delivered_at evidence.
 
 ## Session Continuity
 
-Last session: 2026-02-08
-Stopped at: Completed 09-04-PLAN.md
+Last session: 2026-02-09
+Stopped at: Completed 10-02-PLAN.md
 Resume file: None
