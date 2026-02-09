@@ -2,17 +2,16 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-07)
+See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 10 review-request reliability completed with deterministic downstream idempotency and live delivery redelivery replay verification.
+**Current focus:** Planning next milestone (fresh requirements + roadmap).
 
 ## Current Position
 
-Phase: 10 of 10 (Review Request Reliability)
-Plan: 4 of 4 in current phase
-Status: Complete (phase execution finished)
-Last activity: 2026-02-09 -- Passed live GitHub delivery redelivery replay check on kodiai/xbmc#8.
+Milestone: v1.0 MVP
+Status: Shipped (archived)
+Last activity: 2026-02-09 -- Archived milestone artifacts and prepared planning docs for next milestone.
 
 Progress: [####################] 100% (27/27 plans)
 
