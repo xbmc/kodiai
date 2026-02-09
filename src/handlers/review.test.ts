@@ -33,6 +33,7 @@ function buildReviewRequestedEvent(payloadOverrides: Record<string, unknown>): W
         user: { login: "octocat" },
         base: { ref: "main" },
         head: {
+          sha: "abcdef1234567890",
           ref: "feature",
           repo: {
             full_name: "acme/repo",

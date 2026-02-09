@@ -11,6 +11,10 @@ import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { buildReviewPrompt } from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import {
+  buildReviewOutputKey,
+  ensureReviewOutputNotPublished,
+} from "./review-idempotency.ts";
 import { $ } from "bun";
 
 function isReviewTriggerEnabled(
@@ -68,6 +72,15 @@ export function createReviewHandler(deps: {
       owner: payload.repository.owner.login,
       repo: payload.repository.name,
     };
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: event.installationId,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+      prNumber: pr.number,
+      action,
+      deliveryId: event.id,
+      headSha: pr.head.sha ?? "unknown-head-sha",
+    });
 
     // Skip draft PRs (the opened event fires for drafts too)
     if (pr.draft) {
@@ -269,6 +282,40 @@ export function createReviewHandler(deps: {
           );
           return;
         }
+
+        const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        const idempotencyCheck = await ensureReviewOutputNotPublished({
+          octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          reviewOutputKey,
+        });
+
+        if (!idempotencyCheck.shouldPublish) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-output-idempotency",
+              gateResult: "skipped",
+              skipReason: "already-published",
+              reviewOutputKey,
+              existingLocation: idempotencyCheck.existingLocation,
+            },
+            "Skipping review execution because output already published for key",
+          );
+          return;
+        }
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-output-idempotency",
+            gateResult: "accepted",
+            reviewOutputKey,
+          },
+          "Review output idempotency check passed",
+        );
 
         // Add eyes reaction to PR description for immediate acknowledgment
         try {
