@@ -23,6 +23,7 @@ export function buildMcpServers(deps: {
       deps.getOctokit,
       deps.owner,
       deps.repo,
+      deps.reviewOutputKey,
     ),
   };
 

@@ -14,7 +14,7 @@ export type ReviewOutputPublicationStatus = {
   reviewOutputKey: string;
   marker: string;
   shouldPublish: boolean;
-  existingLocation: "review-comment" | "review" | null;
+  existingLocation: "review-comment" | "issue-comment" | "review" | null;
 };
 
 const KEY_PREFIX = "kodiai-review-output";
@@ -67,6 +67,21 @@ export async function ensureReviewOutputNotPublished(deps: {
       marker,
       shouldPublish: false,
       existingLocation: "review-comment",
+    };
+  }
+
+  const { data: issueComments } = await deps.octokit.rest.issues.listComments({
+    owner: deps.owner,
+    repo: deps.repo,
+    issue_number: deps.prNumber,
+  });
+
+  if (issueComments.some((comment) => comment.body?.includes(marker))) {
+    return {
+      reviewOutputKey: deps.reviewOutputKey,
+      marker,
+      shouldPublish: false,
+      existingLocation: "issue-comment",
     };
   }
 

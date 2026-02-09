@@ -49,7 +49,7 @@ function createCaptureLogger() {
   return { logger, entries };
 }
 
-async function createWorkspaceFixture() {
+async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
@@ -59,7 +59,7 @@ async function createWorkspaceFixture() {
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -318,6 +318,9 @@ describe("createReviewHandler review_requested idempotency", () => {
           }),
           listReviews: async () => ({ data: [] }),
         },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
         reactions: {
           createForIssue: async () => ({ data: {} }),
         },
@@ -411,6 +414,9 @@ describe("createReviewHandler review_requested idempotency", () => {
           }),
           listReviews: async () => ({ data: [] }),
         },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
         reactions: {
           createForIssue: async () => ({ data: {} }),
         },
@@ -470,5 +476,115 @@ describe("createReviewHandler review_requested idempotency", () => {
         entry.message.includes("Skipping review execution because output already published for key")
       ),
     ).toBe(true);
+  });
+
+  test("replaying a clean PR review_requested does not create duplicate approvals", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+    const { logger } = createCaptureLogger();
+
+    const createdReviews: Array<{ body?: string | null }> = [];
+    let executeCount = 0;
+    let approveCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({
+            data: createdReviews.map((review, index) => ({
+              id: index + 1,
+              body: review.body ?? null,
+            })),
+          }),
+          createReview: async ({ body }: { body?: string }) => {
+            approveCount++;
+            createdReviews.push({ body: body ?? null });
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { reviewOutputKey?: string }) => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-clean",
+          };
+        },
+      } as never,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    const event = buildReviewRequestedEvent({
+      requested_reviewer: { login: "kodiai[bot]" },
+    });
+
+    await handler!(event);
+    await handler!(event);
+
+    await workspaceFixture.cleanup();
+
+    expect(executeCount).toBe(1);
+    expect(approveCount).toBe(1);
+
+    const marker = buildReviewOutputMarker(
+      // deterministically built inside handler from these fixture fields
+      // (we assert by inclusion instead of exact key string here)
+      "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890",
+    );
+
+    expect(createdReviews[0]?.body ?? "").toContain("<!-- kodiai:review-output-key:");
+    expect(createdReviews[0]?.body ?? "").toContain("kodiai-review-output:v1");
+    // Ensure marker format stays stable (no visible text)
+    expect(createdReviews[0]?.body ?? "").toContain("-->");
+    // Silence unused var lint (marker is illustrative; body checks are the assertion)
+    expect(marker).toContain("kodiai:review-output-key");
   });
 });

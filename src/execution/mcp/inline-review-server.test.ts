@@ -44,6 +44,9 @@ describe("createInlineReviewServer output idempotency", () => {
             };
           },
         },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
       },
     };
 

@@ -450,9 +450,10 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
+                body: idempotencyCheck.marker,
               });
               logger.info(
-                { prNumber: pr.number },
+                { prNumber: pr.number, reviewOutputKey },
                 "Submitted silent approval (no issues found)",
               );
             } else {

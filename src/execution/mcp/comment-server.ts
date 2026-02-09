@@ -1,12 +1,22 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
+import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
   repo: string,
+  reviewOutputKey?: string,
 ) {
+  const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
+
+  function maybeStampMarker(body: string): string {
+    if (!marker) return body;
+    if (body.includes(marker)) return body;
+    return `${body}\n\n${marker}`;
+  }
+
   return createSdkMcpServer({
     name: "github_comment",
     version: "0.1.0",
@@ -25,7 +35,7 @@ export function createCommentServer(
               owner,
               repo,
               comment_id: commentId,
-              body,
+              body: maybeStampMarker(body),
             });
             return {
               content: [
@@ -59,7 +69,7 @@ export function createCommentServer(
               owner,
               repo,
               issue_number: issueNumber,
-              body,
+              body: maybeStampMarker(body),
             });
             return {
               content: [
