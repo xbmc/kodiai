@@ -9,11 +9,19 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-Milestone: v0.1 MVP
-Status: Shipped (archived)
-Last activity: 2026-02-09 -- Archived milestone artifacts and prepared planning docs for next milestone.
+**Current Phase:** 11
+**Current Phase Name:** mention-ux-parity
+**Total Phases:** 13
+**Current Plan:** 2
+**Total Plans in Phase:** 4
+**Status:** Ready to execute
+**Progress:** [████████░░] 76%
 
-Progress: [####################] 100% (27/27 plans)
+**Last Activity:** 2026-02-09
+**Last Activity Description:** Completed 11-01-PLAN.md
+**Paused At:** None
+
+Milestone: v0.1 MVP (archived)
 
 ## Performance Metrics
 
@@ -40,6 +48,7 @@ Progress: [####################] 100% (27/27 plans)
 *Updated after each plan completion*
 | Phase 10 P03 | 3 min | 2 tasks | 7 files |
 | Phase 10 P04 | 2 min | 3 tasks | 4 files |
+| Phase 11 P01 | 5 min | 2 tasks | 5 files |
 
 ## Deployment Info
 
@@ -51,9 +60,7 @@ Progress: [####################] 100% (27/27 plans)
 - **Azure resources:** rg-kodiai (resource group), kodiairegistry (ACR), ca-kodiai (container app), cae-kodiai (environment)
 - **Latest revision:** ca-kodiai--0000012 (deployed 2026-02-09, includes review_requested reliability hardening and deliveryId correlation logs)
 
-## Accumulated Context
-
-### Decisions
+## Decisions Made
 
 - [09-01]: 500-character threshold for wrapInDetails() (matches UX-03 spec)
 - [09-01]: pr_review_body skipped for reactions (review ID is not a comment ID)
@@ -77,16 +84,18 @@ Progress: [####################] 100% (27/27 plans)
 - [Phase 10]: Inline review publication checks existing kodiai:review-output-key marker once per execution and logs published vs already-published-skip outcomes.
 - [Phase 10]: Use deterministic marker fixture assertions in tests to lock kodiai review-output marker parsing behavior.
 - [Phase 10]: Treat replay/retry reliability as same-delivery reprocessing tests so downstream idempotency is proven independent of ingress dedup.
+- [Phase 11]: Default mention.acceptClaudeAlias to true so @claude triggers by default
+- [Phase 11]: Make mention config strict to reject unknown mention keys in .kodiai.yml
 
-### Roadmap Evolution
+## Roadmap Evolution
 
 - Phase 9 added: Review UX Improvements
 
-### Pending Todos
+## Pending Todos
 
 None.
 
-### Blockers/Concerns
+## Blockers
 
 - Active: GitHub webhook delivery API requires `admin:repo_hook` scope on `gh` token to fetch delivery status metadata (`status_code`, `delivered_at`) for forensic evidence.
 
@@ -98,8 +107,8 @@ Resolved:
 - ~~Claude CLI on Alpine~~ RESOLVED: agent-sdk bundles cli.js, works on Alpine
 - GitHub webhook delivery API requires gh token scope admin:repo_hook to capture status_code/delivered_at evidence.
 
-## Session Continuity
+## Session
 
-Last session: 2026-02-09
-Stopped at: Completed 10-04-PLAN.md
-Resume file: None
+**Last Date:** 2026-02-09T22:53:14.959Z
+**Stopped At:** Completed 11-01-PLAN.md
+**Resume File:** None
