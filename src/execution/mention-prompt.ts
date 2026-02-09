@@ -51,6 +51,12 @@ export function buildMentionPrompt(params: {
     "Important: The handler already added an eyes reaction for tracking. Do not post a separate tracking/ack comment.",
   );
   lines.push(
+    "Do NOT create a 'thinking'/'working on it' comment. Create at most ONE comment total, and only when you are ready to provide the final response.",
+  );
+  lines.push(
+    "Do NOT update comments (avoid using update_comment); post a single final response instead.",
+  );
+  lines.push(
     "Only post a reply if you have something concrete to contribute (a direct answer, a specific suggestion, or a clear next step).",
   );
   lines.push(

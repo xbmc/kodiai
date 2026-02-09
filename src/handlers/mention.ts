@@ -139,7 +139,10 @@ export function createMentionHandler(deps: {
         }
 
         const acceptedHandles = [appSlug];
-        if (config.mention.acceptClaudeAlias) acceptedHandles.push("claude");
+        // Preserve @claude muscle memory: treat missing config as enabled.
+        // Repo opt-out is explicit: acceptClaudeAlias: false.
+        const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
+        if (acceptClaudeAlias) acceptedHandles.push("claude");
 
         // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
         if (!containsMention(mention.commentBody, acceptedHandles)) {
@@ -150,7 +153,7 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               issueNumber: mention.issueNumber,
               prNumber: mention.prNumber,
-              acceptClaudeAlias: config.mention.acceptClaudeAlias,
+              acceptClaudeAlias,
             },
             "Mention does not match accepted handles for repo; skipping",
           );
@@ -166,7 +169,7 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               issueNumber: mention.issueNumber,
               prNumber: mention.prNumber,
-              acceptClaudeAlias: config.mention.acceptClaudeAlias,
+              acceptClaudeAlias,
             },
             "Mention contained no question after stripping mention; skipping",
           );
@@ -181,7 +184,7 @@ export function createMentionHandler(deps: {
             issueNumber: mention.issueNumber,
             prNumber: mention.prNumber,
             commentAuthor: mention.commentAuthor,
-            acceptClaudeAlias: config.mention.acceptClaudeAlias,
+            acceptClaudeAlias,
           },
           "Processing mention",
         );
