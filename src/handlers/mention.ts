@@ -17,21 +17,9 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
-import {
-  buildConversationContext,
-  buildMentionPrompt,
-} from "../execution/mention-prompt.ts";
+import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
-
-const TRACKING_INITIAL = [
-  "<details>",
-  "<summary>Kodiai is thinking...</summary>",
-  "",
-  "_Working on your request. This comment will be updated with the response._",
-  "",
-  "</details>",
-].join("\n");
 
 /**
  * Create the mention handler and register it with the event router.
@@ -119,20 +107,8 @@ export function createMentionHandler(deps: {
       logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
     }
 
-    // Post tracking comment BEFORE enqueue (immediate user feedback)
-    let trackingCommentId: number | undefined;
-    try {
-      const octokit = await githubApp.getInstallationOctokit(event.installationId);
-      const { data: trackingComment } = await octokit.rest.issues.createComment({
-        owner: mention.owner,
-        repo: mention.repo,
-        issue_number: mention.issueNumber,
-        body: TRACKING_INITIAL,
-      });
-      trackingCommentId = trackingComment.id;
-    } catch (err) {
-      logger.error({ err }, "Failed to post tracking comment, continuing without tracking");
-    }
+    // No tracking comment. Tracking is via eyes reaction only.
+    // The response will be posted as a new comment.
 
     await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
@@ -200,15 +176,11 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        // Build conversation context
-        const conversationContext = await buildConversationContext(octokit, mention);
-
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
-          conversationContext,
+          conversationContext: "",
           userQuestion,
-          trackingCommentId,
           customInstructions: config.mention.prompt,
         });
 
@@ -219,7 +191,7 @@ export function createMentionHandler(deps: {
           owner: mention.owner,
           repo: mention.repo,
           prNumber: mention.prNumber,
-          commentId: trackingCommentId,
+          commentId: undefined,
           eventType: `${event.name}.${(event.payload as Record<string, unknown>).action as string}`,
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,
@@ -255,7 +227,6 @@ export function createMentionHandler(deps: {
             owner: mention.owner,
             repo: mention.repo,
             issueNumber: mention.issueNumber,
-            trackingCommentId,
           }, errorBody, logger);
         }
       } catch (err) {
@@ -274,7 +245,6 @@ export function createMentionHandler(deps: {
             owner: mention.owner,
             repo: mention.repo,
             issueNumber: mention.issueNumber,
-            trackingCommentId,
           }, errorBody, logger);
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment");

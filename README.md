@@ -38,8 +38,8 @@ Triggers on:
 
 Behavior:
 
-- Creates a tracking comment quickly ("thinking...")
-- Responds with a contextual answer based on surrounding conversation + PR context (when available)
+- Adds an eyes reaction quickly ("tracking") where GitHub supports reactions
+- Posts a reply comment answering the question (no tracking comment update)
 
 ## Architecture (High Level)
 
@@ -94,6 +94,8 @@ Endpoints:
 bun test
 ```
 
+Note: test discovery is configured in `bunfig.toml` to only scan `src/`.
+
 Typecheck (if available in your environment):
 
 ```bash
@@ -103,6 +105,10 @@ bunx tsc --noEmit
 ## Deployment
 
 `deploy.sh` provisions and deploys to Azure Container Apps.
+
+Details:
+
+- `deployment.md`
 
 Runbook for diagnosing manual re-request issues:
 
