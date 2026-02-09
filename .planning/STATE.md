@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-07)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 10 review-request reliability idempotency hardening completed; final regression/evidence plan pending.
+**Current focus:** Phase 10 review-request reliability completed with replay/retry idempotency regression coverage and gap-closure evidence.
 
 ## Current Position
 
 Phase: 10 of 10 (Review Request Reliability)
-Plan: 3 of 4 in current phase
-Status: In progress with one external-scope blocker
-Last activity: 2026-02-09 -- Completed 10-03 (deterministic output keying + downstream publication idempotency guard).
+Plan: 4 of 4 in current phase
+Status: Complete (phase execution finished)
+Last activity: 2026-02-09 -- Completed 10-04 (replay/retry idempotency regression coverage + verification evidence).
 
-Progress: [###################-] 96% (26/27 plans)
+Progress: [####################] 100% (27/27 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 26
+- Total plans completed: 27
 - Average duration: 3min
-- Total execution time: 84min
+- Total execution time: 86min
 
 **By Phase:**
 
@@ -36,10 +36,11 @@ Progress: [###################-] 96% (26/27 plans)
 | 07-operational-resilience | 2/2 | 5min | 3min |
 | 08-deployment | 2/2 | 16min | 8min |
 | 09-review-ux-improvements | 4/4 | 5min | 1min |
-| 10-review-request-reliability | 3/4 | 47min | 16min |
+| 10-review-request-reliability | 4/4 | 49min | 12min |
 
 *Updated after each plan completion*
 | Phase 10 P03 | 3 min | 2 tasks | 7 files |
+| Phase 10 P04 | 2 min | 3 tasks | 4 files |
 
 ## Deployment Info
 
@@ -75,6 +76,8 @@ Progress: [###################-] 96% (26/27 plans)
 - [Phase 10]: Recovered deploy env vars from existing ACA secrets when local shell vars were missing.
 - [Phase 10]: Delivery-scoped reviewOutputKey combines installation/repo/PR/action/delivery/head SHA for deterministic idempotency identity.
 - [Phase 10]: Inline review publication checks existing kodiai:review-output-key marker once per execution and logs published vs already-published-skip outcomes.
+- [Phase 10]: Use deterministic marker fixture assertions in tests to lock kodiai review-output marker parsing behavior.
+- [Phase 10]: Treat replay/retry reliability as same-delivery reprocessing tests so downstream idempotency is proven independent of ingress dedup.
 
 ### Roadmap Evolution
 
@@ -97,5 +100,5 @@ Resolved:
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Completed 10-03-PLAN.md
+Stopped at: Completed 10-04-PLAN.md
 Resume file: None
