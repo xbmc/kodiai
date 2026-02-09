@@ -1,13 +1,60 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
+import {
+  buildReviewOutputMarker,
+  ensureReviewOutputNotPublished,
+} from "../../handlers/review-idempotency.ts";
+
+const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
 export function createInlineReviewServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
   repo: string,
   prNumber: number,
+  reviewOutputKey?: string,
+  deliveryId?: string,
+  logger?: Logger,
 ) {
+  let outputPublicationState: "unknown" | "allowed" | "already-published" = "unknown";
+
+  async function resolveOutputPublicationState(octokit: Octokit): Promise<"allowed" | "already-published"> {
+    if (!reviewOutputKey) {
+      return "allowed";
+    }
+
+    if (outputPublicationState !== "unknown") {
+      return outputPublicationState;
+    }
+
+    const idempotencyCheck = await ensureReviewOutputNotPublished({
+      octokit,
+      owner,
+      repo,
+      prNumber,
+      reviewOutputKey,
+    });
+
+    if (!idempotencyCheck.shouldPublish) {
+      outputPublicationState = "already-published";
+      logger?.info(
+        {
+          deliveryId,
+          reviewOutputKey,
+          idempotencyOutcome: "already-published-skip",
+          existingLocation: idempotencyCheck.existingLocation,
+        },
+        "Skipping inline review publication because output key already exists",
+      );
+      return outputPublicationState;
+    }
+
+    outputPublicationState = "allowed";
+    return outputPublicationState;
+  }
+
   return createSdkMcpServer({
     name: "github_inline_comment",
     version: "0.1.0",
@@ -59,6 +106,24 @@ export function createInlineReviewServer(
 
             const octokit = await getOctokit();
 
+            const publicationState = await resolveOutputPublicationState(octokit);
+            if (publicationState === "already-published") {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify({
+                      success: true,
+                      skipped: true,
+                      reason: "already-published",
+                      review_output_key: reviewOutputKey,
+                      marker_prefix: REVIEW_OUTPUT_MARKER_PREFIX,
+                    }),
+                  },
+                ],
+              };
+            }
+
             const pr = await octokit.rest.pulls.get({
               owner,
               repo,
@@ -69,7 +134,9 @@ export function createInlineReviewServer(
               owner,
               repo,
               pull_number: prNumber,
-              body,
+              body: reviewOutputKey
+                ? `${body}\n\n${buildReviewOutputMarker(reviewOutputKey)}`
+                : body,
               path,
               side: side || "RIGHT",
               commit_id: pr.data.head.sha,
@@ -88,6 +155,19 @@ export function createInlineReviewServer(
                 typeof octokit.rest.pulls.createReviewComment
               >[0],
             );
+
+            if (reviewOutputKey) {
+              logger?.info(
+                {
+                  deliveryId,
+                  reviewOutputKey,
+                  idempotencyOutcome: "published",
+                  reviewCommentId: result.data.id,
+                  path: result.data.path,
+                },
+                "Published inline review output with idempotency marker",
+              );
+            }
 
             return {
               content: [

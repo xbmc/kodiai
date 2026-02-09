@@ -393,6 +393,8 @@ export function createReviewHandler(deps: {
           eventType: `pull_request.${payload.action}`,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
+          reviewOutputKey,
+          deliveryId: event.id,
         });
 
         logger.info(

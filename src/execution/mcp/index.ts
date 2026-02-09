@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
 import { createCommentServer } from "./comment-server.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCIStatusServer } from "./ci-status-server.ts";
@@ -13,6 +14,9 @@ export function buildMcpServers(deps: {
   repo: string;
   prNumber?: number;
   commentId?: number;
+  reviewOutputKey?: string;
+  deliveryId?: string;
+  logger?: Logger;
 }) {
   const servers: Record<string, ReturnType<typeof createCommentServer>> = {
     github_comment: createCommentServer(
@@ -28,6 +32,9 @@ export function buildMcpServers(deps: {
       deps.owner,
       deps.repo,
       deps.prNumber,
+      deps.reviewOutputKey,
+      deps.deliveryId,
+      deps.logger,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,

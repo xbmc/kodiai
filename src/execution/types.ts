@@ -17,6 +17,10 @@ export type ExecutionContext = {
   triggerBody: string;
   /** Optional pre-built prompt. When set, overrides the default buildPrompt() output. */
   prompt?: string;
+  /** Deterministic idempotency key for one review output batch. */
+  reviewOutputKey?: string;
+  /** Webhook delivery identifier for correlation logging. */
+  deliveryId?: string;
 };
 
 /** The outcome of a Claude execution */

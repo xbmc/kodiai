@@ -50,6 +50,9 @@ export function createExecutor(deps: {
           repo: context.repo,
           prNumber: context.prNumber,
           commentId: context.commentId,
+          reviewOutputKey: context.reviewOutputKey,
+          deliveryId: context.deliveryId,
+          logger,
         });
 
         // Build allowed tools list
