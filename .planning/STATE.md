@@ -12,10 +12,10 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Current Phase:** 11
 **Current Phase Name:** mention-ux-parity
 **Total Phases:** 13
-**Current Plan:** 2
+**Current Plan:** 3
 **Total Plans in Phase:** 4
 **Status:** Ready to execute
-**Progress:** [████████░░] 76%
+**Progress:** [████████░░] 78%
 
 **Last Activity:** 2026-02-09
 **Last Activity Description:** Completed 11-01-PLAN.md
@@ -49,6 +49,7 @@ Milestone: v0.1 MVP (archived)
 | Phase 10 P03 | 3 min | 2 tasks | 7 files |
 | Phase 10 P04 | 2 min | 3 tasks | 4 files |
 | Phase 11 P01 | 5 min | 2 tasks | 5 files |
+| Phase 11-mention-ux-parity P02 | 5 min | 2 tasks | 5 files |
 
 ## Deployment Info
 
@@ -86,6 +87,8 @@ Milestone: v0.1 MVP (archived)
 - [Phase 10]: Treat replay/retry reliability as same-delivery reprocessing tests so downstream idempotency is proven independent of ingress dedup.
 - [Phase 11]: Default mention.acceptClaudeAlias to true so @claude triggers by default
 - [Phase 11]: Make mention config strict to reject unknown mention keys in .kodiai.yml
+- [Phase 11-mention-ux-parity]: [11-02]: Default context bounds: last 20 comments, 800 chars per comment, 1200 chars for PR body
+- [Phase 11-mention-ux-parity]: [11-02]: Mention context build is best-effort; failures proceed with empty context
 
 ## Roadmap Evolution
 
@@ -109,6 +112,6 @@ Resolved:
 
 ## Session
 
-**Last Date:** 2026-02-09T22:53:14.959Z
-**Stopped At:** Completed 11-01-PLAN.md
+**Last Date:** 2026-02-09T23:05:25.304Z
+**Stopped At:** Completed 11-02-PLAN.md
 **Resume File:** None
