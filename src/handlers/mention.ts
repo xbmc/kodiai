@@ -17,6 +17,7 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
+import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
@@ -212,10 +213,22 @@ export function createMentionHandler(deps: {
           logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
         }
 
+        // Build mention context (conversation + PR metadata + inline diff context)
+        // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
+        let mentionContext = "";
+        try {
+          mentionContext = await buildMentionContext(octokit, mention);
+        } catch (err) {
+          logger.warn(
+            { err, surface: mention.surface, issueNumber: mention.issueNumber },
+            "Failed to build mention context; proceeding with empty context",
+          );
+        }
+
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
-          conversationContext: "",
+          mentionContext,
           userQuestion,
           customInstructions: config.mention.prompt,
         });

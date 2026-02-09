@@ -1,69 +1,5 @@
-import type { Octokit } from "@octokit/rest";
 import type { MentionEvent } from "../handlers/mention-types.ts";
-import { sanitizeContent, filterCommentsToTriggerTime } from "../lib/sanitizer.ts";
-
-/**
- * Fetch conversation context appropriate to the mention surface.
- *
- * - Always fetches recent issue/PR comments (general discussion).
- * - For PR surfaces, also fetches PR metadata (title, author, branches, description).
- * - For pr_review_comment, includes the diff hunk context.
- */
-export async function buildConversationContext(
-  octokit: Octokit,
-  mention: MentionEvent,
-): Promise<string> {
-  const lines: string[] = [];
-
-  // Fetch recent issue/PR comments (general discussion)
-  const { data: comments } = await octokit.rest.issues.listComments({
-    owner: mention.owner,
-    repo: mention.repo,
-    issue_number: mention.issueNumber,
-    per_page: 30,
-  });
-
-  // TOCTOU: Only include comments that existed before the trigger event
-  const safeComments = filterCommentsToTriggerTime(comments, mention.commentCreatedAt);
-
-  lines.push("## Conversation History");
-  for (const comment of safeComments) {
-    // Skip bot tracking comments
-    if (comment.body?.startsWith('> **Kodiai**')) continue;
-    lines.push(`### @${comment.user?.login} (${comment.created_at}):`);
-    lines.push(sanitizeContent(comment.body ?? "(empty)"));
-    lines.push("");
-  }
-
-  // For PR surfaces, add PR metadata
-  if (mention.prNumber !== undefined) {
-    const { data: pr } = await octokit.rest.pulls.get({
-      owner: mention.owner,
-      repo: mention.repo,
-      pull_number: mention.prNumber,
-    });
-    lines.push("## Pull Request Context");
-    lines.push(`Title: ${sanitizeContent(pr.title)}`);
-    lines.push(`Author: ${pr.user?.login}`);
-    lines.push(`Branches: ${pr.head.ref} -> ${pr.base.ref}`);
-    if (pr.body) {
-      lines.push(`Description: ${sanitizeContent(pr.body)}`);
-    }
-    lines.push("");
-  }
-
-  // For review comment surface, include the diff hunk
-  if (mention.surface === "pr_review_comment" && mention.diffHunk) {
-    lines.push("## Code Context (Diff Hunk)");
-    lines.push("The triggering comment is on a specific code change:");
-    lines.push("```diff");
-    lines.push(mention.diffHunk);
-    lines.push("```");
-    lines.push("");
-  }
-
-  return lines.join("\n");
-}
+import { sanitizeContent } from "../lib/sanitizer.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -73,11 +9,11 @@ export async function buildConversationContext(
  */
 export function buildMentionPrompt(params: {
   mention: MentionEvent;
-  conversationContext: string;
+  mentionContext: string;
   userQuestion: string;
   customInstructions?: string;
 }): string {
-  const { mention, conversationContext, userQuestion, customInstructions } = params;
+  const { mention, mentionContext, userQuestion, customInstructions } = params;
   const lines: string[] = [];
 
   // Context header
@@ -89,9 +25,9 @@ export function buildMentionPrompt(params: {
   }
   lines.push("");
 
-  // Conversation context (optional)
-  if (conversationContext.trim().length > 0) {
-    lines.push(conversationContext);
+  // Context (optional)
+  if (mentionContext.trim().length > 0) {
+    lines.push(mentionContext);
     lines.push("");
   }
 
@@ -112,7 +48,7 @@ export function buildMentionPrompt(params: {
     "Only post a reply if you have something concrete to contribute (a direct answer, a specific suggestion, or a clear next step).",
   );
   lines.push(
-    "If you cannot provide a useful answer with the information available, DO NOT create a comment.",
+    "If you cannot provide a useful answer with the information available, DO NOT create a comment (do not call any commenting tools).",
   );
   lines.push("");
   lines.push(
