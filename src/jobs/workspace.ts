@@ -96,7 +96,7 @@ export function validateBranchName(branchName: string): void {
 async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefined> {
   try {
     const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
-    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com\//);
+    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com(?:\/|$)/);
     return match?.[1];
   } catch {
     return undefined;
@@ -115,13 +115,13 @@ function redactTokenFromError(err: unknown, token: string | undefined): void {
   // Defense-in-depth: redact any x-access-token URLs even if we could not
   // parse the specific token from the origin remote.
   err.message = err.message.replace(
-    /https:\/\/x-access-token:[^@]+@github\.com\//g,
-    "https://x-access-token:[REDACTED]@github.com/",
+    /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/g,
+    (_m, suffix: string) => `https://x-access-token:[REDACTED]@github.com${suffix ?? ""}`,
   );
   if (err.stack) {
     err.stack = err.stack.replace(
-      /https:\/\/x-access-token:[^@]+@github\.com\//g,
-      "https://x-access-token:[REDACTED]@github.com/",
+      /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/g,
+      (_m, suffix: string) => `https://x-access-token:[REDACTED]@github.com${suffix ?? ""}`,
     );
   }
 }
