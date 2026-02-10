@@ -143,6 +143,7 @@ describe("createMentionHandler fork PR workspace strategy", () => {
           createComment: async () => ({ data: {} }),
         },
         pulls: {
+          list: async () => ({ data: [] }),
           get: async () => ({
             data: {
               title: "Test PR",
@@ -258,6 +259,7 @@ describe("createMentionHandler write intent gating", () => {
           createComment: async () => ({ data: {} }),
         },
         pulls: {
+          list: async () => ({ data: [] }),
           get: async () => ({
             data: {
               title: "Test PR",
@@ -372,6 +374,7 @@ describe("createMentionHandler write intent gating", () => {
           createComment: async () => ({ data: {} }),
         },
         pulls: {
+          list: async () => ({ data: [] }),
           get: async () => ({
             data: {
               title: "Test PR",
@@ -444,6 +447,117 @@ describe("createMentionHandler write intent gating", () => {
     expect(createdPrBase).toBe("main");
     expect(replyBody).toBeDefined();
     expect(replyBody!).toContain("https://example.com/pr/123");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("write intent is idempotent when a PR already exists for the branch", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let executorCalled = false;
+    let replyBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [{ html_url: "https://example.com/pr/existing" }] }),
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async (params: { body: string }) => {
+            replyBody = params.body;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(replyBody).toBeDefined();
+    expect(replyBody!).toContain("Existing PR");
+    expect(replyBody!).toContain("https://example.com/pr/existing");
 
     await workspaceFixture.cleanup();
   });
