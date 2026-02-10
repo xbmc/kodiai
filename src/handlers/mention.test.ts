@@ -24,8 +24,10 @@ function createNoopLogger(): Logger {
 
 async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n") {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));
+  const remoteDir = await mkdtemp(join(tmpdir(), "kodiai-mention-remote-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
+  await $`git -C ${remoteDir} init --bare`.quiet();
   await $`git -C ${dir} config user.email test@example.com`.quiet();
   await $`git -C ${dir} config user.name "Test User"`.quiet();
 
@@ -40,13 +42,16 @@ async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n")
   await $`git -C ${dir} add README.md`.quiet();
   await $`git -C ${dir} commit -m "feature"`.quiet();
 
-  // Use the repo itself as a "remote".
-  await $`git -C ${dir} remote add origin ${dir}`.quiet();
+  // Use a bare repo as the remote so pushes are allowed.
+  await $`git -C ${dir} remote add origin ${remoteDir}`.quiet();
+  await $`git -C ${dir} push -u origin main feature`.quiet();
 
   return {
     dir,
+    remoteDir,
     cleanup: async () => {
       await rm(dir, { recursive: true, force: true });
+      await rm(remoteDir, { recursive: true, force: true });
     },
   };
 }
@@ -103,7 +108,7 @@ describe("createMentionHandler fork PR workspace strategy", () => {
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
       .text()
       .trim();
-    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -219,7 +224,7 @@ describe("createMentionHandler write intent gating", () => {
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
       .text()
       .trim();
-    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -317,19 +322,23 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("write intent reaches executor when write.enabled is true", async () => {
+  test("write intent enabled creates a PR and replies with the link", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
     );
 
     let capturedPrompt: string | undefined;
+    let capturedWriteMode: boolean | undefined;
+    let createdPrHead: string | undefined;
+    let createdPrBase: string | undefined;
+    let replyBody: string | undefined;
 
     const prNumber = 101;
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
       .text()
       .trim();
-    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -372,7 +381,15 @@ describe("createMentionHandler write intent gating", () => {
               base: { ref: "main" },
             },
           }),
-          createReplyForReviewComment: async () => ({ data: {} }),
+          create: async (params: { head: string; base: string }) => {
+            createdPrHead = params.head;
+            createdPrBase = params.base;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async (params: { body: string }) => {
+            replyBody = params.body;
+            return { data: {} };
+          },
         },
       },
     };
@@ -386,11 +403,13 @@ describe("createMentionHandler write intent gating", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async (ctx: { prompt?: string }) => {
+        execute: async (ctx: { prompt?: string; writeMode?: boolean; workspace: { dir: string } }) => {
           capturedPrompt = ctx.prompt;
+          capturedWriteMode = ctx.writeMode;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nfeature\nchanged\n");
           return {
             conclusion: "success",
-            published: true,
+            published: false,
             costUsd: 0,
             numTurns: 1,
             durationMs: 1,
@@ -416,9 +435,15 @@ describe("createMentionHandler write intent gating", () => {
     );
 
     expect(capturedPrompt).toBeDefined();
+    expect(capturedWriteMode).toBe(true);
     expect(capturedPrompt!).toContain("Write-intent request detected");
     expect(capturedPrompt!).toContain("update the README");
     expect(capturedPrompt!).not.toContain("apply:");
+
+    expect(createdPrHead).toBeDefined();
+    expect(createdPrBase).toBe("main");
+    expect(replyBody).toBeDefined();
+    expect(replyBody!).toContain("https://example.com/pr/123");
 
     await workspaceFixture.cleanup();
   });

@@ -10,7 +10,11 @@ import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+import {
+  fetchAndCheckoutPullRequestHeadRef,
+  getGitStatusPorcelain,
+  createBranchCommitAndPush,
+} from "../jobs/workspace.ts";
 import {
   type MentionEvent,
   normalizeIssueComment,
@@ -306,7 +310,23 @@ export function createMentionHandler(deps: {
 
         const writeIntent = parseWriteIntent(userQuestion);
 
-        if (writeIntent.writeIntent && !config.write.enabled) {
+        const isWriteRequest = writeIntent.writeIntent;
+        const writeEnabled = isWriteRequest && config.write.enabled;
+
+        if (isWriteRequest && mention.prNumber === undefined) {
+          const replyBody = wrapInDetails(
+            [
+              "I can only apply changes in a PR context.",
+              "",
+              "Try mentioning me on a pull request (top-level comment or inline diff thread).",
+            ].join("\n"),
+            "kodiai response",
+          );
+          await postMentionReply(replyBody);
+          return;
+        }
+
+        if (isWriteRequest && !config.write.enabled) {
           logger.info(
             {
               surface: mention.surface,
@@ -394,14 +414,25 @@ export function createMentionHandler(deps: {
           );
         }
 
-        const writeInstructions = writeIntent.writeIntent
+        const writeInstructions = writeEnabled
           ? [
               "Write-intent request detected (apply/change).",
-              "In this run: do NOT create branches/commits/PRs and do NOT push changes.",
-              "Instead, propose a concrete, minimal plan (files + steps) and ask for confirmation.",
-              "Keep it concise.",
+              "Write-mode is enabled.",
+              "",
+              "In this run:",
+              "- Make the requested changes by editing files in the workspace.",
+              "- Do NOT run git commands (no branch/commit/push).",
+              "- Do NOT publish any GitHub comments/reviews; publish tools are disabled.",
+              "- Keep changes minimal and focused on the request.",
             ].join("\n")
-          : undefined;
+          : isWriteRequest
+            ? [
+                "Write-intent request detected (apply/change).",
+                "In this run: do NOT create branches/commits/PRs and do NOT push changes.",
+                "Instead, propose a concrete, minimal plan (files + steps) and ask for confirmation.",
+                "Keep it concise.",
+              ].join("\n")
+            : undefined;
 
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
@@ -424,6 +455,7 @@ export function createMentionHandler(deps: {
           // so the executor can enable the in-thread reply MCP tool.
           commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
           deliveryId: event.id,
+          writeMode: writeEnabled,
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,
@@ -435,6 +467,7 @@ export function createMentionHandler(deps: {
             issueNumber: mention.issueNumber,
             conclusion: result.conclusion,
             published: result.published,
+            writeEnabled,
             costUsd: result.costUsd,
             numTurns: result.numTurns,
             durationMs: result.durationMs,
@@ -443,9 +476,65 @@ export function createMentionHandler(deps: {
           "Mention execution completed",
         );
 
+        // Write-mode: trusted code publishes the branch + PR and replies with a link.
+        if (writeEnabled && mention.prNumber !== undefined) {
+          const status = await getGitStatusPorcelain(workspace.dir);
+          if (status.trim().length === 0) {
+            const replyBody = wrapInDetails(
+              [
+                "I didn't end up making any file changes.",
+                "",
+                "If you still want a change, re-run with a more specific request.",
+              ].join("\n"),
+              "kodiai response",
+            );
+            await postMentionReply(replyBody);
+            return;
+          }
+
+          const shortDelivery = event.id.slice(0, 8);
+          const branchName = `kodiai/apply/pr-${mention.prNumber}-${shortDelivery}`;
+          const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
+
+          const pushed = await createBranchCommitAndPush({
+            dir: workspace.dir,
+            branchName,
+            commitMessage,
+          });
+
+          const prTitle = `kodiai: apply changes for PR #${mention.prNumber}`;
+          const prBody = [
+            "Requested via mention write intent.",
+            "",
+            `Keyword: ${writeIntent.keyword ?? "apply/change"}`,
+            "",
+            `Request: ${writeIntent.request}`,
+            "",
+            `Source PR: #${mention.prNumber}`,
+            `Delivery: ${event.id}`,
+            `Commit: ${pushed.headSha}`,
+          ].join("\n");
+
+          const { data: createdPr } = await octokit.rest.pulls.create({
+            owner: mention.owner,
+            repo: mention.repo,
+            title: prTitle,
+            head: pushed.branchName,
+            base: mention.baseRef ?? "main",
+            body: prBody,
+          });
+
+          const replyBody = wrapInDetails(
+            [`Opened PR: ${createdPr.html_url}`].join("\n"),
+            "kodiai response",
+          );
+          await postMentionReply(replyBody);
+          return;
+        }
+
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
-        if (result.conclusion === "success" && !result.published) {
+        if (!writeEnabled && result.conclusion === "success" && !result.published) {
           const fallbackBody = wrapInDetails(
             [
               "I saw your mention, but I didn't publish a reply automatically.",
