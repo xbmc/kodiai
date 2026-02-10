@@ -12,14 +12,14 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Current Phase:** 13
 **Current Phase Name:** xbmc-cutover
 **Total Phases:** 13
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 3
-**Status:** Paused — awaiting human action
-**Progress:** [█████████░] 92%
+**Status:** Ready to execute
+**Progress:** [██████████] 97%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 13 plan 01 started; xbmc cutover runbook written; awaiting GitHub App install + webhook delivery
-**Paused At:** 13-xbmc-cutover-01 checkpoint:human-action
+**Last Activity Description:** Phase 13 plan 01 complete; Kodiai GitHub App installed on xbmc/xbmc and webhook deliveries confirmed healthy
+**Paused At:** None
 
 Milestone: v0.1 MVP (archived)
 
@@ -55,6 +55,7 @@ Milestone: v0.1 MVP (archived)
 | Phase 12-fork-pr-robustness P01 | 3 min | 2 tasks | 3 files |
 | Phase 12-fork-pr-robustness P02 | 5 min | 2 tasks | 3 files |
 | Phase 12-fork-pr-robustness P03 | 6 min | 2 tasks | 5 files |
+| Phase 13-xbmc-cutover P01 | 1 min | 2 tasks | 5 files |
 
 ## Deployment Info
 
@@ -100,6 +101,7 @@ Milestone: v0.1 MVP (archived)
 - [Phase 12-fork-pr-robustness]: Use base-clone + pull/<n>/head checkout for all PR mention workspaces (simpler and fork-safe)
 - [Phase 12]: Use descending sort + bounded pagination for GitHub list endpoints to keep large inputs deterministic without unbounded API usage.
 - [Phase 12]: Skip auto-approval when review-comment scanning hits safety caps (avoid false approvals when scan is incomplete).
+- [Phase 13-xbmc-cutover]: Use GitHub App deliveries UI + ACA logs as primary webhook verification path — gh delivery APIs may require admin:repo_hook scope; UI+logs provide reliable acceptance evidence
 
 ## Roadmap Evolution
 
@@ -123,6 +125,6 @@ Resolved:
 
 ## Session
 
-**Last Date:** 2026-02-10T03:38:53.972Z
-**Stopped At:** Checkpoint 13-xbmc-cutover-01: Install Kodiai GitHub App on xbmc/xbmc + confirm webhook delivery
-**Resume File:** .planning/phases/13-xbmc-cutover/13-01-PLAN.md
+**Last Date:** 2026-02-10T05:16:06.129Z
+**Stopped At:** Completed 13-xbmc-cutover-01-PLAN.md
+**Resume File:** None
