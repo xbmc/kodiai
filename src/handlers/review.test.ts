@@ -7,7 +7,7 @@ import type { Logger } from "pino";
 import { createReviewHandler } from "./review.ts";
 import { buildReviewOutputMarker } from "./review-idempotency.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue, WorkspaceManager } from "../jobs/types.ts";
+import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 
 function createNoopLogger(): Logger {
@@ -586,5 +586,216 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(createdReviews[0]?.body ?? "").toContain("-->");
     // Silence unused var lint (marker is illustrative; body checks are the assertion)
     expect(marker).toContain("kodiai:review-output-key");
+  });
+});
+
+describe("createReviewHandler fork PR workspace strategy", () => {
+  test("fork PRs clone base branch and fetch pull/<n>/head instead of cloning the fork", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createCalls: CloneOptions[] = [];
+
+    // Expose a PR head ref on the "remote" (origin points to this same repo path)
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet()).text().trim();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/101/head ${featureSha}`.quiet();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        createCalls.push(options);
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    let executeCount = 0;
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-fork",
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Fork PR",
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "forker/repo",
+              name: "repo",
+              owner: { login: "forker" },
+            },
+          },
+        },
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executeCount).toBe(1);
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.owner).toBe("acme");
+    expect(createCalls[0]?.repo).toBe("repo");
+    expect(createCalls[0]?.ref).toBe("main");
+
+    const branch = (await $`git -C ${workspaceFixture.dir} rev-parse --abbrev-ref HEAD`.quiet())
+      .text()
+      .trim();
+    expect(branch).toBe("pr-review");
+
+    const headSubject = (await $`git -C ${workspaceFixture.dir} show -s --pretty=%s HEAD`.quiet())
+      .text()
+      .trim();
+    expect(headSubject).toBe("feature");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("non-fork PRs still clone the head branch directly (no pull/<n>/head checkout)", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createCalls: CloneOptions[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        createCalls.push(options);
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-nonfork",
+        }),
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.owner).toBe("acme");
+    expect(createCalls[0]?.repo).toBe("repo");
+    expect(createCalls[0]?.ref).toBe("feature");
+
+    const branch = (await $`git -C ${workspaceFixture.dir} rev-parse --abbrev-ref HEAD`.quiet())
+      .text()
+      .trim();
+    expect(branch).toBe("feature");
+
+    const prReviewRef = await $`git -C ${workspaceFixture.dir} show-ref --verify --quiet refs/heads/pr-review`.nothrow();
+    expect(prReviewRef.exitCode).toBe(1);
+
+    await workspaceFixture.cleanup();
   });
 });
