@@ -14,11 +14,11 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Total Phases:** 20
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Ready to execute
-**Progress:** [          ] 0%
+**Status:** Complete
+**Progress:** [██████████] 100%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Started Phase 20: write-mode UX + guardrails + observability + CI
+**Last Activity Description:** Phase 20 plan 01 complete; write-mode UX + guardrails + CI
 **Paused At:** None
 
 Milestone: v0.2 (planning)
@@ -26,9 +26,9 @@ Milestone: v0.2 (planning)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 35
+- Total plans completed: 36
 - Average duration: 3min
-- Total execution time: 214min
+- Total execution time: 244min
 
 **By Phase:**
 
@@ -64,6 +64,7 @@ Milestone: v0.2 (planning)
 | Phase 17-durability-locking P01 | 20 min | 3 tasks | 2 files |
 | Phase 18-ops-evidence P01 | 15 min | 3 tasks | 4 files |
 | Phase 19-write-confirmation P01 | 15 min | 3 tasks | 4 files |
+| Phase 20-next-improvements P01 | 30 min | 5 tasks | 8 files |
 
 ## Deployment Info
 
