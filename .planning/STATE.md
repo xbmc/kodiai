@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 13
-**Current Phase Name:** xbmc-cutover
-**Total Phases:** 13
-**Current Plan:** 3
-**Total Plans in Phase:** 3
+**Current Phase:** 14
+**Current Phase Name:** write-mode-foundations
+**Total Phases:** 14
+**Current Plan:** 1
+**Total Plans in Phase:** 1
 **Status:** Complete
 **Progress:** [██████████] 100%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 13 plans 02-03 complete; legacy Claude workflows removed and xbmc ops runbook added
+**Last Activity Description:** Phase 14 plan 01 complete; write-mode config scaffold + mention write-intent gating
 **Paused At:** None
 
 Milestone: v0.2 (planning)
@@ -26,9 +26,9 @@ Milestone: v0.2 (planning)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 29
+- Total plans completed: 30
 - Average duration: 3min
-- Total execution time: 104min
+- Total execution time: 119min
 
 **By Phase:**
 
@@ -58,6 +58,7 @@ Milestone: v0.2 (planning)
 | Phase 13-xbmc-cutover P01 | 1 min | 2 tasks | 5 files |
 | Phase 13-xbmc-cutover P02 | 10 min | 2 tasks | 0 files |
 | Phase 13-xbmc-cutover P03 | 8 min | 1 tasks | 1 files |
+| Phase 14-write-mode-foundations P01 | 15 min | 3 tasks | 4 files |
 
 ## Deployment Info
 

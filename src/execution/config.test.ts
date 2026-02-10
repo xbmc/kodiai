@@ -10,6 +10,7 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     const config = await loadRepoConfig(dir);
     expect(config.model).toBe("claude-sonnet-4-5-20250929");
     expect(config.maxTurns).toBe(25);
+    expect(config.write.enabled).toBe(false);
     expect(config.review.enabled).toBe(true);
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
@@ -36,6 +37,7 @@ test("reads and validates .kodiai.yml when present", async () => {
     const config = await loadRepoConfig(dir);
     expect(config.model).toBe("claude-opus-4-20250514");
     expect(config.maxTurns).toBe(10);
+    expect(config.write.enabled).toBe(false); // default preserved
     expect(config.review.autoApprove).toBe(true);
     expect(config.review.enabled).toBe(true); // default preserved
     expect(config.review.triggers.onOpened).toBe(true); // default preserved
@@ -43,6 +45,27 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.review.triggers.onReviewRequested).toBe(true); // default preserved
     expect(config.mention.enabled).toBe(true); // default preserved
     expect(config.mention.acceptClaudeAlias).toBe(true); // default preserved
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("accepts write.enabled: true", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "write:\n  enabled: true\n");
+    const config = await loadRepoConfig(dir);
+    expect(config.write.enabled).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects unsupported write keys", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "write:\n  enabled: false\n  mode: all\n");
+    await expect(loadRepoConfig(dir)).rejects.toThrow("Invalid .kodiai.yml");
   } finally {
     await rm(dir, { recursive: true });
   }

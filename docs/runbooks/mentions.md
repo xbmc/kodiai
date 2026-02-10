@@ -102,6 +102,27 @@ Notes:
 - `@claude` is only accepted if repo config allows it (`mention.acceptClaudeAlias`).
 - If the mention text is just `@kodiai` / `@claude` with no question, the handler will skip.
 
+### Write-intent gating (apply/change)
+
+Mentions support an explicit "write intent" prefix for future mention-driven changes:
+
+- `apply: <request>`
+- `change: <request>`
+
+Behavior today:
+
+- If `write.enabled` is **false** (default), Kodiai will refuse to apply changes and will reply with a short message explaining how to enable write mode.
+- In logs, expect a gate skip with:
+  - `gate=write-mode`
+  - `skipReason=write-disabled`
+
+To enable for a repo, add to `.kodiai.yml`:
+
+```yml
+write:
+  enabled: true
+```
+
 ## 4) Verify Eyes Reaction Attempt (Non-Blocking)
 
 The handler tries to add an ":eyes:" reaction to the trigger comment.

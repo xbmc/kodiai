@@ -6,6 +6,16 @@ const repoConfigSchema = z.object({
   maxTurns: z.number().min(1).max(100).default(25),
   timeoutSeconds: z.number().min(30).max(1800).default(300),
   systemPromptAppend: z.string().optional(),
+  /**
+   * Write-mode gates mention-driven code modifications (branch/commit/push).
+   * This is deny-by-default. Enabling this does not affect review-only behavior.
+   */
+  write: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .strict()
+    .default({ enabled: false }),
   review: z
     .object({
       enabled: z.boolean().default(true),
