@@ -18,7 +18,7 @@ function redactToken(message: string, token: string): string {
  * Validate a git branch name to prevent injection attacks and invalid refs.
  * Throws a descriptive Error if the branch name is invalid.
  */
-function validateBranchName(branchName: string): void {
+export function validateBranchName(branchName: string): void {
   if (!branchName || branchName.trim().length === 0) {
     throw new Error("Branch name must not be empty or whitespace-only");
   }
@@ -90,6 +90,60 @@ function validateBranchName(branchName: string): void {
     throw new Error(
       `Branch name must not contain consecutive slashes '//': ${branchName}`,
     );
+  }
+}
+
+async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefined> {
+  try {
+    const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
+    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com\//);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function redactTokenFromError(err: unknown, token: string | undefined): void {
+  if (!token) return;
+  if (!(err instanceof Error)) return;
+  err.message = redactToken(err.message, token);
+  if (err.stack) err.stack = redactToken(err.stack, token);
+}
+
+export async function getGitStatusPorcelain(dir: string): Promise<string> {
+  return (await $`git -C ${dir} status --porcelain`.quiet()).text();
+}
+
+export async function createBranchCommitAndPush(options: {
+  dir: string;
+  branchName: string;
+  commitMessage: string;
+  remote?: string;
+}): Promise<{ branchName: string; headSha: string }> {
+  const { dir, branchName, commitMessage, remote = "origin" } = options;
+
+  validateBranchName(branchName);
+
+  const token = await getOriginTokenFromRemoteUrl(dir);
+
+  try {
+    await $`git -C ${dir} checkout -b ${branchName}`.quiet();
+    await $`git -C ${dir} add -A`.quiet();
+
+    // Ensure there is something to commit.
+    const staged = (await $`git -C ${dir} diff --cached --name-only`.quiet()).text().trim();
+    if (staged.length === 0) {
+      throw new Error("No staged changes to commit");
+    }
+
+    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
+    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    await $`git -C ${dir} push ${remote} HEAD:${branchName}`.quiet();
+
+    return { branchName, headSha };
+  } catch (err) {
+    redactTokenFromError(err, token);
+    throw err;
   }
 }
 
