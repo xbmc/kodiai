@@ -14,11 +14,11 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Total Phases:** 17
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Ready to execute
-**Progress:** [          ] 0%
+**Status:** Complete
+**Progress:** [██████████] 100%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Started Phase 17: durability + idempotency for write-mode
+**Last Activity Description:** Phase 17 plan 01 complete; idempotent write-mode by trigger comment
 **Paused At:** None
 
 Milestone: v0.2 (planning)
@@ -26,9 +26,9 @@ Milestone: v0.2 (planning)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 32
+- Total plans completed: 33
 - Average duration: 3min
-- Total execution time: 164min
+- Total execution time: 184min
 
 **By Phase:**
 
@@ -61,6 +61,7 @@ Milestone: v0.2 (planning)
 | Phase 14-write-mode-foundations P01 | 15 min | 3 tasks | 4 files |
 | Phase 15-write-pipeline P01 | 20 min | 3 tasks | 6 files |
 | Phase 16-write-guardrails P01 | 25 min | 3 tasks | 6 files |
+| Phase 17-durability-locking P01 | 20 min | 3 tasks | 2 files |
 
 ## Deployment Info
 
