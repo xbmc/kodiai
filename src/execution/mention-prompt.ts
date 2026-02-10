@@ -71,6 +71,9 @@ export function buildMentionPrompt(params: {
     lines.push(
       `Use: pullRequestNumber=${mention.prNumber} and commentId=${mention.commentId}.`,
     );
+    lines.push(
+      "If the thread reply tool fails for any reason, fall back to posting a single top-level reply using `mcp__github_comment__create_comment` on the PR.",
+    );
   } else {
     lines.push(
       `Write your response by creating a new top-level comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
