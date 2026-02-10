@@ -66,8 +66,11 @@ export function createMentionHandler(deps: {
     }
 
     // Fast filter: ignore if neither @appSlug nor @claude appear.
-    // Repo config may opt out of @claude later; we verify inside the job after loading config.
-    if (!containsMention(mention.commentBody, possibleHandles)) return;
+    // NOTE: Use a simple substring check here to avoid regex edge cases.
+    // We still do the authoritative accepted-handles check inside the job after loading config.
+    const bodyLower = mention.commentBody.toLowerCase();
+    const appHandle = `@${appSlug.toLowerCase()}`;
+    if (!bodyLower.includes(appHandle) && !bodyLower.includes("@claude")) return;
 
     // No tracking comment. Tracking is via eyes reaction only.
     // The response will be posted as a new comment.
@@ -145,7 +148,12 @@ export function createMentionHandler(deps: {
         const acceptedHandles = acceptClaudeAlias ? [appSlug, "claude"] : [appSlug];
 
         // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
-        if (!containsMention(mention.commentBody, acceptedHandles)) {
+        // Use substring match to align with the fast filter.
+        const acceptedBodyLower = mention.commentBody.toLowerCase();
+        const accepted = acceptedHandles
+          .map((h) => (h.startsWith("@") ? h : `@${h}`))
+          .map((h) => h.toLowerCase());
+        if (!accepted.some((h) => acceptedBodyLower.includes(h))) {
           logger.info(
             {
               surface: mention.surface,
