@@ -111,7 +111,7 @@ export function buildMentionPrompt(params: {
     "  ",
     "  Decision: APPROVE | NOT APPROVED",
     "  Issues:",
-    "  - (1) <issue summary> (include file:line if applicable)",
+    "  - (1) [critical|major|minor] <issue summary> (include file:line if applicable)",
     "  ",
     "  </details>",
     "  ```",

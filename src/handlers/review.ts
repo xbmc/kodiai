@@ -411,6 +411,7 @@ export function createReviewHandler(deps: {
           {
             prNumber: pr.number,
             conclusion: result.conclusion,
+            published: result.published,
             costUsd: result.costUsd,
             numTurns: result.numTurns,
             durationMs: result.durationMs,
@@ -439,6 +440,21 @@ export function createReviewHandler(deps: {
         // Silent approval: only when autoApprove is enabled and execution succeeded
         if (config.review.autoApprove && result.conclusion === "success") {
           try {
+            // If the review execution published any output (summary comment, inline comments, etc.),
+            // do NOT auto-approve. Auto-approval is only valid when the bot produced zero output.
+            if (result.published) {
+              logger.info(
+                {
+                  prNumber: pr.number,
+                  gate: "auto-approve",
+                  gateResult: "skipped",
+                  skipReason: "output-published",
+                },
+                "Skipping auto-approval because review output was published",
+              );
+              return;
+            }
+
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             const appSlug = githubApp.getAppSlug();
 

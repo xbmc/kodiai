@@ -96,7 +96,7 @@ export function validateBranchName(branchName: string): void {
 async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefined> {
   try {
     const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
-    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com\//);
+    const match = url.match(/https:\/\/x-access-token:([^@]+)@github\.com(?:\/|$)/);
     return match?.[1];
   } catch {
     return undefined;
@@ -104,10 +104,26 @@ async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefi
 }
 
 function redactTokenFromError(err: unknown, token: string | undefined): void {
-  if (!token) return;
   if (!(err instanceof Error)) return;
-  err.message = redactToken(err.message, token);
-  if (err.stack) err.stack = redactToken(err.stack, token);
+
+  // Prefer exact token replacement when known.
+  if (token) {
+    err.message = redactToken(err.message, token);
+    if (err.stack) err.stack = redactToken(err.stack, token);
+  }
+
+  // Defense-in-depth: redact any x-access-token URLs even if we could not
+  // parse the specific token from the origin remote.
+  err.message = err.message.replace(
+    /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/g,
+    (_m, suffix: string) => `https://x-access-token:[REDACTED]@github.com${suffix ?? ""}`,
+  );
+  if (err.stack) {
+    err.stack = err.stack.replace(
+      /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/g,
+      (_m, suffix: string) => `https://x-access-token:[REDACTED]@github.com${suffix ?? ""}`,
+    );
+  }
 }
 
 export async function getGitStatusPorcelain(dir: string): Promise<string> {
@@ -199,7 +215,7 @@ export function createWorkspaceManager(
       // Create temp directory
       const dir = await mkdtemp(join(tmpdir(), "kodiai-"));
 
-      let token: string;
+      let token: string | undefined;
       try {
         // Get installation token for clone auth
         token = await githubApp.getInstallationToken(installationId);
@@ -218,12 +234,7 @@ export function createWorkspaceManager(
         await rm(dir, { recursive: true, force: true }).catch(() => {});
 
         // Redact token from error messages to prevent leakage
-        if (error instanceof Error && token!) {
-          error.message = redactToken(error.message, token!);
-          if (error.stack) {
-            error.stack = redactToken(error.stack, token!);
-          }
-        }
+        redactTokenFromError(error, token);
         throw error;
       }
 
