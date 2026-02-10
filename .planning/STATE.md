@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 20
-**Current Phase Name:** next-improvements
-**Total Phases:** 20
+**Current Phase:** 21
+**Current Phase Name:** polish
+**Total Phases:** 21
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 20 plan 01 complete; write-mode UX + guardrails + CI
+**Last Activity Description:** Started Phase 21: CI strictness + rereview UX + smoke tests
 **Paused At:** None
 
 Milestone: v0.2 (planning)
