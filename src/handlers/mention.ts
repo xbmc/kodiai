@@ -693,6 +693,10 @@ export function createMentionHandler(deps: {
             const headRef = mention.headRef;
             const idempotencyMarker = `kodiai-write-output-key: ${writeOutputKey}`;
 
+            // NOTE: The in-flight lock is acquired earlier for all write-mode requests.
+            // It is in-process only; in multi-replica deployments, two replicas can still
+            // do duplicate work concurrently. This project currently deploys with max-replicas=1.
+
             try {
               await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
               const recentMessages = (
@@ -773,7 +777,14 @@ export function createMentionHandler(deps: {
                 [`Updated PR: ${sourcePrUrl}`].join("\n"),
                 "kodiai response",
               );
-              await postMentionReply(replyBody);
+              try {
+                await postMentionReply(replyBody);
+              } catch (replyErr) {
+                logger.warn(
+                  { err: replyErr, prNumber: mention.prNumber, headRef },
+                  "Applied changes but failed to post confirmation reply",
+                );
+              }
               return;
             } catch (err) {
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.

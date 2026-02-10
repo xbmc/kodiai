@@ -196,7 +196,8 @@ function shannonEntropy(s: string): number {
 }
 
 function findHighEntropyTokens(addedLines: string[]): string | undefined {
-  const tokenRe = /[A-Za-z0-9_\-=]{32,}/g;
+  // Include base64-ish characters (+,/ and =) since real secrets often use them.
+  const tokenRe = /[A-Za-z0-9_\-=+/\/]{32,}/g;
   for (const line of addedLines) {
     const matches = line.match(tokenRe) ?? [];
     for (const m of matches) {
@@ -213,10 +214,10 @@ function findHighEntropyTokens(addedLines: string[]): string | undefined {
       const hasDigit = /\d/.test(m);
       if (!hasLetter || !hasDigit) continue;
 
-      if (m.length < 40) continue;
+      if (m.length < 32) continue;
 
       const ent = shannonEntropy(m);
-      if (ent >= 4.6) {
+      if (ent >= 4.5) {
         return `High-entropy token-like string detected (entropy=${ent.toFixed(2)}, length=${m.length})`;
       }
     }
