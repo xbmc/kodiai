@@ -12,13 +12,13 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Current Phase:** 13
 **Current Phase Name:** xbmc-cutover
 **Total Phases:** 13
-**Current Plan:** 2
+**Current Plan:** 3
 **Total Plans in Phase:** 3
-**Status:** Ready to execute
-**Progress:** [██████████] 97%
+**Status:** Complete
+**Progress:** [██████████] 100%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 13 plan 01 complete; Kodiai GitHub App installed on xbmc/xbmc and webhook deliveries confirmed healthy
+**Last Activity Description:** Phase 13 plans 02-03 complete; legacy Claude workflows removed and xbmc ops runbook added
 **Paused At:** None
 
 Milestone: v0.1 MVP (archived)
@@ -26,9 +26,9 @@ Milestone: v0.1 MVP (archived)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 27
+- Total plans completed: 29
 - Average duration: 3min
-- Total execution time: 86min
+- Total execution time: 104min
 
 **By Phase:**
 
@@ -56,6 +56,8 @@ Milestone: v0.1 MVP (archived)
 | Phase 12-fork-pr-robustness P02 | 5 min | 2 tasks | 3 files |
 | Phase 12-fork-pr-robustness P03 | 6 min | 2 tasks | 5 files |
 | Phase 13-xbmc-cutover P01 | 1 min | 2 tasks | 5 files |
+| Phase 13-xbmc-cutover P02 | 10 min | 2 tasks | 0 files |
+| Phase 13-xbmc-cutover P03 | 8 min | 1 tasks | 1 files |
 
 ## Deployment Info
 
