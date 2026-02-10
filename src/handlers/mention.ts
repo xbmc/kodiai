@@ -4,11 +4,13 @@ import type {
   PullRequestReviewSubmittedEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
+import { $ } from "bun";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
+import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import {
   type MentionEvent,
   normalizeIssueComment,
@@ -119,41 +121,56 @@ export function createMentionHandler(deps: {
         let cloneRepo = mention.repo;
         let cloneRef: string | undefined;
         let cloneDepth = 1;
+        let usesPrRef = false;
 
         if (mention.prNumber !== undefined) {
           cloneDepth = 50; // PR mentions need diff context
 
-          if (mention.headRef) {
-            // Review comment or review body -- PR details available in payload
-            cloneRef = mention.headRef;
-            if (mention.headRepoOwner && mention.headRepoName) {
-              cloneOwner = mention.headRepoOwner;
-              cloneRepo = mention.headRepoName;
-            }
-          } else {
-            // issue_comment on PR -- must fetch PR details (Pitfall 2)
+          // Ensure PR details are available (issue_comment on PR requires a pulls.get fetch).
+          if (!mention.baseRef || !mention.headRef) {
             const { data: pr } = await octokit.rest.pulls.get({
               owner: mention.owner,
               repo: mention.repo,
               pull_number: mention.prNumber,
             });
-            cloneRef = pr.head.ref;
-            if (pr.head.repo) {
-              cloneOwner = pr.head.repo.owner.login;
-              cloneRepo = pr.head.repo.name;
-            }
-            // Populate mention with fetched data for context builder
             mention.headRef = pr.head.ref;
             mention.baseRef = pr.base.ref;
             mention.headRepoOwner = pr.head.repo?.owner.login;
             mention.headRepoName = pr.head.repo?.name;
           }
+
+          // Fork-safe workspace strategy: clone base repo at base ref, then fetch+checkout
+          // refs/pull/<n>/head from the base repo.
+          // This avoids relying on access to contributor forks and mirrors the review handler.
+          cloneOwner = mention.owner;
+          cloneRepo = mention.repo;
+          cloneRef = mention.baseRef;
+          usesPrRef = true;
         } else {
           // Pure issue mention -- clone default branch
           const repoPayload = event.payload as Record<string, unknown>;
           const repository = repoPayload.repository as Record<string, unknown> | undefined;
           cloneRef = (repository?.default_branch as string) ?? "main";
         }
+
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            issueNumber: mention.issueNumber,
+            prNumber: mention.prNumber,
+            cloneOwner,
+            cloneRepo,
+            cloneRef,
+            cloneDepth,
+            usesPrRef,
+            workspaceStrategy: usesPrRef
+              ? "base-clone+pull-ref-fetch"
+              : "direct-branch-clone",
+          },
+          "Creating workspace for mention execution",
+        );
 
         // Clone workspace
         workspace = await workspaceManager.create(event.installationId, {
@@ -162,6 +179,21 @@ export function createMentionHandler(deps: {
           ref: cloneRef!,
           depth: cloneDepth,
         });
+
+        // PR mentions: fetch and checkout PR head ref from base repo.
+        if (usesPrRef && mention.prNumber !== undefined) {
+          await fetchAndCheckoutPullRequestHeadRef({
+            dir: workspace.dir,
+            prNumber: mention.prNumber,
+            localBranch: "pr-mention",
+          });
+
+          // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
+          // origin/BASE...HEAD even in --single-branch workspaces.
+          if (mention.baseRef) {
+            await $`git -C ${workspace.dir} fetch origin ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
+          }
+        }
 
         // Load repo config
         const config = await loadRepoConfig(workspace.dir);
