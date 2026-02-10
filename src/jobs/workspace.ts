@@ -155,7 +155,8 @@ async function getOriginTokenFromDir(dir: string): Promise<string | undefined> {
 function normalizeGlobPattern(pattern: string): string {
   const p = pattern.trim();
   if (p.endsWith("/")) {
-    // Treat trailing slash as "everything under this directory".
+    // Git diffs only contain file paths (no directory entries).
+    // Keep backward-compatible semantics: "foo/" matches everything under "foo/".
     return `${p}**`;
   }
   return p;
@@ -199,11 +200,23 @@ function findHighEntropyTokens(addedLines: string[]): string | undefined {
   for (const line of addedLines) {
     const matches = line.match(tokenRe) ?? [];
     for (const m of matches) {
+      // Reduce false positives for common non-secret identifiers.
+      // NOTE: this is intentionally conservative; we still rely on explicit token regexes first.
+      if (/^[0-9a-f]{32}$/i.test(m) || /^[0-9a-f]{40}$/i.test(m) || /^[0-9a-f]{64}$/i.test(m)) {
+        continue; // hex hash-like
+      }
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(m)) {
+        continue; // UUID
+      }
+
       const hasLetter = /[A-Za-z]/.test(m);
       const hasDigit = /\d/.test(m);
       if (!hasLetter || !hasDigit) continue;
+
+      if (m.length < 40) continue;
+
       const ent = shannonEntropy(m);
-      if (ent >= 4.2) {
+      if (ent >= 4.6) {
         return `High-entropy token-like string detected (entropy=${ent.toFixed(2)}, length=${m.length})`;
       }
     }

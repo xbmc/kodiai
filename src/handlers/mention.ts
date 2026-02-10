@@ -681,9 +681,10 @@ export function createMentionHandler(deps: {
 
           const sourcePrUrl = `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`;
 
+          const normalizeName = (s: string | undefined): string => (s ?? "").trim().toLowerCase();
           const sameRepoHead =
-            (mention.headRepoOwner ?? "").toLowerCase() === mention.owner.toLowerCase() &&
-            (mention.headRepoName ?? "").toLowerCase() === mention.repo.toLowerCase() &&
+            normalizeName(mention.headRepoOwner) === normalizeName(mention.owner) &&
+            normalizeName(mention.headRepoName) === normalizeName(mention.repo) &&
             typeof mention.headRef === "string" &&
             mention.headRef.length > 0;
 
@@ -775,6 +776,44 @@ export function createMentionHandler(deps: {
               await postMentionReply(replyBody);
               return;
             } catch (err) {
+              // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
+              try {
+                await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+                const recentMessages = (
+                  await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
+                )
+                  .text();
+                if (recentMessages.includes(idempotencyMarker)) {
+                  logger.info(
+                    {
+                      evidenceType: "write-mode",
+                      outcome: "skipped-idempotent",
+                      deliveryId: event.id,
+                      installationId: event.installationId,
+                      repo: `${mention.owner}/${mention.repo}`,
+                      sourcePrNumber: mention.prNumber,
+                      triggerCommentId: mention.commentId,
+                      triggerCommentUrl,
+                      writeOutputKey,
+                      prUrl: sourcePrUrl,
+                    },
+                    "Evidence bundle",
+                  );
+
+                  const replyBody = wrapInDetails(
+                    [`Already applied (idempotent): ${sourcePrUrl}`].join("\n"),
+                    "kodiai response",
+                  );
+                  await postMentionReply(replyBody);
+                  return;
+                }
+              } catch (lookupErr) {
+                logger.warn(
+                  { err: lookupErr, prNumber: mention.prNumber, headRef },
+                  "Failed to re-check idempotency marker after push failure",
+                );
+              }
+
               logger.warn(
                 { err, prNumber: mention.prNumber, headRef },
                 "Failed to push to PR head branch; falling back to bot PR",
