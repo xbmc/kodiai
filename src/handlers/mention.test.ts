@@ -441,12 +441,122 @@ describe("createMentionHandler write intent gating", () => {
     expect(capturedWriteMode).toBe(true);
     expect(capturedPrompt!).toContain("Write-intent request detected");
     expect(capturedPrompt!).toContain("update the README");
-    expect(capturedPrompt!).not.toContain("apply:");
+    expect(capturedPrompt!).not.toContain("@kodiai apply: update the README");
 
     expect(createdPrHead).toBeDefined();
     expect(createdPrBase).toBe("main");
     expect(replyBody).toBeDefined();
     expect(replyBody!).toContain("https://example.com/pr/123");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("plan intent does not enable writeMode or create a PR", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let capturedWriteMode: boolean | undefined;
+    let prCreates = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          create: async () => {
+            prCreates++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { writeMode?: boolean }) => {
+          capturedWriteMode = ctx.writeMode;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai plan: update the README",
+      }),
+    );
+
+    expect(capturedWriteMode).toBe(false);
+    expect(prCreates).toBe(0);
 
     await workspaceFixture.cleanup();
   });
