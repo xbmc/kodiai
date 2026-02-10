@@ -9,6 +9,29 @@ export function createReviewCommentThreadServer(
   repo: string,
   onPublish?: () => void,
 ) {
+  function sanitizeDecisionBody(wrappedBody: string): string {
+    // Mirror github_comment sanitizer for decision-only responses.
+    if (!wrappedBody.includes("<summary>kodiai response</summary>")) return wrappedBody;
+    if (!wrappedBody.includes("Decision:")) return wrappedBody;
+    // Let the comment server enforce full rules for top-level comments; here we just
+    // prevent verbose prose after Issues: none.
+    const lines = wrappedBody.split("\n");
+    const end = lines.findIndex((l) => l.trim() === "</details>");
+    if (end === -1) return wrappedBody;
+
+    // If approved, require Issues: none and nothing else.
+    const content = lines.slice(0, end).map((l) => l.trim());
+    const decision = content.find((l) => l.startsWith("Decision:"))?.split(":", 2)[1]?.trim();
+    if (decision === "APPROVE") {
+      const issuesNone = content.includes("Issues: none");
+      if (!issuesNone) {
+        throw new Error("Invalid kodiai response: APPROVE must include 'Issues: none'");
+      }
+    }
+
+    return wrappedBody;
+  }
+
   return createSdkMcpServer({
     name: "reviewCommentThread",
     version: "0.1.0",
@@ -32,7 +55,7 @@ export function createReviewCommentThreadServer(
               repo,
               pull_number: pullRequestNumber,
               comment_id: commentId,
-              body: wrapInDetails(body, "kodiai response"),
+              body: sanitizeDecisionBody(wrapInDetails(body, "kodiai response")),
             });
 
             onPublish?.();

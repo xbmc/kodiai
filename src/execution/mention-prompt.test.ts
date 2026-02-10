@@ -35,5 +35,6 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("Decision: APPROVE | NOT APPROVED");
     expect(prompt).toContain("Issues:");
     expect(prompt).toContain("Issues: none");
+    expect(prompt).toContain("path/to/file.ts");
   });
 });
