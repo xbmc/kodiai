@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 19
-**Current Phase Name:** write-confirmation
-**Total Phases:** 19
+**Current Phase:** 20
+**Current Phase Name:** next-improvements
+**Total Phases:** 20
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 19 plan 01 complete; plan-only mention intent
+**Last Activity Description:** Started Phase 20: write-mode UX + guardrails + observability + CI
 **Paused At:** None
 
 Milestone: v0.2 (planning)
