@@ -437,7 +437,8 @@ export function createReviewHandler(deps: {
           }, errorBody, logger);
         }
 
-        // Silent approval: only when autoApprove is enabled and execution succeeded
+        // Auto-approval: only when autoApprove is enabled AND execution succeeded AND
+        // the model produced zero GitHub-visible output (no summary comment, no inline comments).
         if (config.review.autoApprove && result.conclusion === "success") {
           try {
             // If the review execution published any output (summary comment, inline comments, etc.),
@@ -458,60 +459,31 @@ export function createReviewHandler(deps: {
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             const appSlug = githubApp.getAppSlug();
 
-            const perPage = 100;
-            const maxPages = 10;
-            const maxScanItems = 1000;
+            // Double-check via a scan for the review output marker. This provides
+            // defense-in-depth if the executor didn't report published=true.
+            const idempotencyCheck = await ensureReviewOutputNotPublished({
+              octokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              reviewOutputKey,
+            });
 
-            let scanned = 0;
-            let foundBotComment = false;
-            let hitScanCap = false;
-
-            for (let page = 1; page <= maxPages && scanned < maxScanItems; page++) {
-              const { data } = await octokit.rest.pulls.listReviewComments({
-                owner: apiOwner,
-                repo: apiRepo,
-                pull_number: pr.number,
-                per_page: perPage,
-                page,
-                sort: "created",
-                direction: "desc",
-              });
-
-              for (const comment of data) {
-                scanned++;
-                if (comment.user?.login === `${appSlug}[bot]`) {
-                  foundBotComment = true;
-                  break;
-                }
-                if (scanned >= maxScanItems) break;
-              }
-
-              if (foundBotComment) break;
-              if (data.length < perPage) break;
-              if (page === maxPages || scanned >= maxScanItems) {
-                hitScanCap = true;
-              }
-            }
-
-            if (hitScanCap && !foundBotComment) {
-              // Degrade safely: if we can't confidently prove there were no bot
-              // inline comments (due to pagination caps), skip auto-approval.
-              logger.warn(
+            if (!idempotencyCheck.shouldPublish) {
+              logger.info(
                 {
                   prNumber: pr.number,
-                  scanned,
-                  maxPages,
-                  maxScanItems,
                   gate: "auto-approve",
                   gateResult: "skipped",
-                  skipReason: "review-comments-scan-capped",
+                  skipReason: "output-marker-present",
+                  existingLocation: idempotencyCheck.existingLocation,
                 },
-                "Skipping auto-approval because review comment scan hit safety cap",
+                "Skipping auto-approval because review output marker was published",
               );
               return;
             }
 
-            if (!foundBotComment) {
+            {
               // No issues found -- submit silent approval
               await octokit.rest.pulls.createReview({
                 owner: apiOwner,
@@ -523,11 +495,6 @@ export function createReviewHandler(deps: {
               logger.info(
                 { prNumber: pr.number, reviewOutputKey },
                 "Submitted silent approval (no issues found)",
-              );
-            } else {
-              logger.info(
-                { prNumber: pr.number, scannedReviewComments: scanned, foundBotInlineComments: true },
-                "Issues found, skipping approval",
               );
             }
           } catch (err) {
