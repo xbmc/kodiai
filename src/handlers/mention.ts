@@ -5,6 +5,7 @@ import type {
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import { $ } from "bun";
+import { createHash } from "node:crypto";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -50,6 +51,36 @@ export function createMentionHandler(deps: {
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
   const lastWriteAt = new Map<string, number>();
+
+  const inFlightWriteKeys = new Set<string>();
+
+  function buildWriteOutputKey(input: {
+    installationId: number;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    commentId: number;
+    keyword: string;
+  }): string {
+    return [
+      "kodiai-write-output",
+      "v1",
+      `inst-${input.installationId}`,
+      `${input.owner}/${input.repo}`,
+      `pr-${input.prNumber}`,
+      `comment-${input.commentId}`,
+      `keyword-${input.keyword}`,
+    ].join(":");
+  }
+
+  function buildWriteBranchName(params: {
+    prNumber: number;
+    commentId: number;
+    writeOutputKey: string;
+  }): string {
+    const hash = createHash("sha256").update(params.writeOutputKey).digest("hex").slice(0, 12);
+    return `kodiai/apply/pr-${params.prNumber}-comment-${params.commentId}-${hash}`;
+  }
 
   function pruneRateLimiter(now: number): void {
     // Defense-in-depth: prevent unbounded growth in long-lived processes.
@@ -134,6 +165,7 @@ export function createMentionHandler(deps: {
 
     await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
+      let acquiredWriteKey: string | undefined;
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
@@ -340,6 +372,72 @@ export function createMentionHandler(deps: {
         const isWriteRequest = writeIntent.writeIntent;
         const writeEnabled = isWriteRequest && config.write.enabled;
 
+        const writeKeyword = writeIntent.keyword ?? "apply";
+        const writeOutputKey =
+          writeEnabled && mention.prNumber !== undefined
+            ? buildWriteOutputKey({
+                installationId: event.installationId,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                commentId: mention.commentId,
+                keyword: writeKeyword,
+              })
+            : undefined;
+
+        const writeBranchName =
+          writeOutputKey && mention.prNumber !== undefined
+            ? buildWriteBranchName({
+                prNumber: mention.prNumber,
+                commentId: mention.commentId,
+                writeOutputKey,
+              })
+            : undefined;
+
+        if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
+          // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
+          try {
+            const { data: prs } = await octokit.rest.pulls.list({
+              owner: mention.owner,
+              repo: mention.repo,
+              state: "all",
+              head: `${mention.owner}:${writeBranchName}`,
+              per_page: 5,
+            });
+
+            const existing = prs[0];
+            if (existing?.html_url) {
+              const replyBody = wrapInDetails(
+                [`Existing PR: ${existing.html_url}`].join("\n"),
+                "kodiai response",
+              );
+              await postMentionReply(replyBody);
+              return;
+            }
+          } catch (err) {
+            logger.warn(
+              { err, writeBranchName, writeOutputKey, prNumber: mention.prNumber },
+              "Failed to look up existing PR for write idempotency; continuing",
+            );
+          }
+
+          // Best-effort lock: prevent duplicate work for the same trigger.
+          if (inFlightWriteKeys.has(writeOutputKey)) {
+            const replyBody = wrapInDetails(
+              [
+                "Write request already in progress.",
+                "",
+                "If no PR appears shortly, retry the same comment.",
+              ].join("\n"),
+              "kodiai response",
+            );
+            await postMentionReply(replyBody);
+            return;
+          }
+          inFlightWriteKeys.add(writeOutputKey);
+          acquiredWriteKey = writeOutputKey;
+        }
+
         if (writeEnabled && config.write.minIntervalSeconds > 0) {
           const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
           const now = Date.now();
@@ -525,7 +623,7 @@ export function createMentionHandler(deps: {
         );
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
-        if (writeEnabled && mention.prNumber !== undefined) {
+        if (writeEnabled && mention.prNumber !== undefined && writeOutputKey && writeBranchName) {
           const status = await getGitStatusPorcelain(workspace.dir);
           if (status.trim().length === 0) {
             const replyBody = wrapInDetails(
@@ -540,9 +638,8 @@ export function createMentionHandler(deps: {
             return;
           }
 
-          const shortDelivery = event.id.slice(0, 8);
-          const branchName = `kodiai/apply/pr-${mention.prNumber}-${shortDelivery}`;
-          const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
+           const branchName = writeBranchName;
+           const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
 
           let pushed: { branchName: string; headSha: string };
           try {
@@ -568,6 +665,41 @@ export function createMentionHandler(deps: {
               );
               await postMentionReply(replyBody);
               return;
+            }
+
+            // If the branch already exists (e.g. replay), try to find the existing PR.
+            if (err instanceof Error) {
+              const msg = err.message.toLowerCase();
+              const looksLikeBranchExists =
+                msg.includes("non-fast-forward") ||
+                msg.includes("fetch first") ||
+                msg.includes("rejected") ||
+                msg.includes("already exists");
+              if (looksLikeBranchExists) {
+                try {
+                  const { data: prs } = await octokit.rest.pulls.list({
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    state: "all",
+                    head: `${mention.owner}:${branchName}`,
+                    per_page: 5,
+                  });
+                  const existing = prs[0];
+                  if (existing?.html_url) {
+                    const replyBody = wrapInDetails(
+                      [`Existing PR: ${existing.html_url}`].join("\n"),
+                      "kodiai response",
+                    );
+                    await postMentionReply(replyBody);
+                    return;
+                  }
+                } catch (lookupErr) {
+                  logger.warn(
+                    { err: lookupErr, prNumber: mention.prNumber, branchName },
+                    "Failed to look up existing PR after push failure",
+                  );
+                }
+              }
             }
             throw err;
           }
@@ -605,6 +737,7 @@ export function createMentionHandler(deps: {
             const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
             lastWriteAt.set(key, Date.now());
           }
+
           return;
         }
 
@@ -693,6 +826,9 @@ export function createMentionHandler(deps: {
           logger.error({ err: commentErr }, "Failed to post error comment");
         }
       } finally {
+        if (acquiredWriteKey) {
+          inFlightWriteKeys.delete(acquiredWriteKey);
+        }
         if (workspace) {
           await workspace.cleanup();
         }
