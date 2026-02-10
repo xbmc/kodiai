@@ -160,7 +160,7 @@ Relevant code:
 ## Common Reasons for "Eyes Reaction Happened But No Reply"
 
 - Empty question after stripping the mention (handler skips)
-- The prompt chose to be silent (instructions say: only reply if there is something concrete to contribute)
+- Publish did not occur (model did not call any comment tools); handler may post a fallback reply
 - Comment publish API failed (execution may still finish, but tool call can error)
 - Execution errored and an error comment failed to post (`Failed to post error comment`)
 
@@ -178,6 +178,6 @@ Relevant code:
 - Ingress + correlation: `src/routes/webhooks.ts`
 - Router keys/dispatch: `src/webhook/router.ts`
 - Mention handler: `src/handlers/mention.ts`
-- Mention prompt rules (silence allowed): `src/execution/mention-prompt.ts`
+- Mention prompt rules (always reply; no tracking comment): `src/execution/mention-prompt.ts`
 - Inline thread reply tool: `src/execution/mcp/review-comment-thread-server.ts`
 - Top-level comment tool: `src/execution/mcp/comment-server.ts`
