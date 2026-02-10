@@ -51,6 +51,28 @@ export function createMentionHandler(deps: {
   // Keyed by installation+repo; resets on process restart.
   const lastWriteAt = new Map<string, number>();
 
+  function pruneRateLimiter(now: number): void {
+    // Defense-in-depth: prevent unbounded growth in long-lived processes.
+    // Keep recent entries only; this limiter is best-effort and not durable.
+    const ttlMs = 24 * 60 * 60 * 1000; // 24h
+    for (const [key, ts] of lastWriteAt.entries()) {
+      if (now - ts > ttlMs) {
+        lastWriteAt.delete(key);
+      }
+    }
+
+    // Hard cap: if still large, drop oldest entries.
+    const maxEntries = 10_000;
+    if (lastWriteAt.size <= maxEntries) return;
+
+    const entries = [...lastWriteAt.entries()].sort((a, b) => a[1] - b[1]);
+    const toDelete = entries.length - maxEntries;
+    for (let i = 0; i < toDelete; i++) {
+      const k = entries[i]?.[0];
+      if (k) lastWriteAt.delete(k);
+    }
+  }
+
   function parseWriteIntent(userQuestion: string): {
     writeIntent: boolean;
     keyword: "apply" | "change" | undefined;
@@ -321,6 +343,7 @@ export function createMentionHandler(deps: {
         if (writeEnabled && config.write.minIntervalSeconds > 0) {
           const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
           const now = Date.now();
+          pruneRateLimiter(now);
           const last = lastWriteAt.get(key);
           const minMs = config.write.minIntervalSeconds * 1000;
 
@@ -336,6 +359,10 @@ export function createMentionHandler(deps: {
             await postMentionReply(replyBody);
             return;
           }
+
+          // Reserve immediately so back-to-back requests in the same process
+          // don't both pass the gate before the first finishes publishing.
+          lastWriteAt.set(key, now);
         }
 
         if (isWriteRequest && mention.prNumber === undefined) {
@@ -577,11 +604,7 @@ export function createMentionHandler(deps: {
           );
           await postMentionReply(replyBody);
 
-          // Record successful publish time for rate limiting.
-          if (config.write.minIntervalSeconds > 0) {
-            const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
-            lastWriteAt.set(key, Date.now());
-          }
+          // Note: we already reserved lastWriteAt earlier when passing the gate.
           return;
         }
 

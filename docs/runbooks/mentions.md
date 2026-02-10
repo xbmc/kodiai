@@ -132,6 +132,10 @@ When write-mode is enabled, the server enforces policy before committing/pushing
 - `write.secretScan.enabled`: blocks if staged diffs look like secrets (keys/tokens)
 - `write.minIntervalSeconds`: basic write request rate limiting
 
+Notes:
+
+- Rate limiting is best-effort (in-memory, per process). In multi-replica deployments it is not a hard guarantee.
+
 Common refusal reasons:
 
 - `write-policy-denied-path`: staged change matches denyPaths

@@ -290,8 +290,14 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
   validatePullRequestNumber(prNumber);
   validateBranchName(localBranch);
 
-  await $`git -C ${dir} fetch ${remote} pull/${prNumber}/head:${localBranch}`.quiet();
-  await $`git -C ${dir} checkout ${localBranch}`.quiet();
+  const token = await getOriginTokenFromRemoteUrl(dir);
+  try {
+    await $`git -C ${dir} fetch ${remote} pull/${prNumber}/head:${localBranch}`.quiet();
+    await $`git -C ${dir} checkout ${localBranch}`.quiet();
+  } catch (err) {
+    redactTokenFromError(err, token);
+    throw err;
+  }
 
   return { localBranch };
 }
