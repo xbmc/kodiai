@@ -130,6 +130,47 @@ describe("buildMentionContext", () => {
     expect(ctx).toContain("world");
   });
 
+  test("sanitizes and bounds PR title/body context", async () => {
+    const trigger = "2025-01-15T12:00:00Z";
+    const octokit = makeOctokit({
+      comments: [],
+      pr: {
+        title: "PR title <!-- hidden -->\u200B",
+        body: "hello <!-- hidden -->\u200Bworld",
+        user: { login: "pr-author" },
+        head: { ref: "feature" },
+        base: { ref: "main" },
+      },
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 123,
+      commentBody: "@kodiai question",
+      commentAuthor: "carol",
+      commentCreatedAt: trigger,
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, { maxPrBodyChars: 8 });
+    expect(ctx).toContain("## Pull Request Context");
+    expect(ctx).toContain("Title: PR title");
+    expect(ctx).not.toContain("<!--");
+    expect(ctx).not.toContain("hidden");
+    expect(ctx).not.toContain("\u200B");
+    expect(ctx).toContain("...[truncated]");
+  });
+
   test("truncation and limits are deterministic", async () => {
     const trigger = "2025-01-15T12:00:00Z";
     const octokit = makeOctokit({
