@@ -80,6 +80,40 @@ export function createMentionHandler(deps: {
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
+        async function postMentionError(errorBody: string): Promise<void> {
+          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+
+          // Prefer replying in-thread for inline review comment mentions.
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            try {
+              await errOctokit.rest.pulls.createReplyForReviewComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                pull_number: mention.prNumber,
+                comment_id: mention.commentId,
+                body: errorBody,
+              });
+              return;
+            } catch (err) {
+              logger.warn(
+                { err, prNumber: mention.prNumber, commentId: mention.commentId },
+                "Failed to post in-thread error reply; falling back to top-level error comment",
+              );
+            }
+          }
+
+          await postOrUpdateErrorComment(
+            errOctokit,
+            {
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+            },
+            errorBody,
+            logger,
+          );
+        }
+
         // Determine clone parameters
         let cloneOwner = mention.owner;
         let cloneRepo = mention.repo;
@@ -284,12 +318,7 @@ export function createMentionHandler(deps: {
             ),
             "Kodiai encountered an error",
           );
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(errOctokit, {
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-          }, errorBody, logger);
+          await postMentionError(errorBody);
         }
       } catch (err) {
         logger.error(
@@ -302,12 +331,29 @@ export function createMentionHandler(deps: {
         const detail = err instanceof Error ? err.message : "An unexpected error occurred";
         const errorBody = wrapInDetails(formatErrorComment(category, detail), "Kodiai encountered an error");
         try {
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(errOctokit, {
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-          }, errorBody, logger);
+          // Prefer in-thread reply for inline review comments.
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            await errOctokit.rest.pulls.createReplyForReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              comment_id: mention.commentId,
+              body: errorBody,
+            });
+          } else {
+            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            await postOrUpdateErrorComment(
+              errOctokit,
+              {
+                owner: mention.owner,
+                repo: mention.repo,
+                issueNumber: mention.issueNumber,
+              },
+              errorBody,
+              logger,
+            );
+          }
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment");
         }
