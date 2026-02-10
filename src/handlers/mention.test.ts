@@ -22,7 +22,7 @@ function createNoopLogger(): Logger {
   } as unknown as Logger;
 }
 
-async function createWorkspaceFixture() {
+async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n") {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));
 
   await $`git -C ${dir} init --initial-branch=main`.quiet();
@@ -30,7 +30,7 @@ async function createWorkspaceFixture() {
   await $`git -C ${dir} config user.name "Test User"`.quiet();
 
   await Bun.write(join(dir, "README.md"), "base\n");
-  await Bun.write(join(dir, ".kodiai.yml"), "mention:\n  enabled: true\n");
+  await Bun.write(join(dir, ".kodiai.yml"), configYml);
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
   await $`git -C ${dir} commit -m "base"`.quiet();
@@ -202,6 +202,223 @@ describe("createMentionHandler fork PR workspace strategy", () => {
       .text()
       .trim();
     expect(headSubject).toBe("feature");
+
+    await workspaceFixture.cleanup();
+  });
+});
+
+describe("createMentionHandler write intent gating", () => {
+  test("write intent is refused when write.enabled is false", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    let executorCalled = false;
+    let replyBody: string | undefined;
+
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async (params: { body: string }) => {
+            replyBody = params.body;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(replyBody).toBeDefined();
+    expect(replyBody!).toContain("Write mode is disabled");
+    expect(replyBody!).toContain("write:");
+    expect(replyBody!).toContain("enabled: true");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("write intent reaches executor when write.enabled is true", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let capturedPrompt: string | undefined;
+
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          capturedPrompt = ctx.prompt;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(capturedPrompt).toBeDefined();
+    expect(capturedPrompt!).toContain("Write-intent request detected");
+    expect(capturedPrompt!).toContain("update the README");
+    expect(capturedPrompt!).not.toContain("apply:");
 
     await workspaceFixture.cleanup();
   });

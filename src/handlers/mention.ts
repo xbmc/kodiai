@@ -42,9 +42,33 @@ export function createMentionHandler(deps: {
 }): void {
   const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
 
+  function parseWriteIntent(userQuestion: string): {
+    writeIntent: boolean;
+    keyword: "apply" | "change" | undefined;
+    request: string;
+  } {
+    const trimmed = userQuestion.trimStart();
+    const lower = trimmed.toLowerCase();
+
+    for (const keyword of ["apply", "change"] as const) {
+      const prefix = `${keyword}:`;
+      if (lower.startsWith(prefix)) {
+        return {
+          writeIntent: true,
+          keyword,
+          request: trimmed.slice(prefix.length).trim(),
+        };
+      }
+    }
+
+    return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
+  }
+
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "claude"];
+
+    const action = (event.payload as Record<string, unknown>).action as string | undefined;
 
     // Normalize payload based on event type
     let mention: MentionEvent;
@@ -81,6 +105,36 @@ export function createMentionHandler(deps: {
       let workspace: Workspace | undefined;
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
+
+        async function postMentionReply(replyBody: string): Promise<void> {
+          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+
+          // Prefer replying in-thread for inline review comment mentions.
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            try {
+              await replyOctokit.rest.pulls.createReplyForReviewComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                pull_number: mention.prNumber,
+                comment_id: mention.commentId,
+                body: replyBody,
+              });
+              return;
+            } catch (err) {
+              logger.warn(
+                { err, prNumber: mention.prNumber, commentId: mention.commentId },
+                "Failed to post in-thread reply; falling back to top-level comment",
+              );
+            }
+          }
+
+          await replyOctokit.rest.issues.createComment({
+            owner: mention.owner,
+            repo: mention.repo,
+            issue_number: mention.issueNumber,
+            body: replyBody,
+          });
+        }
 
         async function postMentionError(errorBody: string): Promise<void> {
           const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
@@ -250,6 +304,44 @@ export function createMentionHandler(deps: {
           return;
         }
 
+        const writeIntent = parseWriteIntent(userQuestion);
+
+        if (writeIntent.writeIntent && !config.write.enabled) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              commentAuthor: mention.commentAuthor,
+              keyword: writeIntent.keyword,
+              gate: "write-mode",
+              gateResult: "skipped",
+              skipReason: "write-disabled",
+            },
+            "Write intent detected but write-mode disabled; refusing to apply changes",
+          );
+
+          const replyBody = wrapInDetails(
+            [
+              "Write mode is disabled for this repo.",
+              "",
+              "To enable:",
+              "```yml",
+              "write:",
+              "  enabled: true",
+              "```",
+              "",
+              "Then re-run your request starting with `apply:` or `change:`.",
+            ].join("\n"),
+            "kodiai response",
+          );
+
+          await postMentionReply(replyBody);
+          return;
+        }
+
         logger.info(
           {
             surface: mention.surface,
@@ -302,12 +394,23 @@ export function createMentionHandler(deps: {
           );
         }
 
+        const writeInstructions = writeIntent.writeIntent
+          ? [
+              "Write-intent request detected (apply/change).",
+              "In this run: do NOT create branches/commits/PRs and do NOT push changes.",
+              "Instead, propose a concrete, minimal plan (files + steps) and ask for confirmation.",
+              "Keep it concise.",
+            ].join("\n")
+          : undefined;
+
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
           mentionContext,
-          userQuestion,
-          customInstructions: config.mention.prompt,
+          userQuestion: writeIntent.request,
+          customInstructions: [config.mention.prompt, writeInstructions]
+            .filter((s) => (s ?? "").trim().length > 0)
+            .join("\n\n"),
         });
 
         // Execute via Claude
@@ -320,7 +423,8 @@ export function createMentionHandler(deps: {
           // For inline review comment mentions, provide the triggering review comment id
           // so the executor can enable the in-thread reply MCP tool.
           commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
-          eventType: `${event.name}.${(event.payload as Record<string, unknown>).action as string}`,
+          deliveryId: event.id,
+          eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,
         });
@@ -428,6 +532,12 @@ export function createMentionHandler(deps: {
           await workspace.cleanup();
         }
       }
+    }, {
+      deliveryId: event.id,
+      eventName: event.name,
+      action,
+      jobType: "mention",
+      prNumber: mention.prNumber,
     });
   }
 
