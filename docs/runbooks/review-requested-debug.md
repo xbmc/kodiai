@@ -4,7 +4,7 @@ Use this runbook when manual re-requesting kodiai on a PR does not trigger a rev
 
 ## UI-based Re-review (Team Request)
 
-If you want a UI-only retrigger (no comment), request review from the team `ai-review`.
+If you want a UI-only retrigger (no comment), request review from the team `ai-review` (or `aireview`).
 Kodiai treats `pull_request.review_requested` for that team as a re-review trigger.
 
 ## 1) Confirm webhook delivery exists in GitHub
@@ -68,7 +68,7 @@ Expected outcomes:
 
 If skip reason is `non-kodiai-reviewer`, confirm the re-request target is the app reviewer (`kodiai` or `kodiai[bot]`).
 
-If using team-based UI retrigger, confirm the requested team is `ai-review`.
+If using team-based UI retrigger, confirm the requested team is `ai-review` or `aireview`.
 
 ## 4) Verify queue lifecycle for same delivery
 

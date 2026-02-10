@@ -278,6 +278,48 @@ describe("createReviewHandler review_requested gating", () => {
     expect(enqueued[0]?.installationId).toBe(42);
   });
 
+  test("accepts team-based rereview requests for aireview", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const enqueued: Array<{ installationId: number }> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(installationId: number) => {
+        enqueued.push({ installationId });
+        return undefined as T;
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
+      executor: {} as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_team: { name: "aireview", slug: "aireview" },
+      }),
+    );
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]?.installationId).toBe(42);
+  });
+
   test("skips malformed reviewer payloads without throwing", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     let enqueueCount = 0;
