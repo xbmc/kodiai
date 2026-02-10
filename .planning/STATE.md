@@ -14,8 +14,8 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Total Phases:** 13
 **Current Plan:** 3
 **Total Plans in Phase:** 3
-**Status:** Ready to execute
-**Progress:** [█████████░] 89%
+**Status:** Phase complete — ready for verification
+**Progress:** [█████████░] 92%
 
 **Last Activity:** 2026-02-10
 **Last Activity Description:** Phase 11 verification approved; status passed.
@@ -54,6 +54,7 @@ Milestone: v0.1 MVP (archived)
 | Phase 11-mention-ux-parity P04 | 2h 46m | 2 tasks | 1 files |
 | Phase 12-fork-pr-robustness P01 | 3 min | 2 tasks | 3 files |
 | Phase 12-fork-pr-robustness P02 | 5 min | 2 tasks | 3 files |
+| Phase 12-fork-pr-robustness P03 | 6 min | 2 tasks | 5 files |
 
 ## Deployment Info
 
@@ -97,6 +98,8 @@ Milestone: v0.1 MVP (archived)
 - [Phase 11-mention-ux-parity]: [11-03]: Enforce <details> wrapping for thread replies in the MCP tool via wrapInDetails()
 - [Phase 12-fork-pr-robustness]: For fork (and deleted-fork) PRs, never clone pr.head.repo; clone base repo and fetch pull/<n>/head instead — GitHub App tokens may not have reliable access to contributor forks; PR head refs are exposed on the base repo and keep diff/comment anchoring stable.
 - [Phase 12-fork-pr-robustness]: Use base-clone + pull/<n>/head checkout for all PR mention workspaces (simpler and fork-safe)
+- [Phase 12]: Use descending sort + bounded pagination for GitHub list endpoints to keep large inputs deterministic without unbounded API usage.
+- [Phase 12]: Skip auto-approval when review-comment scanning hits safety caps (avoid false approvals when scan is incomplete).
 
 ## Roadmap Evolution
 
@@ -120,6 +123,6 @@ Resolved:
 
 ## Session
 
-**Last Date:** 2026-02-10T03:15:21.635Z
-**Stopped At:** Completed 12-fork-pr-robustness-02-PLAN.md
+**Last Date:** 2026-02-10T03:26:01.372Z
+**Stopped At:** Completed 12-fork-pr-robustness-03-PLAN.md
 **Resume File:** None
