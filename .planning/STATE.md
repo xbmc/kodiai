@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 13
-**Current Phase Name:** xbmc-cutover
-**Total Phases:** 13
-**Current Plan:** 3
-**Total Plans in Phase:** 3
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Current Phase:** 14
+**Current Phase Name:** write-mode-foundations
+**Total Phases:** 14
+**Current Plan:** 1
+**Total Plans in Phase:** 1
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 13 plans 02-03 complete; legacy Claude workflows removed and xbmc ops runbook added
+**Last Activity Description:** Started Phase 14 planning: write-mode foundations (deny-by-default mention-driven changes)
 **Paused At:** None
 
 Milestone: v0.2 (planning)
