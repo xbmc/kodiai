@@ -6,6 +6,23 @@ import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { WorkspaceManager, Workspace, CloneOptions } from "./types.ts";
 
+export class WritePolicyError extends Error {
+  readonly code:
+    | "write-policy-denied-path"
+    | "write-policy-not-allowed"
+    | "write-policy-secret-detected"
+    | "write-policy-no-changes";
+
+  constructor(
+    code: WritePolicyError["code"],
+    message: string,
+  ) {
+    super(message);
+    this.name = "WritePolicyError";
+    this.code = code;
+  }
+}
+
 /**
  * Replace all occurrences of a token in a string with [REDACTED].
  * Prevents token leakage in error messages and stack traces.
@@ -130,11 +147,89 @@ export async function getGitStatusPorcelain(dir: string): Promise<string> {
   return (await $`git -C ${dir} status --porcelain`.quiet()).text();
 }
 
+function pathMatchesPattern(path: string, pattern: string): boolean {
+  // Keep patterns intentionally simple and deterministic:
+  // - "dir/" => prefix match
+  // - "*.ext" => suffix match
+  // - "foo" => exact match or path endsWith("/foo")
+  const p = pattern.trim();
+  if (p.length === 0) return false;
+
+  if (p.endsWith("/")) {
+    return path.startsWith(p);
+  }
+  if (p.startsWith("*.") && p.length > 2) {
+    return path.endsWith(p.slice(1));
+  }
+  return path === p || path.endsWith(`/${p}`);
+}
+
+function matchesAny(path: string, patterns: string[]): boolean {
+  return patterns.some((p) => pathMatchesPattern(path, p));
+}
+
+function buildSecretRegexes(): Array<{ name: string; regex: RegExp }> {
+  return [
+    { name: "private-key", regex: /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP)? ?PRIVATE KEY-----/ },
+    { name: "aws-access-key", regex: /AKIA[0-9A-Z]{16}/ },
+    { name: "github-pat", regex: /ghp_[A-Za-z0-9]{36}/ },
+    { name: "slack-token", regex: /xox[baprs]-[A-Za-z0-9-]{10,}/ },
+    { name: "github-x-access-token-url", regex: /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/ },
+  ];
+}
+
+async function enforceWritePolicy(options: {
+  dir: string;
+  stagedPaths: string[];
+  allowPaths: string[];
+  denyPaths: string[];
+  secretScanEnabled: boolean;
+}): Promise<void> {
+  const { dir, stagedPaths, allowPaths, denyPaths, secretScanEnabled } = options;
+
+  for (const path of stagedPaths) {
+    if (matchesAny(path, denyPaths)) {
+      throw new WritePolicyError(
+        "write-policy-denied-path",
+        `Write blocked: denied path staged: ${path}`,
+      );
+    }
+  }
+
+  if (allowPaths.length > 0) {
+    for (const path of stagedPaths) {
+      if (!matchesAny(path, allowPaths)) {
+        throw new WritePolicyError(
+          "write-policy-not-allowed",
+          `Write blocked: path is not allowlisted: ${path}`,
+        );
+      }
+    }
+  }
+
+  if (secretScanEnabled) {
+    const diff = (await $`git -C ${dir} diff --cached`.quiet()).text();
+    for (const { name, regex } of buildSecretRegexes()) {
+      if (regex.test(diff)) {
+        throw new WritePolicyError(
+          "write-policy-secret-detected",
+          `Write blocked: suspected secret detected (${name}) in staged diff`,
+        );
+      }
+    }
+  }
+}
+
 export async function createBranchCommitAndPush(options: {
   dir: string;
   branchName: string;
   commitMessage: string;
   remote?: string;
+  policy?: {
+    allowPaths?: string[];
+    denyPaths?: string[];
+    secretScanEnabled?: boolean;
+  };
 }): Promise<{ branchName: string; headSha: string }> {
   const { dir, branchName, commitMessage, remote = "origin" } = options;
 
@@ -149,8 +244,17 @@ export async function createBranchCommitAndPush(options: {
     // Ensure there is something to commit.
     const staged = (await $`git -C ${dir} diff --cached --name-only`.quiet()).text().trim();
     if (staged.length === 0) {
-      throw new Error("No staged changes to commit");
+      throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
     }
+
+    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
+    await enforceWritePolicy({
+      dir,
+      stagedPaths,
+      allowPaths: options.policy?.allowPaths ?? [],
+      denyPaths: options.policy?.denyPaths ?? [],
+      secretScanEnabled: options.policy?.secretScanEnabled ?? true,
+    });
 
     await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
     const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();

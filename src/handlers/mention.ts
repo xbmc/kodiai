@@ -14,6 +14,7 @@ import {
   fetchAndCheckoutPullRequestHeadRef,
   getGitStatusPorcelain,
   createBranchCommitAndPush,
+  WritePolicyError,
 } from "../jobs/workspace.ts";
 import {
   type MentionEvent,
@@ -45,6 +46,10 @@ export function createMentionHandler(deps: {
   logger: Logger;
 }): void {
   const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
+
+  // Basic in-memory rate limiter for write-mode requests.
+  // Keyed by installation+repo; resets on process restart.
+  const lastWriteAt = new Map<string, number>();
 
   function parseWriteIntent(userQuestion: string): {
     writeIntent: boolean;
@@ -313,6 +318,26 @@ export function createMentionHandler(deps: {
         const isWriteRequest = writeIntent.writeIntent;
         const writeEnabled = isWriteRequest && config.write.enabled;
 
+        if (writeEnabled && config.write.minIntervalSeconds > 0) {
+          const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
+          const now = Date.now();
+          const last = lastWriteAt.get(key);
+          const minMs = config.write.minIntervalSeconds * 1000;
+
+          if (last !== undefined && now - last < minMs) {
+            const replyBody = wrapInDetails(
+              [
+                "Write request rate-limited.",
+                "",
+                `Try again in ${Math.ceil((minMs - (now - last)) / 1000)}s.`,
+              ].join("\n"),
+              "kodiai response",
+            );
+            await postMentionReply(replyBody);
+            return;
+          }
+        }
+
         if (isWriteRequest && mention.prNumber === undefined) {
           const replyBody = wrapInDetails(
             [
@@ -496,11 +521,33 @@ export function createMentionHandler(deps: {
           const branchName = `kodiai/apply/pr-${mention.prNumber}-${shortDelivery}`;
           const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
 
-          const pushed = await createBranchCommitAndPush({
-            dir: workspace.dir,
-            branchName,
-            commitMessage,
-          });
+          let pushed: { branchName: string; headSha: string };
+          try {
+            pushed = await createBranchCommitAndPush({
+              dir: workspace.dir,
+              branchName,
+              commitMessage,
+              policy: {
+                allowPaths: config.write.allowPaths,
+                denyPaths: config.write.denyPaths,
+                secretScanEnabled: config.write.secretScan.enabled,
+              },
+            });
+          } catch (err) {
+            if (err instanceof WritePolicyError) {
+              const replyBody = wrapInDetails(
+                [
+                  "Write request refused.",
+                  "",
+                  err.message,
+                ].join("\n"),
+                "kodiai response",
+              );
+              await postMentionReply(replyBody);
+              return;
+            }
+            throw err;
+          }
 
           const prTitle = `kodiai: apply changes for PR #${mention.prNumber}`;
           const prBody = [
@@ -529,6 +576,12 @@ export function createMentionHandler(deps: {
             "kodiai response",
           );
           await postMentionReply(replyBody);
+
+          // Record successful publish time for rate limiting.
+          if (config.write.minIntervalSeconds > 0) {
+            const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
+            lastWriteAt.set(key, Date.now());
+          }
           return;
         }
 
