@@ -44,7 +44,8 @@ function normalizeReviewerLogin(login: string): string {
  *
  * Trigger model: initial review events plus explicit re-request only.
  * Re-requested reviews run only when kodiai itself is the requested reviewer.
- * Additionally, a team-based re-request is supported for the special team slug/name "ai-review"
+ * Additionally, a team-based re-request is supported for a special rereview team
+ * ("ai-review" / "aireview") to enable UI-only re-review without a comment.
  * to enable UI-only re-review without a comment.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
@@ -59,7 +60,7 @@ export function createReviewHandler(deps: {
 }): void {
   const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
 
-  const rereviewTeamSlugs = new Set(["ai-review"]);
+  const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
   async function ensureUiRereviewTeamRequested(options: {
     octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
