@@ -78,6 +78,12 @@ export function buildMentionPrompt(params: {
   }
   lines.push("");
   lines.push("Your response should be:");
+  lines.push(
+    "- Concise by default -- provide only what was asked; avoid long recaps",
+  );
+  lines.push(
+    '- Do NOT include sections like "What Changed", "Key Strengths", or "Minor Observations" unless explicitly requested',
+  );
   lines.push("- Direct and helpful -- answer the question with specific code references where possible");
   lines.push("- Aware of the conversation context above -- don't repeat what's already been discussed");
   lines.push("- Formatted in GitHub-flavored markdown");
@@ -95,6 +101,25 @@ export function buildMentionPrompt(params: {
     "  </details>",
     "  ```",
     "- Important: include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
+  );
+
+  lines.push("- If (and only if) the user is asking for a PR review / approval decision, use this exact structure:");
+  lines.push(
+    "  ```",
+    "  <details>",
+    '  <summary>kodiai response</summary>',
+    "  ",
+    "  Decision: APPROVE | NOT APPROVED",
+    "  Issues:",
+    "  - (1) <issue summary> (include file:line if applicable)",
+    "  ",
+    "  </details>",
+    "  ```",
+  );
+  lines.push(
+    "  Notes:",
+    "  - If APPROVE: keep it to 1-2 lines and set `Issues: none`.",
+    "  - If NOT APPROVED: list only the issues; do not include strengths or change summaries.",
   );
 
   // Custom instructions
