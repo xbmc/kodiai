@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 17
-**Current Phase Name:** durability-locking
-**Total Phases:** 17
+**Current Phase:** 18
+**Current Phase Name:** ops-evidence
+**Total Phases:** 18
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 17 plan 01 complete; idempotent write-mode by trigger comment
+**Last Activity Description:** Started Phase 18: ops evidence bundle logging + runbook updates
 **Paused At:** None
 
 Milestone: v0.2 (planning)
