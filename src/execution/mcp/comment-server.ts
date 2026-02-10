@@ -24,13 +24,19 @@ export function createCommentServer(
       .filter((line) => {
         const t = line.trim();
         if (t.startsWith("**What changed:**")) return false;
+        if (t.toLowerCase().startsWith("what changed:")) return false;
         if (t.startsWith("**Issues found:**")) return false;
         if (t.startsWith("**Note:**")) return false;
         return true;
       })
       .join("\n");
 
-    // Enforce issue bullet format: "- (1) [major] path/to/file.ts (123): ..."
+    // Enforce review summary issue format.
+    // Preferred format:
+    //
+    //   Critical
+    //   path/to/file.ts (12, 34): Issue title
+    //   1-3 sentence explanation...
     const lines = stripped.split("\n");
     const inDetailsStart = lines.findIndex((l) => l.trim() === "<details>");
     const inDetailsEnd = lines.findIndex((l) => l.trim() === "</details>");
@@ -39,27 +45,93 @@ export function createCommentServer(
         ? lines.slice(inDetailsStart, inDetailsEnd + 1)
         : lines;
 
-    const hasStatus = detailsLines.some((l) => l.trim().startsWith("**Status:**"));
-    const issuesHeaderIndex = detailsLines.findIndex((l) => l.trim() === "**Issues:**");
-    if (!hasStatus || issuesHeaderIndex === -1) {
+    const severityHeadings = new Set(["Critical", "Must Fix", "Major", "Medium", "Minor"]);
+
+    for (const l of detailsLines) {
+      const t = (l ?? "").trim();
+      if (t.startsWith("Status:") || t.startsWith("**Status:**")) {
+        throw new Error(
+          "Invalid Kodiai review summary: do not include a Status line; use severity headings only.",
+        );
+      }
+      if (t.startsWith("**Issues:**") || t.startsWith("Issues:")) {
+        throw new Error(
+          "Invalid Kodiai review summary: do not include an Issues header; use severity headings only.",
+        );
+      }
+    }
+
+    const lineSpec = "\\d+(?:-\\d+)?(?:,\\s*\\d+(?:-\\d+)?)*";
+    const issueLineRe = new RegExp(`^(.+?) \\((?:${lineSpec})\\): (.+)$`);
+
+    let sawAnyIssue = false;
+    let currentSeverity: string | undefined;
+    let expectingIssueLine = false;
+    let expectingExplanation = false;
+
+    for (let i = 0; i < detailsLines.length; i++) {
+      const raw = detailsLines[i] ?? "";
+      const line = raw.trim();
+      if (!line) continue;
+      if (line === "<details>" || line.startsWith("<summary")) continue;
+      if (line === "</details>") break;
+
+      if (severityHeadings.has(line)) {
+        currentSeverity = line;
+        expectingIssueLine = true;
+        expectingExplanation = false;
+        continue;
+      }
+
+      if (!currentSeverity) {
+        throw new Error(
+          "Invalid Kodiai review summary: issues must be grouped under a severity heading.",
+        );
+      }
+
+      if (expectingExplanation) {
+        // Require at least one explanation line per issue.
+        if (severityHeadings.has(line) || issueLineRe.test(line)) {
+          throw new Error(
+            `Invalid Kodiai review summary: missing explanation line under ${currentSeverity}.`,
+          );
+        }
+        expectingExplanation = false;
+        expectingIssueLine = false;
+        continue;
+      }
+
+      if (expectingIssueLine) {
+        if (!issueLineRe.test(line)) {
+          throw new Error(
+            `Invalid issue line under ${currentSeverity}. Expected: path/to/file.ts (123, 456): Issue title`,
+          );
+        }
+        sawAnyIssue = true;
+        expectingExplanation = true;
+        continue;
+      }
+
+      // If we see another issue line without a new heading, allow it (same severity).
+      if (issueLineRe.test(line)) {
+        sawAnyIssue = true;
+        expectingExplanation = true;
+        continue;
+      }
+
+      // Otherwise treat it as explanation continuation.
+    }
+
+    if (expectingExplanation) {
       throw new Error(
-        "Invalid Kodiai review summary: must include **Status:** and **Issues:** only (no other headings).",
+        `Invalid Kodiai review summary: missing explanation line under ${currentSeverity ?? "severity"}.`,
       );
     }
 
-    const issueLineRe =
-      /^- \(\d+\) \[(critical|major|minor)\] (.+?) \((\d+)\): .+/;
-    for (let i = issuesHeaderIndex + 1; i < detailsLines.length; i++) {
-      const line = detailsLines[i]?.trim();
-      if (!line) continue;
-      if (line === "</details>") break;
-      if (!line.startsWith("-")) continue;
-
-      if (!issueLineRe.test(line)) {
-        throw new Error(
-          "Invalid Kodiai review summary issue format. Use: - (1) [critical|major|minor] <path> (123): <1-3 sentences>.",
-        );
-      }
+    if (!sawAnyIssue) {
+      throw new Error(
+        "Invalid Kodiai review summary: expected at least one issue under a severity heading.",
+      );
     }
 
     return stripped;

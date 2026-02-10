@@ -44,7 +44,7 @@ describe("createCommentServer", () => {
     expect(calledBody).toBe("Hello");
   });
 
-  test("strips What changed and enforces issue bullet format for review summaries", async () => {
+  test("strips What changed and enforces severity-heading format for review summaries", async () => {
     let calledBody: string | undefined;
     const octokit = {
       rest: {
@@ -67,10 +67,9 @@ describe("createCommentServer", () => {
       "",
       "**What changed:** do not include this",
       "",
-      "**Status:** NOT APPROVED",
-      "",
-      "**Issues:**",
-      "- (1) [major] src/foo.ts (12): This is an issue.",
+      "Critical",
+      "src/my component/foo.ts (12, 34): An issue",
+      "This is an issue.",
       "",
       "</details>",
     ].join("\n");
@@ -79,7 +78,63 @@ describe("createCommentServer", () => {
     expect(result.isError).toBeUndefined();
     expect(calledBody).toBeDefined();
     expect(calledBody!).not.toContain("What changed");
-    expect(calledBody!).toContain("**Status:**");
-    expect(calledBody!).toContain("src/foo.ts (12):");
+    expect(calledBody!).toContain("Critical");
+    expect(calledBody!).toContain("src/my component/foo.ts (12");
+  });
+
+  test("rejects legacy bullet format", async () => {
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "Critical",
+      "- (1) [major] src/bar.ts (9): legacy style should not be mixed",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 1, body });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Error:");
+  });
+
+  test("rejects missing explanation line", async () => {
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "Critical",
+      "src/foo.ts (12): Missing explanation",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 1, body });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing explanation");
   });
 });
