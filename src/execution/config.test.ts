@@ -11,6 +11,15 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.model).toBe("claude-sonnet-4-5-20250929");
     expect(config.maxTurns).toBe(25);
     expect(config.write.enabled).toBe(false);
+    expect(config.write.allowPaths).toEqual([]);
+    expect(config.write.denyPaths).toEqual([
+      ".github/",
+      ".git/",
+      ".planning/",
+      ".kodiai.yml",
+    ]);
+    expect(config.write.minIntervalSeconds).toBe(0);
+    expect(config.write.secretScan.enabled).toBe(true);
     expect(config.review.enabled).toBe(true);
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
@@ -38,6 +47,15 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.model).toBe("claude-opus-4-20250514");
     expect(config.maxTurns).toBe(10);
     expect(config.write.enabled).toBe(false); // default preserved
+    expect(config.write.allowPaths).toEqual([]);
+    expect(config.write.denyPaths).toEqual([
+      ".github/",
+      ".git/",
+      ".planning/",
+      ".kodiai.yml",
+    ]);
+    expect(config.write.minIntervalSeconds).toBe(0);
+    expect(config.write.secretScan.enabled).toBe(true);
     expect(config.review.autoApprove).toBe(true);
     expect(config.review.enabled).toBe(true); // default preserved
     expect(config.review.triggers.onOpened).toBe(true); // default preserved
@@ -56,6 +74,24 @@ test("accepts write.enabled: true", async () => {
     await writeFile(join(dir, ".kodiai.yml"), "write:\n  enabled: true\n");
     const config = await loadRepoConfig(dir);
     expect(config.write.enabled).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses write policy config", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "write:\n  enabled: true\n  minIntervalSeconds: 30\n  allowPaths:\n    - 'src/'\n  denyPaths:\n    - '.github/'\n  secretScan:\n    enabled: false\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.write.enabled).toBe(true);
+    expect(config.write.minIntervalSeconds).toBe(30);
+    expect(config.write.allowPaths).toEqual(["src/"]);
+    expect(config.write.denyPaths).toEqual([".github/"]);
+    expect(config.write.secretScan.enabled).toBe(false);
   } finally {
     await rm(dir, { recursive: true });
   }
