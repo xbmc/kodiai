@@ -12,6 +12,58 @@ export function createCommentServer(
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
+  function sanitizeKodiaiReviewSummary(body: string): string {
+    // Only enforce structure for the PR auto-review summary comment.
+    if (!body.includes("<summary>Kodiai Review Summary</summary>")) {
+      return body;
+    }
+
+    // Strip forbidden sections that the user does not want.
+    const stripped = body
+      .split("\n")
+      .filter((line) => {
+        const t = line.trim();
+        if (t.startsWith("**What changed:**")) return false;
+        if (t.startsWith("**Issues found:**")) return false;
+        if (t.startsWith("**Note:**")) return false;
+        return true;
+      })
+      .join("\n");
+
+    // Enforce issue bullet format: "- (1) [major] path/to/file.ts (123): ..."
+    const lines = stripped.split("\n");
+    const inDetailsStart = lines.findIndex((l) => l.trim() === "<details>");
+    const inDetailsEnd = lines.findIndex((l) => l.trim() === "</details>");
+    const detailsLines =
+      inDetailsStart !== -1 && inDetailsEnd !== -1 && inDetailsEnd > inDetailsStart
+        ? lines.slice(inDetailsStart, inDetailsEnd + 1)
+        : lines;
+
+    const hasStatus = detailsLines.some((l) => l.trim().startsWith("**Status:**"));
+    const issuesHeaderIndex = detailsLines.findIndex((l) => l.trim() === "**Issues:**");
+    if (!hasStatus || issuesHeaderIndex === -1) {
+      throw new Error(
+        "Invalid Kodiai review summary: must include **Status:** and **Issues:** only (no other headings).",
+      );
+    }
+
+    const issueLineRe = /^- \(\d+\) \[(critical|major|minor)\] (\S+) \((\d+)\): .+/;
+    for (let i = issuesHeaderIndex + 1; i < detailsLines.length; i++) {
+      const line = detailsLines[i]?.trim();
+      if (!line) continue;
+      if (line === "</details>") break;
+      if (!line.startsWith("-")) continue;
+
+      if (!issueLineRe.test(line)) {
+        throw new Error(
+          "Invalid Kodiai review summary issue format. Use: - (1) [critical|major|minor] path/to/file.ts (123): <1-3 sentences>.",
+        );
+      }
+    }
+
+    return stripped;
+  }
+
   function maybeStampMarker(body: string): string {
     if (!marker) return body;
     if (body.includes(marker)) return body;
@@ -36,7 +88,7 @@ export function createCommentServer(
               owner,
               repo,
               comment_id: commentId,
-              body: maybeStampMarker(body),
+              body: maybeStampMarker(sanitizeKodiaiReviewSummary(body)),
             });
             onPublish?.();
             return {
@@ -71,7 +123,7 @@ export function createCommentServer(
               owner,
               repo,
               issue_number: issueNumber,
-              body: maybeStampMarker(body),
+              body: maybeStampMarker(sanitizeKodiaiReviewSummary(body)),
             });
             onPublish?.();
             return {

@@ -94,6 +94,32 @@ Endpoints:
 bun test
 ```
 
+## PR Creation (Avoid Literal \\n Bodies)
+
+When creating or editing PR bodies via `gh`, avoid passing strings with `\n` escapes in shell quotes (they can land as literal `\n` in GitHub).
+
+Use the helper scripts which always send a body file (real newlines):
+
+```bash
+# Create a PR with a body from stdin
+bash scripts/gh-pr-create.sh --repo xbmc/kodiai --base main --head my-branch --title "My PR" <<'EOF'
+## Issues
+- ...
+
+## Fix
+- ...
+
+## Tests
+- bun test
+EOF
+
+# Update an existing PR body
+bash scripts/gh-pr-set-body.sh --repo xbmc/kodiai 123 <<'EOF'
+## Issues
+- ...
+EOF
+```
+
 Note: test discovery is configured in `bunfig.toml` to only scan `src/`.
 
 Typecheck (if available in your environment):
