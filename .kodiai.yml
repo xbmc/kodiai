@@ -1,3 +1,8 @@
 review:
   uiRereviewTeam: aireview
   requestUiRereviewTeamOnOpen: true
+
+write:
+  enabled: true
+  allowPaths:
+    - docs/smoke/**
