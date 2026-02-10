@@ -20,6 +20,7 @@ export function buildMcpServers(deps: {
   deliveryId?: string;
   logger?: Logger;
   onPublish?: () => void;
+  enableInlineTools?: boolean;
 }) {
   const servers: Record<string, ReturnType<typeof createCommentServer>> = {
     github_comment: createCommentServer(
@@ -40,7 +41,9 @@ export function buildMcpServers(deps: {
     );
   }
 
-  if (deps.prNumber !== undefined) {
+  const enableInlineTools = deps.enableInlineTools ?? true;
+
+  if (enableInlineTools && deps.prNumber !== undefined) {
     servers.github_inline_comment = createInlineReviewServer(
       deps.getOctokit,
       deps.owner,

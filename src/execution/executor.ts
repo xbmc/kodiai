@@ -45,6 +45,12 @@ export function createExecutor(deps: {
         const getOctokit = () =>
           githubApp.getInstallationOctokit(context.installationId);
         let published = false;
+
+        const isMentionEvent =
+          context.eventType === "issue_comment.created" ||
+          context.eventType === "pull_request_review_comment.created" ||
+          context.eventType === "pull_request_review.submitted";
+
         const mcpServers = buildMcpServers({
           getOctokit,
           owner: context.owner,
@@ -57,6 +63,9 @@ export function createExecutor(deps: {
           onPublish: () => {
             published = true;
           },
+          // Mentions should not create new inline review comments; they should reply in-thread
+          // (when available) or post a top-level PR/issue comment.
+          enableInlineTools: !isMentionEvent,
         });
 
         // Build allowed tools list
