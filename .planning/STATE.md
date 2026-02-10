@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 15
-**Current Phase Name:** write-pipeline
-**Total Phases:** 15
+**Current Phase:** 16
+**Current Phase Name:** write-guardrails
+**Total Phases:** 16
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 15 plan 01 complete; mention-driven branch/commit/PR pipeline
+**Last Activity Description:** Started Phase 16: write-mode guardrails (path policy, secret scan, rate limiting)
 **Paused At:** None
 
 Milestone: v0.2 (planning)
