@@ -873,7 +873,10 @@ export function createMentionHandler(deps: {
                 [
                   "Write request refused.",
                   "",
+                  `Reason: ${err.code}`,
                   err.message,
+                  "",
+                  "Tip: narrow writes with write.allowPaths or adjust write.denyPaths in .kodiai.yml.",
                 ].join("\n"),
                 "kodiai response",
               );
