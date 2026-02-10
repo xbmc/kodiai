@@ -43,6 +43,17 @@ human_verification_results:
       - "@claude-only comment produced no bot reply during isolated test window"
       - "@kodiai comment produced a bot reply during isolated test window"
 
+  - test: "Issue comment mention replies (issue surface)"
+    performed_at: 2026-02-10T02:39:10Z
+    outcome: "passed"
+    evidence:
+      - "Issue created: https://github.com/kodiai/xbmc/issues/11"
+      - "@kodiai trigger: https://github.com/kodiai/xbmc/issues/11#issuecomment-3874989791"
+      - "Bot reply: https://github.com/kodiai/xbmc/issues/11#issuecomment-3874990749"
+      - "Eyes reaction present on trigger (kodiai[bot])"
+      - "@claude trigger: https://github.com/kodiai/xbmc/issues/11#issuecomment-3874991598"
+      - "Bot reply (alias accepted): https://github.com/kodiai/xbmc/issues/11#issuecomment-3874993459"
+
 # Phase 11: Mention UX Parity Verification Report
 
 **Phase Goal:** Mention UX parity with Claude in xbmc/xbmc: global @claude alias support, contextual mention replies, and inline PR review comment thread replies; tracking is eyes-only.
