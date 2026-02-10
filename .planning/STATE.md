@@ -21,7 +21,7 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Last Activity Description:** Phase 13 plans 02-03 complete; legacy Claude workflows removed and xbmc ops runbook added
 **Paused At:** None
 
-Milestone: v0.1 MVP (archived)
+Milestone: v0.2 (planning)
 
 ## Performance Metrics
 
