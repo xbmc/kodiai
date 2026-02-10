@@ -44,6 +44,8 @@ function normalizeReviewerLogin(login: string): string {
  *
  * Trigger model: initial review events plus explicit re-request only.
  * Re-requested reviews run only when kodiai itself is the requested reviewer.
+ * Additionally, a team-based re-request is supported for the special team slug/name "ai-review"
+ * to enable UI-only re-review without a comment.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
@@ -56,6 +58,8 @@ export function createReviewHandler(deps: {
   logger: Logger;
 }): void {
   const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
+
+  const rereviewTeamSlugs = new Set(["ai-review"]);
 
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
@@ -110,6 +114,10 @@ export function createReviewHandler(deps: {
         typeof requestedTeam?.name === "string"
           ? requestedTeam.name
           : undefined;
+      const requestedTeamSlug =
+        typeof (requestedTeam as { slug?: unknown } | undefined)?.slug === "string"
+          ? (requestedTeam as { slug: string }).slug
+          : undefined;
       const appSlug = githubApp.getAppSlug();
       const normalizedAppSlug = normalizeReviewerLogin(appSlug);
 
@@ -144,18 +152,38 @@ export function createReviewHandler(deps: {
           "Accepted review_requested event for kodiai reviewer",
         );
       } else if (requestedTeamName) {
+        const normalizedTeamName = requestedTeamName.trim().toLowerCase();
+        const normalizedTeamSlug = (requestedTeamSlug ?? "").trim().toLowerCase();
+        const matchedTeam = rereviewTeamSlugs.has(normalizedTeamSlug) || rereviewTeamSlugs.has(normalizedTeamName);
+
+        if (!matchedTeam) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review_requested_reviewer",
+              gateResult: "skipped",
+              skipReason: "team-only-request",
+              requestedReviewer: null,
+              requestedTeam: requestedTeamName,
+              requestedTeamSlug: requestedTeamSlug ?? null,
+            },
+            "Skipping review_requested event because only a non-rereview team was requested",
+          );
+          return;
+        }
+
         logger.info(
           {
             ...baseLog,
             gate: "review_requested_reviewer",
-            gateResult: "skipped",
-            skipReason: "team-only-request",
+            gateResult: "accepted",
             requestedReviewer: null,
             requestedTeam: requestedTeamName,
+            requestedTeamSlug: requestedTeamSlug ?? null,
+            rereviewTeam: true,
           },
-          "Skipping review_requested event because only a team was requested",
+          "Accepted review_requested event for rereview team",
         );
-        return;
       } else {
         logger.warn(
           {

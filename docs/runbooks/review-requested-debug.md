@@ -53,6 +53,7 @@ For the same `deliveryId`, check review handler gate logs.
 
 Expected outcomes:
 - Accepted path: `Accepted review_requested event for kodiai reviewer`
+- Accepted path (team-based rereview): `Accepted review_requested event for rereview team` (team `ai-review`)
 - Skip path with reason:
   - `non-kodiai-reviewer`
   - `team-only-request`
