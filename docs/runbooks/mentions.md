@@ -123,6 +123,29 @@ write:
   enabled: true
 ```
 
+### Write policy (allow/deny paths, secret scan, rate limit)
+
+When write-mode is enabled, the server enforces policy before committing/pushing:
+
+- `write.denyPaths`: blocks changes to matching paths (deny wins)
+- `write.allowPaths`: if set, every changed path must match an allow pattern
+- `write.secretScan.enabled`: blocks if staged diffs look like secrets (keys/tokens)
+- `write.minIntervalSeconds`: basic write request rate limiting
+
+Notes:
+
+- Rate limiting is best-effort (in-memory, per process). In multi-replica deployments it is not a hard guarantee.
+- Path patterns use glob semantics. Examples:
+  - `.github/` matches everything under `.github/` (equivalent to `.github/**`)
+  - `**/*.md` matches markdown files anywhere
+
+Common refusal reasons:
+
+- `write-policy-denied-path`: staged change matches denyPaths
+- `write-policy-not-allowed`: staged change did not match allowPaths
+- `write-policy-secret-detected`: suspected secret present in staged diff
+- `rate-limited`: write requests too frequent
+
 ## 4) Verify Eyes Reaction Attempt (Non-Blocking)
 
 The handler tries to add an ":eyes:" reaction to the trigger comment.

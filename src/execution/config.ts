@@ -13,9 +13,29 @@ const repoConfigSchema = z.object({
   write: z
     .object({
       enabled: z.boolean().default(false),
+      /** If set, every changed path must match at least one allowPaths pattern. */
+      allowPaths: z.array(z.string()).default([]),
+      /** Changed paths matching any denyPaths pattern are blocked. Deny wins over allow. */
+      denyPaths: z
+        .array(z.string())
+        .default([".github/", ".git/", ".planning/", ".kodiai.yml"]),
+      /** Basic rate limit for write-mode requests. 0 = no limit. */
+      minIntervalSeconds: z.number().min(0).max(86400).default(0),
+      secretScan: z
+        .object({
+          enabled: z.boolean().default(true),
+        })
+        .strict()
+        .default({ enabled: true }),
     })
     .strict()
-    .default({ enabled: false }),
+    .default({
+      enabled: false,
+      allowPaths: [],
+      denyPaths: [".github/", ".git/", ".planning/", ".kodiai.yml"],
+      minIntervalSeconds: 0,
+      secretScan: { enabled: true },
+    }),
   review: z
     .object({
       enabled: z.boolean().default(true),
