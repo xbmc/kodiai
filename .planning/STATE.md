@@ -9,17 +9,17 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 12
-**Current Phase Name:** fork-pr-robustness
+**Current Phase:** 13
+**Current Phase Name:** xbmc-cutover
 **Total Phases:** 13
-**Current Plan:** 3
+**Current Plan:** 1
 **Total Plans in Phase:** 3
-**Status:** Phase complete — ready for verification
+**Status:** Paused — awaiting human action
 **Progress:** [█████████░] 92%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 11 verification approved; status passed.
-**Paused At:** None
+**Last Activity Description:** Phase 13 plan 01 started; xbmc cutover runbook written; awaiting GitHub App install + webhook delivery
+**Paused At:** 13-xbmc-cutover-01 checkpoint:human-action
 
 Milestone: v0.1 MVP (archived)
 
@@ -123,6 +123,6 @@ Resolved:
 
 ## Session
 
-**Last Date:** 2026-02-10T03:26:01.372Z
-**Stopped At:** Completed 12-fork-pr-robustness-03-PLAN.md
-**Resume File:** None
+**Last Date:** 2026-02-10T03:38:53.972Z
+**Stopped At:** Checkpoint 13-xbmc-cutover-01: Install Kodiai GitHub App on xbmc/xbmc + confirm webhook delivery
+**Resume File:** .planning/phases/13-xbmc-cutover/13-01-PLAN.md
