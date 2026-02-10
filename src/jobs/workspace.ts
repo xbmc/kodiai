@@ -2,6 +2,7 @@ import { mkdtemp, rm, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
+import picomatch from "picomatch";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { WorkspaceManager, Workspace, CloneOptions } from "./types.ts";
@@ -147,25 +148,24 @@ export async function getGitStatusPorcelain(dir: string): Promise<string> {
   return (await $`git -C ${dir} status --porcelain`.quiet()).text();
 }
 
-function pathMatchesPattern(path: string, pattern: string): boolean {
-  // Keep patterns intentionally simple and deterministic:
-  // - "dir/" => prefix match
-  // - "*.ext" => suffix match
-  // - "foo" => exact match or path endsWith("/foo")
+function normalizeGlobPattern(pattern: string): string {
   const p = pattern.trim();
-  if (p.length === 0) return false;
-
   if (p.endsWith("/")) {
-    return path.startsWith(p);
+    // Treat trailing slash as "everything under this directory".
+    return `${p}**`;
   }
-  if (p.startsWith("*.") && p.length > 2) {
-    return path.endsWith(p.slice(1));
-  }
-  return path === p || path.endsWith(`/${p}`);
+  return p;
 }
 
-function matchesAny(path: string, patterns: string[]): boolean {
-  return patterns.some((p) => pathMatchesPattern(path, p));
+function compileGlobMatchers(patterns: string[]): Array<(path: string) => boolean> {
+  return patterns
+    .map((p) => normalizeGlobPattern(p))
+    .filter((p) => p.length > 0)
+    .map((p) => picomatch(p, { dot: true }));
+}
+
+function matchesAny(path: string, matchers: Array<(path: string) => boolean>): boolean {
+  return matchers.some((m) => m(path));
 }
 
 function buildSecretRegexes(): Array<{ name: string; regex: RegExp }> {
@@ -187,8 +187,21 @@ async function enforceWritePolicy(options: {
 }): Promise<void> {
   const { dir, stagedPaths, allowPaths, denyPaths, secretScanEnabled } = options;
 
+  let denyMatchers: Array<(path: string) => boolean>;
+  let allowMatchers: Array<(path: string) => boolean>;
+  try {
+    denyMatchers = compileGlobMatchers(denyPaths);
+    allowMatchers = compileGlobMatchers(allowPaths);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WritePolicyError(
+      "write-policy-not-allowed",
+      `Write blocked: invalid path policy pattern: ${message}`,
+    );
+  }
+
   for (const path of stagedPaths) {
-    if (matchesAny(path, denyPaths)) {
+    if (matchesAny(path, denyMatchers)) {
       throw new WritePolicyError(
         "write-policy-denied-path",
         `Write blocked: denied path staged: ${path}`,
@@ -198,7 +211,7 @@ async function enforceWritePolicy(options: {
 
   if (allowPaths.length > 0) {
     for (const path of stagedPaths) {
-      if (!matchesAny(path, allowPaths)) {
+      if (!matchesAny(path, allowMatchers)) {
         throw new WritePolicyError(
           "write-policy-not-allowed",
           `Write blocked: path is not allowlisted: ${path}`,

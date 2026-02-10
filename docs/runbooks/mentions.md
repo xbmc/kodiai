@@ -135,6 +135,9 @@ When write-mode is enabled, the server enforces policy before committing/pushing
 Notes:
 
 - Rate limiting is best-effort (in-memory, per process). In multi-replica deployments it is not a hard guarantee.
+- Path patterns use glob semantics. Examples:
+  - `.github/` matches everything under `.github/` (equivalent to `.github/**`)
+  - `**/*.md` matches markdown files anywhere
 
 Common refusal reasons:
 
