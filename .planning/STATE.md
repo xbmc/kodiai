@@ -12,10 +12,10 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 **Current Phase:** 12
 **Current Phase Name:** fork-pr-robustness
 **Total Phases:** 13
-**Current Plan:** 0
+**Current Plan:** 1
 **Total Plans in Phase:** 3
-**Status:** Phase 11 complete (verified); ready to execute Phase 12
-**Progress:** [████████░░] 84%
+**Status:** Ready to execute
+**Progress:** [█████████░] 86%
 
 **Last Activity:** 2026-02-10
 **Last Activity Description:** Phase 11 verification approved; status passed.
@@ -52,6 +52,7 @@ Milestone: v0.1 MVP (archived)
 | Phase 11-mention-ux-parity P02 | 5 min | 2 tasks | 5 files |
 | Phase 11-mention-ux-parity P03 | 5 min | 2 tasks | 5 files |
 | Phase 11-mention-ux-parity P04 | 2h 46m | 2 tasks | 1 files |
+| Phase 12-fork-pr-robustness P01 | 3 min | 2 tasks | 3 files |
 
 ## Deployment Info
 
@@ -93,6 +94,7 @@ Milestone: v0.1 MVP (archived)
 - [Phase 11-mention-ux-parity]: [11-02]: Mention context build is best-effort; failures proceed with empty context
 - [Phase 11-mention-ux-parity]: [11-03]: Gate reviewCommentThread MCP server on having PR number + triggering review comment id
 - [Phase 11-mention-ux-parity]: [11-03]: Enforce <details> wrapping for thread replies in the MCP tool via wrapInDetails()
+- [Phase 12-fork-pr-robustness]: For fork (and deleted-fork) PRs, never clone pr.head.repo; clone base repo and fetch pull/<n>/head instead — GitHub App tokens may not have reliable access to contributor forks; PR head refs are exposed on the base repo and keep diff/comment anchoring stable.
 
 ## Roadmap Evolution
 
@@ -116,6 +118,6 @@ Resolved:
 
 ## Session
 
-**Last Date:** 2026-02-10T02:04:12.377Z
-**Stopped At:** Completed 11-mention-ux-parity-04-PLAN.md
+**Last Date:** 2026-02-10T03:07:00.625Z
+**Stopped At:** Completed 12-fork-pr-robustness-01-PLAN.md
 **Resume File:** None
