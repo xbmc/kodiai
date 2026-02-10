@@ -110,13 +110,13 @@ export function createMentionHandler(deps: {
 
   function parseWriteIntent(userQuestion: string): {
     writeIntent: boolean;
-    keyword: "apply" | "change" | undefined;
+    keyword: "apply" | "change" | "plan" | undefined;
     request: string;
   } {
     const trimmed = userQuestion.trimStart();
     const lower = trimmed.toLowerCase();
 
-    for (const keyword of ["apply", "change"] as const) {
+    for (const keyword of ["apply", "change", "plan"] as const) {
       const prefix = `${keyword}:`;
       if (lower.startsWith(prefix)) {
         return {
@@ -374,7 +374,8 @@ export function createMentionHandler(deps: {
         const writeIntent = parseWriteIntent(userQuestion);
 
         const isWriteRequest = writeIntent.writeIntent;
-        const writeEnabled = isWriteRequest && config.write.enabled;
+        const isPlanOnly = writeIntent.keyword === "plan";
+        const writeEnabled = isWriteRequest && !isPlanOnly && config.write.enabled;
 
         const writeKeyword = writeIntent.keyword ?? "apply";
         const writeOutputKey =
@@ -498,7 +499,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        if (isWriteRequest && !config.write.enabled) {
+        if (isWriteRequest && !isPlanOnly && !config.write.enabled) {
           logger.info(
             {
               surface: mention.surface,
@@ -586,6 +587,18 @@ export function createMentionHandler(deps: {
           );
         }
 
+        const planOnlyInstructions = isPlanOnly
+          ? [
+              "Plan-only request detected (plan:).",
+              "In this run:",
+              "- Do NOT edit files.",
+              "- Do NOT run git commands.",
+              "- Do NOT propose opening a PR.",
+              "Return a concise plan with 3-7 steps and a list of files you would touch.",
+              "End by asking the user to proceed with `apply:` if they want you to implement it.",
+            ].join("\n")
+          : undefined;
+
         const writeInstructions = writeEnabled
           ? [
               "Write-intent request detected (apply/change).",
@@ -597,21 +610,21 @@ export function createMentionHandler(deps: {
               "- Do NOT publish any GitHub comments/reviews; publish tools are disabled.",
               "- Keep changes minimal and focused on the request.",
             ].join("\n")
-          : isWriteRequest
-            ? [
-                "Write-intent request detected (apply/change).",
-                "In this run: do NOT create branches/commits/PRs and do NOT push changes.",
-                "Instead, propose a concrete, minimal plan (files + steps) and ask for confirmation.",
-                "Keep it concise.",
-              ].join("\n")
-            : undefined;
+            : isWriteRequest
+              ? [
+                  "Write-intent request detected (apply/change).",
+                  "In this run: do NOT create branches/commits/PRs and do NOT push changes.",
+                  "Instead, propose a concrete, minimal plan (files + steps) and ask for confirmation.",
+                  "Keep it concise.",
+                ].join("\n")
+              : undefined;
 
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
           mentionContext,
           userQuestion: writeIntent.request,
-          customInstructions: [config.mention.prompt, writeInstructions]
+          customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
             .filter((s) => (s ?? "").trim().length > 0)
             .join("\n\n"),
         });

@@ -122,6 +122,14 @@ export function buildMentionPrompt(params: {
     "  - If NOT APPROVED: list only the issues; do not include strengths or change summaries.",
   );
 
+  lines.push("- If the user is asking for a plan (e.g. they used `plan:`), respond with:");
+  lines.push(
+    "  - One sentence intent",
+    "  - Files: <1-6 paths>",
+    "  - Steps: 3-7 steps",
+    "  - End with: 'Reply with apply: <same request> to implement.'",
+  );
+
   // Custom instructions
   if (customInstructions) {
     lines.push("");

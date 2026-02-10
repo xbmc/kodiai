@@ -127,10 +127,12 @@ Mentions support an explicit "write intent" prefix for future mention-driven cha
 
 - `apply: <request>`
 - `change: <request>`
+- `plan: <request>` (plan only; no writes)
 
 Behavior today:
 
 - If `write.enabled` is **false** (default), Kodiai will refuse to apply changes and will reply with a short message explaining how to enable write mode.
+- `plan:` always produces a plan and does not write, even if `write.enabled=true`.
 - In logs, expect a gate skip with:
   - `gate=write-mode`
   - `skipReason=write-disabled`
