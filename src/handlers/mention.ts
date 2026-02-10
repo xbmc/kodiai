@@ -359,10 +359,6 @@ export function createMentionHandler(deps: {
             await postMentionReply(replyBody);
             return;
           }
-
-          // Reserve immediately so back-to-back requests in the same process
-          // don't both pass the gate before the first finishes publishing.
-          lastWriteAt.set(key, now);
         }
 
         if (isWriteRequest && mention.prNumber === undefined) {
@@ -604,7 +600,11 @@ export function createMentionHandler(deps: {
           );
           await postMentionReply(replyBody);
 
-          // Note: we already reserved lastWriteAt earlier when passing the gate.
+          // Record successful publish time for rate limiting.
+          if (config.write.minIntervalSeconds > 0) {
+            const key = `${event.installationId}:${mention.owner}/${mention.repo}`;
+            lastWriteAt.set(key, Date.now());
+          }
           return;
         }
 
