@@ -29,10 +29,14 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.write.minIntervalSeconds).toBe(0);
     expect(config.write.secretScan.enabled).toBe(true);
     expect(config.review.enabled).toBe(true);
+    expect(config.review.uiRereviewTeam).toBeUndefined();
+    expect(config.review.requestUiRereviewTeamOnOpen).toBe(false);
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
     expect(config.review.triggers.onReviewRequested).toBe(true);
     expect(config.review.autoApprove).toBe(true);
+    expect(config.review.uiRereviewTeam).toBeUndefined();
+    expect(config.review.requestUiRereviewTeamOnOpen).toBe(false);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();

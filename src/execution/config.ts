@@ -65,6 +65,14 @@ const repoConfigSchema = z.object({
   review: z
     .object({
       enabled: z.boolean().default(true),
+      /**
+       * Optional team slug/name to use for UI-based re-review.
+       * When configured, Kodiai can ensure the team is requested on PR open so it appears
+       * under Reviewers. Humans can then remove/re-request to retrigger a review.
+       */
+      uiRereviewTeam: z.string().optional(),
+      /** If true, request uiRereviewTeam on opened/ready_for_review events (best-effort). */
+      requestUiRereviewTeamOnOpen: z.boolean().default(false),
       triggers: z
         .object({
           onOpened: z.boolean().default(true),
@@ -90,6 +98,7 @@ const repoConfigSchema = z.object({
         onReviewRequested: true,
       },
       autoApprove: true,
+      requestUiRereviewTeamOnOpen: false,
       skipAuthors: [],
       skipPaths: [],
     }),

@@ -61,6 +61,50 @@ export function createReviewHandler(deps: {
 
   const rereviewTeamSlugs = new Set(["ai-review"]);
 
+  async function ensureUiRereviewTeamRequested(options: {
+    octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    team: string;
+    logger: Logger;
+  }): Promise<void> {
+    const { octokit, owner, repo, prNumber, team } = options;
+    const normalized = team.trim().toLowerCase();
+    if (normalized.length === 0) return;
+
+    try {
+      const requested = await octokit.rest.pulls.listRequestedReviewers({
+        owner,
+        repo,
+        pull_number: prNumber,
+      });
+      const already =
+        (requested.data.teams ?? []).some((t) => (t.slug ?? "").trim().toLowerCase() === normalized) ||
+        (requested.data.teams ?? []).some((t) => (t.name ?? "").trim().toLowerCase() === normalized);
+      if (already) return;
+    } catch (err) {
+      logger.warn(
+        { err, owner, repo, prNumber, team },
+        "Failed to list requested reviewers; attempting to request ui rereview team anyway",
+      );
+    }
+
+    try {
+      await octokit.rest.pulls.requestReviewers({
+        owner,
+        repo,
+        pull_number: prNumber,
+        team_reviewers: [team],
+      });
+    } catch (err) {
+      logger.warn(
+        { err, owner, repo, prNumber, team },
+        "Failed to request ui rereview team (best-effort)",
+      );
+    }
+  }
+
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
       | PullRequestOpenedEvent
@@ -279,6 +323,25 @@ export function createReviewHandler(deps: {
 
         // Load repo config (.kodiai.yml) with defaults
         const config = await loadRepoConfig(workspace.dir);
+
+        // Best-effort: ensure a UI rereview team is requested so it appears under Reviewers.
+        // NOTE: The resulting review_requested event sender will be the app, and our bot filter
+        // drops self-events. This is intentional to avoid loops.
+        if (
+          config.review.requestUiRereviewTeamOnOpen &&
+          config.review.uiRereviewTeam &&
+          (action === "opened" || action === "ready_for_review")
+        ) {
+          const octokit = await githubApp.getInstallationOctokit(event.installationId);
+          await ensureUiRereviewTeamRequested({
+            octokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            team: config.review.uiRereviewTeam,
+            logger,
+          });
+        }
 
         logger.info(
           {
