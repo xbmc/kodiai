@@ -8,6 +8,7 @@ export function createCommentServer(
   owner: string,
   repo: string,
   reviewOutputKey?: string,
+  onPublish?: () => void,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
@@ -37,6 +38,7 @@ export function createCommentServer(
               comment_id: commentId,
               body: maybeStampMarker(body),
             });
+            onPublish?.();
             return {
               content: [
                 {
@@ -71,6 +73,7 @@ export function createCommentServer(
               issue_number: issueNumber,
               body: maybeStampMarker(body),
             });
+            onPublish?.();
             return {
               content: [
                 {

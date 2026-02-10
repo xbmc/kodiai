@@ -44,6 +44,7 @@ export function createExecutor(deps: {
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>
           githubApp.getInstallationOctokit(context.installationId);
+        let published = false;
         const mcpServers = buildMcpServers({
           getOctokit,
           owner: context.owner,
@@ -53,6 +54,9 @@ export function createExecutor(deps: {
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
           logger,
+          onPublish: () => {
+            published = true;
+          },
         });
 
         // Build allowed tools list
@@ -141,6 +145,7 @@ export function createExecutor(deps: {
           numTurns: resultMessage.num_turns,
           durationMs: resultMessage.duration_ms ?? durationMs,
           sessionId: resultMessage.session_id,
+          published,
           errorMessage: undefined,
         };
       } catch (err) {
@@ -159,6 +164,7 @@ export function createExecutor(deps: {
             numTurns: undefined,
             durationMs,
             sessionId: undefined,
+            published: false,
             errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
           };
@@ -174,6 +180,7 @@ export function createExecutor(deps: {
           numTurns: undefined,
           durationMs,
           sessionId: undefined,
+          published: false,
           errorMessage,
         };
       }

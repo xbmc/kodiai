@@ -7,6 +7,7 @@ export function createReviewCommentThreadServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
   repo: string,
+  onPublish?: () => void,
 ) {
   return createSdkMcpServer({
     name: "reviewCommentThread",
@@ -33,6 +34,8 @@ export function createReviewCommentThreadServer(
               comment_id: commentId,
               body: wrapInDetails(body, "kodiai response"),
             });
+
+            onPublish?.();
 
             return {
               content: [

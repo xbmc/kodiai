@@ -30,6 +30,8 @@ export type ExecutionResult = {
   numTurns: number | undefined;
   durationMs: number | undefined;
   sessionId: string | undefined;
+  /** True if the execution published a GitHub-visible output via MCP tools (best-effort). */
+  published?: boolean;
   /** Populated when conclusion is "error" */
   errorMessage: string | undefined;
   /** Set to true when the execution was terminated by timeout */

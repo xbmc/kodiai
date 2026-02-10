@@ -19,6 +19,7 @@ export function buildMcpServers(deps: {
   reviewOutputKey?: string;
   deliveryId?: string;
   logger?: Logger;
+  onPublish?: () => void;
 }) {
   const servers: Record<string, ReturnType<typeof createCommentServer>> = {
     github_comment: createCommentServer(
@@ -26,6 +27,7 @@ export function buildMcpServers(deps: {
       deps.owner,
       deps.repo,
       deps.reviewOutputKey,
+      deps.onPublish,
     ),
   };
 
@@ -34,6 +36,7 @@ export function buildMcpServers(deps: {
       deps.getOctokit,
       deps.owner,
       deps.repo,
+      deps.onPublish,
     );
   }
 

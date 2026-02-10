@@ -298,6 +298,7 @@ export function createMentionHandler(deps: {
             surface: mention.surface,
             issueNumber: mention.issueNumber,
             conclusion: result.conclusion,
+            published: result.published,
             costUsd: result.costUsd,
             numTurns: result.numTurns,
             durationMs: result.durationMs,
@@ -305,6 +306,39 @@ export function createMentionHandler(deps: {
           },
           "Mention execution completed",
         );
+
+        // If Claude finished successfully but did not publish any output, post a fallback reply.
+        // This prevents "silent success" where the model chose not to call any comment tools.
+        if (result.conclusion === "success" && !result.published) {
+          const fallbackBody = wrapInDetails(
+            [
+              "I saw your mention, but I didn't publish a reply automatically.",
+              "",
+              "Can you clarify what you want me to do?",
+              "- (1) What outcome are you aiming for?",
+              "- (2) Which file(s) / line(s) should I focus on?",
+            ].join("\n"),
+            "kodiai response",
+          );
+
+          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            await replyOctokit.rest.pulls.createReplyForReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              comment_id: mention.commentId,
+              body: fallbackBody,
+            });
+          } else {
+            await replyOctokit.rest.issues.createComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              issue_number: mention.issueNumber,
+              body: fallbackBody,
+            });
+          }
+        }
 
         // If execution errored, post or update error comment with classified message
         if (result.conclusion === "error") {
