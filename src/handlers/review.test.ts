@@ -59,7 +59,7 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -229,11 +229,53 @@ describe("createReviewHandler review_requested gating", () => {
 
     await handlers.get("pull_request.review_requested")!(
       buildReviewRequestedEvent({
-        requested_team: { name: "backend" },
+        requested_team: { name: "backend", slug: "backend" },
       }),
     );
 
     expect(enqueueCount).toBe(0);
+  });
+
+  test("accepts team-based rereview requests for ai-review", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const enqueued: Array<{ installationId: number }> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(installationId: number) => {
+        enqueued.push({ installationId });
+        return undefined as T;
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
+      executor: {} as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_team: { name: "ai-review", slug: "ai-review" },
+      }),
+    );
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]?.installationId).toBe(42);
   });
 
   test("skips malformed reviewer payloads without throwing", async () => {
@@ -274,6 +316,102 @@ describe("createReviewHandler review_requested gating", () => {
     ).resolves.toBeUndefined();
 
     expect(enqueueCount).toBe(0);
+  });
+});
+
+describe("createReviewHandler UI rereview team request", () => {
+  test("requests uiRereviewTeam on opened when configured", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let requestedTeams: string[] | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listRequestedReviewers: async () => ({ data: { users: [], teams: [] } }),
+          requestReviewers: async (params: { team_reviewers: string[] }) => {
+            requestedTeams = params.team_reviewers;
+            return { data: {} };
+          },
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    // Enable ui rereview in repo config
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      `review:\n  enabled: true\n  autoApprove: false\n  uiRereviewTeam: ai-review\n  requestUiRereviewTeamOnOpen: true\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    );
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!({
+      ...buildReviewRequestedEvent({ action: "opened" }),
+      name: "pull_request",
+      payload: {
+        ...buildReviewRequestedEvent({}).payload,
+        action: "opened",
+      },
+    });
+
+    expect(requestedTeams).toEqual(["ai-review"]);
+
+    await workspaceFixture.cleanup();
   });
 });
 

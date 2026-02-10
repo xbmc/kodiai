@@ -12,6 +12,90 @@ export function createCommentServer(
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
+  function sanitizeKodiaiDecisionResponse(body: string): string {
+    // Only enforce structure for the mention decision wrapper.
+    if (!body.includes("<summary>kodiai response</summary>")) {
+      return body;
+    }
+    if (!body.includes("Decision:")) {
+      return body;
+    }
+
+    const lines = body.split("\n");
+    const start = lines.findIndex((l) => l.trim() === "<details>");
+    const end = lines.findIndex((l) => l.trim() === "</details>");
+    const details = start !== -1 && end !== -1 && end > start
+      ? lines.slice(start + 1, end)
+      : lines;
+
+    const content = details
+      .map((l) => l.trimEnd())
+      .filter((l) => l.trim().length > 0)
+      .filter((l) => !l.trim().startsWith("<summary>"));
+
+    const decisionLine = content.find((l) => l.trim().startsWith("Decision:"));
+    if (!decisionLine) {
+      throw new Error("Invalid kodiai response: missing Decision line");
+    }
+
+    const decision = decisionLine.split(":", 2)[1]?.trim();
+    if (decision !== "APPROVE" && decision !== "NOT APPROVED") {
+      throw new Error("Invalid kodiai response: Decision must be APPROVE or NOT APPROVED");
+    }
+
+    if (decision === "APPROVE") {
+      const issuesNone = content.find((l) => l.trim() === "Issues: none");
+      if (!issuesNone) {
+        throw new Error("Invalid kodiai response: APPROVE must include 'Issues: none'");
+      }
+      // Enforce no other non-empty content besides Decision and Issues: none.
+      const allowed = new Set([decisionLine.trim(), "Issues: none"]);
+      for (const l of content) {
+        if (!allowed.has(l.trim())) {
+          throw new Error(
+            "Invalid kodiai response: APPROVE must contain only Decision and Issues: none",
+          );
+        }
+      }
+      return body;
+    }
+
+    // NOT APPROVED: require Issues: header and issue lines.
+    const issuesHeaderIndex = content.findIndex((l) => l.trim() === "Issues:");
+    if (issuesHeaderIndex === -1) {
+      throw new Error("Invalid kodiai response: NOT APPROVED must include 'Issues:'");
+    }
+
+    const issueLineRe =
+      /^- \(\d+\) \[(critical|major|minor)\] (.+?) \((\d+(?:,\s*\d+)*)\): .+/;
+    const issueLines = content.slice(issuesHeaderIndex + 1).filter((l) => l.trim().startsWith("-"));
+    if (issueLines.length === 0) {
+      throw new Error("Invalid kodiai response: Issues list is empty");
+    }
+    for (const l of issueLines) {
+      if (!issueLineRe.test(l.trim())) {
+        throw new Error(
+          "Invalid kodiai response issue format. Use: - (1) [critical|major|minor] path/to/file.ts (123, 456): <1-3 sentences>",
+        );
+      }
+    }
+
+    // Enforce no extra prose outside the Decision/Issues block.
+    const allowedPrefixes = ["Decision:", "Issues:", "-"];
+    for (const l of content) {
+      if (l.trim() === "Issues: none") {
+        throw new Error("Invalid kodiai response: Issues: none is only valid with APPROVE");
+      }
+      if (!allowedPrefixes.some((p) => l.trim().startsWith(p))) {
+        throw new Error(
+          "Invalid kodiai response: include only Decision and Issues (no additional text)",
+        );
+      }
+    }
+
+    return body;
+  }
+
   function sanitizeKodiaiReviewSummary(body: string): string {
     // Only enforce structure for the PR auto-review summary comment.
     if (!body.includes("<summary>Kodiai Review Summary</summary>")) {
@@ -161,7 +245,9 @@ export function createCommentServer(
               owner,
               repo,
               comment_id: commentId,
-              body: maybeStampMarker(sanitizeKodiaiReviewSummary(body)),
+              body: maybeStampMarker(
+                sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
+              ),
             });
             onPublish?.();
             return {
@@ -196,7 +282,9 @@ export function createCommentServer(
               owner,
               repo,
               issue_number: issueNumber,
-              body: maybeStampMarker(sanitizeKodiaiReviewSummary(body)),
+              body: maybeStampMarker(
+                sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
+              ),
             });
             onPublish?.();
             return {

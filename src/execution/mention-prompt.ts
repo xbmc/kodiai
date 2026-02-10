@@ -111,7 +111,7 @@ export function buildMentionPrompt(params: {
     "  ",
     "  Decision: APPROVE | NOT APPROVED",
     "  Issues:",
-    "  - (1) [critical|major|minor] <issue summary> (include file:line if applicable)",
+    "  - (1) [critical|major|minor] path/to/file.ts (123, 456): <issue summary>",
     "  ",
     "  </details>",
     "  ```",
@@ -119,7 +119,7 @@ export function buildMentionPrompt(params: {
   lines.push(
     "  Notes:",
     "  - If APPROVE: keep it to 1-2 lines and set `Issues: none`.",
-    "  - If NOT APPROVED: list only the issues; do not include strengths or change summaries.",
+    "  - If NOT APPROVED: include only Decision + Issues (no extra explanation paragraphs).",
   );
 
   lines.push("- If the user is asking for a plan (e.g. they used `plan:`), respond with:");

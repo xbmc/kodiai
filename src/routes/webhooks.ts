@@ -23,6 +23,8 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
     const signature = c.req.header("x-hub-signature-256");
     const deliveryId = c.req.header("x-github-delivery") ?? "unknown";
     const eventName = c.req.header("x-github-event") ?? "unknown";
+    const userAgent = c.req.header("user-agent") ?? "unknown";
+    const receivedAt = new Date().toISOString();
 
     // CRITICAL: Get raw body text BEFORE any JSON parsing.
     // Parsing first can alter whitespace/encoding and break HMAC verification.
@@ -73,6 +75,8 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
         installationId: event.installationId,
         repository: repositoryName,
         sender: senderLogin,
+        receivedAt,
+        userAgent,
       },
       "Webhook accepted and queued for dispatch",
     );

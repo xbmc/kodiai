@@ -18,7 +18,20 @@ const repoConfigSchema = z.object({
       /** Changed paths matching any denyPaths pattern are blocked. Deny wins over allow. */
       denyPaths: z
         .array(z.string())
-        .default([".github/", ".git/", ".planning/", ".kodiai.yml"]),
+        .default([
+          ".github/",
+          ".git/",
+          ".planning/",
+          ".kodiai.yml",
+          ".env",
+          ".env.*",
+          "**/*.pem",
+          "**/*.key",
+          "**/*.p12",
+          "**/*.pfx",
+          "**/*credentials*",
+          "**/*secret*",
+        ]),
       /** Basic rate limit for write-mode requests. 0 = no limit. */
       minIntervalSeconds: z.number().min(0).max(86400).default(0),
       secretScan: z
@@ -32,13 +45,34 @@ const repoConfigSchema = z.object({
     .default({
       enabled: false,
       allowPaths: [],
-      denyPaths: [".github/", ".git/", ".planning/", ".kodiai.yml"],
+      denyPaths: [
+        ".github/",
+        ".git/",
+        ".planning/",
+        ".kodiai.yml",
+        ".env",
+        ".env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*credentials*",
+        "**/*secret*",
+      ],
       minIntervalSeconds: 0,
       secretScan: { enabled: true },
     }),
   review: z
     .object({
       enabled: z.boolean().default(true),
+      /**
+       * Optional team slug/name to use for UI-based re-review.
+       * When configured, Kodiai can ensure the team is requested on PR open so it appears
+       * under Reviewers. Humans can then remove/re-request to retrigger a review.
+       */
+      uiRereviewTeam: z.string().optional(),
+      /** If true, request uiRereviewTeam on opened/ready_for_review events (best-effort). */
+      requestUiRereviewTeamOnOpen: z.boolean().default(false),
       triggers: z
         .object({
           onOpened: z.boolean().default(true),
@@ -64,6 +98,7 @@ const repoConfigSchema = z.object({
         onReviewRequested: true,
       },
       autoApprove: true,
+      requestUiRereviewTeamOnOpen: false,
       skipAuthors: [],
       skipPaths: [],
     }),
