@@ -15,6 +15,8 @@ import {
   fetchAndCheckoutPullRequestHeadRef,
   getGitStatusPorcelain,
   createBranchCommitAndPush,
+  commitAndPushToRemoteRef,
+  pushHeadToRemoteRef,
   WritePolicyError,
 } from "../jobs/workspace.ts";
 import {
@@ -677,8 +679,131 @@ export function createMentionHandler(deps: {
             return;
           }
 
+          const sourcePrUrl = `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`;
+
+          const sameRepoHead =
+            (mention.headRepoOwner ?? "").toLowerCase() === mention.owner.toLowerCase() &&
+            (mention.headRepoName ?? "").toLowerCase() === mention.repo.toLowerCase() &&
+            typeof mention.headRef === "string" &&
+            mention.headRef.length > 0;
+
+          // Preferred path: update existing PR branch when possible.
+          if (sameRepoHead && mention.headRef) {
+            const headRef = mention.headRef;
+            const idempotencyMarker = `kodiai-write-output-key: ${writeOutputKey}`;
+
+            try {
+              await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+              const recentMessages = (
+                await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
+              )
+                .text();
+              if (recentMessages.includes(idempotencyMarker)) {
+                logger.info(
+                  {
+                    evidenceType: "write-mode",
+                    outcome: "skipped-idempotent",
+                    deliveryId: event.id,
+                    installationId: event.installationId,
+                    repo: `${mention.owner}/${mention.repo}`,
+                    sourcePrNumber: mention.prNumber,
+                    triggerCommentId: mention.commentId,
+                    triggerCommentUrl,
+                    writeOutputKey,
+                    prUrl: sourcePrUrl,
+                  },
+                  "Evidence bundle",
+                );
+
+                const replyBody = wrapInDetails(
+                  [`Already applied (idempotent): ${sourcePrUrl}`].join("\n"),
+                  "kodiai response",
+                );
+                await postMentionReply(replyBody);
+                return;
+              }
+            } catch (err) {
+              logger.warn(
+                { err, prNumber: mention.prNumber, headRef },
+                "Failed to check idempotency marker on head ref; continuing",
+              );
+            }
+
+            try {
+              await $`git -C ${workspace.dir} checkout -B pr-head refs/remotes/origin/${headRef}`.quiet();
+
+              const commitMessage = [
+                `kodiai: apply requested changes (pr #${mention.prNumber})`,
+                "",
+                idempotencyMarker,
+                `deliveryId: ${event.id}`,
+              ].join("\n");
+
+              const pushed = await commitAndPushToRemoteRef({
+                dir: workspace.dir,
+                remoteRef: headRef,
+                commitMessage,
+                policy: {
+                  allowPaths: config.write.allowPaths,
+                  denyPaths: config.write.denyPaths,
+                  secretScanEnabled: config.write.secretScan.enabled,
+                },
+              });
+
+              logger.info(
+                {
+                  evidenceType: "write-mode",
+                  outcome: "updated-pr-branch",
+                  deliveryId: event.id,
+                  installationId: event.installationId,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  sourcePrNumber: mention.prNumber,
+                  triggerCommentId: mention.commentId,
+                  triggerCommentUrl,
+                  writeOutputKey,
+                  headRef,
+                  commitSha: pushed.headSha,
+                  prUrl: sourcePrUrl,
+                },
+                "Evidence bundle",
+              );
+
+              const replyBody = wrapInDetails(
+                [`Updated PR: ${sourcePrUrl}`].join("\n"),
+                "kodiai response",
+              );
+              await postMentionReply(replyBody);
+              return;
+            } catch (err) {
+              logger.warn(
+                { err, prNumber: mention.prNumber, headRef },
+                "Failed to push to PR head branch; falling back to bot PR",
+              );
+
+              // Fallback: push current HEAD to deterministic bot branch and open bot PR.
+              try {
+                await pushHeadToRemoteRef({
+                  dir: workspace.dir,
+                  remoteRef: writeBranchName,
+                });
+              } catch (pushErr) {
+                logger.error(
+                  { err: pushErr, prNumber: mention.prNumber, branchName: writeBranchName },
+                  "Fallback push to bot branch failed",
+                );
+                throw err;
+              }
+              // Continue into bot PR creation below.
+            }
+          }
+
           const branchName = writeBranchName;
-          const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
+          const commitMessage = [
+            `kodiai: apply requested changes (pr #${mention.prNumber})`,
+            "",
+            `kodiai-write-output-key: ${writeOutputKey}`,
+            `deliveryId: ${event.id}`,
+          ].join("\n");
 
           let pushed: { branchName: string; headSha: string };
           try {

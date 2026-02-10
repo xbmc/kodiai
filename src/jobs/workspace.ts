@@ -148,6 +148,10 @@ export async function getGitStatusPorcelain(dir: string): Promise<string> {
   return (await $`git -C ${dir} status --porcelain`.quiet()).text();
 }
 
+async function getOriginTokenFromDir(dir: string): Promise<string | undefined> {
+  return await getOriginTokenFromRemoteUrl(dir);
+}
+
 function normalizeGlobPattern(pattern: string): string {
   const p = pattern.trim();
   if (p.endsWith("/")) {
@@ -174,8 +178,37 @@ function buildSecretRegexes(): Array<{ name: string; regex: RegExp }> {
     { name: "aws-access-key", regex: /AKIA[0-9A-Z]{16}/ },
     { name: "github-pat", regex: /ghp_[A-Za-z0-9]{36}/ },
     { name: "slack-token", regex: /xox[baprs]-[A-Za-z0-9-]{10,}/ },
+    { name: "github-token", regex: /gh[opsu]_[A-Za-z0-9]{36,}/ },
     { name: "github-x-access-token-url", regex: /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/ },
   ];
+}
+
+function shannonEntropy(s: string): number {
+  const freq = new Map<string, number>();
+  for (const ch of s) freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  let ent = 0;
+  for (const [, count] of freq) {
+    const p = count / s.length;
+    ent -= p * Math.log2(p);
+  }
+  return ent;
+}
+
+function findHighEntropyTokens(addedLines: string[]): string | undefined {
+  const tokenRe = /[A-Za-z0-9_\-=]{32,}/g;
+  for (const line of addedLines) {
+    const matches = line.match(tokenRe) ?? [];
+    for (const m of matches) {
+      const hasLetter = /[A-Za-z]/.test(m);
+      const hasDigit = /\d/.test(m);
+      if (!hasLetter || !hasDigit) continue;
+      const ent = shannonEntropy(m);
+      if (ent >= 4.2) {
+        return `High-entropy token-like string detected (entropy=${ent.toFixed(2)}, length=${m.length})`;
+      }
+    }
+  }
+  return undefined;
 }
 
 async function enforceWritePolicy(options: {
@@ -230,6 +263,19 @@ async function enforceWritePolicy(options: {
         );
       }
     }
+
+    // Best-effort entropy scan on added lines only.
+    const addedLines = diff
+      .split("\n")
+      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+      .map((l) => l.slice(1));
+    const entropyHit = findHighEntropyTokens(addedLines);
+    if (entropyHit) {
+      throw new WritePolicyError(
+        "write-policy-secret-detected",
+        `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
+      );
+    }
   }
 }
 
@@ -248,7 +294,7 @@ export async function createBranchCommitAndPush(options: {
 
   validateBranchName(branchName);
 
-  const token = await getOriginTokenFromRemoteUrl(dir);
+  const token = await getOriginTokenFromDir(dir);
 
   try {
     await $`git -C ${dir} checkout -b ${branchName}`.quiet();
@@ -274,6 +320,70 @@ export async function createBranchCommitAndPush(options: {
     await $`git -C ${dir} push ${remote} HEAD:${branchName}`.quiet();
 
     return { branchName, headSha };
+  } catch (err) {
+    redactTokenFromError(err, token);
+    throw err;
+  }
+}
+
+export async function commitAndPushToRemoteRef(options: {
+  dir: string;
+  remoteRef: string;
+  commitMessage: string;
+  remote?: string;
+  policy?: {
+    allowPaths?: string[];
+    denyPaths?: string[];
+    secretScanEnabled?: boolean;
+  };
+}): Promise<{ remoteRef: string; headSha: string }> {
+  const { dir, remoteRef, commitMessage, remote = "origin" } = options;
+
+  validateBranchName(remoteRef);
+
+  const token = await getOriginTokenFromDir(dir);
+
+  try {
+    await $`git -C ${dir} add -A`.quiet();
+
+    const staged = (await $`git -C ${dir} diff --cached --name-only`.quiet()).text().trim();
+    if (staged.length === 0) {
+      throw new WritePolicyError("write-policy-no-changes", "No staged changes to commit");
+    }
+
+    const stagedPaths = staged.split("\n").map((s) => s.trim()).filter(Boolean);
+    await enforceWritePolicy({
+      dir,
+      stagedPaths,
+      allowPaths: options.policy?.allowPaths ?? [],
+      denyPaths: options.policy?.denyPaths ?? [],
+      secretScanEnabled: options.policy?.secretScanEnabled ?? true,
+    });
+
+    await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
+    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    await $`git -C ${dir} push ${remote} HEAD:${remoteRef}`.quiet();
+
+    return { remoteRef, headSha };
+  } catch (err) {
+    redactTokenFromError(err, token);
+    throw err;
+  }
+}
+
+export async function pushHeadToRemoteRef(options: {
+  dir: string;
+  remoteRef: string;
+  remote?: string;
+}): Promise<{ remoteRef: string; headSha: string }> {
+  const { dir, remoteRef, remote = "origin" } = options;
+  validateBranchName(remoteRef);
+
+  const token = await getOriginTokenFromDir(dir);
+  try {
+    const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
+    await $`git -C ${dir} push ${remote} HEAD:${remoteRef}`.quiet();
+    return { remoteRef, headSha };
   } catch (err) {
     redactTokenFromError(err, token);
     throw err;
