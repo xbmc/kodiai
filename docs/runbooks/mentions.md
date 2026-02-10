@@ -83,6 +83,25 @@ If the ingress log is missing for a real delivery, suspect:
 - Signature verification failed (look for `Webhook signature verification failed`)
 - Delivery deduplicated (look for `Duplicate delivery skipped`)
 
+## Evidence Bundle (Write-Mode)
+
+When write-mode is enabled and an `apply:` / `change:` mention creates or reuses a PR, the handler emits a single structured log line:
+
+- Message: `Evidence bundle`
+- Fields:
+  - `evidenceType=write-mode`
+  - `outcome=created-pr|reused-pr`
+  - `deliveryId`
+  - `installationId`
+  - `repo`
+  - `sourcePrNumber`
+  - `triggerCommentId`
+  - `triggerCommentUrl`
+  - `writeOutputKey`
+  - `branchName`
+  - `prUrl`
+  - `commitSha` (for created PR)
+
 ## 3) Confirm Mention Detection + Gate Decisions
 
 For the same `deliveryId`, search for mention handler logs.

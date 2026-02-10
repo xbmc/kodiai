@@ -33,6 +33,20 @@ Expected log chain includes:
 - `Router evaluated dispatch keys`
 - Either `Dispatched to ... handler(s)` or explicit filtered/no-handler skip reason
 
+## Evidence Bundle (Review)
+
+When review output is published or an approval is submitted, the handler emits a single structured log line:
+
+- Message: `Evidence bundle`
+- Fields:
+  - `evidenceType=review`
+  - `outcome=published-output|submitted-approval`
+  - `deliveryId`
+  - `installationId`
+  - `repo`
+  - `prNumber`
+  - `reviewOutputKey`
+
 ## 3) Verify review_requested gate decision
 
 For the same `deliveryId`, check review handler gate logs.
