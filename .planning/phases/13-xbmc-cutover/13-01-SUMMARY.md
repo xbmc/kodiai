@@ -53,6 +53,7 @@ completed: 2026-02-10
 
 - Wrote an actionable cutover runbook covering permissions, webhook semantics, delivery verification, smoke tests, and legacy workflow removal.
 - Verified the Kodiai GitHub App is installed on `xbmc/xbmc` and webhook deliveries reach the Azure Container Apps deployment.
+- Captured smoke-test evidence: `issue_comment` delivery accepted for `xbmc/xbmc` and mention execution completed with `published=true` (test PR: https://github.com/xbmc/xbmc/pull/27832; workflow removal PR: https://github.com/xbmc/xbmc/pull/27833).
 - Captured the human-only setup steps in a phase-scoped USER-SETUP doc for future rollouts.
 
 ## Task Commits
