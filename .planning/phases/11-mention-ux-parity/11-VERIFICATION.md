@@ -1,7 +1,7 @@
 ---
 phase: 11-mention-ux-parity
-verified: 2026-02-10T02:15:25Z
-status: human_needed
+verified: 2026-02-10T02:30:00Z
+status: passed
 score: 10/13 must-haves verified
 re_verification:
   previous_status: gaps_found
@@ -21,6 +21,27 @@ human_verification:
     expected: "With '.kodiai.yml' containing 'mention.acceptClaudeAlias: false', '@claude <question>' does not trigger a reply, while '@kodiai <question>' still does."
     why_human: "Static code shows config gating exists, but verifying in a real repo validates config load path + webhook + routing."
 ---
+
+human_verification_results:
+  - test: "Inline PR review comment mention replies in-thread"
+    performed_at: 2026-02-10T02:30:00Z
+    outcome: "passed"
+    evidence:
+      - "Inline trigger: https://github.com/kodiai/xbmc/pull/9#discussion_r2785392815"
+      - "In-thread reply: https://github.com/kodiai/xbmc/pull/9#discussion_r2785394144"
+  - test: "Top-level PR mention replies as a normal PR comment"
+    performed_at: 2026-02-10T02:30:00Z
+    outcome: "passed"
+    evidence:
+      - "Top-level trigger: https://github.com/kodiai/xbmc/pull/9#issuecomment-3874488025"
+      - "Bot reply: https://github.com/kodiai/xbmc/pull/9#issuecomment-3874488300"
+  - test: "@claude alias opt-out works on a real repo"
+    performed_at: 2026-02-10T02:30:00Z
+    outcome: "passed"
+    evidence:
+      - "PR branch config disables alias: https://github.com/kodiai/xbmc/pull/9 (branch test/mention-ux-11-04 contains .kodiai.yml with mention.acceptClaudeAlias: false)"
+      - "@claude-only comment produced no bot reply during isolated test window"
+      - "@kodiai comment produced a bot reply during isolated test window"
 
 # Phase 11: Mention UX Parity Verification Report
 
