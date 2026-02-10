@@ -138,11 +138,11 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const acceptedHandles = [appSlug];
-        // Preserve @claude muscle memory: treat missing config as enabled.
-        // Repo opt-out is explicit: acceptClaudeAlias: false.
+        // Global alias: treat @claude as an always-on alias for mentions.
+        // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
+        // but the alias is enabled by default to support immediate cutover.)
         const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
-        if (acceptClaudeAlias) acceptedHandles.push("claude");
+        const acceptedHandles = acceptClaudeAlias ? [appSlug, "claude"] : [appSlug];
 
         // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
         if (!containsMention(mention.commentBody, acceptedHandles)) {
