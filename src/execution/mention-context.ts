@@ -10,19 +10,36 @@ export type BuildMentionContextOptions = {
   maxComments?: number;
   /** Max characters to include per comment body (after sanitization). */
   maxCommentChars?: number;
+  /** Max total characters to include across all included conversation comments. */
+  maxConversationChars?: number;
+  /** Max pages to scan when paginating GitHub list APIs for context. */
+  maxApiPages?: number;
   /** Max characters to include from PR description (after sanitization). */
   maxPrBodyChars?: number;
 };
 
 const DEFAULT_MAX_COMMENTS = 20;
 const DEFAULT_MAX_COMMENT_CHARS = 800;
+const DEFAULT_MAX_CONVERSATION_CHARS = 16_000;
+const DEFAULT_MAX_API_PAGES = 10;
 const DEFAULT_MAX_PR_BODY_CHARS = 1200;
 
-function truncateDeterministic(input: string, maxChars: number): string {
-  if (maxChars <= 0) return "";
-  if (input.length <= maxChars) return input;
+type IssueComment = {
+  id?: number;
+  body?: string | null;
+  created_at: string;
+  updated_at?: string;
+  user?: { login?: string | null } | null;
+};
+
+function truncateDeterministic(
+  input: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
+  if (maxChars <= 0) return { text: "", truncated: input.length > 0 };
+  if (input.length <= maxChars) return { text: input, truncated: false };
   const clipped = input.slice(0, maxChars).trimEnd();
-  return `${clipped}\n...[truncated]`;
+  return { text: `${clipped}\n...[truncated]`, truncated: true };
 }
 
 function isLegacyBotTrackingComment(body: string | null | undefined): boolean {
@@ -46,17 +63,132 @@ export async function buildMentionContext(
 ): Promise<string> {
   const maxComments = options.maxComments ?? DEFAULT_MAX_COMMENTS;
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
+  const maxConversationChars =
+    options.maxConversationChars ?? DEFAULT_MAX_CONVERSATION_CHARS;
+  const maxApiPages = options.maxApiPages ?? DEFAULT_MAX_API_PAGES;
   const maxPrBodyChars = options.maxPrBodyChars ?? DEFAULT_MAX_PR_BODY_CHARS;
 
   const lines: string[] = [];
+  const scaleNotes: string[] = [];
+
+  async function listIssueCommentsBounded(): Promise<{
+    comments: IssueComment[];
+    scannedPages: number;
+    hitPageCap: boolean;
+    hitTriggerTimeCap: boolean;
+  }> {
+    const perPage = 100;
+    const all: IssueComment[] = [];
+
+    const triggerTs = mention.commentCreatedAt
+      ? new Date(mention.commentCreatedAt).getTime()
+      : undefined;
+    let hitTriggerTimeCap = false;
+
+    for (let page = 1; page <= maxApiPages; page++) {
+      const { data } = await octokit.rest.issues.listComments({
+        owner: mention.owner,
+        repo: mention.repo,
+        issue_number: mention.issueNumber,
+        per_page: perPage,
+        page,
+        sort: "created",
+        direction: "desc",
+      });
+
+      all.push(...(data as IssueComment[]));
+
+      // Early exit: if there's no trigger time, we only need the most recent
+      // `maxComments` comments, and we're already paging newest-first.
+      if (!mention.commentCreatedAt && maxComments > 0 && all.length >= maxComments) {
+        return {
+          comments: all,
+          scannedPages: page,
+          hitPageCap: false,
+          hitTriggerTimeCap: false,
+        };
+      }
+
+      // If we have a trigger time, try to avoid scanning forever through newer
+      // comments after the trigger. Once we've fetched some comments older than
+      // the trigger and have enough eligible comments, we'll stop.
+      if (typeof triggerTs === "number" && data.length > 0) {
+        const oldestFetched = data[data.length - 1] as IssueComment | undefined;
+        const oldestFetchedTs = oldestFetched
+          ? new Date(oldestFetched.created_at).getTime()
+          : NaN;
+
+        // Early exit: once we've reached comments older than the trigger and have
+        // enough eligible comments to fill the cap, older pages won't change the
+        // bounded output.
+        if (maxComments > 0 && oldestFetchedTs < triggerTs) {
+          const eligible = filterCommentsToTriggerTime(
+            all,
+            mention.commentCreatedAt,
+          ).filter((c) => !isLegacyBotTrackingComment(c.body));
+          if (eligible.length >= maxComments) {
+            return {
+              comments: all,
+              scannedPages: page,
+              hitPageCap: false,
+              hitTriggerTimeCap: false,
+            };
+          }
+        }
+
+        if (oldestFetchedTs >= triggerTs && page === maxApiPages) {
+          hitTriggerTimeCap = true;
+        }
+      }
+
+      if (data.length < perPage) {
+        return {
+          comments: all,
+          scannedPages: page,
+          hitPageCap: false,
+          hitTriggerTimeCap,
+        };
+      }
+    }
+
+    // We hit the page cap. We can't know if more pages exist, but the last
+    // page was full-sized, which strongly suggests there is more.
+    if (typeof triggerTs === "number" && all.length > 0) {
+      const oldestOverall = all[all.length - 1] as IssueComment | undefined;
+      const oldestOverallTs = oldestOverall
+        ? new Date(oldestOverall.created_at).getTime()
+        : NaN;
+      if (oldestOverallTs >= triggerTs) {
+        hitTriggerTimeCap = true;
+      }
+    }
+
+    return {
+      comments: all,
+      scannedPages: maxApiPages,
+      hitPageCap: true,
+      hitTriggerTimeCap,
+    };
+  }
 
   // --- Conversation context (issue/PR comments) ---
-  const { data: comments } = await octokit.rest.issues.listComments({
-    owner: mention.owner,
-    repo: mention.repo,
-    issue_number: mention.issueNumber,
-    per_page: 100,
-  });
+  const {
+    comments: comments,
+    scannedPages,
+    hitPageCap,
+    hitTriggerTimeCap,
+  } = await listIssueCommentsBounded();
+
+  if (hitPageCap) {
+    scaleNotes.push(
+      `Conversation history scan capped at ${scannedPages} page(s) of issue comments (pagination guardrail).`,
+    );
+  }
+  if (hitTriggerTimeCap && mention.commentCreatedAt) {
+    scaleNotes.push(
+      `Conversation history may include comments after trigger time because scan did not reach older pages before ${mention.commentCreatedAt}.`,
+    );
+  }
 
   const safeComments = filterCommentsToTriggerTime(
     comments,
@@ -71,6 +203,12 @@ export async function buildMentionContext(
     return (a.id ?? 0) - (b.id ?? 0);
   });
 
+  if (maxComments > 0 && sortedComments.length > maxComments) {
+    scaleNotes.push(
+      `Only the last ${maxComments} comment(s) were included (comment count cap).`,
+    );
+  }
+
   const boundedComments =
     maxComments > 0 ? sortedComments.slice(-maxComments) : [];
 
@@ -80,14 +218,53 @@ export async function buildMentionContext(
   );
   lines.push("");
 
+  let remainingConversationChars = Math.max(0, maxConversationChars);
+  let didHitConversationCharCap = false;
+  let didTruncateAnyComment = false;
+
   for (const comment of boundedComments) {
     const author = comment.user?.login ?? "unknown";
     const bodyRaw = comment.body ?? "(empty)";
     const bodySanitized = sanitizeContent(bodyRaw);
-    const body = truncateDeterministic(bodySanitized, maxCommentChars);
+
+    if (remainingConversationChars <= 0) {
+      if (!didHitConversationCharCap) {
+        didHitConversationCharCap = true;
+        scaleNotes.push(
+          `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+        );
+      }
+      break;
+    }
+
+    const truncatedBody = truncateDeterministic(bodySanitized, maxCommentChars);
+    if (truncatedBody.truncated) {
+      didTruncateAnyComment = true;
+    }
+
+    // Apply the global conversation character budget after per-comment truncation.
+    const finalBody =
+      truncatedBody.text.length <= remainingConversationChars
+        ? truncatedBody.text
+        : truncateDeterministic(truncatedBody.text, remainingConversationChars).text;
+
+    if (finalBody.length < truncatedBody.text.length && !didHitConversationCharCap) {
+      didHitConversationCharCap = true;
+      scaleNotes.push(
+        `Conversation history truncated due to ${maxConversationChars} character cap across included comments.`,
+      );
+    }
+
+    remainingConversationChars = Math.max(0, remainingConversationChars - finalBody.length);
     lines.push(`### @${author} (${comment.created_at})`);
-    lines.push(body);
+    lines.push(finalBody);
     lines.push("");
+  }
+
+  if (didTruncateAnyComment) {
+    scaleNotes.push(
+      `One or more individual comments were truncated to ${maxCommentChars} characters.`,
+    );
   }
 
   // --- PR metadata ---
@@ -104,10 +281,16 @@ export async function buildMentionContext(
     lines.push(`Branches: ${pr.head.ref} -> ${pr.base.ref}`);
 
     if (pr.body) {
-      const body = truncateDeterministic(sanitizeContent(pr.body), maxPrBodyChars);
+      const bodySanitized = sanitizeContent(pr.body);
+      const bodyTruncated = truncateDeterministic(bodySanitized, maxPrBodyChars);
+      if (bodyTruncated.truncated) {
+        scaleNotes.push(
+          `PR description truncated to ${maxPrBodyChars} characters.`,
+        );
+      }
       lines.push("");
       lines.push("Description:");
-      lines.push(body);
+      lines.push(bodyTruncated.text);
     }
 
     lines.push("");
@@ -129,5 +312,15 @@ export async function buildMentionContext(
     }
   }
 
-  return lines.join("\n").trim() + "\n";
+  const header: string[] = [];
+  if (scaleNotes.length > 0) {
+    header.push(
+      "## Scale Notes",
+      "Some context was omitted due to scale guardrails:",
+      ...scaleNotes.map((n) => `- ${n}`),
+      "",
+    );
+  }
+
+  return header.concat(lines).join("\n").trim() + "\n";
 }

@@ -1,5 +1,19 @@
 import { sanitizeContent } from "../lib/sanitizer.ts";
 
+const DEFAULT_MAX_TITLE_CHARS = 200;
+const DEFAULT_MAX_PR_BODY_CHARS = 2000;
+const DEFAULT_MAX_CHANGED_FILES = 200;
+
+function truncateDeterministic(
+  input: string,
+  maxChars: number,
+): { text: string; truncated: boolean } {
+  if (maxChars <= 0) return { text: "", truncated: input.length > 0 };
+  if (input.length <= maxChars) return { text: input, truncated: false };
+  const clipped = input.slice(0, maxChars).trimEnd();
+  return { text: `${clipped}\n...[truncated]`, truncated: true };
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -20,24 +34,54 @@ export function buildReviewPrompt(context: {
   customInstructions?: string;
 }): string {
   const lines: string[] = [];
+  const scaleNotes: string[] = [];
+
+  const titleSanitized = sanitizeContent(context.prTitle);
+  const titleTruncated = truncateDeterministic(titleSanitized, DEFAULT_MAX_TITLE_CHARS);
+  if (titleTruncated.truncated) {
+    scaleNotes.push(`PR title truncated to ${DEFAULT_MAX_TITLE_CHARS} characters.`);
+  }
+
+  const prBodySanitized = sanitizeContent((context.prBody ?? "").trim());
+  const prBodyTruncated = truncateDeterministic(prBodySanitized, DEFAULT_MAX_PR_BODY_CHARS);
+  if (prBodyTruncated.truncated) {
+    scaleNotes.push(`PR description truncated to ${DEFAULT_MAX_PR_BODY_CHARS} characters.`);
+  }
+
+  const changedFilesSorted = [...context.changedFiles].sort();
+  const changedFilesCapped = changedFilesSorted.slice(0, DEFAULT_MAX_CHANGED_FILES);
+  if (changedFilesSorted.length > changedFilesCapped.length) {
+    scaleNotes.push(
+      `Changed file list capped at ${DEFAULT_MAX_CHANGED_FILES}; omitted ${changedFilesSorted.length - changedFilesCapped.length} more file(s).`,
+    );
+  }
 
   // --- Context header ---
   lines.push(
     `You are reviewing pull request #${context.prNumber} in ${context.owner}/${context.repo}.`,
     "",
-    `Title: ${sanitizeContent(context.prTitle)}`,
+    `Title: ${titleTruncated.text}`,
     `Author: ${context.prAuthor}`,
     `Branches: ${context.headBranch} -> ${context.baseBranch}`,
   );
 
+  if (scaleNotes.length > 0) {
+    lines.push(
+      "",
+      "## Scale Notes",
+      "Some context was omitted due to scale guardrails:",
+      ...scaleNotes.map((n) => `- ${n}`),
+    );
+  }
+
   // --- PR body ---
-  if (context.prBody && context.prBody.trim().length > 0) {
-    lines.push("", "PR description:", "---", sanitizeContent(context.prBody.trim()), "---");
+  if (prBodySanitized.length > 0) {
+    lines.push("", "PR description:", "---", prBodyTruncated.text, "---");
   }
 
   // --- Changed files ---
   lines.push("", "Changed files:");
-  for (const file of context.changedFiles) {
+  for (const file of changedFilesCapped) {
     lines.push(`- ${file}`);
   }
 

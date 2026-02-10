@@ -19,6 +19,36 @@ export type ReviewOutputPublicationStatus = {
 
 const KEY_PREFIX = "kodiai-review-output";
 
+const DEFAULT_PER_PAGE = 100;
+const DEFAULT_MAX_SCAN_ITEMS = 2000;
+
+async function scanForMarkerInPagedBodies<T extends { body?: string | null }>(params: {
+  marker: string;
+  perPage?: number;
+  maxItems?: number;
+  fetchPage: (args: { page: number; per_page: number }) => Promise<T[]>;
+}): Promise<{ found: boolean; scanned: number; hitCap: boolean }> {
+  const perPage = params.perPage ?? DEFAULT_PER_PAGE;
+  const maxItems = params.maxItems ?? DEFAULT_MAX_SCAN_ITEMS;
+
+  let scanned = 0;
+  for (let page = 1; scanned < maxItems; page++) {
+    const data = await params.fetchPage({ page, per_page: perPage });
+    for (const item of data) {
+      scanned++;
+      if (item.body?.includes(params.marker)) {
+        return { found: true, scanned, hitCap: false };
+      }
+      if (scanned >= maxItems) break;
+    }
+    if (data.length < perPage) {
+      return { found: false, scanned, hitCap: false };
+    }
+  }
+
+  return { found: false, scanned, hitCap: true };
+}
+
 function normalizeSegment(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -55,13 +85,23 @@ export async function ensureReviewOutputNotPublished(deps: {
 }): Promise<ReviewOutputPublicationStatus> {
   const marker = buildReviewOutputMarker(deps.reviewOutputKey);
 
-  const { data: reviewComments } = await deps.octokit.rest.pulls.listReviewComments({
-    owner: deps.owner,
-    repo: deps.repo,
-    pull_number: deps.prNumber,
+  const reviewCommentsScan = await scanForMarkerInPagedBodies({
+    marker,
+    fetchPage: async ({ page, per_page }) => {
+      const { data } = await deps.octokit.rest.pulls.listReviewComments({
+        owner: deps.owner,
+        repo: deps.repo,
+        pull_number: deps.prNumber,
+        per_page,
+        page,
+        sort: "created",
+        direction: "desc",
+      });
+      return data;
+    },
   });
 
-  if (reviewComments.some((comment) => comment.body?.includes(marker))) {
+  if (reviewCommentsScan.found) {
     return {
       reviewOutputKey: deps.reviewOutputKey,
       marker,
@@ -70,13 +110,23 @@ export async function ensureReviewOutputNotPublished(deps: {
     };
   }
 
-  const { data: issueComments } = await deps.octokit.rest.issues.listComments({
-    owner: deps.owner,
-    repo: deps.repo,
-    issue_number: deps.prNumber,
+  const issueCommentsScan = await scanForMarkerInPagedBodies({
+    marker,
+    fetchPage: async ({ page, per_page }) => {
+      const { data } = await deps.octokit.rest.issues.listComments({
+        owner: deps.owner,
+        repo: deps.repo,
+        issue_number: deps.prNumber,
+        per_page,
+        page,
+        sort: "created",
+        direction: "desc",
+      });
+      return data;
+    },
   });
 
-  if (issueComments.some((comment) => comment.body?.includes(marker))) {
+  if (issueCommentsScan.found) {
     return {
       reviewOutputKey: deps.reviewOutputKey,
       marker,
@@ -85,13 +135,21 @@ export async function ensureReviewOutputNotPublished(deps: {
     };
   }
 
-  const { data: reviews } = await deps.octokit.rest.pulls.listReviews({
-    owner: deps.owner,
-    repo: deps.repo,
-    pull_number: deps.prNumber,
+  const reviewsScan = await scanForMarkerInPagedBodies({
+    marker,
+    fetchPage: async ({ page, per_page }) => {
+      const { data } = await deps.octokit.rest.pulls.listReviews({
+        owner: deps.owner,
+        repo: deps.repo,
+        pull_number: deps.prNumber,
+        per_page,
+        page,
+      });
+      return data;
+    },
   });
 
-  if (reviews.some((review) => review.body?.includes(marker))) {
+  if (reviewsScan.found) {
     return {
       reviewOutputKey: deps.reviewOutputKey,
       marker,

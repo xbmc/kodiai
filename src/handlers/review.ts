@@ -442,18 +442,60 @@ export function createReviewHandler(deps: {
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             const appSlug = githubApp.getAppSlug();
 
-            // Check for bot inline comments on this PR
-            const { data: comments } = await octokit.rest.pulls.listReviewComments({
-              owner: apiOwner,
-              repo: apiRepo,
-              pull_number: pr.number,
-            });
+            const perPage = 100;
+            const maxPages = 10;
+            const maxScanItems = 1000;
 
-            const botComments = comments.filter(
-              (c) => c.user?.login === `${appSlug}[bot]`,
-            );
+            let scanned = 0;
+            let foundBotComment = false;
+            let hitScanCap = false;
 
-            if (botComments.length === 0) {
+            for (let page = 1; page <= maxPages && scanned < maxScanItems; page++) {
+              const { data } = await octokit.rest.pulls.listReviewComments({
+                owner: apiOwner,
+                repo: apiRepo,
+                pull_number: pr.number,
+                per_page: perPage,
+                page,
+                sort: "created",
+                direction: "desc",
+              });
+
+              for (const comment of data) {
+                scanned++;
+                if (comment.user?.login === `${appSlug}[bot]`) {
+                  foundBotComment = true;
+                  break;
+                }
+                if (scanned >= maxScanItems) break;
+              }
+
+              if (foundBotComment) break;
+              if (data.length < perPage) break;
+              if (page === maxPages || scanned >= maxScanItems) {
+                hitScanCap = true;
+              }
+            }
+
+            if (hitScanCap && !foundBotComment) {
+              // Degrade safely: if we can't confidently prove there were no bot
+              // inline comments (due to pagination caps), skip auto-approval.
+              logger.warn(
+                {
+                  prNumber: pr.number,
+                  scanned,
+                  maxPages,
+                  maxScanItems,
+                  gate: "auto-approve",
+                  gateResult: "skipped",
+                  skipReason: "review-comments-scan-capped",
+                },
+                "Skipping auto-approval because review comment scan hit safety cap",
+              );
+              return;
+            }
+
+            if (!foundBotComment) {
               // No issues found -- submit silent approval
               await octokit.rest.pulls.createReview({
                 owner: apiOwner,
@@ -468,7 +510,7 @@ export function createReviewHandler(deps: {
               );
             } else {
               logger.info(
-                { prNumber: pr.number, botCommentCount: botComments.length },
+                { prNumber: pr.number, scannedReviewComments: scanned, foundBotInlineComments: true },
                 "Issues found, skipping approval",
               );
             }
