@@ -156,7 +156,7 @@ export function buildReviewPrompt(context: {
     "**Status:** NOT APPROVED (issues found)",
     "",
     "**Issues:**",
-    "- (1) [short issue summary] (file:line)",
+    "- (1) [critical|major|minor] [short issue summary] (file:line)",
     "",
     "</details>",
     "",
