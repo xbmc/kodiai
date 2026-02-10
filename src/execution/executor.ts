@@ -51,6 +51,8 @@ export function createExecutor(deps: {
           context.eventType === "pull_request_review_comment.created" ||
           context.eventType === "pull_request_review.submitted";
 
+        const isWriteMode = context.writeMode === true;
+
         const mcpServers = buildMcpServers({
           getOctokit,
           owner: context.owner,
@@ -65,7 +67,9 @@ export function createExecutor(deps: {
           },
           // Mentions should not create new inline review comments; they should reply in-thread
           // (when available) or post a top-level PR/issue comment.
-          enableInlineTools: !isMentionEvent,
+          enableInlineTools: !isMentionEvent && !isWriteMode,
+          // In write-mode, trusted code publishes results (PR link, etc.)
+          enableCommentTools: !isWriteMode,
         });
 
         // Build allowed tools list
@@ -78,8 +82,10 @@ export function createExecutor(deps: {
           "Bash(git show:*)",
           "Bash(git status:*)",
         ];
+
+        const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
-        const allowedTools = [...baseTools, ...mcpTools];
+        const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
 
         // Build prompt (use pre-built prompt if provided, e.g., review handler)
         const prompt = context.prompt ?? buildPrompt(context);

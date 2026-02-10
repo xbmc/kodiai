@@ -21,16 +21,20 @@ export function buildMcpServers(deps: {
   logger?: Logger;
   onPublish?: () => void;
   enableInlineTools?: boolean;
+  enableCommentTools?: boolean;
 }) {
-  const servers: Record<string, ReturnType<typeof createCommentServer>> = {
-    github_comment: createCommentServer(
+  const servers: Record<string, ReturnType<typeof createCommentServer>> = {};
+
+  const enableCommentTools = deps.enableCommentTools ?? true;
+  if (enableCommentTools) {
+    servers.github_comment = createCommentServer(
       deps.getOctokit,
       deps.owner,
       deps.repo,
       deps.reviewOutputKey,
       deps.onPublish,
-    ),
-  };
+    );
+  }
 
   if (deps.prNumber !== undefined && deps.commentId !== undefined) {
     servers.reviewCommentThread = createReviewCommentThreadServer(

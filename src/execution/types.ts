@@ -21,6 +21,14 @@ export type ExecutionContext = {
   reviewOutputKey?: string;
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
+
+  /**
+   * Enables write-mode execution.
+   *
+   * When true, the model may edit files in the workspace, but GitHub publishing
+   * tools are disabled so writes are finalized by trusted code.
+   */
+  writeMode?: boolean;
 };
 
 /** The outcome of a Claude execution */
