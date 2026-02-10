@@ -16,6 +16,7 @@ import {
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
 import { $ } from "bun";
+import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 
 function isReviewTriggerEnabled(
   action: string,
@@ -175,25 +176,27 @@ export function createReviewHandler(deps: {
     const apiOwner = payload.repository.owner.login;
     const apiRepo = payload.repository.name;
 
-    // Fork PR support: clone from head.repo (the fork), post comments to base repo
     const headRepo = pr.head.repo;
-    const isFork = headRepo?.full_name !== payload.repository.full_name;
+    const isFork = Boolean(headRepo && headRepo.full_name !== payload.repository.full_name);
+    const isDeletedFork = !headRepo;
 
     let cloneOwner: string;
     let cloneRepo: string;
     let cloneRef: string;
     let usesPrRef = false;
 
-    if (headRepo) {
+    if (isFork || isDeletedFork) {
+      // Fork PRs (or deleted forks): clone base branch and fetch PR head ref from base repo.
+      // This avoids relying on access to the contributor's fork.
+      cloneOwner = apiOwner;
+      cloneRepo = apiRepo;
+      cloneRef = pr.base.ref;
+      usesPrRef = true;
+    } else {
+      // Non-fork PR: clone the head branch directly from the base repo.
       cloneOwner = headRepo.owner.login;
       cloneRepo = headRepo.name;
       cloneRef = pr.head.ref;
-    } else {
-      // Deleted fork -- fall back to PR ref from base repo
-      cloneOwner = apiOwner;
-      cloneRepo = apiRepo;
-      cloneRef = pr.base.ref; // Clone base branch, then fetch PR ref
-      usesPrRef = true;
     }
 
     logger.info(
@@ -205,7 +208,11 @@ export function createReviewHandler(deps: {
         cloneRepo,
         cloneRef,
         isFork,
+        isDeletedFork,
         usesPrRef,
+        workspaceStrategy: usesPrRef
+          ? "base-clone+pull-ref-fetch"
+          : "direct-head-branch-clone",
         action,
         deliveryId: event.id,
         installationId: event.installationId,
@@ -229,10 +236,13 @@ export function createReviewHandler(deps: {
           depth: 50,
         });
 
-        // Handle deleted fork: fetch PR ref from base repo
+        // Fork PR / deleted fork: fetch PR head ref from base repo
         if (usesPrRef) {
-          await $`git -C ${workspace.dir} fetch origin pull/${pr.number}/head:pr-review`.quiet();
-          await $`git -C ${workspace.dir} checkout pr-review`.quiet();
+          await fetchAndCheckoutPullRequestHeadRef({
+            dir: workspace.dir,
+            prNumber: pr.number,
+            localBranch: "pr-review",
+          });
         }
 
         // Fetch base branch so git diff origin/BASE...HEAD works.
