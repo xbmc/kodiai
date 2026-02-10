@@ -398,9 +398,12 @@ export function createMentionHandler(deps: {
               })
             : undefined;
 
-        if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
-          const triggerCommentUrl = `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`;
+        const triggerCommentUrl =
+          mention.prNumber !== undefined
+            ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
+            : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
 
+        if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
           // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
           try {
             const { data: prs } = await octokit.rest.pulls.list({
@@ -764,7 +767,7 @@ export function createMentionHandler(deps: {
               repo: `${mention.owner}/${mention.repo}`,
               sourcePrNumber: mention.prNumber,
               triggerCommentId: mention.commentId,
-              triggerCommentUrl: `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`,
+              triggerCommentUrl,
               writeOutputKey,
               branchName,
               prUrl: createdPr.html_url,
