@@ -1,0 +1,4 @@
+[test]
+# Only scan for tests in the actual codebase.
+# This repo vendors reference code under tmp/ which contains upstream tests.
+root = "src"

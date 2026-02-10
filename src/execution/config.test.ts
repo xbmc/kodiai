@@ -11,11 +11,15 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.model).toBe("claude-sonnet-4-5-20250929");
     expect(config.maxTurns).toBe(25);
     expect(config.review.enabled).toBe(true);
-    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+    expect(config.review.triggers.onReviewRequested).toBe(true);
+    expect(config.review.autoApprove).toBe(true);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();
     expect(config.mention.enabled).toBe(true);
+    expect(config.mention.acceptClaudeAlias).toBe(true);
     expect(config.systemPromptAppend).toBeUndefined();
   } finally {
     await rm(dir, { recursive: true });
@@ -34,7 +38,49 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.maxTurns).toBe(10);
     expect(config.review.autoApprove).toBe(true);
     expect(config.review.enabled).toBe(true); // default preserved
+    expect(config.review.triggers.onOpened).toBe(true); // default preserved
+    expect(config.review.triggers.onReadyForReview).toBe(true); // default preserved
+    expect(config.review.triggers.onReviewRequested).toBe(true); // default preserved
     expect(config.mention.enabled).toBe(true); // default preserved
+    expect(config.mention.acceptClaudeAlias).toBe(true); // default preserved
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("defaults mention.acceptClaudeAlias to true when mention block is omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const config = await loadRepoConfig(dir);
+    expect(config.mention.acceptClaudeAlias).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("accepts mention.acceptClaudeAlias: false", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  acceptClaudeAlias: false\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.mention.acceptClaudeAlias).toBe(false);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects unsupported mention keys", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  acceptClaudeAlias: true\n  acceptClaudeAliass: true\n",
+    );
+    await expect(loadRepoConfig(dir)).rejects.toThrow("Invalid .kodiai.yml");
   } finally {
     await rm(dir, { recursive: true });
   }
@@ -103,7 +149,67 @@ test("parses review.prompt from YAML", async () => {
     const config = await loadRepoConfig(dir);
     expect(config.review.prompt).toBe("Focus on security issues");
     expect(config.review.enabled).toBe(true);
-    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.autoApprove).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.triggers from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: false\n    onReviewRequested: true\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers).toEqual({
+      onOpened: true,
+      onReadyForReview: false,
+      onReviewRequested: true,
+    });
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("defaults review_requested trigger when triggers block is omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+    expect(config.review.triggers.onReviewRequested).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("allows explicitly disabling onReviewRequested", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: false\n",
+    );
+    const config = await loadRepoConfig(dir);
+    expect(config.review.triggers.onReviewRequested).toBe(false);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects unsupported review.triggers keys", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n    onSynchronize: true\n",
+    );
+    await expect(loadRepoConfig(dir)).rejects.toThrow("Invalid .kodiai.yml");
   } finally {
     await rm(dir, { recursive: true });
   }

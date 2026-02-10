@@ -4,11 +4,13 @@ import type {
   PullRequestReviewSubmittedEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
+import { $ } from "bun";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
+import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import {
   type MentionEvent,
   normalizeIssueComment,
@@ -17,17 +19,10 @@ import {
   containsMention,
   stripMention,
 } from "./mention-types.ts";
-import {
-  buildConversationContext,
-  buildMentionPrompt,
-} from "../execution/mention-prompt.ts";
+import { buildMentionContext } from "../execution/mention-context.ts";
+import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
-
-const TRACKING_INITIAL = [
-  "> **Kodiai** is thinking...",
-  "",
-  "_Working on your request. This comment will be updated with the response._",
-].join("\n");
+import { wrapInDetails } from "../lib/formatting.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -49,6 +44,7 @@ export function createMentionHandler(deps: {
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
+    const possibleHandles = [appSlug, "claude"];
 
     // Normalize payload based on event type
     let mention: MentionEvent;
@@ -71,83 +67,110 @@ export function createMentionHandler(deps: {
       return;
     }
 
-    // Check for @kodiai mention
-    if (!containsMention(mention.commentBody, appSlug)) return;
+    // Fast filter: ignore if neither @appSlug nor @claude appear.
+    // NOTE: Use a simple substring check here to avoid regex edge cases.
+    // We still do the authoritative accepted-handles check inside the job after loading config.
+    const bodyLower = mention.commentBody.toLowerCase();
+    const appHandle = `@${appSlug.toLowerCase()}`;
+    if (!bodyLower.includes(appHandle) && !bodyLower.includes("@claude")) return;
 
-    const userQuestion = stripMention(mention.commentBody, appSlug);
-
-    logger.info(
-      {
-        surface: mention.surface,
-        owner: mention.owner,
-        repo: mention.repo,
-        issueNumber: mention.issueNumber,
-        prNumber: mention.prNumber,
-        commentAuthor: mention.commentAuthor,
-      },
-      "Processing @kodiai mention",
-    );
-
-    // Post tracking comment BEFORE enqueue (immediate user feedback)
-    let trackingCommentId: number | undefined;
-    try {
-      const octokit = await githubApp.getInstallationOctokit(event.installationId);
-      const { data: trackingComment } = await octokit.rest.issues.createComment({
-        owner: mention.owner,
-        repo: mention.repo,
-        issue_number: mention.issueNumber,
-        body: TRACKING_INITIAL,
-      });
-      trackingCommentId = trackingComment.id;
-    } catch (err) {
-      logger.error({ err }, "Failed to post tracking comment, continuing without tracking");
-    }
+    // No tracking comment. Tracking is via eyes reaction only.
+    // The response will be posted as a new comment.
 
     await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
+        async function postMentionError(errorBody: string): Promise<void> {
+          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+
+          // Prefer replying in-thread for inline review comment mentions.
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            try {
+              await errOctokit.rest.pulls.createReplyForReviewComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                pull_number: mention.prNumber,
+                comment_id: mention.commentId,
+                body: errorBody,
+              });
+              return;
+            } catch (err) {
+              logger.warn(
+                { err, prNumber: mention.prNumber, commentId: mention.commentId },
+                "Failed to post in-thread error reply; falling back to top-level error comment",
+              );
+            }
+          }
+
+          await postOrUpdateErrorComment(
+            errOctokit,
+            {
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+            },
+            errorBody,
+            logger,
+          );
+        }
+
         // Determine clone parameters
         let cloneOwner = mention.owner;
         let cloneRepo = mention.repo;
         let cloneRef: string | undefined;
         let cloneDepth = 1;
+        let usesPrRef = false;
 
         if (mention.prNumber !== undefined) {
           cloneDepth = 50; // PR mentions need diff context
 
-          if (mention.headRef) {
-            // Review comment or review body -- PR details available in payload
-            cloneRef = mention.headRef;
-            if (mention.headRepoOwner && mention.headRepoName) {
-              cloneOwner = mention.headRepoOwner;
-              cloneRepo = mention.headRepoName;
-            }
-          } else {
-            // issue_comment on PR -- must fetch PR details (Pitfall 2)
+          // Ensure PR details are available (issue_comment on PR requires a pulls.get fetch).
+          if (!mention.baseRef || !mention.headRef) {
             const { data: pr } = await octokit.rest.pulls.get({
               owner: mention.owner,
               repo: mention.repo,
               pull_number: mention.prNumber,
             });
-            cloneRef = pr.head.ref;
-            if (pr.head.repo) {
-              cloneOwner = pr.head.repo.owner.login;
-              cloneRepo = pr.head.repo.name;
-            }
-            // Populate mention with fetched data for context builder
             mention.headRef = pr.head.ref;
             mention.baseRef = pr.base.ref;
             mention.headRepoOwner = pr.head.repo?.owner.login;
             mention.headRepoName = pr.head.repo?.name;
           }
+
+          // Fork-safe workspace strategy: clone base repo at base ref, then fetch+checkout
+          // refs/pull/<n>/head from the base repo.
+          // This avoids relying on access to contributor forks and mirrors the review handler.
+          cloneOwner = mention.owner;
+          cloneRepo = mention.repo;
+          cloneRef = mention.baseRef;
+          usesPrRef = true;
         } else {
           // Pure issue mention -- clone default branch
           const repoPayload = event.payload as Record<string, unknown>;
           const repository = repoPayload.repository as Record<string, unknown> | undefined;
           cloneRef = (repository?.default_branch as string) ?? "main";
         }
+
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            issueNumber: mention.issueNumber,
+            prNumber: mention.prNumber,
+            cloneOwner,
+            cloneRepo,
+            cloneRef,
+            cloneDepth,
+            usesPrRef,
+            workspaceStrategy: usesPrRef
+              ? "base-clone+pull-ref-fetch"
+              : "direct-branch-clone",
+          },
+          "Creating workspace for mention execution",
+        );
 
         // Clone workspace
         workspace = await workspaceManager.create(event.installationId, {
@@ -156,6 +179,21 @@ export function createMentionHandler(deps: {
           ref: cloneRef!,
           depth: cloneDepth,
         });
+
+        // PR mentions: fetch and checkout PR head ref from base repo.
+        if (usesPrRef && mention.prNumber !== undefined) {
+          await fetchAndCheckoutPullRequestHeadRef({
+            dir: workspace.dir,
+            prNumber: mention.prNumber,
+            localBranch: "pr-mention",
+          });
+
+          // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
+          // origin/BASE...HEAD even in --single-branch workspaces.
+          if (mention.baseRef) {
+            await $`git -C ${workspace.dir} fetch origin ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
+          }
+        }
 
         // Load repo config
         const config = await loadRepoConfig(workspace.dir);
@@ -169,15 +207,106 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        // Build conversation context
-        const conversationContext = await buildConversationContext(octokit, mention);
+        // Global alias: treat @claude as an always-on alias for mentions.
+        // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
+        // but the alias is enabled by default to support immediate cutover.)
+        const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
+        const acceptedHandles = acceptClaudeAlias ? [appSlug, "claude"] : [appSlug];
+
+        // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
+        // Use substring match to align with the fast filter.
+        const acceptedBodyLower = mention.commentBody.toLowerCase();
+        const accepted = acceptedHandles
+          .map((h) => (h.startsWith("@") ? h : `@${h}`))
+          .map((h) => h.toLowerCase());
+        if (!accepted.some((h) => acceptedBodyLower.includes(h))) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              acceptClaudeAlias,
+            },
+            "Mention does not match accepted handles for repo; skipping",
+          );
+          return;
+        }
+
+        const userQuestion = stripMention(mention.commentBody, acceptedHandles);
+        if (userQuestion.trim().length === 0) {
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              issueNumber: mention.issueNumber,
+              prNumber: mention.prNumber,
+              acceptClaudeAlias,
+            },
+            "Mention contained no question after stripping mention; skipping",
+          );
+          return;
+        }
+
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            issueNumber: mention.issueNumber,
+            prNumber: mention.prNumber,
+            commentAuthor: mention.commentAuthor,
+            acceptClaudeAlias,
+          },
+          "Processing mention",
+        );
+
+        // Add eyes reaction to trigger comment for immediate visual acknowledgment
+        try {
+          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          if (mention.surface === "pr_review_comment") {
+            await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              comment_id: mention.commentId,
+              content: "eyes",
+            });
+          } else if (mention.surface === "pr_review_body") {
+            // PR review bodies don't support reactions -- skip silently
+            // (the review ID is not a comment ID, so the reaction endpoints would 404)
+          } else {
+            // issue_comment and pr_comment both use the issue comment reaction endpoint
+            await reactionOctokit.rest.reactions.createForIssueComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              comment_id: mention.commentId,
+              content: "eyes",
+            });
+          }
+        } catch (err) {
+          // Non-fatal: don't block processing if reaction fails
+          logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
+        }
+
+        // Build mention context (conversation + PR metadata + inline diff context)
+        // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
+        let mentionContext = "";
+        try {
+          mentionContext = await buildMentionContext(octokit, mention);
+        } catch (err) {
+          logger.warn(
+            { err, surface: mention.surface, issueNumber: mention.issueNumber },
+            "Failed to build mention context; proceeding with empty context",
+          );
+        }
 
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
-          conversationContext,
+          mentionContext,
           userQuestion,
-          trackingCommentId,
           customInstructions: config.mention.prompt,
         });
 
@@ -188,7 +317,9 @@ export function createMentionHandler(deps: {
           owner: mention.owner,
           repo: mention.repo,
           prNumber: mention.prNumber,
-          commentId: trackingCommentId,
+          // For inline review comment mentions, provide the triggering review comment id
+          // so the executor can enable the in-thread reply MCP tool.
+          commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
           eventType: `${event.name}.${(event.payload as Record<string, unknown>).action as string}`,
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,
@@ -199,6 +330,7 @@ export function createMentionHandler(deps: {
             surface: mention.surface,
             issueNumber: mention.issueNumber,
             conclusion: result.conclusion,
+            published: result.published,
             costUsd: result.costUsd,
             numTurns: result.numTurns,
             durationMs: result.durationMs,
@@ -207,22 +339,52 @@ export function createMentionHandler(deps: {
           "Mention execution completed",
         );
 
+        // If Claude finished successfully but did not publish any output, post a fallback reply.
+        // This prevents "silent success" where the model chose not to call any comment tools.
+        if (result.conclusion === "success" && !result.published) {
+          const fallbackBody = wrapInDetails(
+            [
+              "I saw your mention, but I didn't publish a reply automatically.",
+              "",
+              "Can you clarify what you want me to do?",
+              "- (1) What outcome are you aiming for?",
+              "- (2) Which file(s) / line(s) should I focus on?",
+            ].join("\n"),
+            "kodiai response",
+          );
+
+          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            await replyOctokit.rest.pulls.createReplyForReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              comment_id: mention.commentId,
+              body: fallbackBody,
+            });
+          } else {
+            await replyOctokit.rest.issues.createComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              issue_number: mention.issueNumber,
+              body: fallbackBody,
+            });
+          }
+        }
+
         // If execution errored, post or update error comment with classified message
         if (result.conclusion === "error") {
           const category = result.isTimeout
             ? "timeout"
             : classifyError(new Error(result.errorMessage ?? "Unknown error"), false);
-          const errorBody = formatErrorComment(
-            category,
-            result.errorMessage ?? "An unexpected error occurred while processing your request.",
+          const errorBody = wrapInDetails(
+            formatErrorComment(
+              category,
+              result.errorMessage ?? "An unexpected error occurred while processing your request.",
+            ),
+            "Kodiai encountered an error",
           );
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(errOctokit, {
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            trackingCommentId,
-          }, errorBody, logger);
+          await postMentionError(errorBody);
         }
       } catch (err) {
         logger.error(
@@ -233,15 +395,31 @@ export function createMentionHandler(deps: {
         // Post or update error comment with classified message
         const category = classifyError(err, false);
         const detail = err instanceof Error ? err.message : "An unexpected error occurred";
-        const errorBody = formatErrorComment(category, detail);
+        const errorBody = wrapInDetails(formatErrorComment(category, detail), "Kodiai encountered an error");
         try {
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(errOctokit, {
-            owner: mention.owner,
-            repo: mention.repo,
-            issueNumber: mention.issueNumber,
-            trackingCommentId,
-          }, errorBody, logger);
+          // Prefer in-thread reply for inline review comments.
+          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            await errOctokit.rest.pulls.createReplyForReviewComment({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              comment_id: mention.commentId,
+              body: errorBody,
+            });
+          } else {
+            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            await postOrUpdateErrorComment(
+              errOctokit,
+              {
+                owner: mention.owner,
+                repo: mention.repo,
+                issueNumber: mention.issueNumber,
+              },
+              errorBody,
+              logger,
+            );
+          }
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment");
         }

@@ -1,69 +1,5 @@
-import type { Octokit } from "@octokit/rest";
 import type { MentionEvent } from "../handlers/mention-types.ts";
-import { sanitizeContent, filterCommentsToTriggerTime } from "../lib/sanitizer.ts";
-
-/**
- * Fetch conversation context appropriate to the mention surface.
- *
- * - Always fetches recent issue/PR comments (general discussion).
- * - For PR surfaces, also fetches PR metadata (title, author, branches, description).
- * - For pr_review_comment, includes the diff hunk context.
- */
-export async function buildConversationContext(
-  octokit: Octokit,
-  mention: MentionEvent,
-): Promise<string> {
-  const lines: string[] = [];
-
-  // Fetch recent issue/PR comments (general discussion)
-  const { data: comments } = await octokit.rest.issues.listComments({
-    owner: mention.owner,
-    repo: mention.repo,
-    issue_number: mention.issueNumber,
-    per_page: 30,
-  });
-
-  // TOCTOU: Only include comments that existed before the trigger event
-  const safeComments = filterCommentsToTriggerTime(comments, mention.commentCreatedAt);
-
-  lines.push("## Conversation History");
-  for (const comment of safeComments) {
-    // Skip bot tracking comments
-    if (comment.body?.startsWith('> **Kodiai**')) continue;
-    lines.push(`### @${comment.user?.login} (${comment.created_at}):`);
-    lines.push(sanitizeContent(comment.body ?? "(empty)"));
-    lines.push("");
-  }
-
-  // For PR surfaces, add PR metadata
-  if (mention.prNumber !== undefined) {
-    const { data: pr } = await octokit.rest.pulls.get({
-      owner: mention.owner,
-      repo: mention.repo,
-      pull_number: mention.prNumber,
-    });
-    lines.push("## Pull Request Context");
-    lines.push(`Title: ${sanitizeContent(pr.title)}`);
-    lines.push(`Author: ${pr.user?.login}`);
-    lines.push(`Branches: ${pr.head.ref} -> ${pr.base.ref}`);
-    if (pr.body) {
-      lines.push(`Description: ${sanitizeContent(pr.body)}`);
-    }
-    lines.push("");
-  }
-
-  // For review comment surface, include the diff hunk
-  if (mention.surface === "pr_review_comment" && mention.diffHunk) {
-    lines.push("## Code Context (Diff Hunk)");
-    lines.push("The triggering comment is on a specific code change:");
-    lines.push("```diff");
-    lines.push(mention.diffHunk);
-    lines.push("```");
-    lines.push("");
-  }
-
-  return lines.join("\n");
-}
+import { sanitizeContent } from "../lib/sanitizer.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -73,12 +9,11 @@ export async function buildConversationContext(
  */
 export function buildMentionPrompt(params: {
   mention: MentionEvent;
-  conversationContext: string;
+  mentionContext: string;
   userQuestion: string;
-  trackingCommentId?: number;
   customInstructions?: string;
 }): string {
-  const { mention, conversationContext, userQuestion, trackingCommentId, customInstructions } = params;
+  const { mention, mentionContext, userQuestion, customInstructions } = params;
   const lines: string[] = [];
 
   // Context header
@@ -88,11 +23,19 @@ export function buildMentionPrompt(params: {
   } else {
     lines.push(`This is about Issue #${mention.issueNumber}.`);
   }
+
+  if (mention.surface === "pr_review_comment") {
+    lines.push(
+      `This mention was triggered by an inline PR review comment (review comment id: ${mention.commentId}).`,
+    );
+  }
   lines.push("");
 
-  // Conversation context
-  lines.push(conversationContext);
-  lines.push("");
+  // Context (optional)
+  if (mentionContext.trim().length > 0) {
+    lines.push(mentionContext);
+    lines.push("");
+  }
 
   // User's question
   lines.push("## User's Question");
@@ -104,22 +47,79 @@ export function buildMentionPrompt(params: {
   // Response instructions
   lines.push("## How to respond");
   lines.push("");
-  if (trackingCommentId) {
+  lines.push(
+    "Important: The handler already added an eyes reaction for tracking. Do not post a separate tracking/ack comment.",
+  );
+  lines.push(
+    "Do NOT create a 'thinking'/'working on it' comment. Create at most ONE comment total, and only when you are ready to provide the final response.",
+  );
+  lines.push(
+    "Do NOT update comments (avoid using update_comment); post a single final response instead.",
+  );
+  lines.push(
+    "You MUST post a reply when you are mentioned. If you do not have enough information to fully answer, ask 1-3 targeted clarifying questions instead of staying silent.",
+  );
+  lines.push("");
+
+  if (mention.surface === "pr_review_comment") {
     lines.push(
-      `Write your response by updating the tracking comment using the \`mcp__github_comment__update_comment\` tool with comment ID ${trackingCommentId}.`,
+      "Write your response by replying in the same inline thread using the `mcp__reviewCommentThread__reply_to_pr_review_comment` tool.",
+    );
+    lines.push(
+      `Use: pullRequestNumber=${mention.prNumber} and commentId=${mention.commentId}.`,
+    );
+    lines.push(
+      "If the thread reply tool fails for any reason, fall back to posting a single top-level reply using `mcp__github_comment__create_comment` on the PR.",
     );
   } else {
     lines.push(
-      `Write your response by creating a new comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
+      `Write your response by creating a new top-level comment using the \`mcp__github_comment__create_comment\` tool on issue/PR #${mention.issueNumber}.`,
     );
   }
   lines.push("");
   lines.push("Your response should be:");
+  lines.push(
+    "- Concise by default -- provide only what was asked; avoid long recaps",
+  );
+  lines.push(
+    '- Do NOT include sections like "What Changed", "Key Strengths", or "Minor Observations" unless explicitly requested',
+  );
   lines.push("- Direct and helpful -- answer the question with specific code references where possible");
   lines.push("- Aware of the conversation context above -- don't repeat what's already been discussed");
   lines.push("- Formatted in GitHub-flavored markdown");
   lines.push(
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
+  );
+  lines.push(
+    "- ALWAYS wrap your ENTIRE response body in `<details>` tags to reduce noise in the thread:",
+    "  ```",
+    "  <details>",
+    '  <summary>kodiai response</summary>',
+    "  ",
+    "  Your response content here...",
+    "  ",
+    "  </details>",
+    "  ```",
+    "- Important: include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
+  );
+
+  lines.push("- If (and only if) the user is asking for a PR review / approval decision, use this exact structure:");
+  lines.push(
+    "  ```",
+    "  <details>",
+    '  <summary>kodiai response</summary>',
+    "  ",
+    "  Decision: APPROVE | NOT APPROVED",
+    "  Issues:",
+    "  - (1) <issue summary> (include file:line if applicable)",
+    "  ",
+    "  </details>",
+    "  ```",
+  );
+  lines.push(
+    "  Notes:",
+    "  - If APPROVE: keep it to 1-2 lines and set `Issues: none`.",
+    "  - If NOT APPROVED: list only the issues; do not include strengths or change summaries.",
   );
 
   // Custom instructions

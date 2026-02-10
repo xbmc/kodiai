@@ -44,12 +44,28 @@ export function createExecutor(deps: {
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>
           githubApp.getInstallationOctokit(context.installationId);
+        let published = false;
+
+        const isMentionEvent =
+          context.eventType === "issue_comment.created" ||
+          context.eventType === "pull_request_review_comment.created" ||
+          context.eventType === "pull_request_review.submitted";
+
         const mcpServers = buildMcpServers({
           getOctokit,
           owner: context.owner,
           repo: context.repo,
           prNumber: context.prNumber,
           commentId: context.commentId,
+          reviewOutputKey: context.reviewOutputKey,
+          deliveryId: context.deliveryId,
+          logger,
+          onPublish: () => {
+            published = true;
+          },
+          // Mentions should not create new inline review comments; they should reply in-thread
+          // (when available) or post a top-level PR/issue comment.
+          enableInlineTools: !isMentionEvent,
         });
 
         // Build allowed tools list
@@ -138,6 +154,7 @@ export function createExecutor(deps: {
           numTurns: resultMessage.num_turns,
           durationMs: resultMessage.duration_ms ?? durationMs,
           sessionId: resultMessage.session_id,
+          published,
           errorMessage: undefined,
         };
       } catch (err) {
@@ -156,6 +173,7 @@ export function createExecutor(deps: {
             numTurns: undefined,
             durationMs,
             sessionId: undefined,
+            published: false,
             errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
           };
@@ -171,6 +189,7 @@ export function createExecutor(deps: {
           numTurns: undefined,
           durationMs,
           sessionId: undefined,
+          published: false,
           errorMessage,
         };
       }

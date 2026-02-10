@@ -93,6 +93,35 @@ function validateBranchName(branchName: string): void {
   }
 }
 
+function validatePullRequestNumber(prNumber: number): void {
+  if (!Number.isInteger(prNumber) || prNumber <= 0) {
+    throw new Error(`PR number must be a positive integer: ${prNumber}`);
+  }
+}
+
+/**
+ * In GitHub, pull request head refs are exposed on the base repo as:
+ *   refs/pull/<PR_NUMBER>/head
+ *
+ * Fetching and checking out that ref allows reviewing fork PRs without cloning the fork.
+ */
+export async function fetchAndCheckoutPullRequestHeadRef(options: {
+  dir: string;
+  prNumber: number;
+  remote?: string;
+  localBranch?: string;
+}): Promise<{ localBranch: string }> {
+  const { dir, prNumber, remote = "origin", localBranch = "pr-review" } = options;
+
+  validatePullRequestNumber(prNumber);
+  validateBranchName(localBranch);
+
+  await $`git -C ${dir} fetch ${remote} pull/${prNumber}/head:${localBranch}`.quiet();
+  await $`git -C ${dir} checkout ${localBranch}`.quiet();
+
+  return { localBranch };
+}
+
 const STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
 
 /**

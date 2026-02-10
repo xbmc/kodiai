@@ -1,6 +1,7 @@
 import type {
   PullRequestOpenedEvent,
   PullRequestReadyForReviewEvent,
+  PullRequestReviewRequestedEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -10,12 +11,39 @@ import type { createExecutor } from "../execution/executor.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { buildReviewPrompt } from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import {
+  buildReviewOutputKey,
+  ensureReviewOutputNotPublished,
+} from "./review-idempotency.ts";
 import { $ } from "bun";
+import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+
+function isReviewTriggerEnabled(
+  action: string,
+  triggers: {
+    onOpened: boolean;
+    onReadyForReview: boolean;
+    onReviewRequested: boolean;
+  },
+): boolean {
+  if (action === "opened") return triggers.onOpened;
+  if (action === "ready_for_review") return triggers.onReadyForReview;
+  if (action === "review_requested") return triggers.onReviewRequested;
+  return false;
+}
+
+function normalizeReviewerLogin(login: string): string {
+  return login.trim().toLowerCase().replace(/\[bot\]$/i, "");
+}
 
 /**
  * Create the review handler and register it with the event router.
  *
- * Handles `pull_request.opened` and `pull_request.ready_for_review` events.
+ * Handles `pull_request.opened`, `pull_request.ready_for_review`, and
+ * `pull_request.review_requested` events.
+ *
+ * Trigger model: initial review events plus explicit re-request only.
+ * Re-requested reviews run only when kodiai itself is the requested reviewer.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
@@ -32,42 +60,143 @@ export function createReviewHandler(deps: {
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
       | PullRequestOpenedEvent
-      | PullRequestReadyForReviewEvent;
+      | PullRequestReadyForReviewEvent
+      | PullRequestReviewRequestedEvent;
 
     const pr = payload.pull_request;
+    const action = payload.action;
+    const baseLog = {
+      deliveryId: event.id,
+      installationId: event.installationId,
+      action,
+      prNumber: pr.number,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+    };
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: event.installationId,
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+      prNumber: pr.number,
+      action,
+      deliveryId: event.id,
+      headSha: pr.head.sha ?? "unknown-head-sha",
+    });
 
     // Skip draft PRs (the opened event fires for drafts too)
     if (pr.draft) {
       logger.debug(
-        { prNumber: pr.number, owner: payload.repository.owner.login, repo: payload.repository.name },
+        baseLog,
         "Skipping draft PR",
       );
       return;
+    }
+
+    if (action === "review_requested") {
+      const reviewRequestedPayload = payload as PullRequestReviewRequestedEvent;
+      const requestedReviewer =
+        "requested_reviewer" in reviewRequestedPayload
+          ? reviewRequestedPayload.requested_reviewer
+          : undefined;
+      const requestedTeam =
+        "requested_team" in reviewRequestedPayload
+          ? reviewRequestedPayload.requested_team
+          : undefined;
+      const requestedReviewerLogin =
+        typeof requestedReviewer?.login === "string"
+          ? requestedReviewer.login
+          : undefined;
+      const requestedTeamName =
+        typeof requestedTeam?.name === "string"
+          ? requestedTeam.name
+          : undefined;
+      const appSlug = githubApp.getAppSlug();
+      const normalizedAppSlug = normalizeReviewerLogin(appSlug);
+
+      if (requestedReviewerLogin) {
+        const normalizedRequestedReviewer = normalizeReviewerLogin(requestedReviewerLogin);
+        if (normalizedRequestedReviewer !== normalizedAppSlug) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review_requested_reviewer",
+              gateResult: "skipped",
+              skipReason: "non-kodiai-reviewer",
+              requestedReviewer: requestedReviewerLogin,
+              normalizedRequestedReviewer,
+              normalizedAppSlug,
+              requestedTeam: requestedTeamName ?? null,
+            },
+            "Skipping review_requested event for non-kodiai reviewer",
+          );
+          return;
+        }
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "accepted",
+            requestedReviewer: requestedReviewerLogin,
+            normalizedRequestedReviewer,
+            normalizedAppSlug,
+          },
+          "Accepted review_requested event for kodiai reviewer",
+        );
+      } else if (requestedTeamName) {
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "skipped",
+            skipReason: "team-only-request",
+            requestedReviewer: null,
+            requestedTeam: requestedTeamName,
+          },
+          "Skipping review_requested event because only a team was requested",
+        );
+        return;
+      } else {
+        logger.warn(
+          {
+            ...baseLog,
+            gate: "review_requested_reviewer",
+            gateResult: "skipped",
+            skipReason: "missing-or-malformed-reviewer-payload",
+            hasRequestedReviewerField: "requested_reviewer" in reviewRequestedPayload,
+            hasRequestedTeamField: "requested_team" in reviewRequestedPayload,
+          },
+          "Skipping review_requested event due to missing reviewer payload",
+        );
+        return;
+      }
     }
 
     // API target is always the base (upstream) repo
     const apiOwner = payload.repository.owner.login;
     const apiRepo = payload.repository.name;
 
-    // Fork PR support: clone from head.repo (the fork), post comments to base repo
     const headRepo = pr.head.repo;
-    const isFork = headRepo?.full_name !== payload.repository.full_name;
+    const isFork = Boolean(headRepo && headRepo.full_name !== payload.repository.full_name);
+    const isDeletedFork = !headRepo;
 
     let cloneOwner: string;
     let cloneRepo: string;
     let cloneRef: string;
     let usesPrRef = false;
 
-    if (headRepo) {
+    if (isFork || isDeletedFork) {
+      // Fork PRs (or deleted forks): clone base branch and fetch PR head ref from base repo.
+      // This avoids relying on access to the contributor's fork.
+      cloneOwner = apiOwner;
+      cloneRepo = apiRepo;
+      cloneRef = pr.base.ref;
+      usesPrRef = true;
+    } else {
+      // Non-fork PR: clone the head branch directly from the base repo.
       cloneOwner = headRepo.owner.login;
       cloneRepo = headRepo.name;
       cloneRef = pr.head.ref;
-    } else {
-      // Deleted fork -- fall back to PR ref from base repo
-      cloneOwner = apiOwner;
-      cloneRepo = apiRepo;
-      cloneRef = pr.base.ref; // Clone base branch, then fetch PR ref
-      usesPrRef = true;
     }
 
     logger.info(
@@ -79,10 +208,21 @@ export function createReviewHandler(deps: {
         cloneRepo,
         cloneRef,
         isFork,
+        isDeletedFork,
         usesPrRef,
-        action: payload.action,
+        workspaceStrategy: usesPrRef
+          ? "base-clone+pull-ref-fetch"
+          : "direct-head-branch-clone",
+        action,
+        deliveryId: event.id,
+        installationId: event.installationId,
       },
       "Processing PR review",
+    );
+
+    logger.info(
+      { ...baseLog, gate: "enqueue", gateResult: "started" },
+      "Review enqueue started",
     );
 
     await jobQueue.enqueue(event.installationId, async () => {
@@ -96,10 +236,13 @@ export function createReviewHandler(deps: {
           depth: 50,
         });
 
-        // Handle deleted fork: fetch PR ref from base repo
+        // Fork PR / deleted fork: fetch PR head ref from base repo
         if (usesPrRef) {
-          await $`git -C ${workspace.dir} fetch origin pull/${pr.number}/head:pr-review`.quiet();
-          await $`git -C ${workspace.dir} checkout pr-review`.quiet();
+          await fetchAndCheckoutPullRequestHeadRef({
+            dir: workspace.dir,
+            prNumber: pr.number,
+            localBranch: "pr-review",
+          });
         }
 
         // Fetch base branch so git diff origin/BASE...HEAD works.
@@ -109,13 +252,93 @@ export function createReviewHandler(deps: {
         // Load repo config (.kodiai.yml) with defaults
         const config = await loadRepoConfig(workspace.dir);
 
+        logger.info(
+          {
+            ...baseLog,
+            gate: "trigger-config",
+            reviewEnabled: config.review.enabled,
+            triggers: config.review.triggers,
+          },
+          "Evaluating review trigger configuration",
+        );
+
         // Check review.enabled
         if (!config.review.enabled) {
           logger.info(
-            { prNumber: pr.number, apiOwner, apiRepo },
+            {
+              ...baseLog,
+              gate: "review-enabled",
+              gateResult: "skipped",
+              skipReason: "review-disabled",
+              apiOwner,
+              apiRepo,
+            },
             "Review disabled in config, skipping",
           );
           return;
+        }
+
+        // Check whether this event action is enabled in review.triggers
+        if (!isReviewTriggerEnabled(action, config.review.triggers)) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-trigger",
+              gateResult: "skipped",
+              skipReason: "trigger-disabled",
+              triggers: config.review.triggers,
+            },
+            "Review trigger disabled in config, skipping",
+          );
+          return;
+        }
+
+        const idempotencyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        const idempotencyCheck = await ensureReviewOutputNotPublished({
+          octokit: idempotencyOctokit,
+          owner: apiOwner,
+          repo: apiRepo,
+          prNumber: pr.number,
+          reviewOutputKey,
+        });
+
+        if (!idempotencyCheck.shouldPublish) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-output-idempotency",
+              gateResult: "skipped",
+              skipReason: "already-published",
+              reviewOutputKey,
+              existingLocation: idempotencyCheck.existingLocation,
+            },
+            "Skipping review execution because output already published for key",
+          );
+          return;
+        }
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-output-idempotency",
+            gateResult: "accepted",
+            reviewOutputKey,
+          },
+          "Review output idempotency check passed",
+        );
+
+        // Add eyes reaction to PR description for immediate acknowledgment
+        try {
+          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+          await reactionOctokit.rest.reactions.createForIssue({
+            owner: apiOwner,
+            repo: apiRepo,
+            issue_number: pr.number,
+            content: "eyes",
+          });
+        } catch (err) {
+          // Non-fatal: don't block processing if reaction fails
+          logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
         }
 
         // Check skipAuthors
@@ -180,6 +403,8 @@ export function createReviewHandler(deps: {
           eventType: `pull_request.${payload.action}`,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
+          reviewOutputKey,
+          deliveryId: event.id,
         });
 
         logger.info(
@@ -217,32 +442,75 @@ export function createReviewHandler(deps: {
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
             const appSlug = githubApp.getAppSlug();
 
-            // Check for bot inline comments on this PR
-            const { data: comments } = await octokit.rest.pulls.listReviewComments({
-              owner: apiOwner,
-              repo: apiRepo,
-              pull_number: pr.number,
-            });
+            const perPage = 100;
+            const maxPages = 10;
+            const maxScanItems = 1000;
 
-            const botComments = comments.filter(
-              (c) => c.user?.login === `${appSlug}[bot]`,
-            );
+            let scanned = 0;
+            let foundBotComment = false;
+            let hitScanCap = false;
 
-            if (botComments.length === 0) {
+            for (let page = 1; page <= maxPages && scanned < maxScanItems; page++) {
+              const { data } = await octokit.rest.pulls.listReviewComments({
+                owner: apiOwner,
+                repo: apiRepo,
+                pull_number: pr.number,
+                per_page: perPage,
+                page,
+                sort: "created",
+                direction: "desc",
+              });
+
+              for (const comment of data) {
+                scanned++;
+                if (comment.user?.login === `${appSlug}[bot]`) {
+                  foundBotComment = true;
+                  break;
+                }
+                if (scanned >= maxScanItems) break;
+              }
+
+              if (foundBotComment) break;
+              if (data.length < perPage) break;
+              if (page === maxPages || scanned >= maxScanItems) {
+                hitScanCap = true;
+              }
+            }
+
+            if (hitScanCap && !foundBotComment) {
+              // Degrade safely: if we can't confidently prove there were no bot
+              // inline comments (due to pagination caps), skip auto-approval.
+              logger.warn(
+                {
+                  prNumber: pr.number,
+                  scanned,
+                  maxPages,
+                  maxScanItems,
+                  gate: "auto-approve",
+                  gateResult: "skipped",
+                  skipReason: "review-comments-scan-capped",
+                },
+                "Skipping auto-approval because review comment scan hit safety cap",
+              );
+              return;
+            }
+
+            if (!foundBotComment) {
               // No issues found -- submit silent approval
               await octokit.rest.pulls.createReview({
                 owner: apiOwner,
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
+                body: idempotencyCheck.marker,
               });
               logger.info(
-                { prNumber: pr.number },
+                { prNumber: pr.number, reviewOutputKey },
                 "Submitted silent approval (no issues found)",
               );
             } else {
               logger.info(
-                { prNumber: pr.number, botCommentCount: botComments.length },
+                { prNumber: pr.number, scannedReviewComments: scanned, foundBotInlineComments: true },
                 "Issues found, skipping approval",
               );
             }
@@ -278,10 +546,22 @@ export function createReviewHandler(deps: {
           await workspace.cleanup();
         }
       }
+    }, {
+      deliveryId: event.id,
+      eventName: event.name,
+      action,
+      jobType: "pull-request-review",
+      prNumber: pr.number,
     });
+
+    logger.info(
+      { ...baseLog, gate: "enqueue", gateResult: "completed" },
+      "Review enqueue completed",
+    );
   }
 
-  // Register for both events
+  // Register for review trigger events
   eventRouter.register("pull_request.opened", handleReview);
   eventRouter.register("pull_request.ready_for_review", handleReview);
+  eventRouter.register("pull_request.review_requested", handleReview);
 }

@@ -12,28 +12,27 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Validated
 
-(None yet — ship to validate)
+- ✓ Webhook server receives GitHub events and verifies signatures — v0.1
+- ✓ GitHub App authenticates via JWT and mints installation tokens — v0.1
+- ✓ Event router classifies webhooks and dispatches to handlers — v0.1
+- ✓ Per-repo `.kodiai.yml` config loaded with sensible defaults (zero-config works) — v0.1
+- ✓ PR auto-review on open/ready + manual re-request (`review_requested`) — v0.1
+- ✓ Inline review comments with suggestion blocks — v0.1
+- ✓ Fork PR support works natively — v0.1
+- ✓ `@kodiai` mention handling across issue/PR/review surfaces — v0.1
+- ✓ Tracking comments show progress and update on completion/error — v0.1
+- ✓ Content sanitization + TOCTOU protections — v0.1
+- ✓ Bot ignores its own comments (no infinite loops) — v0.1
+- ✓ Job queue with per-installation concurrency limits + ephemeral workspaces — v0.1
+- ✓ Review UX improvements (eyes reaction, `<details>` wrapping, conditional summaries) — v0.1
+- ✓ Production deployment to Azure Container Apps (Docker + probes + secrets) — v0.1
+- ✓ Review-request reliability hardening (delivery correlation, runbook, output idempotency) — v0.1
 
 ### Active
 
-- [ ] Webhook server receives GitHub events and verifies signatures
-- [ ] GitHub App authenticates via JWT and mints installation tokens
-- [ ] Event router classifies webhooks and dispatches to handlers
-- [ ] Per-repo `.kodiai.yml` config loaded from default branch with sensible defaults
-- [ ] PR auto-review on open/ready_for_review using Claude Code CLI
-- [ ] Inline review comments with suggestion blocks via MCP server
-- [ ] `@kodiai` mention handling in issue comments, PR comments, review comments, and review bodies
-- [ ] Mention handler supports code modifications (branch creation, commits, pushes)
-- [ ] Tracking comments show progress during long-running jobs
-- [ ] Fork PR support works natively (no workflow workarounds)
-- [ ] Content sanitization (tokens, invisible chars, HTML comments)
-- [ ] TOCTOU protections for comment filtering
-- [ ] Bot ignores its own comments (no infinite loops)
-- [ ] Permission checks (bot filtering, write-access validation)
-- [ ] Job queue with per-installation concurrency limits
-- [ ] Eyes emoji reaction on trigger comments
-- [ ] Deployed to Azure Container Apps with Docker
-- [ ] Unit and integration tests for key modules
+- [ ] Code modification via @mention (branch creation, commit, push) with guardrails
+- [ ] Durable idempotency/locking (reduce race risk beyond marker checks)
+- [ ] Expand operator evidence capture (GitHub delivery metadata access + richer log correlation tooling)
 
 ### Out of Scope
 
@@ -45,11 +44,21 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ## Context
 
-- **Reference code:** Forked `claude-code-action` and `claude-code-base-action` are cloned in `tmp/` for porting. These contain battle-tested GraphQL queries, MCP servers, prompt generation, sanitization, and the Agent SDK invocation pattern.
-- **Current setup:** xbmc repo uses forked action + custom workflow YAML. This works but requires per-repo workflow files, ugly fork PR workarounds, and burns GitHub Actions minutes.
-- **Execution backend:** Claude Code CLI via `@anthropic-ai/claude-agent-sdk` `query()`. The CLI provides the full toolchain (file editing, MCP servers, tool use) for free.
-- **MCP servers to port:** 4 servers from the action — comment updates, inline review comments, CI status reading, file ops via Git Data API.
-- **GitHub App:** Not yet registered. Will be created as part of this project with the required permissions (contents:write, issues:write, pull_requests:write, actions:read, metadata:read, checks:read).
+
+- **GitHub App:** Registered (App ID 2822869, slug `kodiai`)
+- **Production:** Deployed on Azure Container Apps
+  - FQDN: `ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io`
+  - Webhook: `https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/webhooks/github`
+- **Test repo:** `kodiai/xbmc` (public fork) used to validate PR review + mention flows
+- **Core stack:** Bun + Hono, Octokit, Agent SDK (`query()`), in-process MCP servers, in-process queue (p-queue)
+- **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
+
+## Current State
+
+v0.1 ships an installable GitHub App that:
+- Automatically reviews PRs (inline comments + suggestions; silent approvals for clean PRs)
+- Responds to `@kodiai` mentions across GitHub comment surfaces
+- Is deployable and running in production with observability and runbooks
 
 ## Constraints
 
@@ -64,11 +73,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Bun + Hono over Node + Express | Bun is fast, has native TypeScript support, Hono is lightweight and runs anywhere | — Pending |
-| Claude Code CLI over direct API calls | Gets full Claude Code toolchain for free — file editing, MCP, tool use | — Pending |
-| In-process p-queue over external queue | Simpler to start; can migrate to Azure Service Bus later if needed | — Pending |
-| Shallow clone per job | Avoids large repo downloads; 50 commits gives enough diff context | — Pending |
-| `.kodiai.yml` config over env vars | Per-repo customization without touching the app server | — Pending |
+| Bun + Hono over Node + Express | Bun is fast, has native TypeScript support, Hono is lightweight and runs anywhere | ✓ Good |
+| Claude Code CLI over direct API calls | Gets full Claude Code toolchain for free — file editing, MCP, tool use | ✓ Good |
+| In-process p-queue over external queue | Simpler to start; can migrate to durable queue later if needed | ✓ Good |
+| Shallow clone per job | Avoids large repo downloads; 50 commits gives enough diff context | ✓ Good |
+| `.kodiai.yml` config over env vars | Per-repo customization without touching the app server | ✓ Good |
 
 ---
-*Last updated: 2026-02-07 after initialization*
+*Last updated: 2026-02-09 after v0.1 milestone*

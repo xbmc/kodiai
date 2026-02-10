@@ -36,9 +36,16 @@ export function createEventRouter(
       // Apply bot filter if sender is present
       if (sender) {
         if (!botFilter.shouldProcess(sender)) {
-          logger.debug(
-            { deliveryId: event.id, sender: sender.login },
-            "Event dropped by bot filter",
+          logger.info(
+            {
+              deliveryId: event.id,
+              event: event.name,
+              action: event.payload.action,
+              sender: sender.login,
+              filtered: true,
+              filterReason: "bot-filter",
+            },
+            "Event filtered before dispatch",
           );
           return;
         }
@@ -58,10 +65,32 @@ export function createEventRouter(
         collected.push(...(handlers.get(generalKey) ?? []));
       }
 
+      logger.info(
+        {
+          deliveryId: event.id,
+          event: event.name,
+          action,
+          specificKey,
+          generalKey,
+          specificHandlerCount: specificKey ? (handlers.get(specificKey)?.length ?? 0) : 0,
+          generalHandlerCount: handlers.get(generalKey)?.length ?? 0,
+          matchedHandlerCount: collected.length,
+        },
+        "Router evaluated dispatch keys",
+      );
+
       if (collected.length === 0) {
-        logger.debug(
-          { deliveryId: event.id, event: event.name, action },
-          `No handlers registered for ${specificKey ?? generalKey}`,
+        logger.info(
+          {
+            deliveryId: event.id,
+            event: event.name,
+            action,
+            specificKey,
+            generalKey,
+            matchedHandlerCount: 0,
+            filtered: false,
+          },
+          "Event skipped because no handlers matched",
         );
         return;
       }
@@ -92,7 +121,16 @@ export function createEventRouter(
       }
 
       logger.info(
-        { deliveryId: event.id, event: event.name, action, succeeded, failed },
+        {
+          deliveryId: event.id,
+          event: event.name,
+          action,
+          specificKey,
+          generalKey,
+          matchedHandlerCount: collected.length,
+          succeeded,
+          failed,
+        },
         `Dispatched to ${collected.length} handler(s)`,
       );
     },

@@ -9,23 +9,42 @@ const repoConfigSchema = z.object({
   review: z
     .object({
       enabled: z.boolean().default(true),
-      autoApprove: z.boolean().default(false),
+      triggers: z
+        .object({
+          onOpened: z.boolean().default(true),
+          onReadyForReview: z.boolean().default(true),
+          onReviewRequested: z.boolean().default(true),
+        })
+        .strict()
+        .default({
+          onOpened: true,
+          onReadyForReview: true,
+          onReviewRequested: true,
+        }),
+      autoApprove: z.boolean().default(true),
       prompt: z.string().optional(),
       skipAuthors: z.array(z.string()).default([]),
       skipPaths: z.array(z.string()).default([]),
     })
     .default({
       enabled: true,
-      autoApprove: false,
+      triggers: {
+        onOpened: true,
+        onReadyForReview: true,
+        onReviewRequested: true,
+      },
+      autoApprove: true,
       skipAuthors: [],
       skipPaths: [],
     }),
   mention: z
     .object({
       enabled: z.boolean().default(true),
+      acceptClaudeAlias: z.boolean().default(true),
       prompt: z.string().optional(),
     })
-    .default({ enabled: true }),
+    .strict()
+    .default({ enabled: true, acceptClaudeAlias: true }),
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;

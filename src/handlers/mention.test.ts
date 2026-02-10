@@ -1,0 +1,208 @@
+import { describe, expect, test } from "bun:test";
+import { $ } from "bun";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import type { Logger } from "pino";
+import { createMentionHandler } from "./mention.ts";
+import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
+import type { GitHubApp } from "../auth/github-app.ts";
+import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
+
+function createNoopLogger(): Logger {
+  const noop = () => undefined;
+  return {
+    info: noop,
+    warn: noop,
+    error: noop,
+    debug: noop,
+    trace: noop,
+    fatal: noop,
+    child: () => createNoopLogger(),
+  } as unknown as Logger;
+}
+
+async function createWorkspaceFixture() {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));
+
+  await $`git -C ${dir} init --initial-branch=main`.quiet();
+  await $`git -C ${dir} config user.email test@example.com`.quiet();
+  await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+  await Bun.write(join(dir, "README.md"), "base\n");
+  await Bun.write(join(dir, ".kodiai.yml"), "mention:\n  enabled: true\n");
+
+  await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+  await $`git -C ${dir} commit -m "base"`.quiet();
+  await $`git -C ${dir} checkout -b feature`.quiet();
+
+  await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+  await $`git -C ${dir} add README.md`.quiet();
+  await $`git -C ${dir} commit -m "feature"`.quiet();
+
+  // Use the repo itself as a "remote".
+  await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+  return {
+    dir,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+function buildReviewCommentMentionEvent(params: {
+  prNumber: number;
+  baseRef: string;
+  headRef: string;
+  headRepoOwner: string;
+  headRepoName: string;
+  commentBody: string;
+}): WebhookEvent {
+  return {
+    id: "delivery-mention-123",
+    name: "pull_request_review_comment",
+    installationId: 42,
+    payload: {
+      action: "created",
+      repository: {
+        name: "repo",
+        owner: { login: "acme" },
+      },
+      pull_request: {
+        number: params.prNumber,
+        head: {
+          ref: params.headRef,
+          repo: {
+            name: params.headRepoName,
+            owner: { login: params.headRepoOwner },
+          },
+        },
+        base: { ref: params.baseRef },
+      },
+      comment: {
+        id: 555,
+        body: params.commentBody,
+        user: { login: "alice" },
+        created_at: "2025-01-15T12:00:00Z",
+        diff_hunk: "@@ -1,1 +1,1\n- old\n+ new",
+        path: "README.md",
+        line: 1,
+      },
+    },
+  };
+}
+
+describe("createMentionHandler fork PR workspace strategy", () => {
+  test("PR mentions clone base ref and fetch pull/<n>/head (fork-safe)", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const createCalls: CloneOptions[] = [];
+
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git -C ${workspaceFixture.dir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        createCalls.push(options);
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention",
+        }),
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai please look at this",
+      }),
+    );
+
+    expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]?.owner).toBe("acme");
+    expect(createCalls[0]?.repo).toBe("repo");
+    expect(createCalls[0]?.ref).toBe("main");
+    expect(createCalls[0]?.depth).toBe(50);
+
+    const branch = (await $`git -C ${workspaceFixture.dir} rev-parse --abbrev-ref HEAD`.quiet())
+      .text()
+      .trim();
+    expect(branch).toBe("pr-mention");
+
+    const headSubject = (await $`git -C ${workspaceFixture.dir} show -s --pretty=%s HEAD`.quiet())
+      .text()
+      .trim();
+    expect(headSubject).toBe("feature");
+
+    await workspaceFixture.cleanup();
+  });
+});

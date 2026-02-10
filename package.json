@@ -8,17 +8,21 @@
     "start": "bun run src/index.ts"
   },
   "devDependencies": {
+    "@octokit/webhooks-types": "^7.6.1",
     "@types/bun": "latest",
-    "@octokit/webhooks-types": "^7.6.1"
+    "@types/js-yaml": "^4.0.9"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.37",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@octokit/auth-app": "^8.2.0",
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks-methods": "^6.0.0",
     "hono": "^4.11.8",
+    "js-yaml": "^4.1.1",
     "p-queue": "^9.1.0",
     "pino": "^10.3.0",
     "zod": "^4.3.6"

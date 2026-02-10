@@ -17,6 +17,10 @@ export type ExecutionContext = {
   triggerBody: string;
   /** Optional pre-built prompt. When set, overrides the default buildPrompt() output. */
   prompt?: string;
+  /** Deterministic idempotency key for one review output batch. */
+  reviewOutputKey?: string;
+  /** Webhook delivery identifier for correlation logging. */
+  deliveryId?: string;
 };
 
 /** The outcome of a Claude execution */
@@ -26,6 +30,8 @@ export type ExecutionResult = {
   numTurns: number | undefined;
   durationMs: number | undefined;
   sessionId: string | undefined;
+  /** True if the execution published a GitHub-visible output via MCP tools (best-effort). */
+  published?: boolean;
   /** Populated when conclusion is "error" */
   errorMessage: string | undefined;
   /** Set to true when the execution was terminated by timeout */

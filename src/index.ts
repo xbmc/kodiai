@@ -11,6 +11,7 @@ import { createJobQueue } from "./jobs/queue.ts";
 import { createWorkspaceManager } from "./jobs/workspace.ts";
 import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
+import { createMentionHandler } from "./handlers/mention.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -41,6 +42,14 @@ const executor = createExecutor({ githubApp, logger });
 
 // Register event handlers
 createReviewHandler({
+  eventRouter,
+  jobQueue,
+  workspaceManager,
+  githubApp,
+  executor,
+  logger,
+});
+createMentionHandler({
   eventRouter,
   jobQueue,
   workspaceManager,
