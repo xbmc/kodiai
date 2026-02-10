@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 16
-**Current Phase Name:** write-guardrails
-**Total Phases:** 16
+**Current Phase:** 17
+**Current Phase Name:** durability-locking
+**Total Phases:** 17
 **Current Plan:** 1
 **Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Status:** Ready to execute
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 16 plan 01 complete; write-mode guardrails (path policy, secret scan, rate limiting)
+**Last Activity Description:** Started Phase 17: durability + idempotency for write-mode
 **Paused At:** None
 
 Milestone: v0.2 (planning)
