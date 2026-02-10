@@ -57,10 +57,7 @@ export function buildMentionPrompt(params: {
     "Do NOT update comments (avoid using update_comment); post a single final response instead.",
   );
   lines.push(
-    "Only post a reply if you have something concrete to contribute (a direct answer, a specific suggestion, or a clear next step).",
-  );
-  lines.push(
-    "If you cannot provide a useful answer with the information available, DO NOT create a comment (do not call any commenting tools).",
+    "You MUST post a reply when you are mentioned. If you do not have enough information to fully answer, ask 1-3 targeted clarifying questions instead of staying silent.",
   );
   lines.push("");
 
