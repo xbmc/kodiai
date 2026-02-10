@@ -47,7 +47,8 @@ export function createCommentServer(
       );
     }
 
-    const issueLineRe = /^- \(\d+\) \[(critical|major|minor)\] (\S+) \((\d+)\): .+/;
+    const issueLineRe =
+      /^- \(\d+\) \[(critical|major|minor)\] (.+?) \((\d+)\): .+/;
     for (let i = issuesHeaderIndex + 1; i < detailsLines.length; i++) {
       const line = detailsLines[i]?.trim();
       if (!line) continue;
@@ -56,7 +57,7 @@ export function createCommentServer(
 
       if (!issueLineRe.test(line)) {
         throw new Error(
-          "Invalid Kodiai review summary issue format. Use: - (1) [critical|major|minor] path/to/file.ts (123): <1-3 sentences>.",
+          "Invalid Kodiai review summary issue format. Use: - (1) [critical|major|minor] <path> (123): <1-3 sentences>.",
         );
       }
     }
