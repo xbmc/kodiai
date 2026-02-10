@@ -17,6 +17,14 @@ test("returns defaults when no .kodiai.yml exists", async () => {
       ".git/",
       ".planning/",
       ".kodiai.yml",
+      ".env",
+      ".env.*",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*credentials*",
+      "**/*secret*",
     ]);
     expect(config.write.minIntervalSeconds).toBe(0);
     expect(config.write.secretScan.enabled).toBe(true);
@@ -53,6 +61,14 @@ test("reads and validates .kodiai.yml when present", async () => {
       ".git/",
       ".planning/",
       ".kodiai.yml",
+      ".env",
+      ".env.*",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*credentials*",
+      "**/*secret*",
     ]);
     expect(config.write.minIntervalSeconds).toBe(0);
     expect(config.write.secretScan.enabled).toBe(true);

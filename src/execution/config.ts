@@ -18,7 +18,20 @@ const repoConfigSchema = z.object({
       /** Changed paths matching any denyPaths pattern are blocked. Deny wins over allow. */
       denyPaths: z
         .array(z.string())
-        .default([".github/", ".git/", ".planning/", ".kodiai.yml"]),
+        .default([
+          ".github/",
+          ".git/",
+          ".planning/",
+          ".kodiai.yml",
+          ".env",
+          ".env.*",
+          "**/*.pem",
+          "**/*.key",
+          "**/*.p12",
+          "**/*.pfx",
+          "**/*credentials*",
+          "**/*secret*",
+        ]),
       /** Basic rate limit for write-mode requests. 0 = no limit. */
       minIntervalSeconds: z.number().min(0).max(86400).default(0),
       secretScan: z
@@ -32,7 +45,20 @@ const repoConfigSchema = z.object({
     .default({
       enabled: false,
       allowPaths: [],
-      denyPaths: [".github/", ".git/", ".planning/", ".kodiai.yml"],
+      denyPaths: [
+        ".github/",
+        ".git/",
+        ".planning/",
+        ".kodiai.yml",
+        ".env",
+        ".env.*",
+        "**/*.pem",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pfx",
+        "**/*credentials*",
+        "**/*secret*",
+      ],
       minIntervalSeconds: 0,
       secretScan: { enabled: true },
     }),

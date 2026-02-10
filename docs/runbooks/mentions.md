@@ -160,6 +160,11 @@ Notes:
   - `.github/` matches everything under `.github/` (equivalent to `.github/**`)
   - `**/*.md` matches markdown files anywhere
 
+Secret scan notes:
+
+- In addition to known token/key patterns, write-mode performs a best-effort entropy scan on added lines.
+- False positives are possible; if needed, narrow writes with `write.allowPaths`.
+
 Common refusal reasons:
 
 - `write-policy-denied-path`: staged change matches denyPaths
