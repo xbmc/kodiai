@@ -358,6 +358,7 @@ export function createMentionHandler(deps: {
         }
 
         const userQuestion = stripMention(mention.commentBody, acceptedHandles);
+        const normalizedQuestion = userQuestion.trim().toLowerCase();
         if (userQuestion.trim().length === 0) {
           logger.info(
             {
@@ -405,6 +406,36 @@ export function createMentionHandler(deps: {
           mention.prNumber !== undefined
             ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
             : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
+
+        // Minimal rereview trigger: allow @kodiai review / @kodiai recheck.
+        // This triggers a PR review in the timeline; the mention reply is intentionally minimal.
+        if (
+          mention.prNumber !== undefined &&
+          (normalizedQuestion === "review" || normalizedQuestion === "recheck")
+        ) {
+          const octokit = await githubApp.getInstallationOctokit(event.installationId);
+          const replyBody = wrapInDetails(
+            ["Triggered re-review."].join("\n"),
+            "kodiai response",
+          );
+          await postMentionReply(replyBody);
+
+          // Requesting aireview/ai-review is best-effort and may fail if not configured.
+          try {
+            await octokit.rest.pulls.requestReviewers({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              team_reviewers: ["aireview"],
+            });
+          } catch (err) {
+            logger.warn(
+              { err, prNumber: mention.prNumber },
+              "Failed to request aireview team for rereview; rely on existing triggers",
+            );
+          }
+          return;
+        }
 
         if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
           // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
