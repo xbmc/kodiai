@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 17
-**Current Phase Name:** durability-locking
-**Total Phases:** 17
+**Current Phase:** 18
+**Current Phase Name:** ops-evidence
+**Total Phases:** 18
 **Current Plan:** 1
 **Total Plans in Phase:** 1
 **Status:** Complete
 **Progress:** [██████████] 100%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 17 plan 01 complete; idempotent write-mode by trigger comment
+**Last Activity Description:** Phase 18 plan 01 complete; evidence bundle logging + runbooks
 **Paused At:** None
 
 Milestone: v0.2 (planning)
@@ -26,9 +26,9 @@ Milestone: v0.2 (planning)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 33
+- Total plans completed: 34
 - Average duration: 3min
-- Total execution time: 184min
+- Total execution time: 199min
 
 **By Phase:**
 
@@ -62,6 +62,7 @@ Milestone: v0.2 (planning)
 | Phase 15-write-pipeline P01 | 20 min | 3 tasks | 6 files |
 | Phase 16-write-guardrails P01 | 25 min | 3 tasks | 6 files |
 | Phase 17-durability-locking P01 | 20 min | 3 tasks | 2 files |
+| Phase 18-ops-evidence P01 | 15 min | 3 tasks | 4 files |
 
 ## Deployment Info
 

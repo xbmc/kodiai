@@ -398,6 +398,11 @@ export function createMentionHandler(deps: {
               })
             : undefined;
 
+        const triggerCommentUrl =
+          mention.prNumber !== undefined
+            ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
+            : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
+
         if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
           // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
           try {
@@ -411,6 +416,23 @@ export function createMentionHandler(deps: {
 
             const existing = prs[0];
             if (existing?.html_url) {
+              logger.info(
+                {
+                  evidenceType: "write-mode",
+                  outcome: "reused-pr",
+                  deliveryId: event.id,
+                  installationId: event.installationId,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  sourcePrNumber: mention.prNumber,
+                  triggerCommentId: mention.commentId,
+                  triggerCommentUrl,
+                  writeOutputKey,
+                  branchName: writeBranchName,
+                  prUrl: existing.html_url,
+                },
+                "Evidence bundle",
+              );
+
               const replyBody = wrapInDetails(
                 [`Existing PR: ${existing.html_url}`].join("\n"),
                 "kodiai response",
@@ -735,6 +757,24 @@ export function createMentionHandler(deps: {
             "kodiai response",
           );
           await postMentionReply(replyBody);
+
+          logger.info(
+            {
+              evidenceType: "write-mode",
+              outcome: "created-pr",
+              deliveryId: event.id,
+              installationId: event.installationId,
+              repo: `${mention.owner}/${mention.repo}`,
+              sourcePrNumber: mention.prNumber,
+              triggerCommentId: mention.commentId,
+              triggerCommentUrl,
+              writeOutputKey,
+              branchName,
+              prUrl: createdPr.html_url,
+              commitSha: pushed.headSha,
+            },
+            "Evidence bundle",
+          );
 
           // Record successful publish time for rate limiting.
           if (config.write.minIntervalSeconds > 0) {

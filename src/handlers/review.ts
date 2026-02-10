@@ -420,6 +420,21 @@ export function createReviewHandler(deps: {
           "Review execution completed",
         );
 
+        if (result.conclusion === "success" && result.published) {
+          logger.info(
+            {
+              evidenceType: "review",
+              outcome: "published-output",
+              deliveryId: event.id,
+              installationId: event.installationId,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              reviewOutputKey,
+            },
+            "Evidence bundle",
+          );
+        }
+
         // Post error comment if execution failed or timed out
         if (result.conclusion === "error") {
           const category = result.isTimeout
@@ -492,6 +507,19 @@ export function createReviewHandler(deps: {
                 event: "APPROVE",
                 body: idempotencyCheck.marker,
               });
+
+              logger.info(
+                {
+                  evidenceType: "review",
+                  outcome: "submitted-approval",
+                  deliveryId: event.id,
+                  installationId: event.installationId,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                },
+                "Evidence bundle",
+              );
               logger.info(
                 { prNumber: pr.number, reviewOutputKey },
                 "Submitted silent approval (no issues found)",
