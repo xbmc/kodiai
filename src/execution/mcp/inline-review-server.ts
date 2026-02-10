@@ -17,6 +17,7 @@ export function createInlineReviewServer(
   reviewOutputKey?: string,
   deliveryId?: string,
   logger?: Logger,
+  onPublish?: () => void,
 ) {
   let outputPublicationState: "unknown" | "allowed" | "already-published" = "unknown";
 
@@ -155,6 +156,8 @@ export function createInlineReviewServer(
                 typeof octokit.rest.pulls.createReviewComment
               >[0],
             );
+
+            onPublish?.();
 
             if (reviewOutputKey) {
               logger?.info(

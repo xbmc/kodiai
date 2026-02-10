@@ -56,6 +56,7 @@ export function buildMcpServers(deps: {
       deps.reviewOutputKey,
       deps.deliveryId,
       deps.logger,
+      deps.onPublish,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
