@@ -62,14 +62,18 @@ export function createMentionHandler(deps: {
     commentId: number;
     keyword: string;
   }): string {
+    const normalizedOwner = input.owner.trim().toLowerCase();
+    const normalizedRepo = input.repo.trim().toLowerCase();
+    const normalizedKeyword = input.keyword.trim().toLowerCase();
+
     return [
       "kodiai-write-output",
       "v1",
       `inst-${input.installationId}`,
-      `${input.owner}/${input.repo}`,
+      `${normalizedOwner}/${normalizedRepo}`,
       `pr-${input.prNumber}`,
       `comment-${input.commentId}`,
-      `keyword-${input.keyword}`,
+      `keyword-${normalizedKeyword}`,
     ].join(":");
   }
 
@@ -638,8 +642,8 @@ export function createMentionHandler(deps: {
             return;
           }
 
-           const branchName = writeBranchName;
-           const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
+          const branchName = writeBranchName;
+          const commitMessage = `kodiai: apply requested changes (pr #${mention.prNumber})`;
 
           let pushed: { branchName: string; headSha: string };
           try {
