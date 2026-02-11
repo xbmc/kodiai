@@ -176,12 +176,10 @@ export function createMentionHandler(deps: {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
         async function postMentionReply(replyBody: string): Promise<void> {
-          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
-
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
-              await replyOctokit.rest.pulls.createReplyForReviewComment({
+              await octokit.rest.pulls.createReplyForReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
@@ -197,7 +195,7 @@ export function createMentionHandler(deps: {
             }
           }
 
-          await replyOctokit.rest.issues.createComment({
+          await octokit.rest.issues.createComment({
             owner: mention.owner,
             repo: mention.repo,
             issue_number: mention.issueNumber,
@@ -206,12 +204,10 @@ export function createMentionHandler(deps: {
         }
 
         async function postMentionError(errorBody: string): Promise<void> {
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
-              await errOctokit.rest.pulls.createReplyForReviewComment({
+              await octokit.rest.pulls.createReplyForReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
@@ -228,7 +224,7 @@ export function createMentionHandler(deps: {
           }
 
           await postOrUpdateErrorComment(
-            errOctokit,
+            octokit,
             {
               owner: mention.owner,
               repo: mention.repo,
@@ -358,6 +354,7 @@ export function createMentionHandler(deps: {
         }
 
         const userQuestion = stripMention(mention.commentBody, acceptedHandles);
+        const normalizedQuestion = userQuestion.trim().toLowerCase();
         if (userQuestion.trim().length === 0) {
           logger.info(
             {
@@ -552,9 +549,8 @@ export function createMentionHandler(deps: {
 
         // Add eyes reaction to trigger comment for immediate visual acknowledgment
         try {
-          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
           if (mention.surface === "pr_review_comment") {
-            await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
+            await octokit.rest.reactions.createForPullRequestReviewComment({
               owner: mention.owner,
               repo: mention.repo,
               comment_id: mention.commentId,
@@ -565,7 +561,7 @@ export function createMentionHandler(deps: {
             // (the review ID is not a comment ID, so the reaction endpoints would 404)
           } else {
             // issue_comment and pr_comment both use the issue comment reaction endpoint
-            await reactionOctokit.rest.reactions.createForIssueComment({
+            await octokit.rest.reactions.createForIssueComment({
               owner: mention.owner,
               repo: mention.repo,
               comment_id: mention.commentId,
@@ -575,6 +571,32 @@ export function createMentionHandler(deps: {
         } catch (err) {
           // Non-fatal: don't block processing if reaction fails
           logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
+        }
+
+        // Minimal rereview trigger: allow @kodiai review / @kodiai recheck.
+        // Goal: retrigger review without adding any new PR thread comments.
+        // Signal is via best-effort reviewer request + eyes reaction (above).
+        if (
+          mention.prNumber !== undefined &&
+          (normalizedQuestion === "review" || normalizedQuestion === "recheck")
+        ) {
+          const rereviewTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
+
+          try {
+            await octokit.rest.pulls.requestReviewers({
+              owner: mention.owner,
+              repo: mention.repo,
+              pull_number: mention.prNumber,
+              team_reviewers: [rereviewTeam],
+            });
+          } catch (err) {
+            logger.warn(
+              { err, prNumber: mention.prNumber, rereviewTeam },
+              "Failed to request ui rereview team for rereview (best-effort)",
+            );
+          }
+
+          return;
         }
 
         // Build mention context (conversation + PR metadata + inline diff context)
@@ -787,6 +809,13 @@ export function createMentionHandler(deps: {
               }
               return;
             } catch (err) {
+              if (err instanceof WritePolicyError) {
+                const refusal = buildWritePolicyRefusalMessage(err, config.write.allowPaths);
+                const replyBody = wrapInDetails(refusal, "kodiai response");
+                await postMentionReply(replyBody);
+                return;
+              }
+
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
               try {
                 await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
@@ -869,14 +898,8 @@ export function createMentionHandler(deps: {
             });
           } catch (err) {
             if (err instanceof WritePolicyError) {
-              const replyBody = wrapInDetails(
-                [
-                  "Write request refused.",
-                  "",
-                  err.message,
-                ].join("\n"),
-                "kodiai response",
-              );
+              const refusal = buildWritePolicyRefusalMessage(err, config.write.allowPaths);
+              const replyBody = wrapInDetails(refusal, "kodiai response");
               await postMentionReply(replyBody);
               return;
             }
@@ -1065,13 +1088,64 @@ export function createMentionHandler(deps: {
           await workspace.cleanup();
         }
       }
-    }, {
+      }, {
       deliveryId: event.id,
       eventName: event.name,
       action,
       jobType: "mention",
       prNumber: mention.prNumber,
     });
+  }
+
+  function buildWritePolicyRefusalMessage(
+    err: WritePolicyError,
+    allowPaths: string[],
+  ): string {
+    const yamlSingleQuote = (s: string): string => s.replaceAll("'", "''");
+
+    const lines: string[] = [];
+    lines.push("Write request refused.");
+    lines.push("");
+    lines.push(`Reason: ${err.code}`);
+    if (err.rule) lines.push(`Rule: ${err.rule}`);
+    if (err.path) lines.push(`File: ${err.path}`);
+    if (err.pattern) lines.push(`Matched pattern: ${err.pattern}`);
+    if (err.detector) lines.push(`Detector: ${err.detector}`);
+    lines.push("");
+    lines.push(err.message);
+
+    // Suggest the smallest config change when it's reasonably safe.
+    // For secret detection, do not suggest bypassing policy by default.
+    if (err.code === "write-policy-not-allowed" && err.path) {
+      const escapedPath = yamlSingleQuote(err.path);
+      lines.push("");
+      lines.push("Smallest config change (if intended):");
+      lines.push("```yml");
+      lines.push("write:");
+      lines.push("  allowPaths:");
+      lines.push(`    - '${escapedPath}'`);
+      lines.push("```");
+
+      if (allowPaths.length > 0) {
+        lines.push("");
+        lines.push(
+          `Current allowPaths: ${allowPaths
+            .map((p) => `'${yamlSingleQuote(p)}'`)
+            .join(", ")}`,
+        );
+      }
+    } else if (err.code === "write-policy-denied-path") {
+      lines.push("");
+      lines.push("Config change required to allow this path is potentially risky.");
+      lines.push("If you explicitly want to allow it, narrow or remove the matching denyPaths entry.");
+    } else if (err.code === "write-policy-secret-detected") {
+      lines.push("");
+      lines.push("No safe config bypass suggested.");
+      lines.push("Remove/redact the secret-like content and retry.");
+      lines.push("(If this is a false positive, you can disable secretScan, but that reduces safety.)");
+    }
+
+    return lines.join("\n");
   }
 
   // Register for all three mention-triggering events

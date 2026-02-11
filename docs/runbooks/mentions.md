@@ -102,6 +102,24 @@ When write-mode is enabled and an `apply:` / `change:` mention creates or reuses
   - `prUrl`
   - `commitSha` (for created PR)
 
+### Grep Evidence Bundle by deliveryId
+
+Use the GitHub App deliveries UI to copy `X-GitHub-Delivery`, then search logs for:
+
+- `deliveryId: <X-GitHub-Delivery>`
+- message `Evidence bundle`
+
+Example (Log Analytics):
+
+```sh
+AppTraces
+| where Message has "Evidence bundle"
+| where Message has "deliveryId"
+| where Message has "<delivery-id>"
+| project TimeGenerated, Message
+| order by TimeGenerated asc
+```
+
 ## 3) Confirm Mention Detection + Gate Decisions
 
 For the same `deliveryId`, search for mention handler logs.

@@ -339,8 +339,8 @@ describe("filterCommentsToTriggerTime", () => {
     ];
     const result = filterCommentsToTriggerTime(comments, triggerTime);
     expect(result).toHaveLength(3);
-    expect(result[0].created_at).toBe("2025-01-15T10:00:00Z");
-    expect(result[1].created_at).toBe("2025-01-15T11:00:00Z");
-    expect(result[2].created_at).toBe("2025-01-15T11:59:59Z");
+    expect(result[0]?.created_at).toBe("2025-01-15T10:00:00Z");
+    expect(result[1]?.created_at).toBe("2025-01-15T11:00:00Z");
+    expect(result[2]?.created_at).toBe("2025-01-15T11:59:59Z");
   });
 });

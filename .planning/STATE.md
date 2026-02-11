@@ -9,16 +9,16 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 ## Current Position
 
-**Current Phase:** 20
-**Current Phase Name:** next-improvements
-**Total Phases:** 20
-**Current Plan:** 1
-**Total Plans in Phase:** 1
-**Status:** Complete
-**Progress:** [██████████] 100%
+**Current Phase:** 21
+**Current Phase Name:** polish
+**Total Phases:** 21
+**Current Plan:** 2
+**Total Plans in Phase:** 4
+**Status:** In progress
+**Progress:** [#######   ] 75%
 
 **Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 20 plan 01 complete; write-mode UX + guardrails + CI
+**Last Activity Description:** Phase 21: wrote xbmc/xbmc write-flow smoke doc; improved write guardrail refusal details; manual smoke run pending
 **Paused At:** None
 
 Milestone: v0.2 (planning)

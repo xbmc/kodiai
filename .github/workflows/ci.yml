@@ -17,4 +17,3 @@ jobs:
       - run: bun install
       - run: bun test
       - run: bunx tsc --noEmit
-        continue-on-error: true

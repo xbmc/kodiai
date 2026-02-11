@@ -4,7 +4,7 @@ import yaml from "js-yaml";
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
-  timeoutSeconds: z.number().min(30).max(1800).default(300),
+  timeoutSeconds: z.number().min(30).max(1800).default(600),
   systemPromptAppend: z.string().optional(),
   /**
    * Write-mode gates mention-driven code modifications (branch/commit/push).

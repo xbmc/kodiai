@@ -46,7 +46,6 @@ function normalizeReviewerLogin(login: string): string {
  * Re-requested reviews run only when kodiai itself is the requested reviewer.
  * Additionally, a team-based re-request is supported for a special rereview team
  * ("ai-review" / "aireview") to enable UI-only re-review without a comment.
- * to enable UI-only re-review without a comment.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
