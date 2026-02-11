@@ -36,5 +36,7 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("Issues:");
     expect(prompt).toContain("Issues: none");
     expect(prompt).toContain("path/to/file.ts");
+    expect(prompt).toContain("Prefix first line with: 'Plan only:'");
+    expect(prompt).toContain("Do NOT claim any edits were made");
   });
 });

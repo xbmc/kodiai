@@ -124,9 +124,11 @@ export function buildMentionPrompt(params: {
 
   lines.push("- If the user is asking for a plan (e.g. they used `plan:`), respond with:");
   lines.push(
+    "  - Prefix first line with: 'Plan only:'",
     "  - One sentence intent",
     "  - Files: <1-6 paths>",
     "  - Steps: 3-7 steps",
+    "  - Do NOT claim any edits were made, and do NOT use words like 'Done', 'Implemented', or 'Appended'",
     "  - End with: 'Reply with apply: <same request> to implement.'",
   );
 
