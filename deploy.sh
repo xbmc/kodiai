@@ -22,6 +22,18 @@ set -euo pipefail
 # pass the base64-encoded value straight through as GITHUB_PRIVATE_KEY.
 ###############################################################################
 
+# -- Load .env (optional) ------------------------------------------------------
+# If you prefer not to export variables in your shell, create a local `.env`
+# file and run `./deploy.sh`. This script will source it automatically.
+ENV_FILE=${ENV_FILE:-.env}
+if [[ -f "$ENV_FILE" ]]; then
+  # Export all variables defined in the file.
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 # -- Configuration (customize as needed) --------------------------------------
 RESOURCE_GROUP="rg-kodiai"
 LOCATION="eastus"
