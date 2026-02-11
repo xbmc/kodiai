@@ -1319,6 +1319,7 @@ describe("createMentionHandler rereview command", () => {
               base: { ref: "main" },
             },
           }),
+          listRequestedReviewers: async () => ({ data: { users: [], teams: [] } }),
           requestReviewers: async (params: { team_reviewers: string[] }) => {
             requestedTeams = params.team_reviewers;
             return { data: {} };

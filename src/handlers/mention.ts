@@ -31,6 +31,7 @@ import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
+import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
 
 /**
  * Create the mention handler and register it with the event router.
@@ -580,21 +581,15 @@ export function createMentionHandler(deps: {
           mention.prNumber !== undefined &&
           (normalizedQuestion === "review" || normalizedQuestion === "recheck")
         ) {
-          const rereviewTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
-
-          try {
-            await octokit.rest.pulls.requestReviewers({
-              owner: mention.owner,
-              repo: mention.repo,
-              pull_number: mention.prNumber,
-              team_reviewers: [rereviewTeam],
-            });
-          } catch (err) {
-            logger.warn(
-              { err, prNumber: mention.prNumber, rereviewTeam },
-              "Failed to request ui rereview team for rereview (best-effort)",
-            );
-          }
+          const configuredTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
+          await requestRereviewTeamBestEffort({
+            octokit,
+            owner: mention.owner,
+            repo: mention.repo,
+            prNumber: mention.prNumber,
+            configuredTeam,
+            logger,
+          });
 
           return;
         }
