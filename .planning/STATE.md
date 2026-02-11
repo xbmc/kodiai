@@ -19,16 +19,16 @@ Progress: [████░░░░░░] 42%
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 41 (across v0.1 + v0.2 + v0.3)
+- Total plans completed: 42 (across v0.1 + v0.2 + v0.3)
 - Average duration: 3min
-- Total execution time: 252min
+- Total execution time: 255min
 
 **By Phase (v0.3):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 22-config-validation-safety | 1 | 4min | 4min |
-| 23-telemetry-foundation | 2 | 4min | 2min |
+| 23-telemetry-foundation | 2 | 7min | 3min |
 
 *Updated after each plan completion*
 
@@ -51,6 +51,8 @@ Recent decisions affecting current work:
 - LoadConfigResult pattern: all config loading returns { config, warnings } (22-01)
 - ExecutionResult token fields use `| undefined` (not optional) for explicit backward compatibility (23-02)
 - Error/timeout paths set token fields to undefined (not zero) to distinguish from zero-token executions (23-02)
+- [Phase 23-01]: Used RETURNING clause for purge row counting to avoid bun:sqlite db.run() type mismatch with named params
+- [Phase 23-01]: File-backed temp databases in tests for verification via second connection (in-memory DBs per-connection)
 
 ### Pending Todos
 
@@ -63,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 23-02-PLAN.md (ExecutionResult token enrichment)
+Stopped at: Completed 23-01-PLAN.md (TelemetryStore SQLite storage)
 Resume file: None
