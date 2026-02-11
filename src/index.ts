@@ -12,6 +12,7 @@ import { createWorkspaceManager } from "./jobs/workspace.ts";
 import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
+import { createTelemetryStore } from "./telemetry/store.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -33,6 +34,17 @@ if (staleCount > 0) {
   logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
 }
 
+// Telemetry storage (SQLite with WAL mode)
+const telemetryDbPath = process.env.TELEMETRY_DB_PATH ?? "./data/kodiai-telemetry.db";
+const telemetryStore = createTelemetryStore({ dbPath: telemetryDbPath, logger });
+
+// Startup maintenance: purge old rows (TELEM-07) and checkpoint WAL (TELEM-08)
+const purgedCount = telemetryStore.purgeOlderThan(90);
+if (purgedCount > 0) {
+  logger.info({ purgedCount }, "Telemetry retention purge complete");
+}
+telemetryStore.checkpoint();
+
 // Event processing pipeline: bot filter -> event router
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
@@ -47,6 +59,7 @@ createReviewHandler({
   workspaceManager,
   githubApp,
   executor,
+  telemetryStore,
   logger,
 });
 createMentionHandler({
@@ -55,6 +68,7 @@ createMentionHandler({
   workspaceManager,
   githubApp,
   executor,
+  telemetryStore,
   logger,
 });
 
