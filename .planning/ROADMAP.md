@@ -65,7 +65,7 @@ See `.planning/milestones/v0.3-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Improve review quality through smarter analysis, repo-specific learning, and configurable strictness. Reduce noise and false positives while catching real issues.
 
-- [ ] **Phase 26: Review Mode & Severity Control** — Configurable review strictness with structured output and noise suppression
+- [x] **Phase 26: Review Mode & Severity Control** — Configurable review strictness with structured output and noise suppression (completed 2026-02-11)
 - [ ] **Phase 27: Context-Aware Reviews** — Path-scoped instructions, profile presets, and deterministic diff analysis
 - [ ] **Phase 28: Knowledge Store & Explicit Learning** — SQLite-backed learning, suppression patterns, and review metrics
 - [ ] **Phase 29: Feedback Capture** — Implicit learning via comment reaction tracking
@@ -85,8 +85,8 @@ See `.planning/milestones/v0.3-ROADMAP.md` for full phase details.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 26-01-PLAN.md — Config schema extension (review mode, severity, focus areas, comment cap)
-- [ ] 26-02-PLAN.md — Prompt enrichment with mode-aware instructions and handler wiring
+- [x] 26-01-PLAN.md — Config schema extension (review mode, severity, focus areas, comment cap)
+- [x] 26-02-PLAN.md — Prompt enrichment with mode-aware instructions and handler wiring
 
 ### Phase 27: Context-Aware Reviews
 **Goal**: Reviews understand repo-specific conventions and assess risk using path-scoped instructions, profile presets, and deterministic diff analysis
@@ -162,7 +162,7 @@ Phases execute in numeric order: 26 → 27 → 28 → 29
 | 23. Telemetry Foundation | v0.3 | 3/3 | Complete | 2026-02-11 |
 | 24. Enhanced Config Fields | v0.3 | 2/2 | Complete | 2026-02-11 |
 | 25. Reporting Tools | v0.3 | 1/1 | Complete | 2026-02-11 |
-| 26. Review Mode & Severity Control | v0.4 | 0/? | Not started | - |
+| 26. Review Mode & Severity Control | v0.4 | 2/2 | Complete | 2026-02-11 |
 | 27. Context-Aware Reviews | v0.4 | 0/? | Not started | - |
 | 28. Knowledge Store & Explicit Learning | v0.4 | 0/? | Not started | - |
 | 29. Feedback Capture | v0.4 | 0/? | Not started | - |

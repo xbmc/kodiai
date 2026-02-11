@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 26 — Review Mode & Severity Control
+**Current focus:** Phase 27 — Context-Aware Reviews
 
 ## Current Position
 
-Phase: 26 of 29 (Review Mode & Severity Control)
-Plan: 2 of 2 in current phase (PHASE COMPLETE)
-Status: Phase Complete
-Last activity: 2026-02-11 — Completed 26-02 (Review Prompt Enrichment)
+Phase: 27 of 29 (Context-Aware Reviews)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-02-11 — Phase 26 complete (verified)
 
-Progress: [██████░░░░] 60% (of v0.4)
+Progress: [██░░░░░░░░] 25% (of v0.4)
 
 ## Performance Metrics
 
