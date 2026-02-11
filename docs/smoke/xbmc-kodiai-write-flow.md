@@ -1,5 +1,7 @@
 Smoke Test: xbmc/kodiai write-mode end-to-end
 
+Seed note: same-repo smoke branch baseline (2026-02-11).
+
 Goal
 
 Validate the full mention-driven write flow in the default repo (`xbmc/kodiai`) using:

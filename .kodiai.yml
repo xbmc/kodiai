@@ -1,3 +1,11 @@
 review:
   uiRereviewTeam: aireview
   requestUiRereviewTeamOnOpen: true
+
+mention:
+  enabled: true
+
+write:
+  enabled: true
+  allowPaths:
+    - docs/**
