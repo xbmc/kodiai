@@ -139,3 +139,4 @@ Record these after each smoke run:
 - secret-scan refusal comment URL:
 
 Smoke marker: postdeploy fork verification 2026-02-11.
+fork postdeploy apply smoke
