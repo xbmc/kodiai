@@ -65,8 +65,14 @@ None yet.
 
 None
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 1 | Fix @kodiai review delegation bug - should perform review directly not delegate to aireview team | 2026-02-11 | 1d3a429 | [1-fix-kodiai-review-delegation-bug-should-](./quick/1-fix-kodiai-review-delegation-bug-should-/) |
+
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed quick task 1 (fix @kodiai review delegation bug)
+Stopped at: 2026-02-11 - Completed quick task 1: Fix @kodiai review delegation bug
 Resume file: None
