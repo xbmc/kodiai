@@ -2,26 +2,26 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-09)
+See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** v0.2 execution: write-mode reliability + observability (no distributed infra).
+**Current focus:** v0.3: Enhanced config + usage telemetry (give users control, give operators visibility).
 
 ## Current Position
 
-**Current Phase:** 18
-**Current Phase Name:** observability-verification
-**Total Phases:** 21
-**Current Plan:** 2
-**Total Plans in Phase:** 2
-**Status:** Complete
-**Progress:** [##########] 100%
+**Current Phase:** Not started
+**Current Phase Name:** Defining requirements
+**Total Phases:** TBD
+**Current Plan:** —
+**Total Plans in Phase:** —
+**Status:** Defining requirements
+**Progress:** [          ] 0%
 
 **Last Activity:** 2026-02-11
-**Last Activity Description:** Completed 18-02 observability + verification pass (log consistency + runbook/query templates)
+**Last Activity Description:** Milestone v0.3 started
 **Paused At:** None
 
-Milestone: v0.2 (planning)
+Milestone: v0.3 (defining)
 
 ## Performance Metrics
 

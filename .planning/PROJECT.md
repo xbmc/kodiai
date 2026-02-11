@@ -8,6 +8,15 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
+## Current Milestone: v0.3 Configuration & Observability
+
+**Goal:** Give users fine-grained control over Kodiai behavior and provide operators visibility into resource consumption.
+
+**Target features:**
+- Enhanced `.kodiai.yml` config schema (review control, mention control, write-mode guardrails)
+- Usage telemetry and cost tracking (tokens, duration, cost per execution)
+- Reporting tools for operators (CLI script, persistent storage)
+
 ## Requirements
 
 ### Validated
@@ -27,12 +36,15 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Review UX improvements (eyes reaction, `<details>` wrapping, conditional summaries) — v0.1
 - ✓ Production deployment to Azure Container Apps (Docker + probes + secrets) — v0.1
 - ✓ Review-request reliability hardening (delivery correlation, runbook, output idempotency) — v0.1
+- ✓ Code modification via @mention (branch creation, commit, push) with guardrails — v0.2
+- ✓ Write-mode reliability (clearer failures, safer retries, plan-only mode) — v0.2
 
 ### Active
 
-- [ ] Code modification via @mention (branch creation, commit, push) with guardrails
-- [ ] Write-mode reliability polish (clearer failures, safer retries, reduced false positives)
-- [ ] Expand operator evidence capture (delivery correlation, queue/failure metrics, grep-ready runbooks)
+- [ ] Enhanced config schema (review/mention/write-mode controls via `.kodiai.yml`)
+- [ ] Usage telemetry collection (tokens, duration, cost per execution)
+- [ ] Usage reporting tools (CLI script for operators)
+- [ ] Persistent telemetry storage (SQLite or JSON file)
 
 ### Out of Scope
 
@@ -80,4 +92,4 @@ v0.1 ships an installable GitHub App that:
 | `.kodiai.yml` config over env vars | Per-repo customization without touching the app server | ✓ Good |
 
 ---
-*Last updated: 2026-02-09 after v0.1 milestone*
+*Last updated: 2026-02-11 after v0.3 milestone definition*
