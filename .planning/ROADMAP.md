@@ -61,11 +61,11 @@ Plans:
   3. Setting `mentions.enabled: false` causes Kodiai to ignore all @kodiai mentions in that repo
   4. Setting `mentions.allowedUsers: ["alice"]` causes Kodiai to respond only to alice's mentions and ignore everyone else's
   5. Setting `writeMode.allowPaths` / `writeMode.denyPaths` restricts which files write-mode can modify, and attempts outside those paths are blocked
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 24-01: TBD
-- [ ] 24-02: TBD
+- [ ] 24-01-PLAN.md -- Add allowedUsers to mention config, upgrade skipPaths to picomatch globs, add tests
+- [ ] 24-02-PLAN.md -- Add telemetry config section with opt-out control and cost warning threshold in both handlers
 
 ### Phase 25: Reporting Tools
 **Goal**: Operators can query telemetry data via a CLI script to understand usage patterns, costs, and identify expensive repos
@@ -92,5 +92,5 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 |-------|-----------|----------------|--------|-----------|
 | 22. Config Validation Safety | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
 | 23. Telemetry Foundation | v0.3 | 3/3 | ✓ Complete | 2026-02-11 |
-| 24. Enhanced Config Fields | v0.3 | 0/TBD | Not started | - |
+| 24. Enhanced Config Fields | v0.3 | 0/2 | Not started | - |
 | 25. Reporting Tools | v0.3 | 0/1 | Not started | - |
