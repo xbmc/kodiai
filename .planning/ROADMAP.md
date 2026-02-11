@@ -29,10 +29,10 @@
   2. A `.kodiai.yml` with a valid `review` section but an invalid `write` section loads the valid review config and falls back to defaults for the broken write section (partial failure, not total failure)
   3. A repo with no `.kodiai.yml` at all continues to work with all defaults (zero-config preserved)
   4. When a section falls back to defaults due to validation error, a warning is logged identifying which section failed and why
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 22-01: TBD
+- [ ] 22-01-PLAN.md -- Remove .strict(), implement two-pass safeParse with graceful degradation, update call sites and tests
 
 ### Phase 23: Telemetry Foundation
 **Goal**: Every Kodiai execution (review, mention, write) records token usage, cost, and duration to persistent storage, with retention and concurrency safety built in from day one
@@ -87,7 +87,7 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Config Validation Safety | v0.3 | 0/TBD | Not started | - |
+| 22. Config Validation Safety | v0.3 | 0/1 | Planned | - |
 | 23. Telemetry Foundation | v0.3 | 0/TBD | Not started | - |
 | 24. Enhanced Config Fields | v0.3 | 0/TBD | Not started | - |
 | 25. Reporting Tools | v0.3 | 0/TBD | Not started | - |
