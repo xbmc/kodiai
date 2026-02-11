@@ -5,16 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Milestone v0.3 complete — ready to plan v0.4
+**Current focus:** Milestone v0.4 — Intelligent Review System
 
 ## Current Position
 
-Phase: 25 (4 of 4 in v0.3) — Reporting Tools
-Plan: 1 of 1 complete
-Status: ✅ Milestone v0.3 shipped (2026-02-11)
-Last activity: 2026-02-11 — Milestone v0.3 archived
-
-Progress: [██████████] 100% (v0.3 complete)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-11 — Milestone v0.4 started
 
 ## Performance Metrics
 
