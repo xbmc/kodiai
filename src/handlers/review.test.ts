@@ -1080,3 +1080,327 @@ describe("createReviewHandler fork PR workspace strategy", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+describe("createReviewHandler picomatch skipPaths (CONFIG-04)", () => {
+  async function createSkipPathsFixture(
+    skipPaths: string[],
+    changedFiles: Array<{ path: string; content: string }>,
+  ) {
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-skippaths-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    const skipPathsYaml = skipPaths.map((p) => `    - '${p}'`).join("\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths:\n${skipPathsYaml}\n`,
+    );
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    // Create directories for changed files on main (so they exist)
+    for (const f of changedFiles) {
+      const dirPath = f.path.includes("/") ? f.path.substring(0, f.path.lastIndexOf("/")) : null;
+      if (dirPath) {
+        await $`mkdir -p ${join(dir, dirPath)}`.quiet();
+      }
+      await Bun.write(join(dir, f.path), "placeholder\n");
+    }
+
+    await $`git -C ${dir} add .`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+
+    // Apply changes on feature branch
+    for (const f of changedFiles) {
+      await Bun.write(join(dir, f.path), f.content);
+    }
+    await $`git -C ${dir} add .`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    return {
+      dir,
+      cleanup: async () => {
+        await rm(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  test("skipPaths: ['docs/**'] skips review when all files are under docs/", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createSkipPathsFixture(
+      ["docs/**"],
+      [
+        { path: "docs/guide.md", content: "updated guide\n" },
+        { path: "docs/api.md", content: "updated api\n" },
+      ],
+    );
+
+    let executorCalled = false;
+    const { logger, entries } = createCaptureLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-skip",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(
+      entries.some((e) => e.message.includes("All changed files matched skipPaths")),
+    ).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("skipPaths: ['*.md'] skips review for nested .md files (backward compat)", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createSkipPathsFixture(
+      ["*.md"],
+      [
+        { path: "README.md", content: "updated readme\n" },
+        { path: "src/README.md", content: "nested readme\n" },
+      ],
+    );
+
+    let executorCalled = false;
+    const { logger, entries } = createCaptureLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-skip",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(
+      entries.some((e) => e.message.includes("All changed files matched skipPaths")),
+    ).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("files not matching skipPaths still get reviewed", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createSkipPathsFixture(
+      ["docs/**"],
+      [
+        { path: "docs/guide.md", content: "updated guide\n" },
+        { path: "src/index.ts", content: "console.log('hello');\n" },
+      ],
+    );
+
+    let executorCalled = false;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-skip",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger() as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // src/index.ts doesn't match docs/**, so executor should be called
+    expect(executorCalled).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+});

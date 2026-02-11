@@ -17,8 +17,21 @@ import {
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
 import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
+import picomatch from "picomatch";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+
+/**
+ * Normalize a user-authored skip pattern for backward compatibility.
+ * - "docs/" -> "docs/**"   (directory shorthand)
+ * - "*.md"  -> "**\/*.md"  (extension-only matches nested files)
+ */
+function normalizeSkipPattern(pattern: string): string {
+  const p = pattern.trim();
+  if (p.endsWith("/")) return `${p}**`;
+  if (p.startsWith("*.")) return `**/${p}`;
+  return p;
+}
 
 function isReviewTriggerEnabled(
   action: string,
@@ -415,19 +428,13 @@ export function createReviewHandler(deps: {
           await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD --name-only`.quiet();
         const allChangedFiles = diffOutput.text().trim().split("\n").filter(Boolean);
 
+        const skipMatchers = config.review.skipPaths
+          .map(normalizeSkipPattern)
+          .filter((p) => p.length > 0)
+          .map((p) => picomatch(p, { dot: true }));
+
         const changedFiles = allChangedFiles.filter((file) => {
-          return !config.review.skipPaths.some((pattern) => {
-            // Directory pattern (ends with /): file starts with pattern
-            if (pattern.endsWith("/")) {
-              return file.startsWith(pattern);
-            }
-            // Extension pattern (starts with *.): file ends with suffix
-            if (pattern.startsWith("*.")) {
-              return file.endsWith(pattern.slice(1));
-            }
-            // Exact match or suffix match
-            return file === pattern || file.endsWith(pattern);
-          });
+          return !skipMatchers.some((m) => m(file));
         });
 
         if (changedFiles.length === 0) {
@@ -480,27 +487,57 @@ export function createReviewHandler(deps: {
           "Review execution completed",
         );
 
-        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05)
-        try {
-          telemetryStore.record({
-            deliveryId: event.id,
-            repo: `${apiOwner}/${apiRepo}`,
-            prNumber: pr.number,
-            eventType: `pull_request.${payload.action}`,
-            model: result.model ?? "unknown",
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            cacheReadTokens: result.cacheReadTokens,
-            cacheCreationTokens: result.cacheCreationTokens,
-            durationMs: result.durationMs,
-            costUsd: result.costUsd,
-            conclusion: result.conclusion,
-            sessionId: result.sessionId,
-            numTurns: result.numTurns,
-            stopReason: result.stopReason,
-          });
-        } catch (err) {
-          logger.warn({ err }, "Telemetry write failed (non-blocking)");
+        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
+        if (config.telemetry.enabled) {
+          try {
+            telemetryStore.record({
+              deliveryId: event.id,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              eventType: `pull_request.${payload.action}`,
+              model: result.model ?? "unknown",
+              inputTokens: result.inputTokens,
+              outputTokens: result.outputTokens,
+              cacheReadTokens: result.cacheReadTokens,
+              cacheCreationTokens: result.cacheCreationTokens,
+              durationMs: result.durationMs,
+              costUsd: result.costUsd,
+              conclusion: result.conclusion,
+              sessionId: result.sessionId,
+              numTurns: result.numTurns,
+              stopReason: result.stopReason,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          // Cost warning (CONFIG-11)
+          if (
+            config.telemetry.costWarningUsd > 0 &&
+            result.costUsd !== undefined &&
+            result.costUsd > config.telemetry.costWarningUsd
+          ) {
+            logger.warn(
+              {
+                costUsd: result.costUsd,
+                threshold: config.telemetry.costWarningUsd,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+              },
+              "Execution cost exceeded warning threshold",
+            );
+            try {
+              const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
+              await warnOctokit.rest.issues.createComment({
+                owner: apiOwner,
+                repo: apiRepo,
+                issue_number: pr.number,
+                body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
+              });
+            } catch (err) {
+              logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
+            }
+          }
         }
 
         if (result.conclusion === "success" && result.published) {

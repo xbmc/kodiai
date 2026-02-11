@@ -713,27 +713,57 @@ export function createMentionHandler(deps: {
           "Mention execution completed",
         );
 
-        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05)
-        try {
-          telemetryStore.record({
-            deliveryId: event.id,
-            repo: `${mention.owner}/${mention.repo}`,
-            prNumber: mention.prNumber,
-            eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
-            model: result.model ?? "unknown",
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            cacheReadTokens: result.cacheReadTokens,
-            cacheCreationTokens: result.cacheCreationTokens,
-            durationMs: result.durationMs,
-            costUsd: result.costUsd,
-            conclusion: result.conclusion,
-            sessionId: result.sessionId,
-            numTurns: result.numTurns,
-            stopReason: result.stopReason,
-          });
-        } catch (err) {
-          logger.warn({ err }, "Telemetry write failed (non-blocking)");
+        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
+        if (config.telemetry.enabled) {
+          try {
+            telemetryStore.record({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              prNumber: mention.prNumber,
+              eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
+              model: result.model ?? "unknown",
+              inputTokens: result.inputTokens,
+              outputTokens: result.outputTokens,
+              cacheReadTokens: result.cacheReadTokens,
+              cacheCreationTokens: result.cacheCreationTokens,
+              durationMs: result.durationMs,
+              costUsd: result.costUsd,
+              conclusion: result.conclusion,
+              sessionId: result.sessionId,
+              numTurns: result.numTurns,
+              stopReason: result.stopReason,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          // Cost warning (CONFIG-11)
+          if (
+            config.telemetry.costWarningUsd > 0 &&
+            result.costUsd !== undefined &&
+            result.costUsd > config.telemetry.costWarningUsd
+          ) {
+            logger.warn(
+              {
+                costUsd: result.costUsd,
+                threshold: config.telemetry.costWarningUsd,
+                repo: `${mention.owner}/${mention.repo}`,
+                prNumber: mention.prNumber,
+              },
+              "Execution cost exceeded warning threshold",
+            );
+            try {
+              const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
+              await warnOctokit.rest.issues.createComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                issue_number: mention.issueNumber,
+                body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
+              });
+            } catch (err) {
+              logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
+            }
+          }
         }
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.

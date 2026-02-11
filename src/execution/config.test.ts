@@ -497,3 +497,31 @@ test("falls back to telemetry defaults when telemetry section is invalid", async
     await rm(dir, { recursive: true });
   }
 });
+
+test("mention.allowedUsers defaults to empty array", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.allowedUsers).toEqual([]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("reads mention.allowedUsers from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  allowedUsers:\n    - alice\n    - bob\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.allowedUsers).toEqual(["alice", "bob"]);
+    expect(config.mention.enabled).toBe(true);
+    expect(config.mention.acceptClaudeAlias).toBe(true);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
