@@ -78,8 +78,10 @@ Plans:
   4. Running with `--json` outputs structured JSON; `--csv` outputs CSV -- both suitable for piping to other tools
   5. The report includes a ranked list of repos by cost (top consumers visible at a glance)
 
+**Plans**: 1 plan
+
 Plans:
-- [ ] 25-01: TBD
+- [ ] 25-01-PLAN.md -- Create usage-report.ts CLI script with aggregate queries, filtering, multi-format output, and build integration
 
 ## Progress
 
@@ -91,4 +93,4 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 | 22. Config Validation Safety | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
 | 23. Telemetry Foundation | v0.3 | 3/3 | ✓ Complete | 2026-02-11 |
 | 24. Enhanced Config Fields | v0.3 | 0/TBD | Not started | - |
-| 25. Reporting Tools | v0.3 | 0/TBD | Not started | - |
+| 25. Reporting Tools | v0.3 | 0/1 | Not started | - |
