@@ -158,12 +158,17 @@ export async function loadRepoConfig(
   }
 
   // Pass 2 (section fallback): parse each section independently
-  const obj =
-    typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : {};
+  const isObject = typeof parsed === "object" && parsed !== null;
+  const obj = isObject ? (parsed as Record<string, unknown>) : {};
 
   const warnings: ConfigWarning[] = [];
+
+  if (!isObject) {
+    warnings.push({
+      section: "root",
+      issues: ["Config is not an object, using all defaults"],
+    });
+  }
 
   // model
   const modelSchema = z.string().default("claude-sonnet-4-5-20250929");
