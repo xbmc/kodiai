@@ -24,7 +24,13 @@ export function createExecutor(deps: {
 
       try {
         // Load repo config (.kodiai.yml) with defaults
-        const config = await loadRepoConfig(context.workspace.dir);
+        const { config, warnings } = await loadRepoConfig(context.workspace.dir);
+        for (const w of warnings) {
+          logger.warn(
+            { section: w.section, issues: w.issues },
+            "Config section invalid, using defaults",
+          );
+        }
         logger.info(
           { model: config.model, maxTurns: config.maxTurns },
           "Loaded repo config",

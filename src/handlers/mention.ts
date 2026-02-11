@@ -316,7 +316,13 @@ export function createMentionHandler(deps: {
         }
 
         // Load repo config
-        const config = await loadRepoConfig(workspace.dir);
+        const { config, warnings } = await loadRepoConfig(workspace.dir);
+        for (const w of warnings) {
+          logger.warn(
+            { section: w.section, issues: w.issues },
+            "Config section invalid, using defaults",
+          );
+        }
 
         // Check mention.enabled
         if (!config.mention.enabled) {

@@ -279,7 +279,13 @@ export function createReviewHandler(deps: {
         await $`git -C ${workspace.dir} fetch origin ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
         // Load repo config (.kodiai.yml) with defaults
-        const config = await loadRepoConfig(workspace.dir);
+        const { config, warnings } = await loadRepoConfig(workspace.dir);
+        for (const w of warnings) {
+          logger.warn(
+            { section: w.section, issues: w.issues },
+            "Config section invalid, using defaults",
+          );
+        }
 
         // Best-effort: ensure a UI rereview team is requested so it appears under Reviewers.
         // NOTE: The resulting review_requested event sender will be the app, and our bot filter

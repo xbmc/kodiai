@@ -1,51 +1,21 @@
 import { z } from "zod";
 import yaml from "js-yaml";
 
-const repoConfigSchema = z.object({
-  model: z.string().default("claude-sonnet-4-5-20250929"),
-  maxTurns: z.number().min(1).max(100).default(25),
-  timeoutSeconds: z.number().min(30).max(1800).default(600),
-  systemPromptAppend: z.string().optional(),
-  /**
-   * Write-mode gates mention-driven code modifications (branch/commit/push).
-   * This is deny-by-default. Enabling this does not affect review-only behavior.
-   */
-  write: z
-    .object({
-      enabled: z.boolean().default(false),
-      /** If set, every changed path must match at least one allowPaths pattern. */
-      allowPaths: z.array(z.string()).default([]),
-      /** Changed paths matching any denyPaths pattern are blocked. Deny wins over allow. */
-      denyPaths: z
-        .array(z.string())
-        .default([
-          ".github/",
-          ".git/",
-          ".planning/",
-          ".kodiai.yml",
-          ".env",
-          ".env.*",
-          "**/*.pem",
-          "**/*.key",
-          "**/*.p12",
-          "**/*.pfx",
-          "**/*credentials*",
-          "**/*secret*",
-        ]),
-      /** Basic rate limit for write-mode requests. 0 = no limit. */
-      minIntervalSeconds: z.number().min(0).max(86400).default(0),
-      secretScan: z
-        .object({
-          enabled: z.boolean().default(true),
-        })
-        .strict()
-        .default({ enabled: true }),
-    })
-    .strict()
-    .default({
-      enabled: false,
-      allowPaths: [],
-      denyPaths: [
+const writeSecretScanSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+  })
+  .default({ enabled: true });
+
+const writeSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    /** If set, every changed path must match at least one allowPaths pattern. */
+    allowPaths: z.array(z.string()).default([]),
+    /** Changed paths matching any denyPaths pattern are blocked. Deny wins over allow. */
+    denyPaths: z
+      .array(z.string())
+      .default([
         ".github/",
         ".git/",
         ".planning/",
@@ -58,70 +28,116 @@ const repoConfigSchema = z.object({
         "**/*.pfx",
         "**/*credentials*",
         "**/*secret*",
-      ],
-      minIntervalSeconds: 0,
-      secretScan: { enabled: true },
-    }),
-  review: z
-    .object({
-      enabled: z.boolean().default(true),
-      /**
-       * Optional team slug/name to use for UI-based re-review.
-       * When configured, Kodiai can ensure the team is requested on PR open so it appears
-       * under Reviewers. Humans can then remove/re-request to retrigger a review.
-       */
-      uiRereviewTeam: z.string().optional(),
-      /** If true, request uiRereviewTeam on opened/ready_for_review events (best-effort). */
-      requestUiRereviewTeamOnOpen: z.boolean().default(false),
-      triggers: z
-        .object({
-          onOpened: z.boolean().default(true),
-          onReadyForReview: z.boolean().default(true),
-          onReviewRequested: z.boolean().default(true),
-        })
-        .strict()
-        .default({
-          onOpened: true,
-          onReadyForReview: true,
-          onReviewRequested: true,
-        }),
-      autoApprove: z.boolean().default(true),
-      prompt: z.string().optional(),
-      skipAuthors: z.array(z.string()).default([]),
-      skipPaths: z.array(z.string()).default([]),
-    })
-    .default({
-      enabled: true,
-      triggers: {
-        onOpened: true,
-        onReadyForReview: true,
-        onReviewRequested: true,
-      },
-      autoApprove: true,
-      requestUiRereviewTeamOnOpen: false,
-      skipAuthors: [],
-      skipPaths: [],
-    }),
-  mention: z
-    .object({
-      enabled: z.boolean().default(true),
-      acceptClaudeAlias: z.boolean().default(true),
-      prompt: z.string().optional(),
-    })
-    .strict()
-    .default({ enabled: true, acceptClaudeAlias: true }),
+      ]),
+    /** Basic rate limit for write-mode requests. 0 = no limit. */
+    minIntervalSeconds: z.number().min(0).max(86400).default(0),
+    secretScan: writeSecretScanSchema,
+  })
+  .default({
+    enabled: false,
+    allowPaths: [],
+    denyPaths: [
+      ".github/",
+      ".git/",
+      ".planning/",
+      ".kodiai.yml",
+      ".env",
+      ".env.*",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p12",
+      "**/*.pfx",
+      "**/*credentials*",
+      "**/*secret*",
+    ],
+    minIntervalSeconds: 0,
+    secretScan: { enabled: true },
+  });
+
+const reviewTriggersSchema = z
+  .object({
+    onOpened: z.boolean().default(true),
+    onReadyForReview: z.boolean().default(true),
+    onReviewRequested: z.boolean().default(true),
+  })
+  .default({
+    onOpened: true,
+    onReadyForReview: true,
+    onReviewRequested: true,
+  });
+
+const reviewSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    /**
+     * Optional team slug/name to use for UI-based re-review.
+     * When configured, Kodiai can ensure the team is requested on PR open so it appears
+     * under Reviewers. Humans can then remove/re-request to retrigger a review.
+     */
+    uiRereviewTeam: z.string().optional(),
+    /** If true, request uiRereviewTeam on opened/ready_for_review events (best-effort). */
+    requestUiRereviewTeamOnOpen: z.boolean().default(false),
+    triggers: reviewTriggersSchema,
+    autoApprove: z.boolean().default(true),
+    prompt: z.string().optional(),
+    skipAuthors: z.array(z.string()).default([]),
+    skipPaths: z.array(z.string()).default([]),
+  })
+  .default({
+    enabled: true,
+    triggers: {
+      onOpened: true,
+      onReadyForReview: true,
+      onReviewRequested: true,
+    },
+    autoApprove: true,
+    requestUiRereviewTeamOnOpen: false,
+    skipAuthors: [],
+    skipPaths: [],
+  });
+
+const mentionSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    acceptClaudeAlias: z.boolean().default(true),
+    prompt: z.string().optional(),
+  })
+  .default({ enabled: true, acceptClaudeAlias: true });
+
+const repoConfigSchema = z.object({
+  model: z.string().default("claude-sonnet-4-5-20250929"),
+  maxTurns: z.number().min(1).max(100).default(25),
+  timeoutSeconds: z.number().min(30).max(1800).default(600),
+  systemPromptAppend: z.string().optional(),
+  /**
+   * Write-mode gates mention-driven code modifications (branch/commit/push).
+   * This is deny-by-default. Enabling this does not affect review-only behavior.
+   */
+  write: writeSchema,
+  review: reviewSchema,
+  mention: mentionSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
 
+export interface ConfigWarning {
+  section: string;
+  issues: string[];
+}
+
+export interface LoadConfigResult {
+  config: RepoConfig;
+  warnings: ConfigWarning[];
+}
+
 export async function loadRepoConfig(
   workspaceDir: string,
-): Promise<RepoConfig> {
+): Promise<LoadConfigResult> {
   const configPath = `${workspaceDir}/.kodiai.yml`;
   const file = Bun.file(configPath);
 
   if (!(await file.exists())) {
-    return repoConfigSchema.parse({});
+    return { config: repoConfigSchema.parse({}), warnings: [] };
   }
 
   const raw = await file.text();
@@ -135,15 +151,142 @@ export async function loadRepoConfig(
     );
   }
 
-  try {
-    return repoConfigSchema.parse(parsed);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      const issues = err.issues
-        .map((i) => `${i.path.join(".")}: ${i.message}`)
-        .join("; ");
-      throw new Error(`Invalid .kodiai.yml: ${issues}`);
-    }
-    throw err;
+  // Pass 1 (fast path): try full schema parse
+  const fullResult = repoConfigSchema.safeParse(parsed);
+  if (fullResult.success) {
+    return { config: fullResult.data, warnings: [] };
   }
+
+  // Pass 2 (section fallback): parse each section independently
+  const obj =
+    typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+
+  const warnings: ConfigWarning[] = [];
+
+  // model
+  const modelSchema = z.string().default("claude-sonnet-4-5-20250929");
+  const modelResult = modelSchema.safeParse(obj.model);
+  let model: string;
+  if (modelResult.success) {
+    model = modelResult.data;
+  } else {
+    model = "claude-sonnet-4-5-20250929";
+    warnings.push({
+      section: "model",
+      issues: modelResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // maxTurns
+  const maxTurnsSchema = z.number().min(1).max(100).default(25);
+  const maxTurnsResult = maxTurnsSchema.safeParse(obj.maxTurns);
+  let maxTurns: number;
+  if (maxTurnsResult.success) {
+    maxTurns = maxTurnsResult.data;
+  } else {
+    maxTurns = 25;
+    warnings.push({
+      section: "maxTurns",
+      issues: maxTurnsResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // timeoutSeconds
+  const timeoutSecondsSchema = z.number().min(30).max(1800).default(600);
+  const timeoutSecondsResult = timeoutSecondsSchema.safeParse(
+    obj.timeoutSeconds,
+  );
+  let timeoutSeconds: number;
+  if (timeoutSecondsResult.success) {
+    timeoutSeconds = timeoutSecondsResult.data;
+  } else {
+    timeoutSeconds = 600;
+    warnings.push({
+      section: "timeoutSeconds",
+      issues: timeoutSecondsResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // systemPromptAppend
+  const systemPromptAppendSchema = z.string().optional();
+  const systemPromptAppendResult = systemPromptAppendSchema.safeParse(
+    obj.systemPromptAppend,
+  );
+  let systemPromptAppend: string | undefined;
+  if (systemPromptAppendResult.success) {
+    systemPromptAppend = systemPromptAppendResult.data;
+  } else {
+    systemPromptAppend = undefined;
+    warnings.push({
+      section: "systemPromptAppend",
+      issues: systemPromptAppendResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // review
+  const reviewResult = reviewSchema.safeParse(obj.review);
+  let review: z.infer<typeof reviewSchema>;
+  if (reviewResult.success) {
+    review = reviewResult.data;
+  } else {
+    review = reviewSchema.parse({});
+    warnings.push({
+      section: "review",
+      issues: reviewResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // write
+  const writeResult = writeSchema.safeParse(obj.write);
+  let write: z.infer<typeof writeSchema>;
+  if (writeResult.success) {
+    write = writeResult.data;
+  } else {
+    write = writeSchema.parse({});
+    warnings.push({
+      section: "write",
+      issues: writeResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // mention
+  const mentionResult = mentionSchema.safeParse(obj.mention);
+  let mention: z.infer<typeof mentionSchema>;
+  if (mentionResult.success) {
+    mention = mentionResult.data;
+  } else {
+    mention = mentionSchema.parse({});
+    warnings.push({
+      section: "mention",
+      issues: mentionResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  const config: RepoConfig = {
+    model,
+    maxTurns,
+    timeoutSeconds,
+    systemPromptAppend,
+    review,
+    write,
+    mention,
+  };
+
+  return { config, warnings };
 }
