@@ -42,6 +42,8 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.prompt).toBeUndefined();
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
+    expect(config.telemetry.enabled).toBe(true);
+    expect(config.telemetry.costWarningUsd).toBe(0);
     expect(config.systemPromptAppend).toBeUndefined();
     expect(warnings).toEqual([]);
   } finally {
@@ -454,7 +456,43 @@ test("completely invalid config (not an object) falls back to all defaults", asy
     expect(config.write.enabled).toBe(false);
     expect(config.review.enabled).toBe(true);
     expect(config.mention.enabled).toBe(true);
+    expect(config.telemetry.enabled).toBe(true);
+    expect(config.telemetry.costWarningUsd).toBe(0);
     expect(warnings.length).toBeGreaterThan(0);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("reads telemetry config from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "telemetry:\n  enabled: false\n  costWarningUsd: 2.5\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.telemetry.enabled).toBe(false);
+    expect(config.telemetry.costWarningUsd).toBe(2.5);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("falls back to telemetry defaults when telemetry section is invalid", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "telemetry:\n  enabled: notaboolean\nreview:\n  autoApprove: false\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.telemetry.enabled).toBe(true); // default
+    expect(config.telemetry.costWarningUsd).toBe(0); // default
+    expect(config.review.autoApprove).toBe(false); // preserved
+    const telemetryWarning = warnings.find((w) => w.section === "telemetry");
+    expect(telemetryWarning).toBeDefined();
   } finally {
     await rm(dir, { recursive: true });
   }
