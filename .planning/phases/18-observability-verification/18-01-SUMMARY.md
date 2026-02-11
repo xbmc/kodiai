@@ -1,5 +1,5 @@
 ---
-phase: 18-ops-evidence
+phase: 18-observability-verification
 plan: 01
 subsystem: ops
 tags: [ops, evidence, logging, runbooks]
@@ -19,7 +19,7 @@ duration: 15 min
 completed: 2026-02-10
 ---
 
-# Phase 18 Plan 01: Ops Evidence Bundle Summary
+# Phase 18 Plan 01: Observability + Verification Summary
 
 Added a single structured "Evidence bundle" log line for:
 

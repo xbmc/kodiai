@@ -1,8 +1,8 @@
 ---
-phase: 17-durability-locking
+phase: 17-write-mode-reliability
 plan: 01
 subsystem: write-mode
-tags: [write-mode, idempotency, locking, durability]
+tags: [write-mode, idempotency, locking, reliability]
 
 # Dependency graph
 requires:
@@ -37,7 +37,7 @@ duration: 20 min
 completed: 2026-02-10
 ---
 
-# Phase 17 Plan 01: Durability + Locking Summary
+# Phase 17 Plan 01: Write-Mode Reliability Summary
 
 **Made write-mode idempotent and retry-safe by keying write outputs to the triggering comment and reusing an existing PR when the same request is delivered again.**
 

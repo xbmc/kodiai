@@ -257,6 +257,13 @@ function findHighEntropyTokens(addedLines: string[]): string | undefined {
   return undefined;
 }
 
+function extractAddedLines(patch: string): string[] {
+  return patch
+    .split("\n")
+    .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+    .map((l) => l.slice(1));
+}
+
 async function enforceWritePolicy(options: {
   dir: string;
   stagedPaths: string[];
@@ -314,39 +321,38 @@ async function enforceWritePolicy(options: {
   }
 
   if (secretScanEnabled) {
-    const diff = (await $`git -C ${dir} diff --cached`.quiet()).text();
+    const perFilePatches = new Map<string, string>();
+    for (const p of stagedPaths) {
+      const patch = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
+      perFilePatches.set(p, patch);
+    }
+
     for (const { name, regex } of buildSecretRegexes()) {
-      if (regex.test(diff)) {
-        let path: string | undefined;
-        for (const p of stagedPaths) {
-          const perFile = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
-          if (regex.test(perFile)) {
-            path = p;
-            break;
-          }
+      let path: string | undefined;
+      for (const p of stagedPaths) {
+        const added = extractAddedLines(perFilePatches.get(p) ?? "").join("\n");
+        if (regex.test(added)) {
+          path = p;
+          break;
         }
+      }
+
+      if (path) {
         throw new WritePolicyError(
           "write-policy-secret-detected",
-          `Write blocked: suspected secret detected (${name}) in staged diff`,
+          `Write blocked: suspected secret detected (${name}) in staged additions`,
           { path, rule: "secretScan", detector: `regex:${name}` },
         );
       }
     }
 
     // Best-effort entropy scan on added lines only.
-    const addedLines = diff
-      .split("\n")
-      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-      .map((l) => l.slice(1));
+    const addedLines = stagedPaths.flatMap((p) => extractAddedLines(perFilePatches.get(p) ?? ""));
     const entropyHit = findHighEntropyTokens(addedLines);
     if (entropyHit) {
       let path: string | undefined;
       for (const p of stagedPaths) {
-        const perFile = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
-        const perFileAdded = perFile
-          .split("\n")
-          .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
-          .map((l) => l.slice(1));
+        const perFileAdded = extractAddedLines(perFilePatches.get(p) ?? "");
         if (findHighEntropyTokens(perFileAdded)) {
           path = p;
           break;

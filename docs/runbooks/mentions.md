@@ -90,9 +90,11 @@ When write-mode is enabled and an `apply:` / `change:` mention creates or reuses
 - Message: `Evidence bundle`
 - Fields:
   - `evidenceType=write-mode`
-  - `outcome=created-pr|reused-pr`
+  - `outcome=updated-pr-branch|created-pr|reused-pr|skipped-idempotent`
   - `deliveryId`
   - `installationId`
+  - `owner`
+  - `repoName`
   - `repo`
   - `sourcePrNumber`
   - `triggerCommentId`
@@ -118,6 +120,26 @@ AppTraces
 | where Message has "<delivery-id>"
 | project TimeGenerated, Message
 | order by TimeGenerated asc
+```
+
+Additional query snippets:
+
+```sh
+# Write refusals by reason code (last 24h)
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has "Write request refused"
+| project TimeGenerated, Log_s
+| order by TimeGenerated desc
+```
+
+```sh
+# Recheck/rereview outcomes and fallbacks
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has "rereview" or Log_s has "fallback reviewer"
+| project TimeGenerated, Log_s
+| order by TimeGenerated desc
 ```
 
 ## 3) Confirm Mention Detection + Gate Decisions
@@ -189,6 +211,22 @@ Common refusal reasons:
 - `write-policy-not-allowed`: staged change did not match allowPaths
 - `write-policy-secret-detected`: suspected secret present in staged diff
 - `rate-limited`: write requests too frequent
+
+Operator quick map:
+
+- `write-policy-denied-path`
+  - check `File` + `Matched pattern` in the refusal
+  - action: narrow/remove the specific denyPaths entry only if explicitly intended
+- `write-policy-not-allowed`
+  - check `File` and the suggested minimal `allowPaths` snippet
+  - action: add the narrowest path pattern needed, then retry
+- `write-policy-secret-detected`
+  - check `Detector` and `File`
+  - action: remove/redact secret-like additions and retry (do not bypass by default)
+- `write-policy-no-changes`
+  - action: restate request with explicit file + edit target
+- `rate-limited`
+  - action: wait for `write.minIntervalSeconds` window or lower it in `.kodiai.yml`
 
 ## 4) Verify Eyes Reaction Attempt (Non-Blocking)
 

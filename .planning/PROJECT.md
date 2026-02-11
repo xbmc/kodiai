@@ -31,8 +31,8 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 ### Active
 
 - [ ] Code modification via @mention (branch creation, commit, push) with guardrails
-- [ ] Durable idempotency/locking (reduce race risk beyond marker checks)
-- [ ] Expand operator evidence capture (GitHub delivery metadata access + richer log correlation tooling)
+- [ ] Write-mode reliability polish (clearer failures, safer retries, reduced false positives)
+- [ ] Expand operator evidence capture (delivery correlation, queue/failure metrics, grep-ready runbooks)
 
 ### Out of Scope
 

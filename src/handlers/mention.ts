@@ -423,6 +423,8 @@ export function createMentionHandler(deps: {
                   outcome: "reused-pr",
                   deliveryId: event.id,
                   installationId: event.installationId,
+                  owner: mention.owner,
+                  repoName: mention.repo,
                   repo: `${mention.owner}/${mention.repo}`,
                   sourcePrNumber: mention.prNumber,
                   triggerCommentId: mention.commentId,
@@ -728,6 +730,8 @@ export function createMentionHandler(deps: {
                     outcome: "skipped-idempotent",
                     deliveryId: event.id,
                     installationId: event.installationId,
+                    owner: mention.owner,
+                    repoName: mention.repo,
                     repo: `${mention.owner}/${mention.repo}`,
                     sourcePrNumber: mention.prNumber,
                     triggerCommentId: mention.commentId,
@@ -779,6 +783,8 @@ export function createMentionHandler(deps: {
                   outcome: "updated-pr-branch",
                   deliveryId: event.id,
                   installationId: event.installationId,
+                  owner: mention.owner,
+                  repoName: mention.repo,
                   repo: `${mention.owner}/${mention.repo}`,
                   sourcePrNumber: mention.prNumber,
                   triggerCommentId: mention.commentId,
@@ -826,6 +832,8 @@ export function createMentionHandler(deps: {
                       outcome: "skipped-idempotent",
                       deliveryId: event.id,
                       installationId: event.installationId,
+                      owner: mention.owner,
+                      repoName: mention.repo,
                       repo: `${mention.owner}/${mention.repo}`,
                       sourcePrNumber: mention.prNumber,
                       triggerCommentId: mention.commentId,
@@ -971,6 +979,8 @@ export function createMentionHandler(deps: {
               outcome: "created-pr",
               deliveryId: event.id,
               installationId: event.installationId,
+              owner: mention.owner,
+              repoName: mention.repo,
               repo: `${mention.owner}/${mention.repo}`,
               sourcePrNumber: mention.prNumber,
               triggerCommentId: mention.commentId,
@@ -1139,6 +1149,10 @@ export function createMentionHandler(deps: {
       lines.push("No safe config bypass suggested.");
       lines.push("Remove/redact the secret-like content and retry.");
       lines.push("(If this is a false positive, you can disable secretScan, but that reduces safety.)");
+    } else if (err.code === "write-policy-no-changes") {
+      lines.push("");
+      lines.push("No file changes were produced.");
+      lines.push("Restate the change request with a concrete file + edit.");
     }
 
     return lines.join("\n");
