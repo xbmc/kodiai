@@ -13,7 +13,7 @@
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 22: Config Validation Safety** - Make config parsing forward-compatible and failure-resilient before adding new fields
+- [x] **Phase 22: Config Validation Safety** - Make config parsing forward-compatible and failure-resilient before adding new fields -- completed 2026-02-11
 - [ ] **Phase 23: Telemetry Foundation** - Build persistent telemetry storage with capture pipeline so every execution is recorded
 - [ ] **Phase 24: Enhanced Config Fields** - Add user-facing controls for review, mention, write-mode, and telemetry behavior
 - [ ] **Phase 25: Reporting Tools** - CLI script that queries telemetry storage and surfaces usage/cost metrics for operators
@@ -32,7 +32,7 @@
 **Plans**: 1 plan
 
 Plans:
-- [ ] 22-01-PLAN.md -- Remove .strict(), implement two-pass safeParse with graceful degradation, update call sites and tests
+- [x] 22-01-PLAN.md -- Remove .strict(), implement two-pass safeParse with graceful degradation, update call sites and tests -- completed 2026-02-11
 
 ### Phase 23: Telemetry Foundation
 **Goal**: Every Kodiai execution (review, mention, write) records token usage, cost, and duration to persistent storage, with retention and concurrency safety built in from day one
@@ -87,7 +87,7 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 22. Config Validation Safety | v0.3 | 0/1 | Planned | - |
+| 22. Config Validation Safety | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
 | 23. Telemetry Foundation | v0.3 | 0/TBD | Not started | - |
 | 24. Enhanced Config Fields | v0.3 | 0/TBD | Not started | - |
 | 25. Reporting Tools | v0.3 | 0/TBD | Not started | - |
