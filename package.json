@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "report": "bun scripts/usage-report.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",
