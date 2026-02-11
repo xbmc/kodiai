@@ -5,20 +5,20 @@
 See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Planning next milestone (fresh requirements + roadmap).
+**Current focus:** v0.2 execution: write-mode reliability + observability (no distributed infra).
 
 ## Current Position
 
-**Current Phase:** 21
-**Current Phase Name:** polish
+**Current Phase:** 18
+**Current Phase Name:** observability-verification
 **Total Phases:** 21
 **Current Plan:** 2
-**Total Plans in Phase:** 4
-**Status:** In progress
-**Progress:** [#######   ] 75%
+**Total Plans in Phase:** 2
+**Status:** Complete
+**Progress:** [##########] 100%
 
-**Last Activity:** 2026-02-10
-**Last Activity Description:** Phase 21: wrote xbmc/xbmc write-flow smoke doc; improved write guardrail refusal details; manual smoke run pending
+**Last Activity:** 2026-02-11
+**Last Activity Description:** Completed 18-02 observability + verification pass (log consistency + runbook/query templates)
 **Paused At:** None
 
 Milestone: v0.2 (planning)
@@ -26,7 +26,7 @@ Milestone: v0.2 (planning)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 36
+- Total plans completed: 38
 - Average duration: 3min
 - Total execution time: 244min
 
@@ -61,8 +61,10 @@ Milestone: v0.2 (planning)
 | Phase 14-write-mode-foundations P01 | 15 min | 3 tasks | 4 files |
 | Phase 15-write-pipeline P01 | 20 min | 3 tasks | 6 files |
 | Phase 16-write-guardrails P01 | 25 min | 3 tasks | 6 files |
-| Phase 17-durability-locking P01 | 20 min | 3 tasks | 2 files |
-| Phase 18-ops-evidence P01 | 15 min | 3 tasks | 4 files |
+| Phase 17-write-mode-reliability P01 | 20 min | 3 tasks | 2 files |
+| Phase 17-write-mode-reliability P02 | 15 min | 3 tasks | 4 files |
+| Phase 18-observability-verification P01 | 15 min | 3 tasks | 4 files |
+| Phase 18-observability-verification P02 | 12 min | 3 tasks | 4 files |
 | Phase 19-write-confirmation P01 | 15 min | 3 tasks | 4 files |
 | Phase 20-next-improvements P01 | 30 min | 5 tasks | 8 files |
 
