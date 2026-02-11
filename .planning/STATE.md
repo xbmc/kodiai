@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 26 of 29 (Review Mode & Severity Control)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-02-11 — Completed 26-01 (Review Config Schema Extension)
+Plan: 2 of 2 in current phase (PHASE COMPLETE)
+Status: Phase Complete
+Last activity: 2026-02-11 — Completed 26-02 (Review Prompt Enrichment)
 
-Progress: [█████░░░░░] 50% (of v0.4)
+Progress: [██████░░░░] 60% (of v0.4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 48 (across v0.1 + v0.2 + v0.3 + v0.4)
+- Total plans completed: 49 (across v0.1 + v0.2 + v0.3 + v0.4)
 - Average duration: 3min
-- Total execution time: 275min
+- Total execution time: 277min
 
 **By Phase (v0.3):**
 
@@ -36,7 +36,7 @@ Progress: [█████░░░░░] 50% (of v0.4)
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 26-review-mode-severity-control | 1 | 2min | 2min |
+| 26-review-mode-severity-control | 2 | 4min | 2min |
 
 *Updated after each plan completion*
 
@@ -55,6 +55,7 @@ All decisions are logged in PROJECT.md Key Decisions table.
 v0.3 decisions archived. v0.4 decisions will accumulate here.
 
 - 26-01: New review fields purely additive, no changes to existing schema or fallback logic
+- 26-02: All review intelligence prompt-driven, noise suppression and severity guidelines always included, custom instructions override noise rules
 
 ### Pending Todos
 
@@ -67,5 +68,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 26-01-PLAN.md
+Stopped at: Completed 26-02-PLAN.md (Phase 26 complete)
 Resume file: None
