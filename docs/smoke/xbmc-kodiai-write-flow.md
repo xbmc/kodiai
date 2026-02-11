@@ -125,3 +125,5 @@ Only run the same smoke steps in `xbmc/xbmc` if the behavior depends on:
 - repo size/perf (timeouts, clone strategy)
 - permissions unique to xbmc/xbmc
 - configs that differ materially from xbmc/kodiai
+
+same-repo apply smoke
