@@ -1,319 +1,420 @@
-# Domain Pitfalls: Enhanced Config + Telemetry
+# Domain Pitfalls: Intelligent Review System
 
-**Domain:** Adding config schema evolution and usage telemetry to an existing GitHub App (Kodiai)
+**Domain:** Adding intelligent review capabilities to an existing LLM-powered code review GitHub App
 **Researched:** 2026-02-11
-**Confidence:** HIGH (verified against codebase inspection, official Anthropic docs, SQLite docs, Zod docs)
+**Confidence:** HIGH (verified against codebase inspection, industry research, real-world data from AI code review tools)
+
+---
 
 ## Critical Pitfalls
 
-Mistakes that cause broken deployments, data loss, or require significant rework.
+Mistakes that cause user abandonment, require significant rework, or break the existing working system.
 
-### Pitfall 1: Strict Zod Sub-Schemas Reject Future Config Keys (Forward-Compatibility Break)
+### Pitfall 1: False Positive Flood Destroys Trust (The Cardinal Sin)
 
 **What goes wrong:**
-Adding new fields to `.kodiai.yml` in a newer Kodiai version causes existing repos with older configs to work fine, but repos that adopt a newer schema field and then encounter an older Kodiai version (e.g., during a rollback) will have their configs rejected. More critically, the *current* codebase already applies `.strict()` to `write`, `secretScan`, `mention`, and `review.triggers` sub-objects. This means adding ANY new key to those objects requires a coordinated deploy -- repos cannot adopt the new key until the new server is running.
+Adding multi-category issue detection with severity scoring causes the review to surface far more findings than the current system. Where the existing prompt-driven review might post 2-3 inline comments on a PR, an "intelligent" review scanning for security, performance, maintainability, and logic issues across multiple categories will post 10-15 comments per PR. Most of these are low-confidence findings the LLM generates to be thorough. Developers start ignoring ALL comments, including the genuine critical issues buried in the noise.
+
+Industry data confirms this is the primary failure mode: studies show up to 40% of AI code review alerts get ignored. Only 18% of AI review feedback results in actual code changes (Jellyfish, 2025). Tools that flood PRs with comments get turned off -- not tuned.
 
 **Why it happens:**
-The codebase uses Zod `.strict()` on sub-objects (lines 41, 44, 82, 111 of `src/execution/config.ts`) which throws `ZodError` on unrecognized keys. The root schema is NOT strict (uses plain `z.object()`), so unknown top-level keys are silently stripped. But sub-object strictness means a repo adding `mention.maxTokens: 5000` before the server knows about that field will get `Invalid .kodiai.yml: mention: Unrecognized key(s) in object: 'maxTokens'`. This manifests as an error comment on every PR review and every mention -- effectively breaking the bot for that repo.
+- LLMs are reluctant to deprioritize findings -- they err on the side of reporting everything rather than risk missing something (HN discussion: "LLMs are reluctant to risk downplaying the severity of an issue")
+- Multi-category detection multiplies findings multiplicatively -- each new category (security, performance, maintainability, concurrency) adds its own false positives
+- Severity scoring sounds good in theory but LLMs consistently over-classify findings as "medium" or "high" because under-classifying feels riskier
+- The current prompt already instructs "ONLY report actionable issues" but adding structured categories gives the model more "slots" to fill
 
 **Consequences:**
-- Every review and mention for the repo fails with a config parse error
-- Error comment posted on every PR (noisy, alarming)
-- No way for the repo owner to fix it without reverting `.kodiai.yml` or waiting for the server update
-- Rollback of Kodiai server version breaks repos that already adopted new config fields
+- Developers disable the bot entirely (catastrophic -- worse than no intelligent review at all)
+- Critical real issues get buried under cosmetic suggestions
+- Review comments become background noise nobody reads
+- PR merge velocity slows as developers manually dismiss bot comments
+- Trust erosion is nearly irreversible -- once users learn to ignore the bot, re-earning trust takes months
 
 **Prevention:**
-1. **Remove `.strict()` from all user-facing sub-schemas.** Use `.passthrough()` or the default strip behavior instead. Strict validation is appropriate for internal/programmatic schemas, not user-authored config files that may evolve independently of the server version.
-2. **Add a schema version field** (`schemaVersion: 1`) to the config. When the schema changes in a breaking way (rename/remove a field), bump the version. The parser can then apply version-specific parsing logic.
-3. **Test forward-compatibility:** Add a test that parses a config with unknown keys in every sub-object and asserts it succeeds (unknown keys stripped, valid keys parsed).
-4. **Document supported fields** so users know what is current vs. speculative.
+1. **Start with FEWER categories than planned, not more.** Launch with only the categories the current system already covers (bugs, security, error handling) and add new categories one at a time with measurement.
+2. **Hard cap on comments per PR.** The system MUST enforce a maximum (e.g., 5 inline comments) regardless of how many issues the analysis finds. Force the model to prioritize.
+3. **Default to strict precision over recall.** It is better to miss 3 real issues than to report 10 false positives. Users can always increase sensitivity; they rarely decrease it.
+4. **Measure dismissal rate from day one.** Track how many bot comments get resolved without changes vs. with changes. If dismissal rate exceeds 50%, the system is too noisy.
+5. **Use the existing `review.prompt` config field for per-repo tuning** rather than building a complex category enable/disable matrix.
 
 **Detection:**
-- Error comments containing "Unrecognized key(s) in object" appearing after a repo updates `.kodiai.yml`
-- Support requests from repo owners who added a new field from documentation that was published before the server was updated
+- More than 5 comments per PR on average
+- Users resolving bot comments without making changes
+- Users adding `review.enabled: false` to their `.kodiai.yml`
+- Declining ratio of "changes made after review" over time
 
-**Phase to address:** Config phase (first plan) -- must be fixed before adding any new config fields.
+**Warning signs during development:**
+- Test PRs consistently generating 8+ comments
+- Difficulty getting the model to NOT report a finding it detected
+- Severity scoring clustering everything at "medium"
+
+**Phase to address:** Must be the FIRST design constraint, not an afterthought. Every feature in the intelligent review milestone should be evaluated against "does this increase false positive risk?"
 
 ---
 
-### Pitfall 2: Config Validation Errors Block Critical Paths (No Graceful Degradation)
+### Pitfall 2: Prompt Complexity Explosion (The Mega-Prompt Trap)
 
 **What goes wrong:**
-`loadRepoConfig()` currently throws on any Zod validation error (`Invalid .kodiai.yml: ...`). This is caught in the handler's try/catch and surfaces as an error comment on the PR. But this means ANY config problem -- a typo, an invalid type, a value out of range -- completely prevents the review or mention from running. There is no partial parsing or fallback to defaults for valid sections.
-
-For example, if a user writes `review.autoApprove: "yes"` (string instead of boolean), the ENTIRE config parse fails. The review does not run at all, even though the review section could have been parsed with defaults. A single typo in write-mode config prevents all reviews.
+The current review prompt in `buildReviewPrompt()` is ~190 lines and works well. Adding multi-category detection, severity scoring, repo-specific conventions, and configurable review modes requires embedding structured instructions for each category, scoring rubrics, output format requirements, and conditional logic into the prompt. The prompt balloons to 500+ lines. At this size, the LLM starts ignoring or misinterpreting instructions. Conflicting instructions (e.g., "be thorough" vs. "minimize false positives") cause inconsistent behavior.
 
 **Why it happens:**
-Zod's `.parse()` is all-or-nothing. A single validation error in any nested field causes the entire parse to throw. The current code has no fallback strategy -- no attempt to parse with defaults for the failing section, no `safeParse()` with partial recovery.
+- Each new feature adds prompt instructions: category definitions (~50 lines), severity rubrics (~30 lines), output format (~40 lines), repo conventions (~variable), configurable modes (~30 lines per mode)
+- Prompt instructions interact in unexpected ways -- "focus on security" + "minimize noise" creates ambiguity about whether to report a low-confidence security finding
+- LLMs have finite attention; instructions at the end of a long prompt get less weight than those at the beginning
+- Conditional prompt assembly (if strict mode, add X; if lenient, add Y) creates a combinatorial testing problem
 
 **Consequences:**
-- Bot becomes completely non-functional for a repo due to a single config typo
-- Users may not realize their config is broken until they open a PR and see the error
-- No way to "preview" config validity before committing
+- Non-deterministic review behavior: same PR gets different reviews on re-run
+- Model ignores later instructions in favor of earlier ones (recency/primacy bias)
+- Impossible to debug why a specific comment was or was not generated
+- Testing becomes intractable -- cannot test every prompt variant
 
 **Prevention:**
-1. **Use two-pass parsing:** First, attempt `repoConfigSchema.parse()`. If it fails, attempt parsing each section independently with defaults for failed sections. Log warnings for fields that failed validation.
-2. **Separate critical vs. non-critical config:** Review/mention enablement and basic settings are critical (worth failing on). New telemetry/reporting settings are non-critical (should degrade gracefully).
-3. **Add a config validation endpoint or CLI tool** that repos can use to check their config before committing.
-4. **Log the specific field that failed** (already done) but also continue with defaults for that section rather than aborting entirely.
+1. **Keep the core prompt under 200 lines.** The current prompt length is approximately right. Add minimal structured instructions rather than prose explanations.
+2. **Use the Agent SDK's system prompt append, not inline prompt bloat.** Move category definitions and severity rubrics to `systemPromptAppend` in the config, separate from the per-PR context.
+3. **Do NOT embed repo conventions in the review prompt.** Instead, rely on the CLAUDE.md mechanism (the executor already sets `settingSources: ['project']`). Repo conventions go in a `.claude/CLAUDE.md` file or equivalent, not in the review prompt.
+4. **Test with a "prompt diff" approach:** When adding new instructions, measure the delta in review output on the same set of test PRs. If adding 30 lines of instructions changes output for PRs that should not be affected, the instructions are interfering.
+5. **Prefer few-shot examples over prose rules.** "Here is an example of a finding NOT worth reporting" is more effective than "Do not report stylistic preferences."
 
 **Detection:**
-- Error comments on PRs containing "Invalid .kodiai.yml"
-- Users reporting the bot "stopped working" after a config change
+- Review prompt exceeds 300 lines
+- Same PR produces different findings on consecutive runs (non-determinism)
+- New prompt instructions change behavior for unrelated PR types
+- Developers reporting "the bot used to be better" after adding new categories
 
-**Phase to address:** Config phase -- implement graceful degradation alongside new schema fields.
+**Phase to address:** Architecture phase -- define the prompt structure and boundaries before implementing any new analysis categories.
 
 ---
 
-### Pitfall 3: Logging PII in Telemetry Records
+### Pitfall 3: Breaking Existing Working Reviews During Migration
 
 **What goes wrong:**
-Telemetry records capture execution metadata (repo, PR, cost, duration). It is tempting to also log the prompt, the PR body, comment content, or file paths for debugging. This inadvertently captures personally identifiable information (PII): author names, email addresses in commit messages, proprietary code snippets, and sensitive file paths (e.g., `secrets/production.env`). If telemetry is stored in SQLite on disk, this data persists indefinitely unless explicitly purged.
+The current review system works. Users have calibrated their expectations to its behavior. Replacing `buildReviewPrompt()` with a new "intelligent" version changes the character of reviews for every installed repo simultaneously. Even if the new system is objectively better on average, any change in behavior -- different comment style, different severity language, more or fewer comments -- is perceived as a regression by users who were satisfied with the old behavior.
+
+This is especially dangerous because Kodiai does not currently have feature flags or per-repo version selection. A deploy changes behavior for ALL installations at once.
 
 **Why it happens:**
-Developers add "just a bit more context" to telemetry for debugging. The PR title, comment body, and file paths all seem harmless individually but collectively can identify individuals and expose proprietary information. The existing `Evidence bundle` log lines already include `owner`, `repo`, `prNumber`, `deliveryId`, and `reviewOutputKey` -- which is fine for structured logs with retention policies. But persisting this in a SQLite database with no retention policy changes the risk profile.
+- The new system is deployed as a wholesale replacement of the review prompt and analysis pipeline
+- No A/B testing or gradual rollout mechanism exists
+- Users never opted into the new behavior -- it appears one day without warning
+- The new system may surface issues the old one did not (which users interpret as new false positives, not improved detection)
 
 **Consequences:**
-- Privacy violations if telemetry database is accessed by unauthorized parties
-- Compliance issues (GDPR, SOC 2) if user content is stored without consent
-- Storage bloat if full prompts/responses are logged (prompts can be 10KB+ per execution)
-- Security risk if telemetry contains tokens, secrets, or sensitive file contents
+- Users who were satisfied now see "broken" reviews and file complaints
+- No way to roll back for specific repos without rolling back the entire deploy
+- Lost trust is harder to regain than lost features
 
 **Prevention:**
-1. **Define a strict telemetry schema** that contains ONLY: timestamp, repo owner/name (not full URLs), PR number, event type, job type, model name, token counts (input/output/cache), cost USD, duration ms, conclusion (success/failure/error), session ID. No free-text fields.
-2. **Never log prompts, PR bodies, comment text, file contents, or file paths** in telemetry records. These belong in ephemeral structured logs (pino), not persistent storage.
-3. **Redact before storage:** If any field could contain user content, pass it through the existing `sanitizeContent()` pipeline or, better, simply do not store it.
-4. **Document what is collected:** Add a section to README or config docs explaining exactly what telemetry data is stored and retained.
+1. **Implement a config-driven review mode BEFORE changing any prompt logic.** Add `review.mode: "standard"` (default, current behavior) and `review.mode: "enhanced"` (new intelligent review). Only repos that opt in get the new behavior.
+2. **The default MUST remain the current behavior.** Never change the default mode in the same release as the new feature. Wait until the enhanced mode has proven stable across opt-in repos.
+3. **Use the existing `.kodiai.yml` config system** to gate new features. The forward-compatible config parsing from v0.3 supports this perfectly -- unknown `review.mode` values degrade to the default.
+4. **Deploy the new analysis alongside the old, logging differences but not publishing them.** "Shadow mode" lets you measure accuracy before exposing it to users.
+5. **Announce changes.** Post a PR comment when a repo first uses the enhanced mode, explaining what changed and how to revert.
 
 **Detection:**
-- Telemetry database contains rows with long text fields (>500 chars) suggesting prompt/body storage
-- `grep` of telemetry insert statements showing user-content fields
+- Users reporting "reviews changed" without having modified their config
+- Increase in `review.enabled: false` configs after a deploy
+- Support inquiries about unfamiliar review comment formats
 
-**Phase to address:** Telemetry phase (schema design) -- define the allowlist of fields before writing any storage code.
+**Phase to address:** Must be addressed in the FIRST phase of the milestone. The mode switch mechanism must exist before any analysis changes are deployed.
 
 ---
 
-### Pitfall 4: Unbounded Telemetry Storage Growth (SQLite File Grows Forever)
+### Pitfall 4: Severity Scoring Becomes Meaningless (The "Everything is Medium" Problem)
 
 **What goes wrong:**
-Every execution writes a telemetry row. With no retention policy, the SQLite database grows monotonically. At moderate usage (10-20 PRs/day across installed repos), this accumulates ~7,000 rows/year. The rows themselves are small (~500 bytes each), so raw data growth is modest (~3.5 MB/year). However, SQLite WAL files can grow independently of the main database, and without periodic checkpointing, the WAL can reach hundreds of MB. On Azure Container Apps with limited disk (the container filesystem is ephemeral on restart), this can consume the available tmpfs or overlay space.
+You define a severity scale (Critical / High / Medium / Low / Info). The LLM consistently classifies 60-70% of findings as "Medium" because Medium is the safe default -- it is neither alarmist nor dismissive. Critical and Low are rarely used. The severity system provides no signal: if everything is Medium, severity is noise, not information.
+
+The current prompt already uses severity headings ("Critical, Must Fix, Major, Medium, Minor") in the summary comment format. But these are unstructured -- the model chooses them freely. Making severity a first-class system feature with structured output amplifies this problem because the system will treat "Critical" and "Medium" differently (e.g., blocking merge for Critical), but the model's classification is unreliable.
 
 **Why it happens:**
-- No `DELETE` or `VACUUM` ever runs against telemetry data
-- WAL mode (recommended for concurrent read/write) can grow unbounded if long-running reads prevent checkpointing
-- Container restarts lose the database entirely (ephemeral filesystem), creating a false sense of "it never grows" -- until you move to persistent storage
+- LLMs optimize for not being wrong. Classifying a real issue as "Low" risks looking like it missed something. Classifying a non-issue as "Critical" risks crying wolf. "Medium" is always defensible.
+- Severity rubrics in prompts are inherently subjective. "Could cause data loss" vs. "might cause performance degradation" -- both could be Medium or High depending on context.
+- The model lacks production context: a race condition in a high-traffic payment service is Critical; the same race condition in a test utility is Low. Without deployment context, the model cannot calibrate.
 
 **Consequences:**
-- Disk space exhaustion in the container (especially problematic since Kodiai also creates ephemeral workspace clones)
-- Slow queries on unindexed tables as row count grows
-- WAL file growth causing write stalls if auto-checkpoint is starved
-- Total data loss on container restart if using ephemeral filesystem
+- "Severity fatigue" -- users stop reading severity labels entirely
+- If severity drives automation (e.g., "Critical blocks merge"), false Criticals block PRs unnecessarily, false Lows let real issues through
+- The entire severity system becomes cosmetic overhead that adds complexity without value
 
 **Prevention:**
-1. **Implement retention policy from day one:** `DELETE FROM telemetry WHERE timestamp < datetime('now', '-90 days')` on a periodic timer (daily or on startup).
-2. **Run `PRAGMA wal_checkpoint(TRUNCATE)` periodically** (e.g., after cleanup) to reset WAL file size.
-3. **Use a persistent volume** for the SQLite file (Azure Files mount on the container app), not the ephemeral container filesystem. Without this, all telemetry is lost on every deploy.
-4. **Add a startup migration** that creates the table if it does not exist (idempotent schema). This handles both fresh deploys and version upgrades.
-5. **Cap WAL size:** Set `PRAGMA wal_autocheckpoint = 1000` (checkpoint every 1000 pages, ~4MB) to prevent unbounded WAL growth.
-6. **Monitor database size:** Log the file size on startup and periodically. Alert if it exceeds a threshold (e.g., 100MB).
+1. **Use a 3-level scale, not 5.** "Must Fix" / "Should Fix" / "Consider" is enough. Fewer levels means clearer boundaries and less ambiguity for the model.
+2. **Define severity by CONSEQUENCE, not by category.** Not "security issues are Critical" but "issues that could cause data loss or unauthorized access in production are Must Fix." This gives the model a concrete decision criterion.
+3. **Do NOT automate merge blocking based on severity in v0.4.** The classification will not be reliable enough. Use severity for display/sorting only until you have data proving accuracy.
+4. **Anchor severity with examples in the prompt.** Provide 2-3 concrete examples per level: "Must Fix: SQL injection allowing arbitrary query execution. Should Fix: Missing null check on optional parameter that would cause 500 error. Consider: Variable name does not match team convention."
+5. **Track severity distribution as a health metric.** If more than 60% of findings are the same severity level, the system is not discriminating.
 
 **Detection:**
-- `ls -la` showing telemetry.db growing beyond expected size
-- Container logs showing disk space warnings
-- Telemetry queries becoming slow (>100ms for simple aggregations)
+- Severity distribution histogram showing >60% at one level
+- Users ignoring severity labels (treating all comments the same)
+- Must Fix / Critical findings that users dismiss without changes
 
-**Phase to address:** Storage phase -- retention policy must be part of the initial storage implementation, not a later addition.
+**Phase to address:** Severity design phase -- define the scale and rubric before implementing category detection. Validate with test PRs before shipping.
 
 ---
 
 ## Moderate Pitfalls
 
-### Pitfall 5: Cost Estimation Drift When Anthropic Changes Pricing
+### Pitfall 5: Feedback Learning System Creates Perverse Incentives
 
 **What goes wrong:**
-The Agent SDK provides `total_cost_usd` in the result message, which is authoritative and accurate at the time of the API call. However, if you also compute costs locally (e.g., for projections or budgets), hardcoded per-token prices will silently become wrong when Anthropic changes pricing. This has happened multiple times: Claude Opus 4.5 was 67% cheaper than its predecessor. Any cost calculations using stale rates will diverge from actual bills.
+The feedback learning system collects signals about which comments users acted on (resolved with changes) vs. dismissed (resolved without changes). Over time, this is used to adjust what the system reports. The pitfall: users dismiss comments for many reasons other than "this was wrong" -- they might dismiss because "I will fix this later," "this is a known issue," "I disagree with the convention," or simply "I am in a hurry." Treating all dismissals as negative feedback teaches the system to suppress legitimate findings.
+
+Conversely, if users resolve comments by making changes to PLEASE the bot rather than because the changes are valuable, the system learns to double down on unhelpful but easy-to-fix suggestions (like renaming variables).
 
 **Why it happens:**
-Anthropic updates pricing with new model releases. The SDK's `total_cost_usd` reflects current pricing, but any locally stored rate tables or formulas do not auto-update.
-
-**Prevention:**
-1. **Use `total_cost_usd` from the SDK result as the authoritative cost.** Do not compute costs locally from token counts. Store the SDK-reported cost directly in telemetry.
-2. **Store token counts alongside cost** so you can re-compute if rates change, but always treat the SDK value as ground truth.
-3. **Store the model name** with each telemetry record so cost-per-model reports remain meaningful when models change.
-4. **Do not hardcode pricing tables** for display or budgeting. If you need to show rates, fetch them or clearly label them as approximate.
-
-**Detection:**
-- Cost reports showing $0.00 for executions (SDK returned undefined/null for errored runs)
-- Locally computed costs diverging from Anthropic billing dashboard
-
-**Phase to address:** Telemetry phase -- record SDK cost directly, avoid local computation.
-
----
-
-### Pitfall 6: Telemetry Collection Blocking the Critical Path (Execution Slowdown)
-
-**What goes wrong:**
-If telemetry storage (SQLite write) is in the critical path between execution completion and the next job starting, a slow or failing database write delays the entire job pipeline. Since Kodiai uses per-installation concurrency of 1 (via p-queue), a 500ms database write adds 500ms to every job's total latency. If the database write fails (disk full, permissions, corruption), the job appears to fail even though the actual review/mention succeeded.
-
-**Why it happens:**
-The natural place to add telemetry is at the end of the executor's `execute()` method or in the handler after `executor.execute()` returns. Both locations are inside the p-queue job callback, meaning telemetry write time is added to total job time.
-
-**Prevention:**
-1. **Make telemetry writes fire-and-forget within the job callback.** Use `void writeTelemetry(record).catch(err => logger.warn({err}, "Telemetry write failed"))` -- never `await` it in the critical path.
-2. **Or: write telemetry outside the queue.** The handler `enqueue()` call returns the result. After the queue resolves, write telemetry. But this is trickier with the current architecture where the handler is inside the callback.
-3. **Use an in-memory buffer** that flushes to SQLite periodically (e.g., every 10 seconds or every 10 records). This decouples write latency from job latency.
-4. **Handle storage failures gracefully:** A telemetry write failure must NEVER prevent a review from being posted or a mention from being answered. Log the failure, continue.
-
-**Detection:**
-- Job durations increasing after telemetry is added (compare before/after)
-- Telemetry write errors causing job failures in logs
-
-**Phase to address:** Telemetry phase -- design the write path as non-blocking from the start.
-
----
-
-### Pitfall 7: Schema Migration Breaks Existing `.kodiai.yml` Files
-
-**What goes wrong:**
-Renaming or restructuring config fields breaks existing `.kodiai.yml` files across all installed repos. For example, renaming `review.autoApprove` to `review.silentApproval` would break every repo that has the old field name. Since Kodiai reads `.kodiai.yml` from the target repo at execution time, there is no opportunity to migrate configs before they are parsed.
-
-**Why it happens:**
-Unlike a server-side database where you control migrations, `.kodiai.yml` lives in user repositories. You cannot migrate these files -- they update on the users' schedule, if ever. The server must support all historical config shapes indefinitely (or until explicitly deprecated).
+- Comment resolution on GitHub is binary (resolved/unresolved) with no reason attached
+- There is no reliable way to distinguish "this was a false positive" from "I acknowledge this but will fix later"
+- Developers under time pressure dismiss valid findings to unblock merges
+- Easy fixes (formatting, naming) have high acceptance rates but low value; hard fixes (architecture, security) have low acceptance rates but high value
 
 **Consequences:**
-- All repos with the old field name get config errors on every PR
-- Users must be notified and must update their configs manually
-- The server must either support both old and new field names or break backward compatibility
+- The system gradually suppresses its most valuable findings (hard issues that take time to fix)
+- The system amplifies its least valuable findings (trivial fixes that are easy to accept)
+- A negative feedback spiral: system gets worse -> users dismiss more -> system suppresses more real issues -> users lose trust completely
 
 **Prevention:**
-1. **Never rename or remove config fields.** Add new fields alongside old ones. Deprecate via documentation, not removal.
-2. **Use Zod `.transform()` for field aliases:** If you must rename a field, add the new name and use a transform that reads the old name as a fallback. For example:
-   ```typescript
-   // Support both old and new names
-   z.object({
-     silentApproval: z.boolean().optional(),
-     autoApprove: z.boolean().optional(),  // deprecated alias
-   }).transform(obj => ({
-     silentApproval: obj.silentApproval ?? obj.autoApprove ?? true,
-   }))
-   ```
-3. **Test backward compatibility:** Maintain a set of "golden" config files representing configs from each schema version. Run them through the parser on every build.
-4. **Add a `schemaVersion` field** to configs. Default to 1 (implicit). When breaking changes are unavoidable, check the version and apply version-specific parsing.
+1. **Do NOT use implicit feedback (resolution status) for learning in v0.4.** The signal is too noisy. Start with explicit feedback only: thumbs up/down reactions on comments, or a `@kodiai feedback: false-positive` command.
+2. **If using implicit feedback, weight by SEVERITY not by acceptance.** Never suppress a high-severity category just because users dismiss it often -- that may mean users are ignoring real security issues, not that the findings are wrong.
+3. **Separate "learning" from "auto-tuning."** Collect feedback data for analysis but do not automatically adjust behavior. A human operator should review feedback trends and manually adjust category thresholds.
+4. **Implement a feedback floor:** No category can be suppressed below a minimum reporting threshold, regardless of feedback. Security findings always report, even if dismissed 90% of the time.
+5. **Track feedback signal quality.** If a repo dismisses >80% of all findings, the system is noisy for that repo (address noise, do not just suppress). If they accept >80%, the system is working well (do not change).
 
 **Detection:**
-- Config parse errors appearing across multiple repos simultaneously after a deploy
-- Error messages containing old field names
+- Declining number of reported findings over time without configuration changes
+- High-value categories (security, bugs) being reported less frequently than low-value ones
+- User complaints that the bot "stopped catching things it used to catch"
 
-**Phase to address:** Config phase -- establish the migration strategy before adding new fields.
+**Phase to address:** Feedback system should be the LAST feature implemented in this milestone, after analysis accuracy has been validated. Collect data first, automate tuning later (or never in v0.4).
 
 ---
 
-### Pitfall 8: SQLite Database Locked Under Concurrent Access
+### Pitfall 6: Repo-Specific Learning Overfits to Bad Patterns
 
 **What goes wrong:**
-Bun's `bun:sqlite` is synchronous (like `better-sqlite3`). If a long-running telemetry query (e.g., a CLI report generating aggregations over months of data) holds a read transaction while a webhook handler tries to write a new telemetry row, the write will get `SQLITE_BUSY`. In WAL mode, readers do not block writers in most cases, but `PRAGMA wal_checkpoint(TRUNCATE)` requires exclusive access and will block or fail if any readers are active.
+The system analyzes repository history to learn conventions -- naming patterns, error handling styles, architectural patterns. It then flags deviations from these conventions. The problem: if the codebase has inconsistent or bad patterns (which most codebases do), the system learns and enforces those bad patterns. It might flag a developer for using proper error handling because the rest of the codebase uses a sloppy pattern.
+
+A subtler variant: the system learns patterns from the most prolific contributor (who wrote 70% of the code) and flags code from other contributors as "non-conventional" even when those contributors are using better practices.
 
 **Why it happens:**
-The Kodiai server (handling webhooks) and the CLI reporting tool (generating reports) may access the same SQLite file simultaneously. SQLite handles this well in WAL mode for simple cases, but edge cases (checkpoint, vacuum, schema changes) can cause contention.
+- Statistical convention detection treats frequency as correctness: if 80% of error handlers swallow exceptions, the system considers exception-swallowing "conventional"
+- Codebases evolve -- old patterns should be replaced, not reinforced
+- No mechanism to distinguish "this is our convention" from "this is tech debt we have not cleaned up yet"
+- Small repos have insufficient data for reliable pattern detection
+
+**Consequences:**
+- System reinforces anti-patterns and tech debt
+- New developers following best practices are flagged for "non-conventional" code
+- Codebases calcify around their worst patterns instead of improving
+- Users perceive the system as actively harmful -- "it told me to REMOVE my error handling"
 
 **Prevention:**
-1. **Enable WAL mode** (`PRAGMA journal_mode = WAL`) at database creation time. This allows concurrent reads during writes.
-2. **Use short transactions for writes:** The telemetry insert should be a single `INSERT` statement, not wrapped in a long transaction.
-3. **Set a busy timeout:** `PRAGMA busy_timeout = 5000` (5 seconds) so writes retry instead of immediately failing with SQLITE_BUSY.
-4. **Run checkpoint and cleanup on startup or during quiet periods**, not while the server is actively processing webhooks.
-5. **CLI reporting tool should use read-only mode** if bun:sqlite supports it, or use short-lived connections with `PRAGMA query_only = ON`.
+1. **Convention learning should be OPT-IN and explicit, not automatic.** Let repo owners define conventions in `.kodiai.yml` or a conventions file rather than mining them from code history.
+2. **Never flag a deviation from a mined convention as an "issue."** Use language like "Note: this differs from the common pattern in this repo" -- informational, not prescriptive.
+3. **Apply a quality filter to learned patterns.** Do not learn conventions that conflict with language best practices or known security guidelines. The system should know that "swallow all exceptions" is not a convention worth enforcing, even if the codebase does it.
+4. **Require minimum sample size.** Do not mine conventions from repos with fewer than 100 files or 10 contributors. Small repos have too little data for reliable pattern detection.
+5. **Let users override with explicit config.** `review.conventions.errorHandling: "require-explicit"` overrides whatever the system learned from history.
 
 **Detection:**
-- `SQLITE_BUSY` errors in server logs
-- CLI reports failing with "database is locked"
-- WAL file growing very large (checkpoint unable to complete)
+- Review comments suggesting worse code than what was submitted
+- Comments referencing "repo convention" that contradict language best practices
+- Inconsistent convention enforcement (flagging a pattern in one PR, not in another)
 
-**Phase to address:** Storage phase -- configure WAL mode and busy timeout in the database initialization code.
+**Phase to address:** Pattern analysis phase -- design convention detection with explicit quality filters and opt-in mechanisms before implementing repo scanning.
 
 ---
 
-### Pitfall 9: Telemetry for Errored/Timed-Out Executions Losing Partial Data
+### Pitfall 7: Analysis Overhead Adds Unacceptable Latency
 
 **What goes wrong:**
-When an execution errors or times out, the Agent SDK may not return `total_cost_usd`, `num_turns`, or `session_id` (they are `undefined` in the `ExecutionResult`). If the telemetry layer requires these fields or skips writing when they are undefined, errored executions have no telemetry record. This makes it impossible to answer questions like "how much did failed executions cost this month?" or "what is our error rate?"
+The current review execution takes 30-120 seconds (one Claude invocation reading the diff and posting comments). Adding pre-analysis steps (repo convention scanning, category-specific analysis passes, severity scoring) adds processing time. If the system runs multiple analysis passes or queries additional context before the main review, latency doubles or triples. A review that took 60 seconds now takes 3 minutes. Users waiting for review before merging are now blocked for 3x longer.
 
 **Why it happens:**
-The current `ExecutionResult` type already handles this -- `costUsd`, `numTurns`, and `sessionId` are `undefined` for error cases (see `executor.ts` lines 148-151, 178-181, 194-197). But a telemetry schema that uses `NOT NULL` constraints on these columns, or a CLI report that filters out rows where `cost_usd IS NULL`, will silently exclude error records.
+- Each new analysis capability requires either additional LLM calls or additional context gathering
+- Repo convention learning might require reading files outside the diff to establish patterns
+- Multi-category analysis tempts developers to run separate passes per category (security pass, performance pass, etc.)
+- Context enrichment (fetching related files, understanding dependencies) requires additional git operations and file reads
+
+**Consequences:**
+- Reviews take long enough that developers merge before the review completes
+- Increased token consumption drives up costs (the cost warning system from v0.3 starts firing)
+- Timeout rate increases (current 600-second default becomes insufficient)
+- Users perceive the "intelligent" review as slower and worse, not better
 
 **Prevention:**
-1. **Make cost/turns/session nullable in the telemetry schema.** Use `REAL` (not `REAL NOT NULL`) for cost_usd. Use `INTEGER` (nullable) for num_turns.
-2. **Always write a telemetry record for every execution**, including errors and timeouts. The `conclusion` field (`success`/`failure`/`error`) distinguishes them.
-3. **For timed-out executions, record the elapsed time** from `Date.now() - startTime` even though the SDK did not report `duration_ms`.
-4. **Include an `error_category` field** (timeout, config_error, api_error, unknown) for filtering and aggregation.
+1. **Single-pass architecture.** All analysis MUST happen in one Claude invocation, not multiple sequential passes. The prompt should instruct the model to consider all categories simultaneously while reading the diff once.
+2. **Pre-compute convention context at INSTALL time, not review time.** When a repo installs Kodiai, scan conventions once and cache the result. Reference the cached conventions in review prompts.
+3. **Set a latency budget.** Review latency MUST NOT exceed 2x the current baseline. If current p90 is 90 seconds, the intelligent review p90 must be under 180 seconds.
+4. **Monitor latency as a first-class metric.** The telemetry system already tracks `durationMs`. Add alerting for latency regression.
+5. **If pre-analysis is needed, run it ASYNCHRONOUSLY before the review prompt.** Do not block the review on convention analysis -- use stale-but-fast cached conventions.
 
 **Detection:**
-- Telemetry row count diverging from log line count for "Execution completed" vs "Execution failed"
-- Cost reports showing lower-than-expected totals (errored executions not counted)
-- Error rate appearing as 0% because errors are not recorded
+- `durationMs` increasing by >50% after deploying intelligent review features
+- Timeout rate increasing (more `conclusion: "error"` with `isTimeout: true`)
+- Cost per review increasing significantly (token count visible in telemetry)
+- Users merging PRs before the review posts
 
-**Phase to address:** Telemetry phase -- schema design must accommodate nullable fields from the start.
+**Phase to address:** Architecture phase -- define the single-pass constraint and latency budget before implementing any analysis features.
+
+---
+
+### Pitfall 8: Configuration Complexity Overwhelms Users (The Settings Page Nobody Uses)
+
+**What goes wrong:**
+Each intelligent review feature adds configuration options: category enables/disables, severity thresholds, review mode, convention overrides, feedback sensitivity, analysis depth. The `.kodiai.yml` config grows from its current ~15 fields to 40+ fields. New users see a wall of options and do not configure any of them. Power users spend more time tuning config than benefiting from reviews. The zero-config experience degrades because defaults must now balance dozens of competing concerns.
+
+**Why it happens:**
+- Each feature developer adds "just one more config option" to support their feature
+- The system tries to be configurable instead of opinionated
+- Exposing internal tuning parameters as user config (e.g., `analysis.securityConfidenceThreshold: 0.7`) satisfies completionists but confuses everyone else
+- Per-category settings multiply the config surface: 6 categories x 3 settings each = 18 new fields
+
+**Consequences:**
+- Zero-config repos (no `.kodiai.yml`) get surprising behavior from poorly-chosen defaults
+- Users who try to configure get analysis paralysis ("what should my severity threshold be?")
+- Support burden increases as users misconfigure and blame the tool
+- Config schema evolution becomes a maintenance nightmare (forward compatibility, migrations)
+
+**Prevention:**
+1. **Maximum 3 new user-facing config fields for the entire v0.4 milestone.** Candidates: `review.mode` (standard/enhanced), `review.strictness` (strict/balanced/lenient), and maybe `review.categories` (array of enabled categories). That is it.
+2. **Encode complexity in PRESETS, not individual knobs.** `review.strictness: strict` internally maps to higher confidence thresholds, fewer categories, and shorter comments. Users pick a word, not 15 numbers.
+3. **Internal tuning parameters stay internal.** Confidence thresholds, category weights, context depth -- these are code constants tuned by operators, not YAML fields tuned by users.
+4. **The existing `review.prompt` field already supports per-repo customization.** Custom instructions like "focus on security, ignore style" are more flexible than structured config and more natural for users to write.
+5. **Validate that `repoConfigSchema.parse({})` still returns sensible defaults** after every config addition (existing test pattern from v0.3).
+
+**Detection:**
+- `.kodiai.yml` schema exceeding 20 user-facing fields
+- Users copying config from documentation without understanding it
+- Default behavior producing unexpected results in common cases
+- Support requests about "what should I set X to?"
+
+**Phase to address:** Config phase -- define the config surface BEFORE implementing features. Resist adding fields during implementation.
+
+---
+
+### Pitfall 9: Non-Deterministic Output Erodes Confidence
+
+**What goes wrong:**
+LLM-based analysis is inherently non-deterministic. The same PR reviewed twice produces different comments, different severity scores, and different category classifications. Users discover this when they re-request a review (which Kodiai supports via `review_requested`) and get a completely different set of findings. They lose confidence in any individual review: "If it found a different bug last time, how do I know THIS review caught everything?"
+
+**Why it happens:**
+- LLM output varies with temperature, context ordering, and token sampling
+- Multi-category prompts amplify variance: the model might focus on security in one run and performance in another
+- Context window differences from cached vs. uncached prompts can shift attention
+- The `review_requested` trigger re-runs the entire analysis from scratch with no continuity from the previous review
+
+**Consequences:**
+- Users re-request reviews to "check" the bot, discover inconsistency, lose trust
+- Two reviewers see different bot comments on the same PR (if one re-requested), causing confusion
+- The idempotency system (existing `ensureReviewOutputNotPublished`) prevents duplicate posts but not inconsistent content across different deliveries
+
+**Prevention:**
+1. **Do NOT advertise re-review as a "check" mechanism.** Re-review is for code changes, not for verifying the bot's findings.
+2. **Minimize variance by using deterministic analysis structure.** Instead of open-ended "find issues," provide a checklist of specific checks to run. Checklist-based prompts produce more consistent output.
+3. **Track consistency across re-reviews.** If the same PR is reviewed twice (same HEAD SHA), log the overlap in findings. If overlap is <50%, the system is too non-deterministic.
+4. **For severity scoring, prefer rule-based post-processing over LLM classification.** The LLM identifies the issue; deterministic rules assign severity based on category and keywords. This ensures severity is stable even if phrasing varies.
+5. **Consider caching analysis results per HEAD SHA** so re-review of unchanged code returns the same output.
+
+**Detection:**
+- Users re-requesting reviews and getting different findings on unchanged code
+- Severity scores for the same issue type varying across PRs
+- User complaints about "the bot said something different last time"
+
+**Phase to address:** Testing phase -- measure consistency on a set of golden PRs before shipping.
+
+---
+
+### Pitfall 10: GitHub API Rate Limits Hit with Multi-Comment Reviews
+
+**What goes wrong:**
+The current system posts comments via MCP tools (inline comments and summary comments). With intelligent review generating more findings, the system may attempt to post 10-15 inline comments plus a summary comment on a single PR. GitHub's secondary rate limits throttle rapid content creation. The MCP tool calls fail mid-review, resulting in partial reviews (some comments posted, others dropped) with no error surfaced to the user.
+
+Additionally, if the model posts comments one by one rather than as a batch review, each comment is a separate API call. GitHub's REST API for individual line comments is rate-limited more aggressively than the batch review submission endpoint.
+
+**Why it happens:**
+- The current MCP inline comment server (`inline-review-server.ts`) posts individual comments via the REST API
+- GitHub's secondary rate limits are not documented with precise thresholds but trigger on rapid content creation
+- More findings = more API calls = higher chance of hitting rate limits
+- The model controls when to call MCP tools; there is no batching layer between the model and the API
+
+**Consequences:**
+- Partial reviews: 5 of 10 comments posted, the rest silently dropped
+- Error comments appearing alongside partial review output (confusing)
+- Inconsistent behavior: sometimes all comments post, sometimes only some
+- Users see incomplete reviews and lose trust
+
+**Prevention:**
+1. **Implement a hard cap on inline comments (5-7 max).** Enforce this in the prompt AND in the MCP server (reject tool calls beyond the cap).
+2. **Investigate using the batch review submission API** (`POST /repos/{owner}/{repo}/pulls/{pull_number}/reviews` with `comments` array) instead of individual comment creation. This is a single API call regardless of comment count.
+3. **Add rate limit awareness to MCP servers.** Check response headers for `X-RateLimit-Remaining` and pause/retry if approaching limits.
+4. **The MCP server should log every tool call outcome.** If a tool call fails, the model should be informed so it can stop attempting further comments.
+5. **Test with PRs that trigger many findings** and verify all comments are posted successfully.
+
+**Detection:**
+- Review output logging `published: true` but fewer comments visible on the PR than expected
+- GitHub API 403 errors in logs during review execution
+- Inconsistent comment counts across reviews of similarly-sized PRs
+
+**Phase to address:** Infrastructure phase -- review the MCP inline comment implementation before increasing comment volume.
 
 ---
 
 ## Minor Pitfalls
 
-### Pitfall 10: Adding Config Fields Without Default Values Breaks Zero-Config Repos
+### Pitfall 11: Category Detection Inconsistency Across Languages
 
 **What goes wrong:**
-Repos without a `.kodiai.yml` file rely on `repoConfigSchema.parse({})` returning sensible defaults (see `config.ts` line 124). Adding a new required field without a default causes this parse to fail, breaking every repo that does not have a config file.
+The intelligent review system defines categories like "security," "performance," and "concurrency." The model's ability to detect issues in these categories varies dramatically by language. It may be excellent at finding SQL injection in JavaScript/TypeScript but poor at finding memory management issues in C++, or excellent at detecting race conditions in Go but poor at finding them in Python. If the system claims to check for "concurrency issues" but reliably only detects them in 2 of 5 supported languages, users develop false confidence.
 
 **Prevention:**
-Every new config field MUST have a `.default()` value. This is already the pattern in the codebase (every field has a default), but it must be enforced as a rule. Add a test: `repoConfigSchema.parse({})` succeeds and returns expected defaults for all fields including new ones.
+1. **Do not claim category coverage you cannot deliver.** Start with categories that work well for the languages your current users actually use (TypeScript, based on the `kodiai/xbmc` test repo).
+2. **Language-specific category enablement.** If you know concurrency detection is weak for language X, do not enable it for repos in that language.
+3. **Test each category against multiple languages** before advertising it.
 
-**Phase to address:** Config phase -- enforce in code review and tests.
+**Phase to address:** Category implementation phase -- test each category per language before enabling.
 
 ---
 
-### Pitfall 11: CLI Reporting Script Importing Server Modules (Coupling)
+### Pitfall 12: Learning Data Storage Grows Unbounded
 
 **What goes wrong:**
-The reporting CLI script needs to read the telemetry database and format reports. If it imports modules from the server codebase (e.g., types, config), it creates a coupling that makes the CLI script dependent on server dependencies (Hono, Octokit, Agent SDK). This bloats the CLI and creates import errors if dependencies are not available in the CLI context.
+The existing telemetry system has 90-day retention and modest storage needs (~3.5 MB/year). A learning system that stores per-repo conventions, per-comment feedback signals, and pattern analysis results will require significantly more storage. Convention data includes file patterns, naming examples, and code snippets. Without retention and compaction policies, this data grows linearly with the number of repos and reviews.
 
 **Prevention:**
-1. **Keep the telemetry types in a shared, dependency-free module** (e.g., `src/telemetry/types.ts`) that both the server and CLI can import.
-2. **The CLI script should only depend on bun:sqlite and minimal formatting utilities.** It should NOT import from handlers, execution, or webhook modules.
-3. **Place the CLI script in `scripts/` (already the convention)** and ensure it has its own minimal import graph.
+1. **Define storage budget per repo for learned data.** Cap convention data at 100KB per repo, feedback data at 50KB per repo.
+2. **Implement retention for feedback data.** Feedback older than 90 days should be aggregated into summary statistics and the raw data purged.
+3. **Store conventions as compact representations** (patterns and rules), not raw code examples.
+4. **Use the existing SQLite infrastructure** with a new table, not a separate database. This inherits WAL mode, checkpointing, and the persistent volume mount.
 
-**Phase to address:** Reporting phase -- structure the module boundary before writing the CLI.
+**Phase to address:** Storage/learning phase -- define storage schema with size constraints from the start.
 
 ---
 
-### Pitfall 12: Losing Telemetry on Container Restart (Ephemeral Filesystem)
+### Pitfall 13: Custom Instructions Conflict with Intelligent Analysis
 
 **What goes wrong:**
-Azure Container Apps use an ephemeral overlay filesystem by default. The SQLite database file is lost on every container restart, deploy, or scale event. Since Kodiai deploys frequently (38 plans shipped in the first milestone alone), telemetry data would be lost on every deploy.
+Users have existing `review.prompt` custom instructions like "do not report style issues" or "focus only on security." The new intelligent analysis might override or conflict with these instructions. For example, if the analysis inserts category instructions after the custom prompt, the model sees conflicting directives. Or if the analysis pre-filters findings before the model sees them, the custom instructions become irrelevant.
 
 **Prevention:**
-1. **Mount a persistent Azure Files volume** to the container app. Store the SQLite database on this volume (e.g., `/data/telemetry.db`).
-2. **Alternatively, use a JSON-lines file** on the persistent volume as a simpler alternative to SQLite. Append-only, no WAL concerns, trivially backed up. Parse with `jq` for reporting.
-3. **Configure the storage path via environment variable** (e.g., `TELEMETRY_DB_PATH`) so it works in both local dev (ephemeral) and production (persistent volume).
-4. **Add startup logging** that reports whether the telemetry database exists and its current size/row count.
+1. **Custom instructions always take priority over system analysis.** The prompt hierarchy must be: custom instructions > analysis configuration > system defaults.
+2. **Test the interaction between custom instructions and each new analysis feature.** Common custom instructions to test: "only security," "no style comments," "be brief," "use Spanish."
+3. **Document how custom instructions interact with review modes.** Users need to know if `review.mode: "enhanced"` respects their custom prompt or overrides it.
 
-**Detection:**
-- Telemetry database is empty after every deploy
-- Row count never exceeds what was created since last restart
-
-**Phase to address:** Storage phase -- persistent volume must be configured before telemetry has production value.
+**Phase to address:** Prompt architecture phase -- define the instruction priority hierarchy early.
 
 ---
 
-### Pitfall 13: Config Schema Changes Not Covered by Existing Tests
+### Pitfall 14: Shadow Mode Leaks into User-Visible Output
 
 **What goes wrong:**
-The existing test suite (`config.test.ts`) validates specific field combinations but does not systematically test forward/backward compatibility. Adding new fields without updating tests means regressions are caught in production, not CI.
+If implementing a shadow/comparison mode where the new analysis runs alongside the old but does not publish, a bug in the gating logic could cause the shadow analysis to publish comments. This is especially dangerous because shadow mode output may be more verbose, unformatted, or contain internal debug information.
 
 **Prevention:**
-1. **Add a "golden config" test:** Parse a config file representing every supported field with valid values. Assert the parse succeeds and all fields have expected values.
-2. **Add a "minimal config" test:** Parse `{}` and assert every field has its expected default. (This already exists but should be updated as fields are added.)
-3. **Add a "future config" test:** Parse a config with unknown keys in every sub-object and assert it succeeds (after removing `.strict()`).
-4. **Add a "deprecated field" test:** When fields are deprecated, verify the alias/transform still works.
+1. **Shadow mode should be implemented at the prompt level, not the MCP level.** The analysis produces results but the MCP tools are never called. Do not rely on a flag check at the MCP server level -- mistakes there publish to GitHub.
+2. **Shadow mode output goes to logs only.** Use `logger.info({ shadowAnalysis: true, findings: [...] })`, never MCP tool calls.
+3. **Test shadow mode by verifying ZERO GitHub API calls** are made during shadow analysis.
 
-**Phase to address:** Config phase -- update test suite alongside schema changes.
+**Phase to address:** Migration/rollout phase -- implement shadow mode with strict output isolation.
 
 ---
 
@@ -321,46 +422,64 @@ The existing test suite (`config.test.ts`) validates specific field combinations
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| Config schema expansion | Strict sub-schemas reject new keys (Pitfall 1) | Remove `.strict()` from user-facing schemas before adding fields |
-| Config schema expansion | No graceful degradation (Pitfall 2) | Implement section-level fallback parsing |
-| Config schema expansion | Breaking existing configs (Pitfall 7) | Never rename/remove fields; use aliases |
-| Config schema expansion | Zero-config repos break (Pitfall 10) | Every new field must have `.default()` |
-| Telemetry collection | PII in telemetry records (Pitfall 3) | Define strict field allowlist; no free-text |
-| Telemetry collection | Blocking critical path (Pitfall 6) | Fire-and-forget writes; never await in job |
-| Telemetry collection | Errored executions not recorded (Pitfall 9) | Nullable cost/turns fields; always write |
-| Telemetry collection | Cost drift from pricing changes (Pitfall 5) | Use SDK `total_cost_usd` directly; store model name |
-| Persistent storage | Unbounded growth (Pitfall 4) | 90-day retention + WAL checkpoint on day 1 |
-| Persistent storage | Data loss on restart (Pitfall 12) | Azure Files persistent volume |
-| Persistent storage | Database locking (Pitfall 8) | WAL mode + busy_timeout + short transactions |
-| CLI reporting | Module coupling (Pitfall 11) | Shared types module; CLI has minimal imports |
-| Test coverage | Regressions from schema changes (Pitfall 13) | Golden config + future config + minimal config tests |
+| Review mode config | Breaking existing reviews (Pitfall 3) | Mode switch with `"standard"` default before any analysis changes |
+| Review mode config | Config complexity (Pitfall 8) | Maximum 3 new user-facing fields; use presets not knobs |
+| Prompt architecture | Prompt complexity explosion (Pitfall 2) | Keep under 200 lines; use systemPromptAppend for category defs |
+| Prompt architecture | Custom instruction conflicts (Pitfall 13) | Define priority hierarchy: custom > analysis config > defaults |
+| Category detection | False positive flood (Pitfall 1) | Hard cap on comments; start with fewer categories |
+| Category detection | Language inconsistency (Pitfall 11) | Test per-language before enabling; start with TypeScript |
+| Severity scoring | Everything is medium (Pitfall 4) | 3-level scale; consequence-based definitions; anchored examples |
+| Severity scoring | Automation risk (Pitfall 4) | Display-only in v0.4; no merge blocking |
+| Repo convention learning | Overfitting to bad patterns (Pitfall 6) | Opt-in explicit conventions; quality filter against best practices |
+| Repo convention learning | Storage growth (Pitfall 12) | Cap per-repo; 90-day retention for raw feedback |
+| Feedback system | Perverse incentives (Pitfall 5) | Explicit feedback only; no auto-tuning from implicit signals |
+| Feedback system | Negative spiral (Pitfall 5) | Category suppression floor; human-reviewed adjustments only |
+| Performance | Latency regression (Pitfall 7) | Single-pass architecture; 2x latency budget; pre-compute conventions |
+| Performance | API rate limits (Pitfall 10) | Hard cap on comments; batch review API; rate limit awareness |
+| Testing/rollout | Non-determinism (Pitfall 9) | Golden PR test suite; checklist-based prompts; consistency tracking |
+| Testing/rollout | Shadow mode leaks (Pitfall 14) | Prompt-level gating; log-only output; verify zero API calls |
 
-## Integration Pitfalls: How New Features Break Existing Behavior
+## Integration Pitfalls: How New Features Break Existing Kodiai Behavior
 
-These are specific to adding config + telemetry to the EXISTING Kodiai system.
+These are specific to adding intelligent review features to the EXISTING Kodiai v0.3 system.
 
 | Integration Point | Risk | Prevention |
 |---|---|---|
-| `loadRepoConfig()` adding new fields | Existing `.kodiai.yml` files with typos in new field names fail completely | Graceful degradation: parse valid sections, warn on invalid |
-| Telemetry write in `executor.execute()` | Import of `bun:sqlite` at module level slows server startup | Lazy-initialize database connection on first write |
-| Telemetry write in handler callbacks | Write failure propagates as job failure | Wrap in try/catch with logger.warn, never throw |
-| SQLite database on container filesystem | Every deploy loses data | Persistent volume mount required for production value |
-| CLI script importing from `src/` | CLI breaks when server dependencies change | Shared types module with no server dependencies |
-| New config sections (e.g., `telemetry.enabled`) | Existing repos with no `.kodiai.yml` must still work | Ensure `repoConfigSchema.parse({})` succeeds with all defaults |
+| `buildReviewPrompt()` modification | All existing repos get new behavior simultaneously | Gate behind `review.mode` config; default to current behavior |
+| Adding fields to `.kodiai.yml` schema | v0.3 config parsing rejects unknown fields in strict sub-schemas | v0.3 already removed `.strict()` from user-facing schemas -- verify this holds |
+| New SQLite tables for learning data | Startup migration adds latency; schema changes risk breaking telemetry | Separate tables; idempotent CREATE IF NOT EXISTS; test with existing DB |
+| MCP inline comment server posting more comments | GitHub secondary rate limits trigger partial reviews | Hard cap on comment count in MCP server; consider batch review API |
+| Executor `execute()` context expansion | New context fields (conventions, feedback) increase token count | Monitor token usage in telemetry; set a context size budget |
+| `review.prompt` custom instructions | New analysis categories conflict with user-specified instructions | Custom instructions always take priority; test common custom prompts |
+| Telemetry recording for new metrics | New fields in TelemetryRecord break existing CLI reports | Add new columns as nullable; update CLI queries to handle new fields gracefully |
+| Per-repo learning data | Data accumulates across repos sharing an installation | Per-repo storage caps; retention policy from day one |
+
+## The Meta-Pitfall: Building Too Much Before Validating
+
+The single most dangerous pitfall for this milestone is building the full intelligent review system (multi-category detection + severity scoring + convention learning + feedback system + configurable modes) before validating that users want ANY of it. The current system works. Users have not asked for these features.
+
+**The correct sequence is:**
+1. Add the review mode switch (zero behavior change, just the mechanism)
+2. Improve the existing prompt to reduce false positives (users already want this)
+3. Add basic severity tagging to existing findings (small change, big signal)
+4. Measure whether severity tagging improves user engagement
+5. ONLY THEN add new detection categories, convention learning, or feedback systems
+
+Building features 3-5 without validating feature 2-3 risks months of work on capabilities nobody uses.
 
 ## Sources
 
-- Kodiai codebase inspection: `src/execution/config.ts` (strict sub-schemas), `src/execution/executor.ts` (cost tracking from SDK), `src/handlers/review.ts` and `src/handlers/mention.ts` (telemetry logging points) -- HIGH confidence (direct inspection)
-- [Zod `.strict()` forward-compatibility issue (opencode #6145)](https://github.com/anomalyco/opencode/issues/6145) -- HIGH confidence (real-world case study of exact same problem)
-- [Zod v4 Migration Guide](https://zod.dev/v4/changelog) -- HIGH confidence (official docs)
-- [Claude Agent SDK: Tracking Costs and Usage](https://platform.claude.com/docs/en/agent-sdk/cost-tracking) -- HIGH confidence (official Anthropic docs, verified `total_cost_usd` is authoritative)
-- [Anthropic Claude API Pricing](https://platform.claude.com/docs/en/about-claude/pricing) -- HIGH confidence (official pricing page)
-- [SQLite WAL Mode Documentation](https://sqlite.org/wal.html) -- HIGH confidence (official SQLite docs)
-- [Bun SQLite Runtime Documentation](https://bun.com/docs/runtime/sqlite) -- HIGH confidence (official Bun docs)
-- [Litestream WAL Truncate Threshold Guide](https://litestream.io/guides/wal-truncate-threshold/) -- MEDIUM confidence (well-documented OSS tool)
-- [Keep PII Out of Your Telemetry (OneUptime)](https://oneuptime.com/blog/post/2025-11-13-keep-pii-out-of-observability-telemetry/view) -- MEDIUM confidence (industry best practices)
-- [Microsoft Engineering Playbook: Privacy in Logging](https://microsoft.github.io/code-with-engineering-playbook/observability/logs-privacy/) -- MEDIUM confidence (engineering best practices)
+- [Jellyfish: Impact of AI Code Review Agents (2025)](https://jellyfish.co/blog/impact-of-ai-code-review-agents/) -- 18% of AI feedback results in code changes; 56% of reviews get human response -- HIGH confidence (primary research, 1000+ reviews analyzed)
+- [Graphite: AI Code Review False Positives](https://graphite.com/guides/ai-code-review-false-positives) -- Industry false positive rates of 5-15%; context-aware analysis reduces them -- MEDIUM confidence (vendor blog with industry benchmarks)
+- [Qodo: 5 AI Code Review Pattern Predictions in 2026](https://www.qodo.ai/blog/5-ai-code-review-pattern-predictions-in-2026/) -- Severity-driven review, alert fatigue, feedback loop deficiencies, attribution-based learning -- MEDIUM confidence (industry analysis with specific failure modes)
+- [Hacker News: AI Code Review Bubble Discussion](https://news.ycombinator.com/item?id=46766961) -- Developer complaints about verbosity, false positives, non-determinism, lack of context, contradictory suggestions -- HIGH confidence (firsthand developer experience reports)
+- [Cubic: The False Positive Problem](https://www.cubic.dev/blog/the-false-positive-problem-why-most-ai-code-reviewers-fail-and-how-cubic-solved-it) -- Up to 40% of AI code review alerts ignored -- MEDIUM confidence (vendor blog citing industry data)
+- [ezyang: Code Review as Human Alignment in the Era of LLMs](https://blog.ezyang.com/2025/12/code-review-as-human-alignment-in-the-era-of-llms/) -- LLMs generate overly defensive code; no memory across sessions; alignment gap between AI and human expectations -- HIGH confidence (experienced engineer's analysis)
+- [DevTools Academy: State of AI Code Review Tools 2025](https://www.devtoolsacademy.com/blog/state-of-ai-code-review-tools-2025/) -- Leading tools catch only 40-48% of real bugs; false positive/noise remains primary complaint -- MEDIUM confidence (benchmark study)
+- [CodeRabbit: AI vs Human Code Generation Report](https://www.coderabbit.ai/blog/state-of-ai-vs-human-code-generation-report) -- AI PRs show 1.4-1.7x more critical/major findings than human PRs; AI does not adhere to repo idioms -- HIGH confidence (quantitative analysis of 470 PRs)
+- [GitHub Docs: Rate Limits for GitHub Apps](https://docs.github.com/en/developers/apps/building-github-apps/rate-limits-for-github-apps) -- Secondary rate limits on content creation -- HIGH confidence (official GitHub documentation)
+- Kodiai codebase inspection: `src/execution/review-prompt.ts`, `src/execution/executor.ts`, `src/execution/config.ts`, `src/handlers/review.ts`, `src/telemetry/store.ts`, `src/execution/mcp/inline-review-server.ts` -- HIGH confidence (direct code inspection)
 
 ---
-*Pitfalls research for: Kodiai v0.3 Enhanced Config + Telemetry*
+*Pitfalls research for: Kodiai v0.4 Intelligent Review System*
 *Researched: 2026-02-11*

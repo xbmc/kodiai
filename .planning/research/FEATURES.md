@@ -1,319 +1,195 @@
-# Feature Research: Enhanced Config + Usage Telemetry
+# Feature Landscape: Intelligent Review (v0.4)
 
-**Domain:** GitHub App config schema and usage telemetry (v0.3 milestone)
+**Domain:** AI-powered code review -- noise reduction, severity, learning, and context awareness
 **Researched:** 2026-02-11
-**Confidence:** HIGH
+**Overall Confidence:** MEDIUM-HIGH
 
 ## Scope
 
-This research covers **new features only** for the v0.3 milestone. Already-built capabilities (PR auto-review, @mention handling, write-mode, basic `.kodiai.yml` config, webhook event routing) are treated as existing infrastructure, not features to be researched.
+This research covers **new intelligent review features only** for the v0.4 milestone. Already-built capabilities are treated as existing infrastructure:
 
-The four feature areas:
-1. Enhanced `.kodiai.yml` schema -- giving users control over review/mention/write behavior
-2. Usage telemetry -- recording token consumption, cost, and duration per execution
-3. Cost estimation -- converting raw token counts to dollar amounts
-4. Reporting -- CLI tool for querying and summarizing usage data
+- PR auto-review with inline comments and suggestion blocks (v0.1)
+- Review summary comments with severity headings and `<details>` wrapping (v0.1)
+- `.kodiai.yml` config: `review.enabled`, `review.prompt`, `review.skipPaths`, `review.skipAuthors`, `review.autoApprove`, `review.triggers` (v0.1-v0.3)
+- @kodiai mention handling with `mention.allowedUsers` (v0.1-v0.3)
+- Telemetry recording with cost tracking (v0.3)
 
-## Feature Landscape
+The v0.4 goal: make reviews smarter, not just present. Reduce noise, catch real issues, understand repo context, and give users control over what gets flagged.
 
-### Table Stakes (Operators and Users Expect These)
+## Table Stakes
 
-Features that operators (you) and users expect from a tool that claims "config control + cost visibility."
+Features users expect from any tool claiming "intelligent review." Missing these means the review tool feels like a generic LLM wrapper with no domain awareness.
 
-| Feature | Why Expected | Complexity | Depends On |
-|---------|--------------|------------|------------|
-| **Config validation with clear errors** | Users who mistype a key or use a wrong type must get a clear error, not silent misbehavior. Already implemented via Zod `.strict()` + error formatting. | ALREADY BUILT | `zod`, `js-yaml` |
-| **Sensible defaults for every config field** | Users who provide an empty `.kodiai.yml` or no config file should get safe, useful behavior. All fields must have defaults. Already implemented. | ALREADY BUILT | `repoConfigSchema` defaults |
-| **Per-execution cost recording** | The Agent SDK already returns `total_cost_usd` on the result message. This data is authoritative (per Anthropic docs) and must be persisted, not just logged. Without persistence, you lose cost visibility on restart. | LOW | `executor.ts` result message, storage layer |
-| **Per-execution token recording** | Token counts (input, output, cache read, cache creation) are returned per model via `modelUsage` on the result message. Operators need this to understand *why* a session was expensive. | LOW | Agent SDK `modelUsage` field, storage layer |
-| **Per-execution duration recording** | Wall-clock duration is already computed in `executor.ts` (`durationMs`). Must be persisted alongside cost/tokens. | LOW | `executor.ts` already computes this |
-| **Per-execution metadata** | Each telemetry record must capture: repo, PR number, event type (review/mention/write), delivery ID, session ID, conclusion (success/failure/error), and timestamp. Without metadata, aggregate queries are impossible. | LOW | All fields already available in handler context |
-| **CLI usage report** | Operators must be able to query: "How much did this cost in the last 7 days?" and "Which repo is most expensive?" without parsing raw logs. A simple `bun scripts/usage-report.ts --since 7d` is the minimum. | MEDIUM | Storage layer, telemetry records |
-| **Report filtering by time range** | `--since 7d`, `--since 30d`, `--since 2026-01-01` are the minimum filters. Without time filtering, reports are useless at scale. | LOW | CLI argument parsing |
-| **mention.allowedUsers config field** | Users expect to restrict who can trigger @mention responses. Without this, any contributor can burn tokens by @mentioning the bot. CodeRabbit's `auto_review.ignore_usernames` is the inverse pattern (blocklist); an allowlist is safer for a small-user tool. | LOW | `repoConfigSchema`, mention handler gate |
+| Feature | Why Expected | Complexity | Dependencies |
+|---------|--------------|------------|--------------|
+| **Configurable severity threshold** | Users need `review.severity: high` to suppress minor/medium findings and only see critical and high-severity issues. Without this, noisy repos get buried in low-value comments. CodeRabbit has `review_profile: chill/assertive`; Kilo has strict/balanced/lenient. This is the single most requested feature class in AI review tools. | MEDIUM | Prompt engineering in `review-prompt.ts`; new `review.severity` config field in `repoConfigSchema` |
+| **Structured severity in review output** | Every review comment must have an explicit severity tag (Critical, High, Medium, Low). The existing summary comment already groups by severity headings. Inline comments need severity prefixed consistently so users can visually scan importance. | LOW | Prompt engineering only -- instruct model to prefix inline comments with severity |
+| **Focus area configuration** | Users need `review.focusAreas` to specify which issue categories matter: `["security", "bugs", "performance"]`. A repo that only cares about security should not get performance nits. The existing prompt hardcodes all categories. | LOW | New config field `review.focusAreas: string[]`; conditional inclusion in `buildReviewPrompt()` |
+| **Custom review instructions (per-repo)** | The `review.prompt` field already exists but is poorly documented and underused. Users need clear guidance that this is where repo-specific conventions go: "We use Result types not exceptions," "All API handlers must validate input schemas," etc. | ALREADY BUILT | `review.prompt` field in config; passed as `customInstructions` in `buildReviewPrompt()` |
+| **Noise suppression rules** | Explicit rules in the prompt to suppress known low-value patterns: no style-only comments, no "consider renaming" without a concrete bug, no commenting on test file structure, no flagging intentional `any` types when the context shows they are deliberate. The current prompt says "Focus on correctness and safety, not style preferences" but this is too vague. | LOW | Prompt engineering -- expand the Rules section with explicit suppression patterns |
+| **Skip review for trivial PRs** | Auto-skip or fast-track PRs below a threshold (e.g., fewer than 5 lines changed, only markdown/docs, only lockfile changes). Currently `skipPaths` handles file-type filtering, but there is no line-count threshold. Wasting a full Claude session on a one-line typo fix is cost-inefficient. | LOW | New config field `review.skipIfOnlyPaths` or a line-count check in review handler before executor call |
 
-### Differentiators (Competitive Advantage)
+## Differentiators
 
-Features that go beyond baseline expectations and provide real operator/user value.
+Features that set Kodiai apart from generic review tools. Not expected by default, but valued by teams that use AI review daily.
 
-| Feature | Value Proposition | Complexity | Depends On |
-|---------|-------------------|------------|------------|
-| **Per-model token breakdown in telemetry** | The Agent SDK's `modelUsage` provides per-model cost/token breakdowns. Storing this enables insight into "how much did Haiku subagents cost vs the main Sonnet model?" -- impossible with just `total_cost_usd`. No competitors expose this granularity for self-hosted tools. | LOW | Agent SDK `modelUsage` map, JSON column in storage |
-| **Cost-per-PR aggregation in reports** | "This PR cost $2.34 across 3 executions (1 review + 2 mentions)." Grouping by `owner/repo#prNumber` and summing cost gives the single most useful operator metric. The [Tribe AI guide](https://www.tribe.ai/applied-ai/a-quickstart-for-measuring-the-return-on-your-claude-code-investment) identifies cost-per-PR as the primary ROI metric. | LOW | Telemetry records with PR number, GROUP BY query |
-| **Report output in multiple formats** | Table (human-readable), JSON (machine-parseable), CSV (spreadsheet import). JSON is critical for piping into other tools. | LOW | Formatting logic in CLI script |
-| **review.skipLabels config field** | Skip review for PRs with specific labels (e.g., `skip-review`, `wip`, `dependencies`). CodeRabbit supports this via `auto_review.labels` / `ignore_title_keywords`. Useful for Dependabot PRs and draft labels. | LOW | `repoConfigSchema`, review handler gate, GitHub API label fetch |
-| **Configurable review.severity threshold** | Let users set minimum severity for comments: `severity: high` means only critical/high issues get inline comments; lower-severity findings are suppressed or collected into a summary. Reduces noise for teams that only want important findings. | MEDIUM | Prompt engineering + config field, unclear how to enforce reliably without structured output |
-| **Execution cost budget / warning threshold** | Config field like `costWarningUsd: 5.0` that logs a warning or posts a comment when a single execution exceeds the threshold. Defense against runaway sessions. | LOW | Simple check in executor post-processing |
-| **Telemetry export to stdout JSON lines** | `bun scripts/usage-report.ts --format jsonl` for log aggregation pipelines. Each record is a newline-delimited JSON object. Enables integration with external monitoring (Grafana, Datadog) without requiring OpenTelemetry setup. | LOW | Report formatting option |
+| Feature | Value Proposition | Complexity | Dependencies |
+|---------|-------------------|------------|--------------|
+| **Path-scoped review instructions** | Different review rules for different parts of the codebase: "For `src/api/**`, enforce input validation on every handler. For `tests/**`, only flag incorrect assertions, ignore style." CodeRabbit's `path_instructions` is the gold standard here. Kodiai currently has one global `review.prompt`; adding path-scoped instructions makes the review context-aware per directory. | MEDIUM | New config field `review.pathInstructions: [{path: string, instructions: string}]`; path matching with picomatch (already a dependency); prompt assembly in `buildReviewPrompt()` |
+| **Review profiles (strictness presets)** | Named presets that bundle severity threshold + focus areas + noise suppression rules. Three levels: `strict` (flag everything including style), `balanced` (bugs + security + performance, skip style), `minimal` (only critical/high severity bugs and security). Users set `review.profile: balanced` instead of configuring 5 fields individually. CodeRabbit has `chill`/`assertive`; Kilo has `strict`/`balanced`/`lenient`. | MEDIUM | New config field `review.profile`; preset definitions that set defaults for severity, focusAreas, and noise rules; must interact correctly with explicit field overrides |
+| **Incremental re-review (new changes only)** | When a developer pushes new commits to address review feedback, re-review should focus on the new changes rather than re-reviewing the entire diff. Currently, re-requesting review re-reviews everything. CodeRabbit does this by tracking prior review comments and focusing on new commits. | HIGH | Requires storing or retrieving prior review state (which comments were posted, on which SHA); modified diff calculation (`git diff oldSHA..newSHA` instead of `git diff base...HEAD`); prompt modification to include prior context. This is the hardest feature on this list. |
+| **Issue category tags on inline comments** | Each inline comment tagged with its category: `[Security]`, `[Bug]`, `[Performance]`, `[Error Handling]`. Enables users to quickly filter what matters. Combined with severity, a comment reads: `**Critical** [Security]: SQL injection via unsanitized input`. | LOW | Prompt engineering only -- instruct model to prefix comments with category tag |
+| **Confidence-based filtering** | The model self-assesses confidence on each finding (HIGH/MEDIUM/LOW). Config option `review.minConfidence: medium` suppresses low-confidence findings. Research shows low-confidence AI findings are where most false positives live. This directly attacks the 5-15% false positive rate cited in industry benchmarks. | MEDIUM | Prompt engineering to elicit confidence scores; new config field `review.minConfidence`; either trust the model's self-assessment (simpler) or implement post-processing to filter (harder). The simpler approach (prompt-only) is recommended initially. |
+| **Feedback-driven learning via config** | A `review.suppressions` list in config where users document patterns to stop flagging: `["ignore: 'any' type in test fixtures", "ignore: missing error handling in scripts/"]`. This is explicit, version-controlled, and auditable -- unlike implicit ML-based learning. Acts as a team knowledge base for "things the bot gets wrong." | LOW | New config field `review.suppressions: string[]`; injected into prompt as "Do NOT flag these patterns" |
+| **Review summary with metrics** | Enhance the summary comment with metadata: number of files reviewed, lines of diff analyzed, number of issues by severity, and estimated review time saved. Gives teams quantitative signal that the review was thorough. | LOW | Prompt engineering plus potentially a few calculations in the review handler (file count and diff line count are already available) |
 
-### Anti-Features (Do NOT Build)
+## Anti-Features
 
-Features that seem useful but create complexity disproportionate to their value for a small-user, self-hosted tool.
+Features to explicitly NOT build. These seem valuable but create disproportionate complexity or undermine the tool's strengths.
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **OpenTelemetry export infrastructure** | "Use OTEL for proper observability." | Requires running a collector, configuring OTLP endpoints, and maintaining Prometheus/Grafana. Massive ops overhead for a single-instance tool with a few users. Claude Code's native OTEL support is for *interactive CLI* usage, not GitHub App pipelines. | SQLite + CLI reports. If you later need Grafana, export JSONL and ingest it. Do not build OTEL infra now. |
-| **Web dashboard for usage metrics** | "A real-time dashboard showing cost per repo." | Building a web UI for a CLI-queryable dataset adds frontend dependencies (React/HTML), auth, hosting, and maintenance. The audience is 1-3 operators who can run a CLI command. | CLI reports with `--format table` and `--format json`. If a dashboard is ever needed, pipe JSONL into Grafana Cloud (free tier). |
-| **Per-user billing / chargeback** | "Track cost per GitHub user for internal billing." | Adds user identity tracking, raises privacy concerns, and requires a billing reconciliation system. Overkill for a private tool with a small known user group. | Track cost per repo and per event type. If you need user-level data, add `triggerUser` to telemetry records (already available from webhook payload) and query ad-hoc. |
-| **Real-time cost alerts (Slack/email)** | "Alert me when monthly spend exceeds $X." | Requires notification infrastructure (Slack webhook, email service), cron scheduling, and threshold configuration. | Log warnings when single-execution cost exceeds threshold (the `costWarningUsd` config field). For monthly totals, run the CLI report weekly. |
-| **Config schema versioning / migration** | "Version the YAML schema and auto-migrate old configs." | The config schema is small and stable. Zod `.default()` already handles missing fields gracefully. Schema versioning adds complexity for a problem that does not exist yet. | Keep using Zod defaults. If a breaking change is ever needed, document it in release notes and let the Zod error messages guide users. |
-| **Dynamic config reloading without restart** | "Watch `.kodiai.yml` for changes and hot-reload." | Config is loaded per-execution from the workspace clone, not from a persistent file. Each webhook event clones the repo and reads the config fresh. Hot-reload is already the default behavior -- changing config in the repo takes effect on the next PR event. | Document that config changes take effect on next event (already true). No work needed. |
-| **Path-specific review instructions** | "Different review prompts for `src/api/` vs `src/ui/`." | CodeRabbit supports this but it adds schema complexity, prompt construction logic, and path-matching infrastructure. For a small user group, a single `review.prompt` field suffices. | Defer. If users request it, add `review.pathInstructions: [{path: "src/api/**", prompt: "Focus on auth"}]` later. |
-| **Mention allowedUsers as GitHub team resolution** | "Allow `@my-org/core-team` instead of listing individual users." | Requires GitHub API calls to resolve team membership on every mention event. Adds latency and API rate limit consumption. | Use flat username lists. Teams are small enough that listing users explicitly is fine. |
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| **ML-based learning from past reviews** | Requires storing historical review data, training a feedback model, managing concept drift, and handling the cold-start problem. CodeRabbit and Qodo spend massive engineering effort here because they are SaaS products amortizing cost across thousands of repos. For a self-hosted tool serving a few repos, explicit config-based learning (suppressions, custom instructions) is more predictable and debuggable. | Use `review.prompt`, `review.suppressions`, and `review.pathInstructions` for explicit, version-controlled learning. The "model" is the config file, not a neural network. |
+| **Reaction-based feedback loop (thumbs up/down on comments)** | Requires tracking which comments the bot posted, monitoring reaction events via webhooks, storing feedback data, and implementing a pipeline to translate reactions into prompt modifications. The feedback signal is noisy (a thumbs-down could mean "wrong finding" or "right finding, bad suggestion" or "not important enough to fix"). | If users disagree with a finding pattern, they add it to `review.suppressions`. Explicit text is unambiguous. Reactions can be added later as a convenience layer on top of the suppression system. |
+| **Auto-fix / auto-commit for review findings** | The review tool should identify issues, not fix them. Auto-fixing conflates review (advisory) with write-mode (action). Kodiai already has write-mode via @mentions -- if a user wants a fix, they can say `@kodiai fix the SQL injection in auth.ts`. Auto-fixing review findings risks making unwanted changes and breaks the advisory nature of reviews. GitClear research shows AI reviewing its own output produces 8x code duplication. | Keep review as advisory (inline comments with suggestion blocks). Users click "Accept suggestion" in GitHub UI or ask @kodiai to fix specific issues. The separation between review and write is a feature, not a limitation. |
+| **Cross-repo architectural analysis** | Analyzing dependencies across multiple repos to catch breaking changes. Qodo positions this as a key differentiator. Building it requires: cloning dependent repos, building dependency graphs, understanding API contracts. This is a product unto itself. | Stay within single-PR scope. If the user wants cross-repo awareness, they document API contracts in `review.prompt` or `review.pathInstructions` for the relevant paths. |
+| **Integrated linter/SAST tool orchestration** | Running ESLint, Semgrep, Trivy, etc. alongside the LLM review and merging findings. CodeRabbit integrates 40+ tools. This adds configuration complexity, tool installation, version management, and result deduplication. The LLM already catches many of the same issues that static analyzers catch, and it catches them with better context. | Let CI/CD handle linting and SAST. The LLM review focuses on issues that static tools miss: logic errors, incorrect business logic, subtle bugs, architectural drift. If users want linter integration, they run linters in CI independently. |
+| **PR label auto-assignment from review findings** | Automatically labeling PRs with `needs-security-fix` or `has-performance-issues` based on review findings. Requires: parsing review output structured data, mapping severity/category to labels, calling GitHub API to apply labels. | If needed, use the review summary as the source of truth. Users can manually label based on the severity headings in the summary. Auto-labeling adds API calls and label management overhead for marginal benefit. |
+| **Review gating / merge blocking** | Blocking PR merges when critical issues are found. GitHub already supports required reviews and status checks. Making the bot's review a hard gate introduces responsibility the tool should not carry -- an LLM can have false positives, and a false positive blocking merge erodes trust fast. | Use GitHub's native branch protection. Kodiai posts a "Comment" review (not "Request Changes"). If teams want the bot to block merges, they can configure branch protection to require Kodiai's approval and use `autoApprove` to approve only when no issues are found (already built). |
 
 ## Feature Dependencies
 
 ```
-[Enhanced .kodiai.yml Schema]
+[Severity & Noise Control]  (Foundation -- build first)
     |
-    +-- review.skipLabels
-    |       +--requires--> GitHub API to fetch PR labels (already available via Octokit)
+    +-- review.severity config field
+    |       +--requires--> repoConfigSchema update, prompt conditional logic
     |
-    +-- mention.allowedUsers
-    |       +--requires--> mention handler gate check (trivial: array.includes)
+    +-- review.focusAreas config field
+    |       +--requires--> repoConfigSchema update, prompt conditional logic
     |
-    +-- costWarningUsd
-            +--requires--> telemetry recording (to compare against threshold)
+    +-- Structured severity tags on inline comments
+    |       +--requires--> prompt engineering only (no code deps)
+    |
+    +-- Noise suppression rules in prompt
+            +--requires--> prompt engineering only
 
-[Usage Telemetry]
+[Context-Aware Review]  (Build second -- depends on config infrastructure)
     |
-    +-- Storage layer (SQLite via bun:sqlite)
-    |       +--requires--> Database initialization on app startup
-    |       +--requires--> Schema migration (single CREATE TABLE, no ORM)
+    +-- review.pathInstructions config field
+    |       +--requires--> repoConfigSchema update
+    |       +--requires--> picomatch for path matching (already installed)
+    |       +--requires--> buildReviewPrompt() to assemble path-specific context
     |
-    +-- Recording hook in executor
-    |       +--requires--> Storage layer
-    |       +--requires--> Agent SDK result message fields (already available)
+    +-- review.profile presets
+    |       +--requires--> review.severity and review.focusAreas (must exist first)
+    |       +--requires--> preset definitions mapping profile -> field defaults
     |
-    +-- CLI report script
-            +--requires--> Storage layer
-            +--requires--> SQLite queries with date filtering
+    +-- Issue category tags on comments
+            +--requires--> prompt engineering only
 
-[Cost Estimation]
+[Feedback & Adaptation]  (Build third -- needs the above in place)
     |
-    +-- Already solved: Agent SDK total_cost_usd is authoritative
-    +-- Per-model breakdown via modelUsage (store as JSON)
+    +-- review.suppressions config field
+    |       +--requires--> repoConfigSchema update
+    |       +--requires--> prompt injection of suppression rules
+    |
+    +-- Confidence-based filtering
+    |       +--requires--> review.minConfidence config field
+    |       +--requires--> prompt engineering for confidence self-assessment
+    |
+    +-- Review summary with metrics
+            +--requires--> diff line count (available from git)
+            +--requires--> file count (available from changedFiles array)
 
-[CLI Reporting]
+[Incremental Re-review]  (Build last -- highest complexity, most dependencies)
     |
-    +-- Depends on: Storage layer with telemetry records
-    +-- Filters: --since, --repo, --type (review/mention/write)
-    +-- Formats: table (default), json, csv
-    +-- Aggregations: total cost, cost per repo, cost per PR, cost per event type
+    +-- requires--> Prior review state (comments posted, SHA reviewed)
+    +-- requires--> Differential diff calculation
+    +-- requires--> Modified prompt with prior context
+    +-- requires--> Telemetry store or GitHub API for state retrieval
 ```
 
-### Dependency Notes
+## MVP Recommendation
 
-- **Telemetry recording must exist before reporting can work.** The storage layer is the critical path item.
-- **Config enhancements are independent of telemetry.** They can be built in parallel.
-- **`costWarningUsd` bridges config and telemetry** -- it is a config field that reads telemetry data (execution cost from the result message) to decide whether to warn.
-- **`review.skipLabels` requires an API call** that the review handler does not currently make. The handler has Octokit access, so this is a single added REST call, not a new dependency.
+### Phase 1: Severity and Noise Control (Foundation)
 
-## Config Schema: What to Add
+Prioritize noise reduction above all else. The single biggest complaint about AI review tools is too many low-value comments. Research shows concise reviews are 3x more likely to be acted upon.
 
-Based on analysis of the existing `repoConfigSchema` in `src/execution/config.ts` and patterns from CodeRabbit, AI Review, and similar tools:
+Build:
+1. `review.severity` config field -- threshold for minimum severity to report
+2. `review.focusAreas` config field -- which categories to review
+3. Expanded noise suppression rules in prompt -- explicit "do not flag" patterns
+4. Structured severity and category tags on all inline comments
 
-### Fields to Add to Existing Sections
+### Phase 2: Context-Aware Instructions
 
-**`review` section additions:**
+Make the review understand the repo, not just the diff.
 
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `skipLabels` | `string[]` | `[]` | Skip review when PR has any of these labels. Common: `["skip-review", "dependencies", "wip"]` |
+Build:
+1. `review.pathInstructions` -- per-path review instructions with picomatch globs
+2. `review.profile` presets -- `strict`/`balanced`/`minimal` as convenience bundles
+3. Enhance `review.prompt` documentation and examples
 
-**`mention` section additions:**
+### Phase 3: Feedback and Adaptation
 
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `allowedUsers` | `string[]` | `[]` (empty = allow all) | When non-empty, only these GitHub usernames can trigger @mention responses. Empty means unrestricted. |
+Let teams teach the bot what to ignore.
 
-### New Top-Level Section
+Build:
+1. `review.suppressions` -- explicit patterns to stop flagging
+2. `review.minConfidence` -- filter out low-confidence findings
+3. Review summary metrics (files, lines, issue counts)
 
-**`telemetry` section (NEW):**
+### Defer: Incremental Re-review
 
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `enabled` | `boolean` | `true` | Master switch for telemetry recording. Operators can disable if they do not want any data stored. |
-| `costWarningUsd` | `number` | `0` (disabled) | When > 0, log a warning if a single execution exceeds this cost. Does not block execution. |
+This is the most impactful differentiator but also the hardest to build correctly. It requires state management across review cycles, differential diff calculation, and prompt context that includes prior findings. Defer to v0.4.x or v0.5 after the foundation is solid. A botched incremental review (re-flagging already-fixed issues, missing new issues) is worse than a full re-review.
 
-### Fields NOT to Add (Rationale)
+### Defer: ML-Based Learning, Auto-Fix, Cross-Repo Analysis
 
-| Rejected Field | Why Not |
-|----------------|---------|
-| `review.maxCostUsd` (hard limit) | Aborting mid-review wastes the tokens already spent and leaves the user with no output. A warning is better than a kill switch. |
-| `review.model` per-section | The top-level `model` field already controls this. Per-section model overrides add complexity without clear user need. |
-| `mention.blockedUsers` | An allowlist (`allowedUsers`) is safer and simpler than maintaining both allow + block lists. |
-| `telemetry.retentionDays` | SQLite file size for a small-user tool will be negligible. Add retention pruning only if the DB grows unexpectedly. |
-| `review.pathInstructions` | Deferred. Single `review.prompt` field suffices for now. |
+These are product-level features that require months of engineering each. They belong in a roadmap discussion about Kodiai's long-term direction, not in a v0.4 milestone.
 
-## Telemetry Schema: What to Record
+## Competitor Feature Matrix (Intelligent Review Focus)
 
-Based on analysis of the Agent SDK's result message structure, the [Anthropic cost tracking docs](https://platform.claude.com/docs/en/api/agent-sdk/cost-tracking), and the [Claude Flow telemetry approach](https://github.com/ruvnet/claude-flow/wiki/Token-Tracking-Telemetry):
-
-### Per-Execution Record
-
-| Field | Type | Source | Purpose |
-|-------|------|--------|---------|
-| `id` | `INTEGER PRIMARY KEY` | Auto-increment | Row identifier |
-| `timestamp` | `TEXT (ISO 8601)` | `new Date().toISOString()` | When execution completed |
-| `deliveryId` | `TEXT` | Webhook event `X-GitHub-Delivery` header | Correlate with webhook logs |
-| `installationId` | `INTEGER` | Webhook payload | Group by GitHub App installation |
-| `owner` | `TEXT` | Handler context | Repository owner |
-| `repo` | `TEXT` | Handler context | Repository name |
-| `prNumber` | `INTEGER NULL` | Handler context | NULL for issue-only mentions |
-| `eventType` | `TEXT` | Handler context | `review`, `mention`, or `write` |
-| `conclusion` | `TEXT` | `ExecutionResult.conclusion` | `success`, `failure`, `error` |
-| `costUsd` | `REAL NULL` | `resultMessage.total_cost_usd` | Authoritative cost from Agent SDK |
-| `durationMs` | `INTEGER NULL` | `resultMessage.duration_ms` or fallback | Wall-clock execution time |
-| `numTurns` | `INTEGER NULL` | `resultMessage.num_turns` | Agent loop iterations |
-| `sessionId` | `TEXT NULL` | `resultMessage.session_id` | Agent SDK session identifier |
-| `model` | `TEXT` | `config.model` | Primary model used |
-| `modelUsage` | `TEXT NULL (JSON)` | `JSON.stringify(resultMessage.modelUsage)` | Per-model token/cost breakdown |
-| `errorMessage` | `TEXT NULL` | `ExecutionResult.errorMessage` | Only for errored executions |
-| `isTimeout` | `INTEGER (0/1)` | `ExecutionResult.isTimeout` | Quick filter for timeouts |
-| `triggerUser` | `TEXT NULL` | Webhook payload sender login | Who triggered this execution |
-
-### Why SQLite, Not JSON File
-
-| Criterion | SQLite (bun:sqlite) | JSON File |
-|-----------|---------------------|-----------|
-| Concurrent writes | Safe (WAL mode) | Race conditions on concurrent appends |
-| Query capability | Full SQL (GROUP BY, date ranges, aggregations) | Must load entire file, filter in JS |
-| Performance | bun:sqlite is 3-6x faster than better-sqlite3 | Degrades linearly with file size |
-| Disk format | Single file, portable, crash-safe | Single file, but no crash safety |
-| Already a dependency | `bun:sqlite` is built into Bun (zero install) | `fs` is built into Bun (zero install) |
-
-**Recommendation: SQLite via `bun:sqlite`.** Zero new dependencies. Built-in to Bun. SQL queries make the CLI report script trivial.
-
-## CLI Report: What to Support
-
-### Command Interface
-
-```
-bun scripts/usage-report.ts [options]
-
-Options:
-  --since <period>     Time filter: "7d", "30d", "2026-01-01" (default: "7d")
-  --repo <owner/repo>  Filter by repository (optional)
-  --type <type>        Filter by event type: review, mention, write (optional)
-  --format <format>    Output format: table, json, csv (default: "table")
-  --group-by <field>   Group results: repo, pr, type, day (default: "repo")
-```
-
-### Report Sections (Table Format)
-
-1. **Summary**: Total executions, total cost, total tokens, date range
-2. **By grouping**: Cost/count breakdown by the `--group-by` field
-3. **Top 5 most expensive executions**: Individual records sorted by cost descending
-4. **Error rate**: Count of errored/timed-out executions vs total
-
-### Example Output
-
-```
-Usage Report: 2026-02-04 to 2026-02-11
-=======================================
-
-Summary:
-  Executions:    47
-  Total cost:    $12.83
-  Avg cost:      $0.27
-  Total tokens:  1,247,392
-  Errors:        2 (4.3%)
-  Timeouts:      1 (2.1%)
-
-By Repository:
-  owner/repo-a       31 executions    $8.42    65.6%
-  owner/repo-b       16 executions    $4.41    34.4%
-
-Top 5 Most Expensive:
-  $1.23  owner/repo-a #142  mention  2026-02-10T14:32:00Z
-  $0.89  owner/repo-a #138  review   2026-02-09T09:15:00Z
-  ...
-```
-
-## MVP Definition
-
-### Build Now (v0.3)
-
-Minimum viable set for "config control + cost visibility."
-
-- [ ] **Telemetry storage layer** (SQLite via bun:sqlite) -- Critical path. All reporting depends on this.
-- [ ] **Recording hook in executor** -- Capture every execution's result into SQLite after completion.
-- [ ] **mention.allowedUsers config field** -- Users need to restrict who can burn tokens via @mentions.
-- [ ] **CLI usage report with --since filter** -- Operators need "how much did this cost last week?"
-- [ ] **telemetry.costWarningUsd config field** -- Warn when a single execution is expensive.
-- [ ] **report --format table and --format json** -- Human-readable and machine-parseable output.
-
-### Add After Validation (v0.3.x)
-
-Features to add once the core telemetry pipeline is working.
-
-- [ ] **review.skipLabels** -- Useful but requires an additional API call per review event. Add when users request it.
-- [ ] **report --group-by pr** -- Cost-per-PR aggregation. Add when there is enough data to make this useful.
-- [ ] **report --format csv** -- Spreadsheet export. Add if operators want to share reports.
-- [ ] **telemetry.enabled: false support** -- Disable telemetry entirely. Add if any user requests it (default-on is the right starting point).
-- [ ] **Per-model token breakdown in reports** -- Requires parsing the stored `modelUsage` JSON. Add when operators want to optimize model selection.
-
-### Future Consideration (v0.4+)
-
-- [ ] **review.severity threshold** -- Requires structured output from the LLM or post-processing of review comments. Non-trivial to implement reliably.
-- [ ] **JSONL export for log aggregation** -- Add if operators want Grafana/Datadog integration.
-- [ ] **Retention pruning (delete old records)** -- Add if SQLite file grows beyond ~100MB (unlikely for small user group).
-- [ ] **Path-specific review instructions** -- Deferred from the initial FEATURES.md. Only build if users request it.
-
-## Feature Prioritization Matrix
-
-| Feature | User/Operator Value | Implementation Cost | Priority |
-|---------|---------------------|---------------------|----------|
-| Telemetry storage layer (SQLite) | HIGH (prerequisite) | MEDIUM (1 day) | P1 |
-| Recording hook in executor | HIGH (prerequisite) | LOW (half day) | P1 |
-| mention.allowedUsers config field | HIGH (token protection) | LOW (half day) | P1 |
-| CLI usage report (--since, --format table/json) | HIGH (core visibility) | MEDIUM (1 day) | P1 |
-| telemetry.costWarningUsd | MEDIUM (early warning) | LOW (hour) | P1 |
-| review.skipLabels | MEDIUM (noise reduction) | LOW (half day) | P2 |
-| report --group-by pr | MEDIUM (ROI insight) | LOW (hour) | P2 |
-| report --format csv | LOW (export) | LOW (hour) | P2 |
-| Per-model breakdown in reports | LOW (optimization) | LOW (half day) | P2 |
-| review.severity threshold | MEDIUM (noise reduction) | HIGH (uncertain) | P3 |
-| JSONL export | LOW (integration) | LOW (hour) | P3 |
-| Retention pruning | LOW (maintenance) | LOW (hour) | P3 |
-
-**Priority key:**
-- P1: Must have for v0.3 milestone
-- P2: Should have, add soon after
-- P3: Future consideration
-
-## Competitor Feature Analysis (Config + Telemetry Focus)
-
-| Feature | CodeRabbit | AI Review | Claude Flow | Kodiai (Our Approach) |
-|---------|------------|-----------|-------------|----------------------|
-| YAML config in repo | `.coderabbit.yaml` (extensive schema) | `.ai-review.yaml` / `.ai-review.json` | N/A | `.kodiai.yml` (Zod-validated, strict) |
-| Config validation | JSON Schema (`schema.v2.json`) | Partial | N/A | Zod `.strict()` with clear error messages |
-| Path filtering (review) | `path_filters` with glob + negation | File exclude patterns | N/A | `review.skipPaths` (already built) |
-| Author filtering | `auto_review.ignore_usernames` | Not documented | N/A | `review.skipAuthors` (already built) |
-| Label-based skip | `auto_review.labels` | Not documented | N/A | `review.skipLabels` (planned) |
-| Mention user restriction | Not configurable | N/A | N/A | `mention.allowedUsers` (planned) |
-| Custom review prompts | `path_instructions` (per-path) | Custom prompt templates | N/A | `review.prompt` (already built) |
-| Cost tracking | SaaS billing dashboard | Not applicable | Token usage JSON + CSV reports | SQLite + CLI reports |
-| Token tracking | SaaS (opaque) | N/A | Per-session token metrics | Per-execution with modelUsage breakdown |
-| Cost-per-PR metric | Not exposed | N/A | Documented as key metric | CLI `--group-by pr` aggregation |
-| Telemetry storage | Cloud (SaaS) | N/A | JSON files + CSV exports | SQLite (bun:sqlite, zero deps) |
+| Feature | CodeRabbit | Qodo | GitHub Copilot | Kilo | Kodiai Current | Kodiai v0.4 Target |
+|---------|------------|------|----------------|------|----------------|-------------------|
+| Severity levels | Implicit (chill/assertive) | Yes (risk scoring) | No | Yes (strict/balanced/lenient) | Summary headings only | Configurable threshold + tags on all comments |
+| Focus area config | Via path_instructions | Via workflows | Via custom instructions | Via focus areas | Hardcoded in prompt | Configurable `review.focusAreas` |
+| Path-scoped instructions | `path_instructions` (glob) | Directory scoping | File-level custom instructions | Not documented | Single global `review.prompt` | `review.pathInstructions` with picomatch |
+| Noise suppression | Learnings from chat | Automated workflows | Not documented | Not documented | "Focus on correctness" rule | Explicit `review.suppressions` + expanded prompt rules |
+| Incremental re-review | Yes (per-commit) | Yes | No (full review) | Not documented | No (full re-review) | Deferred to v0.5 |
+| Feedback learning | Chat replies -> learnings | PR history analysis | Not documented | Not documented | None | Explicit suppressions (v0.4); reactions later |
+| Confidence scores | Not exposed | Not exposed | Not exposed | Not exposed | None | Self-assessed confidence with configurable filter |
+| Profile presets | chill / assertive | N/A | N/A | strict / balanced / lenient | None | strict / balanced / minimal |
+| Auto-fix from review | No | Remediation patches | Copilot coding agent | Not documented | Separate write-mode | Separate write-mode (intentional) |
 
 ### Key Insight
 
-CodeRabbit's config is far more extensive (40+ linter integrations, path-specific instructions, AST rules, Jira/Linear integration) -- but it serves enterprise teams paying $24-30/user/month. Kodiai serves a small, known user group. The right strategy is a lean config schema that covers the 80% case (enable/disable, filters, prompts) without the enterprise complexity. Similarly, CodeRabbit hides all telemetry behind their SaaS billing -- Kodiai's self-hosted model means operators need direct access to cost data, which is a feature CodeRabbit cannot offer.
+CodeRabbit's advantage is breadth (40+ integrated tools, Jira/Linear integration, learnings system). Kodiai's advantage is depth of configuration control and transparency. As a self-hosted tool where the operator sees every config field and prompt instruction, Kodiai can offer precision that SaaS tools cannot: explicit suppressions instead of opaque ML, version-controlled path instructions instead of chat-trained models, and direct access to severity/confidence controls instead of binary chill/assertive toggles.
+
+The strategic play is: make Kodiai the most configurable and transparent AI reviewer, not the most feature-rich.
 
 ## Sources
 
-- [CodeRabbit Configuration Reference](https://docs.coderabbit.ai/reference/configuration) -- Full YAML schema with all available settings (HIGH confidence)
-- [Anthropic Agent SDK Cost Tracking Docs](https://platform.claude.com/docs/en/api/agent-sdk/cost-tracking) -- Authoritative docs for `total_cost_usd`, `modelUsage`, and token fields (HIGH confidence)
-- [Claude Flow Token Tracking Telemetry](https://github.com/ruvnet/claude-flow/wiki/Token-Tracking-Telemetry) -- Community approach to token tracking with Claude API (MEDIUM confidence)
-- [Tribe AI: Measuring Claude Code ROI](https://www.tribe.ai/applied-ai/a-quickstart-for-measuring-the-return-on-your-claude-code-investment) -- Cost-per-PR methodology and OTEL setup guide (MEDIUM confidence)
-- [Bun SQLite Documentation](https://bun.com/docs/runtime/sqlite) -- bun:sqlite API reference (HIGH confidence)
-- [AI Review GitHub](https://github.com/Nikita-Filonov/ai-review) -- Alternative config schema patterns (MEDIUM confidence)
-- [9 Best GitHub AI Code Review Tools 2026](https://www.codeant.ai/blogs/best-github-ai-code-review-tools-2025) -- Ecosystem overview (LOW confidence)
-- [Claude Code + OpenTelemetry + Grafana Guide](https://quesma.com/blog/track-claude-code-usage-and-limits-with-grafana-cloud/) -- OTEL integration approach (MEDIUM confidence, rejected for complexity)
+### Primary (HIGH confidence)
+- Existing codebase: `src/execution/review-prompt.ts`, `src/handlers/review.ts`, `src/execution/config.ts` -- verified current prompt structure, config schema, and review handler flow
+- [CodeRabbit Configuration Reference](https://docs.coderabbit.ai/reference/configuration) -- full YAML schema, path_instructions, review profiles, learnings
+- [CodeRabbit Review Instructions Guide](https://docs.coderabbit.ai/guides/review-instructions) -- path_instructions vs code guidelines distinction, glob pattern usage
+- [GitHub Copilot Code Review Docs](https://docs.github.com/copilot/using-github-copilot/code-review/using-copilot-code-review) -- Copilot review behavior, custom instructions, comment-only reviews
+
+### Secondary (MEDIUM confidence)
+- [Signal vs Noise Framework for AI Code Review](https://jetxu-llm.github.io/posts/low-noise-code-review/) -- Three-tier classification (Critical/Pattern/Noise), signal ratio metrics, cost of false positives
+- [Context Engineering for AI Code Reviews (CodeRabbit Blog)](https://www.coderabbit.ai/blog/context-engineering-ai-code-reviews) -- 1:1 code-to-context ratio, context source types, verification scripts
+- [Why Your AI Code Reviews Are Broken (Qodo Blog)](https://www.qodo.ai/blog/why-your-ai-code-reviews-are-broken-and-how-to-fix-them/) -- Confirmation bias in AI review, multi-agent architecture, anchoring effects
+- [AI Code Review False Positive Rates (Graphite)](https://graphite.com/guides/ai-code-review-false-positives) -- 5-15% industry FP rate, triage cost of 15-30 min per FP
+- [AI Code Review Accuracy 2026 (CodeAnt)](https://www.codeant.ai/blogs/ai-code-review-accuracy) -- Severity-based prioritization, context understanding for FP reduction
+- [Google Research: Resolving Code Review Comments with ML](https://research.google/blog/resolving-code-review-comments-with-ml/) -- 52% comment resolution rate, 50% suggestion acceptance rate
+- [5 Ways to Measure AI Code Review Impact (Baz)](https://baz.co/resources/5-ways-to-measure-the-impact-of-ai-code-review) -- Acceptance rate metrics, resolution tracking categories
+
+### Tertiary (LOW confidence)
+- [8 Best AI Code Review Tools 2026 (Qodo Blog)](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/) -- Competitor comparison overview
+- [State of AI Code Review Tools 2025 (DevTools Academy)](https://www.devtoolsacademy.com/blog/state-of-ai-code-review-tools-2025) -- Ecosystem landscape
+- [Self-Learning Code Review with Cursor (Elementor)](https://medium.com/elementor-engineers/the-self-learning-code-review-teaching-ai-cursor-to-learn-from-human-feedback-454df64c98cc) -- Feedback loop implementation patterns
 
 ---
-*Feature research for: Enhanced config schema + usage telemetry (v0.3 milestone)*
+*Feature landscape for: Intelligent review capabilities (v0.4 milestone)*
 *Researched: 2026-02-11*
