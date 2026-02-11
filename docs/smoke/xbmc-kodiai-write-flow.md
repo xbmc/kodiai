@@ -123,3 +123,17 @@ Only run the same smoke steps in `xbmc/xbmc` if the behavior depends on:
 - repo size/perf (timeouts, clone strategy)
 - permissions unique to xbmc/xbmc
 - configs that differ materially from xbmc/kodiai
+
+Release evidence template
+
+Record these after each smoke run:
+
+- same-repo PR URL:
+- same-repo deliveryId:
+- same-repo outcome (`updated-pr-branch`):
+- fork PR URL:
+- fallback bot PR URL:
+- fork deliveryId:
+- fork outcome (`created-pr`/`reused-pr`):
+- denied-path refusal comment URL:
+- secret-scan refusal comment URL:
