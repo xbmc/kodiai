@@ -137,3 +137,5 @@ Record these after each smoke run:
 - fork outcome (`created-pr`/`reused-pr`):
 - denied-path refusal comment URL:
 - secret-scan refusal comment URL:
+
+Smoke marker: postdeploy fork verification 2026-02-11.
