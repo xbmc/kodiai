@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 24 (4 of 4 in v0.3) — Enhanced Config Fields
-Plan: 1 of 2 complete
-Status: Executing
-Last activity: 2026-02-11 — Phase 24-01 executed (allowedUsers + picomatch skipPaths)
+Plan: 2 of 2 complete
+Status: Phase complete
+Last activity: 2026-02-11 — Phase 24-02 executed (telemetry opt-out + cost warning)
 
-Progress: [████████░░] 88%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 45 (across v0.1 + v0.2 + v0.3)
+- Total plans completed: 46 (across v0.1 + v0.2 + v0.3)
 - Average duration: 3min
-- Total execution time: 265min
+- Total execution time: 271min
 
 **By Phase (v0.3):**
 
@@ -30,7 +30,7 @@ Progress: [████████░░] 88%
 | 22-config-validation-safety | 1 | 4min | 4min |
 | 23-telemetry-foundation | 3 | 11min | 4min |
 | 25-reporting-tools | 1 | 2min | 2min |
-| 24-enhanced-config-fields | 1 | 4min | 4min |
+| 24-enhanced-config-fields | 2 | 10min | 5min |
 
 *Updated after each plan completion*
 
@@ -61,6 +61,8 @@ Recent decisions affecting current work:
 - [Phase 25-01]: No npm dependencies for CLI script - util.parseArgs, bun:sqlite all built into Bun
 - [Phase 24-01]: Separate normalizeSkipPattern in review.ts (not reusing workspace.ts) due to additional *.ext normalization need
 - [Phase 24-01]: allowedUsers case-insensitive matching; empty list = all users allowed (no gating)
+- [Phase 24-02]: Cost warning inside telemetry.enabled gate, so disabling telemetry suppresses both recording and warnings
+- [Phase 24-02]: Cost warning posts as GitHub issue comment with formatted USD amounts
 
 ### Pending Todos
 
@@ -73,5 +75,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 24-01-PLAN.md (allowedUsers + picomatch skipPaths)
+Stopped at: Completed 24-02-PLAN.md (telemetry opt-out + cost warning)
 Resume file: None
