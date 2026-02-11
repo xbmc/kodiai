@@ -139,3 +139,4 @@ Record these after each smoke run:
 - secret-scan refusal comment URL:
 
 Smoke marker: postdeploy same-repo verification 2026-02-11.
+same-repo postdeploy apply smoke
