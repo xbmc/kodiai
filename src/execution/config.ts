@@ -82,6 +82,42 @@ const reviewSchema = z
     prompt: z.string().optional(),
     skipAuthors: z.array(z.string()).default([]),
     skipPaths: z.array(z.string()).default([]),
+    /** Review mode: standard preserves current behavior, enhanced adds structured YAML metadata per comment. */
+    mode: z.enum(["standard", "enhanced"]).default("standard"),
+    /** Severity filtering: only report findings at or above this level. */
+    severity: z
+      .object({
+        minLevel: z
+          .enum(["critical", "major", "medium", "minor"])
+          .default("minor"),
+      })
+      .default({ minLevel: "minor" }),
+    /** Focus area targeting: concentrate review on these categories. Empty = all categories. */
+    focusAreas: z
+      .array(
+        z.enum([
+          "security",
+          "correctness",
+          "performance",
+          "style",
+          "documentation",
+        ]),
+      )
+      .default([]),
+    /** Explicit exclude list: skip these categories unless finding is CRITICAL. */
+    ignoredAreas: z
+      .array(
+        z.enum([
+          "security",
+          "correctness",
+          "performance",
+          "style",
+          "documentation",
+        ]),
+      )
+      .default([]),
+    /** Maximum inline comments per review. Range 1-25, default 7. */
+    maxComments: z.number().min(1).max(25).default(7),
   })
   .default({
     enabled: true,
@@ -94,6 +130,11 @@ const reviewSchema = z
     requestUiRereviewTeamOnOpen: false,
     skipAuthors: [],
     skipPaths: [],
+    mode: "standard",
+    severity: { minLevel: "minor" },
+    focusAreas: [],
+    ignoredAreas: [],
+    maxComments: 7,
   });
 
 const mentionSchema = z
