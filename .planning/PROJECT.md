@@ -8,14 +8,18 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.3 Configuration & Observability
+## Latest Release: v0.3 Configuration & Observability
 
-**Goal:** Give users fine-grained control over Kodiai behavior and provide operators visibility into resource consumption.
+**Shipped:** 2026-02-11
+**Phases:** 22-25 (4 phases, 7 plans)
 
-**Target features:**
-- Enhanced `.kodiai.yml` config schema (review control, mention control, write-mode guardrails)
-- Usage telemetry and cost tracking (tokens, duration, cost per execution)
-- Reporting tools for operators (CLI script, persistent storage)
+**Delivered:**
+- Forward-compatible config parsing with section-level graceful degradation
+- Enhanced `.kodiai.yml` controls (review, mention, write-mode, telemetry)
+- Persistent telemetry with SQLite WAL mode and 90-day retention
+- Fire-and-forget telemetry pipeline capturing all executions
+- Cost warning system with configurable USD thresholds
+- CLI reporting tool with filtering and table/JSON/CSV output
 
 ## Requirements
 
@@ -38,13 +42,15 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Review-request reliability hardening (delivery correlation, runbook, output idempotency) — v0.1
 - ✓ Code modification via @mention (branch creation, commit, push) with guardrails — v0.2
 - ✓ Write-mode reliability (clearer failures, safer retries, plan-only mode) — v0.2
+- ✓ Forward-compatible config parsing with graceful degradation — v0.3
+- ✓ Enhanced config controls (review/mention/write-mode guardrails) — v0.3
+- ✓ Usage telemetry collection with persistent SQLite storage — v0.3
+- ✓ CLI reporting tool with filtering and multiple output formats — v0.3
+- ✓ Telemetry opt-out and cost warning thresholds — v0.3
 
 ### Active
 
-- [ ] Enhanced config schema (review/mention/write-mode controls via `.kodiai.yml`)
-- [ ] Usage telemetry collection (tokens, duration, cost per execution)
-- [ ] Usage reporting tools (CLI script for operators)
-- [ ] Persistent telemetry storage (SQLite or JSON file)
+(No active requirements — next milestone will define new requirements)
 
 ### Out of Scope
 
@@ -56,7 +62,6 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ## Context
 
-
 - **GitHub App:** Registered (App ID 2822869, slug `kodiai`)
 - **Production:** Deployed on Azure Container Apps
   - FQDN: `ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io`
@@ -64,13 +69,18 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Test repo:** `kodiai/xbmc` (public fork) used to validate PR review + mention flows
 - **Core stack:** Bun + Hono, Octokit, Agent SDK (`query()`), in-process MCP servers, in-process queue (p-queue)
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
+- **Telemetry:** SQLite WAL database at `./data/kodiai-telemetry.db` with 90-day retention
+- **Codebase:** ~12,880 lines of TypeScript, 178 tests passing
 
 ## Current State
 
-v0.1 ships an installable GitHub App that:
-- Automatically reviews PRs (inline comments + suggestions; silent approvals for clean PRs)
-- Responds to `@kodiai` mentions across GitHub comment surfaces
-- Is deployable and running in production with observability and runbooks
+v0.3 ships an installable GitHub App that:
+- Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
+- Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
+- Records usage telemetry (tokens, cost, duration) for every execution
+- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out)
+- Includes CLI reporting tool for operators to query usage metrics
+- Is production-deployed with observability, cost warnings, and operational runbooks
 
 ## Constraints
 
@@ -90,6 +100,11 @@ v0.1 ships an installable GitHub App that:
 | In-process p-queue over external queue | Simpler to start; can migrate to durable queue later if needed | ✓ Good |
 | Shallow clone per job | Avoids large repo downloads; 50 commits gives enough diff context | ✓ Good |
 | `.kodiai.yml` config over env vars | Per-repo customization without touching the app server | ✓ Good |
+| Two-pass safeParse for config | Fast path tries full schema, fallback parses sections independently for surgical error handling | ✓ Good — v0.3 |
+| SQLite WAL mode for telemetry | Allows concurrent reads (CLI) while server writes; simpler than external DB | ✓ Good — v0.3 |
+| Fire-and-forget telemetry capture | Non-blocking writes prevent telemetry failures from breaking critical path | ✓ Good — v0.3 |
+| Cost warnings nested in telemetry gate | Disabling telemetry suppresses both recording and warnings (user expectation) | ✓ Good — v0.3 |
+| Self-contained CLI scripts in scripts/ | No src/ imports, zero coupling, prevents accidental server startup | ✓ Good — v0.3 |
 
 ---
-*Last updated: 2026-02-11 after v0.3 milestone definition*
+*Last updated: 2026-02-11 after v0.3 milestone completion*

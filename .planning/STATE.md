@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 24 - Enhanced Config Fields (v0.3)
+**Current focus:** Milestone v0.3 complete — ready to plan v0.4
 
 ## Current Position
 
 Phase: 25 (4 of 4 in v0.3) — Reporting Tools
 Plan: 1 of 1 complete
-Status: Milestone v0.3 complete
-Last activity: 2026-02-11 — Phase 25 verified (usage reporting CLI)
+Status: ✅ Milestone v0.3 shipped (2026-02-11)
+Last activity: 2026-02-11 — Milestone v0.3 archived
 
-Progress: [██████████] 100%
+Progress: [██████████] 100% (v0.3 complete)
 
 ## Performance Metrics
 
@@ -45,32 +45,16 @@ Progress: [██████████] 100%
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- Two-pass safeParse for config: fast path tries full schema, fallback parses each section independently (22-01)
-- Unknown keys silently stripped, no .strict()/.passthrough()/.catch() (22-01)
-- LoadConfigResult pattern: all config loading returns { config, warnings } (22-01)
-- ExecutionResult token fields use `| undefined` (not optional) for explicit backward compatibility (23-02)
-- Error/timeout paths set token fields to undefined (not zero) to distinguish from zero-token executions (23-02)
-- [Phase 23-01]: Used RETURNING clause for purge row counting to avoid bun:sqlite db.run() type mismatch with named params
-- [Phase 23-01]: File-backed temp databases in tests for verification via second connection (in-memory DBs per-connection)
-- [Phase 23-03]: model field defaults to "unknown" when ExecutionResult.model is undefined (error/timeout paths)
-- [Phase 23-03]: Telemetry capture inside isolated try-catch, separate from handler main try-catch (TELEM-05 non-blocking)
-- [Phase 25-01]: Script opens DB directly with bun:sqlite, does not import from src/
-- [Phase 25-01]: No npm dependencies for CLI script - util.parseArgs, bun:sqlite all built into Bun
-- [Phase 24-01]: Separate normalizeSkipPattern in review.ts (not reusing workspace.ts) due to additional *.ext normalization need
-- [Phase 24-01]: allowedUsers case-insensitive matching; empty list = all users allowed (no gating)
-- [Phase 24-02]: Cost warning inside telemetry.enabled gate, so disabling telemetry suppresses both recording and warnings
-- [Phase 24-02]: Cost warning posts as GitHub issue comment with formatted USD amounts
+All decisions are logged in PROJECT.md Key Decisions table.
+v0.3 decisions have been archived. Next milestone will build on this foundation.
 
 ### Pending Todos
 
-None yet.
+None — use `/gsd:new-milestone` to define v0.4
 
 ### Blockers/Concerns
 
-None yet.
+None
 
 ## Session Continuity
 
