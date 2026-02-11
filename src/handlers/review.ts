@@ -376,18 +376,21 @@ export function createReviewHandler(deps: {
           "Review output idempotency check passed",
         );
 
-        // Add eyes reaction to PR description for immediate acknowledgment
-        try {
-          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await reactionOctokit.rest.reactions.createForIssue({
-            owner: apiOwner,
-            repo: apiRepo,
-            issue_number: pr.number,
-            content: "eyes",
-          });
-        } catch (err) {
-          // Non-fatal: don't block processing if reaction fails
-          logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
+        // Add eyes reaction only for explicit re-review requests.
+        // Do not react on opened/ready_for_review to avoid noise on the PR description.
+        if (action === "review_requested") {
+          try {
+            const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            await reactionOctokit.rest.reactions.createForIssue({
+              owner: apiOwner,
+              repo: apiRepo,
+              issue_number: pr.number,
+              content: "eyes",
+            });
+          } catch (err) {
+            // Non-fatal: don't block processing if reaction fails
+            logger.warn({ err, prNumber: pr.number }, "Failed to add eyes reaction to PR");
+          }
         }
 
         // Check skipAuthors
