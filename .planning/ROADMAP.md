@@ -5,7 +5,7 @@
 - ✅ **v0.1 MVP** -- shipped 2026-02-09 (Phases 1-10)
   - Archive: `.planning/milestones/v0.1-ROADMAP.md`
 - ✅ **v0.2 Write Mode** -- shipped 2026-02-10 (Phases 11-21)
-- 🚧 **v0.3 Configuration & Observability** -- Phases 22-25 (in progress)
+- ✅ **v0.3 Configuration & Observability** -- shipped 2026-02-11 (Phases 22-25)
 
 ## Phases
 
@@ -15,8 +15,8 @@
 
 - [x] **Phase 22: Config Validation Safety** - Make config parsing forward-compatible and failure-resilient before adding new fields -- completed 2026-02-11
 - [ ] **Phase 23: Telemetry Foundation** - Build persistent telemetry storage with capture pipeline so every execution is recorded
-- [ ] **Phase 24: Enhanced Config Fields** - Add user-facing controls for review, mention, write-mode, and telemetry behavior
-- [ ] **Phase 25: Reporting Tools** - CLI script that queries telemetry storage and surfaces usage/cost metrics for operators
+- [x] **Phase 24: Enhanced Config Fields** - Add user-facing controls for review, mention, write-mode, and telemetry behavior -- completed 2026-02-11
+- [x] **Phase 25: Reporting Tools** - CLI script that queries telemetry storage and surfaces usage/cost metrics for operators -- completed 2026-02-11
 
 ## Phase Details
 
@@ -64,8 +64,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 24-01-PLAN.md -- Add allowedUsers to mention config, upgrade skipPaths to picomatch globs, add tests
-- [ ] 24-02-PLAN.md -- Add telemetry config section with opt-out control and cost warning threshold in both handlers
+- [x] 24-01-PLAN.md -- Add allowedUsers to mention config, upgrade skipPaths to picomatch globs, add tests -- completed 2026-02-11
+- [x] 24-02-PLAN.md -- Add telemetry config section with opt-out control and cost warning threshold in both handlers -- completed 2026-02-11
 
 ### Phase 25: Reporting Tools
 **Goal**: Operators can query telemetry data via a CLI script to understand usage patterns, costs, and identify expensive repos
@@ -81,7 +81,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 25-01-PLAN.md -- Create usage-report.ts CLI script with aggregate queries, filtering, multi-format output, and build integration
+- [x] 25-01-PLAN.md -- Create usage-report.ts CLI script with aggregate queries, filtering, multi-format output, and build integration -- completed 2026-02-11
 
 ## Progress
 
@@ -92,5 +92,5 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 |-------|-----------|----------------|--------|-----------|
 | 22. Config Validation Safety | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
 | 23. Telemetry Foundation | v0.3 | 3/3 | ✓ Complete | 2026-02-11 |
-| 24. Enhanced Config Fields | v0.3 | 0/2 | Not started | - |
-| 25. Reporting Tools | v0.3 | 0/1 | Not started | - |
+| 24. Enhanced Config Fields | v0.3 | 2/2 | ✓ Complete | 2026-02-11 |
+| 25. Reporting Tools | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
