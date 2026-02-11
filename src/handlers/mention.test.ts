@@ -1403,8 +1403,8 @@ describe("createMentionHandler write intent gating", () => {
   });
 });
 
-describe("createMentionHandler rereview command", () => {
-  test("@kodiai review requests aireview team without posting a reply comment", async () => {
+describe("createMentionHandler review command", () => {
+  test("@kodiai review triggers executor instead of delegating to aireview team", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\n",
@@ -1416,7 +1416,7 @@ describe("createMentionHandler rereview command", () => {
       .trim();
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
-    let requestedTeams: string[] | undefined;
+    let executorCalled = false;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -1455,14 +1455,8 @@ describe("createMentionHandler rereview command", () => {
               base: { ref: "main" },
             },
           }),
-          listRequestedReviewers: async () => ({ data: { users: [], teams: [] } }),
-          requestReviewers: async (params: { team_reviewers: string[] }) => {
-            requestedTeams = params.team_reviewers;
-            return { data: {} };
-          },
-          createReplyForReviewComment: async () => {
-            throw new Error("should not comment for rereview command");
-          },
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
         },
         issues: {
           listComments: async () => ({ data: [] }),
@@ -1481,7 +1475,15 @@ describe("createMentionHandler rereview command", () => {
       } as unknown as GitHubApp,
       executor: {
         execute: async () => {
-          throw new Error("should not execute for rereview command");
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
         },
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -1502,7 +1504,7 @@ describe("createMentionHandler rereview command", () => {
       }),
     );
 
-    expect(requestedTeams).toEqual(["aireview"]);
+    expect(executorCalled).toBe(true);
 
     await workspaceFixture.cleanup();
   });
