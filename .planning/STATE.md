@@ -10,24 +10,24 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 22 (1 of 4 in v0.3) — Config Validation Safety
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-02-11 — Roadmap created for v0.3
+Plan: 1 of 1 complete
+Status: Phase complete
+Last activity: 2026-02-11 — Completed 22-01 config validation safety
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 25%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38 (across v0.1 + v0.2)
+- Total plans completed: 39 (across v0.1 + v0.2 + v0.3)
 - Average duration: 3min
-- Total execution time: 244min
+- Total execution time: 248min
 
 **By Phase (v0.3):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 22-config-validation-safety | 1 | 4min | 4min |
 
 *Updated after each plan completion*
 
@@ -45,7 +45,9 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- None yet for v0.3.
+- Two-pass safeParse for config: fast path tries full schema, fallback parses each section independently (22-01)
+- Unknown keys silently stripped, no .strict()/.passthrough()/.catch() (22-01)
+- LoadConfigResult pattern: all config loading returns { config, warnings } (22-01)
 
 ### Pending Todos
 
@@ -58,5 +60,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Roadmap created for v0.3 milestone
+Stopped at: Completed 22-01-PLAN.md (config validation safety)
 Resume file: None
