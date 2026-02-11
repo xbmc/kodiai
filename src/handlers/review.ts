@@ -457,6 +457,12 @@ export function createReviewHandler(deps: {
           headBranch: pr.head.ref,
           changedFiles,
           customInstructions: config.review.prompt,
+          // Review mode & severity control
+          mode: config.review.mode,
+          severityMinLevel: config.review.severity.minLevel,
+          focusAreas: config.review.focusAreas,
+          ignoredAreas: config.review.ignoredAreas,
+          maxComments: config.review.maxComments,
         });
 
         // Execute review via Claude
