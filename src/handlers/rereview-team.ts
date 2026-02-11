@@ -36,6 +36,7 @@ export async function requestRereviewTeamBestEffort(options: {
           owner: string;
           repo: string;
           pull_number: number;
+          reviewers?: string[];
           team_reviewers: string[];
         }) => Promise<unknown>;
       };
@@ -45,9 +46,10 @@ export async function requestRereviewTeamBestEffort(options: {
   repo: string;
   prNumber: number;
   configuredTeam: string;
+  fallbackReviewer?: string;
   logger: Logger;
 }): Promise<{ requestedTeam?: string; alreadyRequested: boolean }> {
-  const { octokit, owner, repo, prNumber, configuredTeam, logger } = options;
+  const { octokit, owner, repo, prNumber, configuredTeam, fallbackReviewer, logger } = options;
   const candidates = buildRereviewTeamCandidates(configuredTeam);
   if (candidates.length === 0) return { alreadyRequested: false };
 
@@ -97,6 +99,28 @@ export async function requestRereviewTeamBestEffort(options: {
         "Failed to request rereview team candidate",
       );
       if (!canFallback) break;
+    }
+  }
+
+  const reviewer = (fallbackReviewer ?? "").trim();
+  if (reviewer.length > 0) {
+    try {
+      await octokit.rest.pulls.requestReviewers({
+        owner,
+        repo,
+        pull_number: prNumber,
+        reviewers: [reviewer],
+        team_reviewers: [],
+      });
+      logger.info(
+        { owner, repo, prNumber, reviewer },
+        "Requested fallback reviewer after rereview team request failure",
+      );
+    } catch (err) {
+      logger.warn(
+        { err, owner, repo, prNumber, reviewer },
+        "Failed to request fallback reviewer after rereview team request failure",
+      );
     }
   }
 

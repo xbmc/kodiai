@@ -296,6 +296,7 @@ export function createReviewHandler(deps: {
             repo: apiRepo,
             prNumber: pr.number,
             configuredTeam: config.review.uiRereviewTeam,
+            fallbackReviewer: githubApp.getAppSlug(),
             logger,
           });
         }

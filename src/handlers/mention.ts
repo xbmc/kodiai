@@ -588,6 +588,7 @@ export function createMentionHandler(deps: {
             repo: mention.repo,
             prNumber: mention.prNumber,
             configuredTeam,
+            fallbackReviewer: githubApp.getAppSlug(),
             logger,
           });
 
