@@ -82,39 +82,39 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CONFIG-01 | TBD | Pending |
-| CONFIG-02 | TBD | Pending |
-| CONFIG-03 | TBD | Pending |
-| CONFIG-04 | TBD | Pending |
-| CONFIG-05 | TBD | Pending |
-| CONFIG-06 | TBD | Pending |
-| CONFIG-07 | TBD | Pending |
-| CONFIG-08 | TBD | Pending |
-| CONFIG-09 | TBD | Pending |
-| CONFIG-10 | TBD | Pending |
-| CONFIG-11 | TBD | Pending |
-| TELEM-01 | TBD | Pending |
-| TELEM-02 | TBD | Pending |
-| TELEM-03 | TBD | Pending |
-| TELEM-04 | TBD | Pending |
-| TELEM-05 | TBD | Pending |
-| TELEM-06 | TBD | Pending |
-| TELEM-07 | TBD | Pending |
-| TELEM-08 | TBD | Pending |
-| REPORT-01 | TBD | Pending |
-| REPORT-02 | TBD | Pending |
-| REPORT-03 | TBD | Pending |
-| REPORT-04 | TBD | Pending |
-| REPORT-05 | TBD | Pending |
-| REPORT-06 | TBD | Pending |
-| REPORT-07 | TBD | Pending |
-| REPORT-08 | TBD | Pending |
+| CONFIG-01 | Phase 22 | Pending |
+| CONFIG-02 | Phase 22 | Pending |
+| CONFIG-03 | Phase 24 | Pending |
+| CONFIG-04 | Phase 24 | Pending |
+| CONFIG-05 | Phase 24 | Pending |
+| CONFIG-06 | Phase 24 | Pending |
+| CONFIG-07 | Phase 24 | Pending |
+| CONFIG-08 | Phase 24 | Pending |
+| CONFIG-09 | Phase 24 | Pending |
+| CONFIG-10 | Phase 24 | Pending |
+| CONFIG-11 | Phase 24 | Pending |
+| TELEM-01 | Phase 23 | Pending |
+| TELEM-02 | Phase 23 | Pending |
+| TELEM-03 | Phase 23 | Pending |
+| TELEM-04 | Phase 23 | Pending |
+| TELEM-05 | Phase 23 | Pending |
+| TELEM-06 | Phase 23 | Pending |
+| TELEM-07 | Phase 23 | Pending |
+| TELEM-08 | Phase 23 | Pending |
+| REPORT-01 | Phase 25 | Pending |
+| REPORT-02 | Phase 25 | Pending |
+| REPORT-03 | Phase 25 | Pending |
+| REPORT-04 | Phase 25 | Pending |
+| REPORT-05 | Phase 25 | Pending |
+| REPORT-06 | Phase 25 | Pending |
+| REPORT-07 | Phase 25 | Pending |
+| REPORT-08 | Phase 25 | Pending |
 
 **Coverage:**
 - v0.3 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️ (pending roadmap creation)
+- Mapped to phases: 27
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after initial definition*
+*Last updated: 2026-02-11 after roadmap creation*

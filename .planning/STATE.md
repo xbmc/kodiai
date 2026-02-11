@@ -5,68 +5,31 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** v0.3: Enhanced config + usage telemetry (give users control, give operators visibility).
+**Current focus:** Phase 22 - Config Validation Safety (v0.3)
 
 ## Current Position
 
-**Current Phase:** Not started
-**Current Phase Name:** Defining requirements
-**Total Phases:** TBD
-**Current Plan:** —
-**Total Plans in Phase:** —
-**Status:** Defining requirements
-**Progress:** [          ] 0%
+Phase: 22 (1 of 4 in v0.3) — Config Validation Safety
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-02-11 — Roadmap created for v0.3
 
-**Last Activity:** 2026-02-11
-**Last Activity Description:** Milestone v0.3 started
-**Paused At:** None
-
-Milestone: v0.3 (defining)
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 38
+- Total plans completed: 38 (across v0.1 + v0.2)
 - Average duration: 3min
 - Total execution time: 244min
 
-**By Phase:**
+**By Phase (v0.3):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-webhook-foundation | 3/3 | 11min | 4min |
-| 02-job-infrastructure | 2/2 | 8min | 4min |
-| 03-execution-engine | 3/3 | 9min | 3min |
-| 04-pr-auto-review | 2/2 | 5min | 3min |
-| 05-mention-handling | 2/2 | 6min | 3min |
-| 06-content-safety | 2/2 | 4min | 2min |
-| 07-operational-resilience | 2/2 | 5min | 3min |
-| 08-deployment | 2/2 | 16min | 8min |
-| 09-review-ux-improvements | 4/4 | 5min | 1min |
-| 10-review-request-reliability | 4/4 | 49min | 12min |
+| - | - | - | - |
 
 *Updated after each plan completion*
-| Phase 10 P03 | 3 min | 2 tasks | 7 files |
-| Phase 10 P04 | 2 min | 3 tasks | 4 files |
-| Phase 11 P01 | 5 min | 2 tasks | 5 files |
-| Phase 11-mention-ux-parity P02 | 5 min | 2 tasks | 5 files |
-| Phase 11-mention-ux-parity P03 | 5 min | 2 tasks | 5 files |
-| Phase 11-mention-ux-parity P04 | 2h 46m | 2 tasks | 1 files |
-| Phase 12-fork-pr-robustness P01 | 3 min | 2 tasks | 3 files |
-| Phase 12-fork-pr-robustness P02 | 5 min | 2 tasks | 3 files |
-| Phase 12-fork-pr-robustness P03 | 6 min | 2 tasks | 5 files |
-| Phase 13-xbmc-cutover P01 | 1 min | 2 tasks | 5 files |
-| Phase 13-xbmc-cutover P02 | 10 min | 2 tasks | 0 files |
-| Phase 13-xbmc-cutover P03 | 8 min | 1 tasks | 1 files |
-| Phase 14-write-mode-foundations P01 | 15 min | 3 tasks | 4 files |
-| Phase 15-write-pipeline P01 | 20 min | 3 tasks | 6 files |
-| Phase 16-write-guardrails P01 | 25 min | 3 tasks | 6 files |
-| Phase 17-write-mode-reliability P01 | 20 min | 3 tasks | 2 files |
-| Phase 17-write-mode-reliability P02 | 15 min | 3 tasks | 4 files |
-| Phase 18-observability-verification P01 | 15 min | 3 tasks | 4 files |
-| Phase 18-observability-verification P02 | 12 min | 3 tasks | 4 files |
-| Phase 19-write-confirmation P01 | 15 min | 3 tasks | 4 files |
-| Phase 20-next-improvements P01 | 30 min | 5 tasks | 8 files |
 
 ## Deployment Info
 
@@ -74,68 +37,26 @@ Milestone: v0.3 (defining)
 - **Webhook URL:** https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/webhooks/github
 - **GitHub App ID:** 2822869
 - **GitHub App slug:** kodiai
-- **GitHub repo:** https://github.com/xbmc/kodiai (private)
-- **Azure resources:** rg-kodiai (resource group), kodiairegistry (ACR), ca-kodiai (container app), cae-kodiai (environment)
-- **Latest revision:** ca-kodiai--0000012 (deployed 2026-02-09, includes review_requested reliability hardening and deliveryId correlation logs)
 
-## Decisions Made
+## Accumulated Context
 
-- [09-01]: 500-character threshold for wrapInDetails() (matches UX-03 spec)
-- [09-01]: pr_review_body skipped for reactions (review ID is not a comment ID)
-- [09-01]: Fire-and-forget pattern for reactions -- failure never blocks processing
-- [09-02]: Summary comment posted FIRST before inline comments to appear at top of PR conversation
-- [09-02]: Trivial PR threshold: fewer than 3 files AND under 50 lines changed
-- [09-02]: 500-character threshold triggers details wrapping for long summaries
-- [09-03]: autoApprove defaults to true so clean PRs get APPROVE review without config
-- [09-03]: reactions.createForIssue for PR description (PR is an issue, not a comment)
-- [09-04]: Removed 500-char COLLAPSE_THRESHOLD -- all bot comments now wrapped unconditionally
-- [09-04]: Review summary conditional on finding actionable issues (clean PRs = zero comments)
-- [09-04]: Tracking comment uses <details> with 'Kodiai is thinking...' as summary text
-- [08-02]: ACR remote build used instead of local docker build + push
-- [08-02]: Managed identity with AcrPull role for registry auth
-- [08-02]: min-replicas 1 to prevent webhook timeouts from cold starts
-- [08-02]: Health probe YAML must include full container spec (image + env vars)
-- [08-02]: Explicit git refspec needed for base branch fetch in single-branch clones
-- [08-02]: Microsoft.ContainerRegistry provider must be pre-registered
-- [Phase 10]: Recovered deploy env vars from existing ACA secrets when local shell vars were missing.
-- [Phase 10]: Delivery-scoped reviewOutputKey combines installation/repo/PR/action/delivery/head SHA for deterministic idempotency identity.
-- [Phase 10]: Inline review publication checks existing kodiai:review-output-key marker once per execution and logs published vs already-published-skip outcomes.
-- [Phase 10]: Use deterministic marker fixture assertions in tests to lock kodiai review-output marker parsing behavior.
-- [Phase 10]: Treat replay/retry reliability as same-delivery reprocessing tests so downstream idempotency is proven independent of ingress dedup.
-- [Phase 11]: Default mention.acceptClaudeAlias to true so @claude triggers by default
-- [Phase 11]: Make mention config strict to reject unknown mention keys in .kodiai.yml
-- [Phase 11-mention-ux-parity]: [11-02]: Default context bounds: last 20 comments, 800 chars per comment, 1200 chars for PR body
-- [Phase 11-mention-ux-parity]: [11-02]: Mention context build is best-effort; failures proceed with empty context
-- [Phase 11-mention-ux-parity]: [11-03]: Gate reviewCommentThread MCP server on having PR number + triggering review comment id
-- [Phase 11-mention-ux-parity]: [11-03]: Enforce <details> wrapping for thread replies in the MCP tool via wrapInDetails()
-- [Phase 12-fork-pr-robustness]: For fork (and deleted-fork) PRs, never clone pr.head.repo; clone base repo and fetch pull/<n>/head instead — GitHub App tokens may not have reliable access to contributor forks; PR head refs are exposed on the base repo and keep diff/comment anchoring stable.
-- [Phase 12-fork-pr-robustness]: Use base-clone + pull/<n>/head checkout for all PR mention workspaces (simpler and fork-safe)
-- [Phase 12]: Use descending sort + bounded pagination for GitHub list endpoints to keep large inputs deterministic without unbounded API usage.
-- [Phase 12]: Skip auto-approval when review-comment scanning hits safety caps (avoid false approvals when scan is incomplete).
-- [Phase 13-xbmc-cutover]: Use GitHub App deliveries UI + ACA logs as primary webhook verification path — gh delivery APIs may require admin:repo_hook scope; UI+logs provide reliable acceptance evidence
+### Decisions
 
-## Roadmap Evolution
+Decisions are logged in PROJECT.md Key Decisions table.
+Recent decisions affecting current work:
 
-- Phase 9 added: Review UX Improvements
+- None yet for v0.3.
 
-## Pending Todos
+### Pending Todos
 
-None.
+None yet.
 
-## Blockers
+### Blockers/Concerns
 
-- Active: GitHub webhook delivery API requires `admin:repo_hook` scope on `gh` token to fetch delivery status metadata (`status_code`, `delivered_at`) for forensic evidence.
+None yet.
 
-Note: Redelivery replay can be verified via GitHub App UI even without the delivery APIs.
+## Session Continuity
 
-Resolved:
-- ~~GitHub App not yet registered~~ RESOLVED: App ID 2822869, slug "kodiai"
-- ~~Azure Container Apps not yet provisioned~~ RESOLVED: deployed to ca-kodiai
-- ~~Claude CLI on Alpine~~ RESOLVED: agent-sdk bundles cli.js, works on Alpine
-- GitHub webhook delivery API requires gh token scope admin:repo_hook to capture status_code/delivered_at evidence.
-
-## Session
-
-**Last Date:** 2026-02-10T05:16:06.129Z
-**Stopped At:** Completed 13-xbmc-cutover-01-PLAN.md
-**Resume File:** None
+Last session: 2026-02-11
+Stopped at: Roadmap created for v0.3 milestone
+Resume file: None
