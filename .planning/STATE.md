@@ -5,14 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Milestone v0.4 — Intelligent Review System
+**Current focus:** Phase 26 — Review Mode & Severity Control
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-11 — Milestone v0.4 started
+Phase: 26 of 29 (Review Mode & Severity Control)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-02-11 — v0.4 roadmap created
+
+Progress: [░░░░░░░░░░] 0% (of v0.4)
 
 ## Performance Metrics
 
@@ -44,11 +46,11 @@ Last activity: 2026-02-11 — Milestone v0.4 started
 ### Decisions
 
 All decisions are logged in PROJECT.md Key Decisions table.
-v0.3 decisions have been archived. Next milestone will build on this foundation.
+v0.3 decisions archived. v0.4 decisions will accumulate here.
 
 ### Pending Todos
 
-None — use `/gsd:new-milestone` to define v0.4
+None yet.
 
 ### Blockers/Concerns
 
@@ -57,5 +59,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 24-02-PLAN.md (telemetry opt-out + cost warning)
+Stopped at: v0.4 roadmap created, Phase 26 ready to plan
 Resume file: None

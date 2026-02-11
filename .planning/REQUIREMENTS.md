@@ -65,27 +65,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | TBD | Pending |
-| FOUND-02 | TBD | Pending |
-| FOUND-03 | TBD | Pending |
-| FOUND-04 | TBD | Pending |
-| FOUND-05 | TBD | Pending |
-| FOUND-06 | TBD | Pending |
-| CTX-01 | TBD | Pending |
-| CTX-02 | TBD | Pending |
-| CTX-03 | TBD | Pending |
-| CTX-04 | TBD | Pending |
-| LEARN-01 | TBD | Pending |
-| LEARN-02 | TBD | Pending |
-| LEARN-03 | TBD | Pending |
-| LEARN-04 | TBD | Pending |
-| LEARN-05 | TBD | Pending |
+| FOUND-01 | Phase 26 | Pending |
+| FOUND-02 | Phase 26 | Pending |
+| FOUND-03 | Phase 26 | Pending |
+| FOUND-04 | Phase 26 | Pending |
+| FOUND-05 | Phase 26 | Pending |
+| FOUND-06 | Phase 26 | Pending |
+| CTX-01 | Phase 27 | Pending |
+| CTX-02 | Phase 27 | Pending |
+| CTX-03 | Phase 27 | Pending |
+| CTX-04 | Phase 27 | Pending |
+| LEARN-01 | Phase 28 | Pending |
+| LEARN-02 | Phase 28 | Pending |
+| LEARN-03 | Phase 28 | Pending |
+| LEARN-04 | Phase 28 | Pending |
+| LEARN-05 | Phase 29 | Pending |
 
 **Coverage:**
 - v0.4 requirements: 15 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-11*
-*Last updated: 2026-02-11 after initial definition*
+*Last updated: 2026-02-11 after roadmap creation*
