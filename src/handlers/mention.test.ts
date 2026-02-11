@@ -1268,7 +1268,7 @@ describe("createMentionHandler write intent gating", () => {
 });
 
 describe("createMentionHandler rereview command", () => {
-  test("@kodiai review posts minimal reply and requests aireview team", async () => {
+  test("@kodiai review requests aireview team without posting a reply comment", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\n",

@@ -132,7 +132,7 @@ export function createMentionHandler(deps: {
     return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
   }
 
-        async function handleMention(event: WebhookEvent): Promise<void> {
+  async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "claude"];
 
@@ -1107,6 +1107,8 @@ export function createMentionHandler(deps: {
     err: WritePolicyError,
     allowPaths: string[],
   ): string {
+    const yamlSingleQuote = (s: string): string => s.replaceAll("'", "''");
+
     const lines: string[] = [];
     lines.push("Write request refused.");
     lines.push("");
@@ -1121,17 +1123,22 @@ export function createMentionHandler(deps: {
     // Suggest the smallest config change when it's reasonably safe.
     // For secret detection, do not suggest bypassing policy by default.
     if (err.code === "write-policy-not-allowed" && err.path) {
+      const escapedPath = yamlSingleQuote(err.path);
       lines.push("");
       lines.push("Smallest config change (if intended):");
       lines.push("```yml");
       lines.push("write:");
       lines.push("  allowPaths:");
-      lines.push(`    - '${err.path}'`);
+      lines.push(`    - '${escapedPath}'`);
       lines.push("```");
 
       if (allowPaths.length > 0) {
         lines.push("");
-        lines.push(`Current allowPaths: ${allowPaths.map((p) => `'${p}'`).join(", ")}`);
+        lines.push(
+          `Current allowPaths: ${allowPaths
+            .map((p) => `'${yamlSingleQuote(p)}'`)
+            .join(", ")}`,
+        );
       }
     } else if (err.code === "write-policy-denied-path") {
       lines.push("");

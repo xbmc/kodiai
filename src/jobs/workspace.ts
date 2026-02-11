@@ -267,15 +267,25 @@ async function enforceWritePolicy(options: {
   const { dir, stagedPaths, allowPaths, denyPaths, secretScanEnabled } = options;
 
   let denyMatchers: Array<(path: string) => boolean>;
-  let allowMatchers: Array<(path: string) => boolean>;
   try {
     denyMatchers = compileGlobMatchers(denyPaths);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WritePolicyError(
+      "write-policy-not-allowed",
+      `Write blocked: invalid denyPaths pattern: ${message}`,
+      { rule: "denyPaths" },
+    );
+  }
+
+  let allowMatchers: Array<(path: string) => boolean> = [];
+  try {
     allowMatchers = compileGlobMatchers(allowPaths);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new WritePolicyError(
       "write-policy-not-allowed",
-      `Write blocked: invalid path policy pattern: ${message}`,
+      `Write blocked: invalid allowPaths pattern: ${message}`,
       { rule: "allowPaths" },
     );
   }
