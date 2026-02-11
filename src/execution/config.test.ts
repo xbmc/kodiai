@@ -40,6 +40,11 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();
+    expect(config.review.mode).toBe("standard");
+    expect(config.review.severity.minLevel).toBe("minor");
+    expect(config.review.focusAreas).toEqual([]);
+    expect(config.review.ignoredAreas).toEqual([]);
+    expect(config.review.maxComments).toBe(7);
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
     expect(config.telemetry.enabled).toBe(true);
@@ -520,6 +525,134 @@ test("reads mention.allowedUsers from YAML", async () => {
     expect(config.mention.allowedUsers).toEqual(["alice", "bob"]);
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.mode: enhanced from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  mode: enhanced\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.mode).toBe("enhanced");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.severity.minLevel from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  severity:\n    minLevel: major\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.severity.minLevel).toBe("major");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.focusAreas from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  focusAreas:\n    - security\n    - correctness\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.focusAreas).toEqual(["security", "correctness"]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.ignoredAreas from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  ignoredAreas:\n    - style\n    - documentation\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.ignoredAreas).toEqual(["style", "documentation"]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.maxComments from YAML", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  maxComments: 15\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.maxComments).toBe(15);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects invalid review.maxComments (out of range)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  maxComments: 50\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.maxComments).toBe(7); // default after fallback
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]!.section).toBe("review");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects invalid review.mode value", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  mode: turbo\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.mode).toBe("standard"); // default after fallback
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]!.section).toBe("review");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("new review fields coexist with existing fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  mode: enhanced\n  maxComments: 10\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.enabled).toBe(true);
+    expect(config.review.autoApprove).toBe(false);
+    expect(config.review.mode).toBe("enhanced");
+    expect(config.review.maxComments).toBe(10);
+    expect(config.review.severity.minLevel).toBe("minor"); // default
+    expect(config.review.focusAreas).toEqual([]); // default
+    expect(config.review.ignoredAreas).toEqual([]); // default
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });
