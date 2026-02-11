@@ -176,12 +176,10 @@ export function createMentionHandler(deps: {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
         async function postMentionReply(replyBody: string): Promise<void> {
-          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
-
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
-              await replyOctokit.rest.pulls.createReplyForReviewComment({
+              await octokit.rest.pulls.createReplyForReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
@@ -197,7 +195,7 @@ export function createMentionHandler(deps: {
             }
           }
 
-          await replyOctokit.rest.issues.createComment({
+          await octokit.rest.issues.createComment({
             owner: mention.owner,
             repo: mention.repo,
             issue_number: mention.issueNumber,
@@ -206,12 +204,10 @@ export function createMentionHandler(deps: {
         }
 
         async function postMentionError(errorBody: string): Promise<void> {
-          const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
-              await errOctokit.rest.pulls.createReplyForReviewComment({
+              await octokit.rest.pulls.createReplyForReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
@@ -228,7 +224,7 @@ export function createMentionHandler(deps: {
           }
 
           await postOrUpdateErrorComment(
-            errOctokit,
+            octokit,
             {
               owner: mention.owner,
               repo: mention.repo,
@@ -553,9 +549,8 @@ export function createMentionHandler(deps: {
 
         // Add eyes reaction to trigger comment for immediate visual acknowledgment
         try {
-          const reactionOctokit = await githubApp.getInstallationOctokit(event.installationId);
           if (mention.surface === "pr_review_comment") {
-            await reactionOctokit.rest.reactions.createForPullRequestReviewComment({
+            await octokit.rest.reactions.createForPullRequestReviewComment({
               owner: mention.owner,
               repo: mention.repo,
               comment_id: mention.commentId,
@@ -566,7 +561,7 @@ export function createMentionHandler(deps: {
             // (the review ID is not a comment ID, so the reaction endpoints would 404)
           } else {
             // issue_comment and pr_comment both use the issue comment reaction endpoint
-            await reactionOctokit.rest.reactions.createForIssueComment({
+            await octokit.rest.reactions.createForIssueComment({
               owner: mention.owner,
               repo: mention.repo,
               comment_id: mention.commentId,
@@ -585,8 +580,7 @@ export function createMentionHandler(deps: {
           mention.prNumber !== undefined &&
           (normalizedQuestion === "review" || normalizedQuestion === "recheck")
         ) {
-          const rereviewTeam = (config.review.uiRereviewTeam ?? "aireview").trim();
-          if (rereviewTeam.length === 0) return;
+          const rereviewTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
 
           try {
             await octokit.rest.pulls.requestReviewers({
