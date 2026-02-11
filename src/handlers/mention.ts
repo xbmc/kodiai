@@ -335,6 +335,26 @@ export function createMentionHandler(deps: {
           return;
         }
 
+        // Check mention.allowedUsers (CONFIG-07)
+        if (config.mention.allowedUsers.length > 0) {
+          const normalizedAuthor = mention.commentAuthor.toLowerCase();
+          const allowed = config.mention.allowedUsers.map((u) => u.toLowerCase());
+          if (!allowed.includes(normalizedAuthor)) {
+            logger.info(
+              {
+                owner: mention.owner,
+                repo: mention.repo,
+                commentAuthor: mention.commentAuthor,
+                gate: "mention-allowed-users",
+                gateResult: "skipped",
+                skipReason: "user-not-allowlisted",
+              },
+              "Mention author not in allowedUsers, skipping",
+            );
+            return;
+          }
+        }
+
         // Global alias: treat @claude as an always-on alias for mentions.
         // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
         // but the alias is enabled by default to support immediate cutover.)

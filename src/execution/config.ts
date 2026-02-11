@@ -100,9 +100,20 @@ const mentionSchema = z
   .object({
     enabled: z.boolean().default(true),
     acceptClaudeAlias: z.boolean().default(true),
+    /** If non-empty, only these GitHub users can trigger @kodiai mentions. Empty = all users allowed. */
+    allowedUsers: z.array(z.string()).default([]),
     prompt: z.string().optional(),
   })
-  .default({ enabled: true, acceptClaudeAlias: true });
+  .default({ enabled: true, acceptClaudeAlias: true, allowedUsers: [] });
+
+const telemetrySchema = z
+  .object({
+    /** If false, skip telemetry recording for this repo. Default: true. */
+    enabled: z.boolean().default(true),
+    /** If set and > 0, warn when execution cost exceeds this USD threshold. 0 = no warning. */
+    costWarningUsd: z.number().min(0).default(0),
+  })
+  .default({ enabled: true, costWarningUsd: 0 });
 
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
@@ -116,6 +127,7 @@ const repoConfigSchema = z.object({
   write: writeSchema,
   review: reviewSchema,
   mention: mentionSchema,
+  telemetry: telemetrySchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -283,6 +295,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // telemetry
+  const telemetryResult = telemetrySchema.safeParse(obj.telemetry);
+  let telemetry: z.infer<typeof telemetrySchema>;
+  if (telemetryResult.success) {
+    telemetry = telemetryResult.data;
+  } else {
+    telemetry = telemetrySchema.parse({});
+    warnings.push({
+      section: "telemetry",
+      issues: telemetryResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -291,6 +318,7 @@ export async function loadRepoConfig(
     review,
     write,
     mention,
+    telemetry,
   };
 
   return { config, warnings };
