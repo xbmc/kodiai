@@ -44,11 +44,12 @@ Plans:
   3. Telemetry writes do not delay the next queued job -- a slow or failed write never blocks the critical path
   4. Rows older than 90 days are automatically deleted (retention policy enforced on startup or periodically)
   5. The SQLite database uses WAL mode and can be read by an external process (the CLI tool) while the server is running
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 23-01: TBD
-- [ ] 23-02: TBD
+- [ ] 23-01-PLAN.md -- TDD: TelemetryStore with SQLite storage, WAL mode, retention purge, and checkpoint
+- [ ] 23-02-PLAN.md -- Enrich ExecutionResult with token usage, model, and stopReason from SDK
+- [ ] 23-03-PLAN.md -- Wire TelemetryStore into server startup and both handlers with fire-and-forget capture
 
 ### Phase 24: Enhanced Config Fields
 **Goal**: Users can fine-tune Kodiai behavior per-repo via `.kodiai.yml` -- disabling reviews, restricting mentions, scoping write-mode paths, and controlling telemetry
@@ -88,6 +89,6 @@ Phases execute in numeric order: 22 -> 23 -> 24 -> 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 22. Config Validation Safety | v0.3 | 1/1 | ✓ Complete | 2026-02-11 |
-| 23. Telemetry Foundation | v0.3 | 0/TBD | Not started | - |
+| 23. Telemetry Foundation | v0.3 | 0/3 | Not started | - |
 | 24. Enhanced Config Fields | v0.3 | 0/TBD | Not started | - |
 | 25. Reporting Tools | v0.3 | 0/TBD | Not started | - |
