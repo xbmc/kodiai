@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 25 - Reporting Tools (v0.3)
+**Current focus:** Phase 24 - Enhanced Config Fields (v0.3)
 
 ## Current Position
 
-Phase: 25 (3 of 4 in v0.3) — Reporting Tools
-Plan: 1 of 1 complete
-Status: Phase complete
-Last activity: 2026-02-11 — Phase 25-01 executed (usage-report CLI)
+Phase: 24 (4 of 4 in v0.3) — Enhanced Config Fields
+Plan: 1 of 2 complete
+Status: Executing
+Last activity: 2026-02-11 — Phase 24-01 executed (allowedUsers + picomatch skipPaths)
 
-Progress: [███████░░░] 75%
+Progress: [████████░░] 88%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 44 (across v0.1 + v0.2 + v0.3)
+- Total plans completed: 45 (across v0.1 + v0.2 + v0.3)
 - Average duration: 3min
-- Total execution time: 261min
+- Total execution time: 265min
 
 **By Phase (v0.3):**
 
@@ -30,6 +30,7 @@ Progress: [███████░░░] 75%
 | 22-config-validation-safety | 1 | 4min | 4min |
 | 23-telemetry-foundation | 3 | 11min | 4min |
 | 25-reporting-tools | 1 | 2min | 2min |
+| 24-enhanced-config-fields | 1 | 4min | 4min |
 
 *Updated after each plan completion*
 
@@ -58,6 +59,8 @@ Recent decisions affecting current work:
 - [Phase 23-03]: Telemetry capture inside isolated try-catch, separate from handler main try-catch (TELEM-05 non-blocking)
 - [Phase 25-01]: Script opens DB directly with bun:sqlite, does not import from src/
 - [Phase 25-01]: No npm dependencies for CLI script - util.parseArgs, bun:sqlite all built into Bun
+- [Phase 24-01]: Separate normalizeSkipPattern in review.ts (not reusing workspace.ts) due to additional *.ext normalization need
+- [Phase 24-01]: allowedUsers case-insensitive matching; empty list = all users allowed (no gating)
 
 ### Pending Todos
 
@@ -70,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-11
-Stopped at: Completed 25-01-PLAN.md (usage-report CLI script)
+Stopped at: Completed 24-01-PLAN.md (allowedUsers + picomatch skipPaths)
 Resume file: None

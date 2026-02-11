@@ -1404,3 +1404,439 @@ describe("createReviewHandler picomatch skipPaths (CONFIG-04)", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+describe("createReviewHandler telemetry opt-out (CONFIG-10)", () => {
+  test("telemetry.enabled: false suppresses telemetryStore.record", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n",
+    );
+
+    await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add README.md`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let recordCalls = 0;
+    const telemetryStore = {
+      record: () => { recordCalls++; },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
+        issues: { listComments: async () => ({ data: [] }) },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0.5,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+    expect(recordCalls).toBe(0);
+  });
+
+  test("telemetry.enabled: true (default) calls telemetryStore.record", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
+    );
+
+    await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add README.md`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let recordCalls = 0;
+    const telemetryStore = {
+      record: () => { recordCalls++; },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
+        issues: { listComments: async () => ({ data: [] }) },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0.5,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+    expect(recordCalls).toBe(1);
+  });
+});
+
+describe("createReviewHandler cost warning (CONFIG-11)", () => {
+  test("posts cost warning comment when costWarningUsd threshold exceeded", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\n",
+    );
+
+    await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add README.md`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let costWarningBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            costWarningBody = params.body;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 2.5,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+    expect(costWarningBody).toBeDefined();
+    expect(costWarningBody!).toContain("cost warning");
+    expect(costWarningBody!).toContain("$2.5000");
+    expect(costWarningBody!).toContain("$1.00");
+  });
+
+  test("no cost warning when costWarningUsd is 0 (default)", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
+    );
+
+    await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add README.md`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let createCommentCalled = false;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 50.0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+    expect(createCommentCalled).toBe(false);
+  });
+
+  test("no cost warning when telemetry disabled (even if threshold exceeded)", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await Bun.write(join(dir, "README.md"), "base\n");
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n  costWarningUsd: 1.0\n",
+    );
+
+    await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add README.md`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let createCommentCalled = false;
+    let recordCalls = 0;
+
+    const telemetryStore = {
+      record: () => { recordCalls++; },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({ dir, cleanup: async () => undefined }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: {} };
+          },
+        },
+        reactions: { createForIssue: async () => ({ data: {} }) },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 5.0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+    expect(recordCalls).toBe(0);
+    expect(createCommentCalled).toBe(false);
+  });
+});
