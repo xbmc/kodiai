@@ -23,6 +23,8 @@ function createNoopLogger(): Logger {
   } as unknown as Logger;
 }
 
+const noopTelemetryStore = { record: () => {}, purgeOlderThan: () => 0, checkpoint: () => {}, close: () => {} } as never;
+
 function createCaptureLogger() {
   const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
   const capture = (data: unknown, message?: string) => {
@@ -144,6 +146,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -186,6 +189,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -224,6 +228,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -262,6 +267,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -304,6 +310,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -346,6 +353,7 @@ describe("createReviewHandler review_requested gating", () => {
       workspaceManager: {} as WorkspaceManager,
       githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
       executor: {} as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -436,6 +444,7 @@ describe("createReviewHandler UI rereview team request", () => {
           sessionId: "session",
         }),
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -533,6 +542,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger,
     });
 
@@ -629,6 +639,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger,
     });
 
@@ -736,6 +747,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: logger as never,
     });
 
@@ -837,6 +849,7 @@ describe("createReviewHandler review_requested idempotency", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger() as never,
     });
 
@@ -926,6 +939,7 @@ describe("createReviewHandler fork PR workspace strategy", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1037,6 +1051,7 @@ describe("createReviewHandler fork PR workspace strategy", () => {
           sessionId: "session-nonfork",
         }),
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 

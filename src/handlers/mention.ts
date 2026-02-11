@@ -10,6 +10,7 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { TelemetryStore } from "../telemetry/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -47,9 +48,10 @@ export function createMentionHandler(deps: {
   workspaceManager: WorkspaceManager;
   githubApp: GitHubApp;
   executor: ReturnType<typeof createExecutor>;
+  telemetryStore: TelemetryStore;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
+  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -690,6 +692,29 @@ export function createMentionHandler(deps: {
           },
           "Mention execution completed",
         );
+
+        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05)
+        try {
+          telemetryStore.record({
+            deliveryId: event.id,
+            repo: `${mention.owner}/${mention.repo}`,
+            prNumber: mention.prNumber,
+            eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
+            model: result.model ?? "unknown",
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            cacheReadTokens: result.cacheReadTokens,
+            cacheCreationTokens: result.cacheCreationTokens,
+            durationMs: result.durationMs,
+            costUsd: result.costUsd,
+            conclusion: result.conclusion,
+            sessionId: result.sessionId,
+            numTurns: result.numTurns,
+            stopReason: result.stopReason,
+          });
+        } catch (err) {
+          logger.warn({ err }, "Telemetry write failed (non-blocking)");
+        }
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && mention.prNumber !== undefined && writeOutputKey && writeBranchName) {

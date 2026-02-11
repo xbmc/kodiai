@@ -22,6 +22,8 @@ function createNoopLogger(): Logger {
   } as unknown as Logger;
 }
 
+const noopTelemetryStore = { record: () => {}, purgeOlderThan: () => 0, checkpoint: () => {}, close: () => {} } as never;
+
 async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n") {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));
   const remoteDir = await mkdtemp(join(tmpdir(), "kodiai-mention-remote-"));
@@ -176,6 +178,7 @@ describe("createMentionHandler fork PR workspace strategy", () => {
           sessionId: "session-mention",
         }),
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -298,6 +301,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -420,6 +424,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -545,6 +550,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -662,6 +668,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -771,6 +778,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -885,6 +893,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1000,6 +1009,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1120,6 +1130,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1245,6 +1256,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1364,6 +1376,7 @@ describe("createMentionHandler write intent gating", () => {
           };
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 
@@ -1471,6 +1484,7 @@ describe("createMentionHandler rereview command", () => {
           throw new Error("should not execute for rereview command");
         },
       } as never,
+      telemetryStore: noopTelemetryStore,
       logger: createNoopLogger(),
     });
 

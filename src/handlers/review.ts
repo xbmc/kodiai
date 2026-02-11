@@ -8,6 +8,7 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { TelemetryStore } from "../telemetry/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { buildReviewPrompt } from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
@@ -56,9 +57,10 @@ export function createReviewHandler(deps: {
   workspaceManager: WorkspaceManager;
   githubApp: GitHubApp;
   executor: ReturnType<typeof createExecutor>;
+  telemetryStore: TelemetryStore;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
+  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
 
   const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
@@ -477,6 +479,29 @@ export function createReviewHandler(deps: {
           },
           "Review execution completed",
         );
+
+        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05)
+        try {
+          telemetryStore.record({
+            deliveryId: event.id,
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            eventType: `pull_request.${payload.action}`,
+            model: result.model ?? "unknown",
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            cacheReadTokens: result.cacheReadTokens,
+            cacheCreationTokens: result.cacheCreationTokens,
+            durationMs: result.durationMs,
+            costUsd: result.costUsd,
+            conclusion: result.conclusion,
+            sessionId: result.sessionId,
+            numTurns: result.numTurns,
+            stopReason: result.stopReason,
+          });
+        } catch (err) {
+          logger.warn({ err }, "Telemetry write failed (non-blocking)");
+        }
 
         if (result.conclusion === "success" && result.published) {
           logger.info(
