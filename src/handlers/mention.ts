@@ -32,7 +32,7 @@ import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
-import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
+
 
 /**
  * Create the mention handler and register it with the event router.
@@ -602,27 +602,6 @@ export function createMentionHandler(deps: {
         } catch (err) {
           // Non-fatal: don't block processing if reaction fails
           logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
-        }
-
-        // Minimal rereview trigger: allow @kodiai review / @kodiai recheck.
-        // Goal: retrigger review without adding any new PR thread comments.
-        // Signal is via best-effort reviewer request + eyes reaction (above).
-        if (
-          mention.prNumber !== undefined &&
-          (normalizedQuestion === "review" || normalizedQuestion === "recheck")
-        ) {
-          const configuredTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
-          await requestRereviewTeamBestEffort({
-            octokit,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-            configuredTeam,
-            fallbackReviewer: githubApp.getAppSlug(),
-            logger,
-          });
-
-          return;
         }
 
         // Build mention context (conversation + PR metadata + inline diff context)
