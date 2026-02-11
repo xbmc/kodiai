@@ -156,8 +156,34 @@ export function createExecutor(deps: {
             durationMs,
             sessionId: undefined,
             errorMessage: "No result message received from Claude Code CLI",
+            model: undefined,
+            inputTokens: undefined,
+            outputTokens: undefined,
+            cacheReadTokens: undefined,
+            cacheCreationTokens: undefined,
+            stopReason: undefined,
           };
         }
+
+        // Extract token usage from SDK result (TELEM-01)
+        const modelEntries = Object.entries(resultMessage.modelUsage ?? {});
+        const primaryModel = modelEntries[0]?.[0] ?? "unknown";
+        const totalInput = modelEntries.reduce(
+          (sum, [, u]) => sum + u.inputTokens,
+          0,
+        );
+        const totalOutput = modelEntries.reduce(
+          (sum, [, u]) => sum + u.outputTokens,
+          0,
+        );
+        const totalCacheRead = modelEntries.reduce(
+          (sum, [, u]) => sum + u.cacheReadInputTokens,
+          0,
+        );
+        const totalCacheCreation = modelEntries.reduce(
+          (sum, [, u]) => sum + u.cacheCreationInputTokens,
+          0,
+        );
 
         return {
           conclusion:
@@ -168,6 +194,12 @@ export function createExecutor(deps: {
           sessionId: resultMessage.session_id,
           published,
           errorMessage: undefined,
+          model: primaryModel,
+          inputTokens: totalInput,
+          outputTokens: totalOutput,
+          cacheReadTokens: totalCacheRead,
+          cacheCreationTokens: totalCacheCreation,
+          stopReason: resultMessage.stop_reason ?? undefined,
         };
       } catch (err) {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -188,6 +220,12 @@ export function createExecutor(deps: {
             published: false,
             errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
+            model: undefined,
+            inputTokens: undefined,
+            outputTokens: undefined,
+            cacheReadTokens: undefined,
+            cacheCreationTokens: undefined,
+            stopReason: undefined,
           };
         }
 
@@ -203,6 +241,12 @@ export function createExecutor(deps: {
           sessionId: undefined,
           published: false,
           errorMessage,
+          model: undefined,
+          inputTokens: undefined,
+          outputTokens: undefined,
+          cacheReadTokens: undefined,
+          cacheCreationTokens: undefined,
+          stopReason: undefined,
         };
       }
     },
