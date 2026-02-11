@@ -82,11 +82,11 @@ See `.planning/milestones/v0.3-ROADMAP.md` for full phase details.
   3. User sets `review.focusAreas: [security, bugs]` and review concentrates on those categories, ignoring style and trivial maintainability nits
   4. PR review produces at most 7 inline comments regardless of PR size, with each comment prefixed by severity level and issue category
   5. Review never flags style-only issues, trivial renamings, or cosmetic preferences — noise suppression rules are enforced in the prompt
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 26-01: TBD
-- [ ] 26-02: TBD
+- [ ] 26-01-PLAN.md — Config schema extension (review mode, severity, focus areas, comment cap)
+- [ ] 26-02-PLAN.md — Prompt enrichment with mode-aware instructions and handler wiring
 
 ### Phase 27: Context-Aware Reviews
 **Goal**: Reviews understand repo-specific conventions and assess risk using path-scoped instructions, profile presets, and deterministic diff analysis
