@@ -20,7 +20,7 @@ export function createExecutor(deps: {
       // Declared outside try so catch block can access them for cleanup
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       let controller: AbortController | undefined;
-      let timeoutSeconds = 300; // default, updated from config
+      let timeoutSeconds = 600; // default, updated from config
 
       try {
         // Load repo config (.kodiai.yml) with defaults

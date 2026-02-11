@@ -14,13 +14,35 @@ export class WritePolicyError extends Error {
     | "write-policy-secret-detected"
     | "write-policy-no-changes";
 
+  /** Best-effort file path involved in the refusal. */
+  readonly path?: string;
+
+  /** Which policy family triggered (denyPaths, allowPaths, secretScan). */
+  readonly rule?: "denyPaths" | "allowPaths" | "secretScan";
+
+  /** Best-effort policy pattern that matched (for glob-based rules). */
+  readonly pattern?: string;
+
+  /** Best-effort secret detector identifier (for secretScan rules). */
+  readonly detector?: string;
+
   constructor(
     code: WritePolicyError["code"],
     message: string,
+    meta?: {
+      path?: string;
+      rule?: WritePolicyError["rule"];
+      pattern?: string;
+      detector?: string;
+    },
   ) {
     super(message);
     this.name = "WritePolicyError";
     this.code = code;
+    this.path = meta?.path;
+    this.rule = meta?.rule;
+    this.pattern = meta?.pattern;
+    this.detector = meta?.detector;
   }
 }
 
@@ -162,6 +184,16 @@ function normalizeGlobPattern(pattern: string): string {
   return p;
 }
 
+function firstMatchingPattern(path: string, patterns: string[]): string | undefined {
+  for (const raw of patterns) {
+    const p = normalizeGlobPattern(raw);
+    if (p.length === 0) continue;
+    const m = picomatch(p, { dot: true });
+    if (m(path)) return raw;
+  }
+  return undefined;
+}
+
 function compileGlobMatchers(patterns: string[]): Array<(path: string) => boolean> {
   return patterns
     .map((p) => normalizeGlobPattern(p))
@@ -244,14 +276,17 @@ async function enforceWritePolicy(options: {
     throw new WritePolicyError(
       "write-policy-not-allowed",
       `Write blocked: invalid path policy pattern: ${message}`,
+      { rule: "allowPaths" },
     );
   }
 
   for (const path of stagedPaths) {
     if (matchesAny(path, denyMatchers)) {
+      const pattern = firstMatchingPattern(path, denyPaths);
       throw new WritePolicyError(
         "write-policy-denied-path",
         `Write blocked: denied path staged: ${path}`,
+        { path, rule: "denyPaths", pattern },
       );
     }
   }
@@ -262,6 +297,7 @@ async function enforceWritePolicy(options: {
         throw new WritePolicyError(
           "write-policy-not-allowed",
           `Write blocked: path is not allowlisted: ${path}`,
+          { path, rule: "allowPaths" },
         );
       }
     }
@@ -271,9 +307,18 @@ async function enforceWritePolicy(options: {
     const diff = (await $`git -C ${dir} diff --cached`.quiet()).text();
     for (const { name, regex } of buildSecretRegexes()) {
       if (regex.test(diff)) {
+        let path: string | undefined;
+        for (const p of stagedPaths) {
+          const perFile = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
+          if (regex.test(perFile)) {
+            path = p;
+            break;
+          }
+        }
         throw new WritePolicyError(
           "write-policy-secret-detected",
           `Write blocked: suspected secret detected (${name}) in staged diff`,
+          { path, rule: "secretScan", detector: `regex:${name}` },
         );
       }
     }
@@ -285,9 +330,22 @@ async function enforceWritePolicy(options: {
       .map((l) => l.slice(1));
     const entropyHit = findHighEntropyTokens(addedLines);
     if (entropyHit) {
+      let path: string | undefined;
+      for (const p of stagedPaths) {
+        const perFile = (await $`git -C ${dir} diff --cached -- ${p}`.quiet()).text();
+        const perFileAdded = perFile
+          .split("\n")
+          .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+          .map((l) => l.slice(1));
+        if (findHighEntropyTokens(perFileAdded)) {
+          path = p;
+          break;
+        }
+      }
       throw new WritePolicyError(
         "write-policy-secret-detected",
         `Write blocked: suspected secret detected (entropy): ${entropyHit}`,
+        { path, rule: "secretScan", detector: "entropy" },
       );
     }
   }

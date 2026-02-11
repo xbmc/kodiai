@@ -61,7 +61,7 @@ const HEADERS: Record<ErrorCategory, string> = {
 /** Actionable suggestions for each error category */
 const SUGGESTIONS: Record<ErrorCategory, string> = {
   timeout:
-    "Try breaking the task into smaller pieces, or increase the timeout in `.kodiai.yml`.",
+    "Try breaking the task into smaller pieces, or increase `timeoutSeconds` in `.kodiai.yml`.",
   api_error: "This is usually temporary. Try again in a few minutes.",
   config_error:
     "Check your `.kodiai.yml` file for syntax or schema errors.",
