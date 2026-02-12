@@ -69,10 +69,19 @@ export type TrendData = {
   avgConfidence: number;
 };
 
+export type GlobalPatternRecord = {
+  severity: FindingSeverity;
+  category: FindingCategory;
+  confidenceBand: "high" | "medium" | "low";
+  patternFingerprint: string;
+  count: number;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
   recordSuppressionLog(entries: SuppressionLogEntry[]): void;
+  recordGlobalPattern(entry: GlobalPatternRecord): void;
   getRepoStats(repo: string, sinceDays?: number): RepoStats;
   getRepoTrends(repo: string, days: number): TrendData[];
   checkpoint(): void;

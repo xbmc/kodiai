@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { Logger } from "pino";
 import type {
   FindingRecord,
+  GlobalPatternRecord,
   KnowledgeStore,
   RepoStats,
   ReviewRecord,
@@ -124,6 +125,23 @@ export function createKnowledgeStore(opts: {
 
   db.run("CREATE INDEX IF NOT EXISTS idx_suppression_log_review ON suppression_log(review_id)");
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS global_patterns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      confidence_band TEXT NOT NULL,
+      pattern_fingerprint TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(severity, category, confidence_band, pattern_fingerprint)
+    )
+  `);
+
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_global_patterns_lookup ON global_patterns(severity, category, confidence_band)",
+  );
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -154,6 +172,24 @@ export function createKnowledgeStore(opts: {
   const recordSuppressionStmt = db.query(`
     INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
     VALUES ($reviewId, $pattern, $matchedCount, $findingIds)
+  `);
+
+  const recordGlobalPatternStmt = db.query(`
+    INSERT INTO global_patterns (
+      severity,
+      category,
+      confidence_band,
+      pattern_fingerprint,
+      count
+    ) VALUES (
+      $severity,
+      $category,
+      $confidenceBand,
+      $patternFingerprint,
+      $count
+    )
+    ON CONFLICT(severity, category, confidence_band, pattern_fingerprint)
+    DO UPDATE SET count = count + excluded.count
   `);
 
   const insertFindingsTxn = db.transaction((findings: FindingRecord[]) => {
@@ -215,6 +251,17 @@ export function createKnowledgeStore(opts: {
     recordSuppressionLog(entries: SuppressionLogEntry[]): void {
       if (entries.length === 0) return;
       insertSuppressionTxn(entries);
+    },
+
+    recordGlobalPattern(entry: GlobalPatternRecord): void {
+      if (entry.count <= 0) return;
+      recordGlobalPatternStmt.run({
+        $severity: entry.severity,
+        $category: entry.category,
+        $confidenceBand: entry.confidenceBand,
+        $patternFingerprint: entry.patternFingerprint,
+        $count: entry.count,
+      });
     },
 
     getRepoStats(repo: string, sinceDays?: number): RepoStats {

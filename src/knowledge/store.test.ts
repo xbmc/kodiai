@@ -165,6 +165,37 @@ describe("KnowledgeStore", () => {
     expect(row.finding_ids).toBe("[11,12]");
   });
 
+  test("recordGlobalPattern upserts anonymized aggregate counts", () => {
+    fixture.store.recordGlobalPattern({
+      severity: "major",
+      category: "correctness",
+      confidenceBand: "high",
+      patternFingerprint: "fp-abc123",
+      count: 2,
+    });
+    fixture.store.recordGlobalPattern({
+      severity: "major",
+      category: "correctness",
+      confidenceBand: "high",
+      patternFingerprint: "fp-abc123",
+      count: 3,
+    });
+
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const row = db
+      .query(
+        "SELECT severity, category, confidence_band, pattern_fingerprint, count FROM global_patterns WHERE pattern_fingerprint = ?",
+      )
+      .get("fp-abc123") as Record<string, unknown>;
+    db.close();
+
+    expect(row.severity).toBe("major");
+    expect(row.category).toBe("correctness");
+    expect(row.confidence_band).toBe("high");
+    expect(row.pattern_fingerprint).toBe("fp-abc123");
+    expect(row.count).toBe(5);
+  });
+
   test("getRepoStats returns aggregate totals and top files", () => {
     const reviewId = fixture.store.recordReview({
       repo: "owner/repo",

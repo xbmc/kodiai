@@ -32,6 +32,7 @@ type ReviewArea = "security" | "correctness" | "performance" | "style" | "docume
 
 type FindingSeverity = "critical" | "major" | "medium" | "minor";
 type FindingCategory = "security" | "correctness" | "performance" | "style" | "documentation";
+type ConfidenceBand = "high" | "medium" | "low";
 
 type ExtractedFinding = {
   commentId: number;
@@ -48,6 +49,29 @@ type ProcessedFinding = ExtractedFinding & {
   confidence: number;
   suppressionPattern?: string;
 };
+
+function toConfidenceBand(confidence: number): ConfidenceBand {
+  if (confidence >= 75) return "high";
+  if (confidence >= 50) return "medium";
+  return "low";
+}
+
+function fingerprintFindingTitle(title: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  const unsigned = hash >>> 0;
+  return `fp-${unsigned.toString(16).padStart(8, "0")}`;
+}
 
 function buildReviewDetailsMarker(reviewOutputKey: string): string {
   return `<!-- kodiai:review-details:${reviewOutputKey} -->`;
@@ -1239,6 +1263,7 @@ export function createReviewHandler(deps: {
                 suppressionCount: config.review.suppressions.length,
                 minConfidence: config.review.minConfidence,
                 profile: config.review.profile,
+                shareGlobal: config.knowledge.shareGlobal,
               }),
               durationMs: result.durationMs,
               model: config.model,
@@ -1277,6 +1302,51 @@ export function createReviewHandler(deps: {
                 matchedCount,
               })),
             );
+
+            if (config.knowledge.shareGlobal) {
+              try {
+                const aggregateCounts = new Map<string, {
+                  severity: FindingSeverity;
+                  category: FindingCategory;
+                  confidenceBand: ConfidenceBand;
+                  patternFingerprint: string;
+                  count: number;
+                }>();
+
+                for (const finding of processedFindings) {
+                  const confidenceBand = toConfidenceBand(finding.confidence);
+                  const patternFingerprint = fingerprintFindingTitle(finding.title);
+                  const key = `${finding.severity}|${finding.category}|${confidenceBand}|${patternFingerprint}`;
+                  const existing = aggregateCounts.get(key);
+                  if (existing) {
+                    existing.count += 1;
+                    continue;
+                  }
+                  aggregateCounts.set(key, {
+                    severity: finding.severity,
+                    category: finding.category,
+                    confidenceBand,
+                    patternFingerprint,
+                    count: 1,
+                  });
+                }
+
+                for (const aggregate of aggregateCounts.values()) {
+                  knowledgeStore.recordGlobalPattern({
+                    severity: aggregate.severity,
+                    category: aggregate.category,
+                    confidenceBand: aggregate.confidenceBand,
+                    patternFingerprint: aggregate.patternFingerprint,
+                    count: aggregate.count,
+                  });
+                }
+              } catch (err) {
+                logger.warn(
+                  { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
+                  "Knowledge store global aggregate write failed (non-fatal)",
+                );
+              }
+            }
 
             logger.debug(
               {

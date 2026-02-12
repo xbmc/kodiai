@@ -198,6 +198,16 @@ const telemetrySchema = z
   })
   .default({ enabled: true, costWarningUsd: 0 });
 
+const knowledgeSchema = z
+  .object({
+    /**
+     * Global knowledge sharing is opt-in only.
+     * false = repository-scoped writes only.
+     */
+    shareGlobal: z.boolean().default(false),
+  })
+  .default({ shareGlobal: false });
+
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
@@ -211,6 +221,7 @@ const repoConfigSchema = z.object({
   review: reviewSchema,
   mention: mentionSchema,
   telemetry: telemetrySchema,
+  knowledge: knowledgeSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -393,6 +404,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // knowledge
+  const knowledgeResult = knowledgeSchema.safeParse(obj.knowledge);
+  let knowledge: z.infer<typeof knowledgeSchema>;
+  if (knowledgeResult.success) {
+    knowledge = knowledgeResult.data;
+  } else {
+    knowledge = knowledgeSchema.parse({});
+    warnings.push({
+      section: "knowledge",
+      issues: knowledgeResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -402,6 +428,7 @@ export async function loadRepoConfig(
     write,
     mention,
     telemetry,
+    knowledge,
   };
 
   return { config, warnings };

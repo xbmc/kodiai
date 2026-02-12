@@ -52,6 +52,7 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.mention.acceptClaudeAlias).toBe(true);
     expect(config.telemetry.enabled).toBe(true);
     expect(config.telemetry.costWarningUsd).toBe(0);
+    expect(config.knowledge.shareGlobal).toBe(false);
     expect(config.systemPromptAppend).toBeUndefined();
     expect(warnings).toEqual([]);
   } finally {
@@ -483,6 +484,33 @@ test("reads telemetry config from YAML", async () => {
     expect(config.telemetry.enabled).toBe(false);
     expect(config.telemetry.costWarningUsd).toBe(2.5);
     expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("knowledge.shareGlobal defaults false and parses true when configured", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const defaults = await loadRepoConfig(dir);
+    expect(defaults.config.knowledge.shareGlobal).toBe(false);
+
+    await writeFile(join(dir, ".kodiai.yml"), "knowledge:\n  shareGlobal: true\n");
+    const configured = await loadRepoConfig(dir);
+    expect(configured.config.knowledge.shareGlobal).toBe(true);
+    expect(configured.warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid knowledge section falls back to defaults with warning", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "knowledge:\n  shareGlobal: maybe\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.shareGlobal).toBe(false);
+    expect(warnings.some((w) => w.section === "knowledge")).toBe(true);
   } finally {
     await rm(dir, { recursive: true });
   }
