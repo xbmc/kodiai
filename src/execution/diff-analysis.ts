@@ -1,8 +1,10 @@
 import picomatch from "picomatch";
 
 export const MAX_ANALYSIS_FILES = 200;
+export const MAX_ANALYSIS_TIME_MS = 50;
 const MAX_DIFF_CONTENT_BYTES = 50 * 1024;
 const CATEGORY_NAMES = ["source", "test", "config", "docs", "infra"] as const;
+const TIME_BUDGET_TRUNCATION_SIGNAL = "Analysis truncated due to time budget";
 
 type CategoryName = (typeof CATEGORY_NAMES)[number];
 
@@ -172,6 +174,8 @@ function countHunks(diffContent?: string): number {
 }
 
 export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
+  const analysisStartTime = Date.now();
+  const isTimeBudgetExceeded = () => Date.now() - analysisStartTime >= MAX_ANALYSIS_TIME_MS;
   const changedFiles = input.changedFiles ?? [];
   const analyzedFiles = changedFiles.slice(0, MAX_ANALYSIS_FILES);
   const mergedCategories = mergeFileCategories(input.fileCategories);
@@ -193,7 +197,14 @@ export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
     infra: mergedCategories.infra.map((pattern) => picomatch(pattern, { dot: true })),
   };
 
+  let isTimeBudgetTruncated = false;
+
   for (const file of analyzedFiles) {
+    if (isTimeBudgetExceeded()) {
+      isTimeBudgetTruncated = true;
+      break;
+    }
+
     if (categoryMatchers.test.some((matcher) => matcher(file))) {
       filesByCategory.test.push(file);
     } else if (categoryMatchers.config.some((matcher) => matcher(file))) {
@@ -205,11 +216,21 @@ export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
     } else {
       filesByCategory.source.push(file);
     }
+
+    if (isTimeBudgetExceeded()) {
+      isTimeBudgetTruncated = true;
+      break;
+    }
   }
 
   const riskSignals: string[] = [];
 
   for (const risk of PATH_RISK_SIGNALS) {
+    if (isTimeBudgetExceeded()) {
+      isTimeBudgetTruncated = true;
+      break;
+    }
+
     const matchers = risk.patterns.map((pattern) => picomatch(pattern, { dot: true }));
     const hasMatch = analyzedFiles.some((file) =>
       matchers.some((matcher) => matcher(file)),
@@ -222,10 +243,19 @@ export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
 
   if (input.diffContent && input.diffContent.length < MAX_DIFF_CONTENT_BYTES) {
     for (const contentRisk of CONTENT_RISK_SIGNALS) {
+      if (isTimeBudgetExceeded()) {
+        isTimeBudgetTruncated = true;
+        break;
+      }
+
       if (contentRisk.pattern.test(input.diffContent)) {
         riskSignals.push(contentRisk.signal);
       }
     }
+  }
+
+  if (isTimeBudgetTruncated) {
+    riskSignals.push(TIME_BUDGET_TRUNCATION_SIGNAL);
   }
 
   const parsedNumstat = parseNumstat(input.numstatLines ?? []);
