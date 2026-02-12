@@ -9,6 +9,7 @@ export function createCommentServer(
   repo: string,
   reviewOutputKey?: string,
   onPublish?: () => void,
+  prNumber?: number,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
@@ -278,13 +279,40 @@ export function createCommentServer(
         async ({ issueNumber, body }) => {
           try {
             const octokit = await getOctokit();
+            const sanitized = maybeStampMarker(
+              sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
+            );
+
+            const isApproveNoIssues =
+              prNumber !== undefined &&
+              sanitized.includes("<summary>kodiai response</summary>") &&
+              sanitized.includes("Decision: APPROVE") &&
+              sanitized.includes("Issues: none");
+
+            if (isApproveNoIssues) {
+              await octokit.rest.pulls.createReview({
+                owner,
+                repo,
+                pull_number: prNumber,
+                event: "APPROVE",
+                body: sanitized,
+              });
+              onPublish?.();
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify({ success: true, approved: true, pull_number: prNumber }),
+                  },
+                ],
+              };
+            }
+
             const { data } = await octokit.rest.issues.createComment({
               owner,
               repo,
               issue_number: issueNumber,
-              body: maybeStampMarker(
-                sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
-              ),
+              body: sanitized,
             });
             onPublish?.();
             return {

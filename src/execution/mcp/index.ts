@@ -33,6 +33,7 @@ export function buildMcpServers(deps: {
       deps.repo,
       deps.reviewOutputKey,
       deps.onPublish,
+      deps.prNumber,
     );
   }
 
