@@ -45,6 +45,9 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.focusAreas).toEqual([]);
     expect(config.review.ignoredAreas).toEqual([]);
     expect(config.review.maxComments).toBe(7);
+    expect(config.review.pathInstructions).toEqual([]);
+    expect(config.review.profile).toBeUndefined();
+    expect(config.review.fileCategories).toBeUndefined();
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
     expect(config.telemetry.enabled).toBe(true);
@@ -638,21 +641,157 @@ test("rejects invalid review.mode value", async () => {
   }
 });
 
-test("new review fields coexist with existing fields", async () => {
+test("parses pathInstructions with single string path", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {
     await writeFile(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  mode: enhanced\n  maxComments: 10\n",
+      "review:\n  pathInstructions:\n    - path: src/api/**\n      instructions: Check auth and input validation\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.pathInstructions).toEqual([
+      {
+        path: "src/api/**",
+        instructions: "Check auth and input validation",
+      },
+    ]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses pathInstructions with array paths", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  pathInstructions:\n    - path:\n        - src/db/**\n        - src/repo/**\n      instructions: Check transaction and consistency behavior\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.pathInstructions).toEqual([
+      {
+        path: ["src/db/**", "src/repo/**"],
+        instructions: "Check transaction and consistency behavior",
+      },
+    ]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("pathInstructions defaults to empty array when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.pathInstructions).toEqual([]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("profile accepts strict, balanced, and minimal", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    for (const profile of ["strict", "balanced", "minimal"] as const) {
+      await writeFile(join(dir, ".kodiai.yml"), `review:\n  profile: ${profile}\n`);
+      const { config, warnings } = await loadRepoConfig(dir);
+      expect(config.review.profile).toBe(profile);
+      expect(warnings).toEqual([]);
+    }
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("profile is optional when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.profile).toBeUndefined();
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses fileCategories overrides", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  fileCategories:\n    source:\n      - app/**\n    test:\n      - qa/**\n    config:\n      - settings/**\n    docs:\n      - docs/**\n    infra:\n      - deploy/**\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.fileCategories).toEqual({
+      source: ["app/**"],
+      test: ["qa/**"],
+      config: ["settings/**"],
+      docs: ["docs/**"],
+      infra: ["deploy/**"],
+    });
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("fileCategories is optional when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.fileCategories).toBeUndefined();
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid pathInstructions falls back to review defaults via section fallback", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  maxComments: 10\n  pathInstructions:\n    - path: src/api/**\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.pathInstructions).toEqual([]);
+    expect(config.review.maxComments).toBe(7);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]!.section).toBe("review");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("new context-aware fields coexist with existing Phase 26 review fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  mode: enhanced\n  severity:\n    minLevel: major\n  focusAreas:\n    - security\n  ignoredAreas:\n    - style\n  maxComments: 10\n  profile: minimal\n  pathInstructions:\n    - path: src/api/**\n      instructions: Check auth boundaries\n  fileCategories:\n    docs:\n      - handbook/**\n",
     );
     const { config, warnings } = await loadRepoConfig(dir);
     expect(config.review.enabled).toBe(true);
     expect(config.review.autoApprove).toBe(false);
     expect(config.review.mode).toBe("enhanced");
     expect(config.review.maxComments).toBe(10);
-    expect(config.review.severity.minLevel).toBe("minor"); // default
-    expect(config.review.focusAreas).toEqual([]); // default
-    expect(config.review.ignoredAreas).toEqual([]); // default
+    expect(config.review.severity.minLevel).toBe("major");
+    expect(config.review.focusAreas).toEqual(["security"]);
+    expect(config.review.ignoredAreas).toEqual(["style"]);
+    expect(config.review.profile).toBe("minimal");
+    expect(config.review.pathInstructions).toEqual([
+      {
+        path: "src/api/**",
+        instructions: "Check auth boundaries",
+      },
+    ]);
+    expect(config.review.fileCategories).toEqual({ docs: ["handbook/**"] });
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });

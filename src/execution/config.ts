@@ -66,6 +66,11 @@ const reviewTriggersSchema = z
     onReviewRequested: true,
   });
 
+const pathInstructionSchema = z.object({
+  path: z.union([z.string(), z.array(z.string())]),
+  instructions: z.string(),
+});
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -118,6 +123,17 @@ const reviewSchema = z
       .default([]),
     /** Maximum inline comments per review. Range 1-25, default 7. */
     maxComments: z.number().min(1).max(25).default(7),
+    pathInstructions: z.array(pathInstructionSchema).default([]),
+    profile: z.enum(["strict", "balanced", "minimal"]).optional(),
+    fileCategories: z
+      .object({
+        source: z.array(z.string()).optional(),
+        test: z.array(z.string()).optional(),
+        config: z.array(z.string()).optional(),
+        docs: z.array(z.string()).optional(),
+        infra: z.array(z.string()).optional(),
+      })
+      .optional(),
   })
   .default({
     enabled: true,
@@ -135,6 +151,7 @@ const reviewSchema = z
     focusAreas: [],
     ignoredAreas: [],
     maxComments: 7,
+    pathInstructions: [],
   });
 
 const mentionSchema = z
