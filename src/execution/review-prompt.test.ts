@@ -173,7 +173,21 @@ test("buildConfidenceInstructions handles minConfidence settings", () => {
 test("buildMetricsInstructions returns metrics section", () => {
   const section = buildMetricsInstructions();
   expect(section).toContain("## Review Metrics");
+  expect(section).toContain("Review Details");
+  expect(section).toContain("Files reviewed");
+  expect(section).toContain("Lines analyzed/changed");
+  expect(section).toContain("Issue counts grouped by severity");
   expect(section.length).toBeGreaterThan(0);
+});
+
+test("standard mode includes quantitative review details contract", () => {
+  const prompt = buildReviewPrompt(baseContext({ mode: "standard" }));
+  expect(prompt).toContain("## Review Metrics");
+  expect(prompt).toContain("collapsible `Review Details` section");
+  expect(prompt).toContain("Files reviewed");
+  expect(prompt).toContain("Lines analyzed/changed");
+  expect(prompt).toContain("Issue counts grouped by severity");
+  expect(prompt).toContain("CRITICAL/MAJOR/MEDIUM/MINOR");
 });
 
 test("custom instructions appear after noise suppression", () => {
@@ -386,6 +400,7 @@ test("buildReviewPrompt includes suppression section when suppressions provided"
   expect(prompt).toContain("missing JSDoc");
   expect(prompt).toContain("below 40% confidence");
   expect(prompt).toContain("## Review Metrics");
+  expect(prompt).toContain("Issue counts grouped by severity");
 });
 
 test("buildReviewPrompt omits suppression section when suppressions are empty", () => {
