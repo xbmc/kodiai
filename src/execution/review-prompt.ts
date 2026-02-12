@@ -1,8 +1,32 @@
 import { sanitizeContent } from "../lib/sanitizer.ts";
+import picomatch from "picomatch";
+import type { DiffAnalysis } from "./diff-analysis.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
+
+export interface PathInstruction {
+  path: string | string[];
+  instructions: string;
+}
+
+export interface MatchedInstruction {
+  pattern: string | string[];
+  instructions: string;
+  matchedFiles: string[];
+}
+
+function scanPattern(pattern: string): { negated: boolean; glob: string } {
+  const scanner = picomatch as unknown as {
+    scan?: (input: string) => { negated?: boolean; glob?: string };
+  };
+  const result = scanner.scan?.(pattern);
+  return {
+    negated: Boolean(result?.negated),
+    glob: result?.glob ?? pattern.replace(/^!+/, ""),
+  };
+}
 
 function truncateDeterministic(
   input: string,
@@ -157,6 +181,157 @@ function buildFocusAreaInstructions(
   return ["## Focus Areas", "", ...parts].join("\n");
 }
 
+export function matchPathInstructions(
+  pathInstructions: PathInstruction[],
+  changedFiles: string[],
+): MatchedInstruction[] {
+  const results: MatchedInstruction[] = [];
+
+  for (const entry of pathInstructions) {
+    const patterns = Array.isArray(entry.path) ? entry.path : [entry.path];
+    const includePatterns: string[] = [];
+    const excludePatterns: string[] = [];
+
+    for (const rawPattern of patterns) {
+      const pattern = rawPattern.trim();
+      if (!pattern) {
+        continue;
+      }
+
+      const scanned = scanPattern(pattern);
+      if (scanned.negated) {
+        excludePatterns.push(scanned.glob || pattern.replace(/^!+/, ""));
+      } else {
+        includePatterns.push(pattern);
+      }
+    }
+
+    const includeMatchers = includePatterns.length > 0
+      ? includePatterns.map((pattern) => picomatch(pattern, { dot: true }))
+      : [() => true];
+    const excludeMatchers = excludePatterns.map((pattern) =>
+      picomatch(pattern, { dot: true })
+    );
+
+    const matchedFiles = changedFiles.filter((file) => {
+      const included = includeMatchers.some((matcher) => matcher(file));
+      const excluded = excludeMatchers.some((matcher) => matcher(file));
+      return included && !excluded;
+    });
+
+    if (matchedFiles.length > 0) {
+      results.push({
+        pattern: entry.path,
+        instructions: entry.instructions,
+        matchedFiles,
+      });
+    }
+  }
+
+  return results;
+}
+
+function patternSpecificity(pattern: string | string[]): number {
+  const patterns = Array.isArray(pattern) ? pattern : [pattern];
+  return patterns.reduce((score, part) => {
+    const wildcardPenalty = (part.match(/[\*\?\[\]{}]/g) ?? []).length * 5;
+    return score + Math.max(0, part.length - wildcardPenalty);
+  }, 0);
+}
+
+export function buildPathInstructionsSection(
+  matched: MatchedInstruction[],
+  maxChars: number = 3000,
+): string {
+  if (matched.length === 0 || maxChars <= 0) {
+    return "";
+  }
+
+  const header = "## Path-Specific Review Instructions";
+  const truncationNote =
+    "_Note: Additional path instructions were truncated due to prompt size limits._";
+  const reservedForNote = truncationNote.length + 2;
+  const effectiveMaxChars = Math.max(0, maxChars - reservedForNote);
+  let section = `${header}\n\n`;
+  let truncated = false;
+
+  const prioritized = matched
+    .map((entry, index) => ({
+      entry,
+      index,
+      score: entry.matchedFiles.length * 1000 + patternSpecificity(entry.pattern),
+    }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(({ entry }) => entry);
+
+  for (const item of prioritized) {
+    const patternText = Array.isArray(item.pattern)
+      ? item.pattern.join(", ")
+      : item.pattern;
+    const displayFiles = item.matchedFiles.slice(0, 5);
+    const extraCount = item.matchedFiles.length - displayFiles.length;
+    const filesText = extraCount > 0
+      ? `${displayFiles.join(", ")} (and ${extraCount} more)`
+      : displayFiles.join(", ");
+    const patternLabel = patternText.endsWith("**")
+      ? `**${patternText}`
+      : `**${patternText}**`;
+    const block = `${patternLabel} (applies to: ${filesText})\n${item.instructions.trim()}\n\n`;
+
+    if (section.length + block.length > effectiveMaxChars) {
+      truncated = true;
+      break;
+    }
+
+    section += block;
+  }
+
+  if (truncated) {
+    if (section.length + truncationNote.length + 2 <= maxChars) {
+      section += `${truncationNote}\n`;
+    }
+  }
+
+  return section.trimEnd();
+}
+
+export function buildDiffAnalysisSection(analysis: DiffAnalysis): string {
+  if (analysis.metrics.totalFiles === 0) {
+    return "";
+  }
+
+  const lines: string[] = ["## Change Context", ""];
+  const hunkSuffix = analysis.metrics.hunksCount > 0
+    ? ` across ${analysis.metrics.hunksCount} hunks`
+    : "";
+  lines.push(
+    `This PR modifies ${analysis.metrics.totalFiles} files (+${analysis.metrics.totalLinesAdded} / -${analysis.metrics.totalLinesRemoved} lines)${hunkSuffix}.`,
+  );
+
+  if (analysis.isLargePR) {
+    lines.push("", "This is a large PR. Focus on the most critical changes.");
+  }
+
+  const categorized = Object.entries(analysis.filesByCategory).filter(([, files]) =>
+    files.length > 0
+  );
+  if (categorized.length > 0) {
+    lines.push("", "File breakdown:");
+    for (const [category, files] of categorized) {
+      lines.push(`- ${category}: ${files.length} file(s)`);
+    }
+  }
+
+  if (analysis.riskSignals.length > 0) {
+    lines.push("", "Pay special attention to these areas:");
+    for (const riskSignal of analysis.riskSignals) {
+      lines.push(`- ${riskSignal}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -181,6 +356,8 @@ export function buildReviewPrompt(context: {
   focusAreas?: string[];
   ignoredAreas?: string[];
   maxComments?: number;
+  diffAnalysis?: DiffAnalysis;
+  matchedPathInstructions?: MatchedInstruction[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -232,6 +409,13 @@ export function buildReviewPrompt(context: {
   lines.push("", "Changed files:");
   for (const file of changedFilesCapped) {
     lines.push(`- ${file}`);
+  }
+
+  const diffAnalysisSection = context.diffAnalysis
+    ? buildDiffAnalysisSection(context.diffAnalysis)
+    : "";
+  if (diffAnalysisSection) {
+    lines.push("", diffAnalysisSection);
   }
 
   // --- How to read the diff ---
@@ -299,6 +483,12 @@ export function buildReviewPrompt(context: {
 
   // --- Noise suppression ---
   lines.push("", buildNoiseSuppressionRules());
+
+  // --- Path instructions ---
+  const pathInstructionsSection = buildPathInstructionsSection(
+    context.matchedPathInstructions ?? [],
+  );
+  if (pathInstructionsSection) lines.push("", pathInstructionsSection);
 
   // --- Comment cap ---
   lines.push("", buildCommentCapInstructions(context.maxComments ?? 7));
