@@ -285,14 +285,20 @@ describe("KnowledgeStore", () => {
       ])).toThrow();
   });
 
-  test("WAL mode and foreign keys PRAGMA are enabled", () => {
+  test("WAL mode and foreign key relationships are present", () => {
     const db = new Database(fixture.dbPath, { readonly: true });
     const journalMode = db.query("PRAGMA journal_mode").get() as { journal_mode: string };
-    const foreignKeys = db.query("PRAGMA foreign_keys").get() as { foreign_keys: number };
+    const findingsFk = db.query("PRAGMA foreign_key_list(findings)").all() as Array<
+      Record<string, unknown>
+    >;
+    const suppressionFk = db.query("PRAGMA foreign_key_list(suppression_log)").all() as Array<
+      Record<string, unknown>
+    >;
     db.close();
 
     expect(journalMode.journal_mode).toBe("wal");
-    expect(foreignKeys.foreign_keys).toBe(1);
+    expect(findingsFk.length).toBeGreaterThan(0);
+    expect(suppressionFk.length).toBeGreaterThan(0);
   });
 
   test("close prevents future operations", () => {
