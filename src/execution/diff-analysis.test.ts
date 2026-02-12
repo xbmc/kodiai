@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   analyzeDiff,
   MAX_ANALYSIS_FILES,
+  MAX_ANALYSIS_TIME_MS,
   type DiffAnalysisInput,
 } from "./diff-analysis.ts";
 
@@ -11,6 +12,23 @@ function run(input: Partial<DiffAnalysisInput> = {}) {
     numstatLines: [],
     ...input,
   });
+}
+
+function withMockedDateNow(times: number[], fn: () => void) {
+  const originalNow = Date.now;
+  let callIndex = 0;
+
+  Date.now = () => {
+    const index = Math.min(callIndex, times.length - 1);
+    callIndex += 1;
+    return times[index] ?? 0;
+  };
+
+  try {
+    fn();
+  } finally {
+    Date.now = originalNow;
+  }
 }
 
 test("empty input returns empty analysis", () => {
@@ -142,4 +160,53 @@ test("files beyond analysis cap count in metrics but are not classified", () => 
 
   expect(result.metrics.totalFiles).toBe(MAX_ANALYSIS_FILES + 5);
   expect(result.filesByCategory.source).toHaveLength(MAX_ANALYSIS_FILES);
+});
+
+test("time budget keeps full analysis behavior within budget", () => {
+  withMockedDateNow(Array(40).fill(0), () => {
+    const result = run({
+      changedFiles: ["src/auth.ts", "package.json"],
+      numstatLines: ["3\t1\tsrc/auth.ts", "5\t2\tpackage.json"],
+      diffContent: "try {\n  doWork();\n} catch (err) {}\n",
+    });
+
+    expect(result.riskSignals).toContain("Modifies authentication/authorization code");
+    expect(result.riskSignals).toContain("Modifies dependency manifest");
+    expect(result.riskSignals).toContain("Modifies error handling logic");
+    expect(result.riskSignals).not.toContain("Analysis truncated due to time budget");
+    expect(result.filesByCategory.source).toContain("src/auth.ts");
+    expect(result.filesByCategory.config).toContain("package.json");
+    expect(result.metrics).toEqual({
+      totalFiles: 2,
+      totalLinesAdded: 8,
+      totalLinesRemoved: 3,
+      hunksCount: 0,
+    });
+  });
+});
+
+test("time budget exceeded returns deterministic truncation signal", () => {
+  withMockedDateNow([0, MAX_ANALYSIS_TIME_MS + 1], () => {
+    const result = run({
+      changedFiles: ["src/auth.ts", "package.json"],
+      numstatLines: ["3\t1\tsrc/auth.ts", "5\t2\tpackage.json"],
+      diffContent: "try {\n  doWork();\n} catch (err) {}\n",
+    });
+
+    expect(result.riskSignals).toEqual(["Analysis truncated due to time budget"]);
+    expect(result.metrics).toEqual({
+      totalFiles: 2,
+      totalLinesAdded: 8,
+      totalLinesRemoved: 3,
+      hunksCount: 0,
+    });
+    expect(result.filesByCategory).toEqual({
+      source: [],
+      test: [],
+      config: [],
+      docs: [],
+      infra: [],
+    });
+    expect(result.isLargePR).toBe(false);
+  });
 });
