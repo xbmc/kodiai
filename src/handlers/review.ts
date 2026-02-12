@@ -1073,7 +1073,8 @@ export function createReviewHandler(deps: {
         );
 
         const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
-        const extractedFindings = result.published
+        const shouldProcessReviewOutput = result.conclusion === "success";
+        const extractedFindings = shouldProcessReviewOutput
           ? await extractFindingsFromReviewComments({
             octokit: extractionOctokit,
             owner: apiOwner,
@@ -1131,7 +1132,7 @@ export function createReviewHandler(deps: {
           finding.suppressed || finding.confidence < config.review.minConfidence
         );
 
-        if (result.published && filteredInlineFindings.length > 0) {
+        if (shouldProcessReviewOutput && filteredInlineFindings.length > 0) {
           await removeFilteredInlineComments({
             octokit: extractionOctokit,
             owner: apiOwner,
@@ -1153,7 +1154,17 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
-        if (result.conclusion === "success" && result.published) {
+        if (shouldProcessReviewOutput) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-details-output",
+              gateResult: "attempt",
+              reviewOutputKey,
+            },
+            "Attempting deterministic Review Details publication",
+          );
+
           try {
             const reviewDetailsBody = formatReviewDetailsSummary({
               reviewOutputKey,
@@ -1179,6 +1190,8 @@ export function createReviewHandler(deps: {
               {
                 ...baseLog,
                 gate: "review-details-output",
+                gateResult: "failed",
+                reviewOutputKey,
                 err,
               },
               "Failed to publish deterministic Review Details summary",
