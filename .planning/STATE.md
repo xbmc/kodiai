@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 28 of 29 (Knowledge Store & Explicit Learning)
-Plan: 7 of 7 in current phase (PHASE COMPLETE)
+Plan: 8 of 8 in current phase (PHASE COMPLETE)
 Status: Phase Complete
-Last activity: 2026-02-12 - Completed 28-07 plan execution
+Last activity: 2026-02-12 - Completed 28-08 plan execution
 
 Progress: [███████░░░] 75% (of v0.4)
 
@@ -45,6 +45,7 @@ Progress: [███████░░░] 75% (of v0.4)
 | Phase 28 P06 | 1 min | 2 tasks | 2 files |
 | Phase 28 P05 | 2 min | 3 tasks | 5 files |
 | Phase 28 P07 | 5 min | 3 tasks | 2 files |
+| Phase 28 P08 | 3 min | 3 tasks | 7 files |
 
 ## Deployment Info
 
@@ -85,6 +86,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: 28-07: Runtime finding extraction now parses emitted inline review comments into normalized severity/category/path metadata
 - [Phase 28]: 28-07: Suppressed findings are excluded from deterministic output sections but persisted with confidence and suppression-pattern metadata
 - [Phase 28]: 28-07: Handler enforces Review Details and Low Confidence Findings via marker-based upsert with explicit time-saved formula
+- [Phase 28]: 28-08: Enforce suppression and minConfidence on visible inline comments by marker-scoped post-publication deletion with non-fatal per-comment handling
+- [Phase 28]: 28-08: Keep per-repo persistence as default and gate anonymized global aggregate writes behind knowledge.shareGlobal opt-in
 
 ### Pending Todos
 
@@ -105,5 +108,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 28-07-PLAN.md
-Resume file: .planning/phases/28-knowledge-store-explicit-learning/.continue-here.md
+Stopped at: Completed 28-08-PLAN.md
+Resume file: None
