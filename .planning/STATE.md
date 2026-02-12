@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 27 of 29 (Context-Aware Reviews)
-Plan: 3 of 3 in current phase (PHASE COMPLETE)
+Plan: 4 of 4 in current phase (PHASE COMPLETE)
 Status: Phase Complete
-Last activity: 2026-02-12 - Completed 27-03 plan execution
+Last activity: 2026-02-12 - Completed 27-04 plan execution
 
 Progress: [██░░░░░░░░] 25% (of v0.4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 50 (across v0.1 + v0.2 + v0.3 + v0.4)
+- Total plans completed: 51 (across v0.1 + v0.2 + v0.3 + v0.4)
 - Average duration: 3min
-- Total execution time: 278min
+- Total execution time: 280min
 
 **By Phase (v0.3):**
 
@@ -37,7 +37,7 @@ Progress: [██░░░░░░░░] 25% (of v0.4)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 26-review-mode-severity-control | 2 | 4min | 2min |
-| 27-context-aware-reviews | 3 | 9min | 3min |
+| 27-context-aware-reviews | 4 | 11min | 3min |
 
 *Updated after each plan completion*
 
@@ -63,6 +63,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 27]: 27-02: Prompt enrichment injects diff context and path-specific instructions only when available
 - [Phase 27-context-aware-reviews]: 27-03: Use adaptive deepen plus unshallow attempts before switching from triple-dot to two-dot diff
 - [Phase 27-context-aware-reviews]: 27-03: Collect changed files, numstat, and full diff from one resolved diff range to keep prompt context aligned
+- [Phase 27]: 27-04: Emit elapsed-time degradation as a stable risk signal to preserve DiffAnalysis output compatibility
+- [Phase 27]: 27-04: Keep metrics computed from full changed-file and numstat inputs even when scanning truncates by time budget
 
 ### Pending Todos
 
@@ -83,5 +85,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 27-03-PLAN.md (Phase 27 complete)
+Stopped at: Completed 27-04-PLAN.md (Phase 27 complete)
 Resume file: None
