@@ -110,6 +110,161 @@ describe("createCommentServer", () => {
     expect(result.content[0]?.text).toContain("Error:");
   });
 
+  test("APPROVE with no issues on PR submits approval review instead of comment", async () => {
+    let createReviewParams: Record<string, unknown> | undefined;
+    let createCommentCalled = false;
+    let publishCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async (params: Record<string, unknown>) => {
+            createReviewParams = params;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      undefined,
+      () => { publishCalled = true; },
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>kodiai response</summary>",
+      "",
+      "Decision: APPROVE",
+      "Issues: none",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 10, body });
+    expect(result.isError).toBeUndefined();
+
+    const parsed = JSON.parse(result.content[0]!.text);
+    expect(parsed.approved).toBe(true);
+    expect(parsed.pull_number).toBe(42);
+
+    expect(createReviewParams).toBeDefined();
+    expect(createReviewParams!.event).toBe("APPROVE");
+    expect(createReviewParams!.pull_number).toBe(42);
+
+    expect(createCommentCalled).toBe(false);
+    expect(publishCalled).toBe(true);
+  });
+
+  test("APPROVE with no issues but no prNumber posts as regular comment", async () => {
+    let createCommentCalled = false;
+    let createReviewCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async () => {
+            createReviewCalled = true;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      undefined,
+      undefined,
+      undefined,
+    );
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>kodiai response</summary>",
+      "",
+      "Decision: APPROVE",
+      "Issues: none",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 10, body });
+    expect(result.isError).toBeUndefined();
+    expect(createCommentCalled).toBe(true);
+    expect(createReviewCalled).toBe(false);
+  });
+
+  test("NOT APPROVED still posts as regular comment even with prNumber", async () => {
+    let createCommentCalled = false;
+    let createReviewCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async () => {
+            createReviewCalled = true;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      undefined,
+      undefined,
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>kodiai response</summary>",
+      "",
+      "Decision: NOT APPROVED",
+      "Issues:",
+      "- (1) [critical] src/foo.ts (12): Security vulnerability",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 10, body });
+    expect(result.isError).toBeUndefined();
+    expect(createCommentCalled).toBe(true);
+    expect(createReviewCalled).toBe(false);
+  });
+
   test("rejects missing explanation line", async () => {
     const octokit = {
       rest: {
