@@ -1296,6 +1296,9 @@ export function createReviewHandler(deps: {
             knowledgeStore.recordFindings(
               processedFindings.map((finding) => ({
                 reviewId,
+                commentId: finding.commentId,
+                commentSurface: "pull_request_review_comment",
+                reviewOutputKey,
                 filePath: finding.filePath,
                 startLine: finding.startLine,
                 endLine: finding.endLine,

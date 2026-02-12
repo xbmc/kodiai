@@ -2171,6 +2171,8 @@ describe("createReviewHandler finding extraction", () => {
           return 1;
         },
         recordFindings: () => undefined,
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
         recordSuppressionLog: () => undefined,
         recordGlobalPattern: () => undefined,
         getRepoStats: () => ({}) as never,
@@ -2364,6 +2366,8 @@ describe("createReviewHandler finding extraction", () => {
         recordFindings: (findings: Record<string, unknown>[]) => {
           recordedFindings.push(...findings);
         },
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
         recordSuppressionLog: (entries: Record<string, unknown>[]) => {
           recordedSuppressions.push(...entries);
         },
@@ -2396,9 +2400,13 @@ describe("createReviewHandler finding extraction", () => {
 
     const highConfidenceFinding = recordedFindings.find((finding) => finding.filePath === "src/db/query.ts");
     expect(highConfidenceFinding?.confidence).toBe(90);
+    expect(highConfidenceFinding?.commentId).toBe(11);
+    expect(highConfidenceFinding?.commentSurface).toBe("pull_request_review_comment");
+    expect(typeof highConfidenceFinding?.reviewOutputKey).toBe("string");
 
     const lowConfidenceFinding = recordedFindings.find((finding) => finding.filePath === "src/ui/button.ts");
     expect(lowConfidenceFinding?.confidence).toBe(45);
+    expect(lowConfidenceFinding?.commentId).toBe(13);
 
     expect(recordedSuppressions).toHaveLength(1);
     expect(recordedSuppressions[0]?.pattern).toBe("glob:*legacy shim*");
@@ -2728,6 +2736,8 @@ describe("createReviewHandler global knowledge sharing", () => {
       knowledgeStore: {
         recordReview: () => 1,
         recordFindings: () => undefined,
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
         recordSuppressionLog: () => undefined,
         recordGlobalPattern: (entry: Record<string, unknown>) => {
           globalWrites.push(entry);
@@ -2868,6 +2878,8 @@ describe("createReviewHandler global knowledge sharing", () => {
       knowledgeStore: {
         recordReview: () => 1,
         recordFindings: () => undefined,
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
         recordSuppressionLog: () => undefined,
         recordGlobalPattern: (entry: Record<string, unknown>) => {
           globalWrites.push(entry);
