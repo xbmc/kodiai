@@ -13,6 +13,7 @@ import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
+import { createKnowledgeStore } from "./knowledge/store.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -45,6 +46,10 @@ if (purgedCount > 0) {
 }
 telemetryStore.checkpoint();
 
+const knowledgeDbPath = process.env.KNOWLEDGE_DB_PATH ?? "./data/kodiai-knowledge.db";
+const knowledgeStore = createKnowledgeStore({ dbPath: knowledgeDbPath, logger });
+knowledgeStore.checkpoint();
+
 // Event processing pipeline: bot filter -> event router
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
@@ -60,6 +65,7 @@ createReviewHandler({
   githubApp,
   executor,
   telemetryStore,
+  knowledgeStore,
   logger,
 });
 createMentionHandler({
@@ -69,6 +75,7 @@ createMentionHandler({
   githubApp,
   executor,
   telemetryStore,
+  knowledgeStore,
   logger,
 });
 

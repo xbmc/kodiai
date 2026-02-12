@@ -9,12 +9,14 @@ import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
+import type { KnowledgeStore } from "../knowledge/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff } from "../execution/diff-analysis.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
+import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import {
   buildReviewOutputKey,
@@ -230,9 +232,19 @@ export function createReviewHandler(deps: {
   githubApp: GitHubApp;
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
+  knowledgeStore?: KnowledgeStore;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
+  const {
+    eventRouter,
+    jobQueue,
+    workspaceManager,
+    githubApp,
+    executor,
+    telemetryStore,
+    knowledgeStore,
+    logger,
+  } = deps;
 
   const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
@@ -680,6 +692,8 @@ export function createReviewHandler(deps: {
           focusAreas: resolvedFocusAreas,
           ignoredAreas: resolvedIgnoredAreas,
           maxComments: resolvedMaxComments,
+          suppressions: config.review.suppressions,
+          minConfidence: config.review.minConfidence,
           diffAnalysis,
           matchedPathInstructions,
         });
@@ -711,6 +725,47 @@ export function createReviewHandler(deps: {
           },
           "Review execution completed",
         );
+
+        const extractedFindings: Array<{
+          filePath: string;
+          title: string;
+          severity: "critical" | "major" | "medium" | "minor";
+          category: "security" | "correctness" | "performance" | "style" | "documentation";
+        }> = [];
+
+        const processedFindings = extractedFindings.map((finding) => {
+          const suppressed = config.review.suppressions.some((suppression) =>
+            matchesSuppression(
+              {
+                filePath: finding.filePath,
+                title: finding.title,
+                severity: finding.severity,
+                category: finding.category,
+              },
+              suppression,
+            )
+          );
+
+          const confidence = computeConfidence({
+            severity: finding.severity,
+            category: finding.category,
+            matchesKnownPattern: suppressed,
+          });
+
+          return {
+            ...finding,
+            suppressed,
+            confidence,
+          };
+        });
+
+        const findingCounts = {
+          critical: processedFindings.filter((finding) => finding.severity === "critical").length,
+          major: processedFindings.filter((finding) => finding.severity === "major").length,
+          medium: processedFindings.filter((finding) => finding.severity === "medium").length,
+          minor: processedFindings.filter((finding) => finding.severity === "minor").length,
+        };
+        const suppressionsApplied = processedFindings.filter((finding) => finding.suppressed).length;
 
         // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
@@ -762,6 +817,54 @@ export function createReviewHandler(deps: {
             } catch (err) {
               logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
             }
+          }
+        }
+
+        if (knowledgeStore) {
+          try {
+            const reviewId = knowledgeStore.recordReview({
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              headSha: pr.head.sha,
+              deliveryId: event.id,
+              filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
+              linesChanged:
+                (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
+                (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+              findingsCritical: findingCounts.critical,
+              findingsMajor: findingCounts.major,
+              findingsMedium: findingCounts.medium,
+              findingsMinor: findingCounts.minor,
+              findingsTotal: processedFindings.length,
+              suppressionsApplied,
+              configSnapshot: JSON.stringify({
+                mode: config.review.mode,
+                severityMinLevel: config.review.severity.minLevel,
+                focusAreas: config.review.focusAreas,
+                maxComments: config.review.maxComments,
+                suppressionCount: config.review.suppressions.length,
+                minConfidence: config.review.minConfidence,
+                profile: config.review.profile,
+              }),
+              durationMs: result.durationMs,
+              model: config.model,
+              conclusion: result.conclusion,
+            });
+
+            logger.debug(
+              {
+                reviewId,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                findingsCaptured: processedFindings.length,
+              },
+              "Knowledge store: review recorded",
+            );
+          } catch (err) {
+            logger.warn(
+              { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
+              "Knowledge store write failed (non-fatal)",
+            );
           }
         }
 

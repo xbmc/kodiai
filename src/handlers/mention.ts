@@ -11,6 +11,7 @@ import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
+import type { KnowledgeStore } from "../knowledge/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -49,6 +50,7 @@ export function createMentionHandler(deps: {
   githubApp: GitHubApp;
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
+  knowledgeStore?: KnowledgeStore;
   logger: Logger;
 }): void {
   const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
