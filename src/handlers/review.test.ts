@@ -81,6 +81,48 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   };
 }
 
+async function createNoMergeBaseFixture(options: { includePhase27Fields: boolean }) {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-review-no-merge-base-"));
+
+  await $`git -C ${dir} init --initial-branch=main`.quiet();
+  await $`git -C ${dir} config user.email test@example.com`.quiet();
+  await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+  await Bun.write(join(dir, "README.md"), "main base\n");
+  await $`git -C ${dir} add README.md`.quiet();
+  await $`git -C ${dir} commit -m "main base"`.quiet();
+
+  await $`git -C ${dir} checkout --orphan feature`.quiet();
+  await $`git -C ${dir} rm -rf .`.quiet().nothrow();
+
+  await $`mkdir -p ${join(dir, "src/api")}`.quiet();
+  await $`mkdir -p ${join(dir, "docs")}`.quiet();
+
+  const configWithPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n  profile: strict\n  pathInstructions:\n    - path: src/api/**\n      instructions: Verify auth checks and error handling for API endpoints.\n`;
+  const configWithoutPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`;
+
+  await Bun.write(
+    join(dir, ".kodiai.yml"),
+    options.includePhase27Fields ? configWithPhase27 : configWithoutPhase27,
+  );
+  await Bun.write(
+    join(dir, "src/api/phase27-uat-example.ts"),
+    "export function run() { return 'ok'; }\n",
+  );
+  await Bun.write(join(dir, "docs/phase27-note.md"), "notes\n");
+
+  await $`git -C ${dir} add .`.quiet();
+  await $`git -C ${dir} commit -m "feature root"`.quiet();
+  await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+  return {
+    dir,
+    cleanup: async () => {
+      await rm(dir, { recursive: true, force: true });
+    },
+  };
+}
+
 function buildReviewRequestedEvent(
   payloadOverrides: Record<string, unknown>,
   eventOverrides: Partial<Pick<WebhookEvent, "id">> = {},
@@ -1838,5 +1880,183 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await rm(dir, { recursive: true, force: true });
     expect(recordCalls).toBe(0);
     expect(createCommentCalled).toBe(false);
+  });
+});
+
+describe("createReviewHandler diff collection resilience", () => {
+  test("continues review flow when merge-base is unavailable and applies path instructions", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger, entries } = createCaptureLogger();
+
+    let executeCount = 0;
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          executeCount++;
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-no-merge-base",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executeCount).toBe(1);
+    expect(capturedPrompt).toContain("src/api/phase27-uat-example.ts");
+    expect(capturedPrompt).toContain("Path-Specific Review Instructions");
+    expect(capturedPrompt).toContain("Verify auth checks and error handling for API endpoints.");
+
+    const diffCollectionLog = entries.find((entry) => entry.data?.gate === "diff-collection");
+    expect(diffCollectionLog).toBeDefined();
+    expect(diffCollectionLog?.data?.strategy).toBe("fallback-two-dot");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("remains backward compatible when phase 27 review fields are absent", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: false });
+
+    let executeCount = 0;
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          executeCount++;
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-back-compat",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(executeCount).toBe(1);
+    expect(capturedPrompt).toContain("src/api/phase27-uat-example.ts");
+    expect(capturedPrompt).not.toContain("Path-Specific Review Instructions");
+
+    await workspaceFixture.cleanup();
   });
 });
