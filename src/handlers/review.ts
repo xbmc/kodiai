@@ -65,6 +65,133 @@ function normalizeSkipPattern(pattern: string): string {
   return p;
 }
 
+type DiffCollectionStrategy = "triple-dot" | "deepened-triple-dot" | "fallback-two-dot";
+
+type DiffCollectionResult = {
+  changedFiles: string[];
+  numstatLines: string[];
+  diffContent?: string;
+  strategy: DiffCollectionStrategy;
+  mergeBaseRecovered: boolean;
+  deepenAttempts: number;
+  unshallowAttempted: boolean;
+  diffRange: string;
+};
+
+const DIFF_DEEPEN_STEPS = [50, 150, 300];
+
+function splitGitLines(output: string): string[] {
+  return output.trim().split("\n").filter(Boolean);
+}
+
+async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
+  const mergeBaseResult = await $`git -C ${workspaceDir} merge-base origin/${baseRef} HEAD`.quiet().nothrow();
+  return mergeBaseResult.exitCode === 0;
+}
+
+async function collectDiffContext(params: {
+  workspaceDir: string;
+  baseRef: string;
+  maxFilesForFullDiff: number;
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+}): Promise<DiffCollectionResult> {
+  const { workspaceDir, baseRef, maxFilesForFullDiff, logger, baseLog } = params;
+
+  let strategy: DiffCollectionStrategy = "triple-dot";
+  let mergeBaseRecovered = false;
+  let deepenAttempts = 0;
+  let unshallowAttempted = false;
+
+  let mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
+  if (!mergeBaseAvailable) {
+    for (const step of DIFF_DEEPEN_STEPS) {
+      deepenAttempts += 1;
+      await $`git -C ${workspaceDir} fetch origin ${baseRef}:refs/remotes/origin/${baseRef} --deepen=${step}`
+        .quiet()
+        .nothrow();
+
+      mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
+      if (mergeBaseAvailable) {
+        mergeBaseRecovered = true;
+        strategy = "deepened-triple-dot";
+        break;
+      }
+    }
+
+    if (!mergeBaseAvailable) {
+      unshallowAttempted = true;
+      await $`git -C ${workspaceDir} fetch origin ${baseRef}:refs/remotes/origin/${baseRef} --unshallow`
+        .quiet()
+        .nothrow();
+
+      mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
+      if (mergeBaseAvailable) {
+        mergeBaseRecovered = true;
+        strategy = "deepened-triple-dot";
+      }
+    }
+  }
+
+  let diffRange = mergeBaseAvailable ? `origin/${baseRef}...HEAD` : `origin/${baseRef}..HEAD`;
+  if (!mergeBaseAvailable) {
+    strategy = "fallback-two-dot";
+  }
+
+  let nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet().nothrow();
+  if (nameOnlyResult.exitCode !== 0 && diffRange.includes("...")) {
+    strategy = "fallback-two-dot";
+    diffRange = `origin/${baseRef}..HEAD`;
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        strategy,
+        reason: "triple-dot-diff-failed",
+      },
+      "Triple-dot diff failed; retrying with deterministic fallback range",
+    );
+    nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet();
+  } else if (nameOnlyResult.exitCode !== 0) {
+    throw new Error(`git diff ${diffRange} --name-only failed with exit code ${nameOnlyResult.exitCode}`);
+  }
+
+  const changedFiles = splitGitLines(nameOnlyResult.text());
+  const numstatOutput = await $`git -C ${workspaceDir} diff ${diffRange} --numstat`.quiet();
+  const numstatLines = splitGitLines(numstatOutput.text());
+
+  let diffContent: string | undefined;
+  if (changedFiles.length <= maxFilesForFullDiff) {
+    const fullDiff = await $`git -C ${workspaceDir} diff ${diffRange}`.quiet();
+    diffContent = fullDiff.text();
+  }
+
+  logger.info(
+    {
+      ...baseLog,
+      gate: "diff-collection",
+      strategy,
+      deepenAttempts,
+      unshallowAttempted,
+      mergeBaseRecovered,
+      diffRange,
+      changedFilesCount: changedFiles.length,
+    },
+    "Collected diff context for review",
+  );
+
+  return {
+    changedFiles,
+    numstatLines,
+    diffContent,
+    strategy,
+    mergeBaseRecovered,
+    deepenAttempts,
+    unshallowAttempted,
+    diffRange,
+  };
+}
+
 function isReviewTriggerEnabled(
   action: string,
   triggers: {
@@ -455,10 +582,15 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        // Build changed files list, filtering out skipPaths
-        const diffOutput =
-          await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD --name-only`.quiet();
-        const allChangedFiles = diffOutput.text().trim().split("\n").filter(Boolean);
+        // Build changed files and diff context, handling shallow-history merge-base gaps.
+        const diffContext = await collectDiffContext({
+          workspaceDir: workspace.dir,
+          baseRef: pr.base.ref,
+          maxFilesForFullDiff: 200,
+          logger,
+          baseLog,
+        });
+        const allChangedFiles = diffContext.changedFiles;
 
         const skipMatchers = config.review.skipPaths
           .map(normalizeSkipPattern)
@@ -477,15 +609,8 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        const numstatOutput =
-          await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD --numstat`.quiet();
-        const numstatLines = numstatOutput.text().trim().split("\n").filter(Boolean);
-
-        let diffContent: string | undefined;
-        if (changedFiles.length <= 200) {
-          const fullDiff = await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD`.quiet();
-          diffContent = fullDiff.text();
-        }
+        const numstatLines = diffContext.numstatLines;
+        const diffContent = changedFiles.length <= 200 ? diffContext.diffContent : undefined;
 
         const diffAnalysis = analyzeDiff({
           changedFiles,
@@ -527,12 +652,15 @@ export function createReviewHandler(deps: {
             gate: "diff-analysis",
             totalFiles: diffAnalysis.metrics.totalFiles,
             isLargePR: diffAnalysis.isLargePR,
-            riskSignals: diffAnalysis.riskSignals.length,
-            matchedInstructions: matchedPathInstructions.length,
-            profile: config.review.profile ?? null,
-          },
-          "Diff analysis and context enrichment complete",
-        );
+              riskSignals: diffAnalysis.riskSignals.length,
+              matchedInstructions: matchedPathInstructions.length,
+              profile: config.review.profile ?? null,
+              diffCollectionStrategy: diffContext.strategy,
+              mergeBaseRecovered: diffContext.mergeBaseRecovered,
+              diffCollectionAttempts: diffContext.deepenAttempts,
+            },
+            "Diff analysis and context enrichment complete",
+          );
 
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
