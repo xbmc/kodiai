@@ -148,7 +148,8 @@ fi
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
-  echo "==> Updating existing container app revision..."
+  REVISION_SUFFIX="deploy-$(date +%Y%m%d-%H%M%S)"
+  echo "==> Updating existing container app (revision: $REVISION_SUFFIX)..."
   az containerapp secret set \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
@@ -162,6 +163,7 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
   az containerapp update \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
+    --revision-suffix "$REVISION_SUFFIX" \
     --image "$ACR_NAME.azurecr.io/kodiai:latest" \
     --set-env-vars \
       GITHUB_APP_ID=secretref:github-app-id \
