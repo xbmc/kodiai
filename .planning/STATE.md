@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 29 of 29 (Feedback Capture)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-12 - Completed 29-01 plan execution
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-12 - Completed 29-02 plan execution
 
-Progress: [████████░░] 80% (of v0.4)
+Progress: [██████████] 100% (of v0.4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 56 (across v0.1 + v0.2 + v0.3 + v0.4)
+- Total plans completed: 57 (across v0.1 + v0.2 + v0.3 + v0.4)
 - Average duration: 5min
-- Total execution time: 292min
+- Total execution time: 295min
 
 **By Phase (v0.3):**
 
@@ -48,6 +48,7 @@ Progress: [████████░░] 80% (of v0.4)
 | Phase 28 P08 | 3 min | 3 tasks | 7 files |
 | Phase 28 P09 | 1 min | 2 tasks | 2 files |
 | Phase 29 P01 | 3 min | 3 tasks | 5 files |
+| Phase 29-feedback-capture P02 | 3 min | 3 tasks | 3 files |
 
 ## Deployment Info
 
@@ -94,6 +95,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: Review Details attempt/failure logs include reviewOutputKey plus PR coordinates for live verification diagnostics
 - [Phase 29]: Persist comment_id/comment_surface/review_output_key directly on findings to avoid fuzzy reaction correlation
 - [Phase 29]: Use UNIQUE(repo, comment_id, reaction_id) with INSERT OR IGNORE to keep feedback ingestion idempotent under retries
+- [Phase 29-feedback-capture]: Reuse supported pull-request-related webhook traffic as feedback sync triggers instead of unsupported reaction events
+- [Phase 29-feedback-capture]: Persist only human +1/-1 reactions and ignore bot/app reactions to keep feedback corpus signal clean
 
 ### Pending Todos
 
@@ -114,5 +117,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 29-01-PLAN.md
+Stopped at: Completed 29-feedback-capture-02-PLAN.md
 Resume file: None
