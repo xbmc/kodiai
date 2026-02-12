@@ -890,8 +890,9 @@ export function createReviewHandler(deps: {
           })
           : [];
 
+        const suppressionMatchCounts = new Map<string, number>();
         const processedFindings = extractedFindings.map((finding) => {
-          const suppressed = config.review.suppressions.some((suppression) =>
+          const matchedSuppression = config.review.suppressions.find((suppression) =>
             matchesSuppression(
               {
                 filePath: finding.filePath,
@@ -902,19 +903,35 @@ export function createReviewHandler(deps: {
               suppression,
             )
           );
+          const suppressed = Boolean(matchedSuppression);
+          const suppressionPattern = typeof matchedSuppression === "string"
+            ? matchedSuppression
+            : matchedSuppression?.pattern;
+          if (suppressionPattern) {
+            const existing = suppressionMatchCounts.get(suppressionPattern) ?? 0;
+            suppressionMatchCounts.set(suppressionPattern, existing + 1);
+          }
 
           const confidence = computeConfidence({
             severity: finding.severity,
             category: finding.category,
-            matchesKnownPattern: suppressed,
+            matchesKnownPattern: Boolean(matchedSuppression),
           });
 
           return {
             ...finding,
             suppressed,
             confidence,
+            suppressionPattern,
           };
         });
+
+        const visibleFindings = processedFindings.filter((finding) =>
+          !finding.suppressed && finding.confidence >= config.review.minConfidence
+        );
+        const lowConfidenceFindings = processedFindings.filter((finding) =>
+          !finding.suppressed && finding.confidence < config.review.minConfidence
+        );
 
         const findingCounts = {
           critical: processedFindings.filter((finding) => finding.severity === "critical").length,
@@ -1016,6 +1033,41 @@ export function createReviewHandler(deps: {
                 findingsCaptured: processedFindings.length,
               },
               "Knowledge store: review recorded",
+            );
+
+            knowledgeStore.recordFindings(
+              processedFindings.map((finding) => ({
+                reviewId,
+                filePath: finding.filePath,
+                startLine: finding.startLine,
+                endLine: finding.endLine,
+                severity: finding.severity,
+                category: finding.category,
+                confidence: finding.confidence,
+                title: finding.title,
+                suppressed: finding.suppressed,
+                suppressionPattern: finding.suppressionPattern,
+              })),
+            );
+
+            knowledgeStore.recordSuppressionLog(
+              [...suppressionMatchCounts.entries()].map(([pattern, matchedCount]) => ({
+                reviewId,
+                pattern,
+                matchedCount,
+              })),
+            );
+
+            logger.debug(
+              {
+                reviewId,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                visibleFindings: visibleFindings.length,
+                lowConfidenceFindings: lowConfidenceFindings.length,
+                suppressionsApplied,
+              },
+              "Knowledge store: findings and suppression logs recorded",
             );
           } catch (err) {
             logger.warn(

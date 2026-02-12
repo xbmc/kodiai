@@ -2192,4 +2192,196 @@ describe("createReviewHandler finding extraction", () => {
 
     await workspaceFixture.cleanup();
   });
+
+  test("persists suppression and confidence metadata for extracted findings", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "  minConfidence: 60",
+        "  suppressions:",
+        "    - pattern: glob:*legacy shim*",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    const recordedReviews: Array<Record<string, unknown>> = [];
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    const recordedSuppressions: Array<Record<string, unknown>> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) {
+              return { data: [] };
+            }
+            return {
+              data: [
+                {
+                  body: [
+                    "[CRITICAL] SQL injection in raw query path",
+                    "Parameterize user input before query execution.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/db/query.ts",
+                  line: 45,
+                  start_line: 45,
+                },
+                {
+                  body: [
+                    "[MINOR] Legacy shim cleanup candidate",
+                    "This can be revisited after migration.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/legacy/shim.ts",
+                  line: 9,
+                  start_line: 8,
+                },
+                {
+                  body: [
+                    "```yaml",
+                    "severity: MINOR",
+                    "category: style",
+                    "```",
+                    "",
+                    "**Formatting consistency issue**",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/ui/button.ts",
+                  line: 12,
+                  start_line: 12,
+                },
+              ],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-finding-persistence",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: (entry: Record<string, unknown>) => {
+          recordedReviews.push(entry);
+          return 99;
+        },
+        recordFindings: (findings: Record<string, unknown>[]) => {
+          recordedFindings.push(...findings);
+        },
+        recordSuppressionLog: (entries: Record<string, unknown>[]) => {
+          recordedSuppressions.push(...entries);
+        },
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(recordedReviews).toHaveLength(1);
+    expect(recordedReviews[0]?.suppressionsApplied).toBe(1);
+
+    expect(recordedFindings).toHaveLength(3);
+    expect(recordedFindings.every((finding) => finding.reviewId === 99)).toBe(true);
+
+    const suppressedFinding = recordedFindings.find((finding) => finding.suppressed === true);
+    expect(suppressedFinding?.suppressionPattern).toBe("glob:*legacy shim*");
+
+    const highConfidenceFinding = recordedFindings.find((finding) => finding.filePath === "src/db/query.ts");
+    expect(highConfidenceFinding?.confidence).toBe(90);
+
+    const lowConfidenceFinding = recordedFindings.find((finding) => finding.filePath === "src/ui/button.ts");
+    expect(lowConfidenceFinding?.confidence).toBe(45);
+
+    expect(recordedSuppressions).toHaveLength(1);
+    expect(recordedSuppressions[0]?.pattern).toBe("glob:*legacy shim*");
+    expect(recordedSuppressions[0]?.matchedCount).toBe(1);
+
+    await workspaceFixture.cleanup();
+  });
 });
