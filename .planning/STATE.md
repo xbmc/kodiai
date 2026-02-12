@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 28 — Knowledge Store & Explicit Learning
+**Current focus:** Phase 29 — Feedback Capture
 
 ## Current Position
 
-Phase: 28 of 29 (Knowledge Store & Explicit Learning)
-Plan: 9 of 9 in current phase (PHASE COMPLETE)
-Status: Phase Complete
-Last activity: 2026-02-12 - Completed 28-09 plan execution
+Phase: 29 of 29 (Feedback Capture)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-12 - Completed 29-01 plan execution
 
-Progress: [███████░░░] 75% (of v0.4)
+Progress: [████████░░] 80% (of v0.4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 55 (across v0.1 + v0.2 + v0.3 + v0.4)
+- Total plans completed: 56 (across v0.1 + v0.2 + v0.3 + v0.4)
 - Average duration: 5min
-- Total execution time: 289min
+- Total execution time: 292min
 
 **By Phase (v0.3):**
 
@@ -47,6 +47,7 @@ Progress: [███████░░░] 75% (of v0.4)
 | Phase 28 P07 | 5 min | 3 tasks | 2 files |
 | Phase 28 P08 | 3 min | 3 tasks | 7 files |
 | Phase 28 P09 | 1 min | 2 tasks | 2 files |
+| Phase 29 P01 | 3 min | 3 tasks | 5 files |
 
 ## Deployment Info
 
@@ -91,6 +92,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: 28-08: Keep per-repo persistence as default and gate anonymized global aggregate writes behind knowledge.shareGlobal opt-in
 - [Phase 28]: Review Details publication is keyed to successful execution conclusion, not best-effort published telemetry
 - [Phase 28]: Review Details attempt/failure logs include reviewOutputKey plus PR coordinates for live verification diagnostics
+- [Phase 29]: Persist comment_id/comment_surface/review_output_key directly on findings to avoid fuzzy reaction correlation
+- [Phase 29]: Use UNIQUE(repo, comment_id, reaction_id) with INSERT OR IGNORE to keep feedback ingestion idempotent under retries
 
 ### Pending Todos
 
@@ -111,5 +114,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 28-09-PLAN.md
+Stopped at: Completed 29-01-PLAN.md
 Resume file: None
