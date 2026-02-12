@@ -41,6 +41,131 @@ type ExtractedFinding = {
   endLine?: number;
 };
 
+type ProcessedFinding = ExtractedFinding & {
+  suppressed: boolean;
+  confidence: number;
+  suppressionPattern?: string;
+};
+
+function buildReviewDetailsMarker(reviewOutputKey: string): string {
+  return `<!-- kodiai:review-details:${reviewOutputKey} -->`;
+}
+
+function formatReviewDetailsSummary(params: {
+  reviewOutputKey: string;
+  filesReviewed: number;
+  linesAnalyzed: number;
+  linesChanged: number;
+  findingCounts: {
+    critical: number;
+    major: number;
+    medium: number;
+    minor: number;
+  };
+  suppressionsApplied: number;
+  minConfidence: number;
+  visibleFindings: ProcessedFinding[];
+  lowConfidenceFindings: ProcessedFinding[];
+}): string {
+  const {
+    reviewOutputKey,
+    filesReviewed,
+    linesAnalyzed,
+    linesChanged,
+    findingCounts,
+    suppressionsApplied,
+    minConfidence,
+    visibleFindings,
+    lowConfidenceFindings,
+  } = params;
+
+  // Time-saved estimate is deterministic and intentionally simple:
+  // - 3 minutes per actionable finding (triage + patch decision)
+  // - 1 minute per low-confidence finding (quick validation pass)
+  // - 0.25 minute per reviewed file (scan/setup overhead)
+  const estimatedMinutesSaved = Math.max(
+    1,
+    Math.round((visibleFindings.length * 3 + lowConfidenceFindings.length + filesReviewed * 0.25) * 10) / 10,
+  );
+
+  const sections = [
+    "<details>",
+    "<summary>Review Details</summary>",
+    "",
+    `- Files reviewed: ${filesReviewed}`,
+    `- Lines analyzed: ${linesAnalyzed}`,
+    `- Lines changed: ${linesChanged}`,
+    `- Severity counts: critical ${findingCounts.critical}, major ${findingCounts.major}, medium ${findingCounts.medium}, minor ${findingCounts.minor}`,
+    `- Suppressions applied: ${suppressionsApplied}`,
+    `- Estimated review time saved: ~${estimatedMinutesSaved} minutes`,
+    "- Time-saved formula: (3 min x actionable findings) + (1 min x low-confidence findings) + (0.25 min x files reviewed)",
+    "</details>",
+  ];
+
+  if (lowConfidenceFindings.length > 0) {
+    const lowConfidenceLines = lowConfidenceFindings.map((finding) => {
+      const lineInfo = finding.endLine ?? finding.startLine;
+      const location = lineInfo ? `${finding.filePath}:${lineInfo}` : finding.filePath;
+      return `- ${location} [${finding.severity}] ${finding.title} (confidence: ${finding.confidence})`;
+    });
+
+    sections.push(
+      "",
+      "<details>",
+      `<summary>Low Confidence Findings (threshold: ${minConfidence})</summary>`,
+      "",
+      ...lowConfidenceLines,
+      "</details>",
+    );
+  }
+
+  sections.push("", buildReviewDetailsMarker(reviewOutputKey));
+
+  return sections.join("\n");
+}
+
+async function upsertReviewDetailsComment(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+  body: string;
+}): Promise<void> {
+  const { octokit, owner, repo, prNumber, reviewOutputKey, body } = params;
+  const marker = buildReviewDetailsMarker(reviewOutputKey);
+
+  const commentsResponse = await octokit.rest.issues.listComments({
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+    sort: "created",
+    direction: "desc",
+  });
+
+  const existingComment = commentsResponse.data.find((comment) =>
+    typeof comment.body === "string" && comment.body.includes(marker)
+  );
+
+  if (existingComment) {
+    await octokit.rest.issues.updateComment({
+      owner,
+      repo,
+      comment_id: existingComment.id,
+      body,
+    });
+    return;
+  }
+
+  await octokit.rest.issues.createComment({
+    owner,
+    repo,
+    issue_number: prNumber,
+    body,
+  });
+}
+
 function normalizeSeverity(value: string | undefined): FindingSeverity | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
@@ -891,7 +1016,7 @@ export function createReviewHandler(deps: {
           : [];
 
         const suppressionMatchCounts = new Map<string, number>();
-        const processedFindings = extractedFindings.map((finding) => {
+        const processedFindings: ProcessedFinding[] = extractedFindings.map((finding) => {
           const matchedSuppression = config.review.suppressions.find((suppression) =>
             matchesSuppression(
               {
@@ -940,6 +1065,42 @@ export function createReviewHandler(deps: {
           minor: processedFindings.filter((finding) => finding.severity === "minor").length,
         };
         const suppressionsApplied = processedFindings.filter((finding) => finding.suppressed).length;
+        const linesChanged =
+          (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
+          (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
+
+        if (result.conclusion === "success" && result.published) {
+          try {
+            const reviewDetailsBody = formatReviewDetailsSummary({
+              reviewOutputKey,
+              filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
+              linesAnalyzed: linesChanged,
+              linesChanged,
+              findingCounts,
+              suppressionsApplied,
+              minConfidence: config.review.minConfidence,
+              visibleFindings,
+              lowConfidenceFindings,
+            });
+            await upsertReviewDetailsComment({
+              octokit: extractionOctokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              reviewOutputKey,
+              body: reviewDetailsBody,
+            });
+          } catch (err) {
+            logger.warn(
+              {
+                ...baseLog,
+                gate: "review-details-output",
+                err,
+              },
+              "Failed to publish deterministic Review Details summary",
+            );
+          }
+        }
 
         // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
@@ -1003,8 +1164,7 @@ export function createReviewHandler(deps: {
               deliveryId: event.id,
               filesAnalyzed: diffAnalysis?.metrics.totalFiles ?? 0,
               linesChanged:
-                (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
-                (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+                linesChanged,
               findingsCritical: findingCounts.critical,
               findingsMajor: findingCounts.major,
               findingsMedium: findingCounts.medium,

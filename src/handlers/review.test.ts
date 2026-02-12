@@ -2220,6 +2220,7 @@ describe("createReviewHandler finding extraction", () => {
     const recordedReviews: Array<Record<string, unknown>> = [];
     const recordedFindings: Array<Record<string, unknown>> = [];
     const recordedSuppressions: Array<Record<string, unknown>> = [];
+    let detailsCommentBody: string | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -2306,6 +2307,11 @@ describe("createReviewHandler finding extraction", () => {
         },
         issues: {
           listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
         },
         reactions: {
           createForIssue: async () => ({ data: {} }),
@@ -2381,6 +2387,14 @@ describe("createReviewHandler finding extraction", () => {
     expect(recordedSuppressions).toHaveLength(1);
     expect(recordedSuppressions[0]?.pattern).toBe("glob:*legacy shim*");
     expect(recordedSuppressions[0]?.matchedCount).toBe(1);
+
+    expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
+    expect(detailsCommentBody).toContain("Files reviewed:");
+    expect(detailsCommentBody).toContain("Lines analyzed:");
+    expect(detailsCommentBody).toContain("Lines changed:");
+    expect(detailsCommentBody).toContain("Estimated review time saved:");
+    expect(detailsCommentBody).toContain("<summary>Low Confidence Findings");
+    expect(detailsCommentBody).not.toContain("Legacy shim cleanup candidate");
 
     await workspaceFixture.cleanup();
   });
