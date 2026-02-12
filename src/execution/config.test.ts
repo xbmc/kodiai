@@ -797,3 +797,71 @@ test("new context-aware fields coexist with existing Phase 26 review fields", as
     await rm(dir, { recursive: true });
   }
 });
+
+test("parses review.suppressions as simple string patterns", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  suppressions:\n    - missing JSDoc\n    - glob:*unused*\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.suppressions).toEqual(["missing JSDoc", "glob:*unused*"]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses review.suppressions object patterns with optional metadata", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  suppressions:\n    - pattern: regex:missing.*handling\n      severity:\n        - major\n      category:\n        - correctness\n      paths:\n        - src/**\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.suppressions).toEqual([
+      {
+        pattern: "regex:missing.*handling",
+        severity: ["major"],
+        category: ["correctness"],
+        paths: ["src/**"],
+      },
+    ]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("review.minConfidence parses and defaults correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  minConfidence: 40\n");
+    const loaded = await loadRepoConfig(dir);
+    expect(loaded.config.review.minConfidence).toBe(40);
+
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    const defaults = await loadRepoConfig(dir);
+    expect(defaults.config.review.minConfidence).toBe(0);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid review.minConfidence falls back review section to defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  minConfidence: 150\n  suppressions:\n    - missing docs\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.minConfidence).toBe(0);
+    expect(config.review.suppressions).toEqual([]);
+    expect(warnings.some((w) => w.section === "review")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
