@@ -71,9 +71,10 @@ None
 |---|-------------|------|--------|-----------|
 | 1 | Fix @kodiai review delegation bug - should perform review directly not delegate to aireview team | 2026-02-11 | 1d3a429 | [1-fix-kodiai-review-delegation-bug-should-](./quick/1-fix-kodiai-review-delegation-bug-should-/) |
 | 2 | Change APPROVE with no issues to submit PR approval review (green checkmark) | 2026-02-12 | c9c3071 | [2-change-approve-with-no-issues-to-submit-](./quick/2-change-approve-with-no-issues-to-submit-/) |
+| 3 | Add --revision-suffix to deploy.sh to force new revision on every deploy | 2026-02-12 | cb55e0f | [3-add-revision-suffix-to-deploy-sh-to-forc](./quick/3-add-revision-suffix-to-deploy-sh-to-forc/) |
 
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: 2026-02-12 - Completed quick task 2: Change APPROVE with no issues to submit PR approval review
+Stopped at: 2026-02-12 - Completed quick task 3: Add --revision-suffix to deploy.sh
 Resume file: None
