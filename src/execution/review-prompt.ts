@@ -17,6 +17,13 @@ export interface MatchedInstruction {
   matchedFiles: string[];
 }
 
+export type SuppressionPattern = {
+  pattern: string;
+  severity?: string[];
+  category?: string[];
+  paths?: string[];
+};
+
 function scanPattern(pattern: string): { negated: boolean; glob: string } {
   const scanner = picomatch as unknown as {
     scan?: (input: string) => { negated?: boolean; glob?: string };
@@ -179,6 +186,72 @@ function buildFocusAreaInstructions(
   if (parts.length === 0) return "";
 
   return ["## Focus Areas", "", ...parts].join("\n");
+}
+
+export function buildSuppressionRulesSection(
+  suppressions: Array<string | SuppressionPattern>,
+): string {
+  if (suppressions.length === 0) return "";
+
+  const lines: string[] = [
+    "## Suppression Rules",
+    "",
+    "Do not flag findings matching these patterns. Still count suppressed findings mentally for the metrics section.",
+    "NEVER suppress findings at CRITICAL severity regardless of suppression patterns.",
+    "",
+    "Configured suppressions:",
+  ];
+
+  for (const suppression of suppressions) {
+    if (typeof suppression === "string") {
+      lines.push(`- pattern: ${suppression}`);
+      continue;
+    }
+
+    const filters: string[] = [];
+    if (suppression.severity && suppression.severity.length > 0) {
+      filters.push(`severity=[${suppression.severity.join(", ")}]`);
+    }
+    if (suppression.category && suppression.category.length > 0) {
+      filters.push(`category=[${suppression.category.join(", ")}]`);
+    }
+    if (suppression.paths && suppression.paths.length > 0) {
+      filters.push(`paths=[${suppression.paths.join(", ")}]`);
+    }
+
+    if (filters.length > 0) {
+      lines.push(`- pattern: ${suppression.pattern} (${filters.join("; ")})`);
+    } else {
+      lines.push(`- pattern: ${suppression.pattern}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export function buildConfidenceInstructions(minConfidence: number): string {
+  const lines = [
+    "## Confidence Display",
+    "",
+    "Include severity and category metadata for every finding so confidence can be computed post-execution.",
+    "Confidence scores are deterministic and derived from severity/category/pattern signals, not self-assessment.",
+  ];
+
+  if (minConfidence > 0) {
+    lines.push(
+      `Findings below ${minConfidence}% confidence will be shown in a separate collapsible section.`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+export function buildMetricsInstructions(): string {
+  return [
+    "## Review Metrics",
+    "",
+    "Categorize findings consistently by severity so review metrics can be computed from files reviewed, lines changed, and finding counts.",
+  ].join("\n");
 }
 
 export function matchPathInstructions(
@@ -356,6 +429,8 @@ export function buildReviewPrompt(context: {
   focusAreas?: string[];
   ignoredAreas?: string[];
   maxComments?: number;
+  suppressions?: Array<string | SuppressionPattern>;
+  minConfidence?: number;
   diffAnalysis?: DiffAnalysis;
   matchedPathInstructions?: MatchedInstruction[];
 }): string {
@@ -506,8 +581,21 @@ export function buildReviewPrompt(context: {
   );
   if (focusInstructions) lines.push("", focusInstructions);
 
-  // --- Summary comment ---
   const mode = context.mode ?? "standard";
+
+  const suppressionRulesSection = buildSuppressionRulesSection(
+    context.suppressions ?? [],
+  );
+  if (suppressionRulesSection) {
+    lines.push("", suppressionRulesSection);
+  }
+
+  lines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
+  if (mode === "enhanced") {
+    lines.push("", buildMetricsInstructions());
+  }
+
+  // --- Summary comment ---
   if (mode === "enhanced") {
     lines.push(
       "",

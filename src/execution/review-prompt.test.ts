@@ -1,9 +1,12 @@
 import { test, expect } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
+  buildConfidenceInstructions,
   buildDiffAnalysisSection,
+  buildMetricsInstructions,
   buildPathInstructionsSection,
   buildReviewPrompt,
+  buildSuppressionRulesSection,
   matchPathInstructions,
 } from "./review-prompt.ts";
 
@@ -129,6 +132,48 @@ test("ignoredAreas excludes categories", () => {
 test("maxComments overrides default", () => {
   const prompt = buildReviewPrompt(baseContext({ maxComments: 3 }));
   expect(prompt).toContain("at most 3 inline comments");
+});
+
+test("buildSuppressionRulesSection formats string and object suppressions", () => {
+  const section = buildSuppressionRulesSection([
+    "missing JSDoc",
+    {
+      pattern: "regex:missing.*handling",
+      severity: ["major"],
+      category: ["correctness"],
+      paths: ["src/**"],
+    },
+  ]);
+  expect(section).toContain("## Suppression Rules");
+  expect(section).toContain("pattern: missing JSDoc");
+  expect(section).toContain("pattern: regex:missing.*handling");
+  expect(section).toContain("severity=[major]");
+  expect(section).toContain("category=[correctness]");
+  expect(section).toContain("paths=[src/**]");
+});
+
+test("buildSuppressionRulesSection returns empty for no suppressions", () => {
+  expect(buildSuppressionRulesSection([])).toBe("");
+});
+
+test("buildSuppressionRulesSection includes CRITICAL safety clause", () => {
+  const section = buildSuppressionRulesSection(["missing docs"]);
+  expect(section).toContain("NEVER suppress findings at CRITICAL severity");
+});
+
+test("buildConfidenceInstructions handles minConfidence settings", () => {
+  const noThreshold = buildConfidenceInstructions(0);
+  expect(noThreshold).toContain("## Confidence Display");
+  expect(noThreshold).not.toContain("separate collapsible section");
+
+  const threshold = buildConfidenceInstructions(40);
+  expect(threshold).toContain("below 40% confidence");
+});
+
+test("buildMetricsInstructions returns metrics section", () => {
+  const section = buildMetricsInstructions();
+  expect(section).toContain("## Review Metrics");
+  expect(section.length).toBeGreaterThan(0);
 });
 
 test("custom instructions appear after noise suppression", () => {
@@ -327,6 +372,25 @@ test("buildReviewPrompt includes path instructions section when provided", () =>
   );
   expect(prompt).toContain("## Path-Specific Review Instructions");
   expect(prompt).toContain("Check auth and validation");
+});
+
+test("buildReviewPrompt includes suppression section when suppressions provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      suppressions: ["missing JSDoc"],
+      minConfidence: 40,
+      mode: "enhanced",
+    }),
+  );
+  expect(prompt).toContain("## Suppression Rules");
+  expect(prompt).toContain("missing JSDoc");
+  expect(prompt).toContain("below 40% confidence");
+  expect(prompt).toContain("## Review Metrics");
+});
+
+test("buildReviewPrompt omits suppression section when suppressions are empty", () => {
+  const prompt = buildReviewPrompt(baseContext({ suppressions: [] }));
+  expect(prompt).not.toContain("## Suppression Rules");
 });
 
 test("buildReviewPrompt remains backward compatible without new fields", () => {
