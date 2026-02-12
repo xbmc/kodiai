@@ -43,6 +43,7 @@ Progress: [███████░░░] 75% (of v0.4)
 *Updated after each plan completion*
 | Phase 28 P04 | 560 | 8 tasks | 14 files |
 | Phase 28 P06 | 1 min | 2 tasks | 2 files |
+| Phase 28 P05 | 2 min | 3 tasks | 5 files |
 
 ## Deployment Info
 
@@ -78,6 +79,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: CLI stats and trends query knowledge SQLite directly in read-only mode
 - [Phase 28]: 28-06: Review Details metrics requirements are mode-agnostic so standard runtime still enforces quantitative output
 - [Phase 28]: 28-06: Prompt tests assert files reviewed, lines analyzed/changed, and severity-grouped counts to prevent contract regressions
+- [Phase 28]: 28-05: Centralized knowledge DB path resolution with shared arg/env/default precedence
+- [Phase 28]: 28-05: Stats CLI missing-path errors now include explicit KNOWLEDGE_DB_PATH and --db recovery examples
 
 ### Pending Todos
 
