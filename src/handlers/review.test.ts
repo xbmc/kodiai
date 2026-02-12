@@ -2111,6 +2111,7 @@ describe("createReviewHandler finding extraction", () => {
             return {
               data: [
                 {
+                  id: 501,
                   body: [
                     "```yaml",
                     "severity: MAJOR",
@@ -2220,6 +2221,7 @@ describe("createReviewHandler finding extraction", () => {
     const recordedReviews: Array<Record<string, unknown>> = [];
     const recordedFindings: Array<Record<string, unknown>> = [];
     const recordedSuppressions: Array<Record<string, unknown>> = [];
+    const deletedCommentIds: number[] = [];
     let detailsCommentBody: string | undefined;
 
     const eventRouter: EventRouter = {
@@ -2264,6 +2266,7 @@ describe("createReviewHandler finding extraction", () => {
             return {
               data: [
                 {
+                  id: 11,
                   body: [
                     "[CRITICAL] SQL injection in raw query path",
                     "Parameterize user input before query execution.",
@@ -2275,6 +2278,7 @@ describe("createReviewHandler finding extraction", () => {
                   start_line: 45,
                 },
                 {
+                  id: 12,
                   body: [
                     "[MINOR] Legacy shim cleanup candidate",
                     "This can be revisited after migration.",
@@ -2286,6 +2290,7 @@ describe("createReviewHandler finding extraction", () => {
                   start_line: 8,
                 },
                 {
+                  id: 13,
                   body: [
                     "```yaml",
                     "severity: MINOR",
@@ -2302,6 +2307,13 @@ describe("createReviewHandler finding extraction", () => {
                 },
               ],
             };
+          },
+          deleteReviewComment: async (params: { comment_id: number }) => {
+            deletedCommentIds.push(params.comment_id);
+            if (params.comment_id === 13) {
+              throw new Error("permission denied");
+            }
+            return { data: {} };
           },
           listReviews: async () => ({ data: [] }),
         },
@@ -2387,6 +2399,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(recordedSuppressions).toHaveLength(1);
     expect(recordedSuppressions[0]?.pattern).toBe("glob:*legacy shim*");
     expect(recordedSuppressions[0]?.matchedCount).toBe(1);
+    expect(deletedCommentIds).toEqual([12, 13]);
 
     expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
     expect(detailsCommentBody).toContain("Files reviewed:");

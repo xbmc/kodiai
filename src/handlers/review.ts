@@ -19,6 +19,7 @@ import {
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import {
+  buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
@@ -33,6 +34,7 @@ type FindingSeverity = "critical" | "major" | "medium" | "minor";
 type FindingCategory = "security" | "correctness" | "performance" | "style" | "documentation";
 
 type ExtractedFinding = {
+  commentId: number;
   filePath: string;
   title: string;
   severity: FindingSeverity;
@@ -246,10 +248,12 @@ async function extractFindingsFromReviewComments(params: {
   owner: string;
   repo: string;
   prNumber: number;
+  reviewOutputKey: string;
   logger: Logger;
   baseLog: Record<string, unknown>;
 }): Promise<ExtractedFinding[]> {
-  const { octokit, owner, repo, prNumber, logger, baseLog } = params;
+  const { octokit, owner, repo, prNumber, reviewOutputKey, logger, baseLog } = params;
+  const marker = buildReviewOutputMarker(reviewOutputKey);
 
   try {
     const response = await octokit.rest.pulls.listReviewComments({
@@ -264,7 +268,15 @@ async function extractFindingsFromReviewComments(params: {
     const findings: ExtractedFinding[] = [];
 
     for (const comment of response.data) {
-      if (typeof comment.path !== "string" || typeof comment.body !== "string") {
+      if (
+        typeof comment.id !== "number" ||
+        typeof comment.path !== "string" ||
+        typeof comment.body !== "string"
+      ) {
+        continue;
+      }
+
+      if (!comment.body.includes(marker)) {
         continue;
       }
 
@@ -274,6 +286,7 @@ async function extractFindingsFromReviewComments(params: {
       }
 
       findings.push({
+        commentId: comment.id,
         filePath: comment.path,
         title: parsed.title,
         severity: parsed.severity,
@@ -303,6 +316,38 @@ async function extractFindingsFromReviewComments(params: {
       "Finding extraction failed; continuing with empty findings",
     );
     return [];
+  }
+}
+
+async function removeFilteredInlineComments(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  findings: ProcessedFinding[];
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+}): Promise<void> {
+  const { octokit, owner, repo, findings, logger, baseLog } = params;
+  const commentIds = new Set<number>(findings.map((finding) => finding.commentId));
+
+  for (const commentId of commentIds) {
+    try {
+      await octokit.rest.pulls.deleteReviewComment({
+        owner,
+        repo,
+        comment_id: commentId,
+      });
+    } catch (err) {
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "inline-policy-filter",
+          commentId,
+          err,
+        },
+        "Failed to delete filtered inline review comment; continuing",
+      );
+    }
   }
 }
 
@@ -1010,6 +1055,7 @@ export function createReviewHandler(deps: {
             owner: apiOwner,
             repo: apiRepo,
             prNumber: pr.number,
+            reviewOutputKey,
             logger,
             baseLog,
           })
@@ -1057,6 +1103,20 @@ export function createReviewHandler(deps: {
         const lowConfidenceFindings = processedFindings.filter((finding) =>
           !finding.suppressed && finding.confidence < config.review.minConfidence
         );
+        const filteredInlineFindings = processedFindings.filter((finding) =>
+          finding.suppressed || finding.confidence < config.review.minConfidence
+        );
+
+        if (result.published && filteredInlineFindings.length > 0) {
+          await removeFilteredInlineComments({
+            octokit: extractionOctokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            findings: filteredInlineFindings,
+            logger,
+            baseLog,
+          });
+        }
 
         const findingCounts = {
           critical: processedFindings.filter((finding) => finding.severity === "critical").length,
