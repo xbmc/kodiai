@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 27 of 29 (Context-Aware Reviews)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-02-11 — Phase 26 complete (verified)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-12 - Completed 27-01 plan execution
 
 Progress: [██░░░░░░░░] 25% (of v0.4)
 
@@ -37,6 +37,7 @@ Progress: [██░░░░░░░░] 25% (of v0.4)
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 26-review-mode-severity-control | 2 | 4min | 2min |
+| 27-context-aware-reviews | 1 | 3min | 3min |
 
 *Updated after each plan completion*
 
@@ -56,6 +57,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 
 - 26-01: New review fields purely additive, no changes to existing schema or fallback logic
 - 26-02: All review intelligence prompt-driven, noise suppression and severity guidelines always included, custom instructions override noise rules
+- [Phase 27]: 27-01: Path instructions modeled as ordered array entries with string|string[] glob support and default empty list
+- [Phase 27]: 27-01: Diff analysis classifies up to 200 files for context while keeping metrics over full PR change set
 
 ### Pending Todos
 
@@ -76,5 +79,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: 2026-02-12 - Completed quick task 3: Add --revision-suffix to deploy.sh
-Resume file: None
+Stopped at: Completed 27-01-PLAN.md
+Resume file: .planning/phases/27-context-aware-reviews/27-02-PLAN.md
