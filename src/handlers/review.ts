@@ -1211,7 +1211,7 @@ export function createReviewHandler(deps: {
             );
 
             knowledgeStore.recordSuppressionLog(
-              [...suppressionMatchCounts.entries()].map(([pattern, matchedCount]) => ({
+              Array.from(suppressionMatchCounts.entries()).map(([pattern, matchedCount]) => ({
                 reviewId,
                 pattern,
                 matchedCount,
