@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 28 of 29 (Knowledge Store & Explicit Learning)
-Plan: 4 of 4 in current phase (PHASE COMPLETE)
+Plan: 6 of 6 in current phase (PHASE COMPLETE)
 Status: Phase Complete
-Last activity: 2026-02-12 - Completed 28-04 plan execution
+Last activity: 2026-02-12 - Completed 28-06 plan execution
 
 Progress: [███████░░░] 75% (of v0.4)
 
@@ -42,6 +42,7 @@ Progress: [███████░░░] 75% (of v0.4)
 
 *Updated after each plan completion*
 | Phase 28 P04 | 560 | 8 tasks | 14 files |
+| Phase 28 P06 | 1 min | 2 tasks | 2 files |
 
 ## Deployment Info
 
@@ -75,6 +76,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: Suppression patterns support string shorthand and metadata filters
 - [Phase 28]: Confidence scores are deterministic from severity/category/pattern signals
 - [Phase 28]: CLI stats and trends query knowledge SQLite directly in read-only mode
+- [Phase 28]: 28-06: Review Details metrics requirements are mode-agnostic so standard runtime still enforces quantitative output
+- [Phase 28]: 28-06: Prompt tests assert files reviewed, lines analyzed/changed, and severity-grouped counts to prevent contract regressions
 
 ### Pending Todos
 
@@ -95,5 +98,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 28-04-PLAN.md
+Stopped at: Completed 28-06-PLAN.md
 Resume file: .planning/phases/28-knowledge-store-explicit-learning/.continue-here.md
