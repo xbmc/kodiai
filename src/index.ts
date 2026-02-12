@@ -12,6 +12,7 @@ import { createWorkspaceManager } from "./jobs/workspace.ts";
 import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
+import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
@@ -80,6 +81,13 @@ createMentionHandler({
   githubApp,
   executor,
   telemetryStore,
+  knowledgeStore,
+  logger,
+});
+createFeedbackSyncHandler({
+  eventRouter,
+  jobQueue,
+  githubApp,
   knowledgeStore,
   logger,
 });
