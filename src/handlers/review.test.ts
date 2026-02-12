@@ -1727,7 +1727,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await $`git -C ${dir} commit -m "feature"`.quiet();
     await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
-    let createCommentCalled = false;
+    const createdCommentBodies: string[] = [];
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => { handlers.set(eventKey, handler); },
@@ -1750,8 +1750,8 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
         pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async () => {
-            createCommentCalled = true;
+          createComment: async (params: { body: string }) => {
+            createdCommentBodies.push(params.body);
             return { data: {} };
           },
         },
@@ -1786,7 +1786,8 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     );
 
     await rm(dir, { recursive: true, force: true });
-    expect(createCommentCalled).toBe(false);
+    const costWarningBodies = createdCommentBodies.filter((body) => body.includes("Kodiai cost warning"));
+    expect(costWarningBodies).toHaveLength(0);
   });
 
   test("no cost warning when telemetry disabled (even if threshold exceeded)", async () => {
@@ -1811,7 +1812,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await $`git -C ${dir} commit -m "feature"`.quiet();
     await $`git -C ${dir} remote add origin ${dir}`.quiet();
 
-    let createCommentCalled = false;
+    const createdCommentBodies: string[] = [];
     let recordCalls = 0;
 
     const telemetryStore = {
@@ -1842,8 +1843,8 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
         pulls: { listReviewComments: async () => ({ data: [] }), listReviews: async () => ({ data: [] }) },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async () => {
-            createCommentCalled = true;
+          createComment: async (params: { body: string }) => {
+            createdCommentBodies.push(params.body);
             return { data: {} };
           },
         },
@@ -1879,7 +1880,8 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
 
     await rm(dir, { recursive: true, force: true });
     expect(recordCalls).toBe(0);
-    expect(createCommentCalled).toBe(false);
+    const costWarningBodies = createdCommentBodies.filter((body) => body.includes("Kodiai cost warning"));
+    expect(costWarningBodies).toHaveLength(0);
   });
 });
 
@@ -2412,6 +2414,199 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).toContain("<summary>Low Confidence Findings");
     expect(detailsCommentBody).toContain("src/ui/button.ts:12 [minor] Formatting consistency issue (confidence: 45)");
     expect(detailsCommentBody).not.toContain("Legacy shim cleanup candidate");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("publishes Review Details even when execution reports published false", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "  minConfidence: 60",
+        "  suppressions:",
+        "    - pattern: glob:*legacy shim*",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    const deletedCommentIds: number[] = [];
+    let listCommentsCalls = 0;
+    let createCommentCalls = 0;
+    let detailsCommentBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) {
+              return { data: [] };
+            }
+            return {
+              data: [
+                {
+                  id: 41,
+                  body: [
+                    "[MINOR] Legacy shim cleanup candidate",
+                    "This can be revisited after migration.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/legacy/shim.ts",
+                  line: 9,
+                  start_line: 8,
+                },
+                {
+                  id: 42,
+                  body: [
+                    "```yaml",
+                    "severity: MINOR",
+                    "category: style",
+                    "```",
+                    "",
+                    "**Formatting consistency issue**",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/ui/button.ts",
+                  line: 12,
+                  start_line: 12,
+                },
+                {
+                  id: 43,
+                  body: [
+                    "[CRITICAL] SQL injection in raw query path",
+                    "Parameterize user input before query execution.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/db/query.ts",
+                  line: 45,
+                  start_line: 45,
+                },
+              ],
+            };
+          },
+          deleteReviewComment: async (params: { comment_id: number }) => {
+            deletedCommentIds.push(params.comment_id);
+            return { data: {} };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => {
+            listCommentsCalls += 1;
+            return { data: [] };
+          },
+          createComment: async (params: { body: string }) => {
+            createCommentCalls += 1;
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-details-published-false",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(deletedCommentIds).toEqual([41, 42]);
+    expect(listCommentsCalls).toBeGreaterThanOrEqual(1);
+    expect(createCommentCalls).toBe(1);
+    expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
+    expect(detailsCommentBody).toContain("Files reviewed:");
+    expect(detailsCommentBody).toContain("Suppressions applied: 1");
+    expect(detailsCommentBody).toContain("<summary>Low Confidence Findings");
+    expect(detailsCommentBody).toContain("src/ui/button.ts:12 [minor] Formatting consistency issue (confidence: 45)");
+    expect(detailsCommentBody).not.toContain("Legacy shim cleanup candidate");
+
+    const detailsAttemptLog = entries.find((entry) =>
+      entry.data?.gate === "review-details-output" && entry.data?.gateResult === "attempt"
+    );
+    expect(detailsAttemptLog?.data?.reviewOutputKey).toBe(reviewOutputKey);
+    expect(detailsAttemptLog?.data?.owner).toBe("acme");
+    expect(detailsAttemptLog?.data?.repo).toBe("repo");
+    expect(detailsAttemptLog?.data?.prNumber).toBe(101);
 
     await workspaceFixture.cleanup();
   });
