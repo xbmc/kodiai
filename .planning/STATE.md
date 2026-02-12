@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-11)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 27 — Context-Aware Reviews
+**Current focus:** Phase 28 — Knowledge Store & Explicit Learning
 
 ## Current Position
 
-Phase: 27 of 29 (Context-Aware Reviews)
+Phase: 28 of 29 (Knowledge Store & Explicit Learning)
 Plan: 4 of 4 in current phase (PHASE COMPLETE)
 Status: Phase Complete
-Last activity: 2026-02-12 - Completed 27-04 plan execution
+Last activity: 2026-02-12 - Completed 28-04 plan execution
 
-Progress: [██░░░░░░░░] 25% (of v0.4)
+Progress: [███████░░░] 75% (of v0.4)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 51 (across v0.1 + v0.2 + v0.3 + v0.4)
-- Average duration: 3min
-- Total execution time: 280min
+- Total plans completed: 55 (across v0.1 + v0.2 + v0.3 + v0.4)
+- Average duration: 5min
+- Total execution time: 289min
 
 **By Phase (v0.3):**
 
@@ -38,8 +38,10 @@ Progress: [██░░░░░░░░] 25% (of v0.4)
 |-------|-------|-------|----------|
 | 26-review-mode-severity-control | 2 | 4min | 2min |
 | 27-context-aware-reviews | 4 | 11min | 3min |
+| 28-knowledge-store-explicit-learning | 4 | 9min | 2min |
 
 *Updated after each plan completion*
+| Phase 28 P04 | 560 | 8 tasks | 14 files |
 
 ## Deployment Info
 
@@ -65,6 +67,14 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 27-context-aware-reviews]: 27-03: Collect changed files, numstat, and full diff from one resolved diff range to keep prompt context aligned
 - [Phase 27]: 27-04: Emit elapsed-time degradation as a stable risk signal to preserve DiffAnalysis output compatibility
 - [Phase 27]: 27-04: Keep metrics computed from full changed-file and numstat inputs even when scanning truncates by time budget
+- [Phase 28]: 28-01: Knowledge store follows telemetry-style factory pattern with WAL, foreign keys, and normalized review/finding/suppression tables
+- [Phase 28]: 28-02: Suppression config supports string and object forms while confidence scoring stays deterministic from severity/category/pattern signals
+- [Phase 28]: 28-03: Knowledge store writes are non-fatal and capture review-level metrics immediately while finding parsing is deferred
+- [Phase 28]: 28-04: Operator reporting uses self-contained read-only SQLite CLI scripts with human and JSON outputs
+- [Phase 28]: Knowledge store writes stay non-fatal and fire-and-forget
+- [Phase 28]: Suppression patterns support string shorthand and metadata filters
+- [Phase 28]: Confidence scores are deterministic from severity/category/pattern signals
+- [Phase 28]: CLI stats and trends query knowledge SQLite directly in read-only mode
 
 ### Pending Todos
 
@@ -85,5 +95,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 27-04-PLAN.md (Phase 27 complete)
-Resume file: None
+Stopped at: Completed 28-04-PLAN.md
+Resume file: .planning/phases/28-knowledge-store-explicit-learning/.continue-here.md
