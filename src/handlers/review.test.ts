@@ -2405,8 +2405,10 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).toContain("Files reviewed:");
     expect(detailsCommentBody).toContain("Lines analyzed:");
     expect(detailsCommentBody).toContain("Lines changed:");
+    expect(detailsCommentBody).toContain("Suppressions applied: 1");
     expect(detailsCommentBody).toContain("Estimated review time saved:");
     expect(detailsCommentBody).toContain("<summary>Low Confidence Findings");
+    expect(detailsCommentBody).toContain("src/ui/button.ts:12 [minor] Formatting consistency issue (confidence: 45)");
     expect(detailsCommentBody).not.toContain("Legacy shim cleanup candidate");
 
     await workspaceFixture.cleanup();
