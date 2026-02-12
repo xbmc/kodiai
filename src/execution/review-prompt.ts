@@ -251,6 +251,11 @@ export function buildMetricsInstructions(): string {
     "## Review Metrics",
     "",
     "Categorize findings consistently by severity so review metrics can be computed from files reviewed, lines changed, and finding counts.",
+    "Your response MUST include a collapsible `Review Details` section with quantitative metrics.",
+    "The `Review Details` section MUST include:",
+    "- Files reviewed (count and key paths)",
+    "- Lines analyzed/changed (+/- totals)",
+    "- Issue counts grouped by severity (CRITICAL/MAJOR/MEDIUM/MINOR)",
   ].join("\n");
 }
 
@@ -591,9 +596,7 @@ export function buildReviewPrompt(context: {
   }
 
   lines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
-  if (mode === "enhanced") {
-    lines.push("", buildMetricsInstructions());
-  }
+  lines.push("", buildMetricsInstructions());
 
   // --- Summary comment ---
   if (mode === "enhanced") {
