@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-02-11)
 ## Current Position
 
 Phase: 28 of 29 (Knowledge Store & Explicit Learning)
-Plan: 8 of 8 in current phase (PHASE COMPLETE)
+Plan: 9 of 9 in current phase (PHASE COMPLETE)
 Status: Phase Complete
-Last activity: 2026-02-12 - Completed 28-08 plan execution
+Last activity: 2026-02-12 - Completed 28-09 plan execution
 
 Progress: [███████░░░] 75% (of v0.4)
 
@@ -46,6 +46,7 @@ Progress: [███████░░░] 75% (of v0.4)
 | Phase 28 P05 | 2 min | 3 tasks | 5 files |
 | Phase 28 P07 | 5 min | 3 tasks | 2 files |
 | Phase 28 P08 | 3 min | 3 tasks | 7 files |
+| Phase 28 P09 | 1 min | 2 tasks | 2 files |
 
 ## Deployment Info
 
@@ -88,6 +89,8 @@ v0.3 decisions archived. v0.4 decisions will accumulate here.
 - [Phase 28]: 28-07: Handler enforces Review Details and Low Confidence Findings via marker-based upsert with explicit time-saved formula
 - [Phase 28]: 28-08: Enforce suppression and minConfidence on visible inline comments by marker-scoped post-publication deletion with non-fatal per-comment handling
 - [Phase 28]: 28-08: Keep per-repo persistence as default and gate anonymized global aggregate writes behind knowledge.shareGlobal opt-in
+- [Phase 28]: Review Details publication is keyed to successful execution conclusion, not best-effort published telemetry
+- [Phase 28]: Review Details attempt/failure logs include reviewOutputKey plus PR coordinates for live verification diagnostics
 
 ### Pending Todos
 
@@ -108,5 +111,5 @@ None
 ## Session Continuity
 
 Last session: 2026-02-12
-Stopped at: Completed 28-08-PLAN.md
+Stopped at: Completed 28-09-PLAN.md
 Resume file: None
