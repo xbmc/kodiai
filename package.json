@@ -22,6 +22,7 @@
     "@octokit/rest": "^22.0.1",
     "@octokit/webhooks-methods": "^6.0.0",
     "hono": "^4.11.8",
+    "jsonwebtoken": "^9.0.2",
     "js-yaml": "^4.1.1",
     "picomatch": "^4.0.2",
     "p-queue": "^9.1.0",
