@@ -39,6 +39,12 @@ function padLeft(text: string, width: number): string {
   return text.padStart(width);
 }
 
+function describeDbPathSource(source: "arg" | "env" | "default"): string {
+  if (source === "arg") return "--db";
+  if (source === "env") return "KNOWLEDGE_DB_PATH";
+  return `default (${DEFAULT_KNOWLEDGE_DB_PATH})`;
+}
+
 const { values } = parseArgs({
   args: process.argv.slice(2),
   options: {
@@ -66,6 +72,14 @@ const resolvedDb = resolveKnowledgeDbPath({ dbPath: values.db });
 const dbPath = resolvedDb.dbPath;
 if (!existsSync(dbPath)) {
   console.error(`No knowledge store found at ${dbPath}`);
+  console.error(`Resolved via: ${describeDbPathSource(resolvedDb.source)}`);
+  console.error("\nTry one of these:");
+  console.error(
+    "  KNOWLEDGE_DB_PATH=/actual/path/kodiai-knowledge.db bun scripts/kodiai-stats.ts --repo owner/name",
+  );
+  console.error(
+    "  bun scripts/kodiai-stats.ts --repo owner/name --db /actual/path/kodiai-knowledge.db",
+  );
   process.exit(1);
 }
 
