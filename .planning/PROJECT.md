@@ -8,29 +8,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.4 Intelligent Review System
+## Current Milestone
 
-**Goal:** Improve review quality through smarter analysis, repo-specific learning, and configurable strictness.
+Milestone planning has not started yet for v0.5.
 
-**Target features:**
-- Reduce noise and false positives in reviews
-- Better detection of real issues (security, logic bugs, performance, maintainability)
-- Context-aware reviews that understand repo patterns and conventions
-- Configurable review modes (strict vs lenient) with severity tagging
-- Learning system combining automatic analysis, explicit config, and feedback
+## Latest Release: v0.4 Intelligent Review System
 
-## Latest Release: v0.3 Configuration & Observability
-
-**Shipped:** 2026-02-11
-**Phases:** 22-25 (4 phases, 7 plans)
+**Shipped:** 2026-02-12
+**Phases:** 26-29 (4 phases, 17 plans)
 
 **Delivered:**
-- Forward-compatible config parsing with section-level graceful degradation
-- Enhanced `.kodiai.yml` controls (review, mention, write-mode, telemetry)
-- Persistent telemetry with SQLite WAL mode and 90-day retention
-- Fire-and-forget telemetry pipeline capturing all executions
-- Cost warning system with configurable USD thresholds
-- CLI reporting tool with filtering and table/JSON/CSV output
+- Configurable review strictness (mode, severity threshold, focus areas, comment caps)
+- Context-aware review prompts with deterministic diff analysis and path-scoped instructions
+- Repo-scoped knowledge store with explicit suppressions and confidence filtering
+- Quantitative Review Details reporting (files, lines, severity counts, time-saved estimate)
+- Idempotent thumbs-reaction feedback capture linked to persisted findings
 
 ## Requirements
 
@@ -58,6 +50,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Usage telemetry collection with persistent SQLite storage — v0.3
 - ✓ CLI reporting tool with filtering and multiple output formats — v0.3
 - ✓ Telemetry opt-out and cost warning thresholds — v0.3
+- ✓ Review mode/severity/focus controls with noise suppression and bounded comment output — v0.4
+- ✓ Context-aware review pipeline with path instructions and deterministic risk analysis — v0.4
+- ✓ Repo-scoped knowledge persistence with explicit suppressions and confidence threshold filtering — v0.4
+- ✓ Review Details metrics contract and persistence for review quality analysis — v0.4
+- ✓ Feedback capture from human thumbs reactions with deterministic finding linkage — v0.4
 
 ### Active
 
@@ -85,13 +82,24 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ## Current State
 
-v0.3 ships an installable GitHub App that:
+v0.4 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
+- Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
+- Applies deterministic diff/risk context before LLM review for targeted findings
+- Persists review findings and suppression context in a SQLite knowledge store
+- Filters low-confidence and explicitly suppressed findings from visible inline output
+- Captures thumbs-up/down feedback reactions for future learning analysis
 - Records usage telemetry (tokens, cost, duration) for every execution
 - Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
+
+## Next Milestone Goals
+
+- Define v0.5 requirement set and roadmap from shipped v0.4 learnings
+- Decide whether to close remaining tech debt (time-budget signal and doc-state drift) as dedicated cleanup work
+- Prioritize deferred advanced learning and multi-language support requirements
 
 ## Constraints
 
@@ -118,4 +126,4 @@ v0.3 ships an installable GitHub App that:
 | Self-contained CLI scripts in scripts/ | No src/ imports, zero coupling, prevents accidental server startup | ✓ Good — v0.3 |
 
 ---
-*Last updated: 2026-02-11 after v0.4 milestone started*
+*Last updated: 2026-02-12 after v0.4 milestone completion*

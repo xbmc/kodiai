@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-11)
+See: .planning/PROJECT.md (updated 2026-02-12)
 
 **Core value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback without requiring any workflow setup in the target repo.
-**Current focus:** Phase 29 — Feedback Capture
+**Current focus:** Planning next milestone (v0.5)
 
 ## Current Position
 
-Phase: 29 of 29 (Feedback Capture)
-Plan: 2 of 2 in current phase
+Phase: 29 of 29 (v0.4 complete)
+Plan: Milestone archived
 Status: Complete
-Last activity: 2026-02-12 - Completed Phase 29 live feedback-capture verification
+Last activity: 2026-02-12 - Completed v0.4 milestone archival and release tagging prep
 
-Progress: [██████████] 100% (of v0.4)
+Progress: [██████████] 100% (v0.4 shipped)
 
 ## Performance Metrics
 
