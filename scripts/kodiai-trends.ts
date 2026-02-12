@@ -1,9 +1,7 @@
 import { Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 import { parseArgs } from "util";
-
-const DEFAULT_DB_PATH = "./data/kodiai-knowledge.db";
+import { DEFAULT_KNOWLEDGE_DB_PATH, resolveKnowledgeDbPath } from "../src/knowledge/db-path.ts";
 
 function printUsage(): void {
   console.log(`Usage: bun scripts/kodiai-trends.ts --repo <owner/name> [options]
@@ -12,7 +10,7 @@ Options:
   --repo <owner/name>  Repository to query (required)
   --days <number>      Number of days to include (default: 30)
   --json               Output JSON instead of table
-  --db <path>          Database path (default: ./data/kodiai-knowledge.db)
+  --db <path>          Database path (default: ${DEFAULT_KNOWLEDGE_DB_PATH})
   -h, --help           Show this help
 
 Examples:
@@ -31,7 +29,7 @@ const { values } = parseArgs({
     repo: { type: "string" },
     days: { type: "string", default: "30" },
     json: { type: "boolean", default: false },
-    db: { type: "string", default: DEFAULT_DB_PATH },
+    db: { type: "string" },
     help: { type: "boolean", default: false, short: "h" },
   },
   strict: true,
@@ -54,7 +52,8 @@ if (!Number.isInteger(days) || days <= 0) {
   process.exit(1);
 }
 
-const dbPath = resolve(values.db!);
+const resolvedDb = resolveKnowledgeDbPath({ dbPath: values.db });
+const dbPath = resolvedDb.dbPath;
 if (!existsSync(dbPath)) {
   console.error(`No knowledge store found at ${dbPath}`);
   process.exit(1);

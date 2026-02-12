@@ -14,6 +14,7 @@ import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
+import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -46,8 +47,12 @@ if (purgedCount > 0) {
 }
 telemetryStore.checkpoint();
 
-const knowledgeDbPath = process.env.KNOWLEDGE_DB_PATH ?? "./data/kodiai-knowledge.db";
-const knowledgeStore = createKnowledgeStore({ dbPath: knowledgeDbPath, logger });
+const knowledgeDb = resolveKnowledgeDbPath();
+const knowledgeStore = createKnowledgeStore({ dbPath: knowledgeDb.dbPath, logger });
+logger.info(
+  { knowledgeDbPath: knowledgeDb.dbPath, source: knowledgeDb.source },
+  "Knowledge store path resolved",
+);
 knowledgeStore.checkpoint();
 
 // Event processing pipeline: bot filter -> event router
