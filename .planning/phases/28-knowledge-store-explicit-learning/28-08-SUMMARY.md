@@ -68,13 +68,26 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] STATE.md auto-advance commands could not parse legacy plan/progress fields**
+- **Found during:** State update step after task completion
+- **Issue:** `state advance-plan`, `state update-progress`, and `state record-session` reported missing/legacy STATE.md field format
+- **Fix:** Kept metric/decision commands via gsd-tools and manually updated Current Position and Session Continuity fields in `STATE.md`
+- **Files modified:** `.planning/STATE.md`
+- **Verification:** Confirmed `STATE.md` reflects `Plan: 8 of 8`, `Last activity: Completed 28-08`, and `Stopped at: Completed 28-08-PLAN.md`
+- **Committed in:** `78adcc02c1`
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking)
+**Impact on plan:** Metadata tooling compatibility issue only; task implementation scope unchanged.
 
 ## Authentication Gates
 None.
 
 ## Issues Encountered
-None.
+- `gsd-tools` state auto-advance/session commands expected a newer STATE.md shape and failed to parse current position/session fields; resolved by manual STATE updates after recording metrics/decisions.
 
 ## User Setup Required
 
