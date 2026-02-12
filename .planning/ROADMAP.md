@@ -97,11 +97,13 @@ Plans:
   2. User sets `review.profile: strict` (or `balanced` or `minimal`) and gets a named preset that configures severity threshold, focus areas, and noise rules as a bundle
   3. Before invoking Claude, system classifies changed files by category (source/test/config/docs) and detects risk signals (auth changes, new dependencies, error handling) deterministically without an LLM call
   4. Review prompt contains diff analysis context (file classifications, risk signals, scale) and any applicable path-scoped instructions, producing more targeted findings
-**Plans**: 2 plans
+**Plans**: 4 plans
 
 Plans:
-- [ ] 27-01-PLAN.md — Config schema extension (pathInstructions, profile, fileCategories) and deterministic diff analysis module
-- [ ] 27-02-PLAN.md — Prompt enrichment with path instruction matching, diff analysis sections, and handler wiring with profile resolution
+- [x] 27-01-PLAN.md — Config schema extension (pathInstructions, profile, fileCategories) and deterministic diff analysis module
+- [x] 27-02-PLAN.md — Prompt enrichment with path instruction matching, diff analysis sections, and handler wiring with profile resolution
+- [x] 27-03-PLAN.md — Gap closure: resilient shallow-clone diff collection and no-merge-base fallback for live review execution
+- [ ] 27-04-PLAN.md — Gap closure: elapsed-time budget guardrails with graceful truncation in deterministic diff analysis
 
 ### Phase 28: Knowledge Store & Explicit Learning
 **Goal**: System persists review knowledge per-repo and users can teach the bot what to ignore via explicit configuration and confidence thresholds
@@ -163,7 +165,7 @@ Phases execute in numeric order: 26 → 27 → 28 → 29
 | 24. Enhanced Config Fields | v0.3 | 2/2 | Complete | 2026-02-11 |
 | 25. Reporting Tools | v0.3 | 1/1 | Complete | 2026-02-11 |
 | 26. Review Mode & Severity Control | v0.4 | 2/2 | Complete | 2026-02-11 |
-| 27. Context-Aware Reviews | v0.4 | 0/2 | In Progress | - |
+| 27. Context-Aware Reviews | v0.4 | 3/4 | In Progress | - |
 | 28. Knowledge Store & Explicit Learning | v0.4 | 0/? | Not started | - |
 | 29. Feedback Capture | v0.4 | 0/? | Not started | - |
 
