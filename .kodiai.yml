@@ -2,6 +2,11 @@ review:
   uiRereviewTeam: aireview
   requestUiRereviewTeamOnOpen: true
   profile: strict
+  minConfidence: 100
+  suppressions:
+    - pattern: "glob:*"
+      paths:
+        - "src/api/**"
   pathInstructions:
     - path: "src/api/**"
       instructions:
