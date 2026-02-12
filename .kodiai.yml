@@ -9,9 +9,9 @@ review:
         - "src/api/**"
   pathInstructions:
     - path: "src/api/**"
-      instructions:
-        - "Treat all auth and token handling as high-risk. Require explicit validation and safe defaults."
-        - "Prioritize findings in security, input validation, and error handling over style concerns."
+      instructions: |
+        Treat all auth and token handling as high-risk. Require explicit validation and safe defaults.
+        Prioritize findings in security, input validation, and error handling over style concerns.
     - path: "docs/**"
-      instructions:
-        - "Keep review lightweight for docs-only changes unless instructions are clearly unsafe or incorrect."
+      instructions: |
+        Keep review lightweight for docs-only changes unless instructions are clearly unsafe or incorrect.
