@@ -68,7 +68,7 @@ See `.planning/milestones/v0.3-ROADMAP.md` for full phase details.
 - [x] **Phase 26: Review Mode & Severity Control** — Configurable review strictness with structured output and noise suppression (completed 2026-02-11)
 - [ ] **Phase 27: Context-Aware Reviews** — Path-scoped instructions, profile presets, and deterministic diff analysis
 - [ ] **Phase 28: Knowledge Store & Explicit Learning** — SQLite-backed learning, suppression patterns, and review metrics
-- [ ] **Phase 29: Feedback Capture** — Implicit learning via comment reaction tracking
+- [x] **Phase 29: Feedback Capture** — Implicit learning via comment reaction tracking (completed 2026-02-12)
 
 ## Phase Details
 
@@ -135,8 +135,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 29-01-PLAN.md — Knowledge-store feedback schema and deterministic finding-comment linkage
-- [ ] 29-02-PLAN.md — Idempotent thumbs reaction sync capture and runtime wiring
+- [x] 29-01-PLAN.md — Knowledge-store feedback schema and deterministic finding-comment linkage
+- [x] 29-02-PLAN.md — Idempotent thumbs reaction sync capture and runtime wiring
 
 ## Progress
 
@@ -173,8 +173,8 @@ Phases execute in numeric order: 26 → 27 → 28 → 29
 | 26. Review Mode & Severity Control | v0.4 | 2/2 | Complete | 2026-02-11 |
 | 27. Context-Aware Reviews | v0.4 | 3/4 | In Progress | - |
 | 28. Knowledge Store & Explicit Learning | v0.4 | 0/4 | Not started | - |
-| 29. Feedback Capture | v0.4 | 0/? | Not started | - |
+| 29. Feedback Capture | v0.4 | 2/2 | Complete | 2026-02-12 |
 
 ---
 
-*Last updated: 2026-02-11 after Phase 28 planning*
+*Last updated: 2026-02-12 after Phase 29 execution + live verification*
