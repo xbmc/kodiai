@@ -10,7 +10,11 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import { buildReviewPrompt } from "../execution/review-prompt.ts";
+import { analyzeDiff } from "../execution/diff-analysis.ts";
+import {
+  buildReviewPrompt,
+  matchPathInstructions,
+} from "../execution/review-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import {
   buildReviewOutputKey,
@@ -20,6 +24,34 @@ import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
 import picomatch from "picomatch";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+
+type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
+
+const PROFILE_PRESETS: Record<string, {
+  severityMinLevel: "critical" | "major" | "medium" | "minor";
+  maxComments: number;
+  ignoredAreas: ReviewArea[];
+  focusAreas: ReviewArea[];
+}> = {
+  strict: {
+    severityMinLevel: "minor",
+    maxComments: 15,
+    ignoredAreas: [],
+    focusAreas: [],
+  },
+  balanced: {
+    severityMinLevel: "medium",
+    maxComments: 7,
+    ignoredAreas: ["style"],
+    focusAreas: [],
+  },
+  minimal: {
+    severityMinLevel: "major",
+    maxComments: 3,
+    ignoredAreas: ["style", "documentation"],
+    focusAreas: ["security", "correctness"],
+  },
+};
 
 /**
  * Normalize a user-authored skip pattern for backward compatibility.
@@ -445,6 +477,63 @@ export function createReviewHandler(deps: {
           return;
         }
 
+        const numstatOutput =
+          await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD --numstat`.quiet();
+        const numstatLines = numstatOutput.text().trim().split("\n").filter(Boolean);
+
+        let diffContent: string | undefined;
+        if (changedFiles.length <= 200) {
+          const fullDiff = await $`git -C ${workspace.dir} diff origin/${pr.base.ref}...HEAD`.quiet();
+          diffContent = fullDiff.text();
+        }
+
+        const diffAnalysis = analyzeDiff({
+          changedFiles,
+          numstatLines,
+          diffContent,
+          fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
+        });
+
+        const matchedPathInstructions = config.review.pathInstructions.length > 0
+          ? matchPathInstructions(config.review.pathInstructions, changedFiles)
+          : [];
+
+        let resolvedSeverityMinLevel = config.review.severity.minLevel;
+        let resolvedMaxComments = config.review.maxComments;
+        let resolvedFocusAreas = [...config.review.focusAreas];
+        let resolvedIgnoredAreas = [...config.review.ignoredAreas];
+
+        if (config.review.profile) {
+          const preset = PROFILE_PRESETS[config.review.profile];
+          if (preset) {
+            if (resolvedSeverityMinLevel === "minor") {
+              resolvedSeverityMinLevel = preset.severityMinLevel;
+            }
+            if (resolvedMaxComments === 7) {
+              resolvedMaxComments = preset.maxComments;
+            }
+            if (resolvedFocusAreas.length === 0) {
+              resolvedFocusAreas = [...preset.focusAreas];
+            }
+            if (resolvedIgnoredAreas.length === 0) {
+              resolvedIgnoredAreas = [...preset.ignoredAreas];
+            }
+          }
+        }
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "diff-analysis",
+            totalFiles: diffAnalysis.metrics.totalFiles,
+            isLargePR: diffAnalysis.isLargePR,
+            riskSignals: diffAnalysis.riskSignals.length,
+            matchedInstructions: matchedPathInstructions.length,
+            profile: config.review.profile ?? null,
+          },
+          "Diff analysis and context enrichment complete",
+        );
+
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -459,10 +548,12 @@ export function createReviewHandler(deps: {
           customInstructions: config.review.prompt,
           // Review mode & severity control
           mode: config.review.mode,
-          severityMinLevel: config.review.severity.minLevel,
-          focusAreas: config.review.focusAreas,
-          ignoredAreas: config.review.ignoredAreas,
-          maxComments: config.review.maxComments,
+          severityMinLevel: resolvedSeverityMinLevel,
+          focusAreas: resolvedFocusAreas,
+          ignoredAreas: resolvedIgnoredAreas,
+          maxComments: resolvedMaxComments,
+          diffAnalysis,
+          matchedPathInstructions,
         });
 
         // Execute review via Claude
