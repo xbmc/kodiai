@@ -97,7 +97,7 @@ Plans:
   2. User sets `review.profile: strict` (or `balanced` or `minimal`) and gets a named preset that configures severity threshold, focus areas, and noise rules as a bundle
   3. Before invoking Claude, system classifies changed files by category (source/test/config/docs) and detects risk signals (auth changes, new dependencies, error handling) deterministically without an LLM call
   4. Review prompt contains diff analysis context (file classifications, risk signals, scale) and any applicable path-scoped instructions, producing more targeted findings
-**Plans**: 4 plans
+**Plans**: 7 plans
 
 Plans:
 - [x] 27-01-PLAN.md — Config schema extension (pathInstructions, profile, fileCategories) and deterministic diff analysis module
@@ -117,10 +117,13 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 28-01-PLAN.md — Knowledge store schema and factory function (SQLite WAL, reviews/findings/suppression_log tables)
-- [ ] 28-02-PLAN.md — Suppression patterns config schema and confidence scoring engine
-- [ ] 28-03-PLAN.md — Prompt enrichment with suppression rules, confidence display, metrics, and handler wiring
-- [ ] 28-04-PLAN.md — CLI query scripts for review stats and trend analysis
+- [x] 28-01-PLAN.md — Knowledge store schema and factory function (SQLite WAL, reviews/findings/suppression_log tables)
+- [x] 28-02-PLAN.md — Suppression patterns config schema and confidence scoring engine
+- [x] 28-03-PLAN.md — Prompt enrichment with suppression rules, confidence display, metrics, and handler wiring
+- [x] 28-04-PLAN.md — CLI query scripts for review stats and trend analysis
+- [x] 28-05-PLAN.md — Gap closure: canonical KNOWLEDGE_DB_PATH contract across runtime and CLI
+- [x] 28-06-PLAN.md — Gap closure: unconditional Review Details metrics contract across modes
+- [ ] 28-07-PLAN.md — Gap closure: runtime finding extraction, suppression/minConfidence output filtering, and enforced metrics/time-saved persistence wiring
 
 ### Phase 29: Feedback Capture
 **Goal**: System captures implicit user feedback on review quality through comment reactions, building a feedback corpus for future learning improvements
