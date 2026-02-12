@@ -114,11 +114,13 @@ Plans:
   2. User defines `review.suppressions` patterns in `.kodiai.yml` (e.g., "ignore missing error handling in test files") and matching findings are excluded from future reviews
   3. User sets `review.minConfidence: medium` and review output excludes low-confidence findings where false positives concentrate
   4. Every review summary includes quantitative metrics: files reviewed, lines analyzed, issues found by severity level, and estimated review time saved
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 28-01: TBD
-- [ ] 28-02: TBD
+- [ ] 28-01-PLAN.md — Knowledge store schema and factory function (SQLite WAL, reviews/findings/suppression_log tables)
+- [ ] 28-02-PLAN.md — Suppression patterns config schema and confidence scoring engine
+- [ ] 28-03-PLAN.md — Prompt enrichment with suppression rules, confidence display, metrics, and handler wiring
+- [ ] 28-04-PLAN.md — CLI query scripts for review stats and trend analysis
 
 ### Phase 29: Feedback Capture
 **Goal**: System captures implicit user feedback on review quality through comment reactions, building a feedback corpus for future learning improvements
@@ -166,9 +168,9 @@ Phases execute in numeric order: 26 → 27 → 28 → 29
 | 25. Reporting Tools | v0.3 | 1/1 | Complete | 2026-02-11 |
 | 26. Review Mode & Severity Control | v0.4 | 2/2 | Complete | 2026-02-11 |
 | 27. Context-Aware Reviews | v0.4 | 3/4 | In Progress | - |
-| 28. Knowledge Store & Explicit Learning | v0.4 | 0/? | Not started | - |
+| 28. Knowledge Store & Explicit Learning | v0.4 | 0/4 | Not started | - |
 | 29. Feedback Capture | v0.4 | 0/? | Not started | - |
 
 ---
 
-*Last updated: 2026-02-11 after v0.4 roadmap created*
+*Last updated: 2026-02-11 after Phase 28 planning*
