@@ -128,6 +128,188 @@ describe("KnowledgeStore", () => {
     expect(finding.suppressed).toBe(0);
   });
 
+  test("recordFindings persists deterministic comment linkage fields", () => {
+    const reviewId = fixture.store.recordReview({
+      repo: "owner/repo",
+      prNumber: 77,
+      filesAnalyzed: 1,
+      linesChanged: 10,
+      findingsCritical: 0,
+      findingsMajor: 1,
+      findingsMedium: 0,
+      findingsMinor: 0,
+      findingsTotal: 1,
+      suppressionsApplied: 0,
+      conclusion: "success",
+    });
+
+    fixture.store.recordFindings([
+      {
+        reviewId,
+        commentId: 1234,
+        commentSurface: "pull_request_review_comment",
+        reviewOutputKey: "kodiai-review-output:v1:test",
+        filePath: "src/handler.ts",
+        severity: "major",
+        category: "correctness",
+        confidence: 80,
+        title: "Guard undefined access",
+        suppressed: false,
+      },
+    ]);
+
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const finding = db
+      .query("SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ?")
+      .get(reviewId) as Record<string, unknown>;
+    db.close();
+
+    expect(finding.comment_id).toBe(1234);
+    expect(finding.comment_surface).toBe("pull_request_review_comment");
+    expect(finding.review_output_key).toBe("kodiai-review-output:v1:test");
+  });
+
+  test("recordFeedbackReactions is append-only and deduplicates by repo/comment/reaction", () => {
+    const reviewId = fixture.store.recordReview({
+      repo: "owner/repo",
+      prNumber: 88,
+      filesAnalyzed: 1,
+      linesChanged: 10,
+      findingsCritical: 0,
+      findingsMajor: 1,
+      findingsMedium: 0,
+      findingsMinor: 0,
+      findingsTotal: 1,
+      suppressionsApplied: 0,
+      conclusion: "success",
+    });
+
+    fixture.store.recordFindings([
+      {
+        reviewId,
+        commentId: 222,
+        commentSurface: "pull_request_review_comment",
+        reviewOutputKey: "kodiai-review-output:v1:feedback",
+        filePath: "src/api/routes.ts",
+        severity: "major",
+        category: "security",
+        confidence: 91,
+        title: "Sanitize request body",
+        suppressed: false,
+      },
+    ]);
+
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const findingRow = db
+      .query("SELECT id FROM findings WHERE review_id = ?")
+      .get(reviewId) as { id: number };
+    db.close();
+
+    fixture.store.recordFeedbackReactions([
+      {
+        repo: "owner/repo",
+        reviewId,
+        findingId: findingRow.id,
+        commentId: 222,
+        commentSurface: "pull_request_review_comment",
+        reactionId: 9001,
+        reactionContent: "+1",
+        reactorLogin: "alice",
+        reactedAt: "2026-02-12T00:00:00Z",
+        severity: "major",
+        category: "security",
+        filePath: "src/api/routes.ts",
+        title: "Sanitize request body",
+      },
+      {
+        repo: "owner/repo",
+        reviewId,
+        findingId: findingRow.id,
+        commentId: 222,
+        commentSurface: "pull_request_review_comment",
+        reactionId: 9002,
+        reactionContent: "-1",
+        reactorLogin: "bob",
+        reactedAt: "2026-02-12T00:05:00Z",
+        severity: "major",
+        category: "security",
+        filePath: "src/api/routes.ts",
+        title: "Sanitize request body",
+      },
+      {
+        repo: "owner/repo",
+        reviewId,
+        findingId: findingRow.id,
+        commentId: 222,
+        commentSurface: "pull_request_review_comment",
+        reactionId: 9001,
+        reactionContent: "+1",
+        reactorLogin: "alice",
+        reactedAt: "2026-02-12T00:00:00Z",
+        severity: "major",
+        category: "security",
+        filePath: "src/api/routes.ts",
+        title: "Sanitize request body",
+      },
+    ]);
+
+    const verifyDb = new Database(fixture.dbPath, { readonly: true });
+    const rows = verifyDb
+      .query(
+        "SELECT reaction_content, reactor_login, severity, category, file_path, title FROM feedback_reactions WHERE finding_id = ? ORDER BY reaction_id ASC",
+      )
+      .all(findingRow.id) as Array<Record<string, unknown>>;
+    verifyDb.close();
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.reaction_content).toBe("+1");
+    expect(rows[1]?.reaction_content).toBe("-1");
+    expect(rows[0]?.reactor_login).toBe("alice");
+    expect(rows[1]?.reactor_login).toBe("bob");
+    expect(rows[0]?.severity).toBe("major");
+    expect(rows[0]?.category).toBe("security");
+    expect(rows[0]?.file_path).toBe("src/api/routes.ts");
+    expect(rows[0]?.title).toBe("Sanitize request body");
+  });
+
+  test("listRecentFindingCommentCandidates returns linked findings for repo", () => {
+    const reviewId = fixture.store.recordReview({
+      repo: "owner/repo",
+      prNumber: 89,
+      filesAnalyzed: 1,
+      linesChanged: 5,
+      findingsCritical: 0,
+      findingsMajor: 1,
+      findingsMedium: 0,
+      findingsMinor: 0,
+      findingsTotal: 1,
+      suppressionsApplied: 0,
+      conclusion: "success",
+    });
+
+    fixture.store.recordFindings([
+      {
+        reviewId,
+        commentId: 444,
+        commentSurface: "pull_request_review_comment",
+        reviewOutputKey: "kodiai-review-output:v1:candidate",
+        filePath: "src/candidate.ts",
+        severity: "major",
+        category: "correctness",
+        confidence: 70,
+        title: "Candidate finding",
+        suppressed: false,
+      },
+    ]);
+
+    const candidates = fixture.store.listRecentFindingCommentCandidates("owner/repo", 10);
+    expect(candidates.length).toBe(1);
+    expect(candidates[0]?.commentId).toBe(444);
+    expect(candidates[0]?.commentSurface).toBe("pull_request_review_comment");
+    expect(candidates[0]?.reviewOutputKey).toBe("kodiai-review-output:v1:candidate");
+    expect(candidates[0]?.filePath).toBe("src/candidate.ts");
+  });
+
   test("recordSuppressionLog stores suppression entries", () => {
     const reviewId = fixture.store.recordReview({
       repo: "owner/repo",
@@ -314,6 +496,24 @@ describe("KnowledgeStore", () => {
           suppressed: false,
         },
       ])).toThrow();
+
+    expect(() =>
+      fixture.store.recordFeedbackReactions([
+        {
+          repo: "owner/repo",
+          reviewId: 999_998,
+          findingId: 999_999,
+          commentId: 1,
+          commentSurface: "pull_request_review_comment",
+          reactionId: 1,
+          reactionContent: "+1",
+          reactorLogin: "eve",
+          severity: "minor",
+          category: "style",
+          filePath: "src/nope.ts",
+          title: "Orphan reaction",
+        },
+      ])).toThrow();
   });
 
   test("WAL mode and foreign key relationships are present", () => {
@@ -325,11 +525,15 @@ describe("KnowledgeStore", () => {
     const suppressionFk = db.query("PRAGMA foreign_key_list(suppression_log)").all() as Array<
       Record<string, unknown>
     >;
+    const reactionFk = db.query("PRAGMA foreign_key_list(feedback_reactions)").all() as Array<
+      Record<string, unknown>
+    >;
     db.close();
 
     expect(journalMode.journal_mode).toBe("wal");
     expect(findingsFk.length).toBeGreaterThan(0);
     expect(suppressionFk.length).toBeGreaterThan(0);
+    expect(reactionFk.length).toBeGreaterThan(0);
   });
 
   test("close prevents future operations", () => {
