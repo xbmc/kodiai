@@ -71,6 +71,25 @@ const pathInstructionSchema = z.object({
   instructions: z.string(),
 });
 
+const suppressionPatternSchema = z.object({
+  pattern: z.string().min(1),
+  severity: z
+    .array(z.enum(["critical", "major", "medium", "minor"]))
+    .optional(),
+  category: z
+    .array(
+      z.enum([
+        "security",
+        "correctness",
+        "performance",
+        "style",
+        "documentation",
+      ]),
+    )
+    .optional(),
+  paths: z.array(z.string()).optional(),
+});
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -123,6 +142,10 @@ const reviewSchema = z
       .default([]),
     /** Maximum inline comments per review. Range 1-25, default 7. */
     maxComments: z.number().min(1).max(25).default(7),
+    suppressions: z
+      .array(z.union([z.string().min(1), suppressionPatternSchema]))
+      .default([]),
+    minConfidence: z.number().min(0).max(100).default(0),
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
     fileCategories: z
@@ -151,6 +174,8 @@ const reviewSchema = z
     focusAreas: [],
     ignoredAreas: [],
     maxComments: 7,
+    suppressions: [],
+    minConfidence: 0,
     pathInstructions: [],
   });
 
