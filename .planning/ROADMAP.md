@@ -132,10 +132,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. When a user adds a thumbs-up or thumbs-down reaction to a Kodiai review comment, the system captures that feedback and correlates it with the original finding in the knowledge store
   2. Captured feedback is stored per-repo with the finding context (issue type, severity, file pattern) for future analysis, without automatically changing review behavior in v0.4
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 29-01: TBD
+- [ ] 29-01-PLAN.md — Knowledge-store feedback schema and deterministic finding-comment linkage
+- [ ] 29-02-PLAN.md — Idempotent thumbs reaction sync capture and runtime wiring
 
 ## Progress
 
