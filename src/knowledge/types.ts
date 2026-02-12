@@ -28,6 +28,9 @@ export type ReviewRecord = {
 
 export type FindingRecord = {
   reviewId: number;
+  commentId?: number;
+  commentSurface?: "pull_request_review_comment";
+  reviewOutputKey?: string;
   filePath: string;
   startLine?: number;
   endLine?: number;
@@ -77,9 +80,41 @@ export type GlobalPatternRecord = {
   count: number;
 };
 
+export type FeedbackReaction = {
+  repo: string;
+  reviewId: number;
+  findingId: number;
+  commentId: number;
+  commentSurface: "pull_request_review_comment";
+  reactionId: number;
+  reactionContent: "+1" | "-1";
+  reactorLogin: string;
+  reactedAt?: string;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  filePath: string;
+  title: string;
+};
+
+export type FindingCommentCandidate = {
+  findingId: number;
+  reviewId: number;
+  repo: string;
+  commentId: number;
+  commentSurface: "pull_request_review_comment";
+  reviewOutputKey: string;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  filePath: string;
+  title: string;
+  createdAt: string;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
+  recordFeedbackReactions(reactions: FeedbackReaction[]): void;
+  listRecentFindingCommentCandidates(repo: string, limit?: number): FindingCommentCandidate[];
   recordSuppressionLog(entries: SuppressionLogEntry[]): void;
   recordGlobalPattern(entry: GlobalPatternRecord): void;
   getRepoStats(repo: string, sinceDays?: number): RepoStats;

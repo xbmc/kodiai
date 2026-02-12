@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "pino";
 import type {
+  FeedbackReaction,
+  FindingCommentCandidate,
   FindingRecord,
   GlobalPatternRecord,
   KnowledgeStore,
@@ -35,6 +37,36 @@ type TrendRow = {
   suppressions_count: number;
   avg_confidence: number;
 };
+
+type TableInfoRow = {
+  name: string;
+};
+
+type FindingCommentCandidateRow = {
+  finding_id: number;
+  review_id: number;
+  repo: string;
+  comment_id: number;
+  comment_surface: "pull_request_review_comment";
+  review_output_key: string;
+  severity: "critical" | "major" | "medium" | "minor";
+  category: "security" | "correctness" | "performance" | "style" | "documentation";
+  file_path: string;
+  title: string;
+  created_at: string;
+};
+
+function hasTableColumn(db: Database, tableName: string, columnName: string): boolean {
+  const rows = db.query(`PRAGMA table_info(${tableName})`).all() as TableInfoRow[];
+  return rows.some((row) => row.name === columnName);
+}
+
+function ensureTableColumn(db: Database, tableName: string, columnName: string, columnDefinition: string): void {
+  if (hasTableColumn(db, tableName, columnName)) {
+    return;
+  }
+  db.run(`ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition}`);
+}
 
 function buildSinceFilter(sinceDays?: number): {
   sql: string;
@@ -109,6 +141,10 @@ export function createKnowledgeStore(opts: {
     )
   `);
 
+  ensureTableColumn(db, "findings", "comment_id", "comment_id INTEGER");
+  ensureTableColumn(db, "findings", "comment_surface", "comment_surface TEXT");
+  ensureTableColumn(db, "findings", "review_output_key", "review_output_key TEXT");
+
   db.run("CREATE INDEX IF NOT EXISTS idx_findings_review ON findings(review_id)");
   db.run("CREATE INDEX IF NOT EXISTS idx_findings_severity ON findings(severity)");
   db.run("CREATE INDEX IF NOT EXISTS idx_findings_repo_file ON findings(file_path)");
@@ -142,6 +178,34 @@ export function createKnowledgeStore(opts: {
     "CREATE INDEX IF NOT EXISTS idx_global_patterns_lookup ON global_patterns(severity, category, confidence_band)",
   );
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS feedback_reactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      repo TEXT NOT NULL,
+      review_id INTEGER NOT NULL REFERENCES reviews(id),
+      finding_id INTEGER NOT NULL REFERENCES findings(id),
+      comment_id INTEGER NOT NULL,
+      comment_surface TEXT NOT NULL,
+      reaction_id INTEGER NOT NULL,
+      reaction_content TEXT NOT NULL,
+      reactor_login TEXT NOT NULL,
+      reacted_at TEXT,
+      severity TEXT NOT NULL,
+      category TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      title TEXT NOT NULL,
+      UNIQUE(repo, comment_id, reaction_id)
+    )
+  `);
+
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_feedback_reactions_repo_created ON feedback_reactions(repo, created_at)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_feedback_reactions_finding ON feedback_reactions(finding_id)",
+  );
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -162,10 +226,44 @@ export function createKnowledgeStore(opts: {
   const recordFindingStmt = db.query(`
     INSERT INTO findings (
       review_id, file_path, start_line, end_line,
-      severity, category, confidence, title, suppressed, suppression_pattern
+      severity, category, confidence, title, suppressed, suppression_pattern,
+      comment_id, comment_surface, review_output_key
     ) VALUES (
       $reviewId, $filePath, $startLine, $endLine,
-      $severity, $category, $confidence, $title, $suppressed, $suppressionPattern
+      $severity, $category, $confidence, $title, $suppressed, $suppressionPattern,
+      $commentId, $commentSurface, $reviewOutputKey
+    )
+  `);
+
+  const recordFeedbackReactionStmt = db.query(`
+    INSERT OR IGNORE INTO feedback_reactions (
+      repo,
+      review_id,
+      finding_id,
+      comment_id,
+      comment_surface,
+      reaction_id,
+      reaction_content,
+      reactor_login,
+      reacted_at,
+      severity,
+      category,
+      file_path,
+      title
+    ) VALUES (
+      $repo,
+      $reviewId,
+      $findingId,
+      $commentId,
+      $commentSurface,
+      $reactionId,
+      $reactionContent,
+      $reactorLogin,
+      $reactedAt,
+      $severity,
+      $category,
+      $filePath,
+      $title
     )
   `);
 
@@ -205,6 +303,9 @@ export function createKnowledgeStore(opts: {
         $title: finding.title,
         $suppressed: finding.suppressed ? 1 : 0,
         $suppressionPattern: finding.suppressionPattern ?? null,
+        $commentId: finding.commentId ?? null,
+        $commentSurface: finding.commentSurface ?? null,
+        $reviewOutputKey: finding.reviewOutputKey ?? null,
       });
     }
   });
@@ -216,6 +317,26 @@ export function createKnowledgeStore(opts: {
         $pattern: entry.pattern,
         $matchedCount: entry.matchedCount,
         $findingIds: entry.findingIds ? JSON.stringify(entry.findingIds) : null,
+      });
+    }
+  });
+
+  const insertFeedbackReactionTxn = db.transaction((reactions: FeedbackReaction[]) => {
+    for (const reaction of reactions) {
+      recordFeedbackReactionStmt.run({
+        $repo: reaction.repo,
+        $reviewId: reaction.reviewId,
+        $findingId: reaction.findingId,
+        $commentId: reaction.commentId,
+        $commentSurface: reaction.commentSurface,
+        $reactionId: reaction.reactionId,
+        $reactionContent: reaction.reactionContent,
+        $reactorLogin: reaction.reactorLogin,
+        $reactedAt: reaction.reactedAt ?? null,
+        $severity: reaction.severity,
+        $category: reaction.category,
+        $filePath: reaction.filePath,
+        $title: reaction.title,
       });
     }
   });
@@ -246,6 +367,52 @@ export function createKnowledgeStore(opts: {
     recordFindings(findings: FindingRecord[]): void {
       if (findings.length === 0) return;
       insertFindingsTxn(findings);
+    },
+
+    recordFeedbackReactions(reactions: FeedbackReaction[]): void {
+      if (reactions.length === 0) return;
+      insertFeedbackReactionTxn(reactions);
+    },
+
+    listRecentFindingCommentCandidates(repo: string, limit = 100): FindingCommentCandidate[] {
+      const rows = db
+        .query(`
+          SELECT
+            f.id AS finding_id,
+            f.review_id AS review_id,
+            r.repo AS repo,
+            f.comment_id AS comment_id,
+            f.comment_surface AS comment_surface,
+            f.review_output_key AS review_output_key,
+            f.severity AS severity,
+            f.category AS category,
+            f.file_path AS file_path,
+            f.title AS title,
+            f.created_at AS created_at
+          FROM findings f
+          INNER JOIN reviews r ON r.id = f.review_id
+          WHERE r.repo = $repo
+            AND f.comment_id IS NOT NULL
+            AND f.comment_surface IS NOT NULL
+            AND f.review_output_key IS NOT NULL
+          ORDER BY f.created_at DESC, f.id DESC
+          LIMIT $limit
+        `)
+        .all({ $repo: repo, $limit: Math.max(1, limit) }) as FindingCommentCandidateRow[];
+
+      return rows.map((row) => ({
+        findingId: row.finding_id,
+        reviewId: row.review_id,
+        repo: row.repo,
+        commentId: row.comment_id,
+        commentSurface: row.comment_surface,
+        reviewOutputKey: row.review_output_key,
+        severity: row.severity,
+        category: row.category,
+        filePath: row.file_path,
+        title: row.title,
+        createdAt: row.created_at,
+      }));
     },
 
     recordSuppressionLog(entries: SuppressionLogEntry[]): void {
