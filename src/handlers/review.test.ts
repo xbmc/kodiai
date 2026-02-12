@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createReviewHandler } from "./review.ts";
-import { buildReviewOutputMarker } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -2056,6 +2056,139 @@ describe("createReviewHandler diff collection resilience", () => {
     expect(executeCount).toBe(1);
     expect(capturedPrompt).toContain("src/api/phase27-uat-example.ts");
     expect(capturedPrompt).not.toContain("Path-Specific Review Instructions");
+
+    await workspaceFixture.cleanup();
+  });
+});
+
+describe("createReviewHandler finding extraction", () => {
+  test("extracts structured findings from inline review output", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let exposeInlineFinding = false;
+    const recordedReviews: Array<Record<string, unknown>> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) {
+              return { data: [] };
+            }
+            return {
+              data: [
+                {
+                  body: [
+                    "```yaml",
+                    "severity: MAJOR",
+                    "category: correctness",
+                    "```",
+                    "",
+                    "**Guard against undefined payload**",
+                    "Add a null check before dereferencing.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/handlers/review.ts",
+                  line: 777,
+                  start_line: 775,
+                },
+              ],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-finding-extraction",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: (entry: Record<string, unknown>) => {
+          recordedReviews.push(entry);
+          return 1;
+        },
+        recordFindings: () => undefined,
+        recordSuppressionLog: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(recordedReviews).toHaveLength(1);
+    expect(recordedReviews[0]?.findingsTotal).toBe(1);
+    expect(recordedReviews[0]?.findingsMajor).toBe(1);
 
     await workspaceFixture.cleanup();
   });

@@ -29,6 +29,158 @@ import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
+type FindingSeverity = "critical" | "major" | "medium" | "minor";
+type FindingCategory = "security" | "correctness" | "performance" | "style" | "documentation";
+
+type ExtractedFinding = {
+  filePath: string;
+  title: string;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  startLine?: number;
+  endLine?: number;
+};
+
+function normalizeSeverity(value: string | undefined): FindingSeverity | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "critical" || normalized === "major" || normalized === "medium" || normalized === "minor") {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeCategory(value: string | undefined): FindingCategory {
+  if (!value) return "correctness";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "security") return "security";
+  if (normalized === "correctness" || normalized === "error-handling") return "correctness";
+  if (normalized === "performance" || normalized === "resource-management" || normalized === "concurrency") {
+    return "performance";
+  }
+  if (normalized === "style") return "style";
+  if (normalized === "documentation") return "documentation";
+  return "correctness";
+}
+
+function parseInlineCommentMetadata(body: string): {
+  severity: FindingSeverity | null;
+  category: FindingCategory;
+  title: string;
+} {
+  const text = body.replace(/<!--\s*kodiai:review-output-key:[\s\S]*?-->/gi, "").trim();
+  const yamlMatch = text.match(/^```yaml\s*([\s\S]*?)```/i);
+
+  if (yamlMatch) {
+    const metadataLines = (yamlMatch[1] ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.includes(":"));
+    const metadata = new Map<string, string>();
+    for (const line of metadataLines) {
+      const idx = line.indexOf(":");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim().toLowerCase();
+      const value = line.slice(idx + 1).trim();
+      metadata.set(key, value);
+    }
+
+    const titleSection = text.slice(yamlMatch[0].length).trim();
+    const titleLine = titleSection
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? "Untitled finding";
+    const title = titleLine.replace(/^\*\*(.+)\*\*$/, "$1").trim();
+
+    return {
+      severity: normalizeSeverity(metadata.get("severity")),
+      category: normalizeCategory(metadata.get("category")),
+      title,
+    };
+  }
+
+  const firstLine = text.split("\n").map((line) => line.trim()).find((line) => line.length > 0) ?? "";
+  const severityPrefix = firstLine.match(/^\[(critical|major|medium|minor)\]\s*(.*)$/i);
+  if (severityPrefix) {
+    return {
+      severity: normalizeSeverity(severityPrefix[1]),
+      category: "correctness",
+      title: (severityPrefix[2] || "Untitled finding").trim(),
+    };
+  }
+
+  return {
+    severity: null,
+    category: "correctness",
+    title: firstLine || "Untitled finding",
+  };
+}
+
+async function extractFindingsFromReviewComments(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+}): Promise<ExtractedFinding[]> {
+  const { octokit, owner, repo, prNumber, logger, baseLog } = params;
+
+  try {
+    const response = await octokit.rest.pulls.listReviewComments({
+      owner,
+      repo,
+      pull_number: prNumber,
+      per_page: 100,
+      sort: "created",
+      direction: "desc",
+    });
+
+    const findings: ExtractedFinding[] = [];
+
+    for (const comment of response.data) {
+      if (typeof comment.path !== "string" || typeof comment.body !== "string") {
+        continue;
+      }
+
+      const parsed = parseInlineCommentMetadata(comment.body);
+      if (!parsed.severity) {
+        continue;
+      }
+
+      findings.push({
+        filePath: comment.path,
+        title: parsed.title,
+        severity: parsed.severity,
+        category: parsed.category,
+        startLine: typeof comment.start_line === "number" ? comment.start_line : undefined,
+        endLine: typeof comment.line === "number" ? comment.line : undefined,
+      });
+    }
+
+    logger.debug(
+      {
+        ...baseLog,
+        gate: "finding-extraction",
+        extractedCount: findings.length,
+      },
+      "Extracted structured findings from review comments",
+    );
+
+    return findings;
+  } catch (err) {
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "finding-extraction",
+        err,
+      },
+      "Finding extraction failed; continuing with empty findings",
+    );
+    return [];
+  }
+}
+
 const PROFILE_PRESETS: Record<string, {
   severityMinLevel: "critical" | "major" | "medium" | "minor";
   maxComments: number;
@@ -726,12 +878,17 @@ export function createReviewHandler(deps: {
           "Review execution completed",
         );
 
-        const extractedFindings: Array<{
-          filePath: string;
-          title: string;
-          severity: "critical" | "major" | "medium" | "minor";
-          category: "security" | "correctness" | "performance" | "style" | "documentation";
-        }> = [];
+        const extractionOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        const extractedFindings = result.published
+          ? await extractFindingsFromReviewComments({
+            octokit: extractionOctokit,
+            owner: apiOwner,
+            repo: apiRepo,
+            prNumber: pr.number,
+            logger,
+            baseLog,
+          })
+          : [];
 
         const processedFindings = extractedFindings.map((finding) => {
           const suppressed = config.review.suppressions.some((suppression) =>
