@@ -8,6 +8,18 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
+## Current Milestone: v0.6 Review Output Formatting & UX
+
+**Goal:** Make review outputs maintainer-friendly, merge-confident, and low-drama by restructuring comment format, adding explicit merge recommendations, and removing noise
+
+**Target features:**
+- Structured initial reviews (What changed → Strengths → Observations → Suggestions → Verdict)
+- Explicit merge recommendations (✅ Ready to merge / ⚠️ Address X before merging)
+- Embedded Review Details in summaries (remove standalone comments)
+- Delta-focused re-reviews (only show what's changed/relevant since last review)
+- Remove time-saved estimates from Review Details
+- Use ✅ for verified positives, severity tags for negatives
+
 ## Latest Release: v0.5 Advanced Learning & Language Support
 
 **Shipped:** 2026-02-13
@@ -75,7 +87,14 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-(No active requirements — next milestone will define new requirements)
+- [ ] **FORMAT-01**: Initial PR reviews use structured format (What changed → Strengths → Observations → Suggestions → Verdict)
+- [ ] **FORMAT-02**: Verdict section provides explicit merge recommendation (✅ Ready / ⚠️ Address X)
+- [ ] **FORMAT-03**: Review Details embedded as collapsible section in summary (not standalone comment)
+- [ ] **FORMAT-04**: Re-reviews show delta findings only (what changed since last review)
+- [ ] **FORMAT-05**: Remove "Estimated review time saved" from Review Details
+- [ ] **FORMAT-06**: Use ✅ checkmarks for verified positives, severity tags for negatives
+- [ ] **FORMAT-07**: Separate blockers from minor issues explicitly in verdict
+- [ ] **FORMAT-08**: Signal review scope with progress checklist (e.g., "Reviewed: logic ✅, tests ✅")
 
 ### Out of Scope
 

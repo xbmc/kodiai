@@ -9,11 +9,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 ## Current Position
 
-Milestone: v0.5 complete
-Status: Shipped 2026-02-13
-Last activity: 2026-02-13 - Completed v0.5 milestone archival
-
-Next: Define v0.6 requirements and roadmap
+Milestone: v0.6 Review Output Formatting & UX
+Phase: Not started (defining requirements)
+Status: Defining requirements
+Last activity: 2026-02-13 — Milestone v0.6 started
 
 ## Performance Metrics
 
