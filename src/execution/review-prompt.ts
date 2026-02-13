@@ -551,6 +551,26 @@ export function buildReviewedCategoriesLine(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Verdict Logic section (FORMAT-03, Phase 36)
+// ---------------------------------------------------------------------------
+export function buildVerdictLogicSection(): string {
+  return [
+    "## Verdict Logic",
+    "",
+    'A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact.',
+    "",
+    "Determining the verdict:",
+    "1. Count the number of [CRITICAL] and [MAJOR] findings under ### Impact.",
+    "2. If count > 0: use :red_circle: **Address before merging** -- [count] blocking issue(s) found",
+    "3. If count == 0 AND there are non-blocking findings (MEDIUM, MINOR, Preference items, or Suggestions): use :yellow_circle: **Ready to merge with minor items** -- Optional cleanup suggestions below",
+    "4. If count == 0 AND there are no findings at all: use :green_circle: **Ready to merge** -- No blocking issues found",
+    "",
+    "Suggestions (## Suggestions section) are NEVER counted as blockers.",
+    "MEDIUM and MINOR findings are NOT blockers. They produce :yellow_circle: at most.",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Incremental review context section
 // ---------------------------------------------------------------------------
 export function buildIncrementalReviewSection(params: {
@@ -988,15 +1008,17 @@ export function buildReviewPrompt(context: {
       "Optional: <specific suggestion with actionable language>",
       "",
       "## Suggestions",
-      "- <optional non-blocking improvement>",
-      "- <optional non-blocking improvement>",
+      "- Optional: <low-friction cleanup or improvement>",
+      "- Future consideration: <larger improvement for a follow-up PR>",
       "",
       "## Verdict",
-      ":green_circle: **Looks good** -- <explanation> (only minor suggestions, nothing blocking)",
-      ":yellow_circle: **Needs changes** -- <count and summary of issues> (has major/medium issues)",
-      ":red_circle: **Blocker** -- <count and summary of critical issues> (has critical issues)",
+      ":green_circle: **Ready to merge** -- No blocking issues found",
+      ":yellow_circle: **Ready to merge with minor items** -- Optional cleanup suggestions below (no blockers)",
+      ":red_circle: **Address before merging** -- [N] blocking issue(s) found (CRITICAL/MAJOR)",
       "",
       "</details>",
+      "",
+      buildVerdictLogicSection(),
       "",
       "Hard requirements for the summary comment:",
       "- ## What Changed and ## Observations and ## Verdict are REQUIRED sections",
@@ -1007,9 +1029,10 @@ export function buildReviewPrompt(context: {
       "- CRITICAL and MAJOR findings MUST go under ### Impact. Preference findings are capped at MEDIUM severity",
       "- Prefix Preference findings with 'Optional:' to signal they are non-blocking",
       "- Under ## Strengths, prefix each item with :white_check_mark: -- list 1-3 specific verified positives about the code changes, each must cite a concrete observation",
-      "- Under ## Suggestions, list optional improvements that do not block merging -- omit this section if you have no suggestions",
-      "- Under ## Verdict, use exactly one verdict line with emoji -- pick the one that matches the review outcome",
-      "- Since this summary is only posted when issues exist, the verdict will typically be :yellow_circle: or :red_circle:",
+      "- Under ## Suggestions, every item MUST start with 'Optional:' or 'Future consideration:' -- suggestions are NEVER counted against merge readiness -- omit this section if you have no suggestions",
+      "- Under ## Verdict, use exactly one verdict line with emoji -- determine which one using the Verdict Logic rules above",
+      "- A blocker is any [CRITICAL] or [MAJOR] finding under ### Impact. Zero blockers = :green_circle: or :yellow_circle: verdict. Never :red_circle: without blockers",
+      "- Since this summary is only posted when issues exist, the verdict will typically be :yellow_circle: or :red_circle:. Use :green_circle: only when all findings are in ### Preference with no Impact findings",
       "Then post your inline comments on the specific lines.",
       "",
       "If NO issues found: do NOT post any comment. The system handles approval automatically.",
