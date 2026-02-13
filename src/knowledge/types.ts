@@ -110,6 +110,30 @@ export type FindingCommentCandidate = {
   createdAt: string;
 };
 
+export type RunStatus = 'pending' | 'running' | 'completed' | 'superseded';
+
+export type RunStateCheck = {
+  shouldProcess: boolean;
+  runKey: string;
+  reason: 'new' | 'duplicate' | 'superseded-prior';
+  supersededRunKeys: string[];
+};
+
+export type RunStateRecord = {
+  id: number;
+  runKey: string;
+  repo: string;
+  prNumber: number;
+  baseSha: string;
+  headSha: string;
+  deliveryId: string;
+  action: string;
+  status: RunStatus;
+  createdAt: string;
+  completedAt: string | null;
+  supersededBy: string | null;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
@@ -119,6 +143,9 @@ export type KnowledgeStore = {
   recordGlobalPattern(entry: GlobalPatternRecord): void;
   getRepoStats(repo: string, sinceDays?: number): RepoStats;
   getRepoTrends(repo: string, days: number): TrendData[];
+  checkAndClaimRun(params: { repo: string; prNumber: number; baseSha: string; headSha: string; deliveryId: string; action: string }): RunStateCheck;
+  completeRun(runKey: string): void;
+  purgeOldRuns(retentionDays?: number): number;
   checkpoint(): void;
   close(): void;
 };

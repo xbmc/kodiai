@@ -553,4 +553,154 @@ describe("KnowledgeStore", () => {
         conclusion: "success",
       })).toThrow();
   });
+
+  describe("run state", () => {
+    test("checkAndClaimRun returns new for first run", () => {
+      const result = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 10,
+        baseSha: "base-aaa",
+        headSha: "head-bbb",
+        deliveryId: "delivery-1",
+        action: "opened",
+      });
+
+      expect(result.shouldProcess).toBe(true);
+      expect(result.reason).toBe("new");
+      expect(result.runKey).toBe("owner/repo:pr-10:base-base-aaa:head-head-bbb");
+      expect(result.supersededRunKeys).toEqual([]);
+    });
+
+    test("checkAndClaimRun returns duplicate for same SHA pair", () => {
+      const params = {
+        repo: "owner/repo",
+        prNumber: 11,
+        baseSha: "base-111",
+        headSha: "head-222",
+        deliveryId: "delivery-first",
+        action: "opened",
+      };
+
+      const first = fixture.store.checkAndClaimRun(params);
+      expect(first.shouldProcess).toBe(true);
+      expect(first.reason).toBe("new");
+
+      const second = fixture.store.checkAndClaimRun({
+        ...params,
+        deliveryId: "delivery-second",
+      });
+      expect(second.shouldProcess).toBe(false);
+      expect(second.reason).toBe("duplicate");
+    });
+
+    test("force push supersedes prior runs", () => {
+      const firstRun = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 12,
+        baseSha: "base-aaa",
+        headSha: "head-old",
+        deliveryId: "delivery-a",
+        action: "opened",
+      });
+      expect(firstRun.shouldProcess).toBe(true);
+      expect(firstRun.reason).toBe("new");
+
+      const secondRun = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 12,
+        baseSha: "base-aaa",
+        headSha: "head-new",
+        deliveryId: "delivery-b",
+        action: "opened",
+      });
+      expect(secondRun.shouldProcess).toBe(true);
+      expect(secondRun.reason).toBe("superseded-prior");
+      expect(secondRun.supersededRunKeys).toContain(firstRun.runKey);
+
+      // Verify the old run is now superseded in the database
+      const db = new Database(fixture.dbPath, { readonly: true });
+      const row = db.query("SELECT status, superseded_by FROM run_state WHERE run_key = ?").get(firstRun.runKey) as Record<string, unknown>;
+      db.close();
+
+      expect(row.status).toBe("superseded");
+      expect(row.superseded_by).toBe(secondRun.runKey);
+    });
+
+    test("completeRun marks run as completed", () => {
+      const result = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 13,
+        baseSha: "base-ccc",
+        headSha: "head-ddd",
+        deliveryId: "delivery-c",
+        action: "opened",
+      });
+      expect(result.shouldProcess).toBe(true);
+
+      fixture.store.completeRun(result.runKey);
+
+      const db = new Database(fixture.dbPath, { readonly: true });
+      const row = db.query("SELECT status, completed_at FROM run_state WHERE run_key = ?").get(result.runKey) as Record<string, unknown>;
+      db.close();
+
+      expect(row.status).toBe("completed");
+      expect(row.completed_at).toBeTruthy();
+    });
+
+    test("purgeOldRuns removes old completed runs", () => {
+      // Create and complete a run
+      const result = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 14,
+        baseSha: "base-eee",
+        headSha: "head-fff",
+        deliveryId: "delivery-d",
+        action: "opened",
+      });
+      fixture.store.completeRun(result.runKey);
+
+      // Manually backdate the run for purge testing
+      const db = new Database(fixture.dbPath);
+      db.run(
+        "UPDATE run_state SET created_at = datetime('now', '-60 days') WHERE run_key = ?",
+        [result.runKey],
+      );
+      db.close();
+
+      const purged = fixture.store.purgeOldRuns(30);
+      expect(purged).toBeGreaterThanOrEqual(1);
+
+      const verifyDb = new Database(fixture.dbPath, { readonly: true });
+      const row = verifyDb.query("SELECT * FROM run_state WHERE run_key = ?").get(result.runKey);
+      verifyDb.close();
+
+      expect(row).toBeNull();
+    });
+
+    test("different delivery IDs for same SHA pair are still duplicates", () => {
+      const first = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 15,
+        baseSha: "base-ggg",
+        headSha: "head-hhh",
+        deliveryId: "delivery-x",
+        action: "opened",
+      });
+      expect(first.shouldProcess).toBe(true);
+
+      const second = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 15,
+        baseSha: "base-ggg",
+        headSha: "head-hhh",
+        deliveryId: "delivery-y",
+        action: "opened",
+      });
+      expect(second.shouldProcess).toBe(false);
+      expect(second.reason).toBe("duplicate");
+
+      // Verify both share the same run_key
+      expect(second.runKey).toBe(first.runKey);
+    });
+  });
 });

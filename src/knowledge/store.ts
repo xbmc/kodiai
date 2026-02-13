@@ -10,6 +10,7 @@ import type {
   KnowledgeStore,
   RepoStats,
   ReviewRecord,
+  RunStateCheck,
   SuppressionLogEntry,
   TrendData,
 } from "./types.ts";
@@ -40,6 +41,11 @@ type TrendRow = {
 
 type TableInfoRow = {
   name: string;
+};
+
+type RunStateRow = {
+  run_key: string;
+  status: string;
 };
 
 type FindingCommentCandidateRow = {
@@ -206,6 +212,26 @@ export function createKnowledgeStore(opts: {
     "CREATE INDEX IF NOT EXISTS idx_feedback_reactions_finding ON feedback_reactions(finding_id)",
   );
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS run_state (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_key TEXT NOT NULL UNIQUE,
+      repo TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      base_sha TEXT NOT NULL,
+      head_sha TEXT NOT NULL,
+      delivery_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT,
+      superseded_by TEXT
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_state_repo_pr ON run_state(repo, pr_number)");
+  db.run("CREATE INDEX IF NOT EXISTS idx_run_state_status ON run_state(status)");
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -289,6 +315,78 @@ export function createKnowledgeStore(opts: {
     ON CONFLICT(severity, category, confidence_band, pattern_fingerprint)
     DO UPDATE SET count = count + excluded.count
   `);
+
+  const checkRunExistsStmt = db.query(
+    "SELECT run_key, status FROM run_state WHERE run_key = $runKey",
+  );
+
+  const findPriorRunsStmt = db.query(
+    "SELECT run_key FROM run_state WHERE repo = $repo AND pr_number = $prNumber AND status NOT IN ('superseded')",
+  );
+
+  const supersedeRunStmt = db.query(
+    "UPDATE run_state SET status = 'superseded', superseded_by = $newRunKey WHERE run_key = $oldRunKey",
+  );
+
+  const insertRunStmt = db.query(`
+    INSERT INTO run_state (run_key, repo, pr_number, base_sha, head_sha, delivery_id, action, status)
+    VALUES ($runKey, $repo, $prNumber, $baseSha, $headSha, $deliveryId, $action, 'pending')
+  `);
+
+  const completeRunStmt = db.query(
+    "UPDATE run_state SET status = 'completed', completed_at = datetime('now') WHERE run_key = $runKey",
+  );
+
+  const checkAndClaimRunTxn = db.transaction((params: {
+    runKey: string;
+    repo: string;
+    prNumber: number;
+    baseSha: string;
+    headSha: string;
+    deliveryId: string;
+    action: string;
+  }): RunStateCheck => {
+    const existing = checkRunExistsStmt.get({ $runKey: params.runKey }) as RunStateRow | null;
+    if (existing) {
+      return {
+        shouldProcess: false,
+        runKey: params.runKey,
+        reason: 'duplicate',
+        supersededRunKeys: [],
+      };
+    }
+
+    const priorRuns = findPriorRunsStmt.all({
+      $repo: params.repo,
+      $prNumber: params.prNumber,
+    }) as RunStateRow[];
+
+    const supersededRunKeys: string[] = [];
+    for (const prior of priorRuns) {
+      supersedeRunStmt.run({
+        $newRunKey: params.runKey,
+        $oldRunKey: prior.run_key,
+      });
+      supersededRunKeys.push(prior.run_key);
+    }
+
+    insertRunStmt.run({
+      $runKey: params.runKey,
+      $repo: params.repo,
+      $prNumber: params.prNumber,
+      $baseSha: params.baseSha,
+      $headSha: params.headSha,
+      $deliveryId: params.deliveryId,
+      $action: params.action,
+    });
+
+    return {
+      shouldProcess: true,
+      runKey: params.runKey,
+      reason: supersededRunKeys.length > 0 ? 'superseded-prior' : 'new',
+      supersededRunKeys,
+    };
+  });
 
   const insertFindingsTxn = db.transaction((findings: FindingRecord[]) => {
     for (const finding of findings) {
@@ -540,6 +638,43 @@ export function createKnowledgeStore(opts: {
         suppressionsCount: row.suppressions_count,
         avgConfidence: Number(row.avg_confidence ?? 0),
       }));
+    },
+
+    checkAndClaimRun(params: {
+      repo: string;
+      prNumber: number;
+      baseSha: string;
+      headSha: string;
+      deliveryId: string;
+      action: string;
+    }): RunStateCheck {
+      const runKey = `${params.repo}:pr-${params.prNumber}:base-${params.baseSha}:head-${params.headSha}`;
+      return checkAndClaimRunTxn({
+        runKey,
+        repo: params.repo,
+        prNumber: params.prNumber,
+        baseSha: params.baseSha,
+        headSha: params.headSha,
+        deliveryId: params.deliveryId,
+        action: params.action,
+      });
+    },
+
+    completeRun(runKey: string): void {
+      completeRunStmt.run({ $runKey: runKey });
+    },
+
+    purgeOldRuns(retentionDays = 30): number {
+      const completedResult = db.run(
+        "DELETE FROM run_state WHERE status = 'completed' AND created_at < datetime('now', $modifier)",
+        { $modifier: `-${retentionDays} days` },
+      );
+      const supersededRetention = Math.min(retentionDays, 7);
+      const supersededResult = db.run(
+        "DELETE FROM run_state WHERE status = 'superseded' AND created_at < datetime('now', $modifier)",
+        { $modifier: `-${supersededRetention} days` },
+      );
+      return completedResult.changes + supersededResult.changes;
     },
 
     checkpoint(): void {
