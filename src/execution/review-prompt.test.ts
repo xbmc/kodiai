@@ -2,6 +2,8 @@ import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
   buildConfidenceInstructions,
+  buildDeltaReviewContext,
+  buildDeltaVerdictLogicSection,
   buildDiffAnalysisSection,
   buildLanguageGuidanceSection,
   buildOutputLanguageSection,
@@ -857,5 +859,87 @@ describe("Phase 36: Verdict & Merge Confidence", () => {
   test("verdict logic section not included in enhanced mode", () => {
     const prompt = buildReviewPrompt(baseContext({ mode: "enhanced" }));
     expect(prompt).not.toContain("Verdict Logic");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 38: Delta Re-Review Formatting
+// ---------------------------------------------------------------------------
+
+describe("Phase 38: Delta Re-Review Formatting", () => {
+  const sampleDeltaContext = {
+    lastReviewedHeadSha: "abc1234def5678",
+    changedFilesSinceLastReview: ["src/index.ts", "src/auth.ts"],
+    priorFindings: [
+      { filePath: "src/auth.ts", title: "SQL injection in login query", severity: "critical", category: "security" },
+      { filePath: "src/db.ts", title: "Missing transaction for batch write", severity: "major", category: "correctness" },
+    ],
+  };
+
+  // 1. buildDeltaReviewContext includes prior findings and changed files
+  test("buildDeltaReviewContext includes prior findings and changed files", () => {
+    const section = buildDeltaReviewContext(sampleDeltaContext);
+    expect(section).toContain("## Delta Review Context");
+    expect(section).toContain("abc1234");
+    expect(section).toContain("src/index.ts");
+    expect(section).toContain("src/auth.ts");
+    expect(section).toContain("[CRITICAL] src/auth.ts: SQL injection in login query");
+    expect(section).toContain("[MAJOR] src/db.ts: Missing transaction for batch write");
+    expect(section).toContain("Prior review findings (2):");
+    expect(section).toContain("NEW");
+    expect(section).toContain("RESOLVED");
+    expect(section).toContain("STILL OPEN");
+  });
+
+  // 2. buildDeltaVerdictLogicSection includes three delta verdict states
+  test("buildDeltaVerdictLogicSection includes three delta verdict states", () => {
+    const section = buildDeltaVerdictLogicSection();
+    expect(section).toContain("Verdict Update Logic");
+    expect(section).toContain(":green_circle:");
+    expect(section).toContain(":yellow_circle:");
+    expect(section).toContain(":large_blue_circle:");
+    expect(section).toContain("New blockers found");
+    expect(section).toContain("Blockers resolved");
+    expect(section).toContain("Still ready");
+  });
+
+  // 3. buildReviewPrompt with deltaContext produces delta template
+  test("buildReviewPrompt with deltaContext produces delta template", () => {
+    const prompt = buildReviewPrompt(baseContext({ deltaContext: sampleDeltaContext }));
+    expect(prompt).toContain("Kodiai Re-Review Summary");
+    expect(prompt).toContain("## Re-review");
+    expect(prompt).toContain("## What Changed");
+    expect(prompt).toContain("## Verdict Update");
+    expect(prompt).toContain(":new:");
+    expect(prompt).toContain(":white_check_mark:");
+    // The standard five-section summary header tag must NOT appear as a template tag
+    // (it may appear in the hard requirements as a negative instruction: "NOT 'Kodiai Review Summary'")
+    expect(prompt).not.toContain("<summary>Kodiai Review Summary</summary>");
+  });
+
+  // 4. buildReviewPrompt without deltaContext produces standard template
+  test("buildReviewPrompt without deltaContext produces standard template", () => {
+    const prompt = buildReviewPrompt(baseContext({ deltaContext: null }));
+    expect(prompt).toContain("Kodiai Review Summary");
+    expect(prompt).not.toContain("Kodiai Re-Review Summary");
+  });
+
+  // 5. delta template hard requirements include section rules
+  test("delta template hard requirements include section rules", () => {
+    const prompt = buildReviewPrompt(baseContext({ deltaContext: sampleDeltaContext }));
+    expect(prompt).toContain("## New Findings");
+    expect(prompt).toContain("## Resolved Findings");
+    expect(prompt).toContain("## Still Open");
+    expect(prompt).toContain("at least one must be present");
+  });
+
+  // 6. delta template omits Impact/Preference subsections
+  test("delta template omits Impact/Preference subsections", () => {
+    const prompt = buildReviewPrompt(baseContext({ deltaContext: sampleDeltaContext }));
+    // The hard requirements section should NOT mention ### Impact or ### Preference
+    const hardReqStart = prompt.indexOf("Hard requirements for the re-review summary:");
+    const hardReqSection = prompt.slice(hardReqStart, hardReqStart + 1500);
+    expect(hardReqSection).not.toContain("### Impact");
+    expect(hardReqSection).not.toContain("### Preference");
   });
 });

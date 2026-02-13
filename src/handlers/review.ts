@@ -1092,9 +1092,10 @@ export function createReviewHandler(deps: {
 
         // Prior finding dedup context (REV-02)
         let priorFindingCtx: PriorFindingContext | null = null;
+        let priorFindings: PriorFinding[] = [];
         if (knowledgeStore && incrementalResult?.mode === "incremental") {
           try {
-            const priorFindings = knowledgeStore.getPriorReviewFindings({
+            priorFindings = knowledgeStore.getPriorReviewFindings({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
             });
@@ -1222,6 +1223,19 @@ export function createReviewHandler(deps: {
           outputLanguage: config.review.outputLanguage,
           // PR labels for intent scoping (FORMAT-07)
           prLabels,
+          // Delta re-review context (FORMAT-14/15/16)
+          deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
+            ? {
+                lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
+                changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+                priorFindings: priorFindings.map(f => ({
+                  filePath: f.filePath,
+                  title: f.title,
+                  severity: f.severity,
+                  category: f.category,
+                })),
+              }
+            : null,
         });
 
         // Execute review via Claude
