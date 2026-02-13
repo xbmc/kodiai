@@ -10,18 +10,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 ## Current Position
 
 Phase: 32 of 33 (Multi-Language Context and Localized Output)
-Plan: 1 of 3 (COMPLETE)
+Plan: 2 of 3 (COMPLETE)
 Status: In Progress
-Last activity: 2026-02-13 - Completed 32-01 (language classification and output language config)
+Last activity: 2026-02-13 - Completed 32-02 (prompt language guidance and output localization)
 
-Progress: [######░░░░] 58% (v0.5 - 7/12 plans)
+Progress: [#######░░░] 67% (v0.5 - 8/12 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 65
+- Total plans completed: 66
 - Average duration: 5 min
-- Total execution time: 318 min
+- Total execution time: 321 min
 
 **By latest shipped milestone:**
 
@@ -33,7 +33,7 @@ Progress: [######░░░░] 58% (v0.5 - 7/12 plans)
 | 29-feedback-capture | 2 | 6 min | 3 min |
 | 30-state-memory-and-isolation-foundation | 3 | 10 min | 3 min |
 | 31-incremental-re-review-with-retrieval-context | 3 | 11 min | 4 min |
-| 32-multi-language-context-and-localized-output | 1 | 2 min | 2 min |
+| 32-multi-language-context-and-localized-output | 2 | 5 min | 3 min |
 
 ## Accumulated Context
 
@@ -63,6 +63,10 @@ Recent decisions relevant to v0.5:
 - Extension map covers ~30 extensions across 20 languages; Unknown files omitted from filesByLanguage (32-01).
 - outputLanguage is free-form z.string() not an enum -- LLMs understand both ISO codes and full names (32-01).
 - h files default to C per research decision; C++ guidance also covers C headers (32-01).
+- TypeScript/JavaScript excluded from LANGUAGE_GUIDANCE -- already covered by base review rules (32-02).
+- Language guidance capped at top 5 by file count to prevent prompt bloat (32-02).
+- Output language section placed at end of prompt for recency bias compliance (32-02).
+- Mention prompt uses simpler localization instruction without taxonomy preservation (32-02).
 
 ### Pending Todos
 
@@ -75,5 +79,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 32-01-PLAN.md
+Stopped at: Completed 32-02-PLAN.md
 Resume file: None
