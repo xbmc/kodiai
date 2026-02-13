@@ -19,6 +19,7 @@ import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
 import { createLearningMemoryStore } from "./learning/memory-store.ts";
 import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
+import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
 import { Database } from "bun:sqlite";
 
 // Fail fast on missing or invalid config
@@ -92,6 +93,13 @@ if (voyageApiKey && learningMemoryStore) {
   }
 }
 
+// Learning memory isolation layer (LEARN-07)
+let isolationLayer: IsolationLayer | undefined;
+if (learningMemoryStore) {
+  isolationLayer = createIsolationLayer({ memoryStore: learningMemoryStore, logger });
+  logger.info("Learning memory isolation layer initialized");
+}
+
 // Startup maintenance: purge old run state entries
 if (knowledgeStore) {
   try {
@@ -122,6 +130,7 @@ createReviewHandler({
   knowledgeStore,
   learningMemoryStore,
   embeddingProvider,
+  isolationLayer,
   logger,
 });
 createMentionHandler({

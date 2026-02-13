@@ -2,6 +2,7 @@ import type {
   PullRequestOpenedEvent,
   PullRequestReadyForReviewEvent,
   PullRequestReviewRequestedEvent,
+  PullRequestSynchronizeEvent,
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -9,8 +10,11 @@ import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
-import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../learning/types.ts";
+import type { IsolationLayer } from "../learning/isolation.ts";
+import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
+import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff } from "../execution/diff-analysis.ts";
 import {
@@ -49,6 +53,18 @@ type ProcessedFinding = ExtractedFinding & {
   suppressed: boolean;
   confidence: number;
   suppressionPattern?: string;
+};
+
+type RetrievalContextForPrompt = {
+  findings: Array<{
+    findingText: string;
+    severity: string;
+    category: string;
+    filePath: string;
+    outcome: string;
+    distance: number;
+    sourceRepo: string;
+  }>;
 };
 
 function toConfidenceBand(confidence: number): ConfidenceBand {
@@ -547,11 +563,13 @@ function isReviewTriggerEnabled(
     onOpened: boolean;
     onReadyForReview: boolean;
     onReviewRequested: boolean;
+    onSynchronize?: boolean;
   },
 ): boolean {
   if (action === "opened") return triggers.onOpened;
   if (action === "ready_for_review") return triggers.onReadyForReview;
   if (action === "review_requested") return triggers.onReviewRequested;
+  if (action === "synchronize") return triggers.onSynchronize ?? false;
   return false;
 }
 
@@ -582,6 +600,7 @@ export function createReviewHandler(deps: {
   knowledgeStore?: KnowledgeStore;
   learningMemoryStore?: LearningMemoryStore;
   embeddingProvider?: EmbeddingProvider;
+  isolationLayer?: IsolationLayer;
   logger: Logger;
 }): void {
   const {
@@ -594,6 +613,7 @@ export function createReviewHandler(deps: {
     knowledgeStore,
     learningMemoryStore,
     embeddingProvider,
+    isolationLayer,
     logger,
   } = deps;
 
@@ -603,7 +623,8 @@ export function createReviewHandler(deps: {
     const payload = event.payload as unknown as
       | PullRequestOpenedEvent
       | PullRequestReadyForReviewEvent
-      | PullRequestReviewRequestedEvent;
+      | PullRequestReviewRequestedEvent
+      | PullRequestSynchronizeEvent;
 
     const pr = payload.pull_request;
     const action = payload.action;
@@ -993,6 +1014,28 @@ export function createReviewHandler(deps: {
           return;
         }
 
+        // Incremental diff computation (REV-01)
+        // Determine if this is an incremental re-review based on prior completed reviews.
+        // Works for both synchronize and review_requested events (state-driven, not event-driven).
+        let incrementalResult: IncrementalDiffResult | null = null;
+        if (knowledgeStore) {
+          try {
+            incrementalResult = await computeIncrementalDiff({
+              workspaceDir: workspace.dir,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              getLastReviewedHeadSha: (p) => knowledgeStore.getLastReviewedHeadSha(p),
+              logger,
+            });
+            logger.info(
+              { ...baseLog, gate: "incremental-diff", mode: incrementalResult.mode, reason: incrementalResult.reason },
+              "Incremental diff computation complete",
+            );
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, "Incremental diff computation failed (fail-open, full review)");
+          }
+        }
+
         // Build changed files and diff context, handling shallow-history merge-base gaps.
         const diffContext = await collectDiffContext({
           workspaceDir: workspace.dir,
@@ -1020,6 +1063,17 @@ export function createReviewHandler(deps: {
           return;
         }
 
+        // In incremental mode, further filter to only files that changed since last review
+        let reviewFiles = changedFiles;
+        if (incrementalResult?.mode === "incremental" && incrementalResult.changedFilesSinceLastReview.length > 0) {
+          const incrementalSet = new Set(incrementalResult.changedFilesSinceLastReview);
+          reviewFiles = changedFiles.filter(f => incrementalSet.has(f));
+          logger.info(
+            { ...baseLog, gate: "incremental-filter", fullCount: changedFiles.length, incrementalCount: reviewFiles.length },
+            "Filtered to incremental changed files",
+          );
+        }
+
         const numstatLines = diffContext.numstatLines;
         const diffContent = changedFiles.length <= 200 ? diffContext.diffContent : undefined;
 
@@ -1033,6 +1087,60 @@ export function createReviewHandler(deps: {
         const matchedPathInstructions = config.review.pathInstructions.length > 0
           ? matchPathInstructions(config.review.pathInstructions, changedFiles)
           : [];
+
+        // Prior finding dedup context (REV-02)
+        let priorFindingCtx: PriorFindingContext | null = null;
+        if (knowledgeStore && incrementalResult?.mode === "incremental") {
+          try {
+            const priorFindings = knowledgeStore.getPriorReviewFindings({
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+            });
+            if (priorFindings.length > 0) {
+              priorFindingCtx = buildPriorFindingContext({
+                priorFindings,
+                changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+              });
+            }
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, "Prior finding context failed (fail-open, no dedup)");
+          }
+        }
+
+        // Retrieval context (LEARN-07)
+        let retrievalCtx: RetrievalContextForPrompt | null = null;
+        if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
+          try {
+            const queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`;
+            const embedResult = await embeddingProvider.generate(queryText, "query");
+            if (embedResult) {
+              const retrieval = isolationLayer.retrieveWithIsolation({
+                queryEmbedding: embedResult.embedding,
+                repo: `${apiOwner}/${apiRepo}`,
+                owner: apiOwner,
+                sharingEnabled: config.knowledge.sharing.enabled,
+                topK: config.knowledge.retrieval.topK,
+                distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                logger,
+              });
+              if (retrieval.results.length > 0) {
+                retrievalCtx = {
+                  findings: retrieval.results.map(r => ({
+                    findingText: r.record.findingText,
+                    severity: r.record.severity,
+                    category: r.record.category,
+                    filePath: r.record.filePath,
+                    outcome: r.record.outcome,
+                    distance: r.distance,
+                    sourceRepo: r.sourceRepo,
+                  })),
+                };
+              }
+            }
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, "Retrieval context generation failed (fail-open, proceeding without retrieval)");
+          }
+        }
 
         let resolvedSeverityMinLevel = config.review.severity.minLevel;
         let resolvedMaxComments = config.review.maxComments;
@@ -1083,7 +1191,7 @@ export function createReviewHandler(deps: {
           prAuthor: pr.user.login,
           baseBranch: pr.base.ref,
           headBranch: pr.head.ref,
-          changedFiles,
+          changedFiles: reviewFiles,
           customInstructions: config.review.prompt,
           // Review mode & severity control
           mode: config.review.mode,
@@ -1095,6 +1203,14 @@ export function createReviewHandler(deps: {
           minConfidence: config.review.minConfidence,
           diffAnalysis,
           matchedPathInstructions,
+          // Incremental re-review context (REV-01)
+          incrementalContext: incrementalResult?.mode === "incremental" ? {
+            lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
+            changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+            unresolvedPriorFindings: priorFindingCtx?.unresolvedOnUnchangedCode ?? [],
+          } : null,
+          // Learning memory retrieval context (LEARN-07)
+          retrievalContext: retrievalCtx,
         });
 
         // Execute review via Claude
@@ -1152,7 +1268,15 @@ export function createReviewHandler(deps: {
               suppression,
             )
           );
-          const suppressed = Boolean(matchedSuppression);
+          // Incremental dedup suppression (REV-02)
+          const dedupSuppressed = priorFindingCtx
+            ? shouldSuppressFinding({
+                filePath: finding.filePath,
+                titleFingerprint: fingerprintFindingTitle(finding.title),
+                suppressionFingerprints: priorFindingCtx.suppressionFingerprints,
+              })
+            : false;
+          const suppressed = Boolean(matchedSuppression) || dedupSuppressed;
           const suppressionPattern = typeof matchedSuppression === "string"
             ? matchedSuppression
             : matchedSuppression?.pattern;
@@ -1684,4 +1808,5 @@ export function createReviewHandler(deps: {
   eventRouter.register("pull_request.opened", handleReview);
   eventRouter.register("pull_request.ready_for_review", handleReview);
   eventRouter.register("pull_request.review_requested", handleReview);
+  eventRouter.register("pull_request.synchronize", handleReview);
 }
