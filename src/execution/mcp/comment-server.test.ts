@@ -310,3 +310,194 @@ describe("createCommentServer", () => {
     expect(result.content[0]?.text).toContain("missing explanation");
   });
 });
+
+// --- Comprehensive sanitizer tests for five-section template ---
+
+function buildTestSummary(sections: Record<string, string>): string {
+  const parts = [
+    "<details>",
+    "<summary>Kodiai Review Summary</summary>",
+    "",
+  ];
+  for (const [name, content] of Object.entries(sections)) {
+    parts.push(name);
+    parts.push(content);
+    parts.push("");
+  }
+  parts.push("</details>");
+  return parts.join("\n");
+}
+
+function makeOctokit() {
+  let calledBody: string | undefined;
+  const octokit = {
+    rest: {
+      issues: {
+        createComment: async (params: { body: string }) => {
+          calledBody = params.body;
+          return { data: { id: 1 } };
+        },
+        updateComment: async () => ({ data: {} }),
+      },
+    },
+  };
+  return { octokit, getCalledBody: () => calledBody };
+}
+
+async function callCreate(body: string) {
+  const { octokit, getCalledBody } = makeOctokit();
+  const server = createCommentServer(async () => octokit as never, "acme", "repo");
+  const { create } = getToolHandlers(server);
+  const result = await create({ issueNumber: 1, body });
+  return { result, calledBody: getCalledBody() };
+}
+
+describe("sanitizeKodiaiReviewSummary", () => {
+  // --- Passing cases ---
+
+  test("accepts valid five-section summary with all sections", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Refactored authentication logic to use JWT tokens.",
+      "## Strengths": "- :white_check_mark: Null checks added for all nullable returns\n- :white_check_mark: Test coverage maintained at 87%",
+      "## Observations": "### Critical\nsrc/auth.ts (12, 34): Missing token expiration check\nThe JWT token is created without an expiration claim, allowing indefinite session reuse.",
+      "## Suggestions": "- Consider extracting the retry logic into a shared utility",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 critical issue requires attention before merge.",
+    });
+
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).toContain("## What Changed");
+    expect(calledBody!).toContain("## Strengths");
+    expect(calledBody!).toContain("## Observations");
+    expect(calledBody!).toContain("## Suggestions");
+    expect(calledBody!).toContain("## Verdict");
+  });
+
+  test("accepts summary with only required sections (no Strengths, no Suggestions)", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Bug fix for race condition in queue processing.",
+      "## Observations": "### Major\nsrc/queue.ts (45): Race condition in dequeue\nTwo concurrent consumers can dequeue the same item when the lock is not held.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("accepts summary with Strengths but no Suggestions", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Added input validation to API endpoints.",
+      "## Strengths": "- :white_check_mark: Comprehensive validation for all user inputs",
+      "## Observations": "### Medium\nsrc/api/users.ts (78): Missing length limit on username\nThe username field accepts arbitrarily long strings which could cause DB issues.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 medium issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("accepts summary with multiple severity sub-headings in Observations", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Refactored database layer.",
+      "## Observations": "### Critical\nsrc/db.ts (10): SQL injection vulnerability\nUser input is concatenated directly into the query string.\n\n### Medium\nsrc/db.ts (50): Missing connection pool limit\nThe pool allows unlimited connections which could exhaust server resources.",
+      "## Verdict": ":red_circle: **Block** -- 1 critical and 1 medium issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  // --- Rejection cases ---
+
+  test("rejects summary missing ## What Changed", async () => {
+    const body = buildTestSummary({
+      "## Observations": "### Major\nsrc/foo.ts (1): Issue\nExplanation here.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("## What Changed");
+  });
+
+  test("rejects summary missing ## Observations", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Verdict": ":green_circle: **Approve** -- No issues found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("## Observations");
+  });
+
+  test("rejects summary missing ## Verdict", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Observations": "### Minor\nsrc/foo.ts (1): Nitpick\nSmall formatting issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("## Verdict");
+  });
+
+  test("rejects summary with sections out of order", async () => {
+    const body = buildTestSummary({
+      "## Verdict": ":red_circle: **Block** -- issues found.",
+      "## What Changed": "Some changes.",
+      "## Observations": "### Major\nsrc/foo.ts (1): Issue\nExplanation here.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("order");
+  });
+
+  test("rejects verdict without correct format", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Observations": "### Major\nsrc/foo.ts (1): Issue\nExplanation here.",
+      "## Verdict": "This PR needs changes before merging.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Verdict must use format");
+  });
+
+  test("rejects observations without severity sub-heading", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Observations": "There is a bug in the auth module that needs fixing.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- issues found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("severity sub-heading");
+  });
+
+  test("rejects extra top-level heading", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Observations": "### Major\nsrc/foo.ts (1): Issue\nExplanation here.",
+      "## Notes": "Some additional notes.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("unexpected section");
+  });
+
+  // --- Passthrough case ---
+
+  test("passes through non-review comments unchanged", async () => {
+    const body = "Just a regular comment, nothing to validate.";
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBe(body);
+  });
+});
