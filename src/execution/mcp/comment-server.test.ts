@@ -790,3 +790,302 @@ describe("Phase 36: Verdict-Observations cross-check", () => {
     expect(calledBody).toContain("<summary>Review Details</summary>");
   });
 });
+
+// --- Phase 38: Delta Re-Review Sanitizer Tests ---
+
+interface ReReviewSections {
+  reReviewHeader?: string;
+  whatChanged?: string;
+  newFindings?: string;
+  resolvedFindings?: string;
+  stillOpen?: string;
+  verdictUpdate?: string;
+  extraSections?: string[];
+}
+
+function buildTestReReviewSummary(overrides: ReReviewSections = {}): string {
+  const parts: string[] = [
+    "<details>",
+    "<summary>Kodiai Re-Review Summary</summary>",
+    "",
+  ];
+
+  if (overrides.reReviewHeader !== undefined) {
+    if (overrides.reReviewHeader !== "") {
+      parts.push(overrides.reReviewHeader);
+      parts.push("");
+    }
+  } else {
+    parts.push("## Re-review -- Changes since abc1234");
+    parts.push("");
+  }
+
+  if (overrides.whatChanged !== undefined) {
+    if (overrides.whatChanged !== "") {
+      parts.push("## What Changed");
+      parts.push(overrides.whatChanged);
+      parts.push("");
+    }
+  } else {
+    parts.push("## What Changed");
+    parts.push("Fixed the authentication bug and updated error handling.");
+    parts.push("");
+  }
+
+  if (overrides.newFindings !== undefined) {
+    if (overrides.newFindings !== "") {
+      parts.push("## New Findings");
+      parts.push(overrides.newFindings);
+      parts.push("");
+    }
+  } else {
+    parts.push("## New Findings");
+    parts.push(":new: [MAJOR] src/auth.ts (42): SQL injection in login query");
+    parts.push("Parameterized queries should be used instead of string concatenation.");
+    parts.push("");
+  }
+
+  if (overrides.resolvedFindings !== undefined) {
+    if (overrides.resolvedFindings !== "") {
+      parts.push("## Resolved Findings");
+      parts.push(overrides.resolvedFindings);
+      parts.push("");
+    }
+  } else {
+    parts.push("## Resolved Findings");
+    parts.push(":white_check_mark: [CRITICAL] src/auth.ts: Hardcoded secret key -- resolved");
+    parts.push("");
+  }
+
+  if (overrides.stillOpen !== undefined) {
+    if (overrides.stillOpen !== "") {
+      parts.push("## Still Open");
+      parts.push(overrides.stillOpen);
+      parts.push("");
+    }
+  } else {
+    parts.push("## Still Open");
+    parts.push("1 finding(s) from the previous review remain open.");
+    parts.push("");
+    parts.push("<details>");
+    parts.push("<summary>View still-open findings</summary>");
+    parts.push("");
+    parts.push("- [MEDIUM] src/utils.ts: Missing null check");
+    parts.push("");
+    parts.push("</details>");
+    parts.push("");
+  }
+
+  if (overrides.extraSections) {
+    for (const section of overrides.extraSections) {
+      parts.push(section);
+      parts.push("");
+    }
+  }
+
+  if (overrides.verdictUpdate !== undefined) {
+    if (overrides.verdictUpdate !== "") {
+      parts.push("## Verdict Update");
+      parts.push(overrides.verdictUpdate);
+      parts.push("");
+    }
+  } else {
+    parts.push("## Verdict Update");
+    parts.push(":yellow_circle: **New blockers found** -- Address 1 new issue(s)");
+    parts.push("");
+  }
+
+  parts.push("</details>");
+  return parts.join("\n");
+}
+
+describe("Phase 38: Delta Re-Review Sanitizer", () => {
+  // --- Happy paths ---
+
+  test("valid delta re-review summary passes through unchanged", async () => {
+    const body = buildTestReReviewSummary();
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBe(body);
+  });
+
+  test("valid delta with only New Findings (no Resolved/Still Open) passes", async () => {
+    const body = buildTestReReviewSummary({
+      resolvedFindings: "",
+      stillOpen: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("valid delta with only Resolved Findings passes", async () => {
+    const body = buildTestReReviewSummary({
+      newFindings: "",
+      stillOpen: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("valid delta with only Still Open passes", async () => {
+    const body = buildTestReReviewSummary({
+      newFindings: "",
+      resolvedFindings: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("delta with green verdict (Blockers resolved) passes", async () => {
+    const body = buildTestReReviewSummary({
+      verdictUpdate: ":green_circle: **Blockers resolved** -- Ready to merge",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("delta with blue verdict (Still ready) passes", async () => {
+    const body = buildTestReReviewSummary({
+      verdictUpdate: ":large_blue_circle: **Still ready** -- No new issues",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("non-re-review body passes through unchanged", async () => {
+    const body = "Just a regular comment about a PR.";
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBe(body);
+  });
+
+  // --- Error paths ---
+
+  test("rejects delta missing ## Re-review header", async () => {
+    const body = buildTestReReviewSummary({
+      reReviewHeader: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing required section '## Re-review'");
+  });
+
+  test("rejects delta missing ## What Changed", async () => {
+    const body = buildTestReReviewSummary({
+      whatChanged: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing required section '## What Changed'");
+  });
+
+  test("rejects delta missing ## Verdict Update", async () => {
+    const body = buildTestReReviewSummary({
+      verdictUpdate: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing required section '## Verdict Update'");
+  });
+
+  test("rejects delta with no delta sections", async () => {
+    const body = buildTestReReviewSummary({
+      newFindings: "",
+      resolvedFindings: "",
+      stillOpen: "",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("must contain at least one of: New Findings, Resolved Findings, Still Open");
+  });
+
+  test("rejects delta with initial review ## Observations section", async () => {
+    const body = buildTestReReviewSummary({
+      extraSections: ["## Observations\n### Impact\n[MAJOR] src/foo.ts (1): Bug\nThis is a bug."],
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("unexpected section '## Observations'");
+  });
+
+  test("rejects delta with initial review ## Strengths section", async () => {
+    const body = buildTestReReviewSummary({
+      extraSections: ["## Strengths\n- :white_check_mark: Good tests"],
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("unexpected section '## Strengths'");
+  });
+
+  test("rejects delta with initial review ## Verdict (without Update)", async () => {
+    // Build manually to have both ## Verdict and ## Verdict Update (the "## Verdict" without "Update" triggers error)
+    const parts = [
+      "<details>",
+      "<summary>Kodiai Re-Review Summary</summary>",
+      "",
+      "## Re-review -- Changes since abc1234",
+      "",
+      "## What Changed",
+      "Fixed auth bug.",
+      "",
+      "## New Findings",
+      ":new: [MAJOR] src/auth.ts (42): SQL injection",
+      "Use parameterized queries.",
+      "",
+      "## Verdict",
+      ":red_circle: **Address before merging** -- 1 blocking issue found",
+      "",
+      "</details>",
+    ].join("\n");
+    const { result } = await callCreate(parts);
+    expect(result.isError).toBe(true);
+    // Should fail on missing ## Verdict Update (since bare ## Verdict exists but not ## Verdict Update)
+    expect(result.content[0]?.text).toContain("missing required section '## Verdict Update'");
+  });
+
+  test("rejects delta with invalid verdict emoji", async () => {
+    const body = buildTestReReviewSummary({
+      verdictUpdate: ":red_circle: **Address before merging** -- 1 blocking issue found",
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("Verdict Update must use format");
+  });
+
+  test("rejects delta with unexpected ## heading", async () => {
+    const body = buildTestReReviewSummary({
+      extraSections: ["## Summary\nSome summary text."],
+    });
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("unexpected section '## Summary'");
+  });
+
+  // --- Discrimination ---
+
+  test("initial review summary still validated by five-section sanitizer (not delta)", async () => {
+    // A valid initial review should pass both sanitizers in the chain
+    const body = buildTestSummary({
+      "## What Changed": "Refactored authentication logic.",
+      "## Observations": "### Impact\n[CRITICAL] src/auth.ts (12): Missing token check\nThe JWT token is created without an expiration claim.",
+      "## Verdict": ":red_circle: **Address before merging** -- 1 blocking issue found",
+    });
+
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(calledBody).toContain("## Observations");
+  });
+
+  test("delta body does not trigger initial review sanitizer", async () => {
+    // A valid delta body should pass through the initial sanitizer unchanged
+    // (because it checks for "Kodiai Review Summary" not "Kodiai Re-Review Summary")
+    // and then be validated by the delta sanitizer
+    const body = buildTestReReviewSummary();
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toContain("<summary>Kodiai Re-Review Summary</summary>");
+    // Should NOT have been rejected by initial sanitizer for missing ## Observations
+    expect(calledBody).not.toContain("## Observations");
+  });
+});
