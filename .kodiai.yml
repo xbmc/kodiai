@@ -2,7 +2,8 @@ review:
   uiRereviewTeam: aireview
   requestUiRereviewTeamOnOpen: true
   profile: strict
-  minConfidence: 100
+  minConfidence: 70
+  onSynchronize: true
   suppressions:
     - pattern: "glob:*"
       paths:
