@@ -94,6 +94,13 @@ Plans:
 **Goal**: Reviews adapt to file language and user output language while preserving canonical severity/category semantics.
 **Depends on**: Phase 31
 **Requirements**: CTX-05, CTX-06, LANG-01
+**Plans:** 3 plans
+
+Plans:
+- [ ] 32-01-PLAN.md -- Language classification in DiffAnalysis and config schema (outputLanguage)
+- [ ] 32-02-PLAN.md -- Language guidance and output localization prompt sections
+- [ ] 32-03-PLAN.md -- Review handler wiring for language context and outputLanguage
+
 **Success Criteria** (what must be TRUE):
 1. Mixed-language pull requests are analyzed with per-file language classification and language-aware context.
 2. Prompt guidance changes by detected language while severity and category labels remain in one canonical taxonomy.
