@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
   buildConfidenceInstructions,
@@ -8,6 +8,7 @@ import {
   buildOutputLanguageSection,
   buildPathInstructionsSection,
   buildRetrievalContextSection,
+  buildReviewedCategoriesLine,
   buildReviewPrompt,
   buildSuppressionRulesSection,
   matchPathInstructions,
@@ -81,10 +82,15 @@ test("default config uses standard mode format", () => {
   expect(prompt).not.toContain("```yaml");
 });
 
-test("default config preserves summary comment section", () => {
+test("default config preserves summary comment section with five-section template", () => {
   const prompt = buildReviewPrompt(baseContext());
   expect(prompt).toContain("Kodiai Review Summary");
   expect(prompt).toContain("summary comment");
+  expect(prompt).toContain("## What Changed");
+  expect(prompt).toContain("## Observations");
+  expect(prompt).toContain("## Verdict");
+  expect(prompt).toContain(":white_check_mark:");
+  expect(prompt).not.toContain("MUST be issues-only");
 });
 
 test("enhanced mode includes YAML code block format", () => {
@@ -568,4 +574,83 @@ test("buildRetrievalContextSection includes provenance citation instruction when
 test("buildRetrievalContextSection returns empty string when no findings", () => {
   const section = buildRetrievalContextSection({ findings: [] });
   expect(section).toBe("");
+});
+
+// ---------------------------------------------------------------------------
+// buildReviewedCategoriesLine tests
+// ---------------------------------------------------------------------------
+
+describe("buildReviewedCategoriesLine", () => {
+  test("returns 'Reviewed: core logic, tests' when source and test have files", () => {
+    const result = buildReviewedCategoriesLine({
+      source: ["a.ts"],
+      test: ["a.test.ts"],
+      config: [],
+      docs: [],
+      infra: [],
+    });
+    expect(result).toBe("Reviewed: core logic, tests");
+  });
+
+  test("returns all labels when all categories have files", () => {
+    const result = buildReviewedCategoriesLine({
+      source: ["a.ts"],
+      test: ["a.test.ts"],
+      config: ["tsconfig.json"],
+      docs: ["README.md"],
+      infra: ["Dockerfile"],
+    });
+    expect(result).toBe("Reviewed: core logic, tests, config, docs, infrastructure");
+  });
+
+  test("returns empty string when all categories are empty arrays", () => {
+    const result = buildReviewedCategoriesLine({
+      source: [],
+      test: [],
+      config: [],
+      docs: [],
+      infra: [],
+    });
+    expect(result).toBe("");
+  });
+
+  test("returns 'Reviewed: tests' when only test has files", () => {
+    const result = buildReviewedCategoriesLine({
+      test: ["a.test.ts"],
+    });
+    expect(result).toBe("Reviewed: tests");
+  });
+
+  test("handles unknown category keys gracefully by using key as label", () => {
+    const result = buildReviewedCategoriesLine({
+      customCategory: ["x.ts"],
+    });
+    expect(result).toBe("Reviewed: customCategory");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildReviewPrompt standard-mode reviewed categories integration tests
+// ---------------------------------------------------------------------------
+
+test("standard mode includes reviewed categories line when diffAnalysis provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      diffAnalysis: baseDiffAnalysis({
+        filesByCategory: {
+          source: ["a.ts"],
+          test: ["a.test.ts"],
+          config: [],
+          docs: [],
+          infra: [],
+        },
+      }),
+    }),
+  );
+  expect(prompt).toContain("Reviewed: core logic, tests");
+});
+
+test("standard mode omits reviewed categories when no diffAnalysis", () => {
+  const prompt = buildReviewPrompt(baseContext());
+  expect(prompt).not.toContain("Reviewed:");
 });
