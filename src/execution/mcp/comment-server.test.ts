@@ -759,4 +759,34 @@ describe("Phase 36: Verdict-Observations cross-check", () => {
     const { result } = await callCreate(body);
     expect(result.isError).toBeUndefined();
   });
+
+  test("tolerates appended Review Details block after closing details tag", async () => {
+    const summaryBody = buildTestSummary({
+      "## What Changed": "Minor refactor of utility helpers.",
+      "## Observations": "### Impact\n[MEDIUM] src/utils.ts (5): Missing null check\nThe helper does not guard against null input.",
+      "## Verdict": ":yellow_circle: **Ready to merge with minor items** -- Optional cleanup suggestions below",
+    });
+
+    const reviewDetailsBlock = [
+      "<details>",
+      "<summary>Review Details</summary>",
+      "",
+      "- Files reviewed: 5",
+      "- Lines changed: +120 -30",
+      "- Findings: 0 critical, 1 major, 0 medium, 1 minor",
+      "- Review completed: 2026-02-13T14:30:00Z",
+      "",
+      "</details>",
+      "",
+      "<!-- kodiai:review-details:test-key -->",
+    ].join("\n");
+
+    const combinedBody = `${summaryBody}\n\n${reviewDetailsBlock}`;
+
+    // Should NOT throw -- the sanitizer should tolerate content after the summary's </details>
+    const { result, calledBody } = await callCreate(combinedBody);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(calledBody).toContain("<summary>Review Details</summary>");
+  });
 });
