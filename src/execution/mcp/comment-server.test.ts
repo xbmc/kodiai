@@ -44,7 +44,7 @@ describe("createCommentServer", () => {
     expect(calledBody).toBe("Hello");
   });
 
-  test("strips What changed and enforces severity-heading format for review summaries", async () => {
+  test("strips legacy What changed line and accepts five-section format", async () => {
     let calledBody: string | undefined;
     const octokit = {
       rest: {
@@ -67,9 +67,17 @@ describe("createCommentServer", () => {
       "",
       "**What changed:** do not include this",
       "",
-      "Critical",
+      "## What Changed",
+      "Refactored component logic.",
+      "",
+      "## Observations",
+      "",
+      "### Critical",
       "src/my component/foo.ts (12, 34): An issue",
       "This is an issue.",
+      "",
+      "## Verdict",
+      ":red_circle: **Block** -- 1 critical issue found.",
       "",
       "</details>",
     ].join("\n");
@@ -77,12 +85,12 @@ describe("createCommentServer", () => {
     const result = await create({ issueNumber: 1, body });
     expect(result.isError).toBeUndefined();
     expect(calledBody).toBeDefined();
-    expect(calledBody!).not.toContain("What changed");
-    expect(calledBody!).toContain("Critical");
+    expect(calledBody!).not.toContain("**What changed:**");
+    expect(calledBody!).toContain("### Critical");
     expect(calledBody!).toContain("src/my component/foo.ts (12");
   });
 
-  test("rejects legacy bullet format", async () => {
+  test("rejects old issues-only format without five-section structure", async () => {
     const octokit = {
       rest: {
         issues: {
@@ -100,14 +108,15 @@ describe("createCommentServer", () => {
       "<summary>Kodiai Review Summary</summary>",
       "",
       "Critical",
-      "- (1) [major] src/bar.ts (9): legacy style should not be mixed",
+      "src/bar.ts (9): legacy style without sections",
+      "This should be rejected.",
       "",
       "</details>",
     ].join("\n");
 
     const result = await create({ issueNumber: 1, body });
     expect(result.isError).toBe(true);
-    expect(result.content[0]?.text).toContain("Error:");
+    expect(result.content[0]?.text).toContain("missing required section");
   });
 
   test("APPROVE with no issues on PR submits approval review instead of comment", async () => {
@@ -265,7 +274,7 @@ describe("createCommentServer", () => {
     expect(createReviewCalled).toBe(false);
   });
 
-  test("rejects missing explanation line", async () => {
+  test("rejects missing explanation line in observations", async () => {
     const octokit = {
       rest: {
         issues: {
@@ -282,8 +291,16 @@ describe("createCommentServer", () => {
       "<details>",
       "<summary>Kodiai Review Summary</summary>",
       "",
-      "Critical",
+      "## What Changed",
+      "Some changes.",
+      "",
+      "## Observations",
+      "",
+      "### Critical",
       "src/foo.ts (12): Missing explanation",
+      "",
+      "## Verdict",
+      ":red_circle: **Block** -- 1 critical issue.",
       "",
       "</details>",
     ].join("\n");
