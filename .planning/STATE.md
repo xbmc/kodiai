@@ -19,9 +19,9 @@ Progress: [#####░░░░░] 42% (v0.5 - 5/12 plans)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 62
+- Total plans completed: 63
 - Average duration: 5 min
-- Total execution time: 309 min
+- Total execution time: 312 min
 
 **By latest shipped milestone:**
 
@@ -32,7 +32,7 @@ Progress: [#####░░░░░] 42% (v0.5 - 5/12 plans)
 | 28-knowledge-store-explicit-learning | 4 | 9 min | 2 min |
 | 29-feedback-capture | 2 | 6 min | 3 min |
 | 30-state-memory-and-isolation-foundation | 3 | 10 min | 3 min |
-| 31-incremental-re-review-with-retrieval-context | 2 | 4 min | 2 min |
+| 31-incremental-re-review-with-retrieval-context | 3 | 7 min | 2 min |
 
 ## Accumulated Context
 
@@ -53,6 +53,9 @@ Recent decisions relevant to v0.5:
 - computeIncrementalDiff accepts function param instead of full KnowledgeStore for loose coupling (31-02).
 - Fail-open git operations: all errors degrade to mode=full rather than blocking review (31-02).
 - Finding dedup uses filePath:titleFingerprint composite key in a Set for O(1) suppression lookup (31-02).
+- Duplicated FNV-1a fingerprint in store.ts to avoid circular import from review.ts (31-01).
+- onSynchronize trigger defaults false; opt-in to avoid costly frequent-push reviews (31-01).
+- Retrieval config enabled by default with conservative topK=5, distanceThreshold=0.3, maxContextChars=2000 (31-01).
 
 ### Pending Todos
 
@@ -65,5 +68,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 31-02-PLAN.md
+Stopped at: Completed 31-01-PLAN.md
 Resume file: None
