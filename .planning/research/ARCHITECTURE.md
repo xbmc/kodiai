@@ -1,808 +1,258 @@
-# Architecture: Intelligent Review System Integration
+# Architecture Research
 
-**Domain:** AI-powered code review with pattern analysis, learning, severity classification, and configurable review modes
-**Researched:** 2026-02-11
-**Confidence:** HIGH -- based on full codebase analysis of existing architecture plus ecosystem research
+**Domain:** Incremental AI code review architecture (embeddings-assisted learning + re-review + multi-language support)
+**Researched:** 2026-02-12
+**Confidence:** HIGH
 
-## Existing Architecture (As-Is)
+## Standard Architecture
 
-The system follows a clean pipeline with clear boundaries:
-
-```
-GitHub Webhook
-    |
-    v
-[Hono HTTP] --> [Signature Verify] --> [Dedup] --> [Event Router]
-                                                        |
-                                    +-------------------+-------------------+
-                                    |                                       |
-                              [Review Handler]                      [Mention Handler]
-                                    |                                       |
-                              [Job Queue]                             [Job Queue]
-                           (per-installation)                      (per-installation)
-                                    |                                       |
-                              [Workspace Manager]                   [Workspace Manager]
-                              (shallow clone)                       (shallow clone)
-                                    |                                       |
-                              [loadRepoConfig]                      [loadRepoConfig]
-                              (.kodiai.yml)                          (.kodiai.yml)
-                                    |                                       |
-                              [buildReviewPrompt]                   [buildPrompt/mention]
-                                    |                                       |
-                              [Executor]                              [Executor]
-                              (Agent SDK query())                   (Agent SDK query())
-                                    |                                       |
-                              [MCP Servers]                         [MCP Servers]
-                              (publish to GitHub)                   (publish to GitHub)
-```
-
-### Key Architectural Properties to Preserve
-
-1. **Stateless job execution:** Each job is self-contained -- clone, config, prompt, execute, publish, cleanup. No shared mutable state between jobs.
-
-2. **Prompt-driven behavior:** All review intelligence lives in the prompt text passed to `query()`. The executor is a thin wrapper that manages timeout/MCP/tools. Changing review behavior means changing the prompt.
-
-3. **Config-gated execution:** The review handler loads config twice (handler for gate checks, executor for model/timeout). Config controls whether and how reviews run.
-
-4. **MCP-based output:** All GitHub output goes through MCP tool calls (comment server, inline review server). The executor tracks `published` state via an `onPublish` callback.
-
-5. **Fire-and-forget telemetry:** After execution, handlers write telemetry records to SQLite. Non-blocking, never fails the job.
-
-6. **Strict output format validation:** The comment server validates review summary format (severity headings, issue line format). This is existing structured output enforcement.
-
----
-
-## Integration Architecture (To-Be)
-
-### Design Principle: Enrich the prompt, don't restructure the pipeline
-
-The existing architecture is clean and well-factored. Intelligent review features integrate by:
-
-1. **Enriching the prompt** with pattern context, severity instructions, and repo-specific learnings
-2. **Adding a knowledge store** alongside the existing telemetry store (same SQLite pattern)
-3. **Extending config** with review mode and severity settings (same zod schema pattern)
-4. **Post-processing feedback** captured from GitHub reactions/comments into the knowledge store
-
-The pipeline shape stays the same. New components add data inputs to `buildReviewPrompt()` and a feedback capture path after execution.
-
-### To-Be Pipeline
+### System Overview
 
 ```
-GitHub Webhook
-    |
-    v
-[Hono HTTP] --> [Signature Verify] --> [Dedup] --> [Event Router]
-                                                        |
-                                    +-------------------+-------------------+
-                                    |                                       |
-                              [Review Handler]                      [Mention Handler]
-                                    |                                       |
-                              [Job Queue]                             (unchanged)
-                           (per-installation)
-                                    |
-                              [Workspace Manager]
-                              (shallow clone)
-                                    |
-                      +-----------+-----------+
-                      |                       |
-                [loadRepoConfig]        [Knowledge Store]        <-- NEW: read learnings
-                (.kodiai.yml)           (SQLite, per-repo)
-                      |                       |
-                      +-----------+-----------+
-                                  |
-                          [buildReviewPrompt]                    <-- MODIFIED: enriched
-                          (+ severity config)
-                          (+ review mode)
-                          (+ repo patterns/learnings)
-                          (+ diff analysis context)
-                                  |
-                            [Executor]
-                            (Agent SDK query())
-                                  |
-                            [MCP Servers]
-                            (publish to GitHub)
-                                  |
-                      +-----------+-----------+
-                      |                       |
-                [Telemetry Store]       [Knowledge Store]        <-- NEW: write feedback
-                (fire-and-forget)       (fire-and-forget)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Ingress + Orchestration Layer                                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  [Hono Webhook] -> [Verify+Dedup] -> [Event Router] -> [Review Handler]    │
+│                                                  \-> [Feedback Sync Handler] │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Review Intelligence Layer                                                     │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  [Diff Analysis] -> [Language Profiler] -> [Re-review Delta Planner]        │
+│         \                \                    /                              │
+│          \-> [Embedding Retrieval] <- [Learning Indexer Worker]             │
+│                            |                                                 │
+│                     [Review Prompt Builder] -> [Executor]                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ Persistence Layer                                                             │
+│  [knowledge.db] [telemetry.db] [embedding vectors/metadata tables]          │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Component Responsibilities
 
-## Component Map: New vs Modified
+| Component | Responsibility | Typical Implementation |
+|-----------|----------------|------------------------|
+| Review Handler | Keep deterministic review lifecycle, now enriched with language + retrieval + re-review context | Extend `src/handlers/review.ts` with optional gated context assembly |
+| Learning Indexer Worker | Build/update embeddings and review-memory records asynchronously, never blocking review publication | New queued job path reusing `jobQueue.enqueue(..., { jobType })` |
+| Embedding Retrieval | Pull top-K historical patterns/snippets for current diff with deterministic ranking | New retrieval service over SQLite tables + deterministic tie-break sort |
+| Re-review Delta Planner | Convert prior findings + current patch into "needs re-check"/"already touched" sets | New deterministic mapper using file path + line range + title fingerprint |
+| Language Profiler | Detect dominant + secondary languages per PR and per changed file | Extension map + shebang parser + conservative fallback |
+
+## Recommended Project Structure
+
+```
+src/
+├── learning/                         # NEW: embeddings and review-memory pipeline
+│   ├── embedding-provider.ts         # provider interface + adapter(s)
+│   ├── chunker.ts                    # deterministic chunking for files/findings
+│   ├── indexer.ts                    # upsert vectors/metadata (async worker path)
+│   ├── retrieval.ts                  # top-K similar memories for prompt enrichment
+│   └── rereview-delta.ts             # incremental re-review planner
+├── language/                         # NEW: multi-language profiling
+│   ├── profiler.ts                   # file->language and PR language mix
+│   └── normalization.ts              # canonical language ids for prompts/storage
+├── handlers/
+│   ├── review.ts                     # MODIFIED: integrate all new context builders
+│   └── feedback-sync.ts              # MODIFIED: emit learning update signals
+├── execution/
+│   ├── review-prompt.ts              # MODIFIED: sections for memory/delta/language
+│   └── config.ts                     # MODIFIED: feature flags + budgets + privacy knobs
+├── knowledge/
+│   ├── store.ts                      # MODIFIED: vector metadata + rereview tracking tables
+│   └── types.ts                      # MODIFIED: new records (embedding docs, reruns)
+└── index.ts                          # MODIFIED: wire new services and async jobs
+```
+
+### Structure Rationale
+
+- **`learning/`:** isolate experimental/high-growth logic away from stable webhook/executor control flow.
+- **`language/`:** keep language concerns deterministic and reusable by prompt build and storage tags.
+- **`handlers/review.ts`:** remains orchestration entrypoint; new capabilities are pluggable helpers, not inlined logic.
+
+## Architectural Patterns
+
+### Pattern 1: Deterministic Context Enrichment Pipeline
+
+**What:** Build review context in fixed order: diff -> language -> re-review delta -> embeddings retrieval -> prompt.
+**When to use:** Every PR review execution.
+**Trade-offs:** Predictable behavior and testability, but strict ordering means less room for opportunistic heuristics.
+
+**Example:**
+```typescript
+const diff = analyzeDiff(...);
+const languageProfile = profileLanguages(changedFiles);
+const deltaPlan = buildRereviewDelta({ repo, prNumber, changedFiles, patchMap, knowledgeStore });
+const memories = retrievalEnabled
+  ? retrieveLearningContext({ repo, changedFiles, languageProfile, deltaPlan, topK: 12 })
+  : [];
+
+const prompt = buildReviewPrompt({ ...base, diffAnalysis: diff, languageProfile, deltaPlan, memories });
+```
+
+### Pattern 2: Async Learning Writes, Sync Learning Reads
+
+**What:** Review path only reads bounded context; expensive embedding generation runs after review in non-fatal async jobs.
+**When to use:** Any learning step with external latency (embedding model call, backfill).
+**Trade-offs:** No regression to review SLA; learning freshness becomes eventually consistent.
+
+**Example:**
+```typescript
+// in review success path
+jobQueue.enqueue(event.installationId, async () => {
+  await learningIndexer.upsertFromReview({ reviewId, repo, findings, changedFiles });
+}, { jobType: "learning-index" });
+```
+
+### Pattern 3: Feature-Flagged Progressive Activation
+
+**What:** Add config gates per capability: `knowledge.embeddings.enabled`, `review.incrementalRereview.enabled`, `review.languageAwareness.enabled`.
+**When to use:** Milestone rollout where stability > capability breadth.
+**Trade-offs:** Slight config complexity, major rollback safety.
+
+## Data Flow
+
+### Request Flow
+
+```
+[pull_request.* webhook]
+    ↓
+[Review Handler]
+    ↓
+[Deterministic Preprocessing]
+    -> analyzeDiff
+    -> profileLanguages
+    -> buildRereviewDelta
+    -> retrieveLearningContext (bounded, optional)
+    ↓
+[buildReviewPrompt]
+    ↓
+[Executor -> MCP publish]
+    ↓
+[Post-processing]
+    -> record review/findings (existing)
+    -> enqueue learning index update (new, non-fatal)
+```
+
+### State Management
+
+```
+[knowledge.store]
+    ↓ (read)
+[Review Handler Context Assembly]
+    ↓ (write after completion, async)
+[Learning Indexer]
+    ↓
+[embedding_* + rereview_* tables]
+```
+
+### Key Data Flows
+
+1. **Embeddings-assisted learning:** new findings and historical accepted/rejected signals become chunks -> embeddings -> vector metadata rows -> retrieved into future prompts.
+2. **Incremental re-review:** prior findings + current patch map produce targeted "re-check these areas" context; unchanged prior findings are deprioritized.
+3. **Multi-language analysis:** changed files map to canonical languages; prompt focus and finding categorization get language-aware hints (framework idioms, test conventions, false-positive guardrails).
+
+## New vs Modified Components (Explicit)
 
 ### New Components
 
-| Component | Location | Responsibility |
-|-----------|----------|----------------|
-| Knowledge Store | `src/knowledge/store.ts` | SQLite-backed per-repo pattern/learnings storage |
-| Knowledge Types | `src/knowledge/types.ts` | Type definitions for learnings, patterns, feedback |
-| Diff Analyzer | `src/execution/diff-analysis.ts` | Pre-execution diff classification (file types, change scope, risk signals) |
-| Severity Config Schema | (within `src/execution/config.ts`) | New zod schema section for severity/mode settings |
-| Review Mode Logic | (within `src/execution/review-prompt.ts`) | Mode-specific prompt sections |
-| Feedback Capture | `src/knowledge/feedback.ts` | Parse GitHub reactions/resolution into learnings |
+| Component | Integration Point | Purpose |
+|----------|--------------------|---------|
+| `src/learning/embedding-provider.ts` | Called by `learning/indexer.ts` | Standard API for embedding model(s), supports provider swap without touching handlers |
+| `src/learning/chunker.ts` | Called by `learning/indexer.ts` | Deterministic chunk IDs for file/finding text (stable hashing) |
+| `src/learning/indexer.ts` | Enqueued from `handlers/review.ts` and `handlers/feedback-sync.ts` | Async generation/upsert of embeddings and learning metadata |
+| `src/learning/retrieval.ts` | Called by `handlers/review.ts` pre-prompt | Bounded top-K retrieval + ranking merge (semantic + recency + confidence) |
+| `src/learning/rereview-delta.ts` | Called by `handlers/review.ts` pre-prompt | Maps historical findings to changed hunks for incremental re-review |
+| `src/language/profiler.ts` | Called by `handlers/review.ts` pre-prompt | PR language distribution and dominant-language detection |
+| `src/language/normalization.ts` | Used by profiler/retrieval/store | Canonical language enums (e.g., `ts`, `tsx`, `python`, `go`) |
 
 ### Modified Components
 
-| Component | Location | Change |
-|-----------|----------|--------|
-| `buildReviewPrompt()` | `src/execution/review-prompt.ts` | Accept severity config, review mode, learnings, diff analysis context |
-| `loadRepoConfig()` | `src/execution/config.ts` | New `review.mode`, `review.severity`, `review.patterns` config sections |
-| Review Handler | `src/handlers/review.ts` | Load learnings from knowledge store, run diff analysis, pass to prompt builder |
-| Comment Server | `src/execution/mcp/comment-server.ts` | Validate severity headings match configured levels |
-| App Entrypoint | `src/index.ts` | Initialize knowledge store, pass to review handler |
+| Component | File/Module | Required Change |
+|----------|-------------|-----------------|
+| Review orchestration | `src/handlers/review.ts` | Add deterministic context assembly step and async index job dispatch; keep publish path unchanged |
+| Prompt assembly | `src/execution/review-prompt.ts` | Add three optional sections: `Learning Context`, `Incremental Re-review Focus`, `Language-Specific Guidance` with hard char caps |
+| Config schema | `src/execution/config.ts` | Add feature flags, token/char budgets, privacy mode (repo-only/global opt-in), embedding provider config |
+| Knowledge schema/API | `src/knowledge/store.ts`, `src/knowledge/types.ts` | Add tables + methods for embedding docs, retrieval traces, rereview state snapshots |
+| Feedback ingestion | `src/handlers/feedback-sync.ts` | Convert thumbs up/down to learning weights and enqueue index refresh |
+| App wiring | `src/index.ts` | Instantiate learning/language services and inject into handlers |
 
-### Unchanged Components
+## Concrete Data Model Additions (SQLite)
 
-| Component | Why Unchanged |
-|-----------|---------------|
-| Executor | Remains a thin wrapper around `query()`. Intelligence is in the prompt, not the executor. |
-| Job Queue | No structural changes. Per-installation concurrency still works. |
-| Workspace Manager | Ephemeral clones unchanged. Knowledge store is separate from workspace. |
-| Mention Handler | v0.4 focuses on review intelligence. Mention handling stays as-is. |
-| Inline Review Server | Already supports line-level comments. No changes needed. |
-| Telemetry Store | Existing telemetry is orthogonal to knowledge. Stays as-is. |
-| Event Router | Same events, same dispatch. No new webhook types needed. |
+- `embedding_documents` (doc metadata): `id`, `repo`, `source_type`, `source_ref`, `language`, `text_hash`, `created_at`.
+- `embedding_vectors` (vector blobs or extension-backed vectors): `document_id`, `model`, `dimensions`, `vector`, `updated_at`.
+- `rereview_snapshots`: `repo`, `pr_number`, `review_id`, `finding_fingerprint`, `file_path`, `start_line`, `end_line`, `status`.
+- `retrieval_events`: audit/observability for retrieved memory IDs, score, latency, prompt budget consumption.
 
----
+Recommendation: if SQLite vector extension is unavailable in runtime, ship lexical fallback in `retrieval.ts` (title/path/category weighted search) and keep the same API shape.
 
-## Integration Point 1: Review Mode Configuration
+## Scaling Considerations
 
-### Where It Fits
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| 0-1k users | Single-process Bun + SQLite WAL remains sufficient; enable embeddings in repo-scoped mode only |
+| 1k-100k users | Move embedding generation to dedicated worker process; keep webhook/review path read-only for learning |
+| 100k+ users | Externalize vector search and queue backend; keep deterministic prompt contract unchanged |
 
-New fields in the `review` section of `.kodiai.yml`, parsed by the existing zod schema in `src/execution/config.ts`.
+### Scaling Priorities
 
-### Config Schema Extension
+1. **First bottleneck:** embedding generation latency/cost; solve with async worker, batching, and strict per-review retrieval budgets.
+2. **Second bottleneck:** knowledge DB growth; solve with dedup by `text_hash`, compaction, and optional retention windows for low-value traces.
 
-```yaml
-# .kodiai.yml
-review:
-  enabled: true
-  mode: "balanced"        # NEW: "strict" | "balanced" | "lenient"
-  severity:               # NEW: severity classification settings
-    levels:               # Which severity levels to report
-      - "critical"
-      - "major"
-      - "minor"
-    minLevel: "minor"     # Minimum severity to report (filters out below this)
-  patterns:               # NEW: repo-specific review patterns
-    focus:                # Areas to emphasize
-      - "security"
-      - "error-handling"
-    ignore:               # Areas to de-emphasize
-      - "style"
-      - "naming"
-    customRules: []       # Free-text rules for this repo
-  # ... existing fields unchanged
-```
+## Anti-Patterns
 
-### How Mode Affects Behavior
+### Anti-Pattern 1: Inline Embedding Calls in Critical Review Path
 
-Review mode maps to prompt instructions, not execution parameters. The executor, model, timeout, and tools stay identical. Only the prompt text changes.
+**What people do:** call embedding API inside `handleReview` before executor run.
+**Why it's wrong:** adds unpredictable latency/failure modes to webhook-driven review SLA.
+**Do this instead:** only retrieve existing embeddings synchronously; generate/update embeddings asynchronously post-review.
 
-| Mode | Behavior | Prompt Effect |
-|------|----------|---------------|
-| `strict` | Report all findings including minor issues. More verbose. Higher false positive rate. | Adds instructions to flag style issues, naming concerns, documentation gaps |
-| `balanced` (default) | Focus on bugs, security, and correctness. Skip style nits. | Current behavior (existing prompt is already balanced) |
-| `lenient` | Only critical and major issues. Maximum noise reduction. | Adds explicit "ONLY report issues that would cause bugs, crashes, or security vulnerabilities" |
+### Anti-Pattern 2: Unbounded Memory Injection into Prompt
 
-### Implementation Strategy
+**What people do:** append all historical findings or multilingual hints to prompt.
+**Why it's wrong:** prompt bloat increases cost, decreases determinism, and can reduce review quality.
+**Do this instead:** hard cap by `topK`, total chars, and deterministic ranking with stable tie-breakers.
 
-The review mode translates to a prompt section inserted into `buildReviewPrompt()`. This is a string concatenation -- no new control flow needed.
+## Integration Points
 
-```typescript
-function buildModeInstructions(mode: ReviewMode): string {
-  switch (mode) {
-    case "strict":
-      return STRICT_MODE_INSTRUCTIONS;
-    case "lenient":
-      return LENIENT_MODE_INSTRUCTIONS;
-    case "balanced":
-    default:
-      return ""; // Current behavior is balanced
-  }
-}
-```
+### External Services
 
----
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| Embedding model provider | Adapter in `learning/embedding-provider.ts` with timeout + retry budget | Must be optional and non-blocking for review publication |
+| GitHub APIs (existing) | Continue Octokit usage in handlers and MCP servers | No new webhook type required for MVP; reuse current events |
 
-## Integration Point 2: Severity Classification
+### Internal Boundaries
 
-### Where It Lives
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `handlers/review.ts` <-> `learning/retrieval.ts` | Direct function call | Read-only, bounded response, deterministic sort |
+| `handlers/review.ts` <-> `learning/indexer.ts` | Queue job dispatch | Write-heavy path isolated from review critical path |
+| `handlers/review.ts` <-> `language/profiler.ts` | Direct function call | Pure deterministic function, easy unit-test surface |
+| `feedback-sync.ts` <-> `learning/indexer.ts` | Queue job dispatch | Enables reinforcement updates from reaction signals |
 
-Severity classification is enforced at two points:
+## Cross-Cutting Concerns
 
-1. **In the prompt** -- instructions tell Claude which severity levels to use and how to classify
-2. **In the comment server** -- the existing `sanitizeKodiaiReviewSummary()` in `comment-server.ts` already validates severity headings
+- **Latency:** retrieval must have strict timeout (e.g., 40-80ms budget) and fail-open to empty context.
+- **Storage Growth:** vectors and retrieval traces can outgrow current DB assumptions; require dedup, compaction job, and optional retention for low-signal artifacts.
+- **Privacy:** default repo-scoped learning only; cross-repo sharing remains explicit opt-in (`knowledge.shareGlobal`) and excludes raw code snippets in shared aggregates.
+- **Observability:** add stage-level metrics and logs (`rereview_delta_ms`, `retrieval_ms`, `retrieved_docs`, `language_mix`, `index_job_ms`) with `deliveryId` correlation.
 
-### Current State
+## Safe Build Order (Minimize Regression Risk)
 
-The existing prompt already uses severity headings:
-```
-MUST group issues under severity headings: Critical, Must Fix, Major, Medium, Minor
-```
-
-The existing comment server validates:
-```typescript
-const severityHeadings = new Set(["Critical", "Must Fix", "Major", "Medium", "Minor"]);
-```
-
-### What Changes
-
-1. **Severity filtering:** When `review.severity.minLevel` is set to "major", the prompt tells Claude to skip minor issues entirely. This is a prompt-level filter, not post-processing.
-
-2. **Configurable severity set:** The prompt adapts to the configured severity levels rather than always listing all five.
-
-3. **No post-processing filter needed:** It would be tempting to filter Claude's output after execution, but this is wrong for two reasons:
-   - Claude should spend tokens on high-value analysis, not generate findings that get discarded
-   - The prompt-based approach is simpler and more predictable
-
-### Severity Mapping
-
-```
-Severity Level    When Used                              Prompt Guidance
-─────────────────────────────────────────────────────────────────────────
-Critical          Crashes, data loss, security holes      "Will cause production incidents"
-Must Fix          Incorrect behavior, auth bypass         "Bug that manifests under normal conditions"
-Major             Performance, resource leaks, races      "Degrades quality under load or over time"
-Medium            Error handling gaps, edge cases          "Could cause problems in edge cases"
-Minor             Style, naming, minor cleanup             "Nice to fix but not urgent"
-```
-
----
-
-## Integration Point 3: Knowledge Store (Learning System)
-
-### Architecture Decision: SQLite alongside telemetry
-
-The knowledge store follows the same pattern as the existing telemetry store:
-- SQLite with WAL mode
-- Factory function (`createKnowledgeStore()`)
-- Fire-and-forget writes from handlers
-- Separate database file (`./data/kodiai-knowledge.db`)
-
-Using a separate database file (not the telemetry DB) because:
-- Different retention policies (learnings are long-lived, telemetry is 90-day)
-- Different access patterns (learnings are read per-review, telemetry is read by CLI)
-- Keeps concerns separated (can back up/migrate independently)
-
-### Data Model
-
-```sql
--- Repo-specific review learnings
-CREATE TABLE learnings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-  repo TEXT NOT NULL,              -- "owner/repo"
-  category TEXT NOT NULL,          -- "pattern" | "preference" | "context"
-  content TEXT NOT NULL,           -- The learning itself (free text)
-  source TEXT NOT NULL,            -- "config" | "feedback" | "analysis"
-  confidence REAL NOT NULL DEFAULT 0.5,  -- 0.0 to 1.0
-  usage_count INTEGER NOT NULL DEFAULT 0,
-  last_used_at TEXT
-);
-
-CREATE INDEX idx_learnings_repo ON learnings(repo);
-CREATE INDEX idx_learnings_repo_category ON learnings(repo, category);
-```
-
-### Three Sources of Learnings
-
-1. **Config-defined patterns** (`source: "config"`)
-   - From `.kodiai.yml` `review.patterns.customRules`
-   - Loaded at config parse time, stored on first encounter
-   - HIGH confidence (explicitly configured by repo owner)
-
-2. **Feedback-derived learnings** (`source: "feedback"`)
-   - When a developer resolves a review comment (marks as resolved vs. replies with disagreement)
-   - When thumbs-down reactions appear on Kodiai comments
-   - MEDIUM confidence initially, increases with repetition
-
-3. **Analysis-derived context** (`source: "analysis"`)
-   - Patterns detected from the codebase itself (e.g., "this repo uses Result<T> pattern for error handling")
-   - Generated during diff analysis phase
-   - LOW confidence initially, increases if validated by feedback
-
-### How Learnings Flow Into Reviews
-
-During `buildReviewPrompt()`, the handler queries the knowledge store for the current repo and injects relevant learnings as a prompt section:
-
-```
-## Repo-Specific Context
-
-The following patterns and preferences have been learned for this repository:
-
-Patterns:
-- This repo uses the Result<T, E> pattern for error handling (confidence: high)
-- Database queries use prepared statements with Bun SQLite (confidence: high)
-
-Preferences:
-- The team prefers explicit error messages over generic throws (confidence: medium)
-- Style nits on import ordering are unwanted (confidence: medium)
-```
-
-### Prompt Token Budget
-
-Learnings must be bounded. With unlimited learnings, the prompt becomes too long and dilutes the review focus.
-
-**Budget:** Maximum 20 learnings per review, prioritized by:
-1. Confidence (high first)
-2. Recency (recently used first)
-3. Usage count (frequently used first)
-
-**Character limit:** 2000 characters total for the learnings section. This keeps the prompt impact small relative to the diff context.
-
----
-
-## Integration Point 4: Diff Analysis (Pre-Execution)
-
-### What It Does
-
-Before building the prompt, analyze the diff to provide structured context that helps Claude focus its review. This is NOT a separate AI call -- it is deterministic analysis of the git diff output.
-
-### Where It Fits
-
-New step in the review handler, after workspace creation and config loading, before prompt building:
-
-```typescript
-// In review handler, after config loads:
-const diffAnalysis = analyzeDiff({
-  workspaceDir: workspace.dir,
-  baseBranch: pr.base.ref,
-  changedFiles,
-});
-
-const reviewPrompt = buildReviewPrompt({
-  // ... existing params
-  diffAnalysis,     // NEW
-  learnings,        // NEW
-  reviewMode: config.review.mode,      // NEW
-  severityConfig: config.review.severity,  // NEW
-});
-```
-
-### What Diff Analysis Produces
-
-```typescript
-interface DiffAnalysis {
-  // File classification
-  filesByCategory: {
-    source: string[];      // .ts, .js, .py, etc.
-    test: string[];        // **/*.test.*, **/*.spec.*
-    config: string[];      // .yml, .json, tsconfig, etc.
-    docs: string[];        // .md, .txt, LICENSE, etc.
-    infra: string[];       // Dockerfile, .github/*, terraform, etc.
-  };
-
-  // Scale indicators
-  totalLinesChanged: number;
-  totalFilesChanged: number;
-  isLargeDiff: boolean;        // >500 lines or >20 files
-
-  // Risk signals (deterministic, not AI)
-  riskSignals: string[];
-  // Examples:
-  // "Modifies authentication-related files"
-  // "Changes database schema or migration files"
-  // "Adds new dependencies"
-  // "Modifies CI/CD configuration"
-  // "Touches security-sensitive paths (auth, crypto, secrets)"
-}
-```
-
-### Why Deterministic, Not AI
-
-Using an AI call for diff analysis would:
-- Add latency and cost before the main review even starts
-- Create a dependency on a second LLM invocation
-- Be unreliable (the main review already reads the diff)
-
-Deterministic analysis is fast, free, and predictable. It gives Claude structured context about what kind of change this is, which helps it prioritize its review focus.
-
-### Risk Signal Detection
-
-Risk signals are keyword/path-based heuristics:
-
-```typescript
-const RISK_PATTERNS = [
-  { pattern: /auth|login|session|token|jwt|oauth/i, signal: "Modifies authentication-related code" },
-  { pattern: /password|secret|credential|api.?key/i, signal: "Touches credential-handling code" },
-  { pattern: /migration|schema|alter.table/i, signal: "Changes database schema" },
-  { pattern: /\.env|secret|credential/i, signal: "Modifies secret/credential files" },
-  { pattern: /package\.json|Cargo\.toml|go\.mod|requirements\.txt/i, signal: "Adds or changes dependencies" },
-  { pattern: /Dockerfile|\.github\/|terraform|pulumi/i, signal: "Modifies infrastructure/CI configuration" },
-  { pattern: /crypto|encrypt|decrypt|hash|sign|verify/i, signal: "Touches cryptographic code" },
-];
-```
-
----
-
-## Integration Point 5: Feedback Capture
-
-### How Feedback Gets Into the System
-
-Feedback capture uses existing webhook events that Kodiai already receives but does not currently act on:
-
-| Feedback Signal | GitHub Event | What It Means |
-|----------------|--------------|---------------|
-| Comment resolved | `pull_request_review_comment` with state change | Developer agreed, fixed the issue |
-| Thumbs-down reaction | `issue_comment` reaction event | Developer disagreed with finding |
-| Reply disagreeing | `issue_comment.created` replying to Kodiai | Developer explains why finding is wrong |
-| No action taken | (absence of resolution) | Finding was ignored (possible false positive) |
-
-### Implementation Approach: Start Simple
-
-Phase 1 (v0.4): Only capture explicit config-defined patterns and write them to the knowledge store. This requires zero new webhook handling.
-
-Phase 2 (future): Add feedback capture from GitHub events. This requires new event router registrations and more complex state tracking.
-
-**Rationale:** The learning system's value comes primarily from:
-1. Config-defined custom rules (immediate, high confidence)
-2. Repo-context analysis (automatic, medium confidence)
-3. Feedback loops (delayed, requires tracking state across reviews)
-
-Items 1 and 2 deliver most of the value and are simpler to build. Item 3 is a future enhancement.
-
-### Knowledge Store in Prompt Flow
-
-```
-                    ┌─────────────────────┐
-                    │   .kodiai.yml        │
-                    │  review.patterns:    │
-                    │    customRules:      │
-                    │      - "..."         │
-                    └─────────┬───────────┘
-                              │ (config load)
-                              v
-┌──────────────┐    ┌─────────────────────┐    ┌──────────────┐
-│ Knowledge DB │<───│   Review Handler    │───>│ Diff Analyzer│
-│ (SQLite)     │    │                     │    │ (deterministic)
-│              │    │  1. Load config     │    └──────┬───────┘
-│  learnings   │    │  2. Load learnings  │           │
-│  table       │    │  3. Analyze diff    │           │
-│              │    │  4. Build prompt    │<──────────┘
-└──────────────┘    │  5. Execute         │
-                    │  6. Store feedback  │
-                    └─────────────────────┘
-```
-
----
-
-## Data Flow: Complete Review Job (v0.4)
-
-```
-1. Webhook arrives (pull_request.opened)
-   |
-2. Event router dispatches to Review Handler
-   |
-3. Handler enqueues job (per-installation queue)
-   |
-4. Job starts:
-   |
-   ├── 4a. Create workspace (shallow clone, depth 50)
-   ├── 4b. Fetch base branch for diff
-   |
-5. Load config (.kodiai.yml)
-   |  - review.mode: "balanced"
-   |  - review.severity.minLevel: "medium"
-   |  - review.patterns.customRules: [...]
-   |  - review.patterns.focus: ["security"]
-   |
-6. Load learnings from Knowledge Store            <-- NEW
-   |  - Query: SELECT * FROM learnings WHERE repo = ?
-   |    ORDER BY confidence DESC, usage_count DESC LIMIT 20
-   |
-7. Run diff analysis                              <-- NEW
-   |  - Classify changed files by category
-   |  - Detect risk signals
-   |  - Compute scale indicators
-   |
-8. Build enriched review prompt                   <-- MODIFIED
-   |  - Context header (existing)
-   |  - Scale notes (existing)
-   |  - Review mode instructions (NEW)
-   |  - Severity classification guidance (NEW)
-   |  - Repo-specific learnings section (NEW)
-   |  - Risk signal summary (NEW)
-   |  - Diff reading instructions (existing)
-   |  - What to look for (existing, filtered by mode)
-   |  - How to report (existing)
-   |  - Rules (existing)
-   |  - Custom instructions (existing)
-   |
-9. Execute via Agent SDK query()                  (unchanged)
-   |
-10. Stream messages, collect result               (unchanged)
-   |
-11. Post-execution:
-    |
-    ├── 11a. Telemetry store write                (unchanged)
-    ├── 11b. Update learning usage counts         <-- NEW
-    ├── 11c. Auto-approval logic                  (unchanged)
-    └── 11d. Error handling / error comments      (unchanged)
-   |
-12. Workspace cleanup                             (unchanged)
-```
-
----
-
-## Component Boundaries
-
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| Review Handler | Orchestrates the review job lifecycle | Job Queue, Workspace Manager, Config, Knowledge Store, Diff Analyzer, Prompt Builder, Executor |
-| Config (enhanced) | Parses review mode, severity, patterns from `.kodiai.yml` | Review Handler (provides config) |
-| Knowledge Store | Persists and retrieves per-repo learnings | Review Handler (read on review, write on feedback) |
-| Diff Analyzer | Deterministic pre-analysis of the git diff | Review Handler (called before prompt build) |
-| Prompt Builder (enhanced) | Assembles enriched prompt with all context | Review Handler (called with enriched inputs) |
-| Executor | Thin wrapper around Agent SDK `query()` | Review Handler (receives prompt, returns result) |
-| Comment Server (enhanced) | Validates output format including severity | Executor/MCP (validates during publication) |
-
----
-
-## Patterns to Follow
-
-### Pattern 1: Prompt Enrichment Over Pipeline Complexity
-
-**What:** Add intelligence by enriching the prompt text, not by adding pre/post-processing AI stages.
-
-**When:** Any time you want to change how Claude reviews code.
-
-**Why:** The existing architecture routes all intelligence through a single `query()` call. Adding pre-processing AI calls (e.g., a "triage" agent) would double latency and cost. Prompt enrichment is free and maintains the single-execution model.
-
-**Example:**
-```typescript
-// GOOD: Enrich the prompt
-const prompt = buildReviewPrompt({
-  ...baseContext,
-  learnings: await knowledgeStore.getForRepo(repo),
-  diffAnalysis: analyzeDiff(workspace, baseBranch, changedFiles),
-  reviewMode: config.review.mode,
-});
-
-// BAD: Add a pre-processing AI call
-const triage = await triageAgent.analyze(diff);  // Extra $$$, extra latency
-const prompt = buildReviewPrompt({ ...baseContext, triage });
-```
-
-### Pattern 2: SQLite Factory Functions
-
-**What:** New persistent stores use the same factory function pattern as telemetry.
-
-**When:** Adding any new persistent storage.
-
-**Why:** Consistency with existing codebase. `createKnowledgeStore({ dbPath, logger })` mirrors `createTelemetryStore({ dbPath, logger })`.
-
-**Example:**
-```typescript
-// Same pattern as telemetry store
-export function createKnowledgeStore(opts: {
-  dbPath: string;
-  logger: Logger;
-}): KnowledgeStore {
-  const db = new Database(dbPath, { create: true });
-  db.run("PRAGMA journal_mode = WAL");
-  db.run("PRAGMA synchronous = NORMAL");
-  db.run("PRAGMA busy_timeout = 5000");
-  // ... create tables, prepare statements
-  return { getForRepo, addLearning, updateUsage, close };
-}
-```
-
-### Pattern 3: Config-Driven Prompt Sections
-
-**What:** Review mode and severity settings map to prompt text sections, not code branches.
-
-**When:** Adding any configurable review behavior.
-
-**Why:** The prompt is the single source of truth for review behavior. Code branches for different modes would create maintenance burden and testing complexity. String templates are simpler.
-
-### Pattern 4: Bounded Context Injection
-
-**What:** All dynamic context injected into prompts has explicit size limits.
-
-**When:** Injecting learnings, diff analysis, or any variable-length content.
-
-**Why:** Unbounded context can blow up prompt token usage, increasing cost and potentially degrading review quality by diluting the signal.
-
-**Limits:**
-- Learnings: max 20 entries, max 2000 characters
-- Diff analysis summary: max 500 characters
-- Risk signals: max 10 signals
-- Custom rules: max 10 rules, max 2000 characters total
-
----
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1: Multi-Agent Review Pipeline
-
-**What:** Using separate AI agents for triage, analysis, and formatting.
-
-**Why bad:** Doubles or triples cost and latency. The existing single-agent model works well. Claude is capable of doing triage, analysis, and formatting in one pass when given good prompt context.
-
-**Instead:** Enrich the prompt. Let Claude do it all in one execution.
-
-### Anti-Pattern 2: Post-Processing Filter on Claude Output
-
-**What:** Running Claude output through a filter that removes low-severity findings after execution.
-
-**Why bad:** Claude already spent tokens generating those findings. Filtering after execution wastes money. Worse, it breaks the structured output format (summary references inline comments that got filtered).
-
-**Instead:** Set severity thresholds in the prompt so Claude never generates low-severity findings.
-
-### Anti-Pattern 3: Storing Learnings in the Workspace
-
-**What:** Writing learnings to a file in the cloned repo workspace.
-
-**Why bad:** Workspaces are ephemeral -- cleaned up after every job. Learnings would be lost. Also, writing to the workspace risks polluting the git state.
-
-**Instead:** Use a separate SQLite database that persists across jobs (same approach as telemetry).
-
-### Anti-Pattern 4: Fine-Grained Feedback Tracking Before Basics Work
-
-**What:** Building complex feedback loops (reaction tracking, resolution analysis, confidence Bayesian updates) before the basic review improvements are validated.
-
-**Why bad:** Premature complexity. The biggest review quality wins come from better prompts (severity instructions, review modes) and simple config-defined patterns. Feedback loops are a refinement, not a foundation.
-
-**Instead:** Ship config-defined patterns and review modes first. Add feedback capture as a separate, later phase.
-
-### Anti-Pattern 5: Separate Knowledge Database Per Installation
-
-**What:** Creating a separate SQLite file per GitHub installation.
-
-**Why bad:** Complicates backup, migration, and monitoring. The telemetry store already uses a single DB with repo-level filtering, and it works well.
-
-**Instead:** Single knowledge database with repo column for filtering. Same as telemetry.
-
----
-
-## Scalability Considerations
-
-| Concern | At 10 repos | At 100 repos | At 1000 repos |
-|---------|-------------|--------------|---------------|
-| Knowledge DB size | <1 MB | <10 MB | <100 MB |
-| Learnings query time | <1ms | <5ms | <10ms (indexed) |
-| Prompt size growth | Negligible (bounded) | Negligible (bounded) | Negligible (bounded) |
-| Diff analysis time | <100ms | <100ms | <100ms (deterministic) |
-| Config schema load | <1ms | <1ms | <1ms |
-
-The bounded context injection pattern ensures that prompt size does not grow with the number of repos or accumulated learnings. Each review only loads the top 20 learnings for its specific repo.
-
----
-
-## Build Order (Dependency-Driven)
-
-Components must be built in this order because of dependencies:
-
-### Phase A: Config Extension (no dependencies)
-1. Add `review.mode`, `review.severity`, `review.patterns` to zod schema
-2. Add defaults and section-level fallback parsing
-3. Tests for new config fields
-
-**Can be built independently.** No other component depends on this being integrated.
-
-### Phase B: Diff Analyzer (no dependencies)
-1. Create `src/execution/diff-analysis.ts`
-2. File classification by extension/path
-3. Risk signal detection
-4. Scale indicators
-5. Tests with sample diffs
-
-**Can be built independently.** Pure function, no external dependencies.
-
-### Phase C: Review Prompt Enhancement (depends on A, B)
-1. Modify `buildReviewPrompt()` to accept new parameters
-2. Add review mode instruction sections
-3. Add severity classification guidance
-4. Add diff analysis context section
-5. Add learnings section (placeholder until D)
-6. Tests for prompt generation with various configs
-
-**Depends on A** for config types and **B** for diff analysis types. This is the integration point.
-
-### Phase D: Knowledge Store (no dependencies, parallel with A/B)
-1. Create `src/knowledge/store.ts` and `src/knowledge/types.ts`
-2. SQLite schema (learnings table)
-3. CRUD operations: getForRepo, addLearning, updateUsage
-4. Factory function following telemetry pattern
-5. Tests
-
-**Can be built independently.** Does not depend on config or diff analysis.
-
-### Phase E: Handler Integration (depends on A, B, C, D)
-1. Wire knowledge store into review handler
-2. Load learnings before prompt building
-3. Run diff analysis before prompt building
-4. Pass enriched context to `buildReviewPrompt()`
-5. Update learning usage counts after execution
-6. Initialize knowledge store in `src/index.ts`
-7. Integration tests
-
-**Depends on all previous phases.** This is the final wiring step.
-
-### Phase F: Comment Server Enhancement (depends on A)
-1. Update severity heading validation to respect configured levels
-2. Add validation for mode-specific output expectations
-3. Tests
-
-**Depends on A** for severity config. Can run in parallel with C/D/E after A is done.
-
-### Dependency Graph
-
-```
-A (Config) ────────┬──────> C (Prompt) ──────> E (Integration)
-                   │              ^                    ^
-B (Diff Analyzer) ─┘              │                    │
-                                  │                    │
-D (Knowledge Store) ──────────────┴────────────────────┘
-
-F (Comment Server) <── A (Config)
-```
-
-**Parallelism opportunity:** A, B, and D can all be built in parallel. C requires A+B. E requires everything. F requires only A.
-
----
-
-## Configuration Impact Summary
-
-### New `.kodiai.yml` Fields
-
-```yaml
-review:
-  # Existing fields (unchanged)
-  enabled: true
-  autoApprove: true
-  triggers: { onOpened: true, onReadyForReview: true, onReviewRequested: true }
-  prompt: "Custom instructions..."
-  skipAuthors: []
-  skipPaths: []
-
-  # NEW fields for v0.4
-  mode: "balanced"            # "strict" | "balanced" | "lenient"
-  severity:
-    minLevel: "minor"         # Minimum severity to report
-  patterns:
-    focus: []                 # Review focus areas
-    ignore: []                # Areas to de-emphasize
-    customRules: []           # Free-text repo-specific rules
-```
-
-### Defaults (Zero-Config Still Works)
-
-| Field | Default | Rationale |
-|-------|---------|-----------|
-| `review.mode` | `"balanced"` | Current behavior preserved |
-| `review.severity.minLevel` | `"minor"` | Report everything (current behavior) |
-| `review.patterns.focus` | `[]` | No special focus (current behavior) |
-| `review.patterns.ignore` | `[]` | Nothing ignored (current behavior) |
-| `review.patterns.customRules` | `[]` | No custom rules |
-
-Zero-config repos get exactly the same behavior as v0.3. All new features are opt-in via configuration.
-
----
-
-## Risk Assessment
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| Prompt too long after enrichment | LOW | MEDIUM (increased cost) | Bounded context injection with character limits |
-| Knowledge store DB corruption | LOW | LOW (graceful fallback) | Same WAL mode as telemetry; missing learnings = current behavior |
-| Review mode causes unexpected behavior | MEDIUM | LOW (config is opt-in) | Default is "balanced" which matches current behavior |
-| Diff analyzer misclassifies files | LOW | LOW (informational only) | Risk signals are hints, not gates. Claude still reads the full diff. |
-| Config migration breaks existing repos | LOW | HIGH (reviews stop working) | Section-level fallback parsing already exists. New fields have defaults. |
-
----
+1. **Schema + Types First (no behavior change):** extend `knowledge/types.ts` and `knowledge/store.ts` with new tables/methods behind unused APIs.
+2. **Pure Deterministic Helpers:** add `language/profiler.ts` and `learning/rereview-delta.ts` with unit tests only; no handler wiring yet.
+3. **Prompt Surface Expansion (gated off):** modify `execution/review-prompt.ts` to accept optional new sections; default empty keeps current output.
+4. **Read-Only Wiring in Review Handler:** integrate profiler + delta into `handlers/review.ts` behind config flags, with fail-open behavior.
+5. **Retrieval Layer (fallback-first):** ship `learning/retrieval.ts` with lexical fallback; only then enable embedding-backed retrieval if extension/provider present.
+6. **Async Indexer + Feedback Reinforcement:** wire `learning/indexer.ts` enqueue from review and feedback handlers; keep non-fatal and separately observable.
+7. **Progressive Rollout:** enable per repo with low limits (`topK`, chars, timeouts), monitor telemetry/knowledge impact, then expand.
 
 ## Sources
 
-- Codebase analysis: Full read of `src/handlers/review.ts`, `src/execution/executor.ts`, `src/execution/review-prompt.ts`, `src/execution/config.ts`, `src/jobs/queue.ts`, `src/jobs/workspace.ts`, `src/execution/mcp/*.ts`, `src/telemetry/store.ts`, `src/index.ts`
-- [CodeRabbit configuration reference](https://docs.coderabbit.ai/reference/configuration) -- learnings scope, review profiles, path instructions
-- [Anthropic claude-code-security-review](https://github.com/anthropics/claude-code-security-review) -- severity classification, false positive filtering pipeline
-- [Qodo AI code review patterns 2026](https://www.qodo.ai/blog/5-ai-code-review-pattern-predictions-in-2026/) -- adaptive severity calibration, attribution-based learning
-- [Kilo AI code reviews](https://blog.kilo.ai/p/introducing-code-reviews) -- strict/balanced/lenient review modes
-- [Reducing False Positives with LLMs](https://arxiv.org/abs/2601.18844) -- hybrid LLM+static analysis eliminates 94-98% false positives
-- [Graphite: Effective prompt engineering for AI code reviews](https://graphite.com/guides/effective-prompt-engineering-ai-code-reviews) -- context engineering patterns
-- [Microsoft: Enhancing Code Quality at Scale](https://devblogs.microsoft.com/engineering-at-microsoft/enhancing-code-quality-at-scale-with-ai-powered-code-reviews/) -- configurable severity, repository-specific guidelines
+- Codebase: `src/handlers/review.ts`, `src/execution/review-prompt.ts`, `src/execution/config.ts`, `src/knowledge/store.ts`, `src/handlers/feedback-sync.ts`, `src/index.ts` (HIGH).
+- Bun SQLite docs (official): https://bun.com/docs/runtime/sqlite (verified `WAL` and `.loadExtension()`, accessed 2026-02-12, HIGH).
+- SQLite WAL docs (official): https://www.sqlite.org/wal.html (HIGH).
+
+---
+*Architecture research for: Kodiai v0.5 Advanced Learning & Language Support*
+*Researched: 2026-02-12*

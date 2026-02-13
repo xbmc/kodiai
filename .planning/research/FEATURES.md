@@ -1,195 +1,147 @@
-# Feature Landscape: Intelligent Review (v0.4)
+# Feature Research
 
-**Domain:** AI-powered code review -- noise reduction, severity, learning, and context awareness
-**Researched:** 2026-02-11
-**Overall Confidence:** MEDIUM-HIGH
+**Domain:** PR-review assistant features for embedding-assisted learning, incremental re-review, and multi-language support (v0.5)
+**Researched:** 2026-02-12
+**Confidence:** MEDIUM
 
-## Scope
+## Feature Landscape
 
-This research covers **new intelligent review features only** for the v0.4 milestone. Already-built capabilities are treated as existing infrastructure:
+### Table Stakes (Users Expect These)
 
-- PR auto-review with inline comments and suggestion blocks (v0.1)
-- Review summary comments with severity headings and `<details>` wrapping (v0.1)
-- `.kodiai.yml` config: `review.enabled`, `review.prompt`, `review.skipPaths`, `review.skipAuthors`, `review.autoApprove`, `review.triggers` (v0.1-v0.3)
-- @kodiai mention handling with `mention.allowedUsers` (v0.1-v0.3)
-- Telemetry recording with cost tracking (v0.3)
+Features users assume exist for these v0.5 capabilities. Missing these makes the system feel noisy, inconsistent, or unsafe.
 
-The v0.4 goal: make reviews smarter, not just present. Reduce noise, catch real issues, understand repo context, and give users control over what gets flagged.
+| Category | Feature | Why Expected | Complexity | Notes |
+|---------|---------|--------------|------------|-------|
+| Embedding-assisted learning | **Repo-scoped learning memory from accepted/suppressed findings** | Teams expect "the bot should learn what we keep accepting vs ignoring" without retraining models. | MEDIUM | Store feedback signals as embeddings + metadata (`repo`, `path`, `rule`, `language`, `outcome`). Keep tenant isolation strict by default. |
+| Embedding-assisted learning | **Retrieval-gated prompt augmentation** | Users expect relevant prior context to be reused, but only when confidence is high enough to reduce noise. | MEDIUM | Inject top-K similar prior findings only above threshold; hard cap token budget to avoid prompt bloat. |
+| Embedding-assisted learning | **Deterministic fallback when retrieval is unavailable** | Private teams expect review never to fail because vector search degraded. | LOW | If embedding/index fails, continue review with existing deterministic context and emit telemetry warning. |
+| Incremental re-review | **Re-review only changed hunks since last reviewed SHA** | Re-running full PR review after every push is perceived as spam. | HIGH | Use `pull_request.synchronize` flow and compare previous reviewed head SHA to current head SHA. |
+| Incremental re-review | **Do-not-repeat behavior for unchanged prior findings** | Developers expect fixed or acknowledged items not to be re-posted verbatim. | HIGH | Track comment fingerprint (`path`, normalized code span, finding type) and suppress duplicates unless code changed materially. |
+| Incremental re-review | **Resolved-thread awareness** | If a conversation is resolved and code remains unchanged, users expect the bot not to reopen the same point. | MEDIUM | Pull prior review comments/threads and map to new diff positions carefully (line mapping is fragile by nature). |
+| Multi-language support | **Configurable output language (`review.outputLanguage`)** | Global teams expect comments in team language with no extra setup. | LOW | Use BCP-47 style values (`en`, `es`, `ja`, `pt-BR`) and default to repo-level setting. |
+| Multi-language support | **Language-consistent severity and taxonomy** | Teams need stable categories regardless of output language for dashboards/rules. | MEDIUM | Keep canonical internal labels (`security`, `correctness`, etc.) and only localize presentation layer. |
+| Multi-language support | **Code-safe localization** | Users expect translated prose, not translated identifiers/snippets. | LOW | Never translate code blocks, symbol names, file paths, or shell commands. |
 
-## Table Stakes
+### Differentiators (Competitive Advantage)
 
-Features users expect from any tool claiming "intelligent review." Missing these means the review tool feels like a generic LLM wrapper with no domain awareness.
+Features that materially improve signal quality and trust for private-team workflows.
 
-| Feature | Why Expected | Complexity | Dependencies |
-|---------|--------------|------------|--------------|
-| **Configurable severity threshold** | Users need `review.severity: high` to suppress minor/medium findings and only see critical and high-severity issues. Without this, noisy repos get buried in low-value comments. CodeRabbit has `review_profile: chill/assertive`; Kilo has strict/balanced/lenient. This is the single most requested feature class in AI review tools. | MEDIUM | Prompt engineering in `review-prompt.ts`; new `review.severity` config field in `repoConfigSchema` |
-| **Structured severity in review output** | Every review comment must have an explicit severity tag (Critical, High, Medium, Low). The existing summary comment already groups by severity headings. Inline comments need severity prefixed consistently so users can visually scan importance. | LOW | Prompt engineering only -- instruct model to prefix inline comments with severity |
-| **Focus area configuration** | Users need `review.focusAreas` to specify which issue categories matter: `["security", "bugs", "performance"]`. A repo that only cares about security should not get performance nits. The existing prompt hardcodes all categories. | LOW | New config field `review.focusAreas: string[]`; conditional inclusion in `buildReviewPrompt()` |
-| **Custom review instructions (per-repo)** | The `review.prompt` field already exists but is poorly documented and underused. Users need clear guidance that this is where repo-specific conventions go: "We use Result types not exceptions," "All API handlers must validate input schemas," etc. | ALREADY BUILT | `review.prompt` field in config; passed as `customInstructions` in `buildReviewPrompt()` |
-| **Noise suppression rules** | Explicit rules in the prompt to suppress known low-value patterns: no style-only comments, no "consider renaming" without a concrete bug, no commenting on test file structure, no flagging intentional `any` types when the context shows they are deliberate. The current prompt says "Focus on correctness and safety, not style preferences" but this is too vague. | LOW | Prompt engineering -- expand the Rules section with explicit suppression patterns |
-| **Skip review for trivial PRs** | Auto-skip or fast-track PRs below a threshold (e.g., fewer than 5 lines changed, only markdown/docs, only lockfile changes). Currently `skipPaths` handles file-type filtering, but there is no line-count threshold. Wasting a full Claude session on a one-line typo fix is cost-inefficient. | LOW | New config field `review.skipIfOnlyPaths` or a line-count check in review handler before executor call |
+| Category | Feature | Value Proposition | Complexity | Notes |
+|---------|---------|-------------------|------------|-------|
+| Embedding-assisted learning | **Outcome-weighted retrieval ranking** | Surfaces prior findings that were historically accepted/fixed, reducing repeated false positives. | MEDIUM | Rank by semantic similarity + recency + acceptance rate + file/path proximity. |
+| Embedding-assisted learning | **Explainable learning context in comment metadata** | Builds trust: reviewers can see why a similar prior case influenced this finding. | MEDIUM | Add optional "Learned from similar accepted finding in `path/*`" footnote with minimal verbosity. |
+| Incremental re-review | **Delta summary section** | Gives high-signal update: "new issues", "still open", "resolved since last review". | MEDIUM | Summary-level feature, low risk, high perceived value for busy reviewers. |
+| Incremental re-review | **Regression detection on previously fixed pattern** | Catches reintroduced mistakes and proves memory is useful beyond suppression. | HIGH | Requires linking historical resolved findings to new diff and confidence thresholds. |
+| Multi-language support | **Mixed-language understanding in one PR** | Handles English code comments with non-English PR descriptions and review conversations gracefully. | MEDIUM | Detect dominant language per artifact (PR body, comments) and localize response while preserving canonical tags. |
+| Multi-language support | **Localized suggestion tone profiles** | Keeps comments culturally natural while preserving strictness policy. | MEDIUM | Map existing strictness modes to per-language phrasing templates; policy remains same. |
 
-## Differentiators
+### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that set Kodiai apart from generic review tools. Not expected by default, but valued by teams that use AI review daily.
+Features that look attractive but are likely to hurt v0.5 signal quality, scope, or trust.
 
-| Feature | Value Proposition | Complexity | Dependencies |
-|---------|-------------------|------------|--------------|
-| **Path-scoped review instructions** | Different review rules for different parts of the codebase: "For `src/api/**`, enforce input validation on every handler. For `tests/**`, only flag incorrect assertions, ignore style." CodeRabbit's `path_instructions` is the gold standard here. Kodiai currently has one global `review.prompt`; adding path-scoped instructions makes the review context-aware per directory. | MEDIUM | New config field `review.pathInstructions: [{path: string, instructions: string}]`; path matching with picomatch (already a dependency); prompt assembly in `buildReviewPrompt()` |
-| **Review profiles (strictness presets)** | Named presets that bundle severity threshold + focus areas + noise suppression rules. Three levels: `strict` (flag everything including style), `balanced` (bugs + security + performance, skip style), `minimal` (only critical/high severity bugs and security). Users set `review.profile: balanced` instead of configuring 5 fields individually. CodeRabbit has `chill`/`assertive`; Kilo has `strict`/`balanced`/`lenient`. | MEDIUM | New config field `review.profile`; preset definitions that set defaults for severity, focusAreas, and noise rules; must interact correctly with explicit field overrides |
-| **Incremental re-review (new changes only)** | When a developer pushes new commits to address review feedback, re-review should focus on the new changes rather than re-reviewing the entire diff. Currently, re-requesting review re-reviews everything. CodeRabbit does this by tracking prior review comments and focusing on new commits. | HIGH | Requires storing or retrieving prior review state (which comments were posted, on which SHA); modified diff calculation (`git diff oldSHA..newSHA` instead of `git diff base...HEAD`); prompt modification to include prior context. This is the hardest feature on this list. |
-| **Issue category tags on inline comments** | Each inline comment tagged with its category: `[Security]`, `[Bug]`, `[Performance]`, `[Error Handling]`. Enables users to quickly filter what matters. Combined with severity, a comment reads: `**Critical** [Security]: SQL injection via unsanitized input`. | LOW | Prompt engineering only -- instruct model to prefix comments with category tag |
-| **Confidence-based filtering** | The model self-assesses confidence on each finding (HIGH/MEDIUM/LOW). Config option `review.minConfidence: medium` suppresses low-confidence findings. Research shows low-confidence AI findings are where most false positives live. This directly attacks the 5-15% false positive rate cited in industry benchmarks. | MEDIUM | Prompt engineering to elicit confidence scores; new config field `review.minConfidence`; either trust the model's self-assessment (simpler) or implement post-processing to filter (harder). The simpler approach (prompt-only) is recommended initially. |
-| **Feedback-driven learning via config** | A `review.suppressions` list in config where users document patterns to stop flagging: `["ignore: 'any' type in test fixtures", "ignore: missing error handling in scripts/"]`. This is explicit, version-controlled, and auditable -- unlike implicit ML-based learning. Acts as a team knowledge base for "things the bot gets wrong." | LOW | New config field `review.suppressions: string[]`; injected into prompt as "Do NOT flag these patterns" |
-| **Review summary with metrics** | Enhance the summary comment with metadata: number of files reviewed, lines of diff analyzed, number of issues by severity, and estimated review time saved. Gives teams quantitative signal that the review was thorough. | LOW | Prompt engineering plus potentially a few calculations in the review handler (file count and diff line count are already available) |
-
-## Anti-Features
-
-Features to explicitly NOT build. These seem valuable but create disproportionate complexity or undermine the tool's strengths.
-
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| **ML-based learning from past reviews** | Requires storing historical review data, training a feedback model, managing concept drift, and handling the cold-start problem. CodeRabbit and Qodo spend massive engineering effort here because they are SaaS products amortizing cost across thousands of repos. For a self-hosted tool serving a few repos, explicit config-based learning (suppressions, custom instructions) is more predictable and debuggable. | Use `review.prompt`, `review.suppressions`, and `review.pathInstructions` for explicit, version-controlled learning. The "model" is the config file, not a neural network. |
-| **Reaction-based feedback loop (thumbs up/down on comments)** | Requires tracking which comments the bot posted, monitoring reaction events via webhooks, storing feedback data, and implementing a pipeline to translate reactions into prompt modifications. The feedback signal is noisy (a thumbs-down could mean "wrong finding" or "right finding, bad suggestion" or "not important enough to fix"). | If users disagree with a finding pattern, they add it to `review.suppressions`. Explicit text is unambiguous. Reactions can be added later as a convenience layer on top of the suppression system. |
-| **Auto-fix / auto-commit for review findings** | The review tool should identify issues, not fix them. Auto-fixing conflates review (advisory) with write-mode (action). Kodiai already has write-mode via @mentions -- if a user wants a fix, they can say `@kodiai fix the SQL injection in auth.ts`. Auto-fixing review findings risks making unwanted changes and breaks the advisory nature of reviews. GitClear research shows AI reviewing its own output produces 8x code duplication. | Keep review as advisory (inline comments with suggestion blocks). Users click "Accept suggestion" in GitHub UI or ask @kodiai to fix specific issues. The separation between review and write is a feature, not a limitation. |
-| **Cross-repo architectural analysis** | Analyzing dependencies across multiple repos to catch breaking changes. Qodo positions this as a key differentiator. Building it requires: cloning dependent repos, building dependency graphs, understanding API contracts. This is a product unto itself. | Stay within single-PR scope. If the user wants cross-repo awareness, they document API contracts in `review.prompt` or `review.pathInstructions` for the relevant paths. |
-| **Integrated linter/SAST tool orchestration** | Running ESLint, Semgrep, Trivy, etc. alongside the LLM review and merging findings. CodeRabbit integrates 40+ tools. This adds configuration complexity, tool installation, version management, and result deduplication. The LLM already catches many of the same issues that static analyzers catch, and it catches them with better context. | Let CI/CD handle linting and SAST. The LLM review focuses on issues that static tools miss: logic errors, incorrect business logic, subtle bugs, architectural drift. If users want linter integration, they run linters in CI independently. |
-| **PR label auto-assignment from review findings** | Automatically labeling PRs with `needs-security-fix` or `has-performance-issues` based on review findings. Requires: parsing review output structured data, mapping severity/category to labels, calling GitHub API to apply labels. | If needed, use the review summary as the source of truth. Users can manually label based on the severity headings in the summary. Auto-labeling adds API calls and label management overhead for marginal benefit. |
-| **Review gating / merge blocking** | Blocking PR merges when critical issues are found. GitHub already supports required reviews and status checks. Making the bot's review a hard gate introduces responsibility the tool should not carry -- an LLM can have false positives, and a false positive blocking merge erodes trust fast. | Use GitHub's native branch protection. Kodiai posts a "Comment" review (not "Request Changes"). If teams want the bot to block merges, they can configure branch protection to require Kodiai's approval and use `autoApprove` to approve only when no issues are found (already built). |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Auto-learning from every emoji/reaction** | Feels "automatic" and zero-config. | Reaction signal is ambiguous and noisy; causes unstable behavior and hard-to-debug drift. | Learn only from explicit outcomes (accepted suggestion, explicit suppression, explicit feedback action). |
+| **Cross-repo shared learning memory by default** | Teams want global learning quickly. | Data leakage and policy mismatch across repos/teams; weakens private-team trust posture. | Keep repo-scoped memory by default; add explicit opt-in org-level pools later. |
+| **Machine-translation of code tokens and identifiers** | Some users ask for fully translated comments. | Translating identifiers breaks precision and can create incorrect fix advice. | Translate prose only; preserve code, paths, symbols verbatim. |
+| **Full PR re-review after each push "for safety"** | Simpler implementation. | Produces duplicate noise and reviewer fatigue; directly conflicts with low-noise product goal. | Incremental pass by default, optional full re-review command for manual override. |
+| **Language-specific rule engines per locale in v0.5** | Seems like best localization quality. | Explodes maintenance matrix and causes inconsistent severity outcomes across languages. | One canonical policy/rule engine, localized rendering layer only. |
+| **Merge-blocking based on learned confidence alone** | Teams want automation. | False positives in learned/retrieved context can block delivery and quickly erode trust. | Keep advisory mode for v0.5; allow status signaling without hard gate. |
 
 ## Feature Dependencies
 
-```
-[Severity & Noise Control]  (Foundation -- build first)
-    |
-    +-- review.severity config field
-    |       +--requires--> repoConfigSchema update, prompt conditional logic
-    |
-    +-- review.focusAreas config field
-    |       +--requires--> repoConfigSchema update, prompt conditional logic
-    |
-    +-- Structured severity tags on inline comments
-    |       +--requires--> prompt engineering only (no code deps)
-    |
-    +-- Noise suppression rules in prompt
-            +--requires--> prompt engineering only
+```text
+[Feedback Capture Signals] (already exists)
+    └──requires──> [Embedding Memory Write Path]
+                          └──requires──> [Schema for outcome metadata]
 
-[Context-Aware Review]  (Build second -- depends on config infrastructure)
-    |
-    +-- review.pathInstructions config field
-    |       +--requires--> repoConfigSchema update
-    |       +--requires--> picomatch for path matching (already installed)
-    |       +--requires--> buildReviewPrompt() to assemble path-specific context
-    |
-    +-- review.profile presets
-    |       +--requires--> review.severity and review.focusAreas (must exist first)
-    |       +--requires--> preset definitions mapping profile -> field defaults
-    |
-    +-- Issue category tags on comments
-            +--requires--> prompt engineering only
+[Embedding Memory Write Path]
+    └──requires──> [Retrieval API + ranking]
+                          └──enhances──> [Learning-informed review prompt]
 
-[Feedback & Adaptation]  (Build third -- needs the above in place)
-    |
-    +-- review.suppressions config field
-    |       +--requires--> repoConfigSchema update
-    |       +--requires--> prompt injection of suppression rules
-    |
-    +-- Confidence-based filtering
-    |       +--requires--> review.minConfidence config field
-    |       +--requires--> prompt engineering for confidence self-assessment
-    |
-    +-- Review summary with metrics
-            +--requires--> diff line count (available from git)
-            +--requires--> file count (available from changedFiles array)
+[Reviewed SHA + prior comment map]
+    └──requires──> [Incremental diff computation]
+                          └──requires──> [Duplicate suppression fingerprinting]
+                                               └──enables──> [Incremental re-review UX]
 
-[Incremental Re-review]  (Build last -- highest complexity, most dependencies)
-    |
-    +-- requires--> Prior review state (comments posted, SHA reviewed)
-    +-- requires--> Differential diff calculation
-    +-- requires--> Modified prompt with prior context
-    +-- requires--> Telemetry store or GitHub API for state retrieval
+[Canonical finding taxonomy]
+    └──requires──> [Output localization layer]
+                          └──enables──> [Multi-language comments]
+
+[Output localization layer]
+    └──conflicts──> [Code/identifier translation]
 ```
 
-## MVP Recommendation
+### Dependency Notes
 
-### Phase 1: Severity and Noise Control (Foundation)
+- **Embedding retrieval requires outcome metadata:** without explicit outcome labels, retrieval adds context but not quality control.
+- **Incremental re-review requires prior state mapping:** last reviewed SHA + prior posted comments are mandatory to prevent duplicate spam.
+- **Localization requires canonical internal taxonomy:** translated labels without canonical IDs break filtering and metrics.
+- **Localization conflicts with code translation:** code/text boundary must be strict to avoid incorrect advice.
 
-Prioritize noise reduction above all else. The single biggest complaint about AI review tools is too many low-value comments. Research shows concise reviews are 3x more likely to be acted upon.
+## MVP Definition
 
-Build:
-1. `review.severity` config field -- threshold for minimum severity to report
-2. `review.focusAreas` config field -- which categories to review
-3. Expanded noise suppression rules in prompt -- explicit "do not flag" patterns
-4. Structured severity and category tags on all inline comments
+### Launch With (v0.5)
 
-### Phase 2: Context-Aware Instructions
+Minimum set to validate advanced learning + language support while keeping output low-noise.
 
-Make the review understand the repo, not just the diff.
+- [ ] **Embedding memory from explicit outcomes** — core learning loop with controllable behavior
+- [ ] **Retrieval-gated prompt context with strict threshold + token cap** — quality gains without prompt sprawl
+- [ ] **Incremental re-review on new commits only** — eliminates repeated full-PR noise
+- [ ] **Duplicate finding suppression across re-reviews** — preserves trust and reduces fatigue
+- [ ] **Configurable output language with code-safe localization** — practical multilingual usability
+- [ ] **Fail-open fallback when retrieval/localization fails** — production reliability for private teams
 
-Build:
-1. `review.pathInstructions` -- per-path review instructions with picomatch globs
-2. `review.profile` presets -- `strict`/`balanced`/`minimal` as convenience bundles
-3. Enhance `review.prompt` documentation and examples
+### Add After Validation (v0.5.x)
 
-### Phase 3: Feedback and Adaptation
+- [ ] **Delta summary (`new`, `resolved`, `still-open`)** — add when teams need workflow-level visibility
+- [ ] **Outcome-weighted ranking (recency + acceptance bias)** — add after baseline retrieval quality is measured
+- [ ] **Mixed-language artifact handling in one PR** — add when multilingual repos exceed baseline assumptions
 
-Let teams teach the bot what to ignore.
+### Future Consideration (v0.6+)
 
-Build:
-1. `review.suppressions` -- explicit patterns to stop flagging
-2. `review.minConfidence` -- filter out low-confidence findings
-3. Review summary metrics (files, lines, issue counts)
+- [ ] **Org-level opt-in shared learning pools** — defer until strong tenancy controls and admin policy surface exist
+- [ ] **Regression detector for previously fixed findings** — high value but needs robust historical linking/evals
 
-### Defer: Incremental Re-review
+## Feature Prioritization Matrix
 
-This is the most impactful differentiator but also the hardest to build correctly. It requires state management across review cycles, differential diff calculation, and prompt context that includes prior findings. Defer to v0.4.x or v0.5 after the foundation is solid. A botched incremental review (re-flagging already-fixed issues, missing new issues) is worse than a full re-review.
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| Embedding memory from explicit outcomes | HIGH | MEDIUM | P1 |
+| Retrieval-gated prompt augmentation | HIGH | MEDIUM | P1 |
+| Incremental diff since last reviewed SHA | HIGH | HIGH | P1 |
+| Duplicate finding suppression | HIGH | HIGH | P1 |
+| Configurable output language | HIGH | LOW | P1 |
+| Code-safe localization guardrails | HIGH | LOW | P1 |
+| Fail-open fallback behavior | HIGH | LOW | P1 |
+| Delta summary in review output | MEDIUM | MEDIUM | P2 |
+| Outcome-weighted retrieval ranking | MEDIUM | MEDIUM | P2 |
+| Mixed-language per-artifact handling | MEDIUM | MEDIUM | P2 |
+| Regression detector on reintroduced issues | HIGH | HIGH | P3 |
+| Org-level shared learning memory (opt-in) | MEDIUM | HIGH | P3 |
 
-### Defer: ML-Based Learning, Auto-Fix, Cross-Repo Analysis
+**Priority key:**
+- P1: Must have for launch
+- P2: Should have, add when possible
+- P3: Nice to have, future consideration
 
-These are product-level features that require months of engineering each. They belong in a roadmap discussion about Kodiai's long-term direction, not in a v0.4 milestone.
+## Competitor Feature Analysis
 
-## Competitor Feature Matrix (Intelligent Review Focus)
-
-| Feature | CodeRabbit | Qodo | GitHub Copilot | Kilo | Kodiai Current | Kodiai v0.4 Target |
-|---------|------------|------|----------------|------|----------------|-------------------|
-| Severity levels | Implicit (chill/assertive) | Yes (risk scoring) | No | Yes (strict/balanced/lenient) | Summary headings only | Configurable threshold + tags on all comments |
-| Focus area config | Via path_instructions | Via workflows | Via custom instructions | Via focus areas | Hardcoded in prompt | Configurable `review.focusAreas` |
-| Path-scoped instructions | `path_instructions` (glob) | Directory scoping | File-level custom instructions | Not documented | Single global `review.prompt` | `review.pathInstructions` with picomatch |
-| Noise suppression | Learnings from chat | Automated workflows | Not documented | Not documented | "Focus on correctness" rule | Explicit `review.suppressions` + expanded prompt rules |
-| Incremental re-review | Yes (per-commit) | Yes | No (full review) | Not documented | No (full re-review) | Deferred to v0.5 |
-| Feedback learning | Chat replies -> learnings | PR history analysis | Not documented | Not documented | None | Explicit suppressions (v0.4); reactions later |
-| Confidence scores | Not exposed | Not exposed | Not exposed | Not exposed | None | Self-assessed confidence with configurable filter |
-| Profile presets | chill / assertive | N/A | N/A | strict / balanced / lenient | None | strict / balanced / minimal |
-| Auto-fix from review | No | Remediation patches | Copilot coding agent | Not documented | Separate write-mode | Separate write-mode (intentional) |
-
-### Key Insight
-
-CodeRabbit's advantage is breadth (40+ integrated tools, Jira/Linear integration, learnings system). Kodiai's advantage is depth of configuration control and transparency. As a self-hosted tool where the operator sees every config field and prompt instruction, Kodiai can offer precision that SaaS tools cannot: explicit suppressions instead of opaque ML, version-controlled path instructions instead of chat-trained models, and direct access to severity/confidence controls instead of binary chill/assertive toggles.
-
-The strategic play is: make Kodiai the most configurable and transparent AI reviewer, not the most feature-rich.
+| Feature | Typical Market Pattern | Risk if Copied Naively | Kodiai v0.5 Approach |
+|---------|------------------------|-------------------------|-----------------------|
+| Learning from prior reviews | Mostly opaque "bot learns" behavior | Unpredictable drift and low debuggability | Explicit, auditable learning from clear outcomes |
+| Re-review behavior | Some tools still over-post on re-runs | Comment fatigue and low trust | Incremental-by-default with duplicate suppression |
+| Multilingual comments | Translation quality varies, often code-unsafe | Incorrect suggestions due to token translation | Prose localization + strict code preservation |
+| Advanced automation | Push toward merge gating/auto actions | High blast radius when wrong | Advisory-first, high-signal, low-noise |
 
 ## Sources
 
-### Primary (HIGH confidence)
-- Existing codebase: `src/execution/review-prompt.ts`, `src/handlers/review.ts`, `src/execution/config.ts` -- verified current prompt structure, config schema, and review handler flow
-- [CodeRabbit Configuration Reference](https://docs.coderabbit.ai/reference/configuration) -- full YAML schema, path_instructions, review profiles, learnings
-- [CodeRabbit Review Instructions Guide](https://docs.coderabbit.ai/guides/review-instructions) -- path_instructions vs code guidelines distinction, glob pattern usage
-- [GitHub Copilot Code Review Docs](https://docs.github.com/copilot/using-github-copilot/code-review/using-copilot-code-review) -- Copilot review behavior, custom instructions, comment-only reviews
-
-### Secondary (MEDIUM confidence)
-- [Signal vs Noise Framework for AI Code Review](https://jetxu-llm.github.io/posts/low-noise-code-review/) -- Three-tier classification (Critical/Pattern/Noise), signal ratio metrics, cost of false positives
-- [Context Engineering for AI Code Reviews (CodeRabbit Blog)](https://www.coderabbit.ai/blog/context-engineering-ai-code-reviews) -- 1:1 code-to-context ratio, context source types, verification scripts
-- [Why Your AI Code Reviews Are Broken (Qodo Blog)](https://www.qodo.ai/blog/why-your-ai-code-reviews-are-broken-and-how-to-fix-them/) -- Confirmation bias in AI review, multi-agent architecture, anchoring effects
-- [AI Code Review False Positive Rates (Graphite)](https://graphite.com/guides/ai-code-review-false-positives) -- 5-15% industry FP rate, triage cost of 15-30 min per FP
-- [AI Code Review Accuracy 2026 (CodeAnt)](https://www.codeant.ai/blogs/ai-code-review-accuracy) -- Severity-based prioritization, context understanding for FP reduction
-- [Google Research: Resolving Code Review Comments with ML](https://research.google/blog/resolving-code-review-comments-with-ml/) -- 52% comment resolution rate, 50% suggestion acceptance rate
-- [5 Ways to Measure AI Code Review Impact (Baz)](https://baz.co/resources/5-ways-to-measure-the-impact-of-ai-code-review) -- Acceptance rate metrics, resolution tracking categories
-
-### Tertiary (LOW confidence)
-- [8 Best AI Code Review Tools 2026 (Qodo Blog)](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/) -- Competitor comparison overview
-- [State of AI Code Review Tools 2025 (DevTools Academy)](https://www.devtoolsacademy.com/blog/state-of-ai-code-review-tools-2025) -- Ecosystem landscape
-- [Self-Learning Code Review with Cursor (Elementor)](https://medium.com/elementor-engineers/the-self-learning-code-review-teaching-ai-cursor-to-learn-from-human-feedback-454df64c98cc) -- Feedback loop implementation patterns
+- Existing Kodiai capabilities and constraints from current milestone context (HIGH confidence).
+- GitHub Webhooks: pull request event model and delivery constraints (official docs): https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request (MEDIUM confidence; page is large but authoritative).
+- GitHub REST API: pull request review comments (line mapping, comment identity, permissions): https://docs.github.com/en/rest/pulls/comments (HIGH confidence).
+- GitHub REST API: pull request files and PR metadata endpoints: https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files (HIGH confidence).
+- OpenAI Embeddings guide: embedding models, multilingual performance note, dimensions/cost tradeoff: https://platform.openai.com/docs/guides/embeddings (HIGH confidence).
 
 ---
-*Feature landscape for: Intelligent review capabilities (v0.4 milestone)*
-*Researched: 2026-02-11*
+*Feature research for: Kodiai v0.5 advanced learning and language support*
+*Researched: 2026-02-12*
