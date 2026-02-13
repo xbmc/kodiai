@@ -2415,9 +2415,13 @@ describe("createReviewHandler finding extraction", () => {
 
     expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
     expect(detailsCommentBody).toContain("Files reviewed:");
-    expect(detailsCommentBody).toContain("Lines changed: +");
-    expect(detailsCommentBody).toContain("Findings:");
-    expect(detailsCommentBody).toContain("Review completed:");
+    expect(detailsCommentBody).toMatch(/Lines changed: \+\d+ -\d+/);
+    expect(detailsCommentBody).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
+    expect(detailsCommentBody).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
+    expect(detailsCommentBody).not.toContain("Lines analyzed:");
+    expect(detailsCommentBody).not.toContain("Suppressions applied:");
+    expect(detailsCommentBody).not.toContain("Estimated review time saved:");
+    expect(detailsCommentBody).not.toContain("Low Confidence Findings");
 
     await workspaceFixture.cleanup();
   });
@@ -2599,9 +2603,12 @@ describe("createReviewHandler finding extraction", () => {
     expect(createCommentCalls).toBe(1);
     expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
     expect(detailsCommentBody).toContain("Files reviewed:");
-    expect(detailsCommentBody).toContain("Lines changed: +");
-    expect(detailsCommentBody).toContain("Findings:");
-    expect(detailsCommentBody).toContain("Review completed:");
+    expect(detailsCommentBody).toMatch(/Lines changed: \+\d+ -\d+/);
+    expect(detailsCommentBody).toMatch(/Findings: \d+ critical, \d+ major, \d+ medium, \d+ minor/);
+    expect(detailsCommentBody).toMatch(/Review completed: \d{4}-\d{2}-\d{2}T/);
+    expect(detailsCommentBody).not.toContain("Suppressions applied:");
+    expect(detailsCommentBody).not.toContain("Estimated review time saved:");
+    expect(detailsCommentBody).not.toContain("Low Confidence Findings");
 
     const detailsAttemptLog = entries.find((entry) =>
       entry.data?.gate === "review-details-output" && entry.data?.gateResult === "attempt"
