@@ -7,10 +7,12 @@ import {
   buildMetricsInstructions,
   buildOutputLanguageSection,
   buildPathInstructionsSection,
+  buildPrIntentScopingSection,
   buildRetrievalContextSection,
   buildReviewedCategoriesLine,
   buildReviewPrompt,
   buildSuppressionRulesSection,
+  buildToneGuidelinesSection,
   matchPathInstructions,
 } from "./review-prompt.ts";
 
@@ -653,4 +655,165 @@ test("standard mode includes reviewed categories line when diffAnalysis provided
 test("standard mode omits reviewed categories when no diffAnalysis", () => {
   const prompt = buildReviewPrompt(baseContext());
   expect(prompt).not.toContain("Reviewed:");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 35: Impact/Preference template, PR intent scoping, tone guidelines,
+//           PR labels threading
+// ---------------------------------------------------------------------------
+
+describe("Phase 35: Findings organization and tone", () => {
+  // 1. Impact/Preference template presence
+  test("standard mode contains ### Impact and ### Preference in Observations", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    const impactIdx = prompt.indexOf("### Impact");
+    const prefIdx = prompt.indexOf("### Preference");
+    expect(impactIdx).toBeGreaterThan(-1);
+    expect(prefIdx).toBeGreaterThan(-1);
+    expect(prefIdx).toBeGreaterThan(impactIdx);
+    // Old severity sub-headings must NOT be present
+    expect(prompt).not.toContain("### Critical");
+    expect(prompt).not.toContain("### Major");
+    expect(prompt).not.toContain("### Medium");
+    expect(prompt).not.toContain("### Minor");
+  });
+
+  // 2. Severity tags in template
+  test("Observations template contains inline severity tags", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    const observationsStart = prompt.indexOf("## Observations");
+    const observationsSection = prompt.slice(observationsStart, observationsStart + 800);
+    expect(observationsSection).toContain("[CRITICAL]");
+    expect(observationsSection).toContain("[MAJOR]");
+    expect(observationsSection).toContain("[MINOR]");
+  });
+
+  // 3. Impact required, Preference optional rule
+  test("hard requirements state Impact is required and Preference is optional", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("### Impact is REQUIRED");
+    expect(prompt).toContain("### Preference is optional");
+  });
+
+  // 4. Severity cap rule
+  test("hard requirements enforce severity caps for Impact and Preference", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("CRITICAL and MAJOR findings MUST go under ### Impact");
+    expect(prompt).toContain("Preference findings are capped at MEDIUM severity");
+  });
+
+  // 5. PR intent scoping section present
+  test("standard mode prompt contains PR Intent Scoping section", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("## PR Intent Scoping");
+  });
+
+  // 6. PR labels in prompt when provided
+  test("PR labels appear in prompt when provided", () => {
+    const prompt = buildReviewPrompt(baseContext({ prLabels: ["bug", "ci-fix"] }));
+    expect(prompt).toContain("Labels: bug, ci-fix");
+  });
+
+  // 7. PR labels omitted when empty
+  test("PR labels omitted from prompt when empty array", () => {
+    const prompt = buildReviewPrompt(baseContext({ prLabels: [] }));
+    expect(prompt).not.toContain("Labels:");
+  });
+
+  // 8. PR labels omitted when undefined
+  test("PR labels omitted from prompt when undefined", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("Labels:");
+  });
+
+  // 9. Tone guidelines section present
+  test("prompt contains Finding Language Guidelines section", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("## Finding Language Guidelines");
+  });
+
+  // 10. Tone guidelines contain stabilizing language
+  test("tone guidelines include stabilizing language phrases", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("preserves existing behavior");
+    expect(prompt).toContain("backward compatible");
+    expect(prompt).toContain("minimal impact");
+  });
+
+  // 11. Tone guidelines contain anti-patterns
+  test("tone guidelines include hedged language anti-patterns", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("could potentially");
+  });
+
+  // 12. buildPrIntentScopingSection helper includes branch and scoping rules
+  test("buildPrIntentScopingSection includes branch name and scoping rules", () => {
+    const section = buildPrIntentScopingSection("Fix auth bug", [], "fix/auth-bypass");
+    expect(section).toContain("## PR Intent Scoping");
+    expect(section).toContain("Branch: fix/auth-bypass");
+    expect(section).toContain("CI/test fix");
+    expect(section).toContain("Bug fix");
+    expect(section).toContain("Feature");
+    expect(section).toContain("Findings outside the PR's intent belong in Preference unless CRITICAL severity");
+    // Labels should NOT be present when empty
+    expect(section).not.toContain("Labels");
+  });
+
+  // 13. buildPrIntentScopingSection includes labels when provided
+  test("buildPrIntentScopingSection includes labels when provided", () => {
+    const section = buildPrIntentScopingSection("Add feature", ["enhancement", "frontend"], "feat/new-ui");
+    expect(section).toContain("Labels (if present): enhancement, frontend");
+    expect(section).toContain("Branch: feat/new-ui");
+  });
+
+  // 14. buildToneGuidelinesSection returns complete guidelines
+  test("buildToneGuidelinesSection returns complete guidelines content", () => {
+    const section = buildToneGuidelinesSection();
+    expect(section).toContain("## Finding Language Guidelines");
+    expect(section).toContain("WHAT happens");
+    expect(section).toContain("WHEN it happens");
+    expect(section).toContain("WHY it matters");
+    expect(section).toContain("causes [specific issue] when [specific condition]");
+    expect(section).toContain("Optional:");
+    expect(section).toContain("consider refactoring");
+    expect(section).toContain("this might have problems");
+  });
+
+  // 15. Enhanced mode is NOT changed
+  test("enhanced mode prompt is not affected by Phase 35 changes", () => {
+    const prompt = buildReviewPrompt(baseContext({ mode: "enhanced" }));
+    expect(prompt).toContain("Do NOT post a top-level summary comment");
+    expect(prompt).not.toContain("### Impact");
+    expect(prompt).not.toContain("### Preference");
+  });
+
+  // 16. PR labels appear in context header after Branches line
+  test("PR labels appear in context header between Branches and Scale Notes", () => {
+    const prompt = buildReviewPrompt(baseContext({ prLabels: ["perf", "urgent"] }));
+    const branchesIdx = prompt.indexOf("Branches:");
+    const labelsIdx = prompt.indexOf("Labels: perf, urgent");
+    expect(branchesIdx).toBeGreaterThan(-1);
+    expect(labelsIdx).toBeGreaterThan(-1);
+    expect(labelsIdx).toBeGreaterThan(branchesIdx);
+  });
+
+  // 17. PR Intent Scoping appears after Noise Suppression
+  test("PR Intent Scoping section appears after Noise Suppression", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    const noiseIdx = prompt.indexOf("## Noise Suppression");
+    const intentIdx = prompt.indexOf("## PR Intent Scoping");
+    expect(noiseIdx).toBeGreaterThan(-1);
+    expect(intentIdx).toBeGreaterThan(-1);
+    expect(intentIdx).toBeGreaterThan(noiseIdx);
+  });
+
+  // 18. Finding Language Guidelines appears after PR Intent Scoping
+  test("Finding Language Guidelines section appears after PR Intent Scoping", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    const intentIdx = prompt.indexOf("## PR Intent Scoping");
+    const toneIdx = prompt.indexOf("## Finding Language Guidelines");
+    expect(intentIdx).toBeGreaterThan(-1);
+    expect(toneIdx).toBeGreaterThan(-1);
+    expect(toneIdx).toBeGreaterThan(intentIdx);
+  });
 });
