@@ -109,6 +109,21 @@ function formatReviewDetailsSummary(params: {
   minConfidence: number;
   visibleFindings: ProcessedFinding[];
   lowConfidenceFindings: ProcessedFinding[];
+  deltaSummary?: {
+    counts: { new: number; resolved: number; stillOpen: number };
+    resolved: Array<{ filePath: string; title: string; severity: string; category: string }>;
+    suppressedStillOpen: number;
+  };
+  provenanceSummary?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+  };
 }): string {
   const {
     reviewOutputKey,
@@ -120,6 +135,8 @@ function formatReviewDetailsSummary(params: {
     minConfidence,
     visibleFindings,
     lowConfidenceFindings,
+    deltaSummary,
+    provenanceSummary,
   } = params;
 
   // Time-saved estimate is deterministic and intentionally simple:
@@ -142,8 +159,74 @@ function formatReviewDetailsSummary(params: {
     `- Suppressions applied: ${suppressionsApplied}`,
     `- Estimated review time saved: ~${estimatedMinutesSaved} minutes`,
     "- Time-saved formula: (3 min x actionable findings) + (1 min x low-confidence findings) + (0.25 min x files reviewed)",
-    "</details>",
   ];
+
+  // Delta Summary section (only when deltaSummary is provided)
+  if (deltaSummary) {
+    sections.push(
+      "",
+      "### Delta Summary",
+      "",
+      `- **New findings:** ${deltaSummary.counts.new}`,
+      `- **Resolved findings:** ${deltaSummary.counts.resolved}`,
+    );
+
+    if (deltaSummary.suppressedStillOpen > 0) {
+      sections.push(
+        `- **Still open:** ${deltaSummary.counts.stillOpen} (${deltaSummary.suppressedStillOpen} suppressed to avoid duplicate comments)`,
+      );
+    } else {
+      sections.push(`- **Still open:** ${deltaSummary.counts.stillOpen}`);
+    }
+
+    if (deltaSummary.resolved.length > 0) {
+      sections.push(
+        "",
+        "Resolved findings were present in the prior review but not flagged in the current run.",
+        "",
+        "Resolved:",
+      );
+      const cappedResolved = deltaSummary.resolved.slice(0, 10);
+      for (const item of cappedResolved) {
+        sections.push(`- [${item.severity}/${item.category}] ${item.title} (${item.filePath})`);
+      }
+      if (deltaSummary.resolved.length > 10) {
+        sections.push(`- ...(${deltaSummary.resolved.length - 10} more resolved findings omitted)`);
+      }
+    }
+  }
+
+  sections.push("</details>");
+
+  // Provenance section (only when provenanceSummary is provided and has findings)
+  if (provenanceSummary && provenanceSummary.findings.length > 0) {
+    sections.push(
+      "",
+      "<details>",
+      "<summary>Learning Provenance</summary>",
+      "",
+      `This review was informed by ${provenanceSummary.findings.length} prior pattern(s):`,
+      "",
+    );
+
+    for (const finding of provenanceSummary.findings) {
+      const relevanceLabel =
+        finding.distance <= 0.15 ? "high relevance"
+        : finding.distance <= 0.25 ? "moderate relevance"
+        : "low relevance";
+      const truncatedText = finding.findingText.length > 100
+        ? `${finding.findingText.slice(0, 100)}...`
+        : finding.findingText;
+      sections.push(
+        `- [${finding.severity}/${finding.category}] "${truncatedText}" (source: ${finding.sourceRepo}, outcome: ${finding.outcome}, ${relevanceLabel})`,
+      );
+    }
+
+    sections.push(
+      "",
+      "</details>",
+    );
+  }
 
   if (lowConfidenceFindings.length > 0) {
     const lowConfidenceLines = lowConfidenceFindings.map((finding) => {
