@@ -15,26 +15,26 @@
   - Verdict (explicit merge recommendation)
 
 - [ ] **FORMAT-02**: "What changed" section signals review scope with progress checklist
-  - Example: "Reviewed: core logic ✅, error handling ✅, tests ✅, docs ✅"
+  - Example: "Reviewed: core logic, error handling, tests, docs"
   - Shows maintainer what the bot actually looked at
   - Built from diff analysis (files reviewed, categories covered)
 
 ### Merge Confidence & Verdict
 
 - [ ] **FORMAT-03**: Verdict section provides explicit merge recommendation
-  - If no blockers: "✅ **Ready to merge** — No blocking issues found"
-  - If blockers: "⚠️ **Address before merging** — [N] blocking issue(s) found"
-  - If minor only: "✅ **Ready to merge with minor items** — Optional cleanup suggestions below"
+  - If no blockers: "Ready to merge -- No blocking issues found"
+  - If blockers: "Address before merging -- [N] blocking issue(s) found"
+  - If minor only: "Ready to merge with minor items -- Optional cleanup suggestions below"
 
 - [ ] **FORMAT-04**: Blockers vs minor issues explicitly separated
-  - Blockers labeled: "🚫 BLOCKER" with severity (CRITICAL/MAJOR)
-  - Minor items labeled: "💡 MINOR" or "✨ SUGGESTION"
-  - Nits/preferences labeled: "🎨 STYLE" or "📝 PREFERENCE"
+  - Blockers labeled: "BLOCKER" with severity (CRITICAL/MAJOR)
+  - Minor items labeled: "MINOR" or "SUGGESTION"
+  - Nits/preferences labeled: "STYLE" or "PREFERENCE"
 
-- [ ] **FORMAT-05**: Use ✅ checkmarks for verified positives in Strengths section
-  - Example: "✅ Null checks added for all nullable returns"
-  - Example: "✅ Test coverage maintained at 87%"
-  - Example: "✅ Breaking changes properly documented in PR description"
+- [ ] **FORMAT-05**: Use checkmarks for verified positives in Strengths section
+  - Example: "Null checks added for all nullable returns"
+  - Example: "Test coverage maintained at 87%"
+  - Example: "Breaking changes properly documented in PR description"
 
 ### Observations & Findings Organization
 
@@ -70,7 +70,7 @@
 - [ ] **FORMAT-11**: Embed Review Details as collapsible section in summary comment
   - Never create standalone comment with just Review Details
   - Place Review Details at bottom of summary, inside `<details>` block
-  - Title: "📊 Review Details"
+  - Title: "Review Details"
 
 - [ ] **FORMAT-12**: Remove "Estimated review time saved" from Review Details
   - Do not calculate or display time-saved metrics
@@ -86,18 +86,18 @@
 ### Re-Review & Delta Formatting
 
 - [ ] **FORMAT-14**: Re-reviews show delta findings only (not full structure)
-  - Header: "🔄 **Re-review** — Changes since [previous review SHA]"
-  - Sections: "What changed" → "New findings" → "Resolved findings" → "Still open" → "Verdict update"
+  - Header: "Re-review -- Changes since [previous review SHA]"
+  - Sections: "What changed" -> "New findings" -> "Resolved findings" -> "Still open" -> "Verdict update"
 
 - [ ] **FORMAT-15**: Delta verdict focuses on what's relevant/updated
-  - If new blockers: "⚠️ **New blockers found** — Address [N] new issue(s)"
-  - If blockers resolved: "✅ **Blockers resolved** — Ready to merge"
-  - If no change: "✅ **Still ready** — No new issues"
+  - If new blockers: "New blockers found -- Address [N] new issue(s)"
+  - If blockers resolved: "Blockers resolved -- Ready to merge"
+  - If no change: "Still ready -- No new issues"
 
 - [ ] **FORMAT-16**: Show only relevant updates from initial review
   - Don't repeat unchanged findings
-  - Highlight resolved issues with ✅
-  - Flag new issues clearly with 🆕 badge
+  - Highlight resolved issues with checkmark
+  - Flag new issues clearly with NEW badge
   - Note still-open issues with count only (expandable list)
 
 ### Tone & Language
@@ -115,28 +115,43 @@
 
 ## Future Requirements
 
-None yet — v0.6 is focused on formatting and UX improvements only.
+None yet -- v0.6 is focused on formatting and UX improvements only.
 
 ## Out of Scope
 
-- Content of findings (what the LLM flags) — v0.6 is about *how* we present findings, not *what* we find
-- Learning/retrieval improvements — deferred to v0.7
-- Language-aware enforcement — deferred to v0.7
-- Large PR intelligence — deferred to v0.7
+- Content of findings (what the LLM flags) -- v0.6 is about *how* we present findings, not *what* we find
+- Learning/retrieval improvements -- deferred to v0.7
+- Language-aware enforcement -- deferred to v0.7
+- Large PR intelligence -- deferred to v0.7
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (To be filled by roadmapper) | | |
+| FORMAT-01 | Phase 34 - Structured Review Template | Pending |
+| FORMAT-02 | Phase 34 - Structured Review Template | Pending |
+| FORMAT-03 | Phase 36 - Verdict & Merge Confidence | Pending |
+| FORMAT-04 | Phase 36 - Verdict & Merge Confidence | Pending |
+| FORMAT-05 | Phase 34 - Structured Review Template | Pending |
+| FORMAT-06 | Phase 35 - Findings Organization & Tone | Pending |
+| FORMAT-07 | Phase 35 - Findings Organization & Tone | Pending |
+| FORMAT-08 | Phase 35 - Findings Organization & Tone | Pending |
+| FORMAT-09 | Phase 36 - Verdict & Merge Confidence | Pending |
+| FORMAT-10 | Phase 36 - Verdict & Merge Confidence | Pending |
+| FORMAT-11 | Phase 37 - Review Details Embedding | Pending |
+| FORMAT-12 | Phase 37 - Review Details Embedding | Pending |
+| FORMAT-13 | Phase 37 - Review Details Embedding | Pending |
+| FORMAT-14 | Phase 38 - Delta Re-Review Formatting | Pending |
+| FORMAT-15 | Phase 38 - Delta Re-Review Formatting | Pending |
+| FORMAT-16 | Phase 38 - Delta Re-Review Formatting | Pending |
+| FORMAT-17 | Phase 35 - Findings Organization & Tone | Pending |
+| FORMAT-18 | Phase 35 - Findings Organization & Tone | Pending |
 
 **Coverage:**
 - v0.6 requirements: 18 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 18 ⚠️
+- Mapped to phases: 18
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after roadmap creation*
