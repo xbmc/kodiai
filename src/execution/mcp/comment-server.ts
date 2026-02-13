@@ -367,6 +367,90 @@ export function createCommentServer(
     return stripped;
   }
 
+  function sanitizeKodiaiReReviewSummary(body: string): string {
+    // Only enforce structure for delta re-review summary comments.
+    if (!body.includes("<summary>Kodiai Re-Review Summary</summary>")) {
+      return body;
+    }
+
+    // --- Required sections validation ---
+    const requiredSections = ["## Re-review", "## What Changed", "## Verdict Update"];
+    for (const section of requiredSections) {
+      if (!body.includes(section)) {
+        throw new Error(
+          `Invalid Kodiai re-review summary: missing required section '${section}'`,
+        );
+      }
+    }
+
+    // --- Delta sections validation: at least one must be present ---
+    const deltaSections = ["## New Findings", "## Resolved Findings", "## Still Open"];
+    const hasAnyDeltaSection = deltaSections.some((s) => body.includes(s));
+    if (!hasAnyDeltaSection) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: must contain at least one of: New Findings, Resolved Findings, Still Open",
+      );
+    }
+
+    // --- No forbidden sections (initial review sections leaking in) ---
+    if (body.includes("## Observations")) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: unexpected section '## Observations'. Delta template uses New Findings/Resolved Findings/Still Open",
+      );
+    }
+    if (body.includes("## Strengths")) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: unexpected section '## Strengths'. Delta template does not include Strengths",
+      );
+    }
+    if (body.includes("## Suggestions")) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: unexpected section '## Suggestions'. Delta template does not include Suggestions",
+      );
+    }
+    // Catch bare "## Verdict" without "Update" -- initial review verdict leaking in.
+    if (body.includes("## Verdict") && !body.includes("## Verdict Update")) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: unexpected section '## Verdict'. Delta template uses '## Verdict Update'",
+      );
+    }
+
+    // --- Verdict Update format validation ---
+    const verdictStart = body.indexOf("## Verdict Update");
+    const verdictSection = body.slice(verdictStart);
+    const deltaVerdictRe =
+      /^:(green_circle|yellow_circle|large_blue_circle): \*\*[^*]+\*\* -- .+$/m;
+    if (!deltaVerdictRe.test(verdictSection)) {
+      throw new Error(
+        "Invalid Kodiai re-review summary: Verdict Update must use format ':emoji: **Label** -- explanation' with delta verdict emojis (green_circle, yellow_circle, large_blue_circle)",
+      );
+    }
+
+    // --- No extra top-level headings ---
+    const allowedHeadings = new Set([
+      "## Re-review",
+      "## What Changed",
+      "## New Findings",
+      "## Resolved Findings",
+      "## Still Open",
+      "## Verdict Update",
+    ]);
+    const headingRe = /^## .+$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = headingRe.exec(body)) !== null) {
+      const heading = match[0].trim();
+      // "## Re-review" matches with prefix to handle "## Re-review -- Changes since abc1234"
+      if (heading.startsWith("## Re-review")) continue;
+      if (!allowedHeadings.has(heading)) {
+        throw new Error(
+          `Invalid Kodiai re-review summary: unexpected section '${heading}'. Only use: Re-review, What Changed, New Findings, Resolved Findings, Still Open, Verdict Update`,
+        );
+      }
+    }
+
+    return body;
+  }
+
   function maybeStampMarker(body: string): string {
     if (!marker) return body;
     if (body.includes(marker)) return body;
@@ -392,7 +476,7 @@ export function createCommentServer(
               repo,
               comment_id: commentId,
               body: maybeStampMarker(
-                sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
+                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
               ),
             });
             onPublish?.();
@@ -425,7 +509,7 @@ export function createCommentServer(
           try {
             const octokit = await getOctokit();
             const sanitized = maybeStampMarker(
-              sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body)),
+              sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
             );
 
             const isApproveNoIssues =
