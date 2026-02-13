@@ -5,23 +5,23 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.5 Phase 32 in progress (Multi-Language Context and Localized Output)
+**Current focus:** v0.5 Phase 33 in progress (Explainable Learning and Delta Reporting)
 
 ## Current Position
 
-Phase: 32 of 33 (Multi-Language Context and Localized Output)
-Plan: 3 of 3 (COMPLETE)
-Status: Phase Complete
-Last activity: 2026-02-13 - Completed 32-03 (handler wiring for language context and output localization)
+Phase: 33 of 33 (Explainable Learning and Delta Reporting)
+Plan: 1 of 3
+Status: In Progress
+Last activity: 2026-02-13 - Completed 33-01 (delta classifier with TDD)
 
-Progress: [########░░] 75% (v0.5 - 9/12 plans)
+Progress: [########░░] 83% (v0.5 - 10/12 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 67
+- Total plans completed: 68
 - Average duration: 5 min
-- Total execution time: 323 min
+- Total execution time: 325 min
 
 **By latest shipped milestone:**
 
@@ -67,6 +67,8 @@ Recent decisions relevant to v0.5:
 - Language guidance capped at top 5 by file count to prevent prompt bloat (32-02).
 - Output language section placed at end of prompt for recency bias compliance (32-02).
 - Mention prompt uses simpler localization instruction without taxonomy preservation (32-02).
+- FindingForDelta defined as standalone type to avoid circular import with review.ts ProcessedFinding (33-01).
+- fingerprintFn injected as parameter for testability -- callers pass real FNV-1a in production (33-01).
 
 ### Pending Todos
 
@@ -79,5 +81,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 32-03-PLAN.md (Phase 32 complete)
+Stopped at: Completed 33-01-PLAN.md
 Resume file: None
