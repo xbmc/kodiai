@@ -36,6 +36,9 @@ function baseDiffAnalysis(overrides: Partial<DiffAnalysis> = {}): DiffAnalysis {
       docs: [],
       infra: [],
     },
+    filesByLanguage: {
+      TypeScript: ["src/index.ts", "src/index.test.ts"],
+    },
     riskSignals: [],
     metrics: {
       totalFiles: 3,
