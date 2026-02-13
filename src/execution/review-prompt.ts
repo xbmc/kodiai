@@ -464,6 +464,28 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Reviewed categories line for summary template (FORMAT-02)
+// ---------------------------------------------------------------------------
+const CATEGORY_LABELS: Record<string, string> = {
+  source: "core logic",
+  test: "tests",
+  config: "config",
+  docs: "docs",
+  infra: "infrastructure",
+};
+
+export function buildReviewedCategoriesLine(
+  filesByCategory: Record<string, string[]>,
+): string {
+  const reviewed = Object.entries(filesByCategory)
+    .filter(([, files]) => files.length > 0)
+    .map(([category]) => CATEGORY_LABELS[category] ?? category);
+
+  if (reviewed.length === 0) return "";
+  return `Reviewed: ${reviewed.join(", ")}`;
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Incremental review context section
 // ---------------------------------------------------------------------------
 export function buildIncrementalReviewSection(params: {
@@ -780,7 +802,7 @@ export function buildReviewPrompt(context: {
     "",
     "- ONLY report actionable issues that need to be fixed",
     '- NO positive feedback, NO "looks good"',
-    '- Do NOT include sections like "What changed" or any change summary (unless explicitly requested)',
+    "- In standard mode, use the five-section template (What Changed, Strengths, Observations, Suggestions, Verdict) for the summary comment",
     "- ONLY post a summary comment when you have actionable inline issues to report",
     "- Use inline comments for ALL code-specific issues",
     "- When listing items, use (1), (2), (3) format -- NEVER #1, #2, #3 (GitHub treats those as issue links)",
@@ -840,6 +862,13 @@ export function buildReviewPrompt(context: {
       "If NO issues found: do nothing.",
     );
   } else {
+    const reviewedLine = buildReviewedCategoriesLine(
+      context.diffAnalysis?.filesByCategory ?? {},
+    );
+    const reviewedLineInstruction = reviewedLine
+      ? `\nInclude this line after the summary: "${reviewedLine}"\n`
+      : "";
+
     lines.push(
       "",
       "## Summary comment",
@@ -851,23 +880,52 @@ export function buildReviewPrompt(context: {
       "<details>",
       "<summary>Kodiai Review Summary</summary>",
       "",
-      "Critical",
+      "## What Changed",
+      "<1-2 sentence summary of PR intent from title and description>",
+      reviewedLineInstruction,
+      "## Strengths",
+      "- :white_check_mark: <specific verified positive about the code changes>",
+      "- :white_check_mark: <specific verified positive about the code changes>",
+      "",
+      "## Observations",
+      "",
+      "### Critical",
       "path/to/file.ts (123, 456): <issue title>",
       "<1-3 sentences explaining impact and why it matters>",
       "",
-      "Medium",
+      "### Major",
       "path/to/file.ts (789): <issue title>",
       "<1-3 sentences explaining impact and why it matters>",
+      "",
+      "### Medium",
+      "path/to/file.ts (101): <issue title>",
+      "<1-3 sentences explaining impact and why it matters>",
+      "",
+      "### Minor",
+      "path/to/file.ts (202): <issue title>",
+      "<1-3 sentences explaining impact and why it matters>",
+      "",
+      "## Suggestions",
+      "- <optional non-blocking improvement>",
+      "- <optional non-blocking improvement>",
+      "",
+      "## Verdict",
+      ":green_circle: **Looks good** -- <explanation> (only minor suggestions, nothing blocking)",
+      ":yellow_circle: **Needs changes** -- <count and summary of issues> (has major/medium issues)",
+      ":red_circle: **Blocker** -- <count and summary of critical issues> (has critical issues)",
       "",
       "</details>",
       "",
       "Hard requirements for the summary comment:",
-      "- MUST be issues-only (no change summary / no 'What changed')",
-      "- MUST group issues under severity headings: Critical, Must Fix, Major, Medium, Minor",
-      "- Under each severity heading, each issue is 2+ lines:",
-      "  - Title line: <path/to/file.ts> (123, 456): <issue title>",
-      "  - Explanation line(s): 1-3 sentences",
-      "- Do NOT add any other headings (no 'Issues found', no 'Note')",
+      "- ## What Changed and ## Observations and ## Verdict are REQUIRED sections",
+      "- ## Strengths and ## Suggestions are OPTIONAL -- omit if nothing meaningful to say",
+      "- Section order MUST be: What Changed, Strengths, Observations, Suggestions, Verdict",
+      "- Do NOT add any other ## headings",
+      "- Under ## Observations, use ### severity sub-headings (Critical, Major, Medium, Minor) -- only include sub-headings for severities that have findings",
+      "- Under ## Strengths, prefix each item with :white_check_mark: -- list 1-3 specific verified positives about the code changes, each must cite a concrete observation",
+      "- Under ## Suggestions, list optional improvements that do not block merging -- omit this section if you have no suggestions",
+      "- Under ## Verdict, use exactly one verdict line with emoji -- pick the one that matches the review outcome",
+      "- Since this summary is only posted when issues exist, the verdict will typically be :yellow_circle: or :red_circle:",
       "Then post your inline comments on the specific lines.",
       "",
       "If NO issues found: do NOT post any comment. The system handles approval automatically.",
