@@ -12,8 +12,9 @@ export function buildMentionPrompt(params: {
   mentionContext: string;
   userQuestion: string;
   customInstructions?: string;
+  outputLanguage?: string;
 }): string {
-  const { mention, mentionContext, userQuestion, customInstructions } = params;
+  const { mention, mentionContext, userQuestion, customInstructions, outputLanguage } = params;
   const lines: string[] = [];
 
   // Context header
@@ -138,6 +139,14 @@ export function buildMentionPrompt(params: {
     lines.push("## Custom Instructions");
     lines.push("");
     lines.push(customInstructions);
+  }
+
+  // Output language localization
+  if (outputLanguage && outputLanguage.toLowerCase() !== "en") {
+    lines.push(
+      "",
+      `Write your response in ${outputLanguage}. Keep code identifiers, snippets, file paths, and technical terms in their original form.`,
+    );
   }
 
   return lines.join("\n");
