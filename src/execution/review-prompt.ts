@@ -176,6 +176,71 @@ function buildNoiseSuppressionRules(): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: PR intent scoping section (FORMAT-07)
+// ---------------------------------------------------------------------------
+export function buildPrIntentScopingSection(
+  prTitle: string,
+  prLabels: string[],
+  headBranch: string,
+): string {
+  const lines = [
+    "## PR Intent Scoping",
+    "",
+    "Before classifying findings, identify this PR's primary intent from:",
+    "- Title and description",
+  ];
+
+  if (prLabels.length > 0) {
+    lines.push(`- Labels (if present): ${prLabels.join(", ")}`);
+  }
+
+  lines.push(
+    `- Branch: ${headBranch}`,
+    "",
+    "Scope findings to the PR's stated intent:",
+    "- CI/test fix: Focus on test reliability and correctness. Style issues go to Preference only.",
+    "- Performance: Focus on resource usage, complexity. Documentation issues go to Preference only.",
+    "- Refactor: Focus on behavior preservation. Note \"preserves existing behavior\" for safe changes.",
+    "- Bug fix: Focus on fix correctness, edge cases. Unrelated style goes to Preference only.",
+    "- Feature: Full review scope -- all categories apply.",
+    "",
+    "Findings outside the PR's intent belong in Preference unless CRITICAL severity.",
+    "Do NOT judge a narrowly-scoped PR against an imagined ideal version of the code.",
+  );
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Tone and language guidelines section (FORMAT-08, FORMAT-17, FORMAT-18)
+// ---------------------------------------------------------------------------
+export function buildToneGuidelinesSection(): string {
+  return [
+    "## Finding Language Guidelines",
+    "",
+    "Every finding must be specific about WHAT happens, WHEN it happens, and WHY it matters.",
+    "",
+    "Use concrete language:",
+    "- \"causes [specific issue] when [specific condition]\"",
+    "- \"[CRITICAL] Null pointer dereference when `user` is undefined\"",
+    "- \"Optional: Extract `retryWithBackoff()` to reduce duplication\"",
+    "",
+    "Do NOT use hedged or vague language:",
+    "- \"could potentially cause issues\"",
+    "- \"consider refactoring\"",
+    "- \"this might have problems\"",
+    "- \"there may be an issue here\"",
+    "",
+    "For low-risk changes, use stabilizing language:",
+    "- \"preserves existing behavior\" -- for refactors that don't change output",
+    "- \"backward compatible\" -- for API changes that don't break callers",
+    "- \"minimal impact\" -- for changes with small blast radius",
+    "",
+    "Prefix Preference findings with \"Optional:\" to signal they are non-blocking.",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Comment cap instructions
 // ---------------------------------------------------------------------------
 function buildCommentCapInstructions(maxComments: number): string {
@@ -673,6 +738,7 @@ export function buildReviewPrompt(context: {
   } | null;
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
+  prLabels?: string[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -705,6 +771,10 @@ export function buildReviewPrompt(context: {
     `Author: ${context.prAuthor}`,
     `Branches: ${context.headBranch} -> ${context.baseBranch}`,
   );
+
+  if (context.prLabels && context.prLabels.length > 0) {
+    lines.push(`Labels: ${context.prLabels.join(", ")}`);
+  }
 
   if (scaleNotes.length > 0) {
     lines.push(
@@ -818,6 +888,19 @@ export function buildReviewPrompt(context: {
   // --- Noise suppression ---
   lines.push("", buildNoiseSuppressionRules());
 
+  // --- PR intent scoping ---
+  lines.push(
+    "",
+    buildPrIntentScopingSection(
+      titleTruncated.text,
+      context.prLabels ?? [],
+      context.headBranch,
+    ),
+  );
+
+  // --- Tone and language guidelines ---
+  lines.push("", buildToneGuidelinesSection());
+
   // --- Path instructions ---
   const pathInstructionsSection = buildPathInstructionsSection(
     context.matchedPathInstructions ?? [],
@@ -889,21 +972,20 @@ export function buildReviewPrompt(context: {
       "",
       "## Observations",
       "",
-      "### Critical",
-      "path/to/file.ts (123, 456): <issue title>",
-      "<1-3 sentences explaining impact and why it matters>",
+      "### Impact",
+      "<findings about correctness, security, performance, error handling, resource management, concurrency>",
       "",
-      "### Major",
-      "path/to/file.ts (789): <issue title>",
-      "<1-3 sentences explaining impact and why it matters>",
+      "[CRITICAL] path/to/file.ts (123, 456): <issue title>",
+      "<concrete condition and consequence: 'causes X when Y'>",
       "",
-      "### Medium",
-      "path/to/file.ts (101): <issue title>",
-      "<1-3 sentences explaining impact and why it matters>",
+      "[MAJOR] path/to/file.ts (789): <issue title>",
+      "<concrete condition and consequence>",
       "",
-      "### Minor",
-      "path/to/file.ts (202): <issue title>",
-      "<1-3 sentences explaining impact and why it matters>",
+      "### Preference",
+      "<optional findings about style, naming, code organization>",
+      "",
+      "[MINOR] path/to/file.ts (101): <issue title>",
+      "Optional: <specific suggestion with actionable language>",
       "",
       "## Suggestions",
       "- <optional non-blocking improvement>",
@@ -921,7 +1003,9 @@ export function buildReviewPrompt(context: {
       "- ## Strengths and ## Suggestions are OPTIONAL -- omit if nothing meaningful to say",
       "- Section order MUST be: What Changed, Strengths, Observations, Suggestions, Verdict",
       "- Do NOT add any other ## headings",
-      "- Under ## Observations, use ### severity sub-headings (Critical, Major, Medium, Minor) -- only include sub-headings for severities that have findings",
+      "- Under ## Observations, use ### Impact and ### Preference subsections. ### Impact is REQUIRED; ### Preference is optional (omit if no preference findings). Each finding line starts with a severity tag: [CRITICAL], [MAJOR], [MEDIUM], or [MINOR]",
+      "- CRITICAL and MAJOR findings MUST go under ### Impact. Preference findings are capped at MEDIUM severity",
+      "- Prefix Preference findings with 'Optional:' to signal they are non-blocking",
       "- Under ## Strengths, prefix each item with :white_check_mark: -- list 1-3 specific verified positives about the code changes, each must cite a concrete observation",
       "- Under ## Suggestions, list optional improvements that do not block merging -- omit this section if you have no suggestions",
       "- Under ## Verdict, use exactly one verdict line with emoji -- pick the one that matches the review outcome",

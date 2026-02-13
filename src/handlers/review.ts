@@ -1266,6 +1266,9 @@ export function createReviewHandler(deps: {
             "Diff analysis and context enrichment complete",
           );
 
+        // Extract PR labels for intent scoping (FORMAT-07)
+        const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];
+
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -1299,6 +1302,8 @@ export function createReviewHandler(deps: {
           // Multi-language context and localized output (LANG-01)
           filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,
+          // PR labels for intent scoping (FORMAT-07)
+          prLabels,
         });
 
         // Execute review via Claude
