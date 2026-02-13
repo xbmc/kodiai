@@ -16,6 +16,10 @@ import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
+import { createLearningMemoryStore } from "./learning/memory-store.ts";
+import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
+import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
+import { Database } from "bun:sqlite";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -56,6 +60,50 @@ logger.info(
 );
 knowledgeStore.checkpoint();
 
+// Learning memory (v0.5 LEARN-06)
+let learningMemoryStore: LearningMemoryStore | undefined;
+let embeddingProvider: EmbeddingProvider | undefined;
+
+try {
+  const learningDb = new Database(knowledgeDb.dbPath, { create: true });
+  learningDb.run("PRAGMA journal_mode = WAL");
+  learningDb.run("PRAGMA synchronous = NORMAL");
+  learningDb.run("PRAGMA busy_timeout = 5000");
+
+  learningMemoryStore = createLearningMemoryStore({ db: learningDb, logger });
+  logger.info("Learning memory store initialized");
+} catch (err) {
+  logger.warn({ err }, "Learning memory store failed to initialize (fail-open, learning disabled)");
+}
+
+const voyageApiKey = process.env.VOYAGE_API_KEY?.trim();
+if (voyageApiKey && learningMemoryStore) {
+  embeddingProvider = createEmbeddingProvider({
+    apiKey: voyageApiKey,
+    model: "voyage-code-3",
+    dimensions: 1024,
+    logger,
+  });
+  logger.info({ model: "voyage-code-3", dimensions: 1024 }, "Embedding provider initialized");
+} else {
+  embeddingProvider = createNoOpEmbeddingProvider(logger);
+  if (!voyageApiKey) {
+    logger.info("VOYAGE_API_KEY not set, embedding generation disabled (no-op provider)");
+  }
+}
+
+// Startup maintenance: purge old run state entries
+if (knowledgeStore) {
+  try {
+    const runsPurged = knowledgeStore.purgeOldRuns(30);
+    if (runsPurged > 0) {
+      logger.info({ runsPurged }, "Run state retention purge complete");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Run state purge failed (non-fatal)");
+  }
+}
+
 // Event processing pipeline: bot filter -> event router
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
@@ -72,6 +120,8 @@ createReviewHandler({
   executor,
   telemetryStore,
   knowledgeStore,
+  learningMemoryStore,
+  embeddingProvider,
   logger,
 });
 createMentionHandler({

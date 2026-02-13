@@ -10,6 +10,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../learning/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff } from "../execution/diff-analysis.ts";
 import {
@@ -579,6 +580,8 @@ export function createReviewHandler(deps: {
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
+  learningMemoryStore?: LearningMemoryStore;
+  embeddingProvider?: EmbeddingProvider;
   logger: Logger;
 }): void {
   const {
@@ -589,6 +592,8 @@ export function createReviewHandler(deps: {
     executor,
     telemetryStore,
     knowledgeStore,
+    learningMemoryStore,
+    embeddingProvider,
     logger,
   } = deps;
 
@@ -1300,9 +1305,11 @@ export function createReviewHandler(deps: {
           }
         }
 
+        let reviewId: number | undefined;
+
         if (knowledgeStore) {
           try {
-            const reviewId = knowledgeStore.recordReview({
+            reviewId = knowledgeStore.recordReview({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
               headSha: pr.head.sha,
@@ -1439,6 +1446,83 @@ export function createReviewHandler(deps: {
           } catch (err) {
             logger.warn({ ...baseLog, err }, 'Failed to mark run as completed (non-fatal)');
           }
+        }
+
+        // Async learning memory write (LEARN-06)
+        // Write accepted and suppressed findings to learning memory with embeddings.
+        // This is async and fail-open -- errors do not affect the review outcome.
+        if (learningMemoryStore && embeddingProvider && processedFindings.length > 0) {
+          // Fire and forget: don't await, don't block review completion
+          Promise.resolve().then(async () => {
+            const owner = apiOwner;
+            const repo = `${apiOwner}/${apiRepo}`;
+            let written = 0;
+            let failed = 0;
+
+            for (const finding of processedFindings) {
+              try {
+                // Determine outcome from finding state
+                const outcome: string = finding.suppressed ? 'suppressed' : 'accepted';
+
+                // Build embedding text: finding title + severity + category + file path for context
+                const embeddingText = [
+                  `[${finding.severity}] [${finding.category}]`,
+                  finding.title,
+                  `File: ${finding.filePath}`,
+                ].join('\n');
+
+                const embeddingResult = await embeddingProvider.generate(embeddingText, 'document');
+                if (!embeddingResult) {
+                  // Embedding failed (already logged by provider), skip this finding
+                  failed++;
+                  continue;
+                }
+
+                const memoryRecord: LearningMemoryRecord = {
+                  repo,
+                  owner,
+                  findingId: finding.commentId, // Use comment ID as finding reference
+                  reviewId: reviewId ?? 0,       // reviewId from knowledge store recordReview above
+                  sourceRepo: repo,
+                  findingText: finding.title,
+                  severity: finding.severity,
+                  category: finding.category,
+                  filePath: finding.filePath,
+                  outcome: outcome as LearningMemoryRecord["outcome"],
+                  embeddingModel: embeddingResult.model,
+                  embeddingDim: embeddingResult.dimensions,
+                  stale: false,
+                };
+
+                learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
+                written++;
+              } catch (err) {
+                failed++;
+                logger.warn(
+                  { err, findingTitle: finding.title, filePath: finding.filePath },
+                  'Learning memory write failed for finding (fail-open)',
+                );
+              }
+            }
+
+            if (written > 0 || failed > 0) {
+              logger.info(
+                {
+                  ...baseLog,
+                  gate: 'learning-memory-write',
+                  written,
+                  failed,
+                  total: processedFindings.length,
+                },
+                'Learning memory write batch complete',
+              );
+            }
+          }).catch((err) => {
+            logger.warn(
+              { ...baseLog, err },
+              'Learning memory write pipeline failed (fail-open)',
+            );
+          });
         }
 
         if (result.conclusion === "success" && result.published) {
