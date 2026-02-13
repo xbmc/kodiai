@@ -59,11 +59,13 @@ const reviewTriggersSchema = z
     onOpened: z.boolean().default(true),
     onReadyForReview: z.boolean().default(true),
     onReviewRequested: z.boolean().default(true),
+    onSynchronize: z.boolean().default(false),
   })
   .default({
     onOpened: true,
     onReadyForReview: true,
     onReviewRequested: true,
+    onSynchronize: false,
   });
 
 const pathInstructionSchema = z.object({
@@ -164,6 +166,7 @@ const reviewSchema = z
       onOpened: true,
       onReadyForReview: true,
       onReviewRequested: true,
+      onSynchronize: false,
     },
     autoApprove: true,
     requestUiRereviewTeamOnOpen: false,
@@ -212,6 +215,20 @@ const sharingSchema = z
   })
   .default({ enabled: false });
 
+const retrievalSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    topK: z.number().min(1).max(20).default(5),
+    distanceThreshold: z.number().min(0).max(2).default(0.3),
+    maxContextChars: z.number().min(0).max(5000).default(2000),
+  })
+  .default({
+    enabled: true,
+    topK: 5,
+    distanceThreshold: 0.3,
+    maxContextChars: 2000,
+  });
+
 const knowledgeSchema = z
   .object({
     /**
@@ -224,11 +241,14 @@ const knowledgeSchema = z
     sharing: sharingSchema,
     /** Embedding generation configuration. */
     embeddings: embeddingsSchema,
+    /** Retrieval configuration for context-aware reviews. */
+    retrieval: retrievalSchema,
   })
   .default({
     shareGlobal: false,
     sharing: { enabled: false },
     embeddings: { enabled: true, model: "voyage-code-3", dimensions: 1024 },
+    retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, maxContextChars: 2000 },
   });
 
 const repoConfigSchema = z.object({

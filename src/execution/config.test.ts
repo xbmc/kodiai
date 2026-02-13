@@ -267,6 +267,7 @@ test("parses review.triggers from YAML", async () => {
       onOpened: true,
       onReadyForReview: false,
       onReviewRequested: true,
+      onSynchronize: false,
     });
   } finally {
     await rm(dir, { recursive: true });
@@ -307,13 +308,13 @@ test("strips unknown review.triggers keys without error", async () => {
   try {
     await writeFile(
       join(dir, ".kodiai.yml"),
-      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n    onSynchronize: true\n",
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n    onFutureEvent: true\n",
     );
     const { config, warnings } = await loadRepoConfig(dir);
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
     expect(config.review.triggers.onReviewRequested).toBe(true);
-    expect((config.review.triggers as Record<string, unknown>).onSynchronize).toBeUndefined();
+    expect((config.review.triggers as Record<string, unknown>).onFutureEvent).toBeUndefined();
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });
@@ -965,6 +966,74 @@ test("backward compat: knowledge.shareGlobal: true still parses without error", 
     expect(config.knowledge.sharing.enabled).toBe(false);
     expect(config.knowledge.embeddings.enabled).toBe(true);
     expect(config.knowledge.embeddings.model).toBe("voyage-code-3");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+// Phase 31: onSynchronize trigger and retrieval settings
+
+test("onSynchronize defaults to false and existing configs without it still parse", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    // Default without .kodiai.yml
+    const defaults = await loadRepoConfig(dir);
+    expect(defaults.config.review.triggers.onSynchronize).toBe(false);
+
+    // Existing config without onSynchronize
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onOpened: true\n    onReadyForReview: false\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.triggers.onSynchronize).toBe(false);
+    expect(config.review.triggers.onOpened).toBe(true);
+    expect(config.review.triggers.onReadyForReview).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("retrieval section defaults are applied when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    // No config file at all
+    const defaults = await loadRepoConfig(dir);
+    expect(defaults.config.knowledge.retrieval.enabled).toBe(true);
+    expect(defaults.config.knowledge.retrieval.topK).toBe(5);
+    expect(defaults.config.knowledge.retrieval.distanceThreshold).toBe(0.3);
+    expect(defaults.config.knowledge.retrieval.maxContextChars).toBe(2000);
+
+    // Config with knowledge section but no retrieval sub-section
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  shareGlobal: true\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.retrieval.enabled).toBe(true);
+    expect(config.knowledge.retrieval.topK).toBe(5);
+    expect(config.knowledge.retrieval.distanceThreshold).toBe(0.3);
+    expect(config.knowledge.retrieval.maxContextChars).toBe(2000);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("retrieval section custom values are honored", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  retrieval:\n    enabled: false\n    topK: 10\n    distanceThreshold: 0.5\n    maxContextChars: 3000\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.retrieval.enabled).toBe(false);
+    expect(config.knowledge.retrieval.topK).toBe(10);
+    expect(config.knowledge.retrieval.distanceThreshold).toBe(0.5);
+    expect(config.knowledge.retrieval.maxContextChars).toBe(3000);
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });
