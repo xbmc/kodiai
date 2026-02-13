@@ -61,6 +61,13 @@ See `.planning/milestones/v0.4-ROADMAP.md` for full phase details.
 **Goal**: Reviews use immutable run identity and repo-only learning memory so incremental behavior is deterministic and tenancy-safe.
 **Depends on**: Phase 29
 **Requirements**: LEARN-06, REL-01, REL-03
+**Plans:** 3 plans
+
+Plans:
+- [ ] 30-01-PLAN.md -- Durable run state and review ingestion idempotency
+- [ ] 30-02-PLAN.md -- Learning memory infrastructure (embedding, vector store, isolation, config)
+- [ ] 30-03-PLAN.md -- Integration wiring and memory store tests
+
 **Success Criteria** (what must be TRUE):
 1. Re-running the same webhook delivery for the same base/head SHA pair does not create duplicate published review state.
 2. Learning memory writes are stored with embeddings and metadata for accepted/suppressed findings and remain scoped to the originating repository.
@@ -98,11 +105,11 @@ See `.planning/milestones/v0.4-ROADMAP.md` for full phase details.
 
 | Phase | Milestone | Requirements | Status | Completed |
 |-------|-----------|--------------|--------|-----------|
-| 30. State, Memory, and Isolation Foundation | v0.5 | 3 | Not started | - |
+| 30. State, Memory, and Isolation Foundation | v0.5 | 3 | Planning complete | - |
 | 31. Incremental Re-review with Retrieval Context | v0.5 | 4 | Not started | - |
 | 32. Multi-Language Context and Localized Output | v0.5 | 3 | Not started | - |
 | 33. Explainable Learning and Delta Reporting | v0.5 | 2 | Not started | - |
 
 ---
 
-*Last updated: 2026-02-13 for v0.5 roadmap creation*
+*Last updated: 2026-02-13 for Phase 30 planning*
