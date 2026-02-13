@@ -10,18 +10,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 ## Current Position
 
 Phase: 33 of 33 (Explainable Learning and Delta Reporting)
-Plan: 1 of 3
+Plan: 2 of 3
 Status: In Progress
-Last activity: 2026-02-13 - Completed 33-01 (delta classifier with TDD)
+Last activity: 2026-02-13 - Completed 33-02 (review details formatting layer with delta and provenance)
 
-Progress: [########░░] 83% (v0.5 - 10/12 plans)
+Progress: [#########░] 92% (v0.5 - 11/12 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 68
+- Total plans completed: 69
 - Average duration: 5 min
-- Total execution time: 325 min
+- Total execution time: 328 min
 
 **By latest shipped milestone:**
 
@@ -34,6 +34,7 @@ Progress: [########░░] 83% (v0.5 - 10/12 plans)
 | 30-state-memory-and-isolation-foundation | 3 | 10 min | 3 min |
 | 31-incremental-re-review-with-retrieval-context | 3 | 11 min | 4 min |
 | 32-multi-language-context-and-localized-output | 3 | 7 min | 2 min |
+| 33-explainable-learning-and-delta-reporting | 2 | 5 min | 3 min |
 
 ## Accumulated Context
 
@@ -69,6 +70,9 @@ Recent decisions relevant to v0.5:
 - Mention prompt uses simpler localization instruction without taxonomy preservation (32-02).
 - FindingForDelta defined as standalone type to avoid circular import with review.ts ProcessedFinding (33-01).
 - fingerprintFn injected as parameter for testability -- callers pass real FNV-1a in production (33-01).
+- Provenance relevance labels use distance thresholds: <=0.15 high, <=0.25 moderate, else low (33-02).
+- Delta section inside main Review Details details block; provenance is a separate collapsible block (33-02).
+- Provenance citation instruction is advisory; deterministic Review Details provenance is authoritative (33-02).
 
 ### Pending Todos
 
@@ -81,5 +85,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 33-01-PLAN.md
+Stopped at: Completed 33-02-PLAN.md
 Resume file: None
