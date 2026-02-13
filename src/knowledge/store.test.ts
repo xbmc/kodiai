@@ -703,4 +703,139 @@ describe("KnowledgeStore", () => {
       expect(second.runKey).toBe(first.runKey);
     });
   });
+
+  describe("incremental re-review queries", () => {
+    test("getLastReviewedHeadSha returns null when no completed review exists", () => {
+      // No runs at all
+      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
+
+      // Pending run (not completed)
+      fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 99,
+        baseSha: "base-aaa",
+        headSha: "head-pending",
+        deliveryId: "delivery-pending",
+        action: "opened",
+      });
+      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
+    });
+
+    test("getLastReviewedHeadSha returns head_sha of most recent completed review", () => {
+      // Create and complete first run
+      const first = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 100,
+        baseSha: "base-aaa",
+        headSha: "head-first",
+        deliveryId: "delivery-first",
+        action: "opened",
+      });
+      fixture.store.completeRun(first.runKey);
+
+      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-first");
+
+      // Create and complete second run (new push)
+      const second = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 100,
+        baseSha: "base-aaa",
+        headSha: "head-second",
+        deliveryId: "delivery-second",
+        action: "synchronize",
+      });
+      fixture.store.completeRun(second.runKey);
+
+      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-second");
+    });
+
+    test("getPriorReviewFindings returns unsuppressed findings from latest completed review", () => {
+      // Set up a completed run + review with findings
+      const run = fixture.store.checkAndClaimRun({
+        repo: "owner/repo",
+        prNumber: 200,
+        baseSha: "base-aaa",
+        headSha: "head-review-1",
+        deliveryId: "delivery-review-1",
+        action: "opened",
+      });
+      fixture.store.completeRun(run.runKey);
+
+      const reviewId = fixture.store.recordReview({
+        repo: "owner/repo",
+        prNumber: 200,
+        headSha: "head-review-1",
+        deliveryId: "delivery-review-1",
+        filesAnalyzed: 3,
+        linesChanged: 50,
+        findingsCritical: 0,
+        findingsMajor: 1,
+        findingsMedium: 1,
+        findingsMinor: 0,
+        findingsTotal: 2,
+        suppressionsApplied: 1,
+        conclusion: "success",
+      });
+
+      fixture.store.recordFindings([
+        {
+          reviewId,
+          filePath: "src/api/routes.ts",
+          startLine: 10,
+          endLine: 15,
+          severity: "major",
+          category: "security",
+          confidence: 90,
+          title: "Missing auth check",
+          suppressed: false,
+          commentId: 555,
+        },
+        {
+          reviewId,
+          filePath: "src/api/utils.ts",
+          startLine: 20,
+          severity: "medium",
+          category: "correctness",
+          confidence: 70,
+          title: "Potential null dereference",
+          suppressed: false,
+        },
+        {
+          reviewId,
+          filePath: "src/api/routes.ts",
+          startLine: 30,
+          severity: "minor",
+          category: "style",
+          confidence: 50,
+          title: "Use const instead of let",
+          suppressed: true,
+          suppressionPattern: "style:let-vs-const",
+        },
+      ]);
+
+      const findings = fixture.store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 200 });
+      expect(findings).toHaveLength(2);
+
+      expect(findings[0]?.filePath).toBe("src/api/routes.ts");
+      expect(findings[0]?.title).toBe("Missing auth check");
+      expect(findings[0]?.severity).toBe("major");
+      expect(findings[0]?.category).toBe("security");
+      expect(findings[0]?.startLine).toBe(10);
+      expect(findings[0]?.endLine).toBe(15);
+      expect(findings[0]?.commentId).toBe(555);
+      expect(findings[0]?.titleFingerprint).toBeTruthy();
+      expect(typeof findings[0]?.titleFingerprint).toBe("string");
+
+      expect(findings[1]?.filePath).toBe("src/api/utils.ts");
+      expect(findings[1]?.title).toBe("Potential null dereference");
+      expect(findings[1]?.startLine).toBe(20);
+      expect(findings[1]?.endLine).toBeNull();
+      expect(findings[1]?.commentId).toBeNull();
+    });
+
+    test("getPriorReviewFindings returns empty array when no completed review exists", () => {
+      const findings = fixture.store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 999 });
+      expect(findings).toEqual([]);
+    });
+  });
 });

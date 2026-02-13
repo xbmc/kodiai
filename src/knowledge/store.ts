@@ -8,6 +8,7 @@ import type {
   FindingRecord,
   GlobalPatternRecord,
   KnowledgeStore,
+  PriorFinding,
   RepoStats,
   ReviewRecord,
   RunStateCheck,
@@ -47,6 +48,36 @@ type RunStateRow = {
   run_key: string;
   status: string;
 };
+
+type LastReviewedShaRow = {
+  head_sha: string;
+};
+
+type PriorFindingRow = {
+  file_path: string;
+  title: string;
+  severity: "critical" | "major" | "medium" | "minor";
+  category: "security" | "correctness" | "performance" | "style" | "documentation";
+  start_line: number | null;
+  end_line: number | null;
+  comment_id: number | null;
+};
+
+/** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
+function _fingerprintTitle(title: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ");
+
+  let hash = 2166136261;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash ^= normalized.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 
 type FindingCommentCandidateRow = {
   finding_id: number;
@@ -336,6 +367,34 @@ export function createKnowledgeStore(opts: {
   const completeRunStmt = db.query(
     "UPDATE run_state SET status = 'completed', completed_at = datetime('now') WHERE run_key = $runKey",
   );
+
+  const getLastReviewedHeadShaStmt = db.query(`
+    SELECT head_sha
+    FROM run_state
+    WHERE repo = $repo
+      AND pr_number = $prNumber
+      AND status = 'completed'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `);
+
+  const getPriorReviewFindingsStmt = db.query(`
+    SELECT
+      f.file_path, f.title, f.severity, f.category,
+      f.start_line, f.end_line, f.comment_id
+    FROM findings f
+    INNER JOIN reviews r ON r.id = f.review_id
+    WHERE r.repo = $repo
+      AND r.pr_number = $prNumber
+      AND r.head_sha = (
+        SELECT rs.head_sha FROM run_state rs
+        WHERE rs.repo = $repo AND rs.pr_number = $prNumber AND rs.status = 'completed'
+        ORDER BY rs.created_at DESC LIMIT 1
+      )
+      AND f.suppressed = 0
+    ORDER BY f.id ASC
+    LIMIT $limit
+  `);
 
   const checkAndClaimRunTxn = db.transaction((params: {
     runKey: string;
@@ -675,6 +734,33 @@ export function createKnowledgeStore(opts: {
         { $modifier: `-${supersededRetention} days` },
       );
       return completedResult.changes + supersededResult.changes;
+    },
+
+    getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null {
+      const row = getLastReviewedHeadShaStmt.get({
+        $repo: params.repo,
+        $prNumber: params.prNumber,
+      }) as LastReviewedShaRow | null;
+      return row?.head_sha ?? null;
+    },
+
+    getPriorReviewFindings(params: { repo: string; prNumber: number; limit?: number }): PriorFinding[] {
+      const rows = getPriorReviewFindingsStmt.all({
+        $repo: params.repo,
+        $prNumber: params.prNumber,
+        $limit: params.limit ?? 100,
+      }) as PriorFindingRow[];
+
+      return rows.map((row) => ({
+        filePath: row.file_path,
+        title: row.title,
+        titleFingerprint: _fingerprintTitle(row.title),
+        severity: row.severity,
+        category: row.category,
+        startLine: row.start_line,
+        endLine: row.end_line,
+        commentId: row.comment_id,
+      }));
     },
 
     checkpoint(): void {

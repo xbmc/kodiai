@@ -134,6 +134,17 @@ export type RunStateRecord = {
   supersededBy: string | null;
 };
 
+export type PriorFinding = {
+  filePath: string;
+  title: string;
+  titleFingerprint: string;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  startLine: number | null;
+  endLine: number | null;
+  commentId: number | null;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
@@ -146,6 +157,8 @@ export type KnowledgeStore = {
   checkAndClaimRun(params: { repo: string; prNumber: number; baseSha: string; headSha: string; deliveryId: string; action: string }): RunStateCheck;
   completeRun(runKey: string): void;
   purgeOldRuns(retentionDays?: number): number;
+  getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null;
+  getPriorReviewFindings(params: { repo: string; prNumber: number; limit?: number }): PriorFinding[];
   checkpoint(): void;
   close(): void;
 };
