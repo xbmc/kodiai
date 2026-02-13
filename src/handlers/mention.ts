@@ -660,6 +660,7 @@ export function createMentionHandler(deps: {
           customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
             .filter((s) => (s ?? "").trim().length > 0)
             .join("\n\n"),
+          outputLanguage: config.review.outputLanguage,
         });
 
         // Execute via Claude
