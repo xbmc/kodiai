@@ -114,11 +114,11 @@ Plans:
   2. Blockers are labeled with severity (CRITICAL/MAJOR) and visually distinct from minor items and suggestions
   3. Suggestions are explicitly labeled "Optional" or "Future consideration" and are never counted against merge readiness
   4. A PR with zero blockers never shows a warning verdict regardless of how many suggestions exist
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 36-01: TBD
-- [ ] 36-02: TBD
+- [ ] 36-01-PLAN.md -- Rewrite Verdict/Suggestions templates, add Verdict Logic section, update hard requirements for blocker-driven merge recommendations
+- [ ] 36-02-PLAN.md -- Add sanitizer verdict-observations cross-check and update all test data for new verdict labels
 
 ### Phase 37: Review Details Embedding
 **Goal**: Review Details appear as a compact, factual appendix inside the summary comment rather than as a separate standalone comment
@@ -157,6 +157,6 @@ Phases execute in numeric order: 34 -> 35 -> 36 -> 37 -> 38
 |-------|-----------|----------------|--------|-----------|
 | 34. Structured Review Template | v0.6 | 0/2 | Planned | - |
 | 35. Findings Organization & Tone | v0.6 | 0/TBD | Not started | - |
-| 36. Verdict & Merge Confidence | v0.6 | 0/TBD | Not started | - |
+| 36. Verdict & Merge Confidence | v0.6 | 0/2 | Planned | - |
 | 37. Review Details Embedding | v0.6 | 0/TBD | Not started | - |
 | 38. Delta Re-Review Formatting | v0.6 | 0/TBD | Not started | - |
