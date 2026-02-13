@@ -59,6 +59,17 @@ export const LANGUAGE_GUIDANCE: Record<string, string[]> = {
   ],
 };
 
+export type DeltaReviewContext = {
+  lastReviewedHeadSha: string;
+  changedFilesSinceLastReview: string[];
+  priorFindings: Array<{
+    filePath: string;
+    title: string;
+    severity: string;
+    category: string;
+  }>;
+};
+
 export interface PathInstruction {
   path: string | string[];
   instructions: string;
@@ -601,6 +612,75 @@ export function buildIncrementalReviewSection(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Delta review context section (FORMAT-14)
+// ---------------------------------------------------------------------------
+export function buildDeltaReviewContext(params: {
+  lastReviewedHeadSha: string;
+  changedFilesSinceLastReview: string[];
+  priorFindings: DeltaReviewContext["priorFindings"];
+}): string {
+  const sha7 = params.lastReviewedHeadSha.slice(0, 7);
+  const lines: string[] = [
+    "## Delta Review Context",
+    "",
+    `This is an incremental re-review. The last review covered commit ${sha7}.`,
+    "",
+    `### Files changed since last review (${params.changedFilesSinceLastReview.length}):`,
+  ];
+
+  const capped = params.changedFilesSinceLastReview.slice(0, 50);
+  for (const file of capped) {
+    lines.push(`- ${file}`);
+  }
+  if (params.changedFilesSinceLastReview.length > 50) {
+    lines.push(`- ...(${params.changedFilesSinceLastReview.length - 50} more)`);
+  }
+
+  if (params.priorFindings.length > 0) {
+    lines.push(
+      "",
+      `### Prior review findings (${params.priorFindings.length}):`,
+      "",
+      "Compare your current findings against these. Classify each as:",
+      "- **NEW**: found now but not in the prior list",
+      "- **RESOLVED**: was in the prior list but no longer applies",
+      "- **STILL OPEN**: was in the prior list and still applies",
+      "",
+    );
+    const cappedFindings = params.priorFindings.slice(0, 30);
+    for (const f of cappedFindings) {
+      lines.push(`- [${f.severity.toUpperCase()}] ${f.filePath}: ${f.title}`);
+    }
+    if (params.priorFindings.length > 30) {
+      lines.push(`- ...(${params.priorFindings.length - 30} more findings omitted)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Delta verdict logic section (FORMAT-15)
+// ---------------------------------------------------------------------------
+export function buildDeltaVerdictLogicSection(): string {
+  return [
+    "## Verdict Update Logic",
+    "",
+    "The delta verdict describes the TRANSITION from the previous review, not the absolute state.",
+    "",
+    "Determining the verdict update:",
+    "1. Count new [CRITICAL] and [MAJOR] findings in ## New Findings.",
+    "2. If new blockers > 0: use :yellow_circle: **New blockers found** -- Address [N] new issue(s)",
+    "3. If new blockers == 0 AND prior blockers were resolved (## Resolved Findings contains CRITICAL/MAJOR): use :green_circle: **Blockers resolved** -- Ready to merge",
+    "4. If new blockers == 0 AND no prior blockers were resolved (or no prior blockers existed): use :large_blue_circle: **Still ready** -- No new issues",
+    "",
+    "Use :green_circle: specifically when the situation IMPROVED (blockers went away).",
+    "Use :large_blue_circle: when the situation is UNCHANGED (was good, still good).",
+    "Use :yellow_circle: when the situation WORSENED (new blockers appeared).",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Retrieval context section (learning memory)
 // ---------------------------------------------------------------------------
 export function buildRetrievalContextSection(params: {
@@ -746,6 +826,7 @@ export function buildReviewPrompt(context: {
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
+  deltaContext?: DeltaReviewContext | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -950,6 +1031,78 @@ export function buildReviewPrompt(context: {
       "Do NOT post a top-level summary comment. Each inline comment stands alone with its own severity and category metadata.",
       "If NO issues found: do nothing.",
     );
+  } else if (context.deltaContext) {
+    // --- Delta re-review template (FORMAT-14/15/16) ---
+    const deltaSha7 = context.deltaContext.lastReviewedHeadSha.slice(0, 7);
+
+    // Push delta review context section BEFORE the summary comment template
+    lines.push("", buildDeltaReviewContext(context.deltaContext));
+
+    lines.push(
+      "",
+      "## Summary comment",
+      "",
+      "This is a re-review. Use the DELTA template below instead of the standard five-section template.",
+      "",
+      "ONLY post a summary comment if you found changes to report (new, resolved, or still-open findings).",
+      "",
+      `If you found changes to report, FIRST post ONE summary comment using the \`mcp__github_comment__create_comment\` tool with issue number ${context.prNumber}. ALWAYS wrap the summary in \`<details>\` tags:`,
+      "",
+      "<details>",
+      "<summary>Kodiai Re-Review Summary</summary>",
+      "",
+      `## Re-review -- Changes since ${deltaSha7}`,
+      "",
+      "## What Changed",
+      "<1-2 sentence summary of what changed since the last review>",
+      "",
+      "## New Findings",
+      ":new: [CRITICAL] path/to/file.ts (123): <issue title>",
+      "<explanation of the new issue>",
+      "",
+      ":new: [MAJOR] path/to/file.ts (45): <issue title>",
+      "<explanation of the new issue>",
+      "",
+      "## Resolved Findings",
+      ":white_check_mark: [CRITICAL] path/to/file.ts: <issue title> -- resolved",
+      ":white_check_mark: [MAJOR] path/to/file.ts: <issue title> -- resolved",
+      "",
+      "## Still Open",
+      "<count> finding(s) from the previous review remain open.",
+      "",
+      "<details>",
+      "<summary>View still-open findings</summary>",
+      "",
+      "- [MEDIUM] path/to/file.ts: <issue title>",
+      "- [MINOR] path/to/file.ts: <issue title>",
+      "",
+      "</details>",
+      "",
+      "## Verdict Update",
+      ":green_circle: **Blockers resolved** -- Ready to merge",
+      ":yellow_circle: **New blockers found** -- Address [N] new issue(s)",
+      ":large_blue_circle: **Still ready** -- No new issues",
+      "",
+      "</details>",
+      "",
+      buildDeltaVerdictLogicSection(),
+      "",
+      "Hard requirements for the re-review summary:",
+      "- Use <summary>Kodiai Re-Review Summary</summary> (NOT 'Kodiai Review Summary')",
+      "- ## Re-review header REQUIRED with prior SHA reference",
+      "- ## What Changed REQUIRED",
+      "- ## Verdict Update REQUIRED",
+      "- ## New Findings, ## Resolved Findings, ## Still Open each OPTIONAL but at least one must be present",
+      "- Omit empty sections entirely (do NOT write empty section placeholders)",
+      "- Do NOT repeat still-open findings in ## New Findings",
+      "- Still-open findings appear ONLY in ## Still Open as count + expandable <details> list",
+      "- New findings use :new: badge before severity tag",
+      "- Resolved findings use :white_check_mark: badge and append ' -- resolved'",
+      "- Still-open findings show severity and file path but NOT line numbers (stale)",
+      "",
+      "If you found changes to report (new, resolved, or still-open findings): post the delta summary (wrapped in `<details>`) first, then post inline comments ONLY for new findings.",
+      "If the delta produces nothing to report: do nothing.",
+    );
   } else {
     const reviewedLine = buildReviewedCategoriesLine(
       context.diffAnalysis?.filesByCategory ?? {},
@@ -1034,7 +1187,8 @@ export function buildReviewPrompt(context: {
       "If you found issues: post inline comments only (no summary comment).",
       "If NO issues found: do nothing.",
     );
-  } else {
+  } else if (!context.deltaContext) {
+    // Standard mode after-review (delta mode includes its own after-review instructions above)
     lines.push(
       "",
       "## After review",
