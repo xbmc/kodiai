@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 Milestone: v0.6 Review Output Formatting & UX
 Phase: 35 of 38 (Findings Organization & Tone)
-Plan: 1 of 2 in current phase
-Status: Executing phase 35
-Last activity: 2026-02-13 -- Completed 35-01 (Impact/Preference template, PR intent scoping, tone guidelines)
+Plan: 2 of 2 in current phase
+Status: Phase 35 complete
+Last activity: 2026-02-13 -- Completed 35-02 (Impact/Preference sanitizer validation + severity-tagged finding tests)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 72
+- Total plans completed: 73
 - Average duration: 5 min
-- Total execution time: 338 min
+- Total execution time: 342 min
 
 **By latest shipped milestone (v0.5):**
 
@@ -43,6 +43,7 @@ All v0.5 decisions archived. v0.6 decisions will be listed here as they occur.
 - **34-01:** Used comma-separated text for reviewed categories (not checkboxes); Strengths/Suggestions optional, What Changed/Observations/Verdict required; unknown category keys use key name as label for forward compatibility
 - **34-02:** Severity sub-headings use ### prefix in Observations; Strengths content format not validated by sanitizer (prompt-driven); Observations validation scoped to section boundaries
 - **35-01:** Severity tags are inline on finding lines not headings; PR labels in both context header and intent scoping; Preference capped at MEDIUM; Intent scoping and tone sections between Noise Suppression and Path Instructions
+- **35-02:** ### Impact required, ### Preference optional; CRITICAL/MAJOR in Preference is soft warning not rejection; Bold markers stripped before severity tag matching; foundImpactFinding ensures at least one tagged finding exists
 
 ### Pending Todos
 
@@ -55,5 +56,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 35-01-PLAN.md
+Stopped at: Completed 35-02-PLAN.md (Phase 35 complete)
 Resume file: None
