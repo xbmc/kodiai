@@ -3,7 +3,9 @@ import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
   buildConfidenceInstructions,
   buildDiffAnalysisSection,
+  buildLanguageGuidanceSection,
   buildMetricsInstructions,
+  buildOutputLanguageSection,
   buildPathInstructionsSection,
   buildReviewPrompt,
   buildSuppressionRulesSection,
@@ -413,4 +415,125 @@ test("buildReviewPrompt remains backward compatible without new fields", () => {
   expect(prompt).toContain("Changed files:");
   expect(prompt).not.toContain("## Change Context");
   expect(prompt).not.toContain("## Path-Specific Review Instructions");
+});
+
+// ---------------------------------------------------------------------------
+// buildLanguageGuidanceSection tests
+// ---------------------------------------------------------------------------
+
+test("buildLanguageGuidanceSection returns empty string for empty input", () => {
+  expect(buildLanguageGuidanceSection({})).toBe("");
+});
+
+test("buildLanguageGuidanceSection returns empty string for languages without guidance", () => {
+  expect(buildLanguageGuidanceSection({ Unknown: ["file.unk"] })).toBe("");
+});
+
+test("buildLanguageGuidanceSection includes Python guidance when Python files present", () => {
+  const section = buildLanguageGuidanceSection({ Python: ["app.py", "utils.py"] });
+  expect(section).toContain("### Python (2 file(s))");
+  expect(section).toContain("Mutable default arguments");
+  expect(section).toContain("Context managers");
+  expect(section).toContain("Bare `except:`");
+  expect(section).toContain("Type hint consistency");
+});
+
+test("buildLanguageGuidanceSection caps at 5 languages", () => {
+  const section = buildLanguageGuidanceSection({
+    Python: ["a.py"],
+    Go: ["a.go"],
+    Rust: ["a.rs"],
+    Java: ["a.java"],
+    "C++": ["a.cpp"],
+    C: ["a.c"],
+    Ruby: ["a.rb"],
+  });
+  // Count the number of ### headings -- should be exactly 5
+  const headings = section.match(/^### /gm) ?? [];
+  expect(headings.length).toBe(5);
+});
+
+test("buildLanguageGuidanceSection sorts by file count (most files first)", () => {
+  const section = buildLanguageGuidanceSection({
+    Ruby: ["a.rb"],
+    Python: ["a.py", "b.py", "c.py"],
+    Go: ["a.go", "b.go"],
+  });
+  const pythonIdx = section.indexOf("### Python");
+  const goIdx = section.indexOf("### Go");
+  const rubyIdx = section.indexOf("### Ruby");
+  expect(pythonIdx).toBeLessThan(goIdx);
+  expect(goIdx).toBeLessThan(rubyIdx);
+});
+
+test("buildLanguageGuidanceSection includes taxonomy preservation note", () => {
+  const section = buildLanguageGuidanceSection({ Python: ["a.py"] });
+  expect(section).toContain("CRITICAL/MAJOR/MEDIUM/MINOR");
+  expect(section).toContain("security, correctness, performance, error-handling, resource-management, concurrency");
+});
+
+// ---------------------------------------------------------------------------
+// buildOutputLanguageSection tests
+// ---------------------------------------------------------------------------
+
+test("buildOutputLanguageSection returns empty for 'en'", () => {
+  expect(buildOutputLanguageSection("en")).toBe("");
+});
+
+test("buildOutputLanguageSection returns empty for 'EN' (case insensitive)", () => {
+  expect(buildOutputLanguageSection("EN")).toBe("");
+});
+
+test("buildOutputLanguageSection returns section for 'ja' containing the literal value", () => {
+  const section = buildOutputLanguageSection("ja");
+  expect(section).toContain("## Output Language");
+  expect(section).toContain("in ja");
+});
+
+test("buildOutputLanguageSection includes severity/category English preservation list", () => {
+  const section = buildOutputLanguageSection("ja");
+  expect(section).toContain("CRITICAL");
+  expect(section).toContain("MAJOR");
+  expect(section).toContain("MEDIUM");
+  expect(section).toContain("MINOR");
+  expect(section).toContain("security");
+  expect(section).toContain("correctness");
+  expect(section).toContain("performance");
+  expect(section).toContain("error-handling");
+  expect(section).toContain("resource-management");
+  expect(section).toContain("concurrency");
+  expect(section).toContain("Code identifiers");
+  expect(section).toContain("Code snippets");
+  expect(section).toContain("File paths");
+  expect(section).toContain("YAML metadata blocks");
+  expect(section).toContain("Only the human-readable explanation text should be localized.");
+});
+
+// ---------------------------------------------------------------------------
+// buildReviewPrompt integration tests for language + output language
+// ---------------------------------------------------------------------------
+
+test("buildReviewPrompt includes language guidance section when filesByLanguage provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      filesByLanguage: { Python: ["app.py"], Go: ["main.go"] },
+    }),
+  );
+  expect(prompt).toContain("## Language-Specific Guidance");
+  expect(prompt).toContain("### Python");
+  expect(prompt).toContain("### Go");
+});
+
+test("buildReviewPrompt includes output language section when outputLanguage is non-English", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({ outputLanguage: "ja" }),
+  );
+  expect(prompt).toContain("## Output Language");
+  expect(prompt).toContain("in ja");
+});
+
+test("buildReviewPrompt omits both language sections when not provided (backward compatible)", () => {
+  const prompt = buildReviewPrompt(baseContext());
+  expect(prompt).not.toContain("## Language-Specific Guidance");
+  expect(prompt).not.toContain("## Output Language");
 });

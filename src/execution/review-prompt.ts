@@ -6,6 +6,58 @@ import type { PriorFinding } from "../knowledge/types.ts";
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
+const MAX_LANGUAGE_GUIDANCE_ENTRIES = 5;
+
+// ---------------------------------------------------------------------------
+// Language-specific review guidance (supplements base review rules)
+// ---------------------------------------------------------------------------
+export const LANGUAGE_GUIDANCE: Record<string, string[]> = {
+  Python: [
+    "Mutable default arguments in function signatures (e.g., `def fn(x=[])`) -- use `None` and initialize inside the body.",
+    "Context managers (`with` statements) for resource handling -- file handles, DB connections, locks.",
+    "Bare `except:` clauses -- prefer specific exception types to avoid silencing unexpected errors.",
+    "Type hint consistency when annotations are present -- partial annotations are worse than none.",
+  ],
+  Go: [
+    "Unchecked error returns -- no `_` discards without justification comment.",
+    "Goroutine leak risk -- ensure channels are closed or contexts are cancelled.",
+    "`sync.Mutex` without corresponding `defer Unlock()` -- risk of deadlock on panic.",
+    "Nil pointer dereference on interface type assertions without `ok` check.",
+  ],
+  Rust: [
+    "Unnecessary `.unwrap()` on `Result`/`Option` -- prefer `?`, `unwrap_or`, or explicit match.",
+    "`unsafe` blocks without `// SAFETY:` comments explaining the invariant.",
+    "Overly restrictive lifetime annotations that prevent valid borrow patterns.",
+  ],
+  Java: [
+    "Unclosed resources -- verify `try-with-resources` or explicit `.close()` in `finally`.",
+    "Checked exceptions swallowed silently (empty catch blocks) -- at minimum log the error.",
+    "Mutable shared state without synchronization -- risk of data races in concurrent code.",
+  ],
+  "C++": [
+    "Raw pointer ownership without RAII or smart pointers (`unique_ptr`/`shared_ptr`).",
+    "Missing virtual destructor on base classes with virtual methods -- causes undefined behavior on delete.",
+    "Buffer overflow risk in array/pointer arithmetic -- prefer bounds-checked containers.",
+  ],
+  C: [
+    "Buffer overflow risk from unchecked array indexing or string operations (`strcpy`, `sprintf`).",
+    "Memory leaks -- `malloc`/`calloc` without matching `free` on all code paths.",
+    "Null pointer dereference -- check return values before use (especially from `malloc`, `fopen`).",
+  ],
+  Ruby: [
+    "Missing safe navigation operator (`&.`) for nil-prone method chains.",
+    "Open `rescue` clauses (`rescue => e`) -- prefer specific exception types (e.g., `rescue ActiveRecord::RecordNotFound`).",
+  ],
+  PHP: [
+    "SQL injection via string concatenation instead of prepared statements / parameter binding.",
+    "Missing type declarations in function signatures (PHP 8+) -- use union types and return types.",
+    "Unchecked return values from file/network operations (`fopen`, `curl_exec`).",
+  ],
+  Swift: [
+    "Force unwrapping (`!`) without prior `guard let` / `if let` -- crashes on nil at runtime.",
+    "Retain cycles in closures -- missing `[weak self]` or `[unowned self]` capture list.",
+  ],
+};
 
 export interface PathInstruction {
   path: string | string[];
@@ -493,6 +545,62 @@ export function buildRetrievalContextSection(params: {
   return lines.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Helper: Language-specific guidance section (CTX-06)
+// ---------------------------------------------------------------------------
+export function buildLanguageGuidanceSection(
+  filesByLanguage: Record<string, string[]>,
+): string {
+  const entries = Object.entries(filesByLanguage)
+    .filter(([lang]) => lang in LANGUAGE_GUIDANCE)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, MAX_LANGUAGE_GUIDANCE_ENTRIES);
+
+  if (entries.length === 0) return "";
+
+  const lines: string[] = ["## Language-Specific Guidance", ""];
+
+  for (const [lang, files] of entries) {
+    lines.push(`### ${lang} (${files.length} file(s))`, "");
+    for (const rule of LANGUAGE_GUIDANCE[lang]!) {
+      lines.push(`- ${rule}`);
+    }
+    lines.push("");
+  }
+
+  lines.push(
+    "These language-specific rules supplement the severity classification. " +
+      "Use the same CRITICAL/MAJOR/MEDIUM/MINOR severity scale and the same category taxonomy " +
+      "(security, correctness, performance, error-handling, resource-management, concurrency) " +
+      "for all findings regardless of language.",
+  );
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Output language localization section (LANG-01)
+// ---------------------------------------------------------------------------
+export function buildOutputLanguageSection(outputLanguage: string): string {
+  if (!outputLanguage || outputLanguage.toLowerCase() === "en") return "";
+
+  return [
+    "## Output Language",
+    "",
+    `Write all explanatory prose, finding descriptions, and summary text in ${outputLanguage}.`,
+    "",
+    "The following MUST remain in English:",
+    "- Severity labels (CRITICAL, MAJOR, MEDIUM, MINOR)",
+    "- Category labels (security, correctness, performance, error-handling, resource-management, concurrency)",
+    "- Code identifiers, variable names, function names, and type names",
+    "- Code snippets inside suggestion blocks",
+    "- File paths",
+    "- YAML metadata blocks (in enhanced mode)",
+    "",
+    "Only the human-readable explanation text should be localized.",
+  ].join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -537,6 +645,8 @@ export function buildReviewPrompt(context: {
       sourceRepo: string;
     }>;
   } | null;
+  filesByLanguage?: Record<string, string[]>;
+  outputLanguage?: string;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -608,6 +718,12 @@ export function buildReviewPrompt(context: {
     if (retrievalSection) {
       lines.push("", retrievalSection);
     }
+  }
+
+  // --- Language-specific guidance ---
+  if (context.filesByLanguage) {
+    const langSection = buildLanguageGuidanceSection(context.filesByLanguage);
+    if (langSection) lines.push("", langSection);
   }
 
   // --- How to read the diff ---
@@ -777,6 +893,10 @@ export function buildReviewPrompt(context: {
   if (context.customInstructions) {
     lines.push("", "## Custom instructions", "", context.customInstructions);
   }
+
+  // --- Output language localization (placed last for recency bias compliance) ---
+  const outputLangSection = buildOutputLanguageSection(context.outputLanguage ?? "en");
+  if (outputLangSection) lines.push("", outputLangSection);
 
   return lines.join("\n");
 }
