@@ -77,6 +77,13 @@ Plans:
 **Goal**: Re-reviews focus only on changed code and leverage bounded similar history without blocking publication.
 **Depends on**: Phase 30
 **Requirements**: LEARN-07, REV-01, REV-02, REL-02
+**Plans:** 3 plans
+
+Plans:
+- [ ] 31-01-PLAN.md -- Config schema extensions and KnowledgeStore query methods
+- [ ] 31-02-PLAN.md -- Incremental diff computation and finding deduplication modules
+- [ ] 31-03-PLAN.md -- Review handler integration with incremental diff, dedup, and retrieval context
+
 **Success Criteria** (what must be TRUE):
 1. On subsequent runs, unchanged hunks are skipped and only changed hunks are reviewed.
 2. Prior unresolved findings remain visible as context while duplicate comments on unchanged code are suppressed.
@@ -112,4 +119,4 @@ Plans:
 
 ---
 
-*Last updated: 2026-02-12 for Phase 30 completion*
+*Last updated: 2026-02-13 for Phase 31 planning*
