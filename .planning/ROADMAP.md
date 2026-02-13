@@ -128,10 +128,11 @@ Plans:
   1. Review Details renders as a collapsible `<details>` block at the bottom of the summary comment, never as a standalone comment
   2. Review Details contains only: files reviewed, lines changed (+/-), findings by severity, and review timestamp
   3. No "Estimated review time saved" metric appears anywhere in the output
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 37-01: TBD
+- [ ] 37-01-PLAN.md -- Rewrite formatReviewDetailsSummary to minimal FORMAT-13, remove buildMetricsInstructions from prompt, embed Review Details in summary comment
+- [ ] 37-02-PLAN.md -- Update test assertions for new FORMAT-13 output and add sanitizer tolerance test
 
 ### Phase 38: Delta Re-Review Formatting
 **Goal**: Re-reviews show only what changed since the last review, giving maintainers a focused update rather than a full repeat
@@ -158,5 +159,5 @@ Phases execute in numeric order: 34 -> 35 -> 36 -> 37 -> 38
 | 34. Structured Review Template | v0.6 | 0/2 | Planned | - |
 | 35. Findings Organization & Tone | v0.6 | 0/TBD | Not started | - |
 | 36. Verdict & Merge Confidence | v0.6 | 0/2 | Planned | - |
-| 37. Review Details Embedding | v0.6 | 0/TBD | Not started | - |
+| 37. Review Details Embedding | v0.6 | 0/2 | Planned | - |
 | 38. Delta Re-Review Formatting | v0.6 | 0/TBD | Not started | - |
