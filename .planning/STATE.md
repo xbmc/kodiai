@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 Milestone: v0.6 Review Output Formatting & UX
 Phase: 37 of 38 (Review Details Embedding)
-Plan: 1 of 2 in current phase
-Status: Executing phase 37
-Last activity: 2026-02-13 -- Completed 37-01 (FORMAT-13 Review Details with embed-into-summary logic)
+Plan: 2 of 2 in current phase
+Status: Phase 37 complete
+Last activity: 2026-02-13 -- Completed 37-02 (FORMAT-13 test assertions and sanitizer tolerance)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 76
+- Total plans completed: 77
 - Average duration: 5 min
-- Total execution time: 352 min
+- Total execution time: 354 min
 
 **By latest shipped milestone (v0.5):**
 
@@ -47,6 +47,7 @@ All v0.5 decisions archived. v0.6 decisions will be listed here as they occur.
 - **36-01:** Verdict Logic section placed after </details> but before hard requirements; buildVerdictLogicSection exported as standalone helper for testability
 - **36-02:** blockerCount only counts CRITICAL/MAJOR under ### Impact (not Preference); red verdict without blockers is hard error, green verdict with blockers is soft warning
 - **37-01:** FORMAT-13 output is exactly 4 data lines (files, lines changed +/-, findings by severity, timestamp); appendReviewDetailsToSummary finds summary by buildReviewOutputMarker; fallback from append to standalone on failure
+- **37-02:** Regex matchers validate FORMAT-13 shape rather than simple toContain; negative assertions guard against old format fields reappearing
 
 ### Pending Todos
 
@@ -59,5 +60,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 37-01-PLAN.md
+Stopped at: Completed 37-02-PLAN.md (phase 37 complete)
 Resume file: None
