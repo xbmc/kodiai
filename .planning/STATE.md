@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 Milestone: v0.6 Review Output Formatting & UX
 Phase: 38 of 38 (Delta Re-Review Formatting)
-Plan: 1 of 2 in current phase
-Status: Executing phase 38
-Last activity: 2026-02-13 -- Completed 38-01 (delta re-review template and deltaContext threading)
+Plan: 2 of 2 in current phase
+Status: Phase 38 complete
+Last activity: 2026-02-13 -- Completed 38-02 (delta re-review sanitizer validation)
 
-Progress: [█████████░] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 78
+- Total plans completed: 79
 - Average duration: 5 min
-- Total execution time: 357 min
+- Total execution time: 359 min
 
 **By latest shipped milestone (v0.5):**
 
@@ -49,6 +49,7 @@ All v0.5 decisions archived. v0.6 decisions will be listed here as they occur.
 - **37-01:** FORMAT-13 output is exactly 4 data lines (files, lines changed +/-, findings by severity, timestamp); appendReviewDetailsToSummary finds summary by buildReviewOutputMarker; fallback from append to standalone on failure
 - **37-02:** Regex matchers validate FORMAT-13 shape rather than simple toContain; negative assertions guard against old format fields reappearing
 - **38-01:** Delta template replaces five-section template when deltaContext present; delta verdict uses transition states (green=improved, blue=unchanged, yellow=worsened); prior findings passed pre-execution for Claude to classify new/resolved/still-open
+- **38-02:** Delta sanitizer validates structure only (sections, verdict format, headings); badges prompt-driven not sanitizer-enforced; discriminator chain uses passthrough pattern; forbidden section checks catch initial review sections leaking into delta
 
 ### Pending Todos
 
@@ -61,5 +62,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 38-01-PLAN.md
+Stopped at: Completed 38-02-PLAN.md (phase 38 complete)
 Resume file: None
