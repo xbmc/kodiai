@@ -13,6 +13,7 @@ import {
   buildReviewPrompt,
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
+  buildVerdictLogicSection,
   matchPathInstructions,
 } from "./review-prompt.ts";
 
@@ -815,5 +816,69 @@ describe("Phase 35: Findings organization and tone", () => {
     expect(intentIdx).toBeGreaterThan(-1);
     expect(toneIdx).toBeGreaterThan(-1);
     expect(toneIdx).toBeGreaterThan(intentIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 36: Verdict & Merge Confidence
+// ---------------------------------------------------------------------------
+
+describe("Phase 36: Verdict & Merge Confidence", () => {
+  // 1. Verdict template includes three merge-recommendation states
+  test("verdict template includes three merge-recommendation states", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("Ready to merge");
+    expect(prompt).toContain("Ready to merge with minor items");
+    expect(prompt).toContain("Address before merging");
+  });
+
+  // 2. Verdict template uses correct emoji mapping
+  test("verdict template uses correct emoji mapping", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain(":green_circle: **Ready to merge**");
+    expect(prompt).toContain(":yellow_circle: **Ready to merge with minor items**");
+    expect(prompt).toContain(":red_circle: **Address before merging**");
+  });
+
+  // 3. Verdict logic section defines blocker as CRITICAL or MAJOR
+  test("verdict logic section defines blocker as CRITICAL or MAJOR", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain('A "blocker" is any finding with severity CRITICAL or MAJOR under ### Impact');
+  });
+
+  // 4. Verdict logic section provides deterministic counting rules
+  test("verdict logic section provides deterministic counting rules", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("1. Count the number of [CRITICAL] and [MAJOR] findings under ### Impact.");
+    expect(prompt).toContain("2. If count > 0:");
+    expect(prompt).toContain("3. If count == 0 AND there are non-blocking findings");
+    expect(prompt).toContain("4. If count == 0 AND there are no findings at all:");
+  });
+
+  // 5. Suggestions template requires Optional or Future consideration prefix
+  test("suggestions template requires Optional or Future consideration prefix", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("Optional: <low-friction cleanup");
+    expect(prompt).toContain("Future consideration: <larger improvement");
+  });
+
+  // 6. Hard requirements enforce blocker-driven verdict
+  test("hard requirements enforce blocker-driven verdict", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("determine which one using the Verdict Logic rules above");
+    expect(prompt).toContain("Zero blockers = :green_circle: or :yellow_circle: verdict. Never :red_circle: without blockers");
+  });
+
+  // 7. Hard requirements enforce suggestion labeling
+  test("hard requirements enforce suggestion labeling", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("every item MUST start with 'Optional:' or 'Future consideration:'");
+    expect(prompt).toContain("suggestions are NEVER counted against merge readiness");
+  });
+
+  // 8. Verdict logic section not included in enhanced mode
+  test("verdict logic section not included in enhanced mode", () => {
+    const prompt = buildReviewPrompt(baseContext({ mode: "enhanced" }));
+    expect(prompt).not.toContain("Verdict Logic");
   });
 });
