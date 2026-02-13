@@ -787,6 +787,54 @@ export function createReviewHandler(deps: {
     );
 
     await jobQueue.enqueue(event.installationId, async () => {
+      // Durable run state idempotency check (REL-01)
+      // Check before expensive workspace creation. Uses SHA pair as identity key.
+      // Fail-open: if knowledgeStore is undefined or query throws, proceed with review.
+      if (knowledgeStore) {
+        try {
+          const runCheck = knowledgeStore.checkAndClaimRun({
+            repo: `${apiOwner}/${apiRepo}`,
+            prNumber: pr.number,
+            baseSha: pr.base.sha,
+            headSha: pr.head.sha,
+            deliveryId: event.id,
+            action,
+          });
+
+          if (!runCheck.shouldProcess) {
+            logger.info(
+              {
+                ...baseLog,
+                gate: 'run-state-idempotency',
+                gateResult: 'skipped',
+                skipReason: runCheck.reason,
+                runKey: runCheck.runKey,
+              },
+              'Skipping review: run state indicates duplicate or already processed',
+            );
+            return;
+          }
+
+          if (runCheck.supersededRunKeys.length > 0) {
+            logger.info(
+              {
+                ...baseLog,
+                gate: 'run-state-idempotency',
+                gateResult: 'accepted',
+                runKey: runCheck.runKey,
+                supersededRunKeys: runCheck.supersededRunKeys,
+              },
+              'New run superseded prior runs (force-push detected)',
+            );
+          }
+        } catch (err) {
+          logger.warn(
+            { ...baseLog, err },
+            'Run state idempotency check failed (fail-open, proceeding with review)',
+          );
+        }
+      }
+
       let workspace: Workspace | undefined;
       try {
         // Create workspace with depth 50 for diff context
@@ -1380,6 +1428,16 @@ export function createReviewHandler(deps: {
               { err, repo: `${apiOwner}/${apiRepo}`, prNumber: pr.number },
               "Knowledge store write failed (non-fatal)",
             );
+          }
+        }
+
+        // Mark run as completed for idempotency tracking
+        if (knowledgeStore) {
+          try {
+            const runKey = `${apiOwner}/${apiRepo}:pr-${pr.number}:base-${pr.base.sha}:head-${pr.head.sha}`;
+            knowledgeStore.completeRun(runKey);
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, 'Failed to mark run as completed (non-fatal)');
           }
         }
 
