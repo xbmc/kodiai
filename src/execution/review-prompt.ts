@@ -1,6 +1,7 @@
 import { sanitizeContent } from "../lib/sanitizer.ts";
 import picomatch from "picomatch";
 import type { DiffAnalysis } from "./diff-analysis.ts";
+import type { PriorFinding } from "../knowledge/types.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -410,6 +411,88 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis): string {
   return lines.join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Helper: Incremental review context section
+// ---------------------------------------------------------------------------
+export function buildIncrementalReviewSection(params: {
+  lastReviewedHeadSha: string;
+  changedFilesSinceLastReview: string[];
+  unresolvedPriorFindings: PriorFinding[];
+}): string {
+  const sha7 = params.lastReviewedHeadSha.slice(0, 7);
+  const files = params.changedFilesSinceLastReview.slice(0, 50);
+  const lines: string[] = [
+    "## Incremental Review Mode",
+    "",
+    `This is an incremental re-review. The last review covered commit ${sha7}. Focus ONLY on changes in these ${files.length} files:`,
+  ];
+
+  for (const file of files) {
+    lines.push(`- ${file}`);
+  }
+  if (params.changedFilesSinceLastReview.length > 50) {
+    lines.push(`- ...(${params.changedFilesSinceLastReview.length - 50} more files omitted)`);
+  }
+
+  if (params.unresolvedPriorFindings.length > 0) {
+    lines.push(
+      "",
+      "### Unresolved Prior Findings (Context Only)",
+      "",
+      "These findings from the prior review are on unchanged code and remain relevant. Do NOT re-comment on them. They are shown for context only.",
+      "",
+    );
+    const capped = params.unresolvedPriorFindings.slice(0, 10);
+    for (const finding of capped) {
+      lines.push(`- [${finding.severity}] ${finding.title} (${finding.filePath})`);
+    }
+    if (params.unresolvedPriorFindings.length > 10) {
+      lines.push(`- ...(${params.unresolvedPriorFindings.length - 10} more findings omitted)`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Retrieval context section (learning memory)
+// ---------------------------------------------------------------------------
+export function buildRetrievalContextSection(params: {
+  findings: Array<{
+    findingText: string;
+    severity: string;
+    category: string;
+    filePath: string;
+    outcome: string;
+    distance: number;
+    sourceRepo: string;
+  }>;
+  maxChars?: number;
+}): string {
+  if (params.findings.length === 0) return "";
+
+  const maxChars = params.maxChars ?? 2000;
+  const lines: string[] = [
+    "## Similar Prior Findings (Learning Context)",
+    "",
+    "The following are similar findings from prior reviews. Use them as context to inform your analysis, but evaluate each issue independently on current code. Do NOT copy prior findings -- only reference them if the same pattern exists in current changes.",
+    "",
+  ];
+
+  let currentLength = lines.join("\n").length;
+
+  for (const finding of params.findings) {
+    const entry = `- [${finding.severity}/${finding.category}] ${finding.findingText} (file: ${finding.filePath}, outcome: ${finding.outcome})`;
+    if (currentLength + entry.length + 1 > maxChars) {
+      break;
+    }
+    lines.push(entry);
+    currentLength += entry.length + 1;
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -438,6 +521,22 @@ export function buildReviewPrompt(context: {
   minConfidence?: number;
   diffAnalysis?: DiffAnalysis;
   matchedPathInstructions?: MatchedInstruction[];
+  incrementalContext?: {
+    lastReviewedHeadSha: string;
+    changedFilesSinceLastReview: string[];
+    unresolvedPriorFindings: PriorFinding[];
+  } | null;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      filePath: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+  } | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -496,6 +595,19 @@ export function buildReviewPrompt(context: {
     : "";
   if (diffAnalysisSection) {
     lines.push("", diffAnalysisSection);
+  }
+
+  // --- Incremental review context ---
+  if (context.incrementalContext) {
+    lines.push("", buildIncrementalReviewSection(context.incrementalContext));
+  }
+
+  // --- Retrieval context (learning memory) ---
+  if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
+    const retrievalSection = buildRetrievalContextSection(context.retrievalContext);
+    if (retrievalSection) {
+      lines.push("", retrievalSection);
+    }
   }
 
   // --- How to read the diff ---
