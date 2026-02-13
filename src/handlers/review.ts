@@ -98,155 +98,36 @@ function buildReviewDetailsMarker(reviewOutputKey: string): string {
 function formatReviewDetailsSummary(params: {
   reviewOutputKey: string;
   filesReviewed: number;
-  linesAnalyzed: number;
-  linesChanged: number;
+  linesAdded: number;
+  linesRemoved: number;
   findingCounts: {
     critical: number;
     major: number;
     medium: number;
     minor: number;
   };
-  suppressionsApplied: number;
-  minConfidence: number;
-  visibleFindings: ProcessedFinding[];
-  lowConfidenceFindings: ProcessedFinding[];
-  deltaSummary?: {
-    counts: { new: number; resolved: number; stillOpen: number };
-    resolved: Array<{ filePath: string; title: string; severity: string; category: string }>;
-    suppressedStillOpen: number;
-  };
-  provenanceSummary?: {
-    findings: Array<{
-      findingText: string;
-      severity: string;
-      category: string;
-      outcome: string;
-      distance: number;
-      sourceRepo: string;
-    }>;
-  };
 }): string {
   const {
     reviewOutputKey,
     filesReviewed,
-    linesAnalyzed,
-    linesChanged,
+    linesAdded,
+    linesRemoved,
     findingCounts,
-    suppressionsApplied,
-    minConfidence,
-    visibleFindings,
-    lowConfidenceFindings,
-    deltaSummary,
-    provenanceSummary,
   } = params;
-
-  // Time-saved estimate is deterministic and intentionally simple:
-  // - 3 minutes per actionable finding (triage + patch decision)
-  // - 1 minute per low-confidence finding (quick validation pass)
-  // - 0.25 minute per reviewed file (scan/setup overhead)
-  const estimatedMinutesSaved = Math.max(
-    1,
-    Math.round((visibleFindings.length * 3 + lowConfidenceFindings.length + filesReviewed * 0.25) * 10) / 10,
-  );
 
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
     "",
     `- Files reviewed: ${filesReviewed}`,
-    `- Lines analyzed: ${linesAnalyzed}`,
-    `- Lines changed: ${linesChanged}`,
-    `- Severity counts: critical ${findingCounts.critical}, major ${findingCounts.major}, medium ${findingCounts.medium}, minor ${findingCounts.minor}`,
-    `- Suppressions applied: ${suppressionsApplied}`,
-    `- Estimated review time saved: ~${estimatedMinutesSaved} minutes`,
-    "- Time-saved formula: (3 min x actionable findings) + (1 min x low-confidence findings) + (0.25 min x files reviewed)",
+    `- Lines changed: +${linesAdded} -${linesRemoved}`,
+    `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
+    `- Review completed: ${new Date().toISOString()}`,
+    "",
+    "</details>",
+    "",
+    buildReviewDetailsMarker(reviewOutputKey),
   ];
-
-  // Delta Summary section (only when deltaSummary is provided)
-  if (deltaSummary) {
-    sections.push(
-      "",
-      "### Delta Summary",
-      "",
-      `- **New findings:** ${deltaSummary.counts.new}`,
-      `- **Resolved findings:** ${deltaSummary.counts.resolved}`,
-    );
-
-    if (deltaSummary.suppressedStillOpen > 0) {
-      sections.push(
-        `- **Still open:** ${deltaSummary.counts.stillOpen} (${deltaSummary.suppressedStillOpen} suppressed to avoid duplicate comments)`,
-      );
-    } else {
-      sections.push(`- **Still open:** ${deltaSummary.counts.stillOpen}`);
-    }
-
-    if (deltaSummary.resolved.length > 0) {
-      sections.push(
-        "",
-        "Resolved findings were present in the prior review but not flagged in the current run.",
-        "",
-        "Resolved:",
-      );
-      const cappedResolved = deltaSummary.resolved.slice(0, 10);
-      for (const item of cappedResolved) {
-        sections.push(`- [${item.severity}/${item.category}] ${item.title} (${item.filePath})`);
-      }
-      if (deltaSummary.resolved.length > 10) {
-        sections.push(`- ...(${deltaSummary.resolved.length - 10} more resolved findings omitted)`);
-      }
-    }
-  }
-
-  sections.push("</details>");
-
-  // Provenance section (only when provenanceSummary is provided and has findings)
-  if (provenanceSummary && provenanceSummary.findings.length > 0) {
-    sections.push(
-      "",
-      "<details>",
-      "<summary>Learning Provenance</summary>",
-      "",
-      `This review was informed by ${provenanceSummary.findings.length} prior pattern(s):`,
-      "",
-    );
-
-    for (const finding of provenanceSummary.findings) {
-      const relevanceLabel =
-        finding.distance <= 0.15 ? "high relevance"
-        : finding.distance <= 0.25 ? "moderate relevance"
-        : "low relevance";
-      const truncatedText = finding.findingText.length > 100
-        ? `${finding.findingText.slice(0, 100)}...`
-        : finding.findingText;
-      sections.push(
-        `- [${finding.severity}/${finding.category}] "${truncatedText}" (source: ${finding.sourceRepo}, outcome: ${finding.outcome}, ${relevanceLabel})`,
-      );
-    }
-
-    sections.push(
-      "",
-      "</details>",
-    );
-  }
-
-  if (lowConfidenceFindings.length > 0) {
-    const lowConfidenceLines = lowConfidenceFindings.map((finding) => {
-      const lineInfo = finding.endLine ?? finding.startLine;
-      const location = lineInfo ? `${finding.filePath}:${lineInfo}` : finding.filePath;
-      return `- ${location} [${finding.severity}] ${finding.title} (confidence: ${finding.confidence})`;
-    });
-
-    sections.push(
-      "",
-      "<details>",
-      `<summary>Low Confidence Findings (threshold: ${minConfidence})</summary>`,
-      "",
-      ...lowConfidenceLines,
-      "</details>",
-    );
-  }
-
-  sections.push("", buildReviewDetailsMarker(reviewOutputKey));
 
   return sections.join("\n");
 }
@@ -290,6 +171,43 @@ async function upsertReviewDetailsComment(params: {
     repo,
     issue_number: prNumber,
     body,
+  });
+}
+
+async function appendReviewDetailsToSummary(params: {
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  owner: string;
+  repo: string;
+  prNumber: number;
+  reviewOutputKey: string;
+  reviewDetailsBlock: string;
+}): Promise<void> {
+  const { octokit, owner, repo, prNumber, reviewOutputKey, reviewDetailsBlock } = params;
+  const marker = buildReviewOutputMarker(reviewOutputKey);
+
+  const commentsResponse = await octokit.rest.issues.listComments({
+    owner,
+    repo,
+    issue_number: prNumber,
+    per_page: 100,
+    sort: "created",
+    direction: "desc",
+  });
+
+  const summaryComment = commentsResponse.data.find((comment) =>
+    typeof comment.body === "string" && comment.body.includes(marker)
+  );
+
+  if (!summaryComment) {
+    throw new Error("Summary comment not found for review output marker");
+  }
+
+  const updatedBody = `${summaryComment.body}\n\n${reviewDetailsBlock}`;
+  await octokit.rest.issues.updateComment({
+    owner,
+    repo,
+    comment_id: summaryComment.id,
+    body: updatedBody,
   });
 }
 
