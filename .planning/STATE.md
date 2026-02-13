@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 36 - Verdict & Merge Confidence
+**Current focus:** Phase 37 - Review Details Embedding
 
 ## Current Position
 
 Milestone: v0.6 Review Output Formatting & UX
-Phase: 36 of 38 (Verdict & Merge Confidence)
-Plan: 2 of 2 in current phase
-Status: Phase 36 complete
-Last activity: 2026-02-13 -- Completed 36-02 (Verdict-observations cross-check + test data updated to new verdict labels)
+Phase: 37 of 38 (Review Details Embedding)
+Plan: 1 of 2 in current phase
+Status: Executing phase 37
+Last activity: 2026-02-13 -- Completed 37-01 (FORMAT-13 Review Details with embed-into-summary logic)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 75
+- Total plans completed: 76
 - Average duration: 5 min
-- Total execution time: 348 min
+- Total execution time: 352 min
 
 **By latest shipped milestone (v0.5):**
 
@@ -46,6 +46,7 @@ All v0.5 decisions archived. v0.6 decisions will be listed here as they occur.
 - **35-02:** ### Impact required, ### Preference optional; CRITICAL/MAJOR in Preference is soft warning not rejection; Bold markers stripped before severity tag matching; foundImpactFinding ensures at least one tagged finding exists
 - **36-01:** Verdict Logic section placed after </details> but before hard requirements; buildVerdictLogicSection exported as standalone helper for testability
 - **36-02:** blockerCount only counts CRITICAL/MAJOR under ### Impact (not Preference); red verdict without blockers is hard error, green verdict with blockers is soft warning
+- **37-01:** FORMAT-13 output is exactly 4 data lines (files, lines changed +/-, findings by severity, timestamp); appendReviewDetailsToSummary finds summary by buildReviewOutputMarker; fallback from append to standalone on failure
 
 ### Pending Todos
 
@@ -58,5 +59,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 36-02-PLAN.md (Phase 36 complete)
+Stopped at: Completed 37-01-PLAN.md
 Resume file: None
