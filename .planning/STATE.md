@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 37 - Review Details Embedding
+**Current focus:** Phase 38 - Delta Re-Review Formatting
 
 ## Current Position
 

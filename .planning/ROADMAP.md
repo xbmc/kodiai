@@ -66,10 +66,10 @@ See `.planning/milestones/v0.5-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Make review outputs maintainer-friendly, merge-confident, and low-drama by restructuring comment format, adding explicit merge recommendations, and removing noise.
 
-- [ ] **Phase 34: Structured Review Template** - Establish predictable section layout for initial reviews
-- [ ] **Phase 35: Findings Organization & Tone** - Categorize findings by impact, scope to PR intent, enforce precise language
-- [ ] **Phase 36: Verdict & Merge Confidence** - Deliver explicit merge recommendations with blocker/suggestion separation
-- [ ] **Phase 37: Review Details Embedding** - Consolidate Review Details into summary comment and remove noise metrics
+- [x] **Phase 34: Structured Review Template** - Establish predictable section layout for initial reviews -- completed 2026-02-13
+- [x] **Phase 35: Findings Organization & Tone** - Categorize findings by impact, scope to PR intent, enforce precise language -- completed 2026-02-13
+- [x] **Phase 36: Verdict & Merge Confidence** - Deliver explicit merge recommendations with blocker/suggestion separation -- completed 2026-02-13
+- [x] **Phase 37: Review Details Embedding** - Consolidate Review Details into summary comment and remove noise metrics -- completed 2026-02-13
 - [ ] **Phase 38: Delta Re-Review Formatting** - Reshape re-review output to show only what changed since last review
 
 ## Phase Details
@@ -156,8 +156,8 @@ Phases execute in numeric order: 34 -> 35 -> 36 -> 37 -> 38
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 34. Structured Review Template | v0.6 | 0/2 | Planned | - |
-| 35. Findings Organization & Tone | v0.6 | 0/TBD | Not started | - |
-| 36. Verdict & Merge Confidence | v0.6 | 0/2 | Planned | - |
-| 37. Review Details Embedding | v0.6 | 0/2 | Planned | - |
+| 34. Structured Review Template | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
+| 35. Findings Organization & Tone | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
+| 36. Verdict & Merge Confidence | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
+| 37. Review Details Embedding | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
 | 38. Delta Re-Review Formatting | v0.6 | 0/TBD | Not started | - |
