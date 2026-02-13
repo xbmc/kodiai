@@ -196,6 +196,7 @@ export function createCommentServer(
     let currentSubsection: string | undefined;
     // State machine: INTRO | ISSUE | EXPLANATION
     let state: "INTRO" | "ISSUE" | "EXPLANATION" = "INTRO";
+    let foundImpactFinding = false;
 
     for (const raw of observationsLines) {
       const line = raw.trim();
@@ -240,6 +241,7 @@ export function createCommentServer(
         if (isIssueLine) {
           // Transition: INTRO -> ISSUE
           state = "ISSUE";
+          if (currentSubsection === "### Impact") foundImpactFinding = true;
           // Soft check: CRITICAL/MAJOR in Preference.
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
@@ -291,6 +293,7 @@ export function createCommentServer(
         // Next severity-tagged issue line -> transition back to ISSUE.
         if (isIssueLine) {
           state = "ISSUE";
+          if (currentSubsection === "### Impact") foundImpactFinding = true;
           // Soft check: CRITICAL/MAJOR in Preference.
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
@@ -326,7 +329,7 @@ export function createCommentServer(
       );
     }
 
-    if (!foundSubsection || !stripped.includes("### Impact")) {
+    if (!foundSubsection || !stripped.includes("### Impact") || !foundImpactFinding) {
       throw new Error(
         "Invalid Kodiai review summary: Observations must contain ### Impact subsection with at least one severity-tagged finding",
       );

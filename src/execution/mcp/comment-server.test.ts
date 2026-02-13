@@ -500,4 +500,171 @@ describe("sanitizeKodiaiReviewSummary", () => {
     expect(result.isError).toBeUndefined();
     expect(calledBody).toBe(body);
   });
+
+  // --- Impact/Preference validation tests ---
+
+  test("accepts Impact-only summary (no Preference)", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Fixed authentication bypass.",
+      "## Observations": "### Impact\n[MAJOR] src/auth.ts (42): Missing token validation\nThe endpoint accepts expired tokens without checking the expiration claim.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("accepts Impact + Preference together", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Refactored user service.",
+      "## Observations": "### Impact\n[CRITICAL] src/user.ts (10): SQL injection in user lookup\nUser-supplied ID is interpolated directly into the query string.\n\n### Preference\n[MINOR] src/user.ts (55): Inconsistent naming convention\nOptional: Rename `getUserData` to `findUserById` for consistency.",
+      "## Verdict": ":red_circle: **Block** -- 1 critical issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("accepts multiple findings under Impact", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Updated database queries.",
+      "## Observations": "### Impact\n[MAJOR] src/db.ts (12): Unbounded query without pagination\nThe query fetches all rows without a LIMIT clause, causing OOM on large tables.\n\n[MAJOR] src/db.ts (45): Missing transaction for multi-step write\nTwo INSERT statements execute independently; a failure in the second leaves orphaned rows.\n\n[MEDIUM] src/db.ts (78): No index on frequently queried column\nThe `status` column is used in WHERE clauses but has no index, causing full table scans.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 2 major and 1 medium issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("rejects missing Impact subsection (Preference-only)", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Code style cleanup.",
+      "## Observations": "### Preference\n[MINOR] src/utils.ts (5): Import order inconsistency\nOptional: Group third-party imports before local imports.",
+      "## Verdict": ":green_circle: **Approve** -- No blocking issues.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("### Impact");
+  });
+
+  test("rejects finding without severity tag", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Bug fix.",
+      "## Observations": "### Impact\nsrc/foo.ts (123): Missing error handling\nThe function does not handle null returns from the API.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("### Impact");
+  });
+
+  test("rejects invalid severity tag [HIGH]", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Performance fix.",
+      "## Observations": "### Impact\n[HIGH] src/api.ts (99): Slow response time\nThe endpoint takes 5s due to N+1 query pattern.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    // [HIGH] is not a valid severity, so no finding lines match -- treated as missing Impact content
+    expect(result.content[0]?.text).toContain("### Impact");
+  });
+
+  test("rejects old severity sub-headings (### Critical) as valid subsection", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Refactored auth module.",
+      "## Observations": "### Critical\nsrc/auth.ts (12): Old-format issue\nThis uses the old severity sub-heading format.",
+      "## Verdict": ":red_circle: **Block** -- 1 critical issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    // ### Critical is not a valid subsection; should fail with missing Impact
+    expect(result.content[0]?.text).toContain("### Impact");
+  });
+
+  test("allows intro text before first finding under Impact", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Added rate limiting middleware.",
+      "## Observations": "### Impact\nFindings related to correctness and security:\n\n[MAJOR] src/middleware.ts (30): Rate limit bypass via header spoofing\nThe X-Forwarded-For header is trusted without validation, allowing rate limit bypass.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("rejects finding with missing explanation (end of section)", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Updated API routes.",
+      "## Observations": "### Impact\n[CRITICAL] src/routes.ts (55): Unauthenticated admin endpoint",
+      "## Verdict": ":red_circle: **Block** -- 1 critical issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing explanation");
+  });
+
+  test("allows MAJOR severity in Preference without throwing (soft warning)", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Code cleanup.",
+      "## Observations": "### Impact\n[MEDIUM] src/core.ts (20): Missing null check on optional return\nThe function assumes non-null but the API can return undefined.\n\n### Preference\n[MAJOR] src/utils.ts (40): Deeply nested callback structure\nOptional: Refactor to async/await for readability.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 medium and 1 major issue found.",
+    });
+
+    const { result } = await callCreate(body);
+    // Soft check -- should NOT throw, just warn
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("accepts bold-stripped severity tag **[CRITICAL]**", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Security patch.",
+      "## Observations": "### Impact\n**[CRITICAL]** src/auth.ts (5): Hardcoded secret key\nThe JWT signing key is hardcoded in source code instead of using environment variables.",
+      "## Verdict": ":red_circle: **Block** -- 1 critical issue.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("section ordering and verdict format validations still work", async () => {
+    // Verify section ordering rejection still works with new format
+    const outOfOrder = buildTestSummary({
+      "## Observations": "### Impact\n[MAJOR] src/foo.ts (1): Issue\nExplanation.",
+      "## What Changed": "Some changes.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 1 major issue.",
+    });
+
+    const { result: r1 } = await callCreate(outOfOrder);
+    expect(r1.isError).toBe(true);
+    expect(r1.content[0]?.text).toContain("order");
+
+    // Verify verdict format rejection still works with new format
+    const badVerdict = buildTestSummary({
+      "## What Changed": "Some changes.",
+      "## Observations": "### Impact\n[MAJOR] src/foo.ts (1): Issue\nExplanation.",
+      "## Verdict": "Needs changes, please fix.",
+    });
+
+    const { result: r2 } = await callCreate(badVerdict);
+    expect(r2.isError).toBe(true);
+    expect(r2.content[0]?.text).toContain("Verdict must use format");
+  });
+
+  test("rejects finding followed by another finding without explanation", async () => {
+    const body = buildTestSummary({
+      "## What Changed": "Multiple fixes.",
+      "## Observations": "### Impact\n[MAJOR] src/a.ts (10): First issue\n[MAJOR] src/b.ts (20): Second issue without explanation for first\nThis explains the second issue.",
+      "## Verdict": ":yellow_circle: **Needs changes** -- 2 major issues.",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("missing explanation");
+  });
 });
