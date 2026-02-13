@@ -8,20 +8,22 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.5 Advanced Learning & Language Support
+## Latest Release: v0.5 Advanced Learning & Language Support
 
-**Goal:** Expand review intelligence with higher-signal learning loops and broader multi-language understanding while preserving Kodiai's low-noise default behavior.
+**Shipped:** 2026-02-13
+**Phases:** 30-33 (4 phases, 12 plans)
 
-**Target features:**
-- Embedding-assisted feedback clustering for recurring false-positive detection
-- Incremental re-review that focuses on newly changed diffs instead of reprocessing full PR history
-- Multi-language diff analysis and prompt guidance beyond TypeScript
-- v0.4 carryover hardening where it materially improves operator trust and review quality
+**Delivered:**
+- SHA-keyed run state for idempotent webhook processing with force-push detection
+- Embedding-backed learning memory with Voyage AI and sqlite-vec for semantic pattern retrieval
+- Incremental re-review focusing on changed code with fingerprint-based finding deduplication
+- Bounded retrieval context enriching prompts with top-K similar findings
+- Multi-language classification and guidance for 20 languages (detailed guidance for 9 major languages)
+- Explainable delta reporting with new/resolved/still-open labeling and learning provenance citations
+- Configurable output language localization preserving canonical severity/category taxonomy
 
-## Latest Release: v0.4 Intelligent Review System
-
-**Shipped:** 2026-02-12
-**Phases:** 26-29 (4 phases, 17 plans)
+<details>
+<summary>Previous Release: v0.4 Intelligent Review System (2026-02-12)</summary>
 
 **Delivered:**
 - Configurable review strictness (mode, severity threshold, focus areas, comment caps)
@@ -29,6 +31,8 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Repo-scoped knowledge store with explicit suppressions and confidence filtering
 - Quantitative Review Details reporting (files, lines, severity counts, time-saved estimate)
 - Idempotent thumbs-reaction feedback capture linked to persisted findings
+
+</details>
 
 ## Requirements
 
@@ -61,6 +65,13 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Repo-scoped knowledge persistence with explicit suppressions and confidence threshold filtering — v0.4
 - ✓ Review Details metrics contract and persistence for review quality analysis — v0.4
 - ✓ Feedback capture from human thumbs reactions with deterministic finding linkage — v0.4
+- ✓ Embedding-backed learning memory with repo isolation and semantic retrieval — v0.5
+- ✓ SHA-keyed run state for idempotent webhook redelivery deduplication — v0.5
+- ✓ Incremental re-review focusing on changed hunks with finding deduplication — v0.5
+- ✓ Bounded retrieval context with configurable top-K and distance thresholds — v0.5
+- ✓ Multi-language classification and language-specific guidance for 20 languages — v0.5
+- ✓ Configurable output language localization preserving code snippet integrity — v0.5
+- ✓ Explainable delta reporting with new/resolved/still-open labels and learning provenance — v0.5
 
 ### Active
 
@@ -83,12 +94,13 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Test repo:** `kodiai/xbmc` (public fork) used to validate PR review + mention flows
 - **Core stack:** Bun + Hono, Octokit, Agent SDK (`query()`), in-process MCP servers, in-process queue (p-queue)
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
-- **Telemetry:** SQLite WAL database at `./data/kodiai-telemetry.db` with 90-day retention
-- **Codebase:** ~12,880 lines of TypeScript, 178 tests passing
+- **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
+- **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
+- **Codebase:** ~22,481 lines of TypeScript, 372 tests passing
 
 ## Current State
 
-v0.4 ships an installable GitHub App that:
+v0.5 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -97,7 +109,14 @@ v0.4 ships an installable GitHub App that:
 - Filters low-confidence and explicitly suppressed findings from visible inline output
 - Captures thumbs-up/down feedback reactions for future learning analysis
 - Records usage telemetry (tokens, cost, duration) for every execution
-- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out)
+- **Deduplicates webhook redeliveries using SHA-keyed run state for idempotent processing**
+- **Learns from past reviews using embedding-backed semantic retrieval with repo isolation**
+- **Performs incremental re-reviews focusing only on changed code hunks**
+- **Enriches review context with bounded top-K similar findings from learning memory**
+- **Classifies and adapts to 20 programming languages with language-specific guidance**
+- **Supports localized output language while preserving code snippet integrity**
+- **Reports finding deltas (new/resolved/still-open) with explainable learning provenance**
+- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
 
@@ -130,6 +149,18 @@ v0.4 ships an installable GitHub App that:
 | Fire-and-forget telemetry capture | Non-blocking writes prevent telemetry failures from breaking critical path | ✓ Good — v0.3 |
 | Cost warnings nested in telemetry gate | Disabling telemetry suppresses both recording and warnings (user expectation) | ✓ Good — v0.3 |
 | Self-contained CLI scripts in scripts/ | No src/ imports, zero coupling, prevents accidental server startup | ✓ Good — v0.3 |
+| SHA-keyed run state for idempotency | Keyed by base+head SHA pair, not delivery ID; catches GitHub retries and force-push supersession | ✓ Good — v0.5 |
+| Fail-open run state checks | Run state errors log warning and proceed with review; never block publication | ✓ Good — v0.5 |
+| Fixed 1024-dim vec0 embeddings | Voyage AI default dimension; changing requires table recreation | — Pending — v0.5 |
+| Owner-level shared pool via partition iteration | Query up to 5 repos via partition key rather than separate unpartitioned table | ✓ Good — v0.5 |
+| Fire-and-forget learning memory writes | Async writes never block review completion; errors logged but non-fatal | ✓ Good — v0.5 |
+| onSynchronize defaults false (opt-in) | Frequent pushes could generate expensive reviews; explicit opt-in required | ✓ Good — v0.5 |
+| Conservative retrieval defaults | topK=5, distanceThreshold=0.3, maxContextChars=2000 prevents prompt bloat | ✓ Good — v0.5 |
+| State-driven incremental mode | Based on prior completed review existence, not event type; works for both synchronize and review_requested | ✓ Good — v0.5 |
+| Fingerprint-based finding deduplication | filePath + titleFingerprint composite key for O(1) suppression lookup | ✓ Good — v0.5 |
+| Free-form outputLanguage config | z.string() not enum; LLMs understand both ISO codes and full language names | ✓ Good — v0.5 |
+| Language guidance capped at top 5 | Prevents prompt bloat in multi-language PRs | ✓ Good — v0.5 |
+| Distance thresholds for provenance relevance | <=0.15 high, <=0.25 moderate, else low; provides explainable confidence labels | ✓ Good — v0.5 |
 
 ---
-*Last updated: 2026-02-13 after v0.5 milestone kickoff*
+*Last updated: 2026-02-13 after v0.5 milestone completion*
