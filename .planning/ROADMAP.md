@@ -99,11 +99,11 @@ Plans:
   3. Findings are scoped to the PR's stated intent -- a CI-fix PR does not receive style nits as top-level findings
   4. Finding language specifies concrete conditions and consequences ("causes X when Y") rather than hedged possibilities ("could potentially cause issues")
   5. Low-risk changes are called out with stabilizing language ("preserves existing behavior", "backward compatible", "minimal impact")
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 35-01: TBD
-- [ ] 35-02: TBD
+- [ ] 35-01-PLAN.md -- Rewrite Observations template with Impact/Preference subsections, PR intent scoping, tone guidelines, and PR labels threading
+- [ ] 35-02-PLAN.md -- Update sanitizer for Impact/Preference validation with severity-tagged finding lines
 
 ### Phase 36: Verdict & Merge Confidence
 **Goal**: Maintainers can read the verdict section and know immediately whether to merge, what blocks merging, and what is optional
