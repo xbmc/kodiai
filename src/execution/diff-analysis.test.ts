@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import {
   analyzeDiff,
+  classifyFileLanguage,
+  classifyLanguages,
   MAX_ANALYSIS_FILES,
   MAX_ANALYSIS_TIME_MS,
   type DiffAnalysisInput,
@@ -41,6 +43,7 @@ test("empty input returns empty analysis", () => {
     docs: [],
     infra: [],
   });
+  expect(result.filesByLanguage).toEqual({});
   expect(result.riskSignals).toEqual([]);
   expect(result.metrics).toEqual({
     totalFiles: 0,
@@ -209,4 +212,64 @@ test("time budget exceeded returns deterministic truncation signal", () => {
     });
     expect(result.isLargePR).toBe(false);
   });
+});
+
+// Language classification tests
+
+test("classifyFileLanguage returns correct language for known extensions", () => {
+  expect(classifyFileLanguage("src/main.ts")).toBe("TypeScript");
+  expect(classifyFileLanguage("app.py")).toBe("Python");
+  expect(classifyFileLanguage("cmd/server.go")).toBe("Go");
+  expect(classifyFileLanguage("lib.rs")).toBe("Rust");
+  expect(classifyFileLanguage("App.java")).toBe("Java");
+  expect(classifyFileLanguage("script.rb")).toBe("Ruby");
+  expect(classifyFileLanguage("widget.cpp")).toBe("C++");
+  expect(classifyFileLanguage("main.c")).toBe("C");
+  expect(classifyFileLanguage("util.h")).toBe("C");
+  expect(classifyFileLanguage("index.php")).toBe("PHP");
+});
+
+test("classifyFileLanguage returns Unknown for unrecognized extension", () => {
+  expect(classifyFileLanguage("data.xyz")).toBe("Unknown");
+  expect(classifyFileLanguage("file.unknown")).toBe("Unknown");
+});
+
+test("classifyFileLanguage returns Unknown for extensionless file", () => {
+  expect(classifyFileLanguage("README")).toBe("Unknown");
+  expect(classifyFileLanguage("Makefile")).toBe("Unknown");
+});
+
+test("classifyLanguages groups files correctly and omits Unknown", () => {
+  const result = classifyLanguages([
+    "src/app.ts",
+    "src/utils.ts",
+    "lib/main.py",
+    "README",
+    "cmd/server.go",
+    "Makefile",
+  ]);
+
+  expect(result).toEqual({
+    TypeScript: ["src/app.ts", "src/utils.ts"],
+    Python: ["lib/main.py"],
+    Go: ["cmd/server.go"],
+  });
+});
+
+test("analyzeDiff result includes filesByLanguage with correct grouping for mixed-language input", () => {
+  const result = run({
+    changedFiles: ["a.ts", "b.py", "c.go", "d.rs", "README.md"],
+  });
+
+  expect(result.filesByLanguage).toEqual({
+    TypeScript: ["a.ts"],
+    Python: ["b.py"],
+    Go: ["c.go"],
+    Rust: ["d.rs"],
+  });
+});
+
+test("empty input returns empty filesByLanguage", () => {
+  const result = run();
+  expect(result.filesByLanguage).toEqual({});
 });

@@ -6,6 +6,62 @@ const MAX_DIFF_CONTENT_BYTES = 50 * 1024;
 const CATEGORY_NAMES = ["source", "test", "config", "docs", "infra"] as const;
 const TIME_BUDGET_TRUNCATION_SIGNAL = "Analysis truncated due to time budget";
 
+export const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
+  ts: "TypeScript",
+  tsx: "TypeScript",
+  mts: "TypeScript",
+  cts: "TypeScript",
+  js: "JavaScript",
+  jsx: "JavaScript",
+  mjs: "JavaScript",
+  cjs: "JavaScript",
+  py: "Python",
+  pyw: "Python",
+  go: "Go",
+  rs: "Rust",
+  java: "Java",
+  kt: "Kotlin",
+  kts: "Kotlin",
+  swift: "Swift",
+  cs: "C#",
+  cpp: "C++",
+  cc: "C++",
+  cxx: "C++",
+  hpp: "C++",
+  hxx: "C++",
+  c: "C",
+  h: "C",
+  rb: "Ruby",
+  php: "PHP",
+  scala: "Scala",
+  sh: "Shell",
+  bash: "Shell",
+  zsh: "Shell",
+  sql: "SQL",
+  dart: "Dart",
+  lua: "Lua",
+  ex: "Elixir",
+  exs: "Elixir",
+  zig: "Zig",
+};
+
+export function classifyFileLanguage(filePath: string): string {
+  const ext = filePath.split(".").pop()?.toLowerCase();
+  if (!ext) return "Unknown";
+  return EXTENSION_LANGUAGE_MAP[ext] ?? "Unknown";
+}
+
+export function classifyLanguages(files: string[]): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const file of files) {
+    const lang = classifyFileLanguage(file);
+    if (lang === "Unknown") continue;
+    if (!result[lang]) result[lang] = [];
+    result[lang]!.push(file);
+  }
+  return result;
+}
+
 type CategoryName = (typeof CATEGORY_NAMES)[number];
 
 export interface DiffAnalysisInput {
@@ -17,6 +73,7 @@ export interface DiffAnalysisInput {
 
 export interface DiffAnalysis {
   filesByCategory: Record<string, string[]>;
+  filesByLanguage: Record<string, string[]>;
   riskSignals: string[];
   metrics: {
     totalFiles: number;
@@ -223,6 +280,8 @@ export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
     }
   }
 
+  const filesByLanguage = classifyLanguages(analyzedFiles);
+
   const riskSignals: string[] = [];
 
   for (const risk of PATH_RISK_SIGNALS) {
@@ -272,6 +331,7 @@ export function analyzeDiff(input: DiffAnalysisInput): DiffAnalysis {
 
   return {
     filesByCategory,
+    filesByLanguage,
     riskSignals,
     metrics,
     isLargePR,
