@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.5 Phase 33 in progress (Explainable Learning and Delta Reporting)
+**Current focus:** v0.5 Phase 33 complete (Explainable Learning and Delta Reporting)
 
 ## Current Position
 
 Phase: 33 of 33 (Explainable Learning and Delta Reporting)
-Plan: 2 of 3
-Status: In Progress
-Last activity: 2026-02-13 - Completed 33-02 (review details formatting layer with delta and provenance)
+Plan: 3 of 3
+Status: Complete
+Last activity: 2026-02-13 - Completed 33-03 (handler wiring for delta classification and provenance)
 
-Progress: [#########░] 92% (v0.5 - 11/12 plans)
+Progress: [##########] 100% (v0.5 - 12/12 plans)
 
 ## Performance Metrics
 
@@ -34,7 +34,7 @@ Progress: [#########░] 92% (v0.5 - 11/12 plans)
 | 30-state-memory-and-isolation-foundation | 3 | 10 min | 3 min |
 | 31-incremental-re-review-with-retrieval-context | 3 | 11 min | 4 min |
 | 32-multi-language-context-and-localized-output | 3 | 7 min | 2 min |
-| 33-explainable-learning-and-delta-reporting | 2 | 5 min | 3 min |
+| 33-explainable-learning-and-delta-reporting | 3 | 7 min | 2 min |
 
 ## Accumulated Context
 
@@ -73,6 +73,8 @@ Recent decisions relevant to v0.5:
 - Provenance relevance labels use distance thresholds: <=0.15 high, <=0.25 moderate, else low (33-02).
 - Delta section inside main Review Details details block; provenance is a separate collapsible block (33-02).
 - Provenance citation instruction is advisory; deterministic Review Details provenance is authoritative (33-02).
+- Pass processedFindings directly to classifyFindingDeltas (satisfies FindingForDelta shape) instead of mapping to subset (33-03).
+- Delta classification re-queries getPriorReviewFindings to avoid scoping issues with prior dedup block (33-03).
 
 ### Pending Todos
 
@@ -85,5 +87,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 33-02-PLAN.md
+Stopped at: Completed 33-03-PLAN.md (Phase 33 complete, v0.5 milestone complete)
 Resume file: None
