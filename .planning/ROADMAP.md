@@ -83,11 +83,11 @@ See `.planning/milestones/v0.5-ROADMAP.md` for full phase details.
   2. What Changed section includes a progress checklist showing which categories the bot reviewed (e.g., "Reviewed: core logic, error handling, tests")
   3. Strengths section uses checkmark formatting for each verified positive (e.g., "Null checks added for all nullable returns")
   4. The new template is applied consistently regardless of PR size or language
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 34-01: TBD
-- [ ] 34-02: TBD
+- [ ] 34-01-PLAN.md -- Rewrite standard-mode summary prompt with five-section template and reviewed-categories helper
+- [ ] 34-02-PLAN.md -- Rewrite sanitizeKodiaiReviewSummary() for five-section template validation
 
 ### Phase 35: Findings Organization & Tone
 **Goal**: Findings are categorized by real impact vs preference, scoped to PR intent, and expressed with specific, low-drama language
@@ -155,7 +155,7 @@ Phases execute in numeric order: 34 -> 35 -> 36 -> 37 -> 38
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 34. Structured Review Template | v0.6 | 0/TBD | Not started | - |
+| 34. Structured Review Template | v0.6 | 0/2 | Planned | - |
 | 35. Findings Organization & Tone | v0.6 | 0/TBD | Not started | - |
 | 36. Verdict & Merge Confidence | v0.6 | 0/TBD | Not started | - |
 | 37. Review Details Embedding | v0.6 | 0/TBD | Not started | - |
