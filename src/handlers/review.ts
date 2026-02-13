@@ -1173,6 +1173,7 @@ export function createReviewHandler(deps: {
             isLargePR: diffAnalysis.isLargePR,
               riskSignals: diffAnalysis.riskSignals.length,
               matchedInstructions: matchedPathInstructions.length,
+              detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}).length,
               profile: config.review.profile ?? null,
               diffCollectionStrategy: diffContext.strategy,
               mergeBaseRecovered: diffContext.mergeBaseRecovered,
@@ -1211,6 +1212,9 @@ export function createReviewHandler(deps: {
           } : null,
           // Learning memory retrieval context (LEARN-07)
           retrievalContext: retrievalCtx,
+          // Multi-language context and localized output (LANG-01)
+          filesByLanguage: diffAnalysis?.filesByLanguage,
+          outputLanguage: config.review.outputLanguage,
         });
 
         // Execute review via Claude
