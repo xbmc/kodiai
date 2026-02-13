@@ -150,6 +150,8 @@ const reviewSchema = z
     minConfidence: z.number().min(0).max(100).default(0),
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
+    /** Output language for review prose. Free-form string (ISO code or full name). Default: "en". */
+    outputLanguage: z.string().default("en"),
     fileCategories: z
       .object({
         source: z.array(z.string()).optional(),
@@ -180,6 +182,7 @@ const reviewSchema = z
     suppressions: [],
     minConfidence: 0,
     pathInstructions: [],
+    outputLanguage: "en",
   });
 
 const mentionSchema = z

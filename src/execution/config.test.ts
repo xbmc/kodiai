@@ -1039,3 +1039,63 @@ test("retrieval section custom values are honored", async () => {
     await rm(dir, { recursive: true });
   }
 });
+
+// Phase 32: outputLanguage config tests
+
+test("default config has review.outputLanguage === 'en'", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.outputLanguage).toBe("en");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("explicit review.outputLanguage: 'ja' is preserved after parsing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  outputLanguage: ja\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.outputLanguage).toBe("ja");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("explicit review.outputLanguage: 'Spanish' (full name) is preserved", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  outputLanguage: Spanish\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.outputLanguage).toBe("Spanish");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid review section falls back to defaults including outputLanguage: 'en'", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  enabled: notaboolean\n  outputLanguage: ja\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.outputLanguage).toBe("en"); // default after fallback
+    expect(config.review.enabled).toBe(true); // default
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]!.section).toBe("review");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
