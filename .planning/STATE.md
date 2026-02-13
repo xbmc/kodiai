@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 35 - Findings Organization & Tone
+**Current focus:** Phase 36 - Verdict & Merge Confidence
 
 ## Current Position
 
 Milestone: v0.6 Review Output Formatting & UX
-Phase: 35 of 38 (Findings Organization & Tone)
-Plan: 2 of 2 in current phase
-Status: Phase 35 complete
-Last activity: 2026-02-13 -- Completed 35-02 (Impact/Preference sanitizer validation + severity-tagged finding tests)
+Phase: 36 of 38 (Verdict & Merge Confidence)
+Plan: 1 of 2 in current phase
+Status: Executing phase 36
+Last activity: 2026-02-13 -- Completed 36-01 (Verdict template rewrite + verdict logic + suggestions labeling)
 
 Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 73
+- Total plans completed: 74
 - Average duration: 5 min
-- Total execution time: 342 min
+- Total execution time: 344 min
 
 **By latest shipped milestone (v0.5):**
 
@@ -44,6 +44,7 @@ All v0.5 decisions archived. v0.6 decisions will be listed here as they occur.
 - **34-02:** Severity sub-headings use ### prefix in Observations; Strengths content format not validated by sanitizer (prompt-driven); Observations validation scoped to section boundaries
 - **35-01:** Severity tags are inline on finding lines not headings; PR labels in both context header and intent scoping; Preference capped at MEDIUM; Intent scoping and tone sections between Noise Suppression and Path Instructions
 - **35-02:** ### Impact required, ### Preference optional; CRITICAL/MAJOR in Preference is soft warning not rejection; Bold markers stripped before severity tag matching; foundImpactFinding ensures at least one tagged finding exists
+- **36-01:** Verdict Logic section placed after </details> but before hard requirements; buildVerdictLogicSection exported as standalone helper for testability
 
 ### Pending Todos
 
@@ -56,5 +57,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 35-02-PLAN.md (Phase 35 complete)
+Stopped at: Completed 36-01-PLAN.md
 Resume file: None
