@@ -198,15 +198,38 @@ const telemetrySchema = z
   })
   .default({ enabled: true, costWarningUsd: 0 });
 
+const embeddingsSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    model: z.string().default("voyage-code-3"),
+    dimensions: z.number().min(256).max(2048).default(1024),
+  })
+  .default({ enabled: true, model: "voyage-code-3", dimensions: 1024 });
+
+const sharingSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({ enabled: false });
+
 const knowledgeSchema = z
   .object({
     /**
      * Global knowledge sharing is opt-in only.
      * false = repository-scoped writes only.
+     * @deprecated Use sharing.enabled instead.
      */
     shareGlobal: z.boolean().default(false),
+    /** Owner-level sharing configuration. */
+    sharing: sharingSchema,
+    /** Embedding generation configuration. */
+    embeddings: embeddingsSchema,
   })
-  .default({ shareGlobal: false });
+  .default({
+    shareGlobal: false,
+    sharing: { enabled: false },
+    embeddings: { enabled: true, model: "voyage-code-3", dimensions: 1024 },
+  });
 
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),

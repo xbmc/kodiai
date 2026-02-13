@@ -893,3 +893,80 @@ test("invalid review.minConfidence falls back review section to defaults", async
     await rm(dir, { recursive: true });
   }
 });
+
+// Knowledge embeddings and sharing config tests
+
+test("default config has knowledge.embeddings with correct defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.embeddings.enabled).toBe(true);
+    expect(config.knowledge.embeddings.model).toBe("voyage-code-3");
+    expect(config.knowledge.embeddings.dimensions).toBe(1024);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("default config has knowledge.sharing.enabled === false", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.sharing.enabled).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("custom embeddings config parses correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  embeddings:\n    enabled: false\n    model: voyage-code-2\n    dimensions: 512\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.embeddings.enabled).toBe(false);
+    expect(config.knowledge.embeddings.model).toBe("voyage-code-2");
+    expect(config.knowledge.embeddings.dimensions).toBe(512);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("custom sharing config parses correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  sharing:\n    enabled: true\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.sharing.enabled).toBe(true);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("backward compat: knowledge.shareGlobal: true still parses without error", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  shareGlobal: true\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.shareGlobal).toBe(true);
+    // sharing and embeddings should still have defaults
+    expect(config.knowledge.sharing.enabled).toBe(false);
+    expect(config.knowledge.embeddings.enabled).toBe(true);
+    expect(config.knowledge.embeddings.model).toBe("voyage-code-3");
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
