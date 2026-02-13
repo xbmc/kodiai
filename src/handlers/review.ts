@@ -1391,30 +1391,49 @@ export function createReviewHandler(deps: {
             const reviewDetailsBody = formatReviewDetailsSummary({
               reviewOutputKey,
               filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-              linesAnalyzed: linesChanged,
-              linesChanged,
+              linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
+              linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
               findingCounts,
-              suppressionsApplied,
-              minConfidence: config.review.minConfidence,
-              visibleFindings,
-              lowConfidenceFindings,
-              deltaSummary: deltaClassification ? {
-                counts: deltaClassification.counts,
-                resolved: deltaClassification.resolved,
-                suppressedStillOpen,
-              } : undefined,
-              provenanceSummary: retrievalCtx ? {
-                findings: retrievalCtx.findings,
-              } : undefined,
             });
-            await upsertReviewDetailsComment({
-              octokit: extractionOctokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              reviewOutputKey,
-              body: reviewDetailsBody,
-            });
+
+            if (result.published) {
+              // Summary comment was posted -- append Review Details to it
+              try {
+                await appendReviewDetailsToSummary({
+                  octokit: extractionOctokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  reviewDetailsBlock: reviewDetailsBody,
+                });
+              } catch (appendErr) {
+                // Fallback: post standalone if append fails (e.g., summary comment not found yet)
+                logger.warn(
+                  { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
+                  "Failed to append Review Details to summary comment; posting standalone",
+                );
+                await upsertReviewDetailsComment({
+                  octokit: extractionOctokit,
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  prNumber: pr.number,
+                  reviewOutputKey,
+                  body: reviewDetailsBody,
+                });
+              }
+            } else {
+              // No summary comment (clean review) -- post standalone Review Details
+              // FORMAT-11 exemption: no summary exists to embed into; standalone preserves metrics visibility
+              await upsertReviewDetailsComment({
+                octokit: extractionOctokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                body: reviewDetailsBody,
+              });
+            }
           } catch (err) {
             logger.warn(
               {
