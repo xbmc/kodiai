@@ -174,7 +174,8 @@ export function createCommentServer(
       );
     }
 
-    // 5. Observations section validation: must contain severity sub-headings with issue lines.
+    // 5. Observations section validation: must contain ### Impact (required) and ### Preference (optional)
+    //    with severity-tagged finding lines: [SEVERITY] path (lines): title
     const observationsStart = stripped.indexOf("## Observations");
     // Find the next ## section after Observations.
     const afterObservations = stripped.slice(
@@ -185,79 +186,149 @@ export function createCommentServer(
       ? afterObservations.slice(0, nextSectionMatch.index)
       : afterObservations;
 
-    const validSeverities = new Set(["### Critical", "### Major", "### Medium", "### Minor"]);
+    const validSubsections = new Set(["### Impact", "### Preference"]);
     const observationsLines = observationsContent.split("\n");
-    let foundSeverity = false;
+    let foundSubsection = false;
 
     const lineSpec = "\\d+(?:-\\d+)?(?:,\\s*\\d+(?:-\\d+)?)*";
-    const issueLineRe = new RegExp(`^(.+?) \\((?:${lineSpec})\\): (.+)$`);
+    const issueLineRe = new RegExp(`^\\[(CRITICAL|MAJOR|MEDIUM|MINOR)\\] (.+?) \\((?:${lineSpec})\\): (.+)$`);
 
-    let currentSeverity: string | undefined;
-    let expectingIssueLine = false;
-    let expectingExplanation = false;
+    let currentSubsection: string | undefined;
+    // State machine: INTRO | ISSUE | EXPLANATION
+    let state: "INTRO" | "ISSUE" | "EXPLANATION" = "INTRO";
 
     for (const raw of observationsLines) {
       const line = raw.trim();
-      if (!line) continue;
 
-      if (validSeverities.has(line)) {
-        if (expectingExplanation) {
+      // Check for subsection headings first (even on empty lines, trim handles it).
+      if (validSubsections.has(line)) {
+        if (state === "ISSUE") {
           throw new Error(
-            `Invalid Kodiai review summary: missing explanation line under ${currentSeverity ?? "severity"}.`,
+            `Invalid Kodiai review summary: missing explanation line after finding in ${currentSubsection ?? "subsection"}.`,
           );
         }
-        foundSeverity = true;
-        currentSeverity = line;
-        expectingIssueLine = true;
-        expectingExplanation = false;
+        foundSubsection = true;
+        currentSubsection = line;
+        state = "INTRO";
         continue;
       }
 
-      if (!currentSeverity) {
-        // Content before any severity heading -- ignore (could be intro text).
+      // Reject old-style severity sub-headings explicitly.
+      if (line === "### Critical" || line === "### Major" || line === "### Medium" || line === "### Minor") {
+        // Falls through to the non-conforming line check below since they're not in validSubsections.
+        // But handle them explicitly: they are not valid subsections.
+      }
+
+      if (!currentSubsection) {
+        // Content before any subsection heading -- ignore (could be intro text).
         continue;
       }
 
-      if (expectingExplanation) {
-        // Any non-empty, non-heading line counts as explanation.
-        if (validSeverities.has(line) || issueLineRe.test(line)) {
+      // Strip bold markers for flexible matching: **[CRITICAL]** -> [CRITICAL]
+      const stripped_line = line.replace(/\*\*/g, "");
+
+      // Test for severity-tagged issue line.
+      const isIssueLine = issueLineRe.test(stripped_line);
+
+      // Extract severity for soft checks.
+      const severityMatch = stripped_line.match(/^\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]/);
+
+      if (state === "INTRO") {
+        // Allow blank lines in INTRO.
+        if (!line) continue;
+
+        if (isIssueLine) {
+          // Transition: INTRO -> ISSUE
+          state = "ISSUE";
+          // Soft check: CRITICAL/MAJOR in Preference.
+          if (currentSubsection === "### Preference" && severityMatch) {
+            const sev = severityMatch[1];
+            if (sev === "CRITICAL" || sev === "MAJOR") {
+              console.warn(`Preference finding with ${sev} severity -- expected MEDIUM or MINOR`);
+            }
+          }
+          continue;
+        }
+
+        // Allow any non-heading, non-severity-tagged lines as introductory/descriptive text.
+        if (line.startsWith("### ")) {
+          // Unknown subsection heading -- error.
           throw new Error(
-            `Invalid Kodiai review summary: missing explanation line under ${currentSeverity}.`,
+            `Invalid Kodiai review summary: unexpected subsection '${line}' under Observations. Only use: ### Impact, ### Preference`,
           );
         }
-        expectingExplanation = false;
-        expectingIssueLine = false;
         continue;
       }
 
-      if (expectingIssueLine) {
-        if (!issueLineRe.test(line)) {
+      if (state === "ISSUE") {
+        // The explanation must directly follow -- blank lines are NOT allowed.
+        if (!line) {
           throw new Error(
-            `Invalid issue line under ${currentSeverity}. Expected: path/to/file.ts (123, 456): Issue title`,
+            `Invalid Kodiai review summary: missing explanation line after finding in ${currentSubsection}.`,
           );
         }
-        expectingExplanation = true;
+        // The next non-empty line is the explanation.
+        // But it must not be another issue line or a subsection heading.
+        if (isIssueLine) {
+          throw new Error(
+            `Invalid Kodiai review summary: missing explanation line after finding in ${currentSubsection}.`,
+          );
+        }
+        if (line.startsWith("### ")) {
+          throw new Error(
+            `Invalid Kodiai review summary: missing explanation line after finding in ${currentSubsection}.`,
+          );
+        }
+        // Valid explanation line.
+        state = "EXPLANATION";
         continue;
       }
 
-      // Additional issue lines under same severity.
-      if (issueLineRe.test(line)) {
-        expectingExplanation = true;
+      if (state === "EXPLANATION") {
+        // Blank lines are allowed as separators between finding pairs.
+        if (!line) continue;
+
+        // Next severity-tagged issue line -> transition back to ISSUE.
+        if (isIssueLine) {
+          state = "ISSUE";
+          // Soft check: CRITICAL/MAJOR in Preference.
+          if (currentSubsection === "### Preference" && severityMatch) {
+            const sev = severityMatch[1];
+            if (sev === "CRITICAL" || sev === "MAJOR") {
+              console.warn(`Preference finding with ${sev} severity -- expected MEDIUM or MINOR`);
+            }
+          }
+          continue;
+        }
+
+        // Subsection heading -> will be caught at top of loop on next iteration.
+        // Unknown heading check.
+        if (line.startsWith("### ")) {
+          if (!validSubsections.has(line)) {
+            throw new Error(
+              `Invalid Kodiai review summary: unexpected subsection '${line}' under Observations. Only use: ### Impact, ### Preference`,
+            );
+          }
+          // This case won't actually reach here because validSubsections check is at top.
+        }
+
+        // Non-conforming line after we've entered ISSUE/EXPLANATION alternation.
+        // A line that is not blank, not an issue line, and not a heading is a non-conforming line.
+        // However, we should tolerate continuation text (multi-line explanations).
+        // Treat as extended explanation continuation -- remain in EXPLANATION state.
         continue;
       }
-
-      // Otherwise treat as explanation continuation.
     }
 
-    if (expectingExplanation) {
+    if (state === "ISSUE") {
       throw new Error(
-        `Invalid Kodiai review summary: missing explanation line under ${currentSeverity ?? "severity"}.`,
+        `Invalid Kodiai review summary: missing explanation line after finding in ${currentSubsection ?? "subsection"}.`,
       );
     }
 
-    if (!foundSeverity) {
+    if (!foundSubsection || !stripped.includes("### Impact")) {
       throw new Error(
-        "Invalid Kodiai review summary: Observations must contain at least one severity sub-heading (### Critical, ### Major, ### Medium, ### Minor)",
+        "Invalid Kodiai review summary: Observations must contain ### Impact subsection with at least one severity-tagged finding",
       );
     }
 
