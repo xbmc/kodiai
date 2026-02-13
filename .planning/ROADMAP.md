@@ -143,11 +143,11 @@ Plans:
   2. Delta verdict reflects the transition: "New blockers found", "Blockers resolved -- Ready to merge", or "Still ready -- No new issues"
   3. Resolved findings are shown with checkmark badges; new findings are shown with "NEW" badges; still-open findings appear as a count with expandable list
   4. Findings that have not changed since the previous review are not repeated in the main body
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 38-01: TBD
-- [ ] 38-02: TBD
+- [ ] 38-01-PLAN.md -- Delta review template in prompt builder with data threading from review.ts
+- [ ] 38-02-PLAN.md -- Delta re-review sanitizer validation and comprehensive tests
 
 ## Progress
 
@@ -160,4 +160,4 @@ Phases execute in numeric order: 34 -> 35 -> 36 -> 37 -> 38
 | 35. Findings Organization & Tone | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
 | 36. Verdict & Merge Confidence | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
 | 37. Review Details Embedding | v0.6 | 2/2 | ✓ Complete | 2026-02-13 |
-| 38. Delta Re-Review Formatting | v0.6 | 0/TBD | Not started | - |
+| 38. Delta Re-Review Formatting | v0.6 | 0/2 | Not started | - |
