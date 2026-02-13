@@ -110,6 +110,13 @@ Plans:
 **Goal**: Users can understand what changed between incremental runs and why learned memory influenced suggestions.
 **Depends on**: Phase 31, Phase 32
 **Requirements**: LEARN-09, REV-03
+**Plans:** 3 plans
+
+Plans:
+- [ ] 33-01-PLAN.md -- Delta classifier module (TDD: classifyFindingDeltas with fingerprint comparison)
+- [ ] 33-02-PLAN.md -- Review Details format extension and retrieval prompt provenance citation
+- [ ] 33-03-PLAN.md -- Handler wiring for delta classification and provenance threading
+
 **Success Criteria** (what must be TRUE):
 1. Incremental review summaries label findings as `new`, `resolved`, or `still-open`.
 2. Suggestions influenced by retrieved memory include explainable provenance describing the influencing prior memory.
@@ -126,4 +133,4 @@ Plans:
 
 ---
 
-*Last updated: 2026-02-13 for Phase 31 planning*
+*Last updated: 2026-02-13 for Phase 33 planning*
