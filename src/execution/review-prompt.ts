@@ -529,6 +529,10 @@ export function buildRetrievalContextSection(params: {
     "",
     "The following are similar findings from prior reviews. Use them as context to inform your analysis, but evaluate each issue independently on current code. Do NOT copy prior findings -- only reference them if the same pattern exists in current changes.",
     "",
+    "When a finding in your review directly relates to one of these prior patterns,",
+    "append a brief provenance note at the end of your comment:",
+    "`(Prior pattern: [brief description of the similar prior finding])`",
+    "",
   ];
 
   let currentLength = lines.join("\n").length;

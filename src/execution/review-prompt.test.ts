@@ -7,6 +7,7 @@ import {
   buildMetricsInstructions,
   buildOutputLanguageSection,
   buildPathInstructionsSection,
+  buildRetrievalContextSection,
   buildReviewPrompt,
   buildSuppressionRulesSection,
   matchPathInstructions,
@@ -539,4 +540,32 @@ test("buildReviewPrompt omits both language sections when not provided (backward
   const prompt = buildReviewPrompt(baseContext());
   expect(prompt).not.toContain("## Language-Specific Guidance");
   expect(prompt).not.toContain("## Output Language");
+});
+
+// ---------------------------------------------------------------------------
+// buildRetrievalContextSection tests
+// ---------------------------------------------------------------------------
+
+test("buildRetrievalContextSection includes provenance citation instruction when findings present", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "SQL injection risk in query builder",
+        severity: "major",
+        category: "security",
+        filePath: "src/db.ts",
+        outcome: "accepted",
+        distance: 0.12,
+        sourceRepo: "owner/other-repo",
+      },
+    ],
+  });
+  expect(section).toContain("Prior pattern:");
+  expect(section).toContain("append a brief provenance note");
+  expect(section).toContain("When a finding in your review directly relates to one of these prior patterns");
+});
+
+test("buildRetrievalContextSection returns empty string when no findings", () => {
+  const section = buildRetrievalContextSection({ findings: [] });
+  expect(section).toBe("");
 });
