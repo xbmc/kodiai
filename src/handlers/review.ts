@@ -15,6 +15,7 @@ import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } fro
 import type { IsolationLayer } from "../learning/isolation.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
+import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff } from "../execution/diff-analysis.ts";
 import {
@@ -1396,6 +1397,36 @@ export function createReviewHandler(deps: {
           finding.suppressed || finding.confidence < config.review.minConfidence
         );
 
+        // Delta classification (REV-03)
+        // Only classify deltas in incremental mode when prior findings exist.
+        let deltaClassification: DeltaClassification | null = null;
+        if (incrementalResult?.mode === "incremental" && priorFindingCtx) {
+          try {
+            const priorFindings = knowledgeStore!.getPriorReviewFindings({
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+            });
+            if (priorFindings.length > 0) {
+              deltaClassification = classifyFindingDeltas({
+                currentFindings: processedFindings,
+                priorFindings,
+                fingerprintFn: fingerprintFindingTitle,
+              });
+            }
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, err },
+              "Delta classification failed (fail-open, publishing without delta labels)",
+            );
+          }
+        }
+
+        const suppressedStillOpen = processedFindings.filter(f =>
+          f.suppressed && priorFindingCtx?.suppressionFingerprints.has(
+            `${f.filePath}:${fingerprintFindingTitle(f.title)}`
+          )
+        ).length;
+
         if (shouldProcessReviewOutput && filteredInlineFindings.length > 0) {
           await removeFilteredInlineComments({
             octokit: extractionOctokit,
@@ -1425,6 +1456,10 @@ export function createReviewHandler(deps: {
               gate: "review-details-output",
               gateResult: "attempt",
               reviewOutputKey,
+              deltaNew: deltaClassification?.counts.new ?? null,
+              deltaResolved: deltaClassification?.counts.resolved ?? null,
+              deltaStillOpen: deltaClassification?.counts.stillOpen ?? null,
+              provenanceCount: retrievalCtx?.findings.length ?? null,
             },
             "Attempting deterministic Review Details publication",
           );
@@ -1440,6 +1475,14 @@ export function createReviewHandler(deps: {
               minConfidence: config.review.minConfidence,
               visibleFindings,
               lowConfidenceFindings,
+              deltaSummary: deltaClassification ? {
+                counts: deltaClassification.counts,
+                resolved: deltaClassification.resolved,
+                suppressedStillOpen,
+              } : undefined,
+              provenanceSummary: retrievalCtx ? {
+                findings: retrievalCtx.findings,
+              } : undefined,
             });
             await upsertReviewDetailsComment({
               octokit: extractionOctokit,
