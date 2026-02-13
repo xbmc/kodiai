@@ -8,9 +8,15 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone
+## Current Milestone: v0.5 Advanced Learning & Language Support
 
-Milestone planning has not started yet for v0.5.
+**Goal:** Expand review intelligence with higher-signal learning loops and broader multi-language understanding while preserving Kodiai's low-noise default behavior.
+
+**Target features:**
+- Embedding-assisted feedback clustering for recurring false-positive detection
+- Incremental re-review that focuses on newly changed diffs instead of reprocessing full PR history
+- Multi-language diff analysis and prompt guidance beyond TypeScript
+- v0.4 carryover hardening where it materially improves operator trust and review quality
 
 ## Latest Release: v0.4 Intelligent Review System
 
@@ -97,9 +103,9 @@ v0.4 ships an installable GitHub App that:
 
 ## Next Milestone Goals
 
-- Define v0.5 requirement set and roadmap from shipped v0.4 learnings
-- Decide whether to close remaining tech debt (time-budget signal and doc-state drift) as dedicated cleanup work
-- Prioritize deferred advanced learning and multi-language support requirements
+- Define v0.6 requirement set and roadmap from shipped v0.5 learnings
+- Evaluate whether embeddings-based learning should stay optional or become default behavior
+- Prioritize larger platform bets after v0.5 (marketplace readiness, broader deployment options)
 
 ## Constraints
 
@@ -126,4 +132,4 @@ v0.4 ships an installable GitHub App that:
 | Self-contained CLI scripts in scripts/ | No src/ imports, zero coupling, prevents accidental server startup | ✓ Good — v0.3 |
 
 ---
-*Last updated: 2026-02-12 after v0.4 milestone completion*
+*Last updated: 2026-02-13 after v0.5 milestone kickoff*
