@@ -1,60 +1,128 @@
-# Requirements: Kodiai
+# Requirements: Kodiai v0.6 Review Output Formatting & UX
 
 **Defined:** 2026-02-13
-**Core Value:** When a PR is opened or @kodiai is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
-
-## v0.5 Requirements
-
-Requirements for advanced learning and language support. Each maps to roadmap phases.
-
-### Learning Memory
-
-- [ ] **LEARN-06**: System stores embedding vectors and metadata for accepted/suppressed findings in a repo-scoped knowledge index.
-- [ ] **LEARN-07**: Review pipeline retrieves semantically similar prior findings with bounded top-K and score thresholds for prompt context.
-- [ ] **LEARN-09**: Review output includes explainable learning provenance (why a retrieved memory influenced the suggestion).
-
-### Incremental Re-review
-
-- [ ] **REV-01**: System re-reviews only changed hunks since the last reviewed base/head SHA pair.
-- [ ] **REV-02**: System suppresses duplicate comments for unchanged code and preserves unresolved prior findings context.
-- [ ] **REV-03**: Review summary includes delta status (`new`, `resolved`, `still-open`) for incremental runs.
-
-### Multi-Language Review
-
-- [ ] **CTX-05**: Diff analyzer classifies files with language-aware rules beyond TypeScript and exposes per-language context.
-- [ ] **CTX-06**: Review prompt injects language-specific guidance while preserving canonical severity/category taxonomy.
-- [ ] **LANG-01**: User can set `review.outputLanguage` and receive localized prose without modifying code identifiers/snippets.
-
-### Reliability and Governance
-
-- [ ] **REL-01**: Review state is keyed by immutable SHAs and delivery IDs to keep incremental runs idempotent and stale-run safe.
-- [ ] **REL-02**: Retrieval and localization failures degrade gracefully (fail-open) without blocking review publication.
-- [ ] **REL-03**: Repo isolation is enforced for learning retrieval by default, with explicit opt-in required for any cross-repo/global sharing.
+**Core Value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
 
 ## v0.6 Requirements
 
-Deferred to future release. Tracked but not in current roadmap.
+### Initial Review Structure
 
-### Learning Expansion
+- [ ] **FORMAT-01**: Initial PR reviews use predictable structure with clear sections
+  - What changed (brief summary of PR intent from title/description)
+  - Strengths (what's correct, measurably improved, well-done)
+  - Observations (findings organized by impact vs preference)
+  - Suggestions (optional improvements without opening debates)
+  - Verdict (explicit merge recommendation)
 
-- **LEARN-10**: Regression detector flags reintroduced previously resolved issues across PRs.
-- **LEARN-11**: Org-level shared learning pools with tenancy boundaries and policy controls.
+- [ ] **FORMAT-02**: "What changed" section signals review scope with progress checklist
+  - Example: "Reviewed: core logic ✅, error handling ✅, tests ✅, docs ✅"
+  - Shows maintainer what the bot actually looked at
+  - Built from diff analysis (files reviewed, categories covered)
 
-### Platform Expansion
+### Merge Confidence & Verdict
 
-- **LANG-02**: Language-quality tiers auto-tune based on repository acceptance/dismissal outcomes.
-- **REV-04**: Incremental re-review supports organization-wide policy baselines and centralized rule packs.
+- [ ] **FORMAT-03**: Verdict section provides explicit merge recommendation
+  - If no blockers: "✅ **Ready to merge** — No blocking issues found"
+  - If blockers: "⚠️ **Address before merging** — [N] blocking issue(s) found"
+  - If minor only: "✅ **Ready to merge with minor items** — Optional cleanup suggestions below"
+
+- [ ] **FORMAT-04**: Blockers vs minor issues explicitly separated
+  - Blockers labeled: "🚫 BLOCKER" with severity (CRITICAL/MAJOR)
+  - Minor items labeled: "💡 MINOR" or "✨ SUGGESTION"
+  - Nits/preferences labeled: "🎨 STYLE" or "📝 PREFERENCE"
+
+- [ ] **FORMAT-05**: Use ✅ checkmarks for verified positives in Strengths section
+  - Example: "✅ Null checks added for all nullable returns"
+  - Example: "✅ Test coverage maintained at 87%"
+  - Example: "✅ Breaking changes properly documented in PR description"
+
+### Observations & Findings Organization
+
+- [ ] **FORMAT-06**: Separate impact (real risks) from preference (nits)
+  - "Impact" subsection: correctness bugs, security issues, performance problems
+  - "Preference" subsection: style nits, naming suggestions, code organization
+  - Each finding tagged with severity in header: [CRITICAL], [MAJOR], [MEDIUM], [MINOR]
+
+- [ ] **FORMAT-07**: Scope findings to PR intent (don't judge against imagined ideal)
+  - If PR goal is "stop flaky CI", focus on test reliability, not code style
+  - If PR goal is "performance optimization", focus on benchmarks, not documentation
+  - Extract intent from PR title/description/labels
+
+- [ ] **FORMAT-08**: Minimize churn language in findings
+  - Call out "minimal impact" for low-risk changes
+  - Highlight "preserves existing behavior" for refactors
+  - Note "backward compatible" for API changes
+
+### Suggestions Section
+
+- [ ] **FORMAT-09**: Offer easy next steps without opening debates
+  - Link to issues for larger improvements: "Consider [feature X] in future PR (#123)"
+  - Suggest TODOs for maintainability: "Add TODO comment for [future enhancement]"
+  - Propose low-friction cleanups: "Optional: extract [repeated logic] to helper function"
+
+- [ ] **FORMAT-10**: Suggestions are optional, not blockers
+  - Clearly labeled as "Optional suggestion:" or "Future consideration:"
+  - Not counted against merge readiness
+  - Grouped at end of Observations, separate from blockers
+
+### Review Details Integration
+
+- [ ] **FORMAT-11**: Embed Review Details as collapsible section in summary comment
+  - Never create standalone comment with just Review Details
+  - Place Review Details at bottom of summary, inside `<details>` block
+  - Title: "📊 Review Details"
+
+- [ ] **FORMAT-12**: Remove "Estimated review time saved" from Review Details
+  - Do not calculate or display time-saved metrics
+  - Remove formula: `(3 min x actionable) + (1 min x low-confidence) + (0.25 min x files)`
+  - Keep only: files reviewed, lines changed, findings by severity
+
+- [ ] **FORMAT-13**: Keep Review Details minimal and factual
+  - Files reviewed: [N]
+  - Lines changed: +[additions] -[deletions]
+  - Findings: [critical], [major], [medium], [minor]
+  - Review completed: [timestamp]
+
+### Re-Review & Delta Formatting
+
+- [ ] **FORMAT-14**: Re-reviews show delta findings only (not full structure)
+  - Header: "🔄 **Re-review** — Changes since [previous review SHA]"
+  - Sections: "What changed" → "New findings" → "Resolved findings" → "Still open" → "Verdict update"
+
+- [ ] **FORMAT-15**: Delta verdict focuses on what's relevant/updated
+  - If new blockers: "⚠️ **New blockers found** — Address [N] new issue(s)"
+  - If blockers resolved: "✅ **Blockers resolved** — Ready to merge"
+  - If no change: "✅ **Still ready** — No new issues"
+
+- [ ] **FORMAT-16**: Show only relevant updates from initial review
+  - Don't repeat unchanged findings
+  - Highlight resolved issues with ✅
+  - Flag new issues clearly with 🆕 badge
+  - Note still-open issues with count only (expandable list)
+
+### Tone & Language
+
+- [ ] **FORMAT-17**: Use low-drama, high-signal language
+  - Avoid: "This could potentially maybe cause issues"
+  - Use: "This will cause [specific issue] when [specific condition]"
+  - Avoid: "Consider refactoring"
+  - Use: "Optional: Extract [method] to reduce duplication"
+
+- [ ] **FORMAT-18**: Be specific about risk and impact
+  - Tag severity: [CRITICAL], [MAJOR], [MEDIUM], [MINOR]
+  - Specify condition: "when X happens" not "could happen"
+  - Show consequence: "causes [crash/leak/bug]" not "might have issues"
+
+## Future Requirements
+
+None yet — v0.6 is focused on formatting and UX improvements only.
 
 ## Out of Scope
 
-Explicitly excluded from v0.5. Documented to prevent scope creep.
-
-| Feature | Reason |
-|---------|--------|
-| Automatic merge blocking from learned confidence alone | High trust risk; keep advisory-first behavior in v0.5. |
-| External vector database service | Adds operational complexity before proving value of in-process retrieval. |
-| Full multilingual code translation or refactoring | Not aligned with review assistant scope; risk of unsafe transformations. |
-| Organization-wide global learning enabled by default | Privacy and tenancy risk; require explicit opt-in governance. |
+- Content of findings (what the LLM flags) — v0.6 is about *how* we present findings, not *what* we find
+- Learning/retrieval improvements — deferred to v0.7
+- Language-aware enforcement — deferred to v0.7
+- Large PR intelligence — deferred to v0.7
 
 ## Traceability
 
@@ -62,24 +130,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LEARN-06 | Phase 30 | Pending |
-| LEARN-07 | Phase 31 | Pending |
-| LEARN-09 | Phase 33 | Pending |
-| REV-01 | Phase 31 | Pending |
-| REV-02 | Phase 31 | Pending |
-| REV-03 | Phase 33 | Pending |
-| CTX-05 | Phase 32 | Pending |
-| CTX-06 | Phase 32 | Pending |
-| LANG-01 | Phase 32 | Pending |
-| REL-01 | Phase 30 | Pending |
-| REL-02 | Phase 31 | Pending |
-| REL-03 | Phase 30 | Pending |
+| (To be filled by roadmapper) | | |
 
 **Coverage:**
-- v0.5 requirements: 12 total
-- Mapped to phases: 12
-- Unmapped: 0
+- v0.6 requirements: 18 total
+- Mapped to phases: 0 (pending roadmap)
+- Unmapped: 18 ⚠️
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after v0.5 roadmap creation*
+*Last updated: 2026-02-13 after initial definition*
