@@ -5,23 +5,23 @@
 See: `.planning/PROJECT.md` (updated 2026-02-13)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.5 Phase 31 complete (Incremental Re-review with Retrieval Context)
+**Current focus:** v0.5 Phase 32 in progress (Multi-Language Context and Localized Output)
 
 ## Current Position
 
-Phase: 31 of 33 (Incremental Re-review with Retrieval Context)
-Plan: 3 of 3 (COMPLETE)
-Status: Phase Complete
-Last activity: 2026-02-13 - Completed 31-03 (review handler wiring for incremental diff, dedup, and retrieval)
+Phase: 32 of 33 (Multi-Language Context and Localized Output)
+Plan: 1 of 3 (COMPLETE)
+Status: In Progress
+Last activity: 2026-02-13 - Completed 32-01 (language classification and output language config)
 
-Progress: [######░░░░] 50% (v0.5 - 6/12 plans)
+Progress: [######░░░░] 58% (v0.5 - 7/12 plans)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 64
+- Total plans completed: 65
 - Average duration: 5 min
-- Total execution time: 316 min
+- Total execution time: 318 min
 
 **By latest shipped milestone:**
 
@@ -33,6 +33,7 @@ Progress: [######░░░░] 50% (v0.5 - 6/12 plans)
 | 29-feedback-capture | 2 | 6 min | 3 min |
 | 30-state-memory-and-isolation-foundation | 3 | 10 min | 3 min |
 | 31-incremental-re-review-with-retrieval-context | 3 | 11 min | 4 min |
+| 32-multi-language-context-and-localized-output | 1 | 2 min | 2 min |
 
 ## Accumulated Context
 
@@ -59,6 +60,9 @@ Recent decisions relevant to v0.5:
 - Incremental mode is state-driven (prior completed review existence), not event-driven -- works for both synchronize and review_requested (31-03).
 - reviewFiles filtered subset for prompt, changedFiles preserved for metrics and diff analysis (31-03).
 - Combined suppression: config-based AND dedup-based fingerprint suppression checked per finding (31-03).
+- Extension map covers ~30 extensions across 20 languages; Unknown files omitted from filesByLanguage (32-01).
+- outputLanguage is free-form z.string() not an enum -- LLMs understand both ISO codes and full names (32-01).
+- h files default to C per research decision; C++ guidance also covers C headers (32-01).
 
 ### Pending Todos
 
@@ -71,5 +75,5 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-13
-Stopped at: Completed 31-03-PLAN.md (Phase 31 complete)
+Stopped at: Completed 32-01-PLAN.md
 Resume file: None
