@@ -197,6 +197,7 @@ export function createCommentServer(
     // State machine: INTRO | ISSUE | EXPLANATION
     let state: "INTRO" | "ISSUE" | "EXPLANATION" = "INTRO";
     let foundImpactFinding = false;
+    let blockerCount = 0;
 
     for (const raw of observationsLines) {
       const line = raw.trim();
@@ -241,7 +242,12 @@ export function createCommentServer(
         if (isIssueLine) {
           // Transition: INTRO -> ISSUE
           state = "ISSUE";
-          if (currentSubsection === "### Impact") foundImpactFinding = true;
+          if (currentSubsection === "### Impact") {
+            foundImpactFinding = true;
+            if (severityMatch && (severityMatch[1] === "CRITICAL" || severityMatch[1] === "MAJOR")) {
+              blockerCount++;
+            }
+          }
           // Soft check: CRITICAL/MAJOR in Preference.
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
@@ -293,7 +299,12 @@ export function createCommentServer(
         // Next severity-tagged issue line -> transition back to ISSUE.
         if (isIssueLine) {
           state = "ISSUE";
-          if (currentSubsection === "### Impact") foundImpactFinding = true;
+          if (currentSubsection === "### Impact") {
+            foundImpactFinding = true;
+            if (severityMatch && (severityMatch[1] === "CRITICAL" || severityMatch[1] === "MAJOR")) {
+              blockerCount++;
+            }
+          }
           // Soft check: CRITICAL/MAJOR in Preference.
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
@@ -332,6 +343,24 @@ export function createCommentServer(
     if (!foundSubsection || !stripped.includes("### Impact") || !foundImpactFinding) {
       throw new Error(
         "Invalid Kodiai review summary: Observations must contain ### Impact subsection with at least one severity-tagged finding",
+      );
+    }
+
+    // 6. Verdict-Observations cross-check: verdict emoji must be consistent with blocker count.
+    const verdictEmojiMatch = verdictSection.match(/^:(green_circle|yellow_circle|red_circle):/m);
+    const verdictEmoji = verdictEmojiMatch?.[1];
+
+    // Hard check: zero blockers must not use red verdict.
+    if (blockerCount === 0 && verdictEmoji === "red_circle") {
+      throw new Error(
+        "Invalid Kodiai review summary: Verdict uses :red_circle: but no CRITICAL or MAJOR findings exist under ### Impact",
+      );
+    }
+
+    // Soft check: blockers exist but verdict is green (log warning, don't throw).
+    if (blockerCount > 0 && verdictEmoji === "green_circle") {
+      console.warn(
+        `Verdict uses :green_circle: but ${blockerCount} blocker(s) (CRITICAL/MAJOR) exist under ### Impact`,
       );
     }
 
