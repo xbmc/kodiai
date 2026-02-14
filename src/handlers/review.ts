@@ -33,6 +33,7 @@ import {
   resolveReviewProfile,
   type ResolvedReviewProfile,
 } from "../lib/auto-profile.ts";
+import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
@@ -67,6 +68,7 @@ type ProcessedFinding = ExtractedFinding & {
   suppressed: boolean;
   confidence: number;
   suppressionPattern?: string;
+  deprioritized?: boolean;
 };
 
 type RetrievalContextForPrompt = {
@@ -151,6 +153,11 @@ function formatReviewDetailsSummary(params: {
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
+  prioritization?: {
+    findingsScored: number;
+    topScore: number | null;
+    thresholdScore: number | null;
+  };
 }): string {
   const {
     reviewOutputKey,
@@ -162,6 +169,7 @@ function formatReviewDetailsSummary(params: {
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
+    prioritization,
   } = params;
 
   const profileLine = profileSelection.source === "auto"
@@ -217,6 +225,12 @@ function formatReviewDetailsSummary(params: {
 
   if (feedbackSuppressionCount && feedbackSuppressionCount > 0) {
     sections.push(`- ${feedbackSuppressionCount} pattern${feedbackSuppressionCount === 1 ? '' : 's'} auto-suppressed by feedback`);
+  }
+
+  if (prioritization) {
+    sections.push(
+      `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
+    );
   }
 
   const keywordSection = buildKeywordParsingSection(
@@ -1590,7 +1604,7 @@ export function createReviewHandler(deps: {
           toolingSuppressed: boolean;
           enforcementPatternId?: string;
         };
-        const processedFindings: ProcessedFinding[] = (enforcedFindings as EnforcedExtractedFinding[]).map((finding) => {
+        let processedFindings: ProcessedFinding[] = (enforcedFindings as EnforcedExtractedFinding[]).map((finding) => {
           const category = finding.category;
           const matchedSuppression = config.review.suppressions.find((suppression) =>
             matchesSuppression(
@@ -1649,14 +1663,77 @@ export function createReviewHandler(deps: {
           };
         });
 
-        const visibleFindings = processedFindings.filter((finding) =>
+        const recurrenceCounts = new Map<string, number>();
+        for (const finding of processedFindings) {
+          if (finding.suppressed || finding.confidence < config.review.minConfidence) {
+            continue;
+          }
+          const fingerprint = fingerprintFindingTitle(finding.title);
+          recurrenceCounts.set(fingerprint, (recurrenceCounts.get(fingerprint) ?? 0) + 1);
+        }
+
+        const fileRiskByPath = new Map(riskScores.map((risk) => [risk.filePath, risk.score]));
+
+        let visibleFindings = processedFindings.filter((finding) =>
           !finding.suppressed && finding.confidence >= config.review.minConfidence
         );
+
+        let prioritizationStats: {
+          findingsScored: number;
+          topScore: number | null;
+          thresholdScore: number | null;
+        } | undefined;
+
+        if (visibleFindings.length > resolvedMaxComments) {
+          const prioritized = prioritizeFindings({
+            findings: visibleFindings.map((finding) => {
+              const titleFingerprint = fingerprintFindingTitle(finding.title);
+              return {
+                ...finding,
+                fileRiskScore: fileRiskByPath.get(finding.filePath) ?? 0,
+                recurrenceCount: recurrenceCounts.get(titleFingerprint) ?? 1,
+              };
+            }),
+            maxComments: resolvedMaxComments,
+            weights: config.review.prioritization,
+          });
+
+          prioritizationStats = prioritized.stats;
+
+          const selectedOriginalIndexes = new Set(
+            prioritized.selectedFindings.map((finding) => finding.originalIndex),
+          );
+          const selectedCommentIds = new Set(
+            visibleFindings
+              .filter((_, index) => selectedOriginalIndexes.has(index))
+              .map((finding) => finding.commentId),
+          );
+
+          processedFindings = processedFindings.map((finding) => {
+            if (finding.suppressed || finding.confidence < config.review.minConfidence) {
+              return finding;
+            }
+
+            if (selectedCommentIds.has(finding.commentId)) {
+              return finding;
+            }
+
+            return {
+              ...finding,
+              deprioritized: true,
+            };
+          });
+
+          visibleFindings = processedFindings.filter((finding) =>
+            !finding.suppressed && !finding.deprioritized && finding.confidence >= config.review.minConfidence
+          );
+        }
+
         const lowConfidenceFindings = processedFindings.filter((finding) =>
           !finding.suppressed && finding.confidence < config.review.minConfidence
         );
         const filteredInlineFindings = processedFindings.filter((finding) =>
-          finding.suppressed || finding.confidence < config.review.minConfidence
+          finding.suppressed || finding.confidence < config.review.minConfidence || Boolean(finding.deprioritized)
         );
 
         // Delta classification (REV-03)
@@ -1742,6 +1819,7 @@ export function createReviewHandler(deps: {
               feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
               keywordParsing: parsedIntent,
               profileSelection,
+              prioritization: prioritizationStats,
             });
 
             if (result.published) {
@@ -1881,10 +1959,11 @@ export function createReviewHandler(deps: {
               model: config.model,
               conclusion: result.conclusion,
             });
+            const recordedReviewId = reviewId;
 
             logger.debug(
               {
-                reviewId,
+                reviewId: recordedReviewId,
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
                 findingsCaptured: processedFindings.length,
@@ -1894,7 +1973,7 @@ export function createReviewHandler(deps: {
 
             knowledgeStore.recordFindings(
               processedFindings.map((finding) => ({
-                reviewId,
+                reviewId: recordedReviewId,
                 commentId: finding.commentId,
                 commentSurface: "pull_request_review_comment",
                 reviewOutputKey,
@@ -1912,7 +1991,7 @@ export function createReviewHandler(deps: {
 
             knowledgeStore.recordSuppressionLog(
               Array.from(suppressionMatchCounts.entries()).map(([pattern, matchedCount]) => ({
-                reviewId,
+                reviewId: recordedReviewId,
                 pattern,
                 matchedCount,
               })),
