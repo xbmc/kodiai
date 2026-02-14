@@ -119,11 +119,11 @@ Plans:
   1. Findings are scored using a composite of severity, file risk, category, and recurrence
   2. When comment cap is reached, the highest-scored findings are published (not just highest severity)
   3. Review Details appendix shows prioritization stats: findings scored, top score, threshold applied
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 44-01: TBD
-- [ ] 44-02: TBD
+- [ ] 44-01-PLAN.md — TDD: deterministic composite finding prioritizer (severity + file risk + category + recurrence) with top-N selection stats
+- [ ] 44-02-PLAN.md — Wire prioritization into review handler with configurable weights, cap enforcement, and Review Details prioritization transparency
 
 ### Phase 45: Author Experience Adaptation
 **Goal**: The bot adapts its review tone based on the PR author's experience level, providing more educational context for newcomers and concise feedback for core contributors
