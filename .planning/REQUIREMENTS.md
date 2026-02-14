@@ -81,29 +81,29 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEP-01 | — | Pending |
-| DEP-02 | — | Pending |
-| DEP-03 | — | Pending |
-| SEC-01 | — | Pending |
-| SEC-02 | — | Pending |
-| SEC-03 | — | Pending |
-| CLOG-01 | — | Pending |
-| CLOG-02 | — | Pending |
-| CLOG-03 | — | Pending |
-| CONF-01 | — | Pending |
-| CONF-02 | — | Pending |
-| TMO-01 | — | Pending |
-| TMO-02 | — | Pending |
-| TMO-03 | — | Pending |
-| TMO-04 | — | Pending |
-| RET-01 | — | Pending |
-| RET-02 | — | Pending |
+| TMO-01 | Phase 51 | Pending |
+| TMO-02 | Phase 51 | Pending |
+| TMO-03 | Phase 51 | Pending |
+| TMO-04 | Phase 51 | Pending |
+| RET-01 | Phase 52 | Pending |
+| RET-02 | Phase 52 | Pending |
+| DEP-01 | Phase 53 | Pending |
+| DEP-02 | Phase 53 | Pending |
+| DEP-03 | Phase 53 | Pending |
+| SEC-01 | Phase 54 | Pending |
+| SEC-02 | Phase 54 | Pending |
+| SEC-03 | Phase 54 | Pending |
+| CLOG-01 | Phase 54 | Pending |
+| CLOG-02 | Phase 54 | Pending |
+| CLOG-03 | Phase 54 | Pending |
+| CONF-01 | Phase 55 | Pending |
+| CONF-02 | Phase 55 | Pending |
 
 **Coverage:**
 - v0.9 requirements: 17 total
-- Mapped to phases: 0
-- Unmapped: 17 ⚠️
+- Mapped to phases: 17
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation*
