@@ -5,22 +5,22 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.9 Phase 52 — Intelligent Retrieval
+**Current focus:** v0.9 Phase 53 — Dependency Bump Detection
 
 ## Current Position
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
-**Phase:** 52 of 55 (Intelligent Retrieval)
-**Plan:** 2 of 2 complete
-**Status:** Phase Complete
-**Last Activity:** 2026-02-14 — Completed quick task 4: Fix Review Details placement and finding counts
+**Phase:** 53 of 55 (Dependency Bump Detection)
+**Plan:** 1 of 2 complete
+**Status:** In Progress
+**Last Activity:** 2026-02-14 — Completed 53-01-PLAN.md (dep bump detection pipeline)
 
 **Progress:** [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 150
+- Total plans completed: 151
 - Total milestones shipped: 8
 - Total phases completed: 52
 
@@ -40,6 +40,9 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **52-01:** Unknown-language records treated as neutral (1.0 multiplier) to avoid demoting config/docs
 - **52-02:** distanceThreshold filters on raw distance before re-ranking; adjustedDistance only reorders results
 - **52-02:** filesByLanguage keys used as prLanguages for both query construction and re-ranking
+- **53-01:** Two-signal requirement for dep bump detection prevents false positives on human PRs
+- **53-01:** Hand-rolled semver parser (~15 lines) avoids 376KB semver npm dependency
+- **53-01:** Group bumps marked isGroup: true with ecosystem only, no per-package extraction
 
 ### Pending Todos
 
@@ -65,6 +68,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-14
-**Stopped At:** Completed 52-02-PLAN.md (integration wiring)
+**Stopped At:** Completed 53-01-PLAN.md (dep bump detection pipeline)
 **Resume File:** None
-**Next action:** `/gsd:execute-phase 53`
+**Next action:** Execute 53-02-PLAN.md (integration wiring)
