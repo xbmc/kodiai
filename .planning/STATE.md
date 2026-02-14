@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 50 -- publish-path-mention-sanitization-completion (Plan 1 complete)
+**Current focus:** Phase 50 complete — all v0.8 phases executed, ready for milestone completion
 
 ## Current Position
 
@@ -13,10 +13,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 **Phase:** 50-publish-path-mention-sanitization-completion
 **Current Plan:** 2
 **Total Plans in Phase:** 2
-**Status:** Ready to execute
+**Status:** Phase complete — verified
 **Last Activity:** 2026-02-14
 
-**Progress:** [██████████] 101%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 

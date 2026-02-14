@@ -80,7 +80,7 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 - [ ] **Phase 47: v0.8 Verification Backfill** — Generate missing phase verification reports required for milestone DoD
 - [ ] **Phase 48: Conversational Fail-Open Hardening** — Ensure finding-lookup errors degrade gracefully in reply mention flow
 - [ ] **Phase 49: Verification Artifacts for Phases 47-48** — Produce missing verification reports for recently completed gap-closure phases
-- [ ] **Phase 50: Publish-Path Mention Sanitization Completion** — Enforce sanitization across all outbound mention/comment publish paths
+- [x] **Phase 50: Publish-Path Mention Sanitization Completion** — Enforce sanitization across all outbound mention/comment publish paths
 
 ## Phase Details
 
@@ -224,7 +224,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 7 milestones, 44 phases, 113 plans
+**Total shipped:** 7 milestones, 50 phases, 126 plans
 
 **Execution Order:**
 Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48 -> 49 -> 50
@@ -241,12 +241,12 @@ Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48 -> 49 ->
 | 42. Keywords & PR Intent | v0.8 | 2/2 | Complete | 2026-02-14 |
 | 43. Auto-Profile Selection | v0.8 | 2/2 | Complete | 2026-02-14 |
 | 44. Smart Prioritization | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 45. Author Adaptation | v0.8 | 0/TBD | Not started | - |
-| 46. Conversational Review | v0.8 | 0/TBD | Not started | - |
-| 47. Verification Backfill | v0.8 | 0/2 | Planned | - |
-| 48. Fail-Open Hardening | v0.8 | 0/2 | Planned | - |
-| 49. Verification Artifacts | v0.8 | 0/2 | Planned | - |
-| 50. Sanitization Completion | v0.8 | 0/2 | Planned | - |
+| 45. Author Adaptation | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 46. Conversational Review | v0.8 | 3/3 | Complete | 2026-02-14 |
+| 47. Verification Backfill | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 48. Fail-Open Hardening | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 49. Verification Artifacts | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 50. Sanitization Completion | v0.8 | 2/2 | Complete | 2026-02-14 |
 
 ---
 
