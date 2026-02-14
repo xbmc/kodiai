@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 43 -- Auto Profile Selection
+**Current focus:** Phase 44 -- Smart Finding Prioritization
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
-Phase: 43 of 46 (Auto Profile Selection)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-14 -- completed phase 43 auto profile selection
+Phase: 44 of 46 (Smart Finding Prioritization)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-14 -- completed phase 44 plan 01 finding prioritizer TDD
 
 Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 111
+- Total plans completed: 112
 - Average duration: 4 min
-- Total execution time: ~462 min
+- Total execution time: ~464 min
 
 **By latest shipped milestone (v0.7):**
 
@@ -33,6 +33,7 @@ Progress: [##########] 100%
 | 41-feedback-driven-learning | 3 | ~9 min | ~3 min |
 | 42-commit-message-keywords-pr-intent | 2 | ~30 min | ~15 min |
 | 43-auto-profile-selection | 2 | ~4 min | ~2 min |
+| Phase 44 P01 | 2 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,8 @@ Recent decisions affecting current work:
 - [Phase 43]: Auto selection metadata includes source and band for observability without handler coupling
 - [Phase 43]: Handler now resolves a single profile selection object before applying presets
 - [Phase 43]: Review Details always publishes profile source text (auto/manual/keyword) for traceability
+- [Phase 44]: Unknown severity/category values fail open to neutral scoring defaults instead of throwing
+- [Phase 44]: Prioritization weights are runtime-normalized and ties are resolved by original index for deterministic ranking
 
 ### Pending Todos
 
@@ -66,6 +69,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 43-02-PLAN.md
+Stopped at: Completed 44-01-PLAN.md
 Resume file: None
-Next action: `/gsd:plan-phase 44` to continue milestone v0.8
+Next action: `/gsd-execute-phase 44` to execute 44-02-PLAN.md
