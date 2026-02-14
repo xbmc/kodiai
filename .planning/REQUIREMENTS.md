@@ -19,7 +19,7 @@ Requirements for v0.8 milestone. Each maps to roadmap phases.
 ### Auto-Profile Selection
 
 - [ ] **PROF-01**: Bot analyzes PR size (lines changed) before review
-- [ ] **PROF-02**: Bot selects strict profile for small PRs (≤100 lines)
+- [ ] **PROF-02**: Bot selects strict profile for small PRs (<=100 lines)
 - [ ] **PROF-03**: Bot selects balanced profile for medium PRs (101-500 lines)
 - [ ] **PROF-04**: Bot selects minimal profile for large PRs (>500 lines)
 - [ ] **PROF-05**: Manual config profile overrides auto-selection
@@ -102,13 +102,43 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (To be populated by roadmapper) | | |
+| KEY-01 | Phase 42 | Pending |
+| KEY-02 | Phase 42 | Pending |
+| KEY-03 | Phase 42 | Pending |
+| KEY-04 | Phase 42 | Pending |
+| KEY-05 | Phase 42 | Pending |
+| KEY-06 | Phase 42 | Pending |
+| KEY-07 | Phase 42 | Pending |
+| KEY-08 | Phase 42 | Pending |
+| PROF-01 | Phase 43 | Pending |
+| PROF-02 | Phase 43 | Pending |
+| PROF-03 | Phase 43 | Pending |
+| PROF-04 | Phase 43 | Pending |
+| PROF-05 | Phase 43 | Pending |
+| PROF-06 | Phase 43 | Pending |
+| PRIOR-01 | Phase 44 | Pending |
+| PRIOR-02 | Phase 44 | Pending |
+| PRIOR-03 | Phase 44 | Pending |
+| PRIOR-04 | Phase 44 | Pending |
+| AUTH-01 | Phase 45 | Pending |
+| AUTH-02 | Phase 45 | Pending |
+| AUTH-03 | Phase 45 | Pending |
+| AUTH-04 | Phase 45 | Pending |
+| AUTH-05 | Phase 45 | Pending |
+| AUTH-06 | Phase 45 | Pending |
+| AUTH-07 | Phase 45 | Pending |
+| CONV-01 | Phase 46 | Pending |
+| CONV-02 | Phase 46 | Pending |
+| CONV-03 | Phase 46 | Pending |
+| CONV-04 | Phase 46 | Pending |
+| CONV-05 | Phase 46 | Pending |
+| CONV-06 | Phase 46 | Pending |
 
 **Coverage:**
-- v0.8 requirements: 27 total
-- Mapped to phases: 0
-- Unmapped: 27 ⚠️
+- v0.8 requirements: 31 total
+- Mapped to phases: 31
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after initial definition*
+*Last updated: 2026-02-13 after roadmap creation (traceability populated)*
