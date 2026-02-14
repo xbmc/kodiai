@@ -72,9 +72,9 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Transform Kodiai from one-shot reviewer to conversational partner, enabling dialog-based refinement of reviews and intelligent adaptation to PR context.
 
-- [ ] **Phase 42: Commit Message Keywords & PR Intent** — Parse PR metadata to detect review intent signals
-- [ ] **Phase 43: Auto-Profile Selection** — Adapt review depth based on PR size and keyword signals
-- [ ] **Phase 44: Smart Finding Prioritization** — Rank findings by multi-factor scoring for intelligent comment selection
+- [x] **Phase 42: Commit Message Keywords & PR Intent** — Parse PR metadata to detect review intent signals
+- [x] **Phase 43: Auto-Profile Selection** — Adapt review depth based on PR size and keyword signals
+- [x] **Phase 44: Smart Finding Prioritization** — Rank findings by multi-factor scoring for intelligent comment selection
 - [ ] **Phase 45: Author Experience Adaptation** — Detect contributor experience level and adjust review tone
 - [ ] **Phase 46: Conversational Review** — Enable dialog-based follow-up on review findings via @kodiai mentions
 
@@ -93,8 +93,8 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 42-01-PLAN.md — TDD: PR intent parser (bracket tags, conventional commits, breaking change detection, commit sampling, section builder)
-- [ ] 42-02-PLAN.md — Wire parser into review handler ([no-review] fast check, commit fetching, profile/focus/style overrides, Review Details transparency, conventional commit prompt context)
+- [x] 42-01-PLAN.md — TDD: PR intent parser (bracket tags, conventional commits, breaking change detection, commit sampling, section builder)
+- [x] 42-02-PLAN.md — Wire parser into review handler ([no-review] fast check, commit fetching, profile/focus/style overrides, Review Details transparency, conventional commit prompt context)
 
 ### Phase 43: Auto-Profile Selection
 **Goal**: The bot automatically selects an appropriate review depth profile based on PR size and keyword overrides, so small PRs get thorough reviews and large PRs get focused ones
@@ -108,8 +108,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 43-01-PLAN.md — TDD: deterministic auto-profile resolver (threshold bands + keyword/manual precedence metadata)
-- [ ] 43-02-PLAN.md — Integrate auto-profile into review handler and Review Details with runtime regression coverage
+- [x] 43-01-PLAN.md — TDD: deterministic auto-profile resolver (threshold bands + keyword/manual precedence metadata)
+- [x] 43-02-PLAN.md — Integrate auto-profile into review handler and Review Details with runtime regression coverage
 
 ### Phase 44: Smart Finding Prioritization
 **Goal**: When the bot has more findings than the comment cap allows, it selects the most important findings using a multi-factor score rather than severity alone
@@ -122,8 +122,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 44-01-PLAN.md — TDD: deterministic composite finding prioritizer (severity + file risk + category + recurrence) with top-N selection stats
-- [ ] 44-02-PLAN.md — Wire prioritization into review handler with configurable weights, cap enforcement, and Review Details prioritization transparency
+- [x] 44-01-PLAN.md — TDD: deterministic composite finding prioritizer (severity + file risk + category + recurrence) with top-N selection stats
+- [x] 44-02-PLAN.md — Wire prioritization into review handler with configurable weights, cap enforcement, and Review Details prioritization transparency
 
 ### Phase 45: Author Experience Adaptation
 **Goal**: The bot adapts its review tone based on the PR author's experience level, providing more educational context for newcomers and concise feedback for core contributors
@@ -158,7 +158,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 7 milestones, 41 phases, 107 plans
+**Total shipped:** 7 milestones, 44 phases, 113 plans
 
 **Execution Order:**
 Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46
@@ -172,12 +172,12 @@ Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46
 | 30-33 | v0.5 | 12/12 | Complete | 2026-02-13 |
 | 34-38 | v0.6 | 10/10 | Complete | 2026-02-14 |
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
-| 42. Keywords & PR Intent | v0.8 | 0/TBD | Not started | - |
-| 43. Auto-Profile Selection | v0.8 | 0/TBD | Not started | - |
-| 44. Smart Prioritization | v0.8 | 0/TBD | Not started | - |
+| 42. Keywords & PR Intent | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 43. Auto-Profile Selection | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 44. Smart Prioritization | v0.8 | 2/2 | Complete | 2026-02-14 |
 | 45. Author Adaptation | v0.8 | 0/TBD | Not started | - |
 | 46. Conversational Review | v0.8 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-13 -- v0.8 phases 42-46 added*
+*Roadmap updated: 2026-02-14 -- phases 42-44 completed and verified*
