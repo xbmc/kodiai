@@ -1,113 +1,114 @@
-# Requirements: Kodiai v0.7 Intelligent Review Content
+# Requirements: Kodiai v0.8 Conversational Intelligence
 
-**Defined:** 2026-02-14
+**Defined:** 2026-02-13
 **Core Value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
 
-## v0.7 Requirements
+## v0.8 Requirements
 
-### Language-Aware Enforcement
+Requirements for v0.8 milestone. Each maps to roadmap phases.
 
-- [ ] **LANG-01**: Bot auto-suppresses formatting violations when formatter config detected (`.prettierrc`, `.clang-format`, `.black.toml`, `.editorconfig`)
-- [ ] **LANG-02**: Bot auto-suppresses import order violations when linter config detected
-- [ ] **LANG-03**: C++ null dereference findings are enforced as CRITICAL severity
-- [ ] **LANG-04**: C++ uninitialized member findings are enforced as CRITICAL severity
-- [ ] **LANG-05**: Go unchecked error findings are enforced as MAJOR severity
-- [ ] **LANG-06**: Python bare except findings are enforced as MAJOR severity
-- [ ] **LANG-07**: Language severity floors are enforced post-LLM-execution (deterministic, not prompt-driven)
-- [ ] **LANG-08**: CRITICAL findings are never suppressed by language rules
-- [ ] **LANG-09**: Language rules are configurable per-repo via `.kodiai.yml`
-- [ ] **LANG-10**: Unknown languages fall back to generic review without error
+### Conversational Review
 
-### Large PR Intelligence
+- [ ] **CONV-01**: User can mention @kodiai in a reply to a review finding comment
+- [ ] **CONV-02**: Bot detects the reply context and loads the original finding
+- [ ] **CONV-03**: Bot responds with relevant context (finding details, code snippet, reasoning)
+- [ ] **CONV-04**: Conversation threads are rate-limited (max N turns per PR)
+- [ ] **CONV-05**: Bot sanitizes outgoing mentions to prevent self-trigger loops
+- [ ] **CONV-06**: Context budget prevents window explosion (cap at K chars per turn)
 
-- [ ] **LARGE-01**: Bot computes risk score for each file in PR using composite heuristics (lines changed, path risk, category, churn)
-- [ ] **LARGE-02**: Bot prioritizes files by risk score when PR exceeds 50 files
-- [ ] **LARGE-03**: Bot reviews top 50 files by risk score for large PRs
-- [ ] **LARGE-04**: Bot uses tiered analysis (full for top 30, abbreviated for next 20, mention for rest) not binary include/exclude
-- [ ] **LARGE-05**: Bot discloses coverage in Review Details ("Reviewed 50/312 files, prioritized by risk")
-- [ ] **LARGE-06**: Risk scoring weights are configurable via `.kodiai.yml`
-- [ ] **LARGE-07**: Skipped files are listed with risk scores for transparency
-- [ ] **LARGE-08**: File limit threshold (50) is configurable per-repo
+### Auto-Profile Selection
 
-### Feedback-Driven Learning
+- [ ] **PROF-01**: Bot analyzes PR size (lines changed) before review
+- [ ] **PROF-02**: Bot selects strict profile for small PRs (≤100 lines)
+- [ ] **PROF-03**: Bot selects balanced profile for medium PRs (101-500 lines)
+- [ ] **PROF-04**: Bot selects minimal profile for large PRs (>500 lines)
+- [ ] **PROF-05**: Manual config profile overrides auto-selection
+- [ ] **PROF-06**: Keyword-based profile overrides both auto and manual config
 
-- [ ] **FEED-01**: Bot tracks thumbs-down reactions on review comments
-- [ ] **FEED-02**: Bot aggregates feedback by finding fingerprint (file path + title pattern)
-- [ ] **FEED-03**: Bot auto-suppresses patterns after 3+ thumbs-down from 3+ distinct reactors across 2+ PRs
-- [ ] **FEED-04**: CRITICAL findings are never auto-suppressed via feedback
-- [ ] **FEED-05**: MAJOR findings in security/correctness categories are never auto-suppressed via feedback
-- [ ] **FEED-06**: Bot adjusts confidence scores based on feedback (+10 for thumbs-up, -20 for thumbs-down)
-- [ ] **FEED-07**: Bot reports auto-suppressed patterns in Review Details ("3 patterns auto-suppressed based on prior feedback")
-- [ ] **FEED-08**: Feedback-driven suppression requires explicit opt-in via `.kodiai.yml`
-- [ ] **FEED-09**: Suppression thresholds (3 thumbs-down, 3 reactors, 2 PRs) are configurable
-- [ ] **FEED-10**: Bot provides mechanism to view and clear feedback-based suppressions
+### Smart Finding Prioritization
 
-## Future Requirements
+- [ ] **PRIOR-01**: Bot scores findings using multi-factor algorithm (severity + file risk + category + recurrence)
+- [ ] **PRIOR-02**: When exceeding max comments, bot prioritizes by score (not just severity)
+- [ ] **PRIOR-03**: Scoring weights are configurable
+- [ ] **PRIOR-04**: Review Details shows prioritization stats (findings scored, top score, threshold)
 
-### Enhanced Language Coverage (v0.8+)
+### Author Experience Adaptation
 
-- **LANG-11**: Expand language-specific rules beyond 9 current languages (Python, Go, Rust, Java, C++, C, Ruby, PHP, Swift)
-- **LANG-12**: Add language-specific anti-patterns (e.g., Ruby `method_missing` overuse, Go goroutine leaks)
+- [ ] **AUTH-01**: Bot detects author contributor status from `author_association` webhook field
+- [ ] **AUTH-02**: Bot classifies authors into tiers (first-time / regular / core)
+- [ ] **AUTH-03**: Bot adjusts review tone for first-time contributors (more explanation, gentler language)
+- [ ] **AUTH-04**: Bot uses terse tone for core contributors (assumes context)
+- [ ] **AUTH-05**: Classification results cached in SQLite (24-hour TTL)
+- [ ] **AUTH-06**: GitHub Search API optionally enriches classification (PR count)
+- [ ] **AUTH-07**: Feature is fail-open (classification errors don't block review)
 
-### Advanced Risk Scoring (v0.8+)
+### Commit Message Keywords
 
-- **LARGE-09**: Include git churn frequency in risk score
-- **LARGE-10**: Add semantic similarity to previously flagged files in risk score
+- [ ] **KEY-01**: Bot parses PR title for bracket tags (`[WIP]`, `[Component]`, `[security-review]`)
+- [ ] **KEY-02**: Bot parses PR title for conventional commit prefixes (`fix:`, `feat:`, `docs:`)
+- [ ] **KEY-03**: Bot detects "breaking change" keyword in PR body (case-insensitive)
+- [ ] **KEY-04**: Keywords override auto-profile selection (e.g., `[strict-review]` forces strict mode)
+- [ ] **KEY-05**: Keywords adjust review focus (e.g., `[security-review]` prioritizes security findings)
+- [ ] **KEY-06**: Keywords enable skip mode (e.g., `[no-review]` skips auto-review)
+- [ ] **KEY-07**: Keywords enable style suppression (e.g., `[style-ok]` suppresses formatting findings)
+- [ ] **KEY-08**: Keyword parsing results logged in Review Details for transparency
 
-### Feedback Analytics (v0.8+)
+## v0.9 Requirements
 
-- **FEED-11**: Provide dashboard of most suppressed patterns per repo
-- **FEED-12**: Detect and warn about potential feedback gaming (mass reactions from single actor)
+Deferred to future milestone. Tracked but not in current roadmap.
+
+### Enhanced Retrieval
+
+- **RETR-01**: Multi-signal retrieval query (PR title + body + commit messages)
+- **RETR-02**: Code snippet embedding for semantic code search
+- **RETR-03**: Cross-repo learning (owner-level shared pool)
+
+### Feedback Analytics
+
+- **FEED-01**: Dashboard showing feedback trends by repo/language/category
+- **FEED-02**: Pattern confidence scores visible to users
+- **FEED-03**: Suppression rule recommendations based on feedback volume
+
+### Advanced Language Patterns
+
+- **LANG-01**: Ruby metaprogramming patterns (method_missing overuse)
+- **LANG-02**: Go goroutine leak detection
+- **LANG-03**: Rust lifetime complexity warnings
+- **LANG-04**: Expand language-specific guidance beyond current 9 languages
+
+### Conversation Depth
+
+- **CONVD-01**: Multi-turn conversation history (beyond single reply)
+- **CONVD-02**: Conversation summarization for long threads
+- **CONVD-03**: Conversation persistence across re-reviews
 
 ## Out of Scope
 
+Explicitly excluded. Documented to prevent scope creep.
+
 | Feature | Reason |
 |---------|--------|
-| Linter runtime dependencies (ESLint, Ruff, Clippy) | Workspace lacks toolchains; adds 10-30s latency; config varies per repo |
-| AST parsing for complexity metrics | Lines changed + path signals are better predictors; AST libs add dependencies |
-| ML models for risk scoring | Heuristics are transparent, debuggable, sufficient; ML adds complexity without proven benefit |
-| Embedding-based feedback clustering | Exact-match handles 80% of cases; embeddings add complexity for marginal gain in v0.7 |
-| PR split recommendations | Low impact; humans already know PR is too big |
-| Real-time reaction webhooks | GitHub API doesn't support; polling is architecturally correct |
+| Unlimited conversation depth | Context window explosion risk, token cost escalation |
+| Complex keyword syntax (nested conditions, boolean logic) | Hurts discoverability, increases user error rate |
+| Author profiling from public GitHub data (followers, stars, etc.) | Privacy concerns, not relevant to code quality |
+| Auto-resolve findings on force-push | Trust erosion, bypasses human judgment |
+| Real-time streaming conversation UI | GitHub comments are the interface, no custom UI for v0.8 |
+| ML-based auto-profile selection | Deterministic thresholds are sufficient and more predictable |
+| Conversation persistence outside GitHub | GitHub is source of truth, no separate conversation database |
 
 ## Traceability
 
+Which phases cover which requirements. Updated during roadmap creation.
+
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LANG-01 | Phase 39 | Pending |
-| LANG-02 | Phase 39 | Pending |
-| LANG-03 | Phase 39 | Pending |
-| LANG-04 | Phase 39 | Pending |
-| LANG-05 | Phase 39 | Pending |
-| LANG-06 | Phase 39 | Pending |
-| LANG-07 | Phase 39 | Pending |
-| LANG-08 | Phase 39 | Pending |
-| LANG-09 | Phase 39 | Pending |
-| LANG-10 | Phase 39 | Pending |
-| LARGE-01 | Phase 40 | Pending |
-| LARGE-02 | Phase 40 | Pending |
-| LARGE-03 | Phase 40 | Pending |
-| LARGE-04 | Phase 40 | Pending |
-| LARGE-05 | Phase 40 | Pending |
-| LARGE-06 | Phase 40 | Pending |
-| LARGE-07 | Phase 40 | Pending |
-| LARGE-08 | Phase 40 | Pending |
-| FEED-01 | Phase 41 | Pending |
-| FEED-02 | Phase 41 | Pending |
-| FEED-03 | Phase 41 | Pending |
-| FEED-04 | Phase 41 | Pending |
-| FEED-05 | Phase 41 | Pending |
-| FEED-06 | Phase 41 | Pending |
-| FEED-07 | Phase 41 | Pending |
-| FEED-08 | Phase 41 | Pending |
-| FEED-09 | Phase 41 | Pending |
-| FEED-10 | Phase 41 | Pending |
+| (To be populated by roadmapper) | | |
 
 **Coverage:**
-- v0.7 requirements: 28 total
-- Mapped to phases: 28
-- Unmapped: 0
+- v0.8 requirements: 27 total
+- Mapped to phases: 0
+- Unmapped: 27 ⚠️
 
 ---
-*Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after roadmap creation*
+*Requirements defined: 2026-02-13*
+*Last updated: 2026-02-13 after initial definition*
