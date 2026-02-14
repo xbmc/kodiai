@@ -4620,3 +4620,324 @@ describe("createReviewHandler feedback-driven suppression", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+describe("createReviewHandler finding prioritization", () => {
+  async function runPrioritizationScenario(options: {
+    maxComments: number;
+    prioritizationLines?: string[];
+    comments: Array<{
+      id: number;
+      severity: "critical" | "major" | "medium" | "minor";
+      category: "security" | "correctness" | "performance" | "style" | "documentation";
+      title: string;
+      path: string;
+    }>;
+  }): Promise<{ deletedCommentIds: number[]; detailsCommentBody: string | undefined }> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-prioritization-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    const configLines = [
+      "review:",
+      "  enabled: true",
+      "  autoApprove: false",
+      "  requestUiRereviewTeamOnOpen: false",
+      "  triggers:",
+      "    onOpened: true",
+      "    onReadyForReview: true",
+      "    onReviewRequested: true",
+      "  skipAuthors: []",
+      "  skipPaths: []",
+      `  maxComments: ${options.maxComments}`,
+      ...(options.prioritizationLines ?? []),
+    ];
+
+    const uniquePaths = Array.from(new Set(options.comments.map((comment) => comment.path)));
+
+    await Bun.write(join(dir, ".kodiai.yml"), `${configLines.join("\n")}\n`);
+    await Bun.write(join(dir, "README.md"), "base\n");
+
+    for (const filePath of uniquePaths) {
+      const directory = filePath.includes("/")
+        ? filePath.slice(0, filePath.lastIndexOf("/"))
+        : "";
+      if (directory) {
+        await $`mkdir -p ${join(dir, directory)}`.quiet();
+      }
+      await Bun.write(join(dir, filePath), "base\n");
+    }
+
+    await $`git -C ${dir} add .`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+    await $`git -C ${dir} checkout -b feature`.quiet();
+
+    for (const filePath of uniquePaths) {
+      const lineCount = filePath.includes("auth") ? 200 : 5;
+      const content = Array.from({ length: lineCount }, (_, index) => `${filePath}-${index}`).join("\n") + "\n";
+      await Bun.write(join(dir, filePath), content);
+    }
+
+    await Bun.write(join(dir, "README.md"), "base\nfeature\n");
+    await $`git -C ${dir} add .`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    let exposeInlineFinding = false;
+    let detailsCommentBody: string | undefined;
+    const deletedCommentIds: number[] = [];
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) {
+              return { data: [] };
+            }
+
+            return {
+              data: options.comments.map((comment) => ({
+                id: comment.id,
+                body: [
+                  "```yaml",
+                  `severity: ${comment.severity}`,
+                  `category: ${comment.category}`,
+                  "```",
+                  "",
+                  `**${comment.title}**`,
+                  "Prioritization scenario finding.",
+                  "",
+                  marker,
+                ].join("\n"),
+                path: comment.path,
+                line: 3,
+                start_line: 2,
+              })),
+            };
+          },
+          deleteReviewComment: async (params: { comment_id: number }) => {
+            deletedCommentIds.push(params.comment_id);
+            return { data: {} };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-prioritization",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await rm(dir, { recursive: true, force: true });
+
+    return { deletedCommentIds, detailsCommentBody };
+  }
+
+  test("cap overflow keeps top composite-scored findings instead of raw severity order", async () => {
+    const result = await runPrioritizationScenario({
+      maxComments: 1,
+      comments: [
+        {
+          id: 901,
+          severity: "critical",
+          category: "style",
+          title: "Naming inconsistency",
+          path: "docs/changelog.md",
+        },
+        {
+          id: 902,
+          severity: "major",
+          category: "security",
+          title: "Auth token validation gap",
+          path: "src/auth/token.ts",
+        },
+      ],
+    });
+
+    expect(result.deletedCommentIds).toEqual([901]);
+  });
+
+  test("changing prioritization weights changes selected findings predictably", async () => {
+    const severityHeavy = await runPrioritizationScenario({
+      maxComments: 1,
+      prioritizationLines: [
+        "  prioritization:",
+        "    severity: 1",
+        "    fileRisk: 0",
+        "    category: 0",
+        "    recurrence: 0",
+      ],
+      comments: [
+        {
+          id: 911,
+          severity: "critical",
+          category: "style",
+          title: "Naming inconsistency",
+          path: "docs/changelog.md",
+        },
+        {
+          id: 912,
+          severity: "major",
+          category: "security",
+          title: "Auth token validation gap",
+          path: "src/auth/token.ts",
+        },
+      ],
+    });
+
+    const fileRiskHeavy = await runPrioritizationScenario({
+      maxComments: 1,
+      prioritizationLines: [
+        "  prioritization:",
+        "    severity: 0",
+        "    fileRisk: 1",
+        "    category: 0",
+        "    recurrence: 0",
+      ],
+      comments: [
+        {
+          id: 921,
+          severity: "critical",
+          category: "style",
+          title: "Naming inconsistency",
+          path: "docs/changelog.md",
+        },
+        {
+          id: 922,
+          severity: "major",
+          category: "security",
+          title: "Auth token validation gap",
+          path: "src/auth/token.ts",
+        },
+      ],
+    });
+
+    expect(severityHeavy.deletedCommentIds).toEqual([912]);
+    expect(fileRiskHeavy.deletedCommentIds).toEqual([921]);
+  });
+
+  test("under-cap runs do not delete findings via prioritization", async () => {
+    const result = await runPrioritizationScenario({
+      maxComments: 5,
+      comments: [
+        {
+          id: 931,
+          severity: "major",
+          category: "correctness",
+          title: "Missing null guard",
+          path: "src/handlers/guard.ts",
+        },
+        {
+          id: 932,
+          severity: "minor",
+          category: "style",
+          title: "Naming inconsistency",
+          path: "docs/changelog.md",
+        },
+      ],
+    });
+
+    expect(result.deletedCommentIds).toEqual([]);
+  });
+
+  test("Review Details includes prioritization stats when prioritization runs", async () => {
+    const result = await runPrioritizationScenario({
+      maxComments: 1,
+      comments: [
+        {
+          id: 941,
+          severity: "critical",
+          category: "style",
+          title: "Naming inconsistency",
+          path: "docs/changelog.md",
+        },
+        {
+          id: 942,
+          severity: "major",
+          category: "security",
+          title: "Auth token validation gap",
+          path: "src/auth/token.ts",
+        },
+      ],
+    });
+
+    expect(result.detailsCommentBody).toContain("Prioritization: scored 2 findings");
+    expect(result.detailsCommentBody).toContain("top score");
+    expect(result.detailsCommentBody).toContain("threshold score");
+  });
+});
