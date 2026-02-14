@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 41 of 41 (Feedback-Driven Learning)
-Plan: 2 of 3 complete
-Status: In Progress
-Last activity: 2026-02-14 — Completed 41-02 (feedback aggregator and safety guard)
+Plan: 3 of 3 complete
+Status: Complete
+Last activity: 2026-02-14 — Completed 41-03 (pipeline integration)
 
-Progress: [======----] 67%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 88
+- Total plans completed: 89
 - Average duration: 4 min
-- Total execution time: 389 min
+- Total execution time: 393 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -47,6 +47,8 @@ Recent decisions affecting current work:
 - Safety guard protects CRITICAL (all categories) and MAJOR security/correctness from auto-suppression per FEED-04/FEED-05
 - Confidence adjustment uses +10 per thumbs-up, -20 per thumbs-down with [0,100] clamping
 - evaluateFeedbackSuppressions is fail-open: on store errors, logs warning and returns empty suppression set
+- Feedback evaluation placed after enforcement, before config suppression matching in pipeline
+- Feedback suppression count passed through to Review Details for transparent disclosure
 
 ### Pending Todos
 
@@ -59,6 +61,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 41-02-PLAN.md (feedback aggregator and safety guard)
+Stopped at: Completed 41-03-PLAN.md (pipeline integration) - Phase 41 complete
 Resume file: None
-Next action: Execute 41-03-PLAN.md (pipeline integration)
+Next action: Phase 41 complete. All feedback-driven learning plans executed.
