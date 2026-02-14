@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 47 -- v0.8 Verification Backfill
+**Current focus:** Phase 47 -- v0.8 Verification Backfill (Completed)
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
 Phase: 47 of 47 (v0.8 Verification Backfill)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-14 -- completed phase 47 plan 01 verification artifact backfill for phases 42/43/45/46
+Plan: 2 of 2 in current phase
+Status: Completed
+Last activity: 2026-02-14 -- completed phase 47 plan 02 milestone audit reconciliation and requirement traceability closure
 
 Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 114
+- Total plans completed: 116
 - Average duration: 4 min
-- Total execution time: ~471 min
+- Total execution time: ~479 min
 
 **By latest shipped milestone (v0.7):**
 
@@ -41,6 +41,7 @@ Progress: [##########] 100%
 | Phase 46 P02 | 2 min | 2 tasks | 4 files |
 | Phase 46 P03 | 6 min | 2 tasks | 4 files |
 | Phase 47 P01 | 7min | 2 tasks | 4 files |
+| Phase 47 P02 | 1min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,8 @@ Recent decisions affecting current work:
 - [Phase 46]: Review-thread context keeps the most recent three turns at maxCommentChars while truncating older turns to 200 characters.
 - [Phase 47]: Backfilled phase 42/43/45/46 verification reports using phase-44 format with requirement-owned coverage tables.
 - [Phase 47]: Phase 46 degraded fail-open finding-lookup hardening remains deferred to phase 48 and is documented as out of scope in verification artifacts.
+- [Phase 47]: Milestone audit phase and requirement statuses now transition only when owning phase verification artifacts are present.
+- [Phase 47]: Conversational fail-open degraded flow remains deferred to phase 48 and is intentionally not marked fixed in v0.8 audit closure.
 
 ### Pending Todos
 
@@ -89,6 +92,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 47-01-PLAN.md
+Stopped at: Completed 47-02-PLAN.md
 Resume file: None
-Next action: Execute 47-02-PLAN.md to update v0.8 milestone audit from backfilled verification evidence
+Next action: Plan phase 48 remediation for deferred conversational fail-open hardening
