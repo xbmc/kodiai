@@ -19,5 +19,48 @@ export function resolveReviewProfile(_params: {
   manualProfile: ReviewProfile | null;
   linesChanged: number;
 }): ResolvedReviewProfile {
-  throw new Error("not implemented");
+  const { keywordProfileOverride, manualProfile, linesChanged } = _params;
+
+  if (keywordProfileOverride) {
+    return {
+      selectedProfile: keywordProfileOverride,
+      source: "keyword",
+      autoBand: null,
+      linesChanged,
+    };
+  }
+
+  if (manualProfile) {
+    return {
+      selectedProfile: manualProfile,
+      source: "manual",
+      autoBand: null,
+      linesChanged,
+    };
+  }
+
+  if (linesChanged <= AUTO_PROFILE_THRESHOLDS.strictMax) {
+    return {
+      selectedProfile: "strict",
+      source: "auto",
+      autoBand: "small",
+      linesChanged,
+    };
+  }
+
+  if (linesChanged <= AUTO_PROFILE_THRESHOLDS.balancedMax) {
+    return {
+      selectedProfile: "balanced",
+      source: "auto",
+      autoBand: "medium",
+      linesChanged,
+    };
+  }
+
+  return {
+    selectedProfile: "minimal",
+    source: "auto",
+    autoBand: "large",
+    linesChanged,
+  };
 }
