@@ -10,19 +10,19 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
-Phase: 44 of 46 (Smart Finding Prioritization)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-02-14 -- completed phase 44 plan 02 runtime prioritization integration
+Phase: 45 of 46 (Author Experience Adaptation)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-14 -- completed phase 45 plan 01 deterministic classifier and tone section builder
 
-Progress: [##########] 100%
+Progress: [#########-] 98%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 112
+- Total plans completed: 113
 - Average duration: 4 min
-- Total execution time: ~464 min
+- Total execution time: ~466 min
 
 **By latest shipped milestone (v0.7):**
 
@@ -35,6 +35,7 @@ Progress: [##########] 100%
 | 43-auto-profile-selection | 2 | ~4 min | ~2 min |
 | Phase 44 P01 | 2 min | 2 tasks | 2 files |
 | Phase 44 P02 | 2 min | 3 tasks | 4 files |
+| Phase 45 P01 | 2 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,8 @@ Recent decisions affecting current work:
 - [Phase 44]: Prioritization weights are runtime-normalized and ties are resolved by original index for deterministic ranking
 - [Phase 44]: Prioritization weights are configured under review.prioritization with bounded 0..1 values and section-level fallback behavior
 - [Phase 44]: Cap overflow prioritization runs after suppression and confidence filtering, and non-selected findings are deleted through the existing inline cleanup path
+- [Phase 45]: Definite author_association values short-circuit before PR-count enrichment to keep MEMBER/OWNER and FIRST_TIMER/FIRST_TIME_CONTRIBUTOR deterministic.
+- [Phase 45]: Author experience tone adaptation is exposed as buildAuthorExperienceSection and intentionally not wired into buildReviewPrompt until plan 45-02 integration.
 
 ### Pending Todos
 
@@ -72,6 +75,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 44-02-PLAN.md
+Stopped at: Completed 45-01-PLAN.md
 Resume file: None
-Next action: `/gsd-execute-phase 45` to start author experience adaptation plans
+Next action: `/gsd-execute-phase 45` to continue with plan 45-02
