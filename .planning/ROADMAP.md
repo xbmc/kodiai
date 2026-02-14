@@ -74,7 +74,7 @@ See `.planning/milestones/v0.6-ROADMAP.md` for full phase details.
 **Milestone Goal:** Improve review content quality through language-aware severity enforcement that eliminates linter-catchable noise, risk-weighted file prioritization that focuses large PR reviews where they matter, and feedback-driven learning that auto-suppresses patterns users consistently reject.
 
 - [ ] **Phase 39: Language-Aware Enforcement** (4 plans) — Suppress auto-fixable findings, enforce safety-critical severity floors
-- [ ] **Phase 40: Large PR Intelligence** — Risk-score files and prioritize review attention for oversized PRs
+- [ ] **Phase 40: Large PR Intelligence** (4 plans) — Risk-score files and prioritize review attention for oversized PRs
 - [ ] **Phase 41: Feedback-Driven Learning** — Auto-suppress patterns with consistent negative feedback
 
 ## Phase Details
@@ -107,12 +107,13 @@ Plans:
   3. Skipped/deprioritized files are listed with their risk scores so the PR author can see what was not fully reviewed
   4. The bot applies tiered depth -- full analysis for top-risk files, abbreviated analysis for mid-tier, mention-only for the rest -- not binary include/exclude
   5. A repo owner can configure the file limit threshold and risk scoring weights via `.kodiai.yml`
-**Plans**: TBD
+**Plans:** 4 plans
 
 Plans:
-- [ ] 40-01: TBD
-- [ ] 40-02: TBD
-- [ ] 40-03: TBD
+- [ ] 40-01-PLAN.md — Foundation: risk scoring engine, per-file numstat parser, config schema
+- [ ] 40-02-PLAN.md — Risk scoring and numstat parser tests (TDD)
+- [ ] 40-03-PLAN.md — Tiered prompt sections and Review Details disclosure
+- [ ] 40-04-PLAN.md — Pipeline integration into review handler
 
 ### Phase 41: Feedback-Driven Learning
 **Goal**: The bot learns from thumbs-down reactions on its review comments -- tracking rejection patterns by finding fingerprint, auto-suppressing patterns that cross configurable thresholds, and adjusting confidence scores -- while enforcing hard safety floors that prevent suppression of critical/security findings.
@@ -145,5 +146,5 @@ Phases execute in numeric order: 39 → 40 → 41
 | 30-33 | v0.5 | 12/12 | ✓ Complete | 2026-02-13 |
 | 34-38 | v0.6 | 10/10 | ✓ Complete | 2026-02-14 |
 | 39. Language-Aware Enforcement | v0.7 | 0/4 | Not started | - |
-| 40. Large PR Intelligence | v0.7 | 0/TBD | Not started | - |
+| 40. Large PR Intelligence | v0.7 | 0/4 | Not started | - |
 | 41. Feedback-Driven Learning | v0.7 | 0/TBD | Not started | - |
