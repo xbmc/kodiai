@@ -39,6 +39,8 @@ import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
+import { buildRetrievalQuery } from "../learning/retrieval-query.ts";
+import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -1429,7 +1431,16 @@ export function createReviewHandler(deps: {
         let retrievalCtx: RetrievalContextForPrompt | null = null;
         if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
           try {
-            const queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`;
+            const queryText = buildRetrievalQuery({
+              prTitle: pr.title,
+              prBody: pr.body ?? undefined,
+              conventionalType: parsedIntent.conventionalType?.type ?? null,
+              detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+              riskSignals: diffAnalysis.riskSignals ?? [],
+              authorTier: authorClassification.tier,
+              topFilePaths: reviewFiles.slice(0, 15),
+            });
+            logger.debug({ ...baseLog, queryLength: queryText.length }, "Retrieval query constructed");
             const embedResult = await embeddingProvider.generate(queryText, "query");
             if (embedResult) {
               const retrieval = isolationLayer.retrieveWithIsolation({
@@ -1442,14 +1453,18 @@ export function createReviewHandler(deps: {
                 logger,
               });
               if (retrieval.results.length > 0) {
+                const reranked = rerankByLanguage({
+                  results: retrieval.results,
+                  prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+                });
                 retrievalCtx = {
-                  findings: retrieval.results.map(r => ({
+                  findings: reranked.map(r => ({
                     findingText: r.record.findingText,
                     severity: r.record.severity,
                     category: r.record.category,
                     filePath: r.record.filePath,
                     outcome: r.record.outcome,
-                    distance: r.distance,
+                    distance: r.adjustedDistance,
                     sourceRepo: r.sourceRepo,
                   })),
                 };
