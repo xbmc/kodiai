@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 47 -- v0.8 Verification Backfill (Completed)
+**Current focus:** Phase 48 -- conversational-fail-open-hardening (In Progress)
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
-Phase: 47 of 47 (v0.8 Verification Backfill)
-Plan: 2 of 2 in current phase
-Status: Completed
-Last activity: 2026-02-14 -- completed phase 47 plan 02 milestone audit reconciliation and requirement traceability closure
+Phase: 48 of 48 (conversational-fail-open-hardening)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-14 -- completed phase 48 plan 01 mention-context finding-lookup fail-open hardening
 
 Progress: [##########] 100%
 
@@ -42,6 +42,7 @@ Progress: [##########] 100%
 | Phase 46 P03 | 6 min | 2 tasks | 4 files |
 | Phase 47 P01 | 7min | 2 tasks | 4 files |
 | Phase 47 P02 | 1min | 2 tasks | 1 files |
+| Phase 48 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 47]: Phase 46 degraded fail-open finding-lookup hardening remains deferred to phase 48 and is documented as out of scope in verification artifacts.
 - [Phase 47]: Milestone audit phase and requirement statuses now transition only when owning phase verification artifacts are present.
 - [Phase 47]: Conversational fail-open degraded flow remains deferred to phase 48 and is intentionally not marked fixed in v0.8 audit closure.
+- [Phase 48]: Catch only finding hydration failures in mention-context thread assembly and continue without metadata
+- [Phase 48]: Lock degraded behavior with regression coverage that keeps review thread context while omitting finding metadata
 
 ### Pending Todos
 
@@ -92,6 +95,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 47-02-PLAN.md
+Stopped at: Completed 48-01-PLAN.md
 Resume file: None
-Next action: Plan phase 48 remediation for deferred conversational fail-open hardening
+Next action: Execute 48-02-PLAN.md handler-level fail-open hardening and regression coverage
