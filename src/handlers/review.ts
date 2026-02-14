@@ -138,6 +138,26 @@ function buildReviewDetailsMarker(reviewOutputKey: string): string {
   return `<!-- kodiai:review-details:${reviewOutputKey} -->`;
 }
 
+function parseSeverityCountsFromBody(body: string): {
+  critical: number;
+  major: number;
+  medium: number;
+  minor: number;
+} {
+  // Match severity tags like [CRITICAL], [MAJOR], etc. in the summary body
+  // These appear in observation bullets, e.g. "- [MAJOR] Some observation"
+  const countMatches = (tag: string) => {
+    const regex = new RegExp(`\\[${tag}\\]`, 'gi');
+    return (body.match(regex) || []).length;
+  };
+  return {
+    critical: countMatches('CRITICAL'),
+    major: countMatches('MAJOR'),
+    medium: countMatches('MEDIUM'),
+    minor: countMatches('MINOR'),
+  };
+}
+
 function formatReviewDetailsSummary(params: {
   reviewOutputKey: string;
   filesReviewed: number;
@@ -309,7 +329,8 @@ async function appendReviewDetailsToSummary(params: {
   reviewDetailsBlock: string;
   botHandles: string[];
 }): Promise<void> {
-  const { octokit, owner, repo, prNumber, reviewOutputKey, reviewDetailsBlock, botHandles } = params;
+  const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
+  let updatedReviewDetails = params.reviewDetailsBlock;
   const marker = buildReviewOutputMarker(reviewOutputKey);
 
   const commentsResponse = await octokit.rest.issues.listComments({
@@ -329,6 +350,24 @@ async function appendReviewDetailsToSummary(params: {
     throw new Error("Summary comment not found for review output marker");
   }
 
+  // Merge severity counts from summary body observations into the findings line
+  const bodyCounts = parseSeverityCountsFromBody(summaryComment.body!);
+  const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
+  if (bodyTotal > 0) {
+    updatedReviewDetails = updatedReviewDetails.replace(
+      /- Findings: (\d+) critical, (\d+) major, (\d+) medium, (\d+) minor/,
+      (_match, c, ma, me, mi) => {
+        const total = {
+          critical: parseInt(c) + bodyCounts.critical,
+          major: parseInt(ma) + bodyCounts.major,
+          medium: parseInt(me) + bodyCounts.medium,
+          minor: parseInt(mi) + bodyCounts.minor,
+        };
+        return `- Findings: ${total.critical} critical, ${total.major} major, ${total.medium} medium, ${total.minor} minor (includes ${bodyTotal} from summary observations)`;
+      }
+    );
+  }
+
   // Insert review details block INSIDE the summary's <details> block (before
   // the last </details> tag) so it renders as a nested collapsible.  The review
   // output marker (<!-- kodiai:review-output-key:... -->) that follows the
@@ -338,11 +377,11 @@ async function appendReviewDetailsToSummary(params: {
   let updatedBody: string;
   if (lastCloseIdx === -1) {
     // Fallback: append as before if structure is unexpected
-    updatedBody = `${summaryComment.body}\n\n${reviewDetailsBlock}`;
+    updatedBody = `${summaryComment.body}\n\n${updatedReviewDetails}`;
   } else {
     const before = summaryComment.body!.slice(0, lastCloseIdx);
     const after = summaryComment.body!.slice(lastCloseIdx);
-    updatedBody = `${before}\n\n${reviewDetailsBlock}\n${after}`;
+    updatedBody = `${before}\n\n${updatedReviewDetails}\n${after}`;
   }
 
   await octokit.rest.issues.updateComment({
