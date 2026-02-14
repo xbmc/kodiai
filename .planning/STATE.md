@@ -5,16 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** Defining requirements for v0.7
 
 ## Current Position
 
-Milestone: v0.6 Review Output Formatting & UX — COMPLETE ✅
-All phases: 34-38 complete (5 phases, 10 plans)
-Status: Milestone shipped 2026-02-14
-Last activity: 2026-02-14 -- Completed milestone v0.6 archive and git tag
-
-Next: /gsd:new-milestone for v0.7 planning
+Milestone: v0.7 Intelligent Review Content
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-14 — Milestone v0.7 started
 
 ## Performance Metrics
 
@@ -49,6 +48,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Milestone v0.6 completion
+Stopped at: Started v0.7 milestone (defining requirements)
 Resume file: None
-Next action: /gsd:new-milestone to define v0.7
+Next action: Complete requirements definition and roadmap

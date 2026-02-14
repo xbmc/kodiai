@@ -8,6 +8,17 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
+## Current Milestone: v0.7 Intelligent Review Content
+
+**Goal:** Improve review content quality through language-aware enforcement, large PR intelligence, and feedback-driven learning
+
+**Target features:**
+- Language-specific severity enforcement (suppress auto-fixable, elevate safety-critical)
+- Risk-weighted file prioritization for large PRs
+- Thumbs-down feedback loop with auto-suppression
+- Multi-signal retrieval (PR body + commits, not just title)
+- Auto-profile selection based on PR size
+
 ## Latest Release: v0.6 Review Output Formatting & UX
 
 **Shipped:** 2026-02-14
@@ -33,20 +44,6 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Configurable output language localization preserving canonical severity/category taxonomy
 
 </details>
-
-## Previous Milestones
-
-**Shipped:** 2026-02-13
-**Phases:** 30-33 (4 phases, 12 plans)
-
-**Delivered:**
-- SHA-keyed run state for idempotent webhook processing with force-push detection
-- Embedding-backed learning memory with Voyage AI and sqlite-vec for semantic pattern retrieval
-- Incremental re-review focusing on changed code with fingerprint-based finding deduplication
-- Bounded retrieval context enriching prompts with top-K similar findings
-- Multi-language classification and guidance for 20 languages (detailed guidance for 9 major languages)
-- Explainable delta reporting with new/resolved/still-open labeling and learning provenance citations
-- Configurable output language localization preserving canonical severity/category taxonomy
 
 
 ## Requirements
@@ -92,7 +89,13 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-None yet — define in next milestone planning
+- [ ] Language-aware enforcement with per-language severity rules
+- [ ] Auto-suppress formatting violations flagged by linters/formatters
+- [ ] Risk-weighted file prioritization for large PRs (>50 files)
+- [ ] Thumbs-down reaction feedback with confidence recalibration
+- [ ] Auto-suppression after N ignored occurrences
+- [ ] Multi-signal retrieval query (title + body + commits)
+- [ ] Auto-profile selection based on PR size
 
 ### Out of Scope
 
@@ -144,9 +147,10 @@ v0.6 ships an installable GitHub App that:
 
 ## Next Milestone Goals
 
-- Define v0.7 requirements and roadmap from shipped v0.6 learnings
-- Evaluate focus areas: advanced formatting features, marketplace preparation, or platform expansion
-- Consider whether any v0.6 formatting patterns need refinement based on real-world usage
+After v0.7, evaluate:
+- Marketplace preparation (public listing, broader user base)
+- Platform expansion (additional auth methods, deployment options)
+- Advanced code understanding (architectural analysis, cross-file context)
 
 ## Constraints
 
@@ -194,4 +198,4 @@ v0.6 ships an installable GitHub App that:
 | Discriminator chain pattern | Each sanitizer checks its tag and returns body unchanged if no match; composable | ✓ Good — v0.6 |
 
 ---
-*Last updated: 2026-02-14 after v0.6 milestone completion*
+*Last updated: 2026-02-14 after v0.7 milestone started*
