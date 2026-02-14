@@ -11,9 +11,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.8 Conversational Intelligence
 Phase: 46 of 46 (Conversational Review)
-Plan: 2 of 3 in current phase
+Plan: 3 of 3 in current phase
 Status: In Progress
-Last activity: 2026-02-14 -- completed phase 46 plan 01 thread-aware mention context and finding lookup
+Last activity: 2026-02-14 -- completed phase 46 plan 02 outgoing mention sanitization and conversation config schema
 
 Progress: [#########-] 99%
 
@@ -38,6 +38,7 @@ Progress: [#########-] 99%
 | Phase 45 P01 | 2 min | 2 tasks | 4 files |
 | Phase 45 P02 | 5 | 2 tasks | 5 files |
 | Phase 46 P01 | 4 min | 2 tasks | 9 files |
+| Phase 46 P02 | 2 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Recent decisions affecting current work:
 - [Phase 45]: Classification enrichment calls GitHub Search API only for ambiguous associations and always fails open on lookup/cache errors.
 - [Phase 46]: Thread context fetches one review-comments page (100 max) and filters deterministically by thread root.
 - [Phase 46]: Finding enrichment stays decoupled by using optional KnowledgeStore.getFindingByCommentId and mention-context findingLookup callback.
+- [Phase 46]: sanitizeOutgoingMentions remains self-contained in sanitizer.ts to avoid circular imports
+- [Phase 46]: mention.conversation defaults are nested under mention schema for backward-compatible config parsing
 
 ### Pending Todos
 
@@ -80,6 +83,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 46-01-PLAN.md
+Stopped at: Completed 46-02-PLAN.md
 Resume file: None
-Next action: `/gsd-execute-phase 46` to continue with plan 46-02
+Next action: `/gsd-execute-phase 46` to continue with plan 46-03
