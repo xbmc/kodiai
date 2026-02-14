@@ -329,7 +329,22 @@ async function appendReviewDetailsToSummary(params: {
     throw new Error("Summary comment not found for review output marker");
   }
 
-  const updatedBody = `${summaryComment.body}\n\n${reviewDetailsBlock}`;
+  // Insert review details block INSIDE the summary's <details> block (before
+  // the last </details> tag) so it renders as a nested collapsible.  The review
+  // output marker (<!-- kodiai:review-output-key:... -->) that follows the
+  // summary's </details> stays outside both blocks.
+  const closingTag = '</details>';
+  const lastCloseIdx = summaryComment.body!.lastIndexOf(closingTag);
+  let updatedBody: string;
+  if (lastCloseIdx === -1) {
+    // Fallback: append as before if structure is unexpected
+    updatedBody = `${summaryComment.body}\n\n${reviewDetailsBlock}`;
+  } else {
+    const before = summaryComment.body!.slice(0, lastCloseIdx);
+    const after = summaryComment.body!.slice(lastCloseIdx);
+    updatedBody = `${before}\n\n${reviewDetailsBlock}\n${after}`;
+  }
+
   await octokit.rest.issues.updateComment({
     owner,
     repo,
