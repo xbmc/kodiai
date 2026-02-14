@@ -205,7 +205,7 @@ Plans:
 
 Plans:
 - [ ] 49-01-PLAN.md — Produce phase 47 and phase 48 verification reports with evidence-backed status
-- [ ] 49-02-PLAN.md — Re-run milestone audit and reconcile phase verification coverage/status
+- [ ] 49-02-PLAN.md — Reconcile canonical and secondary v0.8 audits to 7/7 phase coverage with no unverified blockers
 
 ### Phase 50: Publish-Path Mention Sanitization Completion
 **Goal**: Eliminate residual degraded publish-path sanitization risk by enforcing mention sanitization through a single shared outbound helper
