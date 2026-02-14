@@ -90,7 +90,7 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 - Integer phases (51, 52, 53): Planned milestone work
 - Decimal phases (51.1, 51.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 51: Timeout Resilience** — Users get useful partial reviews instead of error messages when large PRs time out
+- [x] **Phase 51: Timeout Resilience** — Users get useful partial reviews instead of error messages when large PRs time out (completed 2026-02-14)
 - [ ] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction
 - [ ] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output
 - [ ] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps
@@ -107,10 +107,11 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
   2. Kodiai estimates timeout risk before starting and auto-reduces review scope for high-risk PRs (fewer files or minimal profile)
   3. PR timeout duration scales with PR complexity instead of using a fixed 600s default for all PRs
   4. A 2000-line PR across 80 files gets a longer timeout and reduced scope compared to a 50-line PR across 3 files
-**Plans:** 2 plans
+**Plans:** 3 plans (includes 1 gap closure)
 Plans:
-- [ ] 51-01-PLAN.md -- Timeout estimator engine and dynamic timeout wiring
-- [ ] 51-02-PLAN.md -- Scope reduction and informative timeout messages
+- [x] 51-01-PLAN.md -- Timeout estimator engine and dynamic timeout wiring
+- [x] 51-02-PLAN.md -- Scope reduction and informative timeout messages
+- [x] 51-03-PLAN.md -- Gap closure: timeout_partial test coverage
 
 ### Phase 52: Intelligent Retrieval
 **Goal:** Users get more relevant historical findings surfaced during reviews through multi-signal query construction and language-aware ranking
@@ -160,7 +161,7 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
-**Total shipped:** 8 milestones, 50 phases, 145 plans
+**Total shipped:** 8 milestones, 51 phases, 148 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -172,7 +173,7 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 34-38 | v0.6 | 10/10 | Complete | 2026-02-14 |
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
-| 51 | v0.9 | 0/2 | Not started | - |
+| 51 | v0.9 | 3/3 | Complete | 2026-02-14 |
 | 52 | v0.9 | 0/TBD | Not started | - |
 | 53 | v0.9 | 0/TBD | Not started | - |
 | 54 | v0.9 | 0/TBD | Not started | - |
@@ -180,4 +181,4 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 51 planned (2 plans, 2 waves)*
+*Roadmap updated: 2026-02-14 -- Phase 51 complete (3 plans, verified 10/10)*
