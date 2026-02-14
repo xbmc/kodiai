@@ -977,3 +977,91 @@ describe("Phase 38: Delta Re-Review Formatting", () => {
     expect(hardReqSection).not.toContain("### Preference");
   });
 });
+
+// ---------------------------------------------------------------------------
+// depBumpContext — Dependency Bump Context prompt section
+// ---------------------------------------------------------------------------
+describe("depBumpContext", () => {
+  function makeDepBumpContext(overrides: Record<string, unknown> = {}) {
+    return {
+      detection: {
+        source: "dependabot" as const,
+        signals: ["title", "sender"],
+      },
+      details: {
+        packageName: "lodash",
+        oldVersion: "4.17.20",
+        newVersion: "4.17.21",
+        ecosystem: "npm",
+        isGroup: false,
+      },
+      classification: {
+        bumpType: "patch" as const,
+        isBreaking: false,
+      },
+      ...overrides,
+    };
+  }
+
+  test("includes dependency bump section for major bump", () => {
+    const depBumpContext = makeDepBumpContext({
+      details: {
+        packageName: "@angular/core",
+        oldVersion: "15.2.0",
+        newVersion: "16.0.0",
+        ecosystem: "npm",
+        isGroup: false,
+      },
+      classification: {
+        bumpType: "major",
+        isBreaking: true,
+      },
+    });
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Dependency Bump Context");
+    expect(prompt).toContain("MAJOR version bump");
+    expect(prompt).toContain("@angular/core");
+    expect(prompt).toContain("15.2.0");
+    expect(prompt).toContain("16.0.0");
+    expect(prompt).toContain("npm");
+    expect(prompt).toContain("Breaking API changes");
+  });
+
+  test("includes dependency bump section for minor/patch bump", () => {
+    const depBumpContext = makeDepBumpContext({
+      classification: {
+        bumpType: "patch",
+        isBreaking: false,
+      },
+    });
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Dependency Bump Context");
+    expect(prompt).toContain("minor/patch dependency update");
+    expect(prompt).not.toContain("MAJOR version bump");
+    expect(prompt).toContain("routine maintenance");
+  });
+
+  test("includes group bump note", () => {
+    const depBumpContext = makeDepBumpContext({
+      details: {
+        packageName: null,
+        oldVersion: null,
+        newVersion: null,
+        ecosystem: "npm",
+        isGroup: true,
+      },
+    });
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("group dependency update");
+  });
+
+  test("omits section when depBumpContext is null", () => {
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext: null }));
+    expect(prompt).not.toContain("Dependency Bump Context");
+  });
+
+  test("omits section when depBumpContext is undefined", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("Dependency Bump Context");
+  });
+});

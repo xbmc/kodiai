@@ -4,6 +4,7 @@ import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
+import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -873,6 +874,59 @@ export function buildOutputLanguageSection(outputLanguage: string): string {
   ].join("\n");
 }
 
+// ---------------------------------------------------------------------------
+// Helper: Dependency bump context section (DEP-01/02/03)
+// ---------------------------------------------------------------------------
+function buildDepBumpSection(ctx: DepBumpContext): string {
+  const lines = [
+    "## Dependency Bump Context",
+    "",
+    `This PR is an automated dependency update (detected via: ${ctx.detection.signals.join(", ")}).`,
+    "",
+  ];
+
+  if (ctx.details.isGroup) {
+    lines.push("This is a **group dependency update** affecting multiple packages.");
+  }
+  if (ctx.details.packageName) {
+    lines.push(`- **Package:** ${ctx.details.packageName}`);
+  }
+  if (ctx.details.oldVersion && ctx.details.newVersion) {
+    lines.push(`- **Version:** ${ctx.details.oldVersion} → ${ctx.details.newVersion}`);
+  } else if (ctx.details.newVersion) {
+    lines.push(`- **Version:** → ${ctx.details.newVersion}`);
+  }
+  if (ctx.details.ecosystem) {
+    lines.push(`- **Ecosystem:** ${ctx.details.ecosystem}`);
+  }
+  if (ctx.classification.bumpType !== "unknown") {
+    lines.push(`- **Bump type:** ${ctx.classification.bumpType}`);
+  }
+
+  lines.push("");
+
+  if (ctx.classification.isBreaking) {
+    lines.push(
+      "**⚠ MAJOR version bump — potential breaking changes.**",
+      "Focus your review on:",
+      "- Breaking API changes in the updated dependency",
+      "- Deprecated features that may have been removed",
+      "- Migration requirements or compatibility issues",
+      "- Whether test coverage exercises the dependency's changed API surface",
+    );
+  } else {
+    lines.push(
+      "This is a minor/patch dependency update (low risk).",
+      "Focus your review on:",
+      "- Verify lockfile changes are consistent with the manifest change",
+      "- Check for unexpected additions to the dependency tree",
+      "- Keep review concise — minor/patch bumps are routine maintenance",
+    );
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * Build the system prompt for PR auto-review.
  *
@@ -929,6 +983,7 @@ export function buildReviewPrompt(context: {
     totalFiles: number;
   } | null;
   authorTier?: AuthorTier;
+  depBumpContext?: DepBumpContext | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1127,6 +1182,11 @@ export function buildReviewPrompt(context: {
       authorLogin: context.prAuthor,
     });
     if (authorExpSection) lines.push("", authorExpSection);
+  }
+
+  // --- Dependency bump context (DEP-01/02/03) ---
+  if (context.depBumpContext) {
+    lines.push("", buildDepBumpSection(context.depBumpContext));
   }
 
   // --- Path instructions ---
