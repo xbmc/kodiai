@@ -9,7 +9,7 @@
 - ✅ **v0.5 Advanced Learning & Language Support** — Phases 30-33 (shipped 2026-02-13)
 - ✅ **v0.6 Review Output Formatting & UX** — Phases 34-38 (shipped 2026-02-14)
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
-- **v0.8 Conversational Intelligence** — Phases 42-46 (in progress)
+- **v0.8 Conversational Intelligence** — Phases 42-48 (in progress)
 
 ## Phases
 
@@ -77,6 +77,8 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 - [x] **Phase 44: Smart Finding Prioritization** — Rank findings by multi-factor scoring for intelligent comment selection
 - [ ] **Phase 45: Author Experience Adaptation** — Detect contributor experience level and adjust review tone
 - [ ] **Phase 46: Conversational Review** — Enable dialog-based follow-up on review findings via @kodiai mentions
+- [ ] **Phase 47: v0.8 Verification Backfill** — Generate missing phase verification reports required for milestone DoD
+- [ ] **Phase 48: Conversational Fail-Open Hardening** — Ensure finding-lookup errors degrade gracefully in reply mention flow
 
 ## Phase Details
 
@@ -157,12 +159,43 @@ Plans:
 - [ ] 46-02-PLAN.md — TDD: outgoing mention sanitization and conversation config schema (sanitizeOutgoingMentions, maxTurnsPerPr, contextBudgetChars)
 - [ ] 46-03-PLAN.md — Wire conversational review into mention handler (rate limiting, sanitization, context budget, finding lookup integration)
 
+### Phase 47: v0.8 Verification Backfill
+**Goal**: Close milestone DoD evidence gaps by producing missing phase verification reports for completed v0.8 implementation phases
+**Depends on**: Phase 46 (all target implementation phases are already completed)
+**Requirements**: KEY-01, KEY-02, KEY-03, KEY-04, KEY-05, KEY-06, KEY-07, KEY-08, PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, PROF-06, AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, AUTH-07, CONV-01, CONV-02, CONV-03, CONV-04, CONV-05, CONV-06
+**Gap Closure**: Closes audit requirement gaps caused by missing `*-VERIFICATION.md` artifacts for phases 42, 43, 45, and 46
+**Success Criteria** (what must be TRUE):
+  1. Phase 42 has a passable `42-*-VERIFICATION.md` with requirement evidence for KEY-01..KEY-08
+  2. Phase 43 has a passable `43-*-VERIFICATION.md` with requirement evidence for PROF-01..PROF-06
+  3. Phase 45 has a passable `45-*-VERIFICATION.md` with requirement evidence for AUTH-01..AUTH-07
+  4. Phase 46 has a passable `46-*-VERIFICATION.md` with requirement evidence for CONV-01..CONV-06
+**Plans**: 2 plans
+
+Plans:
+- [ ] 47-01-PLAN.md — Produce missing verification reports for phases 42, 43, 45, and 46 using goal-backward evidence checks
+- [ ] 47-02-PLAN.md — Re-run milestone audit and update traceability/status once verification coverage is complete
+
+### Phase 48: Conversational Fail-Open Hardening
+**Goal**: Ensure conversational reply mentions never fail closed when finding lookup throws, preserving a no-context fallback response path
+**Depends on**: Phase 46 (hardens existing conversational implementation)
+**Requirements**: CONV-02, CONV-03
+**Gap Closure**: Closes audit degraded flow gap: mention fail-open on prompt-level finding lookup error
+**Success Criteria** (what must be TRUE):
+  1. Prompt-level finding lookup errors are caught locally and downgraded to empty finding context
+  2. Mention reply handler continues execution and publishes conversational response without finding context when lookup fails
+  3. Regression tests prove degraded path remains fail-open and does not route to handler-level error reply
+**Plans**: 2 plans
+
+Plans:
+- [ ] 48-01-PLAN.md — Add local fail-open guard around prompt-level finding lookup and preserve fallback context assembly
+- [ ] 48-02-PLAN.md — Add regression coverage for lookup-throw path and verify conversational pipeline remains resilient
+
 ## Progress
 
 **Total shipped:** 7 milestones, 44 phases, 113 plans
 
 **Execution Order:**
-Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46
+Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -178,7 +211,9 @@ Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46
 | 44. Smart Prioritization | v0.8 | 2/2 | Complete | 2026-02-14 |
 | 45. Author Adaptation | v0.8 | 0/TBD | Not started | - |
 | 46. Conversational Review | v0.8 | 0/TBD | Not started | - |
+| 47. Verification Backfill | v0.8 | 0/2 | Planned | - |
+| 48. Fail-Open Hardening | v0.8 | 0/2 | Planned | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- phases 42-44 completed and verified*
+*Roadmap updated: 2026-02-14 -- added phases 47-48 for v0.8 audit gap closure*
