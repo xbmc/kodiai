@@ -92,7 +92,7 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 
 - [x] **Phase 51: Timeout Resilience** — Users get useful partial reviews instead of error messages when large PRs time out (completed 2026-02-14)
 - [x] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction (completed 2026-02-14)
-- [ ] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output
+- [x] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output (completed 2026-02-14)
 - [ ] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps
 - [ ] **Phase 55: Merge Confidence Scoring** — Users see a composite confidence assessment synthesizing all dependency signals
 
@@ -137,8 +137,8 @@ Plans:
   4. Non-dependency PRs are unaffected — detection produces no output and adds no latency
 **Plans:** 2 plans
 Plans:
-- [ ] 53-01-PLAN.md — TDD: dep-bump-detector module (detect, extract, classify pipeline)
-- [ ] 53-02-PLAN.md — Wire detection into review.ts and review-prompt.ts
+- [x] 53-01-PLAN.md — TDD: dep-bump-detector module (detect, extract, classify pipeline)
+- [x] 53-02-PLAN.md — Wire detection into review.ts and review-prompt.ts
 
 ### Phase 54: Security Advisory & Changelog Analysis
 **Goal:** Users see CVE/advisory information and changelog context for dependency bumps, enabling informed merge decisions
@@ -167,7 +167,7 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
-**Total shipped:** 8 milestones, 52 phases, 150 plans
+**Total shipped:** 8 milestones, 53 phases, 152 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -181,10 +181,10 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51 | v0.9 | 3/3 | Complete | 2026-02-14 |
 | 52 | v0.9 | 2/2 | Complete | 2026-02-14 |
-| 53 | v0.9 | 0/TBD | Not started | - |
+| 53 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 54 | v0.9 | 0/TBD | Not started | - |
 | 55 | v0.9 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 52 complete (2 plans, verified 8/8)*
+*Roadmap updated: 2026-02-14 -- Phase 53 complete (2 plans, verified 11/11)*
