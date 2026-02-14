@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 46 -- Conversational Review
+**Current focus:** Phase 47 -- v0.8 Verification Backfill
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
-Phase: 46 of 46 (Conversational Review)
-Plan: 3 of 3 in current phase
-Status: Completed
-Last activity: 2026-02-14 -- completed phase 46 plan 03 conversational handler wiring and thread context budgets
+Phase: 47 of 47 (v0.8 Verification Backfill)
+Plan: 1 of 2 in current phase
+Status: In Progress
+Last activity: 2026-02-14 -- completed phase 47 plan 01 verification artifact backfill for phases 42/43/45/46
 
 Progress: [##########] 100%
 
@@ -40,6 +40,7 @@ Progress: [##########] 100%
 | Phase 46 P01 | 4 min | 2 tasks | 9 files |
 | Phase 46 P02 | 2 min | 2 tasks | 4 files |
 | Phase 46 P03 | 6 min | 2 tasks | 4 files |
+| Phase 47 P01 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,8 @@ Recent decisions affecting current work:
 - [Phase 46]: mention.conversation defaults are nested under mention schema for backward-compatible config parsing
 - [Phase 46]: Conversation turn limiting now applies only to reply-thread mentions and increments after successful executions.
 - [Phase 46]: Review-thread context keeps the most recent three turns at maxCommentChars while truncating older turns to 200 characters.
+- [Phase 47]: Backfilled phase 42/43/45/46 verification reports using phase-44 format with requirement-owned coverage tables.
+- [Phase 47]: Phase 46 degraded fail-open finding-lookup hardening remains deferred to phase 48 and is documented as out of scope in verification artifacts.
 
 ### Pending Todos
 
@@ -86,6 +89,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 46-03-PLAN.md
+Stopped at: Completed 47-01-PLAN.md
 Resume file: None
-Next action: Prepare milestone v0.8 wrap-up/release verification
+Next action: Execute 47-02-PLAN.md to update v0.8 milestone audit from backfilled verification evidence
