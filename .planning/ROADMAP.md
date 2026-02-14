@@ -91,7 +91,7 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 - Decimal phases (51.1, 51.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 51: Timeout Resilience** — Users get useful partial reviews instead of error messages when large PRs time out (completed 2026-02-14)
-- [ ] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction
+- [x] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction (completed 2026-02-14)
 - [ ] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output
 - [ ] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps
 - [ ] **Phase 55: Merge Confidence Scoring** — Users see a composite confidence assessment synthesizing all dependency signals
@@ -123,8 +123,8 @@ Plans:
   3. A TypeScript PR retrieves TypeScript-specific historical findings preferentially over Python findings at similar distance
 **Plans:** 2 plans
 Plans:
-- [ ] 52-01-PLAN.md -- TDD: multi-signal query builder + language-aware re-ranker
-- [ ] 52-02-PLAN.md -- Wire query builder and re-ranker into review.ts retrieval path
+- [x] 52-01-PLAN.md -- TDD: multi-signal query builder + language-aware re-ranker
+- [x] 52-02-PLAN.md -- Wire query builder and re-ranker into review.ts retrieval path
 
 ### Phase 53: Dependency Bump Detection
 **Goal:** Users see dependency version bumps automatically identified, parsed, and classified in Kodiai reviews
@@ -164,7 +164,7 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
-**Total shipped:** 8 milestones, 51 phases, 148 plans
+**Total shipped:** 8 milestones, 52 phases, 150 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -177,11 +177,11 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51 | v0.9 | 3/3 | Complete | 2026-02-14 |
-| 52 | v0.9 | 0/TBD | Not started | - |
+| 52 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 53 | v0.9 | 0/TBD | Not started | - |
 | 54 | v0.9 | 0/TBD | Not started | - |
 | 55 | v0.9 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 51 complete (3 plans, verified 10/10)*
+*Roadmap updated: 2026-02-14 -- Phase 52 complete (2 plans, verified 8/8)*
