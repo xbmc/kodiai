@@ -9,7 +9,7 @@
 - ✅ **v0.5 Advanced Learning & Language Support** — Phases 30-33 (shipped 2026-02-13)
 - ✅ **v0.6 Review Output Formatting & UX** — Phases 34-38 (shipped 2026-02-14)
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
-- **v0.8 Conversational Intelligence** — Phases 42-50 (in progress)
+- ✅ **v0.8 Conversational Intelligence** — Phases 42-50 (shipped 2026-02-14)
 
 ## Phases
 
@@ -60,174 +60,30 @@ See `.planning/milestones/v0.6-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 
-**Milestone Goal:** Improve review content quality through language-aware enforcement, large PR intelligence, and feedback-driven learning
-
-- [x] Phase 39: Language-Aware Enforcement (4/4 plans) -- completed 2026-02-14
-- [x] Phase 40: Large PR Intelligence (4/4 plans) -- completed 2026-02-14
-- [x] Phase 41: Feedback-Driven Learning (3/3 plans) -- completed 2026-02-14
-
 </details>
 
-### v0.8 Conversational Intelligence (In Progress)
+<details>
+<summary>v0.8 Conversational Intelligence (Phases 42-50) -- SHIPPED 2026-02-14</summary>
+
+See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Transform Kodiai from one-shot reviewer to conversational partner, enabling dialog-based refinement of reviews and intelligent adaptation to PR context.
 
-- [x] **Phase 42: Commit Message Keywords & PR Intent** — Parse PR metadata to detect review intent signals
-- [x] **Phase 43: Auto-Profile Selection** — Adapt review depth based on PR size and keyword signals
-- [x] **Phase 44: Smart Finding Prioritization** — Rank findings by multi-factor scoring for intelligent comment selection
-- [ ] **Phase 45: Author Experience Adaptation** — Detect contributor experience level and adjust review tone
-- [ ] **Phase 46: Conversational Review** — Enable dialog-based follow-up on review findings via @kodiai mentions
-- [ ] **Phase 47: v0.8 Verification Backfill** — Generate missing phase verification reports required for milestone DoD
-- [ ] **Phase 48: Conversational Fail-Open Hardening** — Ensure finding-lookup errors degrade gracefully in reply mention flow
-- [ ] **Phase 49: Verification Artifacts for Phases 47-48** — Produce missing verification reports for recently completed gap-closure phases
-- [x] **Phase 50: Publish-Path Mention Sanitization Completion** — Enforce sanitization across all outbound mention/comment publish paths
+- [x] Phase 42: Commit Message Keywords & PR Intent (2/2 plans) -- completed 2026-02-14
+- [x] Phase 43: Auto-Profile Selection (2/2 plans) -- completed 2026-02-14
+- [x] Phase 44: Smart Finding Prioritization (2/2 plans) -- completed 2026-02-14
+- [x] Phase 45: Author Experience Adaptation (2/2 plans) -- completed 2026-02-14
+- [x] Phase 46: Conversational Review (3/3 plans) -- completed 2026-02-14
+- [x] Phase 47: v0.8 Verification Backfill (2/2 plans) -- completed 2026-02-14
+- [x] Phase 48: Conversational Fail-Open Hardening (2/2 plans) -- completed 2026-02-14
+- [x] Phase 49: Verification Artifacts for Phases 47-48 (2/2 plans) -- completed 2026-02-14
+- [x] Phase 50: Publish-Path Mention Sanitization (2/2 plans) -- completed 2026-02-14
 
-## Phase Details
-
-### Phase 42: Commit Message Keywords & PR Intent
-**Goal**: Users can signal review intent through PR title keywords and body markers, giving Kodiai structured context before the review begins
-**Depends on**: Nothing (first phase of v0.8; pure parsing, no side effects)
-**Requirements**: KEY-01, KEY-02, KEY-03, KEY-04, KEY-05, KEY-06, KEY-07, KEY-08
-**Success Criteria** (what must be TRUE):
-  1. Bracket tags in PR title (`[WIP]`, `[security-review]`, `[no-review]`, `[style-ok]`) are detected and influence review behavior
-  2. Conventional commit prefixes in PR title (`fix:`, `feat:`, `docs:`) are recognized and parsed into structured intent
-  3. "Breaking change" keyword in PR body triggers elevated review attention
-  4. `[no-review]` in PR title causes the bot to skip auto-review entirely
-  5. Keyword parsing results appear in Review Details appendix for transparency
-**Plans**: 2 plans
-
-Plans:
-- [x] 42-01-PLAN.md — TDD: PR intent parser (bracket tags, conventional commits, breaking change detection, commit sampling, section builder)
-- [x] 42-02-PLAN.md — Wire parser into review handler ([no-review] fast check, commit fetching, profile/focus/style overrides, Review Details transparency, conventional commit prompt context)
-
-### Phase 43: Auto-Profile Selection
-**Goal**: The bot automatically selects an appropriate review depth profile based on PR size and keyword overrides, so small PRs get thorough reviews and large PRs get focused ones
-**Depends on**: Phase 42 (keyword-based profile overrides depend on keyword parsing)
-**Requirements**: PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, PROF-06
-**Success Criteria** (what must be TRUE):
-  1. A small PR (100 lines or fewer) receives a strict-profile review with detailed findings
-  2. A large PR (over 500 lines) receives a minimal-profile review focused on critical issues
-  3. A `.kodiai.yml` profile setting overrides the auto-selected profile
-  4. A `[strict-review]` keyword in the PR title overrides both auto-selection and config
-**Plans**: 2 plans
-
-Plans:
-- [x] 43-01-PLAN.md — TDD: deterministic auto-profile resolver (threshold bands + keyword/manual precedence metadata)
-- [x] 43-02-PLAN.md — Integrate auto-profile into review handler and Review Details with runtime regression coverage
-
-### Phase 44: Smart Finding Prioritization
-**Goal**: When the bot has more findings than the comment cap allows, it selects the most important findings using a multi-factor score rather than severity alone
-**Depends on**: Phase 43 (profile determines comment caps that trigger prioritization)
-**Requirements**: PRIOR-01, PRIOR-02, PRIOR-03, PRIOR-04
-**Success Criteria** (what must be TRUE):
-  1. Findings are scored using a composite of severity, file risk, category, and recurrence
-  2. When comment cap is reached, the highest-scored findings are published (not just highest severity)
-  3. Review Details appendix shows prioritization stats: findings scored, top score, threshold applied
-**Plans**: 2 plans
-
-Plans:
-- [x] 44-01-PLAN.md — TDD: deterministic composite finding prioritizer (severity + file risk + category + recurrence) with top-N selection stats
-- [x] 44-02-PLAN.md — Wire prioritization into review handler with configurable weights, cap enforcement, and Review Details prioritization transparency
-
-### Phase 45: Author Experience Adaptation
-**Goal**: The bot adapts its review tone based on the PR author's experience level, providing more educational context for newcomers and concise feedback for core contributors
-**Depends on**: Phase 42 (benefits from keyword parsing being in place; no hard dependency on 43-44)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, AUTH-07
-**Success Criteria** (what must be TRUE):
-  1. A first-time contributor receives review comments with gentler language and more explanation of why findings matter
-  2. A core contributor (MEMBER/OWNER) receives terse review comments that assume context
-  3. Author classification is cached in SQLite with a 24-hour TTL to avoid redundant API calls
-  4. If the GitHub Search API or classification logic fails, the review proceeds normally (fail-open)
-**Plans**: 2 plans
-
-Plans:
-- [ ] 45-01-PLAN.md — TDD: author classifier (three-tier mapping from author_association + PR count) and prompt tone section builder
-- [ ] 45-02-PLAN.md — Wire classification into review pipeline (SQLite cache, Search API enrichment, prompt injection, Review Details, fail-open)
-
-### Phase 46: Conversational Review
-**Goal**: Users can mention @kodiai in a reply to a review finding and receive a contextual follow-up response, turning one-shot reviews into dialog
-**Depends on**: Phase 42 (benefits from all prior phases; extends the mention handler)
-**Requirements**: CONV-01, CONV-02, CONV-03, CONV-04, CONV-05, CONV-06
-**Success Criteria** (what must be TRUE):
-  1. User can reply to a review finding comment with @kodiai and receive a response that references the original finding, code snippet, and reasoning
-  2. The bot loads the original finding context (not just the comment text) when responding to a reply
-  3. Conversation threads are rate-limited (max N turns per PR) to prevent runaway token costs
-  4. The bot does not trigger itself when responding (outgoing mention sanitization works)
-  5. Context budget caps the total characters assembled per turn to prevent context window explosion
-**Plans**: 3 plans
-
-Plans:
-- [ ] 46-01-PLAN.md — TDD: thread-aware context building and finding lookup (inReplyToId, getFindingByCommentId, thread context, finding-specific prompt)
-- [ ] 46-02-PLAN.md — TDD: outgoing mention sanitization and conversation config schema (sanitizeOutgoingMentions, maxTurnsPerPr, contextBudgetChars)
-- [ ] 46-03-PLAN.md — Wire conversational review into mention handler (rate limiting, sanitization, context budget, finding lookup integration)
-
-### Phase 47: v0.8 Verification Backfill
-**Goal**: Close milestone DoD evidence gaps by producing missing phase verification reports for completed v0.8 implementation phases
-**Depends on**: Phase 46 (all target implementation phases are already completed)
-**Requirements**: KEY-01, KEY-02, KEY-03, KEY-04, KEY-05, KEY-06, KEY-07, KEY-08, PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, PROF-06, AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, AUTH-07, CONV-01, CONV-02, CONV-03, CONV-04, CONV-05, CONV-06
-**Gap Closure**: Closes audit requirement gaps caused by missing `*-VERIFICATION.md` artifacts for phases 42, 43, 45, and 46
-**Success Criteria** (what must be TRUE):
-  1. Phase 42 has a passable `42-*-VERIFICATION.md` with requirement evidence for KEY-01..KEY-08
-  2. Phase 43 has a passable `43-*-VERIFICATION.md` with requirement evidence for PROF-01..PROF-06
-  3. Phase 45 has a passable `45-*-VERIFICATION.md` with requirement evidence for AUTH-01..AUTH-07
-  4. Phase 46 has a passable `46-*-VERIFICATION.md` with requirement evidence for CONV-01..CONV-06
-**Plans**: 2 plans
-
-Plans:
-- [ ] 47-01-PLAN.md — Produce missing verification reports for phases 42, 43, 45, and 46 using goal-backward evidence checks
-- [ ] 47-02-PLAN.md — Re-run milestone audit and update traceability/status once verification coverage is complete
-
-### Phase 48: Conversational Fail-Open Hardening
-**Goal**: Ensure conversational reply mentions never fail closed when finding lookup throws, preserving a no-context fallback response path
-**Depends on**: Phase 46 (hardens existing conversational implementation)
-**Requirements**: CONV-02, CONV-03
-**Gap Closure**: Closes audit degraded flow gap: mention fail-open on prompt-level finding lookup error
-**Success Criteria** (what must be TRUE):
-  1. Prompt-level finding lookup errors are caught locally and downgraded to empty finding context
-  2. Mention reply handler continues execution and publishes conversational response without finding context when lookup fails
-  3. Regression tests prove degraded path remains fail-open and does not route to handler-level error reply
-**Plans**: 2 plans
-
-Plans:
-- [ ] 48-01-PLAN.md — Add local fail-open guard around prompt-level finding lookup and preserve fallback context assembly
-- [ ] 48-02-PLAN.md — Add regression coverage for lookup-throw path and verify conversational pipeline remains resilient
-
-### Phase 49: Verification Artifacts for Phases 47-48
-**Goal**: Close milestone audit blockers by adding phase-level verification artifacts for phases 47 and 48 and reconciling milestone phase coverage
-**Depends on**: Phase 48 (verification artifacts require completed implementation summaries)
-**Requirements**: None (audit process closure)
-**Gap Closure**: Closes audit requirement gaps for unverified phases 47 and 48
-**Success Criteria** (what must be TRUE):
-  1. `.planning/phases/47-v0-8-verification-backfill/` contains a passable `47-*-VERIFICATION.md`
-  2. `.planning/phases/48-conversational-fail-open-hardening/` contains a passable `48-*-VERIFICATION.md`
-  3. Milestone audit phase coverage updates from 5/7 to 7/7 with no unverified phase blockers
-**Plans**: 2 plans
-
-Plans:
-- [ ] 49-01-PLAN.md — Produce phase 47 and phase 48 verification reports with evidence-backed status
-- [ ] 49-02-PLAN.md — Reconcile canonical and secondary v0.8 audits to 7/7 phase coverage with no unverified blockers
-
-### Phase 50: Publish-Path Mention Sanitization Completion
-**Goal**: Eliminate residual degraded publish-path sanitization risk by enforcing mention sanitization through a single shared outbound helper
-**Depends on**: Phase 48 (builds on conversational fail-open hardening)
-**Requirements**: CONV-05
-**Gap Closure**: Closes audit degraded flow for ancillary outbound mention/comment publish paths
-**Success Criteria** (what must be TRUE):
-  1. All outbound mention/comment publish paths pass through a shared sanitizing helper
-  2. Ancillary publish paths (non-primary conversational paths) are explicitly covered by regression tests
-  3. Milestone audit no longer reports degraded flow for outbound mention sanitization coverage
-**Plans**: 2 plans
-
-Plans:
-- [ ] 50-01-PLAN.md — Thread botHandles through ExecutionContext and MCP servers, apply sanitizeOutgoingMentions to all publish paths
-- [ ] 50-02-PLAN.md — Add regression tests for MCP server mention sanitization and close milestone audit degraded flow
+</details>
 
 ## Progress
 
-**Total shipped:** 7 milestones, 50 phases, 126 plans
-
-**Execution Order:**
-Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48 -> 49 -> 50
+**Total shipped:** 8 milestones, 50 phases, 145 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -238,16 +94,8 @@ Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48 -> 49 ->
 | 30-33 | v0.5 | 12/12 | Complete | 2026-02-13 |
 | 34-38 | v0.6 | 10/10 | Complete | 2026-02-14 |
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
-| 42. Keywords & PR Intent | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 43. Auto-Profile Selection | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 44. Smart Prioritization | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 45. Author Adaptation | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 46. Conversational Review | v0.8 | 3/3 | Complete | 2026-02-14 |
-| 47. Verification Backfill | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 48. Fail-Open Hardening | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 49. Verification Artifacts | v0.8 | 2/2 | Complete | 2026-02-14 |
-| 50. Sanitization Completion | v0.8 | 2/2 | Complete | 2026-02-14 |
+| 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- added phases 49-50 for v0.8 audit gap closure*
+*Roadmap updated: 2026-02-14 -- v0.8 Conversational Intelligence shipped*

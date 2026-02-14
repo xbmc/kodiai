@@ -5,15 +5,12 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 50 complete — all v0.8 phases executed, ready for milestone completion
+**Current focus:** v0.8 milestone complete — planning next milestone
 
 ## Current Position
 
-**Milestone:** v0.8 Conversational Intelligence
-**Phase:** 50-publish-path-mention-sanitization-completion
-**Current Plan:** 2
-**Total Plans in Phase:** 2
-**Status:** Phase complete — verified
+**Milestone:** v0.8 Conversational Intelligence (SHIPPED)
+**Status:** Milestone complete
 **Last Activity:** 2026-02-14
 
 **Progress:** [██████████] 100%
@@ -21,87 +18,19 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 118
-- Average duration: 4 min
-- Total execution time: ~481 min
-
-**By latest shipped milestone (v0.7):**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 39-language-aware-enforcement | 4 | ~12 min | ~3 min |
-| 40-large-pr-intelligence | 4 | ~12 min | ~3 min |
-| 41-feedback-driven-learning | 3 | ~9 min | ~3 min |
-| 42-commit-message-keywords-pr-intent | 2 | ~30 min | ~15 min |
-| 43-auto-profile-selection | 2 | ~4 min | ~2 min |
-| Phase 44 P01 | 2 min | 2 tasks | 2 files |
-| Phase 44 P02 | 2 min | 3 tasks | 4 files |
-| Phase 45 P01 | 2 min | 2 tasks | 4 files |
-| Phase 45 P02 | 5 | 2 tasks | 5 files |
-| Phase 46 P01 | 4 min | 2 tasks | 9 files |
-| Phase 46 P02 | 2 min | 2 tasks | 4 files |
-| Phase 46 P03 | 6 min | 2 tasks | 4 files |
-| Phase 47 P01 | 7min | 2 tasks | 4 files |
-| Phase 47 P02 | 1min | 2 tasks | 1 files |
-| Phase 48 P01 | 1 min | 2 tasks | 2 files |
-| Phase 48 P02 | 1 min | 2 tasks | 2 files |
-| Phase 49-verification-artifacts-for-phases-47-48 P01 | 3 min | 2 tasks | 2 files |
-| Phase 49-verification-artifacts-for-phases-47-48 P02 | 2 min | 2 tasks | 2 files |
-| Phase 50 P01 | 6 min | 2 tasks | 11 files |
-| Phase 50 P02 | 3min | 2 tasks | 5 files |
+- Total plans completed: 145
+- Total milestones shipped: 8
+- Total phases completed: 50
 
 ## Accumulated Context
 
 ### Decisions
 
-All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.7 decisions archived.
-
-Recent decisions affecting current work:
-- Research recommends building keyword parsing first (pure-function, feeds into auto-profile)
-- Zero new npm dependencies required for v0.8 -- all features use existing stack
-- One new SQLite table needed: author experience cache (24-hour TTL)
-- `author_association` may return NONE instead of FIRST_TIME_CONTRIBUTOR -- defensive handling required
-- [Phase 42]: Conventional commit parsing now ignores leading bracket tags so [WIP] feat: still resolves intent.
-- [Phase 42]: Large PR commit scanning uses strategic sampling (>50 commits): first 10, every 5th middle, last 10.
-- [Phase 42]: [no-review] now short-circuits review before workspace creation and posts acknowledgment.
-- [Phase 42]: Conventional commit metadata is now passed into prompt construction for type-specific review focus guidance.
-- [Phase 43]: Profile precedence is fixed as keyword override > manual config > auto-threshold
-- [Phase 43]: Auto selection metadata includes source and band for observability without handler coupling
-- [Phase 43]: Handler now resolves a single profile selection object before applying presets
-- [Phase 43]: Review Details always publishes profile source text (auto/manual/keyword) for traceability
-- [Phase 44]: Unknown severity/category values fail open to neutral scoring defaults instead of throwing
-- [Phase 44]: Prioritization weights are runtime-normalized and ties are resolved by original index for deterministic ranking
-- [Phase 44]: Prioritization weights are configured under review.prioritization with bounded 0..1 values and section-level fallback behavior
-- [Phase 44]: Cap overflow prioritization runs after suppression and confidence filtering, and non-selected findings are deleted through the existing inline cleanup path
-- [Phase 45]: Definite author_association values short-circuit before PR-count enrichment to keep MEMBER/OWNER and FIRST_TIMER/FIRST_TIME_CONTRIBUTOR deterministic.
-- [Phase 45]: Author experience tone adaptation is exposed as buildAuthorExperienceSection and intentionally not wired into buildReviewPrompt until plan 45-02 integration.
-- [Phase 45]: Author tier resolution runs only when a knowledge store is available; otherwise review defaults to regular tier without blocking execution.
-- [Phase 45]: Classification enrichment calls GitHub Search API only for ambiguous associations and always fails open on lookup/cache errors.
-- [Phase 46]: Thread context fetches one review-comments page (100 max) and filters deterministically by thread root.
-- [Phase 46]: Finding enrichment stays decoupled by using optional KnowledgeStore.getFindingByCommentId and mention-context findingLookup callback.
-- [Phase 46]: sanitizeOutgoingMentions remains self-contained in sanitizer.ts to avoid circular imports
-- [Phase 46]: mention.conversation defaults are nested under mention schema for backward-compatible config parsing
-- [Phase 46]: Conversation turn limiting now applies only to reply-thread mentions and increments after successful executions.
-- [Phase 46]: Review-thread context keeps the most recent three turns at maxCommentChars while truncating older turns to 200 characters.
-- [Phase 47]: Backfilled phase 42/43/45/46 verification reports using phase-44 format with requirement-owned coverage tables.
-- [Phase 47]: Phase 46 degraded fail-open finding-lookup hardening remains deferred to phase 48 and is documented as out of scope in verification artifacts.
-- [Phase 47]: Milestone audit phase and requirement statuses now transition only when owning phase verification artifacts are present.
-- [Phase 47]: Conversational fail-open degraded flow remains deferred to phase 48 and is intentionally not marked fixed in v0.8 audit closure.
-- [Phase 48]: Catch only finding hydration failures in mention-context thread assembly and continue without metadata
-- [Phase 48]: Lock degraded behavior with regression coverage that keeps review thread context while omitting finding metadata
-- [Phase 48]: Guard mention handler findingContext hydration with a narrow catch and warning log so lookup faults do not trigger handler-level error replies
-- [Phase 48]: Verify degraded path by asserting executor invocation, conversational context retention, and omission of finding preamble when lookup throws
-- [Phase 49]: Phase 47/48 verification artifacts assert no new requirement ownership; requirements are referenced as supportive without inventing IDs.
-- [Phase 49]: Phase 47/48 verification reports reuse the established v0.8 verification section ordering for audit consistency.
-- [Phase 49-verification-artifacts-for-phases-47-48]: Treat .planning/v0.8-v0.8-MILESTONE-AUDIT.md as canonical for 7-phase v0.8 audit coverage and keep .planning/v0.8-MILESTONE-AUDIT.md synchronized to prevent drift.
-- [Phase 50]: Use githubApp.getAppSlug() at review handler call sites instead of caching appSlug variable (synchronous, always in scope)
-- [Phase 50]: Sanitize at utility function level (upsertReviewDetailsComment, appendReviewDetailsToSummary) by adding botHandles parameter for DRY publish-path coverage
-- [Phase 50]: Test all 5 MCP publish paths with botHandles and verify @kodiai stripped to kodiai in regression tests
-- [Phase 50]: Update both audit files in sync to prevent drift between canonical and secondary audit
+All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisions archived.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
@@ -109,7 +38,7 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T20:29:31.282Z
-**Stopped At:** Completed 50-02-PLAN.md
+**Last session:** 2026-02-14
+**Stopped At:** v0.8 milestone completion
 **Resume File:** None
-**Next action:** Execute 50-02-PLAN.md
+**Next action:** `/gsd:new-milestone` to start next milestone

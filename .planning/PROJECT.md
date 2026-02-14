@@ -8,41 +8,40 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.7 Intelligent Review Content
+## Latest Release: v0.8 Conversational Intelligence
 
 **Shipped:** 2026-02-14
-**Phases:** 39-41 (3 phases, 11 plans, 16 commits)
+**Phases:** 42-50 (9 phases, 19 plans, ~66 commits)
+
+**Delivered:**
+- PR intent parser extracting bracket tags, conventional commit prefixes, and breaking change signals from PR metadata
+- Deterministic auto-profile selection adapting review depth to PR size (strict/balanced/minimal)
+- Multi-factor finding prioritization with composite scoring and configurable weights
+- Author experience adaptation classifying contributors into tiers with tone-adjusted review feedback
+- Conversational review enabling @kodiai follow-up responses on review findings with thread context and rate limiting
+- Defense-in-depth mention sanitization across all 12 outbound publish paths preventing self-trigger loops
+- 736 tests passing (100% pass rate)
+
+<details>
+<summary>Previous Release: v0.7 Intelligent Review Content (2026-02-14)</summary>
 
 **Delivered:**
 - Language-aware enforcement with 10-pattern safety catalog (auto-suppress tooling noise, elevate C++ null deref/Go unchecked errors)
 - Risk-weighted file prioritization for large PRs (5-dimension scoring, tiered analysis for top 50 files)
 - Feedback-driven suppression with safety floors (auto-suppress after 3+ thumbs-down from 3+ users across 2+ PRs)
 - Fail-open enforcement pipeline with composable config schema
-- 616 tests passing (100% pass rate)
-
-<details>
-<summary>Previous Release: v0.6 Review Output Formatting & UX (2026-02-14)</summary>
-
-**Delivered:**
-- Structured five-section review template (What Changed → Strengths → Observations → Suggestions → Verdict)
-- Impact vs preference categorization separating real risks from style nits with inline severity tags
-- Explicit merge recommendations using blocker-driven verdict logic (Ready to merge / Ready with minor / Address before merging)
-- Embedded Review Details as compact 4-line factual appendix in summary comments (removed time-saved estimates)
-- Delta re-review formatting showing only what changed (new/resolved/still-open findings) with transition-based verdicts
 
 </details>
 
 <details>
-<summary>v0.5 Advanced Learning & Language Support (2026-02-13)</summary>
+<summary>v0.6 Review Output Formatting & UX (2026-02-14)</summary>
 
 **Delivered:**
-- SHA-keyed run state for idempotent webhook processing with force-push detection
-- Embedding-backed learning memory with Voyage AI and sqlite-vec for semantic pattern retrieval
-- Incremental re-review focusing on changed code with fingerprint-based finding deduplication
-- Bounded retrieval context enriching prompts with top-K similar findings
-- Multi-language classification and guidance for 20 languages (detailed guidance for 9 major languages)
-- Explainable delta reporting with new/resolved/still-open labeling and learning provenance citations
-- Configurable output language localization preserving canonical severity/category taxonomy
+- Structured five-section review template (What Changed → Strengths → Observations → Suggestions → Verdict)
+- Impact vs preference categorization separating real risks from style nits with inline severity tags
+- Explicit merge recommendations using blocker-driven verdict logic
+- Embedded Review Details as compact 4-line factual appendix in summary comments
+- Delta re-review formatting showing only what changed with transition-based verdicts
 
 </details>
 
@@ -94,17 +93,20 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Thumbs-down reaction feedback with confidence recalibration — v0.7
 - ✓ Auto-suppression after N ignored occurrences — v0.7
 
+- ✓ Conversational review with @kodiai follow-up responses on review findings — v0.8
+- ✓ Thread context tracking with rate limiting for conversational mode — v0.8
+- ✓ Auto-profile selection based on PR size (≤100 lines strict, 500+ minimal) — v0.8
+- ✓ Smart finding prioritization using multi-factor scoring (severity + file risk + category + recurrence) — v0.8
+- ✓ Author experience detection and tone adaptation (first-time vs regular vs core contributors) — v0.8
+- ✓ Commit message keyword parsing for review intent (PR title/body analysis) — v0.8
+- ✓ Bracket tag extraction (`[Component]`, `[WIP]`, etc.) — v0.8
+- ✓ Breaking change detection from PR metadata — v0.8
+- ✓ Review mode override via keywords (`[strict-review]`, `[quick-review]`, `[security-review]`, `[style-ok]`, `[no-review]`) — v0.8
+- ✓ Defense-in-depth mention sanitization across all outbound publish paths — v0.8
+
 ### Active
 
-- [ ] Conversational review with @kodiai follow-up responses on review findings
-- [ ] Thread context tracking with rate limiting for conversational mode
-- [ ] Auto-profile selection based on PR size (≤100 lines strict, 500+ minimal)
-- [ ] Smart finding prioritization using multi-factor scoring (severity + file risk + category + recurrence)
-- [ ] Author experience detection and tone adaptation (first-time vs regular vs core contributors)
-- [ ] Commit message keyword parsing for review intent (PR title/body analysis)
-- [ ] Bracket tag extraction (`[Component]`, `[WIP]`, etc.)
-- [ ] Breaking change detection from PR metadata
-- [ ] Review mode override via keywords (`[strict-review]`, `[quick-review]`, `[security-review]`, `[style-ok]`, `[no-review]`)
+(None — define in next milestone)
 
 ### Out of Scope
 
@@ -125,11 +127,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
 - **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
-- **Codebase:** ~29,527 lines of TypeScript, 616 tests passing (100% pass rate)
+- **Codebase:** ~58,594 lines of TypeScript, 736 tests passing (100% pass rate)
 
 ## Current State
 
-v0.7 ships an installable GitHub App that:
+v0.8 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -155,20 +157,15 @@ v0.7 ships an installable GitHub App that:
 - **Applies risk-weighted file prioritization for large PRs (>50 files) with tiered analysis (top 30 full, next 20 abbreviated)**
 - **Learns from thumbs-down reactions and auto-suppresses patterns after 3+ rejections from 3+ users across 2+ PRs**
 - **Enforces safety floors preventing suppression of CRITICAL and MAJOR security/correctness findings**
-- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression)
+- **Parses PR title keywords and conventional commit prefixes for structured review intent signaling**
+- **Auto-selects review depth profile based on PR size (strict ≤100, balanced 101-500, minimal >500 lines)**
+- **Prioritizes findings using multi-factor composite scoring (severity + file risk + category + recurrence)**
+- **Adapts review tone based on author experience tier (first-time/regular/core contributors)**
+- **Enables conversational follow-up via @kodiai replies to review findings with thread context and rate limiting**
+- **Sanitizes outgoing mentions across all 12 publish paths to prevent self-trigger loops**
+- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression, prioritization weights, conversation limits)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
-
-## Current Milestone: v0.8 Conversational Intelligence
-
-**Goal:** Transform Kodiai from one-shot reviewer to conversational partner, enabling dialog-based refinement of reviews and intelligent adaptation to PR context.
-
-**Target features:**
-- Conversational review foundation with @kodiai follow-up responses
-- Auto-profile selection based on PR size (strict/balanced/minimal)
-- Smart finding prioritization using multi-factor scoring
-- Author experience adaptation (gentler tone for newcomers)
-- Commit message keyword detection for review intent signaling
 
 ## Constraints
 
@@ -221,6 +218,13 @@ v0.7 ships an installable GitHub App that:
 | Tiered large PR analysis | Top 30 full review, next 20 abbreviated, rest mention-only; not binary include/exclude | ✓ Good — v0.7 |
 | Feedback aggregation thresholds | 3+ thumbs-down from 3+ reactors across 2+ PRs triggers auto-suppression | ✓ Good — v0.7 |
 | Safety floors for feedback | CRITICAL and MAJOR security/correctness never auto-suppressed regardless of feedback volume | ✓ Good — v0.7 |
+| Pure-function PR intent parser | Stateless parsing enables easy testing and composition with downstream resolvers | ✓ Good — v0.8 |
+| Keyword override > manual > auto precedence | Clear, deterministic profile resolution chain | ✓ Good — v0.8 |
+| Normalized weighted composite scoring | Runtime-normalized weights with stable tie-breaking by original index | ✓ Good — v0.8 |
+| Three-tier author classification | first-time/regular/core with definite association short-circuit before enrichment | ✓ Good — v0.8 |
+| Optional finding enrichment via callback | Decoupled knowledge store from mention context via findingLookup callback | ✓ Good — v0.8 |
+| Narrow fail-open guards on enrichment | Catch only enrichment failures, not structural errors; preserves degraded response path | ✓ Good — v0.8 |
+| Defense-in-depth publish-path sanitization | botHandles threaded through ExecutionContext to all MCP servers for self-trigger prevention | ✓ Good — v0.8 |
 
 ---
-*Last updated: 2026-02-13 after starting v0.8 milestone*
+*Last updated: 2026-02-14 after v0.8 milestone*
