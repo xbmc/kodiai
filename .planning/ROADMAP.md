@@ -125,12 +125,12 @@ Plans:
   3. The Review Details section reports how many patterns were auto-suppressed based on prior feedback (e.g., "3 patterns auto-suppressed based on prior feedback")
   4. Feedback-driven suppression requires explicit opt-in via `.kodiai.yml` and suppression thresholds are configurable per-repo
   5. A repo owner can view and clear feedback-based suppressions, and confidence scores reflect feedback history (thumbs-up boosts, thumbs-down reduces)
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 41-01: TBD
-- [ ] 41-02: TBD
-- [ ] 41-03: TBD
+- [ ] 41-01-PLAN.md — Foundation: types, config schema, KnowledgeStore aggregation query
+- [ ] 41-02-PLAN.md — Aggregator, safety guard, and confidence adjuster (TDD)
+- [ ] 41-03-PLAN.md — Pipeline integration into review handler with Review Details disclosure
 
 ## Progress
 
