@@ -219,8 +219,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 50-01-PLAN.md — Introduce shared sanitized publish helper and route all mention handler publish calls through it
-- [ ] 50-02-PLAN.md — Add regression coverage for ancillary publish paths and re-audit flow status
+- [ ] 50-01-PLAN.md — Thread botHandles through ExecutionContext and MCP servers, apply sanitizeOutgoingMentions to all publish paths
+- [ ] 50-02-PLAN.md — Add regression tests for MCP server mention sanitization and close milestone audit degraded flow
 
 ## Progress
 
