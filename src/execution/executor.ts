@@ -38,14 +38,17 @@ export function createExecutor(deps: {
 
         // Set up timeout enforcement via AbortController (not AbortSignal.timeout()
         // because we need to clearTimeout on success -- Pitfall 5 from research)
-        timeoutSeconds = config.timeoutSeconds;
+        timeoutSeconds = context.dynamicTimeoutSeconds ?? config.timeoutSeconds;
         const timeoutMs = timeoutSeconds * 1000;
         controller = new AbortController();
         timeoutId = setTimeout(
           () => controller!.abort(new Error("timeout")),
           timeoutMs,
         );
-        logger.info({ timeoutMs }, "Timeout enforcement configured");
+        logger.info(
+          { timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
+          "Timeout enforcement configured",
+        );
 
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>

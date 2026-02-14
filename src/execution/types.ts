@@ -22,6 +22,9 @@ export type ExecutionContext = {
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
 
+  /** Optional dynamic timeout override (seconds). When set, overrides config.timeoutSeconds. */
+  dynamicTimeoutSeconds?: number;
+
   /** Bot mention handles for outgoing sanitization (e.g. ['kodiai', 'claude']). */
   botHandles?: string[];
 

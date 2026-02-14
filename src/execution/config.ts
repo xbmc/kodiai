@@ -354,6 +354,13 @@ const largePRSchema = z
     },
   });
 
+const timeoutSchema = z
+  .object({
+    dynamicScaling: z.boolean().default(true),
+    autoReduceScope: z.boolean().default(true),
+  })
+  .default({ dynamicScaling: true, autoReduceScope: true });
+
 const feedbackAutoSuppressThresholdsSchema = z
   .object({
     minThumbsDown: z.number().min(1).max(50).default(3),
@@ -412,6 +419,7 @@ const repoConfigSchema = z.object({
   languageRules: languageRulesSchema,
   largePR: largePRSchema,
   feedback: feedbackSchema,
+  timeout: timeoutSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -654,6 +662,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // timeout
+  const timeoutResult = timeoutSchema.safeParse(obj.timeout);
+  let timeout: z.infer<typeof timeoutSchema>;
+  if (timeoutResult.success) {
+    timeout = timeoutResult.data;
+  } else {
+    timeout = timeoutSchema.parse({});
+    warnings.push({
+      section: "timeout",
+      issues: timeoutResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -667,6 +690,7 @@ export async function loadRepoConfig(
     languageRules,
     largePR,
     feedback,
+    timeout,
   };
 
   return { config, warnings };
