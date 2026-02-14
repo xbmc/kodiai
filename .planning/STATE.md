@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 40 of 41 (Large PR Intelligence)
-Plan: 2 of 4 complete
+Plan: 3 of 4 complete
 Status: In Progress
-Last activity: 2026-02-14 — Completed 40-02 (risk scoring and numstat parser tests)
+Last activity: 2026-02-14 — Completed 40-03 (prompt triage section and Review Details disclosure)
 
-Progress: [=====-----] 50%
+Progress: [=======---] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 84
+- Total plans completed: 85
 - Average duration: 4 min
-- Total execution time: 376 min
+- Total execution time: 379 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -43,6 +43,8 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.6 decisio
 Recent decisions affecting current work:
 - Tests written against pre-existing 40-01 implementation; RED+GREEN phases collapsed since code already passed
 - Used describe blocks to group related tests (computeFileRiskScores, triageFilesByRisk, parseNumstatPerFile)
+- Mention-only files excluded from LLM prompt (token waste), listed only in Review Details
+- 100-entry cap on skipped file listing for GitHub comment size limits
 
 ### Pending Todos
 
@@ -55,6 +57,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Re-executed 40-01-PLAN.md (foundation: risk scorer, numstat parser, largePR config)
+Stopped at: Completed 40-03-PLAN.md (prompt triage section and Review Details disclosure)
 Resume file: None
-Next action: Execute 40-03-PLAN.md (prompt triage section)
+Next action: Execute 40-04-PLAN.md (review handler orchestration integration)
