@@ -110,10 +110,10 @@ Plans:
 **Plans:** 4 plans
 
 Plans:
-- [ ] 40-01-PLAN.md — Foundation: risk scoring engine, per-file numstat parser, config schema
-- [ ] 40-02-PLAN.md — Risk scoring and numstat parser tests (TDD)
-- [ ] 40-03-PLAN.md — Tiered prompt sections and Review Details disclosure
-- [ ] 40-04-PLAN.md — Pipeline integration into review handler
+- [x] 40-01-PLAN.md — Foundation: risk scoring engine, per-file numstat parser, config schema
+- [x] 40-02-PLAN.md — Risk scoring and numstat parser tests (TDD)
+- [x] 40-03-PLAN.md — Tiered prompt sections and Review Details disclosure
+- [x] 40-04-PLAN.md — Pipeline integration into review handler
 
 ### Phase 41: Feedback-Driven Learning
 **Goal**: The bot learns from thumbs-down reactions on its review comments -- tracking rejection patterns by finding fingerprint, auto-suppressing patterns that cross configurable thresholds, and adjusting confidence scores -- while enforcing hard safety floors that prevent suppression of critical/security findings.
@@ -145,6 +145,6 @@ Phases execute in numeric order: 39 → 40 → 41
 | 26-29 | v0.4 | 17/17 | ✓ Complete | 2026-02-12 |
 | 30-33 | v0.5 | 12/12 | ✓ Complete | 2026-02-13 |
 | 34-38 | v0.6 | 10/10 | ✓ Complete | 2026-02-14 |
-| 39. Language-Aware Enforcement | v0.7 | 0/4 | Not started | - |
-| 40. Large PR Intelligence | v0.7 | 0/4 | Not started | - |
+| 39. Language-Aware Enforcement | v0.7 | 4/4 | ✓ Complete | 2026-02-14 |
+| 40. Large PR Intelligence | v0.7 | 4/4 | ✓ Complete | 2026-02-14 |
 | 41. Feedback-Driven Learning | v0.7 | 0/TBD | Not started | - |
