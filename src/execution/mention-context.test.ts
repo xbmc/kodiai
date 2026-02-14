@@ -467,6 +467,67 @@ describe("buildMentionContext", () => {
     expect(ctx).toContain("## Review Comment Thread Context");
     expect(ctx).toContain("What does this mean?");
     expect(ctx).not.toContain("Original finding:");
+    expect(ctx).not.toContain("File:");
+    expect(ctx).not.toContain("Line:");
+  });
+
+  test("thread context stays available when finding lookup throws", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 720,
+        body: "<!-- kodiai:review-output-key:jkl --> finding",
+        created_at: "2025-01-15T08:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 720,
+          body: "<!-- kodiai:review-output-key:jkl --> finding",
+          created_at: "2025-01-15T08:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 721,
+          body: "Can you break this down?",
+          created_at: "2025-01-15T08:04:00Z",
+          in_reply_to_id: 720,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 722,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T08:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 720,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => {
+        throw new Error("lookup unavailable");
+      },
+    });
+
+    expect(ctx).toContain("## Review Comment Thread Context");
+    expect(ctx).toContain("Can you break this down?");
+    expect(ctx).not.toContain("Original finding:");
+    expect(ctx).not.toContain("File:");
+    expect(ctx).not.toContain("Line:");
   });
 
   test("skips thread context gracefully when parent review comment is missing", async () => {
