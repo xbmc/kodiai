@@ -688,10 +688,31 @@ export function createMentionHandler(deps: {
           );
         }
 
-        const findingContext =
-          mention.inReplyToId !== undefined && findingLookup
-            ? findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId) ?? undefined
-            : undefined;
+        let findingContext:
+          | {
+              severity: string;
+              category: string;
+              filePath: string;
+              startLine: number | null;
+              title: string;
+            }
+          | undefined;
+        if (mention.inReplyToId !== undefined && findingLookup) {
+          try {
+            findingContext =
+              findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId) ?? undefined;
+          } catch (err) {
+            logger.warn(
+              {
+                err,
+                owner: mention.owner,
+                repo: mention.repo,
+                inReplyToId: mention.inReplyToId,
+              },
+              "Failed to hydrate finding context; proceeding without finding metadata",
+            );
+          }
+        }
 
         const planOnlyInstructions = isPlanOnly
           ? [
