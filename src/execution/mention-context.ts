@@ -366,10 +366,24 @@ export async function buildMentionContext(
       const reviewOutputMarkerRe = /<!-- kodiai:review-output-key:[^>]+ -->/;
       const isKodiaiFinding = reviewOutputMarkerRe.test(parent.body ?? "");
       if (isKodiaiFinding && options.findingLookup) {
-        const finding = options.findingLookup(
-          `${mention.owner}/${mention.repo}`,
-          mention.inReplyToId,
-        );
+        let finding: ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>;
+        try {
+          finding = options.findingLookup(
+            `${mention.owner}/${mention.repo}`,
+            mention.inReplyToId,
+          );
+        } catch (error) {
+          console.warn(
+            {
+              owner: mention.owner,
+              repo: mention.repo,
+              parentCommentId: mention.inReplyToId,
+              error,
+            },
+            "Skipping finding metadata in mention context because lookup failed",
+          );
+          finding = null;
+        }
         if (finding) {
           lines.push(
             `Original finding: [${finding.severity.toUpperCase()}] ${finding.category}`,
