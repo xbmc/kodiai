@@ -280,6 +280,46 @@ const languageRulesSchema = z
     disableBuiltinFloors: false,
   });
 
+const riskWeightsSchema = z
+  .object({
+    linesChanged: z.number().min(0).max(1).default(0.3),
+    pathRisk: z.number().min(0).max(1).default(0.3),
+    fileCategory: z.number().min(0).max(1).default(0.2),
+    languageRisk: z.number().min(0).max(1).default(0.1),
+    fileExtension: z.number().min(0).max(1).default(0.1),
+  })
+  .default({
+    linesChanged: 0.3,
+    pathRisk: 0.3,
+    fileCategory: 0.2,
+    languageRisk: 0.1,
+    fileExtension: 0.1,
+  });
+
+const largePRSchema = z
+  .object({
+    /** Number of files that triggers large PR triage. Default 50. */
+    fileThreshold: z.number().min(10).max(1000).default(50),
+    /** Number of files to review at full depth. Default 30. */
+    fullReviewCount: z.number().min(5).max(200).default(30),
+    /** Number of files to review at abbreviated depth (critical/major only). Default 20. */
+    abbreviatedCount: z.number().min(0).max(200).default(20),
+    /** Risk scoring weights. Normalized at runtime so they need not sum to exactly 1.0. */
+    riskWeights: riskWeightsSchema,
+  })
+  .default({
+    fileThreshold: 50,
+    fullReviewCount: 30,
+    abbreviatedCount: 20,
+    riskWeights: {
+      linesChanged: 0.3,
+      pathRisk: 0.3,
+      fileCategory: 0.2,
+      languageRisk: 0.1,
+      fileExtension: 0.1,
+    },
+  });
+
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
@@ -295,6 +335,7 @@ const repoConfigSchema = z.object({
   telemetry: telemetrySchema,
   knowledge: knowledgeSchema,
   languageRules: languageRulesSchema,
+  largePR: largePRSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -507,6 +548,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // largePR
+  const largePRResult = largePRSchema.safeParse(obj.largePR);
+  let largePR: z.infer<typeof largePRSchema>;
+  if (largePRResult.success) {
+    largePR = largePRResult.data;
+  } else {
+    largePR = largePRSchema.parse({});
+    warnings.push({
+      section: "largePR",
+      issues: largePRResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -518,6 +574,7 @@ export async function loadRepoConfig(
     telemetry,
     knowledge,
     languageRules,
+    largePR,
   };
 
   return { config, warnings };
