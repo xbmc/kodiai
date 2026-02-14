@@ -411,6 +411,187 @@ describe("createReviewHandler review_requested gating", () => {
   });
 });
 
+describe("createReviewHandler auto profile selection", () => {
+  async function runProfileScenario(options: {
+    title?: string;
+    manualProfile?: "strict" | "balanced" | "minimal";
+    additions: number;
+    deletions: number;
+  }): Promise<{ prompt: string; detailsCommentBody: string }> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const configLines = [
+      "review:",
+      "  enabled: true",
+      "  autoApprove: false",
+      "  requestUiRereviewTeamOnOpen: false",
+      "  triggers:",
+      "    onOpened: true",
+      "    onReadyForReview: true",
+      "    onReviewRequested: true",
+      "  skipAuthors: []",
+      "  skipPaths: []",
+    ];
+
+    if (options.manualProfile) {
+      configLines.push(`  profile: ${options.manualProfile}`);
+    }
+
+    await Bun.write(`${workspaceFixture.dir}/.kodiai.yml`, `${configLines.join("\n")}\n`);
+
+    let capturedPrompt = "";
+    let detailsCommentBody = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-auto-profile",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: options.title ?? "Auto profile scenario",
+          body: "",
+          commits: 0,
+          additions: options.additions,
+          deletions: options.deletions,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    return { prompt: capturedPrompt, detailsCommentBody };
+  }
+
+  test("small PRs default to strict profile", async () => {
+    const result = await runProfileScenario({ additions: 80, deletions: 20 });
+
+    expect(result.prompt).toContain("Post at most 15 inline comments");
+    expect(result.detailsCommentBody).toContain("- Profile: strict (auto, lines changed: 100)");
+  });
+
+  test("medium PRs default to balanced profile", async () => {
+    const result = await runProfileScenario({ additions: 90, deletions: 20 });
+
+    expect(result.prompt).toContain("Post at most 7 inline comments");
+    expect(result.prompt).toContain("Only report findings at these severity levels: critical, major, medium.");
+    expect(result.detailsCommentBody).toContain("- Profile: balanced (auto, lines changed: 110)");
+  });
+
+  test("large PRs default to minimal profile", async () => {
+    const result = await runProfileScenario({ additions: 600, deletions: 20 });
+
+    expect(result.prompt).toContain("Post at most 3 inline comments");
+    expect(result.prompt).toContain("Only report findings at these severity levels: critical, major.");
+    expect(result.detailsCommentBody).toContain("- Profile: minimal (auto, lines changed: 620)");
+  });
+
+  test("manual config profile overrides auto profile", async () => {
+    const result = await runProfileScenario({
+      manualProfile: "minimal",
+      additions: 20,
+      deletions: 20,
+    });
+
+    expect(result.prompt).toContain("Post at most 3 inline comments");
+    expect(result.detailsCommentBody).toContain("- Profile: minimal (manual config)");
+  });
+
+  test("keyword profile override supersedes manual and auto", async () => {
+    const result = await runProfileScenario({
+      title: "[strict-review] tighten auth checks",
+      manualProfile: "minimal",
+      additions: 700,
+      deletions: 200,
+    });
+
+    expect(result.prompt).toContain("Post at most 15 inline comments");
+    expect(result.detailsCommentBody).toContain("- Profile: strict (keyword override)");
+  });
+});
+
 describe("createReviewHandler UI rereview team request", () => {
   test("requests uiRereviewTeam on opened when configured", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
