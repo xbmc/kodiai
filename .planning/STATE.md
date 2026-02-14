@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 42 -- Commit Message Keywords & PR Intent
+**Current focus:** Phase 43 -- Auto Profile Selection
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
-Phase: 42 of 46 (Commit Message Keywords & PR Intent)
+Phase: 43 of 46 (Auto Profile Selection)
 Plan: 2 of 2 in current phase
 Status: Complete
-Last activity: 2026-02-14 -- completed phase 42 keyword intent integration
+Last activity: 2026-02-14 -- completed phase 43 auto profile selection
 
 Progress: [##########] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 109
+- Total plans completed: 111
 - Average duration: 4 min
-- Total execution time: ~458 min
+- Total execution time: ~462 min
 
 **By latest shipped milestone (v0.7):**
 
@@ -32,7 +32,7 @@ Progress: [##########] 100%
 | 40-large-pr-intelligence | 4 | ~12 min | ~3 min |
 | 41-feedback-driven-learning | 3 | ~9 min | ~3 min |
 | 42-commit-message-keywords-pr-intent | 2 | ~30 min | ~15 min |
-| Phase 43 P01 | 1 min | 2 tasks | 2 files |
+| 43-auto-profile-selection | 2 | ~4 min | ~2 min |
 
 ## Accumulated Context
 
@@ -51,6 +51,8 @@ Recent decisions affecting current work:
 - [Phase 42]: Conventional commit metadata is now passed into prompt construction for type-specific review focus guidance.
 - [Phase 43]: Profile precedence is fixed as keyword override > manual config > auto-threshold
 - [Phase 43]: Auto selection metadata includes source and band for observability without handler coupling
+- [Phase 43]: Handler now resolves a single profile selection object before applying presets
+- [Phase 43]: Review Details always publishes profile source text (auto/manual/keyword) for traceability
 
 ### Pending Todos
 
@@ -64,6 +66,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 42-02-PLAN.md
+Stopped at: Completed 43-02-PLAN.md
 Resume file: None
-Next action: `/gsd:plan-phase 43` to continue milestone v0.8
+Next action: `/gsd:plan-phase 44` to continue milestone v0.8
