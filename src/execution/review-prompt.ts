@@ -2,6 +2,7 @@ import { sanitizeContent } from "../lib/sanitizer.ts";
 import picomatch from "picomatch";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
+import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -877,6 +878,7 @@ export function buildReviewPrompt(context: {
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
+  conventionalType?: ConventionalCommitType | null;
   deltaContext?: DeltaReviewContext | null;
   largePRContext?: {
     fullReviewFiles: string[];
@@ -1049,6 +1051,29 @@ export function buildReviewPrompt(context: {
       context.headBranch,
     ),
   );
+
+  if (context.conventionalType) {
+    const typeGuidance: Record<string, string> = {
+      feat: "This is a feature PR. Pay extra attention to: breaking changes in public APIs, missing test coverage for new behavior, documentation for new functionality.",
+      fix: "This is a bug fix PR. Pay extra attention to: whether the fix addresses the root cause, test coverage for the fixed scenario, potential regression in related code paths.",
+      docs: "This is a documentation PR. Apply lighter review: focus on accuracy of technical content, broken links, and code example correctness. Minimize style findings.",
+      refactor: "This is a refactoring PR. Pay extra attention to: behavior preservation (no functional changes), test coverage continuity, and import/export consistency.",
+      perf: "This is a performance PR. Pay extra attention to: benchmark methodology, potential correctness trade-offs, and algorithmic complexity changes.",
+      test: "This is a test PR. Focus on: test reliability, assertion specificity, edge case coverage. Minimize style findings on production code.",
+      ci: "This is a CI/build PR. Focus on: pipeline correctness, security of new dependencies or scripts, and configuration accuracy. Minimize code style findings.",
+      chore: "This is a maintenance PR. Apply lighter review: focus on correctness and potential breakage. Minimize style findings.",
+    };
+    const guidance = typeGuidance[context.conventionalType.type];
+    if (guidance) {
+      lines.push("", "## Conventional Commit Context", "", guidance);
+    }
+    if (context.conventionalType.isBreaking) {
+      lines.push(
+        "",
+        "**BREAKING CHANGE indicated.** Verify: backward compatibility impact is documented, migration path exists if applicable, and all affected consumers are addressed.",
+      );
+    }
+  }
 
   // --- Tone and language guidelines ---
   lines.push("", buildToneGuidelinesSection());
