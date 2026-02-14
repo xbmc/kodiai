@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   analyzeDiff,
   classifyFileLanguage,
   classifyLanguages,
+  parseNumstatPerFile,
   MAX_ANALYSIS_FILES,
   MAX_ANALYSIS_TIME_MS,
   type DiffAnalysisInput,
@@ -272,4 +273,43 @@ test("analyzeDiff result includes filesByLanguage with correct grouping for mixe
 test("empty input returns empty filesByLanguage", () => {
   const result = run();
   expect(result.filesByLanguage).toEqual({});
+});
+
+// ---------- parseNumstatPerFile ----------
+
+describe("parseNumstatPerFile", () => {
+  test("standard lines: parses added and removed per file", () => {
+    const result = parseNumstatPerFile([
+      "10\t5\tsrc/foo.ts",
+      "20\t3\tsrc/bar.ts",
+    ]);
+
+    expect(result.get("src/foo.ts")).toEqual({ added: 10, removed: 5 });
+    expect(result.get("src/bar.ts")).toEqual({ added: 20, removed: 3 });
+    expect(result.size).toBe(2);
+  });
+
+  test("binary files: dash values treated as 0 lines", () => {
+    const result = parseNumstatPerFile(["-\t-\tsrc/image.png"]);
+
+    expect(result.get("src/image.png")).toEqual({ added: 0, removed: 0 });
+  });
+
+  test("empty input: returns empty Map", () => {
+    const result = parseNumstatPerFile([]);
+    expect(result.size).toBe(0);
+  });
+
+  test("malformed lines: skips them gracefully", () => {
+    const result = parseNumstatPerFile([
+      "10\t5\tsrc/foo.ts",
+      "not-a-numstat-line",
+      "",
+      "20\t3\tsrc/bar.ts",
+    ]);
+
+    expect(result.size).toBe(2);
+    expect(result.get("src/foo.ts")).toEqual({ added: 10, removed: 5 });
+    expect(result.get("src/bar.ts")).toEqual({ added: 20, removed: 3 });
+  });
 });
