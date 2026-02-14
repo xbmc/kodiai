@@ -52,6 +52,12 @@ import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import {
+  detectDepBump,
+  extractDepBumpDetails,
+  classifyDepBump,
+  type DepBumpContext,
+} from "../lib/dep-bump-detector.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -1379,6 +1385,46 @@ export function createReviewHandler(deps: {
         });
         const allChangedFiles = diffContext.changedFiles;
 
+        // ── Dependency bump detection (DEP-01/02/03) ──
+        let depBumpContext: DepBumpContext | null = null;
+        try {
+          const detection = detectDepBump({
+            prTitle: pr.title,
+            prLabels: (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [],
+            headBranch: pr.head.ref,
+            senderLogin: pr.user.login,
+          });
+          if (detection) {
+            const details = extractDepBumpDetails({
+              detection,
+              prTitle: pr.title,
+              prBody: pr.body ?? null,
+              changedFiles: allChangedFiles,
+              headBranch: pr.head.ref,
+            });
+            const classification = classifyDepBump({
+              oldVersion: details.oldVersion,
+              newVersion: details.newVersion,
+            });
+            depBumpContext = { detection, details, classification };
+            logger.info(
+              {
+                ...baseLog,
+                gate: "dep-bump-detect",
+                source: detection.source,
+                signals: detection.signals,
+                packageName: details.packageName,
+                ecosystem: details.ecosystem,
+                bumpType: classification.bumpType,
+                isGroup: details.isGroup,
+              },
+              "Dependency bump detected",
+            );
+          }
+        } catch (err) {
+          logger.warn({ ...baseLog, err }, "Dep bump detection failed (fail-open)");
+        }
+
         const skipMatchers = config.review.skipPaths
           .map(normalizeSkipPattern)
           .filter((p) => p.length > 0)
@@ -1754,6 +1800,7 @@ export function createReviewHandler(deps: {
             totalFiles: tieredFiles.totalFiles,
           } : null,
           authorTier: authorClassification.tier,
+          depBumpContext,
         });
 
         // Execute review via Claude
