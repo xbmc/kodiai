@@ -17,7 +17,8 @@ import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incre
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import { analyzeDiff } from "../execution/diff-analysis.ts";
+import { analyzeDiff, parseNumstatPerFile } from "../execution/diff-analysis.ts";
+import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -1131,6 +1132,46 @@ export function createReviewHandler(deps: {
           fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
         });
 
+        // --- Large PR file triage (LARGE-01 through LARGE-08) ---
+        // Parse per-file numstat for risk scoring
+        const perFileStats = parseNumstatPerFile(numstatLines);
+
+        // Compute risk scores for files being reviewed
+        const riskScores = computeFileRiskScores({
+          files: reviewFiles,
+          perFileStats,
+          filesByCategory: diffAnalysis.filesByCategory,
+          weights: config.largePR.riskWeights,
+        });
+
+        // Triage uses changedFiles.length (full PR size) for threshold check,
+        // not reviewFiles.length (which may be filtered for incremental mode).
+        // Per pitfall 3 in research: check full PR, triage review set.
+        const tieredFiles = triageFilesByRisk({
+          riskScores,
+          fileThreshold: config.largePR.fileThreshold,
+          fullReviewCount: config.largePR.fullReviewCount,
+          abbreviatedCount: config.largePR.abbreviatedCount,
+          totalFileCount: changedFiles.length,
+        });
+
+        // Build the file list for the prompt: only full + abbreviated tier files
+        const promptFiles = tieredFiles.isLargePR
+          ? [...tieredFiles.full.map(f => f.filePath), ...tieredFiles.abbreviated.map(f => f.filePath)]
+          : reviewFiles;
+
+        if (tieredFiles.isLargePR) {
+          logger.info({
+            ...baseLog,
+            gate: "large-pr-triage",
+            totalFiles: tieredFiles.totalFiles,
+            fullReview: tieredFiles.full.length,
+            abbreviated: tieredFiles.abbreviated.length,
+            mentionOnly: tieredFiles.mentionOnly.length,
+            threshold: config.largePR.fileThreshold,
+          }, "Large PR file triage applied");
+        }
+
         const matchedPathInstructions = config.review.pathInstructions.length > 0
           ? matchPathInstructions(config.review.pathInstructions, changedFiles)
           : [];
@@ -1243,7 +1284,7 @@ export function createReviewHandler(deps: {
           prAuthor: pr.user.login,
           baseBranch: pr.base.ref,
           headBranch: pr.head.ref,
-          changedFiles: reviewFiles,
+          changedFiles: promptFiles,
           customInstructions: config.review.prompt,
           // Review mode & severity control
           mode: config.review.mode,
@@ -1281,6 +1322,13 @@ export function createReviewHandler(deps: {
                 })),
               }
             : null,
+          // Large PR file triage context (LARGE-01 through LARGE-08)
+          largePRContext: tieredFiles.isLargePR ? {
+            fullReviewFiles: tieredFiles.full.map(f => f.filePath),
+            abbreviatedFiles: tieredFiles.abbreviated.map(f => f.filePath),
+            mentionOnlyCount: tieredFiles.mentionOnly.length,
+            totalFiles: tieredFiles.totalFiles,
+          } : null,
         });
 
         // Execute review via Claude
@@ -1348,6 +1396,12 @@ export function createReviewHandler(deps: {
           );
         }
 
+        // Post-LLM abbreviated tier enforcement (LARGE-08)
+        // Suppress medium/minor findings on abbreviated-tier files deterministically.
+        const abbreviatedFileSet = tieredFiles.isLargePR
+          ? new Set(tieredFiles.abbreviated.map(f => f.filePath))
+          : new Set<string>();
+
         const suppressionMatchCounts = new Map<string, number>();
         // Enforcement preserves all ExtractedFinding fields; cast back to the
         // intersection so downstream code can access commentId, startLine, etc.
@@ -1378,7 +1432,10 @@ export function createReviewHandler(deps: {
                 suppressionFingerprints: priorFindingCtx.suppressionFingerprints,
               })
             : false;
-          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed;
+          // Abbreviated tier enforcement: suppress medium/minor findings on abbreviated files
+          const abbreviatedSuppressed = abbreviatedFileSet.has(finding.filePath)
+            && (finding.severity === "medium" || finding.severity === "minor");
+          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed;
           const suppressionPattern = typeof matchedSuppression === "string"
             ? matchedSuppression
             : matchedSuppression?.pattern;
@@ -1486,6 +1543,12 @@ export function createReviewHandler(deps: {
               linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
               linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
               findingCounts,
+              largePRTriage: tieredFiles.isLargePR ? {
+                fullCount: tieredFiles.full.length,
+                abbreviatedCount: tieredFiles.abbreviated.length,
+                mentionOnlyFiles: tieredFiles.mentionOnly.map(f => ({ filePath: f.filePath, score: f.score })),
+                totalFiles: tieredFiles.totalFiles,
+              } : undefined,
             });
 
             if (result.published) {

@@ -275,10 +275,15 @@ export function triageFilesByRisk(params: {
   fileThreshold: number;
   fullReviewCount: number;
   abbreviatedCount: number;
+  /** Override the file count used for the threshold check.
+   *  Defaults to riskScores.length. In incremental mode, pass
+   *  the full PR file count so the threshold decision uses the
+   *  real PR size, not the filtered review subset. */
+  totalFileCount?: number;
 }): TieredFiles {
   const { riskScores, fileThreshold, fullReviewCount, abbreviatedCount } =
     params;
-  const totalFiles = riskScores.length;
+  const totalFiles = params.totalFileCount ?? riskScores.length;
   const isLargePR = totalFiles > fileThreshold;
 
   if (!isLargePR) {
