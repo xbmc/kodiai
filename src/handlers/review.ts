@@ -47,6 +47,7 @@ import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
 import picomatch from "picomatch";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -153,6 +154,7 @@ function formatReviewDetailsSummary(params: {
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
+  authorTier?: string;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -169,6 +171,7 @@ function formatReviewDetailsSummary(params: {
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
+    authorTier,
     prioritization,
   } = params;
 
@@ -185,6 +188,7 @@ function formatReviewDetailsSummary(params: {
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     profileLine,
+    `- Author: ${authorTier ?? "regular"} (${authorTier === "regular" ? "default" : "adapted tone"})`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];
@@ -325,6 +329,67 @@ async function appendReviewDetailsToSummary(params: {
     comment_id: summaryComment.id,
     body: updatedBody,
   });
+}
+
+async function resolveAuthorTier(params: {
+  authorLogin: string;
+  authorAssociation: string;
+  repo: string;
+  owner: string;
+  repoSlug: string;
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
+  knowledgeStore: KnowledgeStore;
+  logger: Logger;
+}): Promise<{ tier: AuthorTier; prCount: number | null; fromCache: boolean }> {
+  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, logger } = params;
+
+  try {
+    const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
+    if (cached) {
+      return {
+        tier: cached.tier as AuthorTier,
+        prCount: cached.prCount,
+        fromCache: true,
+      };
+    }
+  } catch (err) {
+    logger.warn({ err, authorLogin }, "Author cache read failed (fail-open)");
+  }
+
+  const ambiguousAssociations = new Set(["NONE", "MANNEQUIN", "COLLABORATOR", "CONTRIBUTOR"]);
+  const normalizedAssociation = (authorAssociation || "NONE").toUpperCase();
+  let prCount: number | null = null;
+
+  if (ambiguousAssociations.has(normalizedAssociation)) {
+    try {
+      const { data } = await octokit.rest.search.issuesAndPullRequests({
+        q: `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`,
+        per_page: 1,
+      });
+      prCount = data.total_count;
+    } catch (err) {
+      logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+    }
+  }
+
+  const tier = classifyAuthor({
+    authorAssociation: normalizedAssociation,
+    prCount,
+  }).tier;
+
+  try {
+    knowledgeStore.upsertAuthorCache?.({
+      repo: repoSlug,
+      authorLogin,
+      tier,
+      authorAssociation: normalizedAssociation,
+      prCount,
+    });
+  } catch (err) {
+    logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
+  }
+
+  return { tier, prCount, fromCache: false };
 }
 
 function normalizeSeverity(value: string | undefined): FindingSeverity | null {
@@ -1185,6 +1250,41 @@ export function createReviewHandler(deps: {
           return;
         }
 
+        let authorClassification: { tier: AuthorTier; prCount: number | null; fromCache: boolean } = {
+          tier: "regular",
+          prCount: null,
+          fromCache: false,
+        };
+
+        if (knowledgeStore) {
+          try {
+            authorClassification = await resolveAuthorTier({
+              authorLogin: pr.user.login,
+              authorAssociation: (pr as { author_association?: string }).author_association ?? "NONE",
+              repo: apiRepo,
+              owner: apiOwner,
+              repoSlug: `${apiOwner}/${apiRepo}`,
+              octokit: idempotencyOctokit,
+              knowledgeStore,
+              logger,
+            });
+            logger.info(
+              {
+                ...baseLog,
+                authorTier: authorClassification.tier,
+                authorPrCount: authorClassification.prCount,
+                fromCache: authorClassification.fromCache,
+              },
+              "Author experience classification resolved",
+            );
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, err },
+              "Author classification failed (fail-open, using regular tier)",
+            );
+          }
+        }
+
         // Incremental diff computation (REV-01)
         // Determine if this is an incremental re-review based on prior completed reviews.
         // Works for both synchronize and review_requested events (state-driven, not event-driven).
@@ -1502,6 +1602,7 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
+          authorTier: authorClassification.tier,
         });
 
         // Execute review via Claude
@@ -1819,6 +1920,7 @@ export function createReviewHandler(deps: {
               feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
               keywordParsing: parsedIntent,
               profileSelection,
+              authorTier: authorClassification.tier,
               prioritization: prioritizationStats,
             });
 

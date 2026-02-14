@@ -928,6 +928,7 @@ export function buildReviewPrompt(context: {
     mentionOnlyCount: number;
     totalFiles: number;
   } | null;
+  authorTier?: AuthorTier;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1119,6 +1120,14 @@ export function buildReviewPrompt(context: {
 
   // --- Tone and language guidelines ---
   lines.push("", buildToneGuidelinesSection());
+
+  if (context.authorTier) {
+    const authorExpSection = buildAuthorExperienceSection({
+      tier: context.authorTier,
+      authorLogin: context.prAuthor,
+    });
+    if (authorExpSection) lines.push("", authorExpSection);
+  }
 
   // --- Path instructions ---
   const pathInstructionsSection = buildPathInstructionsSection(

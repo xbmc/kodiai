@@ -51,6 +51,46 @@ function createCaptureLogger() {
   return { logger, entries };
 }
 
+function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
+  return {
+    recordReview: () => 1,
+    recordFindings: () => undefined,
+    recordFeedbackReactions: () => undefined,
+    listRecentFindingCommentCandidates: () => [],
+    recordSuppressionLog: () => undefined,
+    recordGlobalPattern: () => undefined,
+    getRepoStats: () => ({
+      totalReviews: 0,
+      totalFindings: 0,
+      findingsBySeverity: { critical: 0, major: 0, medium: 0, minor: 0 },
+      totalSuppressed: 0,
+      avgFindingsPerReview: 0,
+      avgConfidence: 0,
+      topFiles: [],
+    }),
+    getRepoTrends: () => [],
+    checkAndClaimRun: () => ({
+      shouldProcess: true,
+      runKey: "run-key",
+      reason: "new" as const,
+      supersededRunKeys: [],
+    }),
+    completeRun: () => undefined,
+    purgeOldRuns: () => 0,
+    getAuthorCache: () => null,
+    upsertAuthorCache: () => undefined,
+    purgeStaleAuthorCache: () => 0,
+    getLastReviewedHeadSha: () => null,
+    getPriorReviewFindings: () => [],
+    aggregateFeedbackPatterns: () => [],
+    clearFeedbackSuppressions: () => 0,
+    listFeedbackSuppressions: () => [],
+    checkpoint: () => undefined,
+    close: () => undefined,
+    ...overrides,
+  };
+}
+
 async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-review-handler-"));
 
@@ -2347,6 +2387,8 @@ describe("createReviewHandler finding extraction", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
+        ...createKnowledgeStoreStub(),
         recordReview: (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 1;
@@ -2540,6 +2582,7 @@ describe("createReviewHandler finding extraction", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 99;
@@ -2917,6 +2960,7 @@ describe("createReviewHandler global knowledge sharing", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: () => undefined,
         recordFeedbackReactions: () => undefined,
@@ -3059,6 +3103,7 @@ describe("createReviewHandler global knowledge sharing", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: () => undefined,
         recordFeedbackReactions: () => undefined,
@@ -3204,6 +3249,7 @@ describe("createReviewHandler enforcement integration", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -3347,6 +3393,7 @@ describe("createReviewHandler enforcement integration", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           debugFindings.push(...findings);
@@ -3486,6 +3533,7 @@ describe("createReviewHandler enforcement integration", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -3704,6 +3752,7 @@ describe("createReviewHandler enforcement integration", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 1;
@@ -3881,6 +3930,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -4032,6 +4082,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -4200,6 +4251,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -4370,6 +4422,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
@@ -4565,6 +4618,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
       } as never,
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
+        ...createKnowledgeStoreStub(),
         recordReview: () => 1,
         recordFindings: () => undefined,
         recordFeedbackReactions: () => undefined,
