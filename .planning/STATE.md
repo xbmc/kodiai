@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
 **Phase:** 52 of 55 (Intelligent Retrieval)
-**Plan:** 1 of 2 complete
-**Status:** In Progress
-**Last Activity:** 2026-02-14 — Completed 52-01-PLAN.md (core retrieval functions)
+**Plan:** 2 of 2 complete
+**Status:** Phase Complete
+**Last Activity:** 2026-02-14 — Completed 52-02-PLAN.md (integration wiring)
 
-**Progress:** [█████░░░░░] 50%
+**Progress:** [██████████] 101%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 149
+- Total plans completed: 150
 - Total milestones shipped: 8
-- Total phases completed: 51
+- Total phases completed: 52
 
 ## Accumulated Context
 
@@ -38,6 +38,8 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **52-01:** Query length capped at 800 chars to prevent embedding quality degradation
 - **52-01:** Language reranking uses mild multipliers (0.85/1.15) as tiebreaker, not dominant factor
 - **52-01:** Unknown-language records treated as neutral (1.0 multiplier) to avoid demoting config/docs
+- **52-02:** distanceThreshold filters on raw distance before re-ranking; adjustedDistance only reorders results
+- **52-02:** filesByLanguage keys used as prLanguages for both query construction and re-ranking
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-14
-**Stopped At:** Completed 52-01-PLAN.md (core retrieval functions TDD)
+**Stopped At:** Completed 52-02-PLAN.md (integration wiring)
 **Resume File:** None
-**Next action:** Execute 52-02-PLAN.md (integration)
+**Next action:** Begin Phase 53
