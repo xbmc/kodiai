@@ -9,7 +9,7 @@
 - ✅ **v0.5 Advanced Learning & Language Support** — Phases 30-33 (shipped 2026-02-13)
 - ✅ **v0.6 Review Output Formatting & UX** — Phases 34-38 (shipped 2026-02-14)
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
-- **v0.8 Conversational Intelligence** — Phases 42-48 (in progress)
+- **v0.8 Conversational Intelligence** — Phases 42-50 (in progress)
 
 ## Phases
 
@@ -79,6 +79,8 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 - [ ] **Phase 46: Conversational Review** — Enable dialog-based follow-up on review findings via @kodiai mentions
 - [ ] **Phase 47: v0.8 Verification Backfill** — Generate missing phase verification reports required for milestone DoD
 - [ ] **Phase 48: Conversational Fail-Open Hardening** — Ensure finding-lookup errors degrade gracefully in reply mention flow
+- [ ] **Phase 49: Verification Artifacts for Phases 47-48** — Produce missing verification reports for recently completed gap-closure phases
+- [ ] **Phase 50: Publish-Path Mention Sanitization Completion** — Enforce sanitization across all outbound mention/comment publish paths
 
 ## Phase Details
 
@@ -190,12 +192,42 @@ Plans:
 - [ ] 48-01-PLAN.md — Add local fail-open guard around prompt-level finding lookup and preserve fallback context assembly
 - [ ] 48-02-PLAN.md — Add regression coverage for lookup-throw path and verify conversational pipeline remains resilient
 
+### Phase 49: Verification Artifacts for Phases 47-48
+**Goal**: Close milestone audit blockers by adding phase-level verification artifacts for phases 47 and 48 and reconciling milestone phase coverage
+**Depends on**: Phase 48 (verification artifacts require completed implementation summaries)
+**Requirements**: None (audit process closure)
+**Gap Closure**: Closes audit requirement gaps for unverified phases 47 and 48
+**Success Criteria** (what must be TRUE):
+  1. `.planning/phases/47-v0-8-verification-backfill/` contains a passable `47-*-VERIFICATION.md`
+  2. `.planning/phases/48-conversational-fail-open-hardening/` contains a passable `48-*-VERIFICATION.md`
+  3. Milestone audit phase coverage updates from 5/7 to 7/7 with no unverified phase blockers
+**Plans**: 2 plans
+
+Plans:
+- [ ] 49-01-PLAN.md — Produce phase 47 and phase 48 verification reports with evidence-backed status
+- [ ] 49-02-PLAN.md — Re-run milestone audit and reconcile phase verification coverage/status
+
+### Phase 50: Publish-Path Mention Sanitization Completion
+**Goal**: Eliminate residual degraded publish-path sanitization risk by enforcing mention sanitization through a single shared outbound helper
+**Depends on**: Phase 48 (builds on conversational fail-open hardening)
+**Requirements**: CONV-05
+**Gap Closure**: Closes audit degraded flow for ancillary outbound mention/comment publish paths
+**Success Criteria** (what must be TRUE):
+  1. All outbound mention/comment publish paths pass through a shared sanitizing helper
+  2. Ancillary publish paths (non-primary conversational paths) are explicitly covered by regression tests
+  3. Milestone audit no longer reports degraded flow for outbound mention sanitization coverage
+**Plans**: 2 plans
+
+Plans:
+- [ ] 50-01-PLAN.md — Introduce shared sanitized publish helper and route all mention handler publish calls through it
+- [ ] 50-02-PLAN.md — Add regression coverage for ancillary publish paths and re-audit flow status
+
 ## Progress
 
 **Total shipped:** 7 milestones, 44 phases, 113 plans
 
 **Execution Order:**
-Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48
+Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48 -> 49 -> 50
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -213,7 +245,9 @@ Phases execute in numeric order: 42 -> 43 -> 44 -> 45 -> 46 -> 47 -> 48
 | 46. Conversational Review | v0.8 | 0/TBD | Not started | - |
 | 47. Verification Backfill | v0.8 | 0/2 | Planned | - |
 | 48. Fail-Open Hardening | v0.8 | 0/2 | Planned | - |
+| 49. Verification Artifacts | v0.8 | 0/2 | Planned | - |
+| 50. Sanitization Completion | v0.8 | 0/2 | Planned | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- added phases 47-48 for v0.8 audit gap closure*
+*Roadmap updated: 2026-02-14 -- added phases 49-50 for v0.8 audit gap closure*
