@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 39 of 41 (Language-Aware Enforcement)
-Plan: 1 of 4 complete
+Plan: 3 of 4 complete
 Status: Executing
-Last activity: 2026-02-14 — Completed 39-01 (foundation types, tooling detection, config schema)
+Last activity: 2026-02-14 — Completed 39-03 (tooling-aware finding suppression via TDD)
 
-Progress: [==░░░░░░░░] 8%
+Progress: [=======░░░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 80
+- Total plans completed: 82
 - Average duration: 5 min
-- Total execution time: 362 min
+- Total execution time: 366 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -47,6 +47,8 @@ Recent decisions affecting current work:
 - Precedence: user suppressions > user minLevel > language overrides > default
 - Go gofmt treated as always-on when go.mod exists (no config file needed)
 - Tooling detection is fail-open: filesystem errors return empty maps, never block review
+- Only style/documentation findings suppressable by tooling; correctness/security/performance never suppressed
+- Keyword matching uses OR-of-AND groups for finding classification precision
 
 ### Pending Todos
 
@@ -59,6 +61,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 39-01-PLAN.md
+Stopped at: Completed 39-03-PLAN.md
 Resume file: None
-Next action: `/gsd:execute-phase 39` (plan 39-02)
+Next action: `/gsd:execute-phase 39` (plan 39-04)
