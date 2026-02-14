@@ -93,7 +93,13 @@ export async function applyEnforcement(params: {
       languageRules: params.languageRules,
     });
 
-    return enforced as (EnforcementFinding & EnforcedFinding)[];
+    // Merge toolingSuppressed from step 2 back into step 3 results.
+    // enforceSeverityFloors always sets toolingSuppressed: false because it
+    // operates independently; we restore the actual suppression state here.
+    return enforced.map((finding, i) => ({
+      ...finding,
+      toolingSuppressed: afterTooling[i]?.toolingSuppressed ?? false,
+    })) as (EnforcementFinding & EnforcedFinding)[];
   } catch (err) {
     // Fail-open: log warning, return findings unchanged with default metadata
     params.logger?.warn(

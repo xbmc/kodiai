@@ -23,6 +23,7 @@ import {
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
+import { applyEnforcement } from "../enforcement/index.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import {
   buildReviewOutputMarker,
@@ -1280,15 +1281,47 @@ export function createReviewHandler(deps: {
           })
           : [];
 
+        // Language-aware enforcement (LANG-01 through LANG-10)
+        // Runs between finding extraction and existing suppression matching.
+        // Fail-open: errors log warning and return findings unchanged.
+        const enforcedFindings = extractedFindings.length > 0
+          ? await applyEnforcement({
+              findings: extractedFindings,
+              workspaceDir: workspace.dir,
+              filesByCategory: diffAnalysis?.filesByCategory ?? {},
+              filesByLanguage: diffAnalysis?.filesByLanguage ?? {},
+              languageRules: config.languageRules,
+              logger,
+            })
+          : [];
+
+        const toolingSuppressedCount = enforcedFindings.filter(f => f.toolingSuppressed).length;
+        const severityElevatedCount = enforcedFindings.filter(f => f.severityElevated).length;
+        if (toolingSuppressedCount > 0 || severityElevatedCount > 0) {
+          logger.info(
+            { ...baseLog, toolingSuppressedCount, severityElevatedCount },
+            "Language enforcement applied",
+          );
+        }
+
         const suppressionMatchCounts = new Map<string, number>();
-        const processedFindings: ProcessedFinding[] = extractedFindings.map((finding) => {
+        // Enforcement preserves all ExtractedFinding fields; cast back to the
+        // intersection so downstream code can access commentId, startLine, etc.
+        type EnforcedExtractedFinding = ExtractedFinding & {
+          originalSeverity: FindingSeverity;
+          severityElevated: boolean;
+          toolingSuppressed: boolean;
+          enforcementPatternId?: string;
+        };
+        const processedFindings: ProcessedFinding[] = (enforcedFindings as EnforcedExtractedFinding[]).map((finding) => {
+          const category = finding.category;
           const matchedSuppression = config.review.suppressions.find((suppression) =>
             matchesSuppression(
               {
                 filePath: finding.filePath,
                 title: finding.title,
                 severity: finding.severity,
-                category: finding.category,
+                category,
               },
               suppression,
             )
@@ -1301,7 +1334,7 @@ export function createReviewHandler(deps: {
                 suppressionFingerprints: priorFindingCtx.suppressionFingerprints,
               })
             : false;
-          const suppressed = Boolean(matchedSuppression) || dedupSuppressed;
+          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed;
           const suppressionPattern = typeof matchedSuppression === "string"
             ? matchedSuppression
             : matchedSuppression?.pattern;
@@ -1312,12 +1345,13 @@ export function createReviewHandler(deps: {
 
           const confidence = computeConfidence({
             severity: finding.severity,
-            category: finding.category,
+            category,
             matchesKnownPattern: Boolean(matchedSuppression),
           });
 
           return {
             ...finding,
+            category,
             suppressed,
             confidence,
             suppressionPattern,
