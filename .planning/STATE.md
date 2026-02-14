@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 44 -- Smart Finding Prioritization
+**Current focus:** Phase 45 -- Author Experience Adaptation
 
 ## Current Position
 
 Milestone: v0.8 Conversational Intelligence
 Phase: 44 of 46 (Smart Finding Prioritization)
-Plan: 1 of 2 in current phase
-Status: In Progress
-Last activity: 2026-02-14 -- completed phase 44 plan 01 finding prioritizer TDD
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-02-14 -- completed phase 44 plan 02 runtime prioritization integration
 
 Progress: [##########] 100%
 
@@ -34,6 +34,7 @@ Progress: [##########] 100%
 | 42-commit-message-keywords-pr-intent | 2 | ~30 min | ~15 min |
 | 43-auto-profile-selection | 2 | ~4 min | ~2 min |
 | Phase 44 P01 | 2 min | 2 tasks | 2 files |
+| Phase 44 P02 | 2 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,8 @@ Recent decisions affecting current work:
 - [Phase 43]: Review Details always publishes profile source text (auto/manual/keyword) for traceability
 - [Phase 44]: Unknown severity/category values fail open to neutral scoring defaults instead of throwing
 - [Phase 44]: Prioritization weights are runtime-normalized and ties are resolved by original index for deterministic ranking
+- [Phase 44]: Prioritization weights are configured under review.prioritization with bounded 0..1 values and section-level fallback behavior
+- [Phase 44]: Cap overflow prioritization runs after suppression and confidence filtering, and non-selected findings are deleted through the existing inline cleanup path
 
 ### Pending Todos
 
@@ -69,6 +72,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 44-01-PLAN.md
+Stopped at: Completed 44-02-PLAN.md
 Resume file: None
-Next action: `/gsd-execute-phase 44` to execute 44-02-PLAN.md
+Next action: `/gsd-execute-phase 45` to start author experience adaptation plans
