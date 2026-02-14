@@ -107,6 +107,12 @@ function formatReviewDetailsSummary(params: {
     medium: number;
     minor: number;
   };
+  largePRTriage?: {
+    fullCount: number;
+    abbreviatedCount: number;
+    mentionOnlyFiles: Array<{ filePath: string; score: number }>;
+    totalFiles: number;
+  };
 }): string {
   const {
     reviewOutputKey,
@@ -114,6 +120,7 @@ function formatReviewDetailsSummary(params: {
     linesAdded,
     linesRemoved,
     findingCounts,
+    largePRTriage,
   } = params;
 
   const sections = [
@@ -124,11 +131,48 @@ function formatReviewDetailsSummary(params: {
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
+  ];
+
+  if (largePRTriage) {
+    const reviewedCount = largePRTriage.fullCount + largePRTriage.abbreviatedCount;
+    const notReviewedCount = largePRTriage.totalFiles - reviewedCount;
+
+    sections.push(
+      "",
+      `- Review scope: Reviewed ${reviewedCount}/${largePRTriage.totalFiles} files, prioritized by risk`,
+      `- Full review: ${largePRTriage.fullCount} files | Abbreviated review: ${largePRTriage.abbreviatedCount} files | Not reviewed: ${notReviewedCount} files`,
+    );
+
+    if (largePRTriage.mentionOnlyFiles.length > 0) {
+      const MAX_MENTION_ONLY_ENTRIES = 100;
+      const cappedFiles = largePRTriage.mentionOnlyFiles.slice(0, MAX_MENTION_ONLY_ENTRIES);
+      const remaining = largePRTriage.mentionOnlyFiles.length - cappedFiles.length;
+
+      sections.push(
+        "",
+        "<details>",
+        "<summary>Files not fully reviewed (sorted by risk score)</summary>",
+        "",
+      );
+
+      for (const file of cappedFiles) {
+        sections.push(`- ${file.filePath} (risk: ${file.score})`);
+      }
+
+      if (remaining > 0) {
+        sections.push(`- ...and ${remaining} more files`);
+      }
+
+      sections.push("", "</details>");
+    }
+  }
+
+  sections.push(
     "",
     "</details>",
     "",
     buildReviewDetailsMarker(reviewOutputKey),
-  ];
+  );
 
   return sections.join("\n");
 }
