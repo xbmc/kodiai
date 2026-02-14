@@ -25,6 +25,7 @@ import {
 } from "../execution/review-prompt.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
+import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import {
   buildReviewOutputMarker,
@@ -114,6 +115,7 @@ function formatReviewDetailsSummary(params: {
     mentionOnlyFiles: Array<{ filePath: string; score: number }>;
     totalFiles: number;
   };
+  feedbackSuppressionCount?: number;
 }): string {
   const {
     reviewOutputKey,
@@ -122,6 +124,7 @@ function formatReviewDetailsSummary(params: {
     linesRemoved,
     findingCounts,
     largePRTriage,
+    feedbackSuppressionCount,
   } = params;
 
   const sections = [
@@ -166,6 +169,10 @@ function formatReviewDetailsSummary(params: {
 
       sections.push("", "</details>");
     }
+  }
+
+  if (feedbackSuppressionCount && feedbackSuppressionCount > 0) {
+    sections.push(`- ${feedbackSuppressionCount} pattern${feedbackSuppressionCount === 1 ? '' : 's'} auto-suppressed by feedback`);
   }
 
   sections.push(
@@ -1396,6 +1403,26 @@ export function createReviewHandler(deps: {
           );
         }
 
+        // Feedback-driven suppression (FEED-01 through FEED-10)
+        // Runs after enforcement, before config suppression matching.
+        // Early returns empty when feedback.autoSuppress.enabled is false (FEED-08).
+        // Fail-open: errors log warning and return empty suppression set.
+        const feedbackSuppression = knowledgeStore
+          ? evaluateFeedbackSuppressions({
+              store: knowledgeStore,
+              repo: `${apiOwner}/${apiRepo}`,
+              config: config.feedback.autoSuppress,
+              logger,
+            })
+          : { suppressedFingerprints: new Set<string>(), suppressedPatternCount: 0, patterns: [] };
+
+        if (feedbackSuppression.suppressedPatternCount > 0) {
+          logger.info(
+            { ...baseLog, feedbackSuppressedPatterns: feedbackSuppression.suppressedPatternCount },
+            "Feedback-driven suppression applied",
+          );
+        }
+
         // Post-LLM abbreviated tier enforcement (LARGE-08)
         // Suppress medium/minor findings on abbreviated-tier files deterministically.
         const abbreviatedFileSet = tieredFiles.isLargePR
@@ -1435,7 +1462,10 @@ export function createReviewHandler(deps: {
           // Abbreviated tier enforcement: suppress medium/minor findings on abbreviated files
           const abbreviatedSuppressed = abbreviatedFileSet.has(finding.filePath)
             && (finding.severity === "medium" || finding.severity === "minor");
-          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed;
+          // Feedback-driven suppression: suppress findings whose title fingerprint is in the suppression set
+          const titleFp = fingerprintFindingTitle(finding.title);
+          const feedbackSuppressed = feedbackSuppression.suppressedFingerprints.has(titleFp);
+          const suppressed = finding.toolingSuppressed || Boolean(matchedSuppression) || dedupSuppressed || abbreviatedSuppressed || feedbackSuppressed;
           const suppressionPattern = typeof matchedSuppression === "string"
             ? matchedSuppression
             : matchedSuppression?.pattern;
@@ -1444,11 +1474,19 @@ export function createReviewHandler(deps: {
             suppressionMatchCounts.set(suppressionPattern, existing + 1);
           }
 
-          const confidence = computeConfidence({
+          // Confidence: base score adjusted by feedback history when pattern data exists
+          const feedbackPattern = feedbackSuppression.patterns.find(p => p.fingerprint === titleFp);
+          const baseConfidence = computeConfidence({
             severity: finding.severity,
             category,
             matchesKnownPattern: Boolean(matchedSuppression),
           });
+          const confidence = feedbackPattern
+            ? adjustConfidenceForFeedback(baseConfidence, {
+                thumbsUp: feedbackPattern.thumbsUpCount,
+                thumbsDown: feedbackPattern.thumbsDownCount,
+              })
+            : baseConfidence;
 
           return {
             ...finding,
@@ -1549,6 +1587,7 @@ export function createReviewHandler(deps: {
                 mentionOnlyFiles: tieredFiles.mentionOnly.map(f => ({ filePath: f.filePath, score: f.score })),
                 totalFiles: tieredFiles.totalFiles,
               } : undefined,
+              feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
             });
 
             if (result.published) {
