@@ -53,6 +53,9 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.telemetry.enabled).toBe(true);
     expect(config.telemetry.costWarningUsd).toBe(0);
     expect(config.knowledge.shareGlobal).toBe(false);
+    expect(config.languageRules.severityFloors).toEqual([]);
+    expect(config.languageRules.toolingOverrides).toEqual([]);
+    expect(config.languageRules.disableBuiltinFloors).toBe(false);
     expect(config.systemPromptAppend).toBeUndefined();
     expect(warnings).toEqual([]);
   } finally {
@@ -1095,6 +1098,108 @@ test("invalid review section falls back to defaults including outputLanguage: 'e
     expect(config.review.enabled).toBe(true); // default
     expect(warnings.length).toBe(1);
     expect(warnings[0]!.section).toBe("review");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+// Phase 39: languageRules config tests
+
+test("default config has languageRules with empty defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.severityFloors).toEqual([]);
+    expect(config.languageRules.toolingOverrides).toEqual([]);
+    expect(config.languageRules.disableBuiltinFloors).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("valid languageRules with custom severityFloors parses correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "languageRules:\n  severityFloors:\n    - pattern: unvalidated input\n      language: TypeScript\n      minSeverity: major\n      skipTestFiles: true\n    - pattern: hardcoded secret\n      minSeverity: critical\n      skipTestFiles: false\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.severityFloors).toEqual([
+      { pattern: "unvalidated input", language: "TypeScript", minSeverity: "major", skipTestFiles: true },
+      { pattern: "hardcoded secret", minSeverity: "critical", skipTestFiles: false },
+    ]);
+    expect(config.languageRules.toolingOverrides).toEqual([]);
+    expect(config.languageRules.disableBuiltinFloors).toBe(false);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("valid languageRules with toolingOverrides parses correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "languageRules:\n  toolingOverrides:\n    - language: Python\n      suppressFormatting: true\n      suppressImportOrder: false\n    - language: Go\n      suppressFormatting: true\n      suppressImportOrder: true\n      configFiles:\n        - custom-format.toml\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.toolingOverrides).toEqual([
+      { language: "Python", suppressFormatting: true, suppressImportOrder: false },
+      { language: "Go", suppressFormatting: true, suppressImportOrder: true, configFiles: ["custom-format.toml"] },
+    ]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid languageRules falls back to defaults with warning", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "languageRules:\n  severityFloors: notanarray\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.severityFloors).toEqual([]);
+    expect(config.languageRules.toolingOverrides).toEqual([]);
+    expect(config.languageRules.disableBuiltinFloors).toBe(false);
+    expect(warnings.some((w) => w.section === "languageRules")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("languageRules.disableBuiltinFloors=true parses correctly", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "languageRules:\n  disableBuiltinFloors: true\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.disableBuiltinFloors).toBe(true);
+    expect(config.languageRules.severityFloors).toEqual([]);
+    expect(config.languageRules.toolingOverrides).toEqual([]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("unknown languages in toolingOverrides parse without error", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "languageRules:\n  toolingOverrides:\n    - language: Haskell\n      suppressFormatting: true\n      suppressImportOrder: false\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.languageRules.toolingOverrides[0]!.language).toBe("Haskell");
+    expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });
   }

@@ -254,6 +254,32 @@ const knowledgeSchema = z
     retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, maxContextChars: 2000 },
   });
 
+const severityFloorOverrideSchema = z.object({
+  pattern: z.string().min(1),
+  language: z.string().optional(),
+  minSeverity: z.enum(["critical", "major", "medium", "minor"]),
+  skipTestFiles: z.boolean().default(true),
+});
+
+const toolingOverrideSchema = z.object({
+  language: z.string(),
+  suppressFormatting: z.boolean().default(true),
+  suppressImportOrder: z.boolean().default(true),
+  configFiles: z.array(z.string()).optional(),
+});
+
+const languageRulesSchema = z
+  .object({
+    severityFloors: z.array(severityFloorOverrideSchema).default([]),
+    toolingOverrides: z.array(toolingOverrideSchema).default([]),
+    disableBuiltinFloors: z.boolean().default(false),
+  })
+  .default({
+    severityFloors: [],
+    toolingOverrides: [],
+    disableBuiltinFloors: false,
+  });
+
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
@@ -268,6 +294,7 @@ const repoConfigSchema = z.object({
   mention: mentionSchema,
   telemetry: telemetrySchema,
   knowledge: knowledgeSchema,
+  languageRules: languageRulesSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -465,6 +492,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // languageRules
+  const languageRulesResult = languageRulesSchema.safeParse(obj.languageRules);
+  let languageRules: z.infer<typeof languageRulesSchema>;
+  if (languageRulesResult.success) {
+    languageRules = languageRulesResult.data;
+  } else {
+    languageRules = languageRulesSchema.parse({});
+    warnings.push({
+      section: "languageRules",
+      issues: languageRulesResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -475,6 +517,7 @@ export async function loadRepoConfig(
     mention,
     telemetry,
     knowledge,
+    languageRules,
   };
 
   return { config, warnings };
