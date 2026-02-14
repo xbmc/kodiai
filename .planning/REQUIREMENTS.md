@@ -1,157 +1,113 @@
-# Requirements: Kodiai v0.6 Review Output Formatting & UX
+# Requirements: Kodiai v0.7 Intelligent Review Content
 
-**Defined:** 2026-02-13
+**Defined:** 2026-02-14
 **Core Value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
 
-## v0.6 Requirements
+## v0.7 Requirements
 
-### Initial Review Structure
+### Language-Aware Enforcement
 
-- [ ] **FORMAT-01**: Initial PR reviews use predictable structure with clear sections
-  - What changed (brief summary of PR intent from title/description)
-  - Strengths (what's correct, measurably improved, well-done)
-  - Observations (findings organized by impact vs preference)
-  - Suggestions (optional improvements without opening debates)
-  - Verdict (explicit merge recommendation)
+- [ ] **LANG-01**: Bot auto-suppresses formatting violations when formatter config detected (`.prettierrc`, `.clang-format`, `.black.toml`, `.editorconfig`)
+- [ ] **LANG-02**: Bot auto-suppresses import order violations when linter config detected
+- [ ] **LANG-03**: C++ null dereference findings are enforced as CRITICAL severity
+- [ ] **LANG-04**: C++ uninitialized member findings are enforced as CRITICAL severity
+- [ ] **LANG-05**: Go unchecked error findings are enforced as MAJOR severity
+- [ ] **LANG-06**: Python bare except findings are enforced as MAJOR severity
+- [ ] **LANG-07**: Language severity floors are enforced post-LLM-execution (deterministic, not prompt-driven)
+- [ ] **LANG-08**: CRITICAL findings are never suppressed by language rules
+- [ ] **LANG-09**: Language rules are configurable per-repo via `.kodiai.yml`
+- [ ] **LANG-10**: Unknown languages fall back to generic review without error
 
-- [ ] **FORMAT-02**: "What changed" section signals review scope with progress checklist
-  - Example: "Reviewed: core logic, error handling, tests, docs"
-  - Shows maintainer what the bot actually looked at
-  - Built from diff analysis (files reviewed, categories covered)
+### Large PR Intelligence
 
-### Merge Confidence & Verdict
+- [ ] **LARGE-01**: Bot computes risk score for each file in PR using composite heuristics (lines changed, path risk, category, churn)
+- [ ] **LARGE-02**: Bot prioritizes files by risk score when PR exceeds 50 files
+- [ ] **LARGE-03**: Bot reviews top 50 files by risk score for large PRs
+- [ ] **LARGE-04**: Bot uses tiered analysis (full for top 30, abbreviated for next 20, mention for rest) not binary include/exclude
+- [ ] **LARGE-05**: Bot discloses coverage in Review Details ("Reviewed 50/312 files, prioritized by risk")
+- [ ] **LARGE-06**: Risk scoring weights are configurable via `.kodiai.yml`
+- [ ] **LARGE-07**: Skipped files are listed with risk scores for transparency
+- [ ] **LARGE-08**: File limit threshold (50) is configurable per-repo
 
-- [ ] **FORMAT-03**: Verdict section provides explicit merge recommendation
-  - If no blockers: "Ready to merge -- No blocking issues found"
-  - If blockers: "Address before merging -- [N] blocking issue(s) found"
-  - If minor only: "Ready to merge with minor items -- Optional cleanup suggestions below"
+### Feedback-Driven Learning
 
-- [ ] **FORMAT-04**: Blockers vs minor issues explicitly separated
-  - Blockers labeled: "BLOCKER" with severity (CRITICAL/MAJOR)
-  - Minor items labeled: "MINOR" or "SUGGESTION"
-  - Nits/preferences labeled: "STYLE" or "PREFERENCE"
-
-- [ ] **FORMAT-05**: Use checkmarks for verified positives in Strengths section
-  - Example: "Null checks added for all nullable returns"
-  - Example: "Test coverage maintained at 87%"
-  - Example: "Breaking changes properly documented in PR description"
-
-### Observations & Findings Organization
-
-- [ ] **FORMAT-06**: Separate impact (real risks) from preference (nits)
-  - "Impact" subsection: correctness bugs, security issues, performance problems
-  - "Preference" subsection: style nits, naming suggestions, code organization
-  - Each finding tagged with severity in header: [CRITICAL], [MAJOR], [MEDIUM], [MINOR]
-
-- [ ] **FORMAT-07**: Scope findings to PR intent (don't judge against imagined ideal)
-  - If PR goal is "stop flaky CI", focus on test reliability, not code style
-  - If PR goal is "performance optimization", focus on benchmarks, not documentation
-  - Extract intent from PR title/description/labels
-
-- [ ] **FORMAT-08**: Minimize churn language in findings
-  - Call out "minimal impact" for low-risk changes
-  - Highlight "preserves existing behavior" for refactors
-  - Note "backward compatible" for API changes
-
-### Suggestions Section
-
-- [ ] **FORMAT-09**: Offer easy next steps without opening debates
-  - Link to issues for larger improvements: "Consider [feature X] in future PR (#123)"
-  - Suggest TODOs for maintainability: "Add TODO comment for [future enhancement]"
-  - Propose low-friction cleanups: "Optional: extract [repeated logic] to helper function"
-
-- [ ] **FORMAT-10**: Suggestions are optional, not blockers
-  - Clearly labeled as "Optional suggestion:" or "Future consideration:"
-  - Not counted against merge readiness
-  - Grouped at end of Observations, separate from blockers
-
-### Review Details Integration
-
-- [ ] **FORMAT-11**: Embed Review Details as collapsible section in summary comment
-  - Never create standalone comment with just Review Details
-  - Place Review Details at bottom of summary, inside `<details>` block
-  - Title: "Review Details"
-
-- [ ] **FORMAT-12**: Remove "Estimated review time saved" from Review Details
-  - Do not calculate or display time-saved metrics
-  - Remove formula: `(3 min x actionable) + (1 min x low-confidence) + (0.25 min x files)`
-  - Keep only: files reviewed, lines changed, findings by severity
-
-- [ ] **FORMAT-13**: Keep Review Details minimal and factual
-  - Files reviewed: [N]
-  - Lines changed: +[additions] -[deletions]
-  - Findings: [critical], [major], [medium], [minor]
-  - Review completed: [timestamp]
-
-### Re-Review & Delta Formatting
-
-- [ ] **FORMAT-14**: Re-reviews show delta findings only (not full structure)
-  - Header: "Re-review -- Changes since [previous review SHA]"
-  - Sections: "What changed" -> "New findings" -> "Resolved findings" -> "Still open" -> "Verdict update"
-
-- [ ] **FORMAT-15**: Delta verdict focuses on what's relevant/updated
-  - If new blockers: "New blockers found -- Address [N] new issue(s)"
-  - If blockers resolved: "Blockers resolved -- Ready to merge"
-  - If no change: "Still ready -- No new issues"
-
-- [ ] **FORMAT-16**: Show only relevant updates from initial review
-  - Don't repeat unchanged findings
-  - Highlight resolved issues with checkmark
-  - Flag new issues clearly with NEW badge
-  - Note still-open issues with count only (expandable list)
-
-### Tone & Language
-
-- [ ] **FORMAT-17**: Use low-drama, high-signal language
-  - Avoid: "This could potentially maybe cause issues"
-  - Use: "This will cause [specific issue] when [specific condition]"
-  - Avoid: "Consider refactoring"
-  - Use: "Optional: Extract [method] to reduce duplication"
-
-- [ ] **FORMAT-18**: Be specific about risk and impact
-  - Tag severity: [CRITICAL], [MAJOR], [MEDIUM], [MINOR]
-  - Specify condition: "when X happens" not "could happen"
-  - Show consequence: "causes [crash/leak/bug]" not "might have issues"
+- [ ] **FEED-01**: Bot tracks thumbs-down reactions on review comments
+- [ ] **FEED-02**: Bot aggregates feedback by finding fingerprint (file path + title pattern)
+- [ ] **FEED-03**: Bot auto-suppresses patterns after 3+ thumbs-down from 3+ distinct reactors across 2+ PRs
+- [ ] **FEED-04**: CRITICAL findings are never auto-suppressed via feedback
+- [ ] **FEED-05**: MAJOR findings in security/correctness categories are never auto-suppressed via feedback
+- [ ] **FEED-06**: Bot adjusts confidence scores based on feedback (+10 for thumbs-up, -20 for thumbs-down)
+- [ ] **FEED-07**: Bot reports auto-suppressed patterns in Review Details ("3 patterns auto-suppressed based on prior feedback")
+- [ ] **FEED-08**: Feedback-driven suppression requires explicit opt-in via `.kodiai.yml`
+- [ ] **FEED-09**: Suppression thresholds (3 thumbs-down, 3 reactors, 2 PRs) are configurable
+- [ ] **FEED-10**: Bot provides mechanism to view and clear feedback-based suppressions
 
 ## Future Requirements
 
-None yet -- v0.6 is focused on formatting and UX improvements only.
+### Enhanced Language Coverage (v0.8+)
+
+- **LANG-11**: Expand language-specific rules beyond 9 current languages (Python, Go, Rust, Java, C++, C, Ruby, PHP, Swift)
+- **LANG-12**: Add language-specific anti-patterns (e.g., Ruby `method_missing` overuse, Go goroutine leaks)
+
+### Advanced Risk Scoring (v0.8+)
+
+- **LARGE-09**: Include git churn frequency in risk score
+- **LARGE-10**: Add semantic similarity to previously flagged files in risk score
+
+### Feedback Analytics (v0.8+)
+
+- **FEED-11**: Provide dashboard of most suppressed patterns per repo
+- **FEED-12**: Detect and warn about potential feedback gaming (mass reactions from single actor)
 
 ## Out of Scope
 
-- Content of findings (what the LLM flags) -- v0.6 is about *how* we present findings, not *what* we find
-- Learning/retrieval improvements -- deferred to v0.7
-- Language-aware enforcement -- deferred to v0.7
-- Large PR intelligence -- deferred to v0.7
+| Feature | Reason |
+|---------|--------|
+| Linter runtime dependencies (ESLint, Ruff, Clippy) | Workspace lacks toolchains; adds 10-30s latency; config varies per repo |
+| AST parsing for complexity metrics | Lines changed + path signals are better predictors; AST libs add dependencies |
+| ML models for risk scoring | Heuristics are transparent, debuggable, sufficient; ML adds complexity without proven benefit |
+| Embedding-based feedback clustering | Exact-match handles 80% of cases; embeddings add complexity for marginal gain in v0.7 |
+| PR split recommendations | Low impact; humans already know PR is too big |
+| Real-time reaction webhooks | GitHub API doesn't support; polling is architecturally correct |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FORMAT-01 | Phase 34 - Structured Review Template | Pending |
-| FORMAT-02 | Phase 34 - Structured Review Template | Pending |
-| FORMAT-03 | Phase 36 - Verdict & Merge Confidence | Pending |
-| FORMAT-04 | Phase 36 - Verdict & Merge Confidence | Pending |
-| FORMAT-05 | Phase 34 - Structured Review Template | Pending |
-| FORMAT-06 | Phase 35 - Findings Organization & Tone | Pending |
-| FORMAT-07 | Phase 35 - Findings Organization & Tone | Pending |
-| FORMAT-08 | Phase 35 - Findings Organization & Tone | Pending |
-| FORMAT-09 | Phase 36 - Verdict & Merge Confidence | Pending |
-| FORMAT-10 | Phase 36 - Verdict & Merge Confidence | Pending |
-| FORMAT-11 | Phase 37 - Review Details Embedding | Pending |
-| FORMAT-12 | Phase 37 - Review Details Embedding | Pending |
-| FORMAT-13 | Phase 37 - Review Details Embedding | Pending |
-| FORMAT-14 | Phase 38 - Delta Re-Review Formatting | Pending |
-| FORMAT-15 | Phase 38 - Delta Re-Review Formatting | Pending |
-| FORMAT-16 | Phase 38 - Delta Re-Review Formatting | Pending |
-| FORMAT-17 | Phase 35 - Findings Organization & Tone | Pending |
-| FORMAT-18 | Phase 35 - Findings Organization & Tone | Pending |
+| LANG-01 | TBD | Pending |
+| LANG-02 | TBD | Pending |
+| LANG-03 | TBD | Pending |
+| LANG-04 | TBD | Pending |
+| LANG-05 | TBD | Pending |
+| LANG-06 | TBD | Pending |
+| LANG-07 | TBD | Pending |
+| LANG-08 | TBD | Pending |
+| LANG-09 | TBD | Pending |
+| LANG-10 | TBD | Pending |
+| LARGE-01 | TBD | Pending |
+| LARGE-02 | TBD | Pending |
+| LARGE-03 | TBD | Pending |
+| LARGE-04 | TBD | Pending |
+| LARGE-05 | TBD | Pending |
+| LARGE-06 | TBD | Pending |
+| LARGE-07 | TBD | Pending |
+| LARGE-08 | TBD | Pending |
+| FEED-01 | TBD | Pending |
+| FEED-02 | TBD | Pending |
+| FEED-03 | TBD | Pending |
+| FEED-04 | TBD | Pending |
+| FEED-05 | TBD | Pending |
+| FEED-06 | TBD | Pending |
+| FEED-07 | TBD | Pending |
+| FEED-08 | TBD | Pending |
+| FEED-09 | TBD | Pending |
+| FEED-10 | TBD | Pending |
 
 **Coverage:**
-- v0.6 requirements: 18 total
-- Mapped to phases: 18
-- Unmapped: 0
+- v0.7 requirements: 28 total
+- Mapped to phases: 0 (roadmap not yet created)
+- Unmapped: 28
 
 ---
-*Requirements defined: 2026-02-13*
-*Last updated: 2026-02-13 after roadmap creation*
+*Requirements defined: 2026-02-14*
+*Last updated: 2026-02-14 after initial definition*
