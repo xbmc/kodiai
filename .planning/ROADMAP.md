@@ -105,11 +105,11 @@ Plans:
   2. A large PR (over 500 lines) receives a minimal-profile review focused on critical issues
   3. A `.kodiai.yml` profile setting overrides the auto-selected profile
   4. A `[strict-review]` keyword in the PR title overrides both auto-selection and config
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 43-01: TBD
-- [ ] 43-02: TBD
+- [ ] 43-01-PLAN.md — TDD: deterministic auto-profile resolver (threshold bands + keyword/manual precedence metadata)
+- [ ] 43-02-PLAN.md — Integrate auto-profile into review handler and Review Details with runtime regression coverage
 
 ### Phase 44: Smart Finding Prioritization
 **Goal**: When the bot has more findings than the comment cap allows, it selects the most important findings using a multi-factor score rather than severity alone
