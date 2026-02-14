@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 39 of 41 (Language-Aware Enforcement)
-Plan: —
-Status: Ready to plan
-Last activity: 2026-02-14 — Roadmap created for v0.7 (3 phases, 28 requirements)
+Plan: 1 of 4 complete
+Status: Executing
+Last activity: 2026-02-14 — Completed 39-01 (foundation types, tooling detection, config schema)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [==░░░░░░░░] 8%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 79
+- Total plans completed: 80
 - Average duration: 5 min
-- Total execution time: 359 min
+- Total execution time: 362 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -45,6 +45,8 @@ Recent decisions affecting current work:
 - Language severity floors enforced post-LLM (deterministic TypeScript, not prompt-driven)
 - Feedback suppression default OFF (explicit opt-in via `.kodiai.yml`)
 - Precedence: user suppressions > user minLevel > language overrides > default
+- Go gofmt treated as always-on when go.mod exists (no config file needed)
+- Tooling detection is fail-open: filesystem errors return empty maps, never block review
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Created v0.7 roadmap (3 phases, 28 requirements mapped)
+Stopped at: Completed 39-01-PLAN.md
 Resume file: None
-Next action: `/gsd:plan-phase 39`
+Next action: `/gsd:execute-phase 39` (plan 39-02)
