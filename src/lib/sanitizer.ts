@@ -203,3 +203,19 @@ export function filterCommentsToTriggerTime<
     return true;
   });
 }
+
+/**
+ * Strip mention handles from outgoing bot replies to prevent self-trigger loops.
+ * Replaces @handle with handle (removes the @ prefix) preserving readability.
+ * Defense-in-depth alongside the bot filter in webhook processing.
+ */
+export function sanitizeOutgoingMentions(body: string, handles: string[]): string {
+  let result = body;
+  for (const handle of handles) {
+    const clean = handle.startsWith("@") ? handle.slice(1) : handle;
+    if (!clean) continue;
+    const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`@${escaped}\\b`, "gi"), clean);
+  }
+  return result;
+}
