@@ -1,6 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
+  buildAuthorExperienceSection,
   buildConfidenceInstructions,
   buildDeltaReviewContext,
   buildDeltaVerdictLogicSection,
@@ -407,6 +408,39 @@ test("buildReviewPrompt remains backward compatible without new fields", () => {
   expect(prompt).toContain("Changed files:");
   expect(prompt).not.toContain("## Change Context");
   expect(prompt).not.toContain("## Path-Specific Review Instructions");
+});
+
+test("buildAuthorExperienceSection returns educational directives for first-time tier", () => {
+  const section = buildAuthorExperienceSection({
+    tier: "first-time",
+    authorLogin: "newdev",
+  });
+
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("first-time or new contributor");
+  expect(section).toContain("encouraging, welcoming");
+  expect(section).toContain("Explain WHY");
+  expect(section).toContain("learning opportunities");
+  expect(section).toContain("newdev");
+});
+
+test("buildAuthorExperienceSection returns terse directives for core tier", () => {
+  const section = buildAuthorExperienceSection({
+    tier: "core",
+    authorLogin: "maintainer",
+  });
+
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("core contributor");
+  expect(section).toContain("concise");
+  expect(section).toContain("terse");
+  expect(section).toContain("maintainer");
+});
+
+test("buildAuthorExperienceSection returns empty string for regular tier", () => {
+  expect(
+    buildAuthorExperienceSection({ tier: "regular", authorLogin: "someone" }),
+  ).toBe("");
 });
 
 // ---------------------------------------------------------------------------

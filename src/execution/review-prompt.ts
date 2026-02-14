@@ -3,6 +3,7 @@ import picomatch from "picomatch";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
+import type { AuthorTier } from "../lib/author-classifier.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -250,6 +251,47 @@ export function buildToneGuidelinesSection(): string {
     "",
     "Prefix Preference findings with \"Optional:\" to signal they are non-blocking.",
   ].join("\n");
+}
+
+export function buildAuthorExperienceSection(params: {
+  tier: AuthorTier;
+  authorLogin: string;
+}): string {
+  const { tier, authorLogin } = params;
+
+  if (tier === "first-time") {
+    return [
+      "## Author Experience Context",
+      "",
+      `The PR author (${authorLogin}) appears to be a first-time or new contributor to this repository.`,
+      "",
+      "Adapt your review tone accordingly:",
+      "- Use encouraging, welcoming language",
+      "- Explain WHY each finding matters, not just WHAT is wrong",
+      "- Link to relevant documentation or examples when suggesting fixes",
+      "- Frame suggestions as learning opportunities rather than corrections",
+      "- Acknowledge what was done well before noting issues",
+      "- Use phrases like \"A common pattern here is...\" instead of \"You should...\"",
+      "- For MINOR findings, prefer a brief explanation over terse labels",
+    ].join("\n");
+  }
+
+  if (tier === "core") {
+    return [
+      "## Author Experience Context",
+      "",
+      `The PR author (${authorLogin}) is a core contributor (MEMBER/OWNER) of this repository.`,
+      "",
+      "Adapt your review tone accordingly:",
+      "- Be concise and assume familiarity with the codebase",
+      "- Skip explanations of well-known patterns; focus on the specific issue",
+      "- Use terse finding descriptions (issue + consequence only)",
+      "- Omit links to basic documentation",
+      "- For MINOR findings, a one-liner is sufficient",
+    ].join("\n");
+  }
+
+  return "";
 }
 
 // ---------------------------------------------------------------------------
