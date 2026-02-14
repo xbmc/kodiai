@@ -74,40 +74,40 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LANG-01 | TBD | Pending |
-| LANG-02 | TBD | Pending |
-| LANG-03 | TBD | Pending |
-| LANG-04 | TBD | Pending |
-| LANG-05 | TBD | Pending |
-| LANG-06 | TBD | Pending |
-| LANG-07 | TBD | Pending |
-| LANG-08 | TBD | Pending |
-| LANG-09 | TBD | Pending |
-| LANG-10 | TBD | Pending |
-| LARGE-01 | TBD | Pending |
-| LARGE-02 | TBD | Pending |
-| LARGE-03 | TBD | Pending |
-| LARGE-04 | TBD | Pending |
-| LARGE-05 | TBD | Pending |
-| LARGE-06 | TBD | Pending |
-| LARGE-07 | TBD | Pending |
-| LARGE-08 | TBD | Pending |
-| FEED-01 | TBD | Pending |
-| FEED-02 | TBD | Pending |
-| FEED-03 | TBD | Pending |
-| FEED-04 | TBD | Pending |
-| FEED-05 | TBD | Pending |
-| FEED-06 | TBD | Pending |
-| FEED-07 | TBD | Pending |
-| FEED-08 | TBD | Pending |
-| FEED-09 | TBD | Pending |
-| FEED-10 | TBD | Pending |
+| LANG-01 | Phase 39 | Pending |
+| LANG-02 | Phase 39 | Pending |
+| LANG-03 | Phase 39 | Pending |
+| LANG-04 | Phase 39 | Pending |
+| LANG-05 | Phase 39 | Pending |
+| LANG-06 | Phase 39 | Pending |
+| LANG-07 | Phase 39 | Pending |
+| LANG-08 | Phase 39 | Pending |
+| LANG-09 | Phase 39 | Pending |
+| LANG-10 | Phase 39 | Pending |
+| LARGE-01 | Phase 40 | Pending |
+| LARGE-02 | Phase 40 | Pending |
+| LARGE-03 | Phase 40 | Pending |
+| LARGE-04 | Phase 40 | Pending |
+| LARGE-05 | Phase 40 | Pending |
+| LARGE-06 | Phase 40 | Pending |
+| LARGE-07 | Phase 40 | Pending |
+| LARGE-08 | Phase 40 | Pending |
+| FEED-01 | Phase 41 | Pending |
+| FEED-02 | Phase 41 | Pending |
+| FEED-03 | Phase 41 | Pending |
+| FEED-04 | Phase 41 | Pending |
+| FEED-05 | Phase 41 | Pending |
+| FEED-06 | Phase 41 | Pending |
+| FEED-07 | Phase 41 | Pending |
+| FEED-08 | Phase 41 | Pending |
+| FEED-09 | Phase 41 | Pending |
+| FEED-10 | Phase 41 | Pending |
 
 **Coverage:**
 - v0.7 requirements: 28 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 28
+- Mapped to phases: 28
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-14*
-*Last updated: 2026-02-14 after initial definition*
+*Last updated: 2026-02-14 after roadmap creation*
