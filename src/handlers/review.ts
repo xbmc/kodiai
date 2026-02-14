@@ -23,6 +23,12 @@ import {
   buildReviewPrompt,
   matchPathInstructions,
 } from "../execution/review-prompt.ts";
+import {
+  buildKeywordParsingSection,
+  DEFAULT_EMPTY_INTENT,
+  parsePRIntent,
+  type ParsedPRIntent,
+} from "../lib/pr-intent-parser.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
@@ -71,6 +77,29 @@ type RetrievalContextForPrompt = {
   }>;
 };
 
+async function fetchCommitMessages(
+  octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  commitCount: number,
+): Promise<Array<{ sha: string; message: string }>> {
+  if (commitCount === 0) return [];
+
+  const perPage = Math.min(commitCount, 100);
+  const { data } = await octokit.rest.pulls.listCommits({
+    owner,
+    repo,
+    pull_number: prNumber,
+    per_page: perPage,
+  });
+
+  return data.map((c) => ({
+    sha: c.sha.slice(0, 7),
+    message: c.commit.message.split("\n")[0] ?? "",
+  }));
+}
+
 function toConfidenceBand(confidence: number): ConfidenceBand {
   if (confidence >= 75) return "high";
   if (confidence >= 50) return "medium";
@@ -116,6 +145,7 @@ function formatReviewDetailsSummary(params: {
     totalFiles: number;
   };
   feedbackSuppressionCount?: number;
+  keywordParsing?: ParsedPRIntent;
 }): string {
   const {
     reviewOutputKey,
@@ -125,6 +155,7 @@ function formatReviewDetailsSummary(params: {
     findingCounts,
     largePRTriage,
     feedbackSuppressionCount,
+    keywordParsing,
   } = params;
 
   const sections = [
@@ -174,6 +205,11 @@ function formatReviewDetailsSummary(params: {
   if (feedbackSuppressionCount && feedbackSuppressionCount > 0) {
     sections.push(`- ${feedbackSuppressionCount} pattern${feedbackSuppressionCount === 1 ? '' : 's'} auto-suppressed by feedback`);
   }
+
+  const keywordSection = buildKeywordParsingSection(
+    keywordParsing ?? DEFAULT_EMPTY_INTENT,
+  );
+  sections.push(keywordSection);
 
   sections.push(
     "",
@@ -710,6 +746,28 @@ export function createReviewHandler(deps: {
       return;
     }
 
+    if (/\[no-review\]/i.test(pr.title)) {
+      logger.info(
+        { ...baseLog, gate: "keyword-skip", gateResult: "skipped" },
+        "Review skipped via [no-review] keyword in PR title",
+      );
+      try {
+        const skipOctokit = await githubApp.getInstallationOctokit(event.installationId);
+        await skipOctokit.rest.issues.createComment({
+          owner: payload.repository.owner.login,
+          repo: payload.repository.name,
+          issue_number: pr.number,
+          body: "Review skipped per `[no-review]` in PR title.",
+        });
+      } catch (commentErr) {
+        logger.warn(
+          { ...baseLog, err: commentErr },
+          "Failed to post [no-review] acknowledgment (non-fatal)",
+        );
+      }
+      return;
+    }
+
     if (action === "review_requested") {
       const reviewRequestedPayload = payload as PullRequestReviewRequestedEvent;
       const requestedReviewer =
@@ -1043,6 +1101,37 @@ export function createReviewHandler(deps: {
           "Review output idempotency check passed",
         );
 
+        let parsedIntent: ParsedPRIntent = DEFAULT_EMPTY_INTENT;
+        try {
+          const commitMessages = await fetchCommitMessages(
+            idempotencyOctokit,
+            apiOwner,
+            apiRepo,
+            pr.number,
+            pr.commits,
+          );
+          parsedIntent = parsePRIntent(pr.title, pr.body ?? null, commitMessages);
+          logger.info(
+            {
+              ...baseLog,
+              gate: "keyword-parse",
+              recognized: parsedIntent.recognized,
+              unrecognized: parsedIntent.unrecognized,
+              noReview: parsedIntent.noReview,
+              isWIP: parsedIntent.isWIP,
+              profileOverride: parsedIntent.profileOverride,
+              breakingChange: parsedIntent.breakingChangeDetected,
+              conventionalType: parsedIntent.conventionalType?.type ?? null,
+            },
+            "PR intent keywords parsed",
+          );
+        } catch (err) {
+          logger.warn(
+            { ...baseLog, err },
+            "PR intent parsing failed (fail-open, proceeding without keywords)",
+          );
+        }
+
         // Add eyes reaction only for explicit re-review requests.
         // Do not react on opened/ready_for_review to avoid noise on the PR description.
         if (action === "review_requested") {
@@ -1257,6 +1346,40 @@ export function createReviewHandler(deps: {
             }
             if (resolvedIgnoredAreas.length === 0) {
               resolvedIgnoredAreas = [...preset.ignoredAreas];
+            }
+          }
+        }
+
+        if (parsedIntent.profileOverride) {
+          const keywordPreset = PROFILE_PRESETS[parsedIntent.profileOverride];
+          if (keywordPreset) {
+            resolvedSeverityMinLevel = keywordPreset.severityMinLevel;
+            resolvedMaxComments = keywordPreset.maxComments;
+            if (keywordPreset.focusAreas.length > 0) {
+              resolvedFocusAreas = [...keywordPreset.focusAreas];
+            }
+            if (keywordPreset.ignoredAreas.length > 0) {
+              resolvedIgnoredAreas = [...keywordPreset.ignoredAreas];
+            }
+            logger.info(
+              {
+                ...baseLog,
+                gate: "keyword-profile-override",
+                profile: parsedIntent.profileOverride,
+              },
+              "Keyword profile override applied",
+            );
+          }
+        }
+
+        if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
+          resolvedIgnoredAreas.push("style");
+        }
+
+        if (parsedIntent.focusAreas.length > 0) {
+          for (const area of parsedIntent.focusAreas as ReviewArea[]) {
+            if (!resolvedFocusAreas.includes(area)) {
+              resolvedFocusAreas.push(area);
             }
           }
         }
@@ -1588,6 +1711,7 @@ export function createReviewHandler(deps: {
                 totalFiles: tieredFiles.totalFiles,
               } : undefined,
               feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
+              keywordParsing: parsedIntent,
             });
 
             if (result.published) {
