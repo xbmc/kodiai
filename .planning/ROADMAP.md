@@ -150,11 +150,12 @@ Plans:
   3. Conversation threads are rate-limited (max N turns per PR) to prevent runaway token costs
   4. The bot does not trigger itself when responding (outgoing mention sanitization works)
   5. Context budget caps the total characters assembled per turn to prevent context window explosion
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 46-01: TBD
-- [ ] 46-02: TBD
+- [ ] 46-01-PLAN.md — TDD: thread-aware context building and finding lookup (inReplyToId, getFindingByCommentId, thread context, finding-specific prompt)
+- [ ] 46-02-PLAN.md — TDD: outgoing mention sanitization and conversation config schema (sanitizeOutgoingMentions, maxTurnsPerPr, contextBudgetChars)
+- [ ] 46-03-PLAN.md — Wire conversational review into mention handler (rate limiting, sanitization, context budget, finding lookup integration)
 
 ## Progress
 
