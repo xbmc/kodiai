@@ -106,7 +106,13 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-(None — define in next milestone)
+#### Current Milestone: v0.9 Smart Dependencies & Resilience
+
+**Goal:** Make Kodiai smarter about dependency bumps, resilient to large PR timeouts, and more precise in knowledge retrieval.
+
+- [ ] Dependency bump analysis with changelog, CVE, and breaking change reporting
+- [ ] Timeout and large PR resilience with progressive/chunked review and partial result publishing
+- [ ] Intelligent retrieval improvements with multi-signal queries, adaptive thresholds, and language-aware boosting
 
 ### Out of Scope
 
@@ -227,4 +233,4 @@ v0.8 ships an installable GitHub App that:
 | Defense-in-depth publish-path sanitization | botHandles threaded through ExecutionContext to all MCP servers for self-trigger prevention | ✓ Good — v0.8 |
 
 ---
-*Last updated: 2026-02-14 after v0.8 milestone*
+*Last updated: 2026-02-14 after v0.9 milestone start*
