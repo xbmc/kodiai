@@ -6,6 +6,7 @@ import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
   FeedbackReaction,
+  FindingByCommentId,
   FindingCommentCandidate,
   FindingRecord,
   FindingCategory,
@@ -72,6 +73,14 @@ type AuthorCacheRow = {
   author_association: string;
   pr_count: number | null;
   cached_at: string;
+};
+
+type FindingByCommentIdRow = {
+  severity: FindingSeverity;
+  category: FindingCategory;
+  file_path: string;
+  start_line: number | null;
+  title: string;
 };
 
 /** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
@@ -474,6 +483,15 @@ export function createKnowledgeStore(opts: {
     LIMIT $limit
   `);
 
+  const getFindingByCommentIdStmt = db.query(`
+    SELECT f.severity, f.category, f.file_path, f.start_line, f.title
+    FROM findings f
+    INNER JOIN reviews r ON r.id = f.review_id
+    WHERE r.repo = $repo AND f.comment_id = $commentId
+    ORDER BY f.created_at DESC
+    LIMIT 1
+  `);
+
   const aggregateFeedbackPatternsStmt = db.query(`
     SELECT
       fr.title,
@@ -844,6 +862,23 @@ export function createKnowledgeStore(opts: {
         authorAssociation: row.author_association,
         prCount: row.pr_count,
         cachedAt: row.cached_at,
+      };
+    },
+
+    getFindingByCommentId(params: { repo: string; commentId: number }): FindingByCommentId | null {
+      const row = getFindingByCommentIdStmt.get({
+        $repo: params.repo,
+        $commentId: params.commentId,
+      }) as FindingByCommentIdRow | null;
+
+      if (!row) return null;
+
+      return {
+        severity: row.severity,
+        category: row.category,
+        filePath: row.file_path,
+        startLine: row.start_line,
+        title: row.title,
       };
     },
 

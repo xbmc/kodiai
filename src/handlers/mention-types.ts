@@ -35,6 +35,8 @@ export interface MentionEvent {
   filePath: string | undefined;
   /** Only for pr_review_comment surface */
   fileLine: number | undefined;
+  /** For pr_review_comment: the comment ID this is replying to (thread parent) */
+  inReplyToId: number | undefined;
 }
 
 /**
@@ -65,6 +67,7 @@ export function normalizeIssueComment(
     diffHunk: undefined,
     filePath: undefined,
     fileLine: undefined,
+    inReplyToId: undefined,
   };
 }
 
@@ -93,6 +96,7 @@ export function normalizeReviewComment(
     diffHunk: payload.comment.diff_hunk,
     filePath: payload.comment.path,
     fileLine: payload.comment.line ?? payload.comment.original_line ?? undefined,
+    inReplyToId: payload.comment.in_reply_to_id ?? undefined,
   };
 }
 
@@ -122,6 +126,7 @@ export function normalizeReviewBody(
     diffHunk: undefined,
     filePath: undefined,
     fileLine: undefined,
+    inReplyToId: undefined,
   };
 }
 

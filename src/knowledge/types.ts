@@ -154,6 +154,14 @@ export type AuthorCacheEntry = {
   cachedAt: string;
 };
 
+export type FindingByCommentId = {
+  severity: FindingSeverity;
+  category: FindingCategory;
+  filePath: string;
+  startLine: number | null;
+  title: string;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
@@ -167,6 +175,7 @@ export type KnowledgeStore = {
   completeRun(runKey: string): void;
   purgeOldRuns(retentionDays?: number): number;
   getAuthorCache?(params: { repo: string; authorLogin: string }): AuthorCacheEntry | null;
+  getFindingByCommentId?(params: { repo: string; commentId: number }): FindingByCommentId | null;
   upsertAuthorCache?(params: { repo: string; authorLogin: string; tier: string; authorAssociation: string; prCount: number | null }): void;
   purgeStaleAuthorCache?(retentionDays?: number): number;
   getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null;

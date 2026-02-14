@@ -310,6 +310,56 @@ describe("KnowledgeStore", () => {
     expect(candidates[0]?.filePath).toBe("src/candidate.ts");
   });
 
+  test("getFindingByCommentId returns finding metadata and null when missing", () => {
+    const reviewId = fixture.store.recordReview({
+      repo: "owner/repo",
+      prNumber: 90,
+      filesAnalyzed: 1,
+      linesChanged: 5,
+      findingsCritical: 0,
+      findingsMajor: 1,
+      findingsMedium: 0,
+      findingsMinor: 0,
+      findingsTotal: 1,
+      suppressionsApplied: 0,
+      conclusion: "success",
+    });
+
+    fixture.store.recordFindings([
+      {
+        reviewId,
+        commentId: 5566,
+        commentSurface: "pull_request_review_comment",
+        reviewOutputKey: "kodiai-review-output:v1:finding",
+        filePath: "src/thread.ts",
+        startLine: 27,
+        severity: "major",
+        category: "correctness",
+        confidence: 88,
+        title: "Guard nullable value",
+        suppressed: false,
+      },
+    ]);
+
+    const finding = fixture.store.getFindingByCommentId?.({
+      repo: "owner/repo",
+      commentId: 5566,
+    });
+    expect(finding).toEqual({
+      severity: "major",
+      category: "correctness",
+      filePath: "src/thread.ts",
+      startLine: 27,
+      title: "Guard nullable value",
+    });
+
+    const missing = fixture.store.getFindingByCommentId?.({
+      repo: "owner/repo",
+      commentId: 999999,
+    });
+    expect(missing).toBeNull();
+  });
+
   test("recordSuppressionLog stores suppression entries", () => {
     const reviewId = fixture.store.recordReview({
       repo: "owner/repo",
