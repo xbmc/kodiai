@@ -56,6 +56,8 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.fileCategories).toBeUndefined();
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(10);
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000);
     expect(config.telemetry.enabled).toBe(true);
     expect(config.telemetry.costWarningUsd).toBe(0);
     expect(config.knowledge.shareGlobal).toBe(false);
@@ -104,6 +106,8 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.review.triggers.onReviewRequested).toBe(true); // default preserved
     expect(config.mention.enabled).toBe(true); // default preserved
     expect(config.mention.acceptClaudeAlias).toBe(true); // default preserved
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(10); // default preserved
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000); // default preserved
   } finally {
     await rm(dir, { recursive: true });
   }
@@ -567,6 +571,84 @@ test("reads mention.allowedUsers from YAML", async () => {
     expect(config.mention.enabled).toBe(true);
     expect(config.mention.acceptClaudeAlias).toBe(true);
     expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("defaults mention.conversation when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "mention:\n  enabled: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(10);
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses custom mention.conversation values", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  conversation:\n    maxTurnsPerPr: 5\n    contextBudgetChars: 4000\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(5);
+    expect(config.mention.conversation.contextBudgetChars).toBe(4000);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("mention.conversation uses defaults for missing fields", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  conversation:\n    maxTurnsPerPr: 6\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(6);
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid mention.conversation range falls back mention section defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  enabled: false\n  conversation:\n    maxTurnsPerPr: 0\n    contextBudgetChars: 999\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.enabled).toBe(true);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(10);
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000);
+    expect(warnings.some((w) => w.section === "mention")).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("rejects mention.conversation values above maximum limits", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "mention:\n  conversation:\n    maxTurnsPerPr: 51\n    contextBudgetChars: 50001\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.mention.conversation.maxTurnsPerPr).toBe(10);
+    expect(config.mention.conversation.contextBudgetChars).toBe(8000);
+    expect(warnings.some((w) => w.section === "mention")).toBe(true);
   } finally {
     await rm(dir, { recursive: true });
   }

@@ -206,6 +206,13 @@ const reviewSchema = z
     outputLanguage: "en",
   });
 
+const conversationSchema = z
+  .object({
+    maxTurnsPerPr: z.number().min(1).max(50).default(10),
+    contextBudgetChars: z.number().min(1000).max(50000).default(8000),
+  })
+  .default({ maxTurnsPerPr: 10, contextBudgetChars: 8000 });
+
 const mentionSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -213,8 +220,14 @@ const mentionSchema = z
     /** If non-empty, only these GitHub users can trigger @kodiai mentions. Empty = all users allowed. */
     allowedUsers: z.array(z.string()).default([]),
     prompt: z.string().optional(),
+    conversation: conversationSchema,
   })
-  .default({ enabled: true, acceptClaudeAlias: true, allowedUsers: [] });
+  .default({
+    enabled: true,
+    acceptClaudeAlias: true,
+    allowedUsers: [],
+    conversation: { maxTurnsPerPr: 10, contextBudgetChars: 8000 },
+  });
 
 const telemetrySchema = z
   .object({
