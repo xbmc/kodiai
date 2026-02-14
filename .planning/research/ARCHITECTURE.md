@@ -1,258 +1,683 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** Incremental AI code review architecture (embeddings-assisted learning + re-review + multi-language support)
-**Researched:** 2026-02-12
+**Domain:** Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning
+**Researched:** 2026-02-13
 **Confidence:** HIGH
 
-## Standard Architecture
+## Recommended Architecture
 
-### System Overview
+All three features integrate into the existing review pipeline as additional preprocessing steps and post-processing enhancements. No new services, no new processes, no new databases.
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ Ingress + Orchestration Layer                                                │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  [Hono Webhook] -> [Verify+Dedup] -> [Event Router] -> [Review Handler]    │
-│                                                  \-> [Feedback Sync Handler] │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Review Intelligence Layer                                                     │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  [Diff Analysis] -> [Language Profiler] -> [Re-review Delta Planner]        │
-│         \                \                    /                              │
-│          \-> [Embedding Retrieval] <- [Learning Indexer Worker]             │
-│                            |                                                 │
-│                     [Review Prompt Builder] -> [Executor]                    │
-├──────────────────────────────────────────────────────────────────────────────┤
-│ Persistence Layer                                                             │
-│  [knowledge.db] [telemetry.db] [embedding vectors/metadata tables]          │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| Review Handler | Keep deterministic review lifecycle, now enriched with language + retrieval + re-review context | Extend `src/handlers/review.ts` with optional gated context assembly |
-| Learning Indexer Worker | Build/update embeddings and review-memory records asynchronously, never blocking review publication | New queued job path reusing `jobQueue.enqueue(..., { jobType })` |
-| Embedding Retrieval | Pull top-K historical patterns/snippets for current diff with deterministic ranking | New retrieval service over SQLite tables + deterministic tie-break sort |
-| Re-review Delta Planner | Convert prior findings + current patch into "needs re-check"/"already touched" sets | New deterministic mapper using file path + line range + title fingerprint |
-| Language Profiler | Detect dominant + secondary languages per PR and per changed file | Extension map + shebang parser + conservative fallback |
-
-## Recommended Project Structure
+### System Integration Map
 
 ```
-src/
-├── learning/                         # NEW: embeddings and review-memory pipeline
-│   ├── embedding-provider.ts         # provider interface + adapter(s)
-│   ├── chunker.ts                    # deterministic chunking for files/findings
-│   ├── indexer.ts                    # upsert vectors/metadata (async worker path)
-│   ├── retrieval.ts                  # top-K similar memories for prompt enrichment
-│   └── rereview-delta.ts             # incremental re-review planner
-├── language/                         # NEW: multi-language profiling
-│   ├── profiler.ts                   # file->language and PR language mix
-│   └── normalization.ts              # canonical language ids for prompts/storage
-├── handlers/
-│   ├── review.ts                     # MODIFIED: integrate all new context builders
-│   └── feedback-sync.ts              # MODIFIED: emit learning update signals
-├── execution/
-│   ├── review-prompt.ts              # MODIFIED: sections for memory/delta/language
-│   └── config.ts                     # MODIFIED: feature flags + budgets + privacy knobs
-├── knowledge/
-│   ├── store.ts                      # MODIFIED: vector metadata + rereview tracking tables
-│   └── types.ts                      # MODIFIED: new records (embedding docs, reruns)
-└── index.ts                          # MODIFIED: wire new services and async jobs
++------------------------------------------------------------------------------+
+| Existing Review Pipeline (unchanged)                                         |
+|                                                                              |
+|  [Webhook] -> [Router] -> [Review Handler] -> [Executor] -> [Post-process]  |
+|                                 |                                |           |
+|                                 | (ENHANCED)                     |           |
+|                                 v                                v           |
+|  +--------------------------------------+  +--------------------------+      |
+|  | Pre-Execution Context Assembly       |  | Post-Execution Processing|      |
+|  |                                      |  |                          |      |
+|  | 1. analyzeDiff()       [existing]    |  | 1. Extract findings      |      |
+|  | 2. computeFileRiskScores()   [NEW]   |  | 2. Apply suppressions    |      |
+|  | 3. prioritizeFiles()         [NEW]   |  | 3. Apply feedback supps  | [NEW]|
+|  | 4. loadFeedbackSuppressions() [NEW]  |  | 4. Record findings       |      |
+|  | 5. buildReviewPrompt()  [ENHANCED]   |  | 5. Learning memory write |      |
+|  |    - Language severity tiers  [NEW]  |  | 6. Feedback aggregation  | [NEW]|
+|  |    - Risk priority hints      [NEW]  |  |                          |      |
+|  |    - Feedback suppression ctx [NEW]  |  |                          |      |
+|  +--------------------------------------+  +--------------------------+      |
+|                                                                              |
+| Feedback Sync Pipeline (existing, enhanced)                                  |
+|  [PR Activity Event] -> [Sync Reactions] -> [Store] -> [Aggregate]  [NEW]   |
++------------------------------------------------------------------------------+
 ```
 
-### Structure Rationale
+### Component Boundaries
 
-- **`learning/`:** isolate experimental/high-growth logic away from stable webhook/executor control flow.
-- **`language/`:** keep language concerns deterministic and reusable by prompt build and storage tags.
-- **`handlers/review.ts`:** remains orchestration entrypoint; new capabilities are pluggable helpers, not inlined logic.
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| `diff-analysis.ts` (ENHANCED) | File risk scoring, per-file numstat, file prioritization | Review handler, prompt builder |
+| `review-prompt.ts` (ENHANCED) | Language severity tiers in prompt, risk priority hints | Review handler (caller), Executor (consumer) |
+| `confidence.ts` (ENHANCED) | Apply feedback-derived suppressions alongside config suppressions | Review handler (post-processing) |
+| `knowledge/store.ts` (ENHANCED) | Feedback suppression rules table, aggregation queries | Review handler, feedback-sync handler |
+| `feedback-sync.ts` (ENHANCED) | Trigger feedback aggregation after reaction sync | Knowledge store |
+| `config.ts` (ENHANCED) | `review.languageRules`, `review.largePR`, `review.feedback` schemas | All components |
 
-## Architectural Patterns
+### New Modules (Pure Functions, No New Processes)
 
-### Pattern 1: Deterministic Context Enrichment Pipeline
+| Module | Location | Type | Purpose |
+|--------|----------|------|---------|
+| `computeFileRiskScore()` | `src/execution/diff-analysis.ts` | Pure function | Score individual files by risk heuristics |
+| `prioritizeFiles()` | `src/execution/diff-analysis.ts` | Pure function | Sort files by risk, allocate comment budget |
+| `parsePerFileNumstat()` | `src/execution/diff-analysis.ts` | Pure function | Per-file lines added/removed from numstat |
+| `LANGUAGE_SEVERITY_RULES` | `src/execution/review-prompt.ts` | Static data | Auto-fixable vs safety-critical tiers per language |
+| `buildLanguageSeveritySection()` | `src/execution/review-prompt.ts` | Pure function | Emit tiered language instructions to prompt |
+| `loadFeedbackSuppressions()` | `src/knowledge/store.ts` | DB query | Load auto-suppression rules from feedback aggregation |
+| `refreshFeedbackSuppressions()` | `src/knowledge/store.ts` | DB write | Recompute suppression rules from feedback_reactions |
 
-**What:** Build review context in fixed order: diff -> language -> re-review delta -> embeddings retrieval -> prompt.
-**When to use:** Every PR review execution.
-**Trade-offs:** Predictable behavior and testability, but strict ordering means less room for opportunistic heuristics.
+### Data Flow
 
+#### Feature 1: Language-Specific Severity Rules
+
+```
+.kodiai.yml config
+    |
+    v
+loadRepoConfig() -- parse review.languageRules
+    |
+    v
+analyzeDiff() -- classifies files by language (existing)
+    |
+    v
+buildReviewPrompt()
+    |
+    v
+buildLanguageSeveritySection() -- NEW: emit tiered instructions
+    |  - Auto-fixable tier: "Do NOT flag these (linter handles them)"
+    |  - Safety-critical tier: "Flag these at MAJOR or higher"
+    v
+Executor (Claude) applies language-specific severity rules in review
+    |
+    v
+Post-processing: confidence scoring boosted for safety-critical categories
+```
+
+#### Feature 2: Risk-Weighted File Prioritization
+
+```
+git diff --numstat output (existing)
+    |
+    v
+parsePerFileNumstat() -- NEW: per-file lines added/removed
+    |
+    v
+computeFileRiskScore() -- NEW: composite score per file
+    |  inputs: linesChanged, pathRiskSignals, categoryMultiplier, churnCount
+    v
+prioritizeFiles() -- NEW: sort by score, apply budget
+    |
+    v
+buildReviewPrompt()
+    |  - Inject file priority list into Change Context section
+    |  - "Focus your review budget on these high-risk files"
+    v
+Executor (Claude) allocates attention to highest-risk files
+```
+
+#### Feature 3: Feedback-Driven Auto-Suppression
+
+```
+[Existing: feedback-sync polls reactions on PR events]
+    |
+    v
+feedback_reactions table (existing, already populated)
+    |
+    v
+refreshFeedbackSuppressions() -- NEW: aggregate thumbs-down by pattern
+    |  GROUP BY severity, category, title_fingerprint
+    |  HAVING COUNT(*) >= threshold (default: 3)
+    v
+feedback_suppression_rules table -- NEW
+    |
+    v
+loadFeedbackSuppressions() -- NEW: read active rules for repo
+    |
+    v
+Review handler: merge with config suppressions
+    |
+    v
+matchesSuppression() -- existing, now checks both sources
+    |
+    v
+Finding suppressed with suppressionSource: "feedback"
+```
+
+---
+
+## Precise Codebase Integration Map
+
+This section documents the exact insertion points, existing function signatures, and line-level integration details for each feature. Derived from reading every source file in the codebase.
+
+### Existing Pipeline: review.ts Step-by-Step
+
+The review handler (`handlers/review.ts`, 1898 lines) orchestrates the entire review. The following annotated pipeline shows exactly where each new feature inserts:
+
+```
+[Lines 817-865]   jobQueue.enqueue() + run-state idempotency check
+[Lines 866-888]   workspace creation + git clone + fetch base ref
+[Lines 890-896]   loadRepoConfig(.kodiai.yml)
+[Lines 1019-1039] incrementalResult = computeIncrementalDiff()         -- fail-open
+[Lines 1042-1080] collectDiffContext() + skipPaths filtering
+[Lines 1082-1087] diffAnalysis = analyzeDiff({ changedFiles, numstatLines, diffContent })
+                  ^^^ INSERT: file risk scoring + prioritization AFTER this line
+[Lines 1089-1091] matchedPathInstructions
+[Lines 1093-1111] priorFindingCtx from knowledgeStore                  -- fail-open
+[Lines 1113-1146] retrievalCtx from isolationLayer + embeddingProvider -- fail-open
+                  ^^^ INSERT: feedback suppression loading AFTER this block
+[Lines 1148-1169] Profile presets merge (severity, maxComments, focusAreas)
+[Lines 1192-1239] buildReviewPrompt({ ... all context ... })
+                  ^^^ MODIFY: pass language rules, file priorities, feedback context
+[Lines 1242-1267] executor.execute()
+[Lines 1269-1281] extractFindingsFromReviewComments()
+[Lines 1283-1335] processedFindings: suppression + confidence scoring
+                  ^^^ INSERT: feedback-based suppression alongside config suppression
+                  ^^^ INSERT: language severity overrides in confidence adjustment
+[Lines 1367-1376] removeFilteredInlineComments()
+[Lines 1389-1463] Review Details publication
+[Lines 1520-1649] Knowledge store writes (review, findings, suppressions, global patterns)
+[Lines 1664-1736] Learning memory writes (async fire-and-forget)
+                  ^^^ INSERT: feedback bridge writes (also fire-and-forget)
+```
+
+### Feature 1: Language Severity -- Exact Integration Points
+
+**Config Schema** (`execution/config.ts`)
+
+The review schema is at lines 95-186. Add `languageRules` section:
+
+```typescript
+// Insert after line 153 (pathInstructions)
+languageRules: z.record(
+  z.string(), // language name matching EXTENSION_LANGUAGE_MAP values
+  z.object({
+    minSeverity: z.enum(["critical", "major", "medium", "minor"]).optional(),
+    focus: z.array(z.enum(["security", "correctness", "performance", "style", "documentation"])).optional(),
+    customGuidance: z.array(z.string()).optional(),
+    autoFixable: z.array(z.string()).optional(), // patterns that linters handle
+  })
+).default({}),
+```
+
+**Prompt Builder** (`execution/review-prompt.ts`)
+
+The existing `buildLanguageGuidanceSection()` is at lines 729-757. It takes `filesByLanguage: Record<string, string[]>` and merges entries with the static `LANGUAGE_GUIDANCE` map (lines 14-60).
+
+Extend the function signature to accept language rules config:
+
+```typescript
+// Current signature (line 729):
+export function buildLanguageGuidanceSection(
+  filesByLanguage: Record<string, string[]>,
+): string
+
+// New signature:
+export function buildLanguageGuidanceSection(
+  filesByLanguage: Record<string, string[]>,
+  languageRules?: Record<string, LanguageRuleConfig>,
+): string
+```
+
+When `languageRules` is provided, merge `customGuidance` entries with `LANGUAGE_GUIDANCE`, add `minSeverity` floor instructions, and add `autoFixable` suppression instructions per language.
+
+**Review Handler** (`handlers/review.ts`)
+
+At the `buildReviewPrompt()` call (line 1192), pass the new config:
+
+```typescript
+// Current (line 1222):
+filesByLanguage: diffAnalysis?.filesByLanguage,
+
+// Also pass:
+languageRules: config.review.languageRules,
+```
+
+For post-processing enforcement, after `processedFindings` computation (lines 1283-1335), apply language-based severity filter using `classifyFileLanguage()` (already exported from `diff-analysis.ts` at line 48):
+
+```typescript
+// Insert after line 1335
+const languageFilteredFindings = processedFindings.filter(f => {
+  const lang = classifyFileLanguage(f.filePath);
+  const rules = config.review.languageRules[lang];
+  if (!rules?.minSeverity) return true;
+  return severityRank(f.severity) >= severityRank(rules.minSeverity);
+});
+```
+
+### Feature 2: File Prioritization -- Exact Integration Points
+
+**Config Schema** (`execution/config.ts`)
+
+```typescript
+// Insert in review schema (after line 155)
+largePR: z.object({
+  threshold: z.number().min(5).max(500).default(30),
+  maxReviewFiles: z.number().min(5).max(200).default(50),
+  alwaysInclude: z.array(z.string()).default([]),
+}).default({ threshold: 30, maxReviewFiles: 50, alwaysInclude: [] }),
+```
+
+**Diff Analysis** (`execution/diff-analysis.ts`)
+
+The existing `parseNumstat()` (line 180) aggregates totals. Add `parsePerFileNumstat()` that returns per-file stats:
+
+```typescript
+// Already has: function parseNumstat(numstatLines: string[]): { added: number; removed: number }
+// Add: function parsePerFileNumstat(numstatLines: string[]): Map<string, { added: number; removed: number }>
+```
+
+The existing `PATH_RISK_SIGNALS` array (lines 120-167) defines risk patterns. `computeFileRiskScore()` checks each file against these patterns plus category and line count.
+
+The existing `analyzeDiff()` (line 233) already returns `DiffAnalysis` with `filesByCategory`, `filesByLanguage`, `riskSignals`, `metrics`, `isLargePR`. The file prioritization uses this output, not modifying analyzeDiff itself.
+
+**Review Handler** (`handlers/review.ts`)
+
+Insert between `analyzeDiff()` (line 1082) and `buildReviewPrompt()` (line 1192):
+
+```typescript
+// After line 1087, before matchedPathInstructions
+let prioritizationResult = null;
+if (reviewFiles.length > config.review.largePR.threshold) {
+  try {
+    const perFileStats = parsePerFileNumstat(numstatLines);
+    prioritizationResult = prioritizeFiles({
+      files: reviewFiles,
+      perFileStats,
+      diffAnalysis,
+      config: config.review.largePR,
+      pathRiskSignals: PATH_RISK_SIGNALS, // re-exported from diff-analysis
+    });
+    reviewFiles = prioritizationResult.includedFiles;
+    logger.info({
+      ...baseLog,
+      gate: "file-prioritization",
+      included: prioritizationResult.includedFiles.length,
+      excluded: prioritizationResult.excludedFiles.length,
+      strategy: prioritizationResult.strategy,
+    }, "File prioritization applied");
+  } catch (err) {
+    logger.warn({ ...baseLog, err }, "File prioritization failed (fail-open, using all files)");
+  }
+}
+```
+
+**Prompt Builder** (`execution/review-prompt.ts`)
+
+Replace the current `isLargePR` handling (lines 505-507) with `buildLargePRPrioritizationSection()`:
+
+```typescript
+// Current (lines 505-507):
+if (analysis.isLargePR) {
+  lines.push("", "This is a large PR. Focus on the most critical changes.");
+}
+
+// Replace with:
+if (prioritizationResult) {
+  lines.push("", buildLargePRPrioritizationSection(prioritizationResult));
+}
+```
+
+### Feature 3: Feedback Loop -- Exact Integration Points
+
+**Critical Finding: GitHub Reaction Webhooks**
+
+GitHub does NOT send webhook events for individual reactions on `pull_request_review_comment` objects. The existing `feedback-sync.ts` correctly uses REST API polling (`octokit.rest.reactions.listForPullRequestReviewComment`) triggered by PR activity events. This polling approach is architecturally correct and should be enhanced, not replaced.
+
+**Knowledge Store** (`knowledge/store.ts`)
+
+The `feedback_reactions` table (lines 218-237) already stores reactions with: repo, reviewId, findingId, commentId, reactionContent (+1/-1), severity, category, filePath, title.
+
+Add a new table and two methods:
+
+```sql
+-- New table for materialized suppression rules
+CREATE TABLE IF NOT EXISTS feedback_suppression_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title_fingerprint TEXT NOT NULL,
+  title_sample TEXT NOT NULL,
+  thumbs_down_count INTEGER NOT NULL DEFAULT 0,
+  thumbs_up_count INTEGER NOT NULL DEFAULT 0,
+  net_sentiment INTEGER NOT NULL DEFAULT 0,
+  auto_suppress INTEGER NOT NULL DEFAULT 0,
+  last_refreshed TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(repo, severity, category, title_fingerprint)
+);
+```
+
+New methods on `KnowledgeStore`:
+- `refreshFeedbackSuppressions(repo: string, threshold: number, windowDays: number): number`
+- `loadFeedbackSuppressions(repo: string): FeedbackSuppressionRule[]`
+
+**Feedback Sync Handler** (`handlers/feedback-sync.ts`)
+
+After `knowledgeStore.recordFeedbackReactions()` (line 183), trigger aggregation:
+
+```typescript
+// After line 183
+try {
+  knowledgeStore.refreshFeedbackSuppressions(repo,
+    config?.review?.feedback?.suppressionThreshold ?? 3,
+    config?.review?.feedback?.windowDays ?? 90
+  );
+} catch (err) {
+  logger.warn({ err, repo }, "Feedback suppression refresh failed (fail-open)");
+}
+```
+
+Note: `createFeedbackSyncHandler` currently does not load repo config. It would need either (a) config passed as parameter, or (b) default threshold hardcoded. Option (b) is simpler and consistent with fail-open design.
+
+**Review Handler** (`handlers/review.ts`)
+
+Load feedback suppressions alongside config suppressions (insert after retrieval context block, around line 1146):
+
+```typescript
+let feedbackSuppressions: FeedbackSuppressionRule[] = [];
+if (knowledgeStore && config.review.feedback?.autoSuppressEnabled) {
+  try {
+    feedbackSuppressions = knowledgeStore.loadFeedbackSuppressions(
+      `${apiOwner}/${apiRepo}`
+    );
+  } catch (err) {
+    logger.warn({ ...baseLog, err }, "Feedback suppression load failed (fail-open)");
+  }
+}
+```
+
+In the post-processing loop (lines 1284-1325), merge feedback suppressions with config suppressions:
+
+```typescript
+// Existing (line 1285):
+const matchedSuppression = config.review.suppressions.find(...)
+
+// Enhanced: also check feedback suppressions
+const matchedFeedbackSuppression = feedbackSuppressions.find(rule =>
+  rule.autoSuppress &&
+  rule.severity === finding.severity &&
+  rule.category === finding.category &&
+  rule.titleFingerprint === fingerprintFindingTitle(finding.title)
+);
+```
+
+**Learning Memory Integration** (optional enhancement)
+
+The existing `learning/types.ts` `MemoryOutcome` (line 3) already includes `"thumbs_up" | "thumbs_down"` but these are never written. To close the learning loop into retrieval context:
+
+After feedback reactions are recorded, fire-and-forget write to learning memory (similar to the existing async write pattern at review.ts lines 1664-1736). This requires passing `learningMemoryStore` and `embeddingProvider` to `createFeedbackSyncHandler()` -- update the deps in `index.ts` (line 146-152).
+
+**Confidence Scoring** (`knowledge/confidence.ts`)
+
+The existing `computeConfidence()` (line 39) uses a fixed formula: `50 + SEVERITY_BOOST + CATEGORY_BOOST + patternBoost`. Extend to accept optional feedback signal:
+
+```typescript
+// Current (line 4):
+export type ConfidenceInput = {
+  severity: FindingSeverity;
+  category: FindingCategory;
+  matchesKnownPattern: boolean;
+};
+
+// Enhanced:
+export type ConfidenceInput = {
+  severity: FindingSeverity;
+  category: FindingCategory;
+  matchesKnownPattern: boolean;
+  feedbackSignal?: {
+    thumbsUp: number;
+    thumbsDown: number;
+  };
+};
+```
+
+Adjustment: net negative feedback (thumbsDown > thumbsUp * 2) applies -15 penalty. Strong negative (thumbsDown >= 3, thumbsUp === 0) applies -25. Net positive applies +5.
+
+---
+
+## Patterns to Follow
+
+### Pattern 1: Static Rule Registry (Language Severity Tiers)
+
+**What:** Define language rules as a typed constant object, not a dynamic config or database.
+**When:** Rules change infrequently (language safety semantics are stable) and need to be version-controlled.
 **Example:**
 ```typescript
-const diff = analyzeDiff(...);
-const languageProfile = profileLanguages(changedFiles);
-const deltaPlan = buildRereviewDelta({ repo, prNumber, changedFiles, patchMap, knowledgeStore });
-const memories = retrievalEnabled
-  ? retrieveLearningContext({ repo, changedFiles, languageProfile, deltaPlan, topK: 12 })
-  : [];
+type LanguageSeverityTier = "auto-fixable" | "safety-critical";
 
-const prompt = buildReviewPrompt({ ...base, diffAnalysis: diff, languageProfile, deltaPlan, memories });
+type LanguageSeverityRule = {
+  pattern: string;        // Human-readable description
+  tier: LanguageSeverityTier;
+  severityFloor?: FindingSeverity;  // Minimum severity for safety-critical
+};
+
+const LANGUAGE_SEVERITY_RULES: Record<string, LanguageSeverityRule[]> = {
+  Go: [
+    { pattern: "Unchecked error returns", tier: "safety-critical", severityFloor: "major" },
+    { pattern: "Goroutine leak risk", tier: "safety-critical", severityFloor: "major" },
+    { pattern: "Unused import", tier: "auto-fixable" },
+  ],
+  Python: [
+    { pattern: "Mutable default arguments", tier: "safety-critical", severityFloor: "major" },
+    { pattern: "Bare except clause", tier: "safety-critical", severityFloor: "major" },
+    { pattern: "Unused import", tier: "auto-fixable" },
+    { pattern: "Import ordering", tier: "auto-fixable" },
+  ],
+  // ... per language
+};
 ```
 
-### Pattern 2: Async Learning Writes, Sync Learning Reads
+### Pattern 2: Composite Risk Score (File Prioritization)
 
-**What:** Review path only reads bounded context; expensive embedding generation runs after review in non-fatal async jobs.
-**When to use:** Any learning step with external latency (embedding model call, backfill).
-**Trade-offs:** No regression to review SLA; learning freshness becomes eventually consistent.
-
+**What:** Weighted sum of observable signals, each normalized to 0-1 range.
+**When:** Need to rank items (files) for attention allocation without ML models.
 **Example:**
 ```typescript
-// in review success path
-jobQueue.enqueue(event.installationId, async () => {
-  await learningIndexer.upsertFromReview({ reviewId, repo, findings, changedFiles });
-}, { jobType: "learning-index" });
+type FileRiskInput = {
+  linesChanged: number;
+  maxLinesInPR: number;
+  pathRiskSignalCount: number;
+  category: "source" | "test" | "config" | "docs" | "infra";
+  recentChurnCount: number;
+};
+
+const CATEGORY_RISK_MULTIPLIER: Record<string, number> = {
+  source: 1.0,
+  infra: 0.8,
+  config: 0.3,
+  test: 0.2,
+  docs: 0.1,
+};
+
+function computeFileRiskScore(input: FileRiskInput): number {
+  const normalizedLines = input.maxLinesInPR > 0
+    ? Math.min(1, input.linesChanged / input.maxLinesInPR)
+    : 0;
+  const normalizedChurn = Math.min(1, input.recentChurnCount / 50);
+  const categoryWeight = CATEGORY_RISK_MULTIPLIER[input.category] ?? 0.5;
+
+  return (
+    0.35 * normalizedLines +
+    0.30 * Math.min(1, input.pathRiskSignalCount / 3) +
+    0.20 * categoryWeight +
+    0.15 * normalizedChurn
+  );
+}
 ```
 
-### Pattern 3: Feature-Flagged Progressive Activation
+### Pattern 3: Threshold-Based Suppression Generation
 
-**What:** Add config gates per capability: `knowledge.embeddings.enabled`, `review.incrementalRereview.enabled`, `review.languageAwareness.enabled`.
-**When to use:** Milestone rollout where stability > capability breadth.
-**Trade-offs:** Slight config complexity, major rollback safety.
+**What:** Convert aggregated feedback signals into actionable suppression rules with a configurable threshold.
+**When:** Need to "learn" from user behavior without ML models.
+**Example:**
+```typescript
+type FeedbackSuppressionRule = {
+  repo: string;
+  severity: FindingSeverity;
+  category: FindingCategory;
+  titleFingerprint: string;
+  titleSample: string;
+  thumbsDownCount: number;
+  thumbsUpCount: number;
+  netSentiment: number;  // thumbsUp - thumbsDown
+  autoSuppress: boolean;
+};
 
-## Data Flow
-
-### Request Flow
-
-```
-[pull_request.* webhook]
-    ↓
-[Review Handler]
-    ↓
-[Deterministic Preprocessing]
-    -> analyzeDiff
-    -> profileLanguages
-    -> buildRereviewDelta
-    -> retrieveLearningContext (bounded, optional)
-    ↓
-[buildReviewPrompt]
-    ↓
-[Executor -> MCP publish]
-    ↓
-[Post-processing]
-    -> record review/findings (existing)
-    -> enqueue learning index update (new, non-fatal)
-```
-
-### State Management
-
-```
-[knowledge.store]
-    ↓ (read)
-[Review Handler Context Assembly]
-    ↓ (write after completion, async)
-[Learning Indexer]
-    ↓
-[embedding_* + rereview_* tables]
+// Query to generate rules
+const AGGREGATE_FEEDBACK_SQL = `
+  SELECT
+    severity, category, title,
+    SUM(CASE WHEN reaction_content = '-1' THEN 1 ELSE 0 END) AS thumbs_down,
+    SUM(CASE WHEN reaction_content = '+1' THEN 1 ELSE 0 END) AS thumbs_up
+  FROM feedback_reactions
+  WHERE repo = $repo
+    AND created_at >= datetime('now', $windowModifier)
+  GROUP BY severity, category, title
+  HAVING SUM(CASE WHEN reaction_content = '-1' THEN 1 ELSE 0 END) >= $threshold
+`;
 ```
 
-### Key Data Flows
+### Pattern 4: Fail-Open Enrichment (Existing, Must Follow)
 
-1. **Embeddings-assisted learning:** new findings and historical accepted/rejected signals become chunks -> embeddings -> vector metadata rows -> retrieved into future prompts.
-2. **Incremental re-review:** prior findings + current patch map produce targeted "re-check these areas" context; unchanged prior findings are deprioritized.
-3. **Multi-language analysis:** changed files map to canonical languages; prompt focus and finding categorization get language-aware hints (framework idioms, test conventions, false-positive guardrails).
+Every optional enrichment step MUST wrap in try/catch and log warnings on failure. The review continues with degraded functionality. All three new features are optional enrichments.
 
-## New vs Modified Components (Explicit)
+```typescript
+// Established pattern from review.ts (lines 1113-1146):
+let retrievalCtx = null;
+if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
+  try {
+    // ... enrichment logic
+  } catch (err) {
+    logger.warn({ ...baseLog, err }, "...failed (fail-open, proceeding without...)");
+  }
+}
+```
 
-### New Components
+### Pattern 5: Section Builder Composition (Existing, Must Follow)
 
-| Component | Integration Point | Purpose |
-|----------|--------------------|---------|
-| `src/learning/embedding-provider.ts` | Called by `learning/indexer.ts` | Standard API for embedding model(s), supports provider swap without touching handlers |
-| `src/learning/chunker.ts` | Called by `learning/indexer.ts` | Deterministic chunk IDs for file/finding text (stable hashing) |
-| `src/learning/indexer.ts` | Enqueued from `handlers/review.ts` and `handlers/feedback-sync.ts` | Async generation/upsert of embeddings and learning metadata |
-| `src/learning/retrieval.ts` | Called by `handlers/review.ts` pre-prompt | Bounded top-K retrieval + ranking merge (semantic + recency + confidence) |
-| `src/learning/rereview-delta.ts` | Called by `handlers/review.ts` pre-prompt | Maps historical findings to changed hunks for incremental re-review |
-| `src/language/profiler.ts` | Called by `handlers/review.ts` pre-prompt | PR language distribution and dominant-language detection |
-| `src/language/normalization.ts` | Used by profiler/retrieval/store | Canonical language enums (e.g., `ts`, `tsx`, `python`, `go`) |
+Every prompt concern is a standalone function returning a string section. New features add new builders that follow the same shape:
 
-### Modified Components
+```typescript
+// Existing (review-prompt.ts):
+export function buildLanguageGuidanceSection(...): string
+export function buildDiffAnalysisSection(...): string
+export function buildRetrievalContextSection(...): string
 
-| Component | File/Module | Required Change |
-|----------|-------------|-----------------|
-| Review orchestration | `src/handlers/review.ts` | Add deterministic context assembly step and async index job dispatch; keep publish path unchanged |
-| Prompt assembly | `src/execution/review-prompt.ts` | Add three optional sections: `Learning Context`, `Incremental Re-review Focus`, `Language-Specific Guidance` with hard char caps |
-| Config schema | `src/execution/config.ts` | Add feature flags, token/char budgets, privacy mode (repo-only/global opt-in), embedding provider config |
-| Knowledge schema/API | `src/knowledge/store.ts`, `src/knowledge/types.ts` | Add tables + methods for embedding docs, retrieval traces, rereview state snapshots |
-| Feedback ingestion | `src/handlers/feedback-sync.ts` | Convert thumbs up/down to learning weights and enqueue index refresh |
-| App wiring | `src/index.ts` | Instantiate learning/language services and inject into handlers |
+// New:
+export function buildLanguageSeveritySection(...): string
+export function buildLargePRPrioritizationSection(...): string
+```
 
-## Concrete Data Model Additions (SQLite)
+---
 
-- `embedding_documents` (doc metadata): `id`, `repo`, `source_type`, `source_ref`, `language`, `text_hash`, `created_at`.
-- `embedding_vectors` (vector blobs or extension-backed vectors): `document_id`, `model`, `dimensions`, `vector`, `updated_at`.
-- `rereview_snapshots`: `repo`, `pr_number`, `review_id`, `finding_fingerprint`, `file_path`, `start_line`, `end_line`, `status`.
-- `retrieval_events`: audit/observability for retrieved memory IDs, score, latency, prompt budget consumption.
+## Anti-Patterns to Avoid
 
-Recommendation: if SQLite vector extension is unavailable in runtime, ship lexical fallback in `retrieval.ts` (title/path/category weighted search) and keep the same API shape.
+### Anti-Pattern 1: Running Linters in the Review Workspace
 
-## Scaling Considerations
+**What:** Shelling out to ESLint, Ruff, Clippy, etc. during review execution.
+**Why bad:** Workspace is a shallow git clone. No `node_modules`, no Python venv, no Cargo cache. Installing toolchains adds 10-30s and may fail. Linter configs vary wildly across repos.
+**Instead:** Use prompt instructions. Claude knows what is auto-fixable by training. The `LANGUAGE_SEVERITY_RULES` registry tells the model what to suppress vs enforce.
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 0-1k users | Single-process Bun + SQLite WAL remains sufficient; enable embeddings in repo-scoped mode only |
-| 1k-100k users | Move embedding generation to dedicated worker process; keep webhook/review path read-only for learning |
-| 100k+ users | Externalize vector search and queue backend; keep deterministic prompt contract unchanged |
+### Anti-Pattern 2: ML-Based Risk Scoring
 
-### Scaling Priorities
+**What:** Training a model to predict file risk from features.
+**Why bad:** No training data exists. The model would overfit to the small number of repos currently using Kodiai. Heuristics are transparent and debuggable.
+**Instead:** Use a weighted formula with configurable weights. Users can understand and override the scoring.
 
-1. **First bottleneck:** embedding generation latency/cost; solve with async worker, batching, and strict per-review retrieval budgets.
-2. **Second bottleneck:** knowledge DB growth; solve with dedup by `text_hash`, compaction, and optional retention windows for low-value traces.
+### Anti-Pattern 3: Automatic Behavior Mutation from Implicit Feedback
 
-## Anti-Patterns
+**What:** Automatically changing review severity or suppression based on reaction signals without user awareness.
+**Why bad:** Users cannot explain why findings disappeared. Debugging "the bot stopped catching X" is impossible without audit trail.
+**Instead:** Make auto-suppression opt-in (`review.feedback.autoSuppressEnabled: false` by default). Show suppression source ("Suppressed by feedback: 4 thumbs-down in last 90 days"). Never suppress CRITICAL.
 
-### Anti-Pattern 1: Inline Embedding Calls in Critical Review Path
+### Anti-Pattern 4: Equal File Treatment in Large PRs
 
-**What people do:** call embedding API inside `handleReview` before executor run.
-**Why it's wrong:** adds unpredictable latency/failure modes to webhook-driven review SLA.
-**Do this instead:** only retrieve existing embeddings synchronously; generate/update embeddings asynchronously post-review.
+**What:** Giving all 300 files in a large PR the same review attention.
+**Why bad:** Research shows reviewers spot defects best at 200-400 lines. After that, attention drops. Spreading 7 comments across 300 files means nothing meaningful lands.
+**Instead:** Score files by risk, allocate comment budget to top-scoring files, and explicitly tell the model to skip low-risk files.
 
-### Anti-Pattern 2: Unbounded Memory Injection into Prompt
+### Anti-Pattern 5: File Prioritization Before Diff Analysis
 
-**What people do:** append all historical findings or multilingual hints to prompt.
-**Why it's wrong:** prompt bloat increases cost, decreases determinism, and can reduce review quality.
-**Do this instead:** hard cap by `topK`, total chars, and deterministic ranking with stable tie-breakers.
+**What:** Filtering files before running `analyzeDiff()`.
+**Why bad:** `analyzeDiff()` needs ALL files to produce accurate categories, risk signals, and language detection. Filtering beforehand produces incomplete analysis.
+**Instead:** Run `analyzeDiff()` on all files first (it already caps at 200), then use analysis results to inform prioritization.
 
-## Integration Points
+### Anti-Pattern 6: Event-Driven Reaction Capture
 
-### External Services
+**What:** Registering a webhook handler for reaction events on review comments.
+**Why bad:** GitHub does NOT send webhook events for reactions on `pull_request_review_comment` objects. The `.created` event fires for new comments, not reactions. This would create dead code.
+**Instead:** Enhance the existing REST API polling in `feedback-sync.ts`.
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| Embedding model provider | Adapter in `learning/embedding-provider.ts` with timeout + retry budget | Must be optional and non-blocking for review publication |
-| GitHub APIs (existing) | Continue Octokit usage in handlers and MCP servers | No new webhook type required for MVP; reuse current events |
+---
 
-### Internal Boundaries
+## Scalability Considerations
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| `handlers/review.ts` <-> `learning/retrieval.ts` | Direct function call | Read-only, bounded response, deterministic sort |
-| `handlers/review.ts` <-> `learning/indexer.ts` | Queue job dispatch | Write-heavy path isolated from review critical path |
-| `handlers/review.ts` <-> `language/profiler.ts` | Direct function call | Pure deterministic function, easy unit-test surface |
-| `feedback-sync.ts` <-> `learning/indexer.ts` | Queue job dispatch | Enables reinforcement updates from reaction signals |
+| Concern | At 10 repos | At 100 repos | At 1000 repos |
+|---------|-------------|--------------|---------------|
+| Feedback aggregation | Inline SQL query per review | Same -- SQLite handles this easily | Add index on `(repo, reaction_content, created_at)` if slow |
+| Risk scoring | Instant (10-50 files) | Instant (50-200 files) | Git churn queries may need caching for >500 file PRs |
+| Language rules | Static lookup, O(1) | Same | Same |
+| Feedback suppression rules | In-memory per review | Same | Consider caching per-repo suppression rules (invalidate on new reactions) |
+| Config schema parsing | Per-review, negligible | Same | Same |
 
-## Cross-Cutting Concerns
+---
 
-- **Latency:** retrieval must have strict timeout (e.g., 40-80ms budget) and fail-open to empty context.
-- **Storage Growth:** vectors and retrieval traces can outgrow current DB assumptions; require dedup, compaction job, and optional retention for low-signal artifacts.
-- **Privacy:** default repo-scoped learning only; cross-repo sharing remains explicit opt-in (`knowledge.shareGlobal`) and excludes raw code snippets in shared aggregates.
-- **Observability:** add stage-level metrics and logs (`rereview_delta_ms`, `retrieval_ms`, `retrieved_docs`, `language_mix`, `index_job_ms`) with `deliveryId` correlation.
+## Suggested Phase Ordering
 
-## Safe Build Order (Minimize Regression Risk)
+### Phase 1: Language-Aware Severity Enforcement (no dependencies)
 
-1. **Schema + Types First (no behavior change):** extend `knowledge/types.ts` and `knowledge/store.ts` with new tables/methods behind unused APIs.
-2. **Pure Deterministic Helpers:** add `language/profiler.ts` and `learning/rereview-delta.ts` with unit tests only; no handler wiring yet.
-3. **Prompt Surface Expansion (gated off):** modify `execution/review-prompt.ts` to accept optional new sections; default empty keeps current output.
-4. **Read-Only Wiring in Review Handler:** integrate profiler + delta into `handlers/review.ts` behind config flags, with fail-open behavior.
-5. **Retrieval Layer (fallback-first):** ship `learning/retrieval.ts` with lexical fallback; only then enable embedding-backed retrieval if extension/provider present.
-6. **Async Indexer + Feedback Reinforcement:** wire `learning/indexer.ts` enqueue from review and feedback handlers; keep non-fatal and separately observable.
-7. **Progressive Rollout:** enable per repo with low limits (`topK`, chars, timeouts), monitor telemetry/knowledge impact, then expand.
+**Rationale:** Extends existing `LANGUAGE_GUIDANCE` and `filesByLanguage` directly. Config addition is isolated. Both prompt and post-processing are small and independently testable. Immediate noise reduction value for polyglot repos.
+
+**Build order within phase:**
+1. Config schema (`languageRules` Zod section)
+2. `LANGUAGE_SEVERITY_RULES` static registry
+3. Prompt builder extension (merge config + built-in guidance)
+4. Post-processing filter (language severity floor)
+5. Tests
+
+### Phase 2: Large PR File Prioritization (independent of Phase 1, benefits from it)
+
+**Rationale:** Uses diff analysis output (already exists). Can benefit from language awareness for scoring. Independent of feedback. Addresses concrete pain point for monorepo PRs.
+
+**Build order within phase:**
+1. Config schema (`largePR` Zod section)
+2. `parsePerFileNumstat()` function
+3. `computeFileRiskScore()` function
+4. `prioritizeFiles()` orchestrator
+5. Prompt section (`buildLargePRPrioritizationSection`)
+6. Handler integration (between analyzeDiff and buildReviewPrompt)
+7. Tests
+
+### Phase 3: Feedback-Driven Learning Loop (depends on feedback reactions being populated)
+
+**Rationale:** Depends on existing feedback infrastructure having captured data. Most complex -- involves new table, aggregation queries, suppression merging, and optionally confidence formula changes. Benefits from Phases 1-2 providing more data.
+
+**Build order within phase:**
+1. Knowledge store schema (`feedback_suppression_rules` table)
+2. `refreshFeedbackSuppressions()` aggregation method
+3. `loadFeedbackSuppressions()` query method
+4. Config schema (`review.feedback` section, autoSuppressEnabled defaulting to false)
+5. Handler integration (load + merge feedback suppressions)
+6. Feedback-sync handler integration (trigger aggregation after reaction capture)
+7. Optional: confidence formula extension with feedback signal
+8. Optional: learning memory bridge for thumbs_up/thumbs_down outcomes
+9. Tests
+
+---
 
 ## Sources
 
-- Codebase: `src/handlers/review.ts`, `src/execution/review-prompt.ts`, `src/execution/config.ts`, `src/knowledge/store.ts`, `src/handlers/feedback-sync.ts`, `src/index.ts` (HIGH).
-- Bun SQLite docs (official): https://bun.com/docs/runtime/sqlite (verified `WAL` and `.loadExtension()`, accessed 2026-02-12, HIGH).
-- SQLite WAL docs (official): https://www.sqlite.org/wal.html (HIGH).
+- Direct codebase analysis of all source files (HIGH confidence):
+  - `src/handlers/review.ts` (1898 lines -- full pipeline with line-level annotations)
+  - `src/handlers/feedback-sync.ts` (204 lines -- reaction polling mechanism)
+  - `src/execution/review-prompt.ts` (1211 lines -- all section builders)
+  - `src/execution/diff-analysis.ts` (339 lines -- file classification and risk signals)
+  - `src/execution/config.ts` (481 lines -- Zod config schema)
+  - `src/execution/executor.ts` (254 lines -- Claude SDK wrapper)
+  - `src/knowledge/store.ts` (777 lines -- SQLite schema and queries)
+  - `src/knowledge/confidence.ts` (97 lines -- scoring formula)
+  - `src/knowledge/types.ts` (164 lines -- type definitions)
+  - `src/learning/memory-store.ts` (348 lines -- vector search)
+  - `src/learning/types.ts` (83 lines -- MemoryOutcome includes unused thumbs types)
+  - `src/learning/isolation.ts` (127 lines -- retrieval with provenance)
+  - `src/webhook/router.ts` (138 lines -- event dispatch)
+  - `src/webhook/types.ts` (26 lines -- event/handler types)
+  - `src/index.ts` (171 lines -- service wiring and dependency injection)
+- GitHub Webhooks API: reaction events are NOT available for individual review comments (HIGH confidence from API documentation)
 
 ---
-*Architecture research for: Kodiai v0.5 Advanced Learning & Language Support*
-*Researched: 2026-02-12*
+*Architecture research for: Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning*
+*Researched: 2026-02-13*

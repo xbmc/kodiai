@@ -1,147 +1,289 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** PR-review assistant features for embedding-assisted learning, incremental re-review, and multi-language support (v0.5)
-**Researched:** 2026-02-12
-**Confidence:** MEDIUM
+**Domain:** Language-aware enforcement, large PR intelligence, and feedback-driven learning for AI code review
+**Researched:** 2026-02-13
+**Confidence:** HIGH (grounded in XBMC real-world analysis + competitive landscape + existing codebase audit)
 
-## Feature Landscape
+## Existing Foundation (Already Built)
 
-### Table Stakes (Users Expect These)
+Before defining new features, here is what Kodiai already has that these features build on:
 
-Features users assume exist for these v0.5 capabilities. Missing these makes the system feel noisy, inconsistent, or unsafe.
+| Existing Capability | Module | Relevance |
+|---------------------|--------|-----------|
+| Language classification (`classifyFileLanguage`) | `diff-analysis.ts` | Maps file extensions to 20+ languages; used for language guidance injection |
+| Language guidance prompts (`LANGUAGE_GUIDANCE`) | `review-prompt.ts` | Static per-language rule sets for Python, Go, Rust, Java, C++, C, Ruby, PHP, Swift |
+| File category classification (source/test/config/docs/infra) | `diff-analysis.ts` | Categorizes files by glob patterns; used in risk signals |
+| Risk signal detection (auth, secrets, dependencies, DB, crypto) | `diff-analysis.ts` | Path-based and content-based risk heuristics |
+| `isLargePR` flag (>200 files or >5000 lines) | `diff-analysis.ts` | Triggers "focus on most critical changes" prompt instruction |
+| Suppression patterns (string, glob, regex) | `confidence.ts` | Matches finding titles with optional severity/category/path scoping |
+| Feedback sync (thumbs up/down reactions) | `feedback-sync.ts` | Collects human thumb reactions on review comments, stores in knowledge store |
+| Learning memory with embeddings | `learning/` | Writes findings with outcome labels, retrieves similar prior findings via Voyage Code 3 |
+| Isolation layer (repo-scoped + optional owner sharing) | `learning/isolation.ts` | Enforces retrieval boundaries with provenance logging |
+| Delta classification (new/resolved/still-open) | `delta-classifier.ts` | Compares current vs prior findings using FNV-1a fingerprints |
+| Severity filtering (`review.severity.minLevel`) | `config.ts` | Configurable minimum severity threshold |
+| Focus/ignored areas | `config.ts` | Category-level focus and exclusion with CRITICAL override |
+| Confidence scoring (severity + category + known pattern) | `confidence.ts` | Deterministic confidence from -10 to +30 boosts |
 
-| Category | Feature | Why Expected | Complexity | Notes |
-|---------|---------|--------------|------------|-------|
-| Embedding-assisted learning | **Repo-scoped learning memory from accepted/suppressed findings** | Teams expect "the bot should learn what we keep accepting vs ignoring" without retraining models. | MEDIUM | Store feedback signals as embeddings + metadata (`repo`, `path`, `rule`, `language`, `outcome`). Keep tenant isolation strict by default. |
-| Embedding-assisted learning | **Retrieval-gated prompt augmentation** | Users expect relevant prior context to be reused, but only when confidence is high enough to reduce noise. | MEDIUM | Inject top-K similar prior findings only above threshold; hard cap token budget to avoid prompt bloat. |
-| Embedding-assisted learning | **Deterministic fallback when retrieval is unavailable** | Private teams expect review never to fail because vector search degraded. | LOW | If embedding/index fails, continue review with existing deterministic context and emit telemetry warning. |
-| Incremental re-review | **Re-review only changed hunks since last reviewed SHA** | Re-running full PR review after every push is perceived as spam. | HIGH | Use `pull_request.synchronize` flow and compare previous reviewed head SHA to current head SHA. |
-| Incremental re-review | **Do-not-repeat behavior for unchanged prior findings** | Developers expect fixed or acknowledged items not to be re-posted verbatim. | HIGH | Track comment fingerprint (`path`, normalized code span, finding type) and suppress duplicates unless code changed materially. |
-| Incremental re-review | **Resolved-thread awareness** | If a conversation is resolved and code remains unchanged, users expect the bot not to reopen the same point. | MEDIUM | Pull prior review comments/threads and map to new diff positions carefully (line mapping is fragile by nature). |
-| Multi-language support | **Configurable output language (`review.outputLanguage`)** | Global teams expect comments in team language with no extra setup. | LOW | Use BCP-47 style values (`en`, `es`, `ja`, `pt-BR`) and default to repo-level setting. |
-| Multi-language support | **Language-consistent severity and taxonomy** | Teams need stable categories regardless of output language for dashboards/rules. | MEDIUM | Keep canonical internal labels (`security`, `correctness`, etc.) and only localize presentation layer. |
-| Multi-language support | **Code-safe localization** | Users expect translated prose, not translated identifiers/snippets. | LOW | Never translate code blocks, symbol names, file paths, or shell commands. |
+---
 
-### Differentiators (Competitive Advantage)
+## Table Stakes
 
-Features that materially improve signal quality and trust for private-team workflows.
+Features users expect in this domain. Missing these makes the product feel broken or noisy.
 
-| Category | Feature | Value Proposition | Complexity | Notes |
-|---------|---------|-------------------|------------|-------|
-| Embedding-assisted learning | **Outcome-weighted retrieval ranking** | Surfaces prior findings that were historically accepted/fixed, reducing repeated false positives. | MEDIUM | Rank by semantic similarity + recency + acceptance rate + file/path proximity. |
-| Embedding-assisted learning | **Explainable learning context in comment metadata** | Builds trust: reviewers can see why a similar prior case influenced this finding. | MEDIUM | Add optional "Learned from similar accepted finding in `path/*`" footnote with minimal verbosity. |
-| Incremental re-review | **Delta summary section** | Gives high-signal update: "new issues", "still open", "resolved since last review". | MEDIUM | Summary-level feature, low risk, high perceived value for busy reviewers. |
-| Incremental re-review | **Regression detection on previously fixed pattern** | Catches reintroduced mistakes and proves memory is useful beyond suppression. | HIGH | Requires linking historical resolved findings to new diff and confidence thresholds. |
-| Multi-language support | **Mixed-language understanding in one PR** | Handles English code comments with non-English PR descriptions and review conversations gracefully. | MEDIUM | Detect dominant language per artifact (PR body, comments) and localize response while preserving canonical tags. |
-| Multi-language support | **Localized suggestion tone profiles** | Keeps comments culturally natural while preserving strictness policy. | MEDIUM | Map existing strictness modes to per-language phrasing templates; policy remains same. |
+### Language-Aware Enforcement
 
-### Anti-Features (Commonly Requested, Often Problematic)
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Suppress linter-catchable findings** (formatting, import order, whitespace) | Every competing tool has learned this lesson. XBMC data: 10 formatting violations flagged, 0 addressed (100% noise). Users stop reading bot comments when they see style nits. CodeRabbit, Qodo, Greptile all suppress or filter these. | LOW | Existing suppression engine + `LANGUAGE_GUIDANCE`. Classify via prompt-level instructions (no linter runtime needed). |
+| **Language-specific severity baselines** (e.g., C++ null deref = CRITICAL, Python bare except = MAJOR, Go unchecked error = MAJOR) | Users expect safety issues in their language to be flagged at appropriate severity. CodeRabbit, Qodo Merge, and Greptile all provide language-aware analysis. XBMC evidence: human reviewers consistently flag null deref as critical while bots flag formatting at same severity. | MEDIUM | Existing `LANGUAGE_GUIDANCE` + severity classification guidelines. Partition rules into auto-fixable vs safety-critical tiers. |
+| **Per-language config surface** (`review.languageRules` in `.kodiai.yml`) | Teams need to override defaults. A C++ project using exceptions may not care about RAII; a Python data pipeline may want stricter type hint enforcement. Qodo Merge offers `extra_instructions` per language; Danger.js is entirely user-defined rules. | LOW | Existing config schema extension. |
+| **CRITICAL findings never suppressed by language rules** | Safety override. No language configuration should silence SQL injection, auth bypass, or buffer overflow detection. Universal across all tools. | LOW | Hard floor in suppression logic. |
 
-Features that look attractive but are likely to hurt v0.5 signal quality, scope, or trust.
+### Large PR Intelligence
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Auto-learning from every emoji/reaction** | Feels "automatic" and zero-config. | Reaction signal is ambiguous and noisy; causes unstable behavior and hard-to-debug drift. | Learn only from explicit outcomes (accepted suggestion, explicit suppression, explicit feedback action). |
-| **Cross-repo shared learning memory by default** | Teams want global learning quickly. | Data leakage and policy mismatch across repos/teams; weakens private-team trust posture. | Keep repo-scoped memory by default; add explicit opt-in org-level pools later. |
-| **Machine-translation of code tokens and identifiers** | Some users ask for fully translated comments. | Translating identifiers breaks precision and can create incorrect fix advice. | Translate prose only; preserve code, paths, symbols verbatim. |
-| **Full PR re-review after each push "for safety"** | Simpler implementation. | Produces duplicate noise and reviewer fatigue; directly conflicts with low-noise product goal. | Incremental pass by default, optional full re-review command for manual override. |
-| **Language-specific rule engines per locale in v0.5** | Seems like best localization quality. | Explodes maintenance matrix and causes inconsistent severity outcomes across languages. | One canonical policy/rule engine, localized rendering layer only. |
-| **Merge-blocking based on learned confidence alone** | Teams want automation. | False positives in learned/retrieved context can block delivery and quickly erode trust. | Keep advisory mode for v0.5; allow status signaling without hard gate. |
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **File prioritization by risk** (review core logic first, skip mechanical callsite updates) | XBMC PR #27752: 312 files, humans reviewed 3 core files. CodeRabbit classifies diffs as trivial vs complex. Qodo Merge offers `require_can_be_split_review`. Every user expects large PRs to get focused review, not uniform noise. | HIGH | Existing `filesByCategory` + `riskSignals` from `diff-analysis.ts` |
+| **Explicit coverage disclosure** ("Reviewed 50/312 files, prioritized by risk") | Users need to know what was reviewed and what was not. Incomplete review without disclosure is worse than no review. Transparency is table stakes for trust. | LOW | File prioritization (must know which files were selected) |
+| **Comment budget allocation by risk** | When comment cap is 7, all 7 should go to the riskiest files, not spread evenly across trivial config changes and core logic. | LOW | File risk scoring + existing `maxComments` config |
+
+### Feedback-Driven Learning
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Thumbs-down pattern tracking** | Every competitor learns from reactions. Greptile tracks thumbs up/down and improved address rate from 19% to 55%. This is the minimum viable feedback loop. | LOW | Already collected by `feedback-sync.ts`. New work is aggregation only. |
+| **Feedback-informed suppression** (suppress patterns after N thumbs-down) | After repeated rejection of the same pattern, the system should stop flagging it. Greptile does this via embedding clustering. CodeRabbit uses explicit chat-based "Learnings." This is the expected learning behavior. | MEDIUM | Feedback aggregation by title fingerprint + suppression engine integration |
+| **CRITICAL findings exempt from feedback suppression** | Same safety floor as language rules. No amount of thumbs-down should suppress SQL injection detection. | LOW | Hard floor in auto-suppression logic |
+
+---
+
+## Differentiators
+
+Features that set Kodiai apart. Not universally expected, but high-value when present.
+
+### Language-Aware Enforcement
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Post-execution severity floor enforcement** | Goes beyond "language guidance in prompt" to enforce hard severity floors that the LLM cannot override. No competitor does this deterministically -- CodeRabbit (46% accuracy) and Qodo Merge rely on LLM judgment alone. If the LLM tags a null deref as MEDIUM, Kodiai can upgrade it to CRITICAL based on language rules. | MEDIUM | Post-execution finding processing, severity normalization in `review.ts` |
+| **Auto-detect formatter config files** (detect `.clang-format`, `.prettierrc`, `black.toml` in repo and auto-suppress style findings for those languages) | Eliminates an entire class of false positives automatically without user configuration. XBMC evidence: all formatting violations ignored because clang-format exists but bot did not know. No competitor auto-detects formatters. | MEDIUM | Workspace file detection in review handler |
+| **Graduated language tiers** (explicitly label which languages get "deep" vs "basic" review) | Honest about coverage gaps. `LANGUAGE_GUIDANCE` already covers 9 languages deeply and 11 at basic level. Making tiers visible sets expectations and reduces surprise. | LOW | Existing `LANGUAGE_GUIDANCE` map |
+
+### Large PR Intelligence
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Risk-weighted file scoring algorithm** (score = category_weight + lines_changed + risk_signal_bonus + extension_weight) | Goes beyond binary "large PR / not large PR" to rank every file on a numeric scale. Enables principled selection of top-N files for review. Research shows heuristic risk scoring improves review quality (Springer 2024 study, 3.66/5.0 effectiveness rating). | HIGH | Existing category + risk signal infrastructure in `diff-analysis.ts` |
+| **Adaptive severity by PR size** (large PRs auto-escalate to MAJOR+ only, small PRs allow MEDIUM+) | XBMC evidence: large refactors get architectural focus from humans, small fixes get detailed review. Auto-adapting reduces noise without configuration. | MEDIUM | `isLargePR` flag, severity filter |
+| **Risk heatmap in review summary** | Shows which files got most review attention and why. Builds trust that the tool is focusing correctly. No competitor surfaces the prioritization rationale. | LOW | Risk scoring data, `buildDiffAnalysisSection()` |
+| **Split recommendation** for PRs exceeding threshold (>100 files or >5000 lines) | Qodo Merge has `require_can_be_split_review` but it is an add-on. Proactively recommending split before reviewing is higher value because it shapes contributor behavior. | LOW | File count + line count metrics |
+
+### Feedback-Driven Learning
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Feedback-weighted confidence adjustment** (patterns with consistent thumbs-up get +10 confidence; thumbs-down get -20) | Goes beyond binary suppress/allow to graduate confidence. A finding pattern with 2 thumbs-up and 0 thumbs-down should be surfaced more confidently. No competitor does graduated confidence from reactions. | MEDIUM | Existing confidence scoring in `confidence.ts`, feedback aggregation |
+| **Feedback transparency in Review Details** ("3 patterns auto-suppressed based on prior feedback") | Builds trust. Teams need to know WHY a finding was suppressed. CodeRabbit's "Learnings" are inspectable; Kodiai's auto-suppression should be too. Avoids the "automatic behavior mutation" anti-pattern. | LOW | Review Details comment, suppression log |
+| **Learning memory outcome update on thumbs-down** | When a finding gets thumbs-downed, update its outcome in learning memory so future embedding retrievals reflect the rejection. Prevents retrieval from surfacing previously-rejected patterns as positive evidence. | MEDIUM | Existing learning memory write path in `learning/` |
+| **Embedding-based pattern clustering** (group similar downvoted findings and suppress the cluster, not just exact matches) | Greptile's key insight: "most nit comments cluster into a small number of semantic categories." Clustering catches variations that exact-match suppression misses. Their address rate went from 19% to 55% with this approach. | HIGH | Learning memory embeddings, vector similarity, threshold tuning |
+
+---
+
+## Anti-Features
+
+Features to explicitly NOT build. These are commonly requested but harmful.
+
+| Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
+|--------------|-------------|-----------|-------------------|
+| **AST-based language rule engine** (parse code with ast-grep or tree-sitter) | CodeRabbit integrates ast-grep with 35+ linters. Seems comprehensive. | Massive maintenance burden per language. The LLM already understands code structure. AST rules duplicate what the model does natively and add latency. CodeRabbit has 46% accuracy despite 35 linters -- proving more tools does not equal more accuracy. | Use LLM for structural analysis; enforce severity floors and suppressions post-execution. Let linter tools (eslint, clippy) run in CI separately. |
+| **Run linters in workspace** (install ESLint, Ruff, Clippy in review workspace) | Deterministic linter output seems reliable. | Requires per-language toolchains. Workspace is a shallow clone with no dev dependencies. Adds 10-30s latency. Different projects use different linter configs. | Use prompt-driven classification. Claude's training knows what is auto-fixable. |
+| **Auto-learning from every single emoji reaction** | "Zero config learning" sounds great. | CodeRabbit explicitly warns: "thumbs up means... what, exactly?" Ambiguous signal causes sycophantic drift. OpenAI found GPT-4o became "overly agreeable" from binary feedback. Single reactions are noisy. | Learn only from clustered patterns with minimum vote threshold (3+ unique thumbs-down). Never auto-suppress from a single reaction. |
+| **Review all files in large PRs via multi-turn chunking** | "We should review everything for completeness." | Cost scales linearly: 312 files at ~$0.03/file = $9.36 per review. Latency explodes. Findings in file 280 are rarely actionable. | Prioritize by risk score, review top 50, disclose coverage. Offer `@kodiai review-all` escape hatch for explicit full-PR review. |
+| **Cross-repo feedback sharing by default** | One repo's learned suppressions could help another. | One repo's "noise" might be another repo's "critical." Feedback preferences are context-dependent. Data leakage risk. | Keep feedback suppression repo-scoped. Org-level sharing is a separate, opt-in, future feature. |
+| **Merge-blocking based on feedback confidence** | Teams want automation gates. | False positives in auto-learned suppressions can either block merges (frustrating) or allow bugs through (dangerous). Either outcome erodes trust. | Keep advisory mode. Show confidence and feedback history in Review Details. Let humans decide. |
+| **Real-time reaction processing** | Faster learning loop seems better. | GitHub does not emit reaction-specific webhooks. Building workarounds (polling, frequent cron) adds complexity for minimal latency gain. | Sync reactions on next PR activity event (existing `feedback-sync.ts` pattern). |
+| **Language-specific severity that cannot be overridden** | "We know best what's critical in C++." | Power users have valid reasons to downgrade. A team wrapping a C library may accept raw pointers deliberately. | Provide opinionated defaults but honor user overrides. Warn when overriding a safety baseline, but allow it. |
+| **ML-based file risk prediction** | ML model could learn from historical review data. | Requires training data that does not exist yet. Heuristics are sufficient, debuggable, and explainable. | Use deterministic risk formula with configurable weights. |
+
+---
 
 ## Feature Dependencies
 
 ```text
-[Feedback Capture Signals] (already exists)
-    └──requires──> [Embedding Memory Write Path]
-                          └──requires──> [Schema for outcome metadata]
+LANGUAGE-AWARE ENFORCEMENT
+==========================
+[Existing: LANGUAGE_GUIDANCE map in review-prompt.ts]
+    |
+    +-- extends --> [Language severity tiers: auto-fixable vs safety-critical]
+    |                   |
+    |                   +-- requires --> [Post-execution severity floor enforcement]
+    |                   |
+    |                   +-- optional --> [Auto-detect formatter config files in workspace]
+    |
+    +-- extends --> [review.languageRules config section]
+                        |
+                        +-- feeds --> [Language severity tier overrides]
 
-[Embedding Memory Write Path]
-    └──requires──> [Retrieval API + ranking]
-                          └──enhances──> [Learning-informed review prompt]
+LARGE PR INTELLIGENCE
+=====================
+[Existing: diff-analysis.ts (categories + risk signals + numstat)]
+    |
+    +-- extends --> [Per-file risk scoring formula]
+    |                   |
+    |                   +-- requires --> [Token-aware file budget / top-N selection]
+    |                   |                     |
+    |                   |                     +-- requires --> [Coverage disclosure in summary]
+    |                   |
+    |                   +-- optional --> [Risk heatmap in review summary]
+    |                   |
+    |                   +-- optional --> [Adaptive severity by PR size]
+    |
+    +-- optional --> [Split recommendation for oversized PRs]
 
-[Reviewed SHA + prior comment map]
-    └──requires──> [Incremental diff computation]
-                          └──requires──> [Duplicate suppression fingerprinting]
-                                               └──enables──> [Incremental re-review UX]
-
-[Canonical finding taxonomy]
-    └──requires──> [Output localization layer]
-                          └──enables──> [Multi-language comments]
-
-[Output localization layer]
-    └──conflicts──> [Code/identifier translation]
+FEEDBACK-DRIVEN LEARNING
+=========================
+[Existing: feedback-sync.ts + FeedbackReaction table in knowledge store]
+    |
+    +-- extends --> [Feedback aggregation query: count by title fingerprint per repo]
+    |                   |
+    |                   +-- requires --> [Auto-suppress rule generation when count >= threshold]
+    |                   |                     |
+    |                   |                     +-- integrates --> [matchesSuppression() in confidence.ts]
+    |                   |
+    |                   +-- feeds --> [Feedback-weighted confidence adjustment]
+    |
+    +-- extends --> [Learning memory outcome update on thumbs-down]
+    |
+    +-- extends --> [Feedback transparency in Review Details]
 ```
 
-### Dependency Notes
+### Critical Path
 
-- **Embedding retrieval requires outcome metadata:** without explicit outcome labels, retrieval adds context but not quality control.
-- **Incremental re-review requires prior state mapping:** last reviewed SHA + prior posted comments are mandatory to prevent duplicate spam.
-- **Localization requires canonical internal taxonomy:** translated labels without canonical IDs break filtering and metrics.
-- **Localization conflicts with code translation:** code/text boundary must be strict to avoid incorrect advice.
+1. **Language severity tiers** depend on the existing `LANGUAGE_GUIDANCE` map but need a new post-execution enforcement step (not just prompt injection)
+2. **File risk scoring** depends on existing `diff-analysis.ts` infrastructure and must happen before the review prompt is built
+3. **Auto-suppress** depends on feedback aggregation reaching threshold, which depends on `feedback-sync.ts` having collected enough data points
 
-## MVP Definition
+### Independence Points
 
-### Launch With (v0.5)
+- Language enforcement and large PR intelligence are **independent** -- can be built in parallel
+- Language enforcement and feedback learning are **independent** -- can be built in parallel
+- Large PR intelligence and feedback learning are **independent** -- can be built in parallel
+- All three feature areas share no code dependencies
 
-Minimum set to validate advanced learning + language support while keeping output low-noise.
+---
 
-- [ ] **Embedding memory from explicit outcomes** — core learning loop with controllable behavior
-- [ ] **Retrieval-gated prompt context with strict threshold + token cap** — quality gains without prompt sprawl
-- [ ] **Incremental re-review on new commits only** — eliminates repeated full-PR noise
-- [ ] **Duplicate finding suppression across re-reviews** — preserves trust and reduces fatigue
-- [ ] **Configurable output language with code-safe localization** — practical multilingual usability
-- [ ] **Fail-open fallback when retrieval/localization fails** — production reliability for private teams
+## MVP Recommendation
 
-### Add After Validation (v0.5.x)
+### Build First (P1) -- Highest ROI
 
-- [ ] **Delta summary (`new`, `resolved`, `still-open`)** — add when teams need workflow-level visibility
-- [ ] **Outcome-weighted ranking (recency + acceptance bias)** — add after baseline retrieval quality is measured
-- [ ] **Mixed-language artifact handling in one PR** — add when multilingual repos exceed baseline assumptions
+1. **Language severity tiers** (auto-fixable suppression + safety-critical enforcement) -- Highest signal-to-noise improvement per line of code. XBMC data: eliminates 100% of formatting noise and ensures 100% of null deref findings are CRITICAL.
+2. **File risk scoring and top-N prioritization** -- Addresses the 312-file problem directly. Without this, large PR reviews are either incomplete (truncated randomly) or noisy (uniform review of all files).
+3. **Feedback auto-suppression with threshold** -- Closes the feedback loop. The infrastructure (feedback-sync.ts, FeedbackReaction table) already exists. New work is aggregation + threshold + suppression integration.
+4. **Coverage disclosure** -- Required for trust once file selection is active.
+5. **CRITICAL safety floor** (both language and feedback) -- Must ship with auto-suppression to prevent runaway learning.
 
-### Future Consideration (v0.6+)
+### Build Second (P2) -- Add after P1 validated
 
-- [ ] **Org-level opt-in shared learning pools** — defer until strong tenancy controls and admin policy surface exist
-- [ ] **Regression detector for previously fixed findings** — high value but needs robust historical linking/evals
+6. **Auto-detect formatter config files** -- Refines language suppression without user configuration.
+7. **Adaptive severity by PR size** -- Refines large PR noise reduction beyond file selection.
+8. **Feedback-weighted confidence adjustment** -- Refines the confidence model using actual reaction data.
+9. **Feedback transparency reporting** -- Makes auto-suppression auditable.
+10. **Risk heatmap in review summary** -- Trust-building visibility into prioritization logic.
+11. **Learning memory outcome update** -- Prevents retrieval from surfacing rejected patterns.
+
+### Defer (P3) -- Future consideration
+
+12. **Split recommendation** -- Low complexity but limited impact; humans already know their PR is too big.
+13. **Embedding-based pattern clustering** -- Powerful but complex. Simple title-fingerprint aggregation handles 80% of cases. Add when exact-match shows insufficient coverage.
+14. **Churn-aware risk scoring** -- Requires additional git commands per review. Add after basic risk scoring is validated.
+15. **Auto-fixable finding grouping** -- Nice UX polish but not critical for initial release.
+
+---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Embedding memory from explicit outcomes | HIGH | MEDIUM | P1 |
-| Retrieval-gated prompt augmentation | HIGH | MEDIUM | P1 |
-| Incremental diff since last reviewed SHA | HIGH | HIGH | P1 |
-| Duplicate finding suppression | HIGH | HIGH | P1 |
-| Configurable output language | HIGH | LOW | P1 |
-| Code-safe localization guardrails | HIGH | LOW | P1 |
-| Fail-open fallback behavior | HIGH | LOW | P1 |
-| Delta summary in review output | MEDIUM | MEDIUM | P2 |
-| Outcome-weighted retrieval ranking | MEDIUM | MEDIUM | P2 |
-| Mixed-language per-artifact handling | MEDIUM | MEDIUM | P2 |
-| Regression detector on reintroduced issues | HIGH | HIGH | P3 |
-| Org-level shared learning memory (opt-in) | MEDIUM | HIGH | P3 |
+| Feature | User Value | Impl. Cost | Risk | Priority |
+|---------|------------|------------|------|----------|
+| Language severity tiers (auto-fixable/safety-critical) | HIGH | LOW | LOW | P1 |
+| Suppress linter-catchable findings | HIGH | LOW | LOW | P1 |
+| Post-execution severity floor enforcement | HIGH | MEDIUM | LOW | P1 |
+| File risk scoring formula | HIGH | HIGH | MEDIUM | P1 |
+| Top-N file selection + token budget | HIGH | MEDIUM | MEDIUM | P1 |
+| Coverage disclosure in summary | HIGH | LOW | LOW | P1 |
+| Comment budget allocation by risk | HIGH | LOW | LOW | P1 |
+| Feedback auto-suppression with threshold | HIGH | MEDIUM | MEDIUM | P1 |
+| CRITICAL findings safety floor | HIGH | LOW | LOW | P1 |
+| Per-language config surface | MEDIUM | LOW | LOW | P1 |
+| Auto-detect formatter config | MEDIUM | MEDIUM | LOW | P2 |
+| Adaptive severity by PR size | MEDIUM | LOW | LOW | P2 |
+| Feedback-weighted confidence | MEDIUM | MEDIUM | LOW | P2 |
+| Feedback transparency reporting | MEDIUM | LOW | LOW | P2 |
+| Risk heatmap in review summary | MEDIUM | LOW | LOW | P2 |
+| Learning memory outcome update | MEDIUM | MEDIUM | LOW | P2 |
+| Graduated language tier visibility | LOW | LOW | LOW | P2 |
+| Split recommendation | LOW | LOW | LOW | P3 |
+| Embedding-based pattern clustering | MEDIUM | HIGH | MEDIUM | P3 |
+| Churn-aware risk scoring | MEDIUM | MEDIUM | LOW | P3 |
+| Auto-fixable finding grouping | LOW | MEDIUM | LOW | P3 |
 
-**Priority key:**
-- P1: Must have for launch
-- P2: Should have, add when possible
-- P3: Nice to have, future consideration
+---
 
 ## Competitor Feature Analysis
 
-| Feature | Typical Market Pattern | Risk if Copied Naively | Kodiai v0.5 Approach |
-|---------|------------------------|-------------------------|-----------------------|
-| Learning from prior reviews | Mostly opaque "bot learns" behavior | Unpredictable drift and low debuggability | Explicit, auditable learning from clear outcomes |
-| Re-review behavior | Some tools still over-post on re-runs | Comment fatigue and low trust | Incremental-by-default with duplicate suppression |
-| Multilingual comments | Translation quality varies, often code-unsafe | Incorrect suggestions due to token translation | Prose localization + strict code preservation |
-| Advanced automation | Push toward merge gating/auto actions | High blast radius when wrong | Advisory-first, high-signal, low-noise |
+### Language-Aware Enforcement
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | ast-grep rules + 35 linters + LLM; auto-detects style preferences | Broadest static analysis integration; community rule library | 46% bug detection accuracy; heavy infrastructure; rule maintenance burden |
+| **Qodo Merge** | Extra instructions per language; compliance checklist templates; language framework exclusion | Configurable; open-source core; YAML-based compliance | No deterministic severity enforcement; relies entirely on LLM judgment |
+| **Greptile** | Full codebase indexing; semantic understanding per language | Deep context from entire repo, not just diff | Expensive compute; slower review times |
+| **Danger.js** | Programmatic rules in JS/TS; no AI | Deterministic; fully controllable; zero false positives from rules | Manual rule authoring; no semantic understanding; no language awareness |
+| **Kodiai (proposed)** | LLM language guidance + post-execution severity floors + configurable overrides | Best of both: LLM flexibility + deterministic enforcement; low maintenance | Severity floors only apply post-execution; cannot prevent LLM from missing issues |
+
+### Large PR Intelligence
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | Dual-model: trivial/complex classification; filters trivial changes | Cost-efficient (50% savings); identifies obvious low-risk changes | Binary classification (trivial vs complex) lacks granularity; 1/5 completeness score |
+| **Qodo Merge** | PR compression; split detection; incremental update button | Manages large PRs progressively; suggests splitting | No file-level risk scoring; relies on user to trigger incremental review |
+| **Microsoft Internal** | AI reviews 600K+ PRs/month; PR summarization; conversational follow-up | Massive scale validation; proven workflow integration | No public details on file prioritization algorithm |
+| **Greptile** | Full codebase context; semantic dependency analysis | Cross-file understanding for impact analysis | Cost scales with repo size; latency concerns |
+| **Kodiai (proposed)** | Risk-weighted file scoring; top-N selection; coverage disclosure; adaptive severity | Transparent prioritization; principled token budgeting; honest about coverage gaps | Heuristic scoring requires tuning; may miss important files in edge cases |
+
+### Feedback-Driven Learning
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | Natural language "Learnings" from chat; org/repo scoping; explicit reasoning required | High-quality signals; inspectable; team-specific | High friction (requires typing explanation, not just reacting); slow adoption |
+| **Greptile** | Thumbs up/down + commit-addressed tracking; embedding clustering; team-specific filtering | Low friction; objective metric (did they actually fix it?); improved address rate 19% to 55% | Embedding infrastructure required; commit tracking is lossy |
+| **Qodo Merge** | No persistent learning across PRs; extra instructions per run | Clean, no drift risk | Zero learning; same false positives repeat forever |
+| **Kodiai (proposed)** | Reaction-based + title fingerprint aggregation; threshold-based auto-suppress; transparent reporting | Balanced friction (react, don't type); deterministic threshold (no drift from single reaction); auditable | Requires enough reactions to reach threshold; cold-start period per repo |
+
+---
 
 ## Sources
 
-- Existing Kodiai capabilities and constraints from current milestone context (HIGH confidence).
-- GitHub Webhooks: pull request event model and delivery constraints (official docs): https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request (MEDIUM confidence; page is large but authoritative).
-- GitHub REST API: pull request review comments (line mapping, comment identity, permissions): https://docs.github.com/en/rest/pulls/comments (HIGH confidence).
-- GitHub REST API: pull request files and PR metadata endpoints: https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files (HIGH confidence).
-- OpenAI Embeddings guide: embedding models, multilingual performance note, dimensions/cost tradeoff: https://platform.openai.com/docs/guides/embeddings (HIGH confidence).
+### Direct Evidence (HIGH confidence)
+- XBMC deep PR analysis (100 PRs, 96 review comments): `.planning/xbmc_deep_analysis.md`
+- XBMC high-comment PR analysis (6 PRs, 450+ comments): `.planning/xbmc_high_comment_pr_analysis.md`
+- Kodiai codebase audit: `src/execution/review-prompt.ts`, `src/execution/diff-analysis.ts`, `src/knowledge/confidence.ts`, `src/handlers/feedback-sync.ts`, `src/learning/`
+
+### Competitive Intelligence (MEDIUM confidence)
+- [CodeRabbit Learnings documentation](https://docs.coderabbit.ai/guides/learnings)
+- [CodeRabbit: Why emojis suck for reinforcement learning](https://www.coderabbit.ai/blog/why-emojis-suck-for-reinforcement-learning)
+- [Qodo Merge review tool documentation](https://qodo-merge-docs.qodo.ai/tools/review/)
+- [Qodo Merge compliance documentation](https://qodo-merge-docs.qodo.ai/tools/compliance/)
+- [Microsoft AI code review at scale](https://devblogs.microsoft.com/engineering-at-microsoft/enhancing-code-quality-at-scale-with-ai-powered-code-reviews/)
+- [Greptile embedding-based comment filtering (ZenML case study)](https://www.zenml.io/llmops-database/improving-ai-code-review-bot-comment-quality-through-vector-embeddings)
+- [ast-grep rule configuration](https://ast-grep.github.io/guide/rule-config.html)
+- [Danger.js documentation](https://danger.systems/js/)
+
+### Industry Analysis (LOW confidence -- used for context only)
+- [Springer 2024 study on PR change impact analysis](https://link.springer.com/article/10.1007/s10664-024-10600-2)
+- [CodeRabbit 2026 enterprise gap analysis](https://ucstrategies.com/news/coderabbit-review-2026-fast-ai-code-reviews-but-a-critical-gap-enterprises-cant-ignore/)
+- [Qodo best AI code review tools 2026](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/)
+- [GitHub webhook events -- no reaction webhooks](https://docs.github.com/en/webhooks/webhook-events-and-payloads)
 
 ---
-*Feature research for: Kodiai v0.5 advanced learning and language support*
-*Researched: 2026-02-12*
+*Feature research for: Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning*
+*Researched: 2026-02-13*

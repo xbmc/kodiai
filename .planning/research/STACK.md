@@ -1,146 +1,315 @@
-# Stack Research
+# Technology Stack
 
-**Domain:** AI GitHub App enhancements (embeddings, incremental re-review, multi-language analysis)
-**Researched:** 2026-02-12
-**Confidence:** MEDIUM
+**Project:** Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning
+**Researched:** 2026-02-13
+**Overall Confidence:** HIGH
+
+## Executive Summary
+
+This milestone adds three capabilities to an existing, mature codebase: (1) language-specific severity rules that distinguish auto-fixable from safety-critical findings, (2) risk-weighted file prioritization for large PRs, and (3) thumbs-down reaction feedback with auto-suppression. The critical finding from this research is that **zero new dependencies are needed**. Every capability can be built using existing libraries, existing SQLite schema patterns, existing diff analysis infrastructure, and existing GitHub API methods already verified in the codebase.
+
+The "stack" for this milestone is overwhelmingly about **data structures, heuristics, and configuration schema extensions** -- not new libraries. The existing `diff-analysis.ts` already classifies files by language and category. The existing `feedback-sync.ts` already polls reactions via `octokit.rest.reactions.listForPullRequestReviewComment`. The existing `confidence.ts` already scores findings by severity and category. Each new feature extends these foundations with additional logic, not additional dependencies.
 
 ## Recommended Stack
 
-### Core Technologies
+### No New Dependencies Required
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Voyage Embeddings API | v1 (HTTP) | Generate embeddings for feedback clustering and retrieval | Best fit for the new learning loop; Anthropic explicitly points to Voyage for embeddings, and Voyage now exposes code + multilingual-capable models. |
-| `sqlite-vec` | `0.1.7-alpha.2` | Vector similarity search directly in existing SQLite DB | Preserves Bun + SQLite architecture and avoids adding external vector infrastructure for v0.5. |
-| `bun:sqlite` extension loading | Bun `1.3.8` (installed) | Host scalar tables + vector tables in same file | Keeps operational model unchanged (single DB, WAL, local transactions). |
+| What's Needed | Already Available | Where |
+|---------------|-------------------|-------|
+| Language classification | `EXTENSION_LANGUAGE_MAP` (20 languages) | `src/execution/diff-analysis.ts` |
+| Language-specific rules | `LANGUAGE_GUIDANCE` (9 languages with detailed rules) | `src/execution/review-prompt.ts` |
+| File risk heuristics | `PATH_RISK_SIGNALS`, `CONTENT_RISK_SIGNALS`, `analyzeDiff()` | `src/execution/diff-analysis.ts` |
+| Numstat parsing (lines changed per file) | `parseNumstat()` | `src/execution/diff-analysis.ts` |
+| File category classification | `DEFAULT_FILE_CATEGORIES` with picomatch | `src/execution/diff-analysis.ts` |
+| Git churn data | `git log --numstat` via Bun shell `$` | `src/handlers/review.ts` |
+| Reaction polling | `octokit.rest.reactions.listForPullRequestReviewComment()` | `src/handlers/feedback-sync.ts` |
+| Reaction storage | `feedback_reactions` table with `UNIQUE(repo, comment_id, reaction_id)` | `src/knowledge/store.ts` |
+| Finding-to-comment correlation | `comment_id`, `comment_surface`, `review_output_key` on findings | `src/knowledge/types.ts` |
+| Confidence scoring | `computeConfidence()` with severity/category boosts | `src/knowledge/confidence.ts` |
+| Suppression matching | `matchesSuppression()` with glob/regex patterns | `src/knowledge/confidence.ts` |
+| Configuration schema | Zod schemas with section fallback parsing | `src/execution/config.ts` |
+| Prompt injection | `buildReviewPrompt()` with conditional sections | `src/execution/review-prompt.ts` |
+| Embedding-backed learning | `LearningMemoryStore` + `sqlite-vec` + Voyage AI | `src/learning/memory-store.ts` |
 
-### Supporting Libraries
+### Existing Dependencies (No Version Changes)
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `linguist-languages` | `9.3.1` | Extension/shebang-based language detection aligned with GitHub Linguist data | Use for per-file language tagging in diff analysis and language-aware prompt shaping. |
-| `@anthropic-ai/claude-agent-sdk` | upgrade `0.2.37 -> 0.2.39` | Keep executor layer current while adding more MCP tools for re-review/learning | Upgrade alongside v0.5 rollout to reduce SDK drift risk. |
-| `@octokit/webhooks-types` | keep `7.6.1` | Existing typed webhook surface for feedback/reactions | No new package needed; reuse current event ingestion path. |
+| Technology | Version | Purpose | Used For New Features |
+|------------|---------|---------|----------------------|
+| `bun:sqlite` | builtin | Persistent storage | New tables/columns for feedback aggregation and risk scores |
+| `picomatch` | ^4.0.2 | Glob pattern matching | File path matching in language rules and risk signals |
+| `@octokit/rest` | ^22.0.1 | GitHub API | Reaction polling (already used by feedback-sync) |
+| `zod` | ^4.3.6 | Schema validation | Config schema extensions for language rules |
+| `pino` | ^10.3.0 | Structured logging | Feedback loop and risk scoring telemetry |
+| `p-queue` | ^9.1.0 | Concurrency control | Rate-limited reaction sync jobs |
+| `sqlite-vec` | ^0.1.7-alpha.2 | Vector similarity search | Feedback-to-learning-memory integration |
+| `voyageai` | ^0.1.0 | Embedding generation | Thumbs-down finding embedding for suppression retrieval |
+| `hono` | ^4.11.8 | HTTP framework | No changes needed |
 
-### Development Tools
+## Feature-Specific Stack Details
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `git patch-id --stable` | Fingerprint semantically equivalent diffs for incremental re-review | Use in Bun `Bash(...)` calls; avoids new hashing libs and is robust to line-number churn. |
-| Bun native `fetch` | Voyage API calls without extra HTTP client | Prefer over adding transport libs in Bun runtime. |
+### Feature 1: Language-Specific Severity Rules
 
-## Why These Additions Are Needed (vs current stack)
+**Approach: Prompt-driven enforcement with heuristic classification, NOT linter integration.**
 
-- Current knowledge store in `src/knowledge/store.ts` tracks structured findings/reactions but has no semantic retrieval, so embeddings + vector search are required for clustering similar feedback across PRs.
-- Current re-review flow in `src/handlers/review.ts` re-analyzes full PR context; adding patch fingerprints + prior finding retrieval enables incremental re-review instead of full replay.
-- Current diff categorization in `src/execution/diff-analysis.ts` is category-based (source/test/config/docs/infra), not language-aware; multi-language support needs explicit language tagging.
-- Current prompt builder in `src/execution/review-prompt.ts` is language-agnostic; adding language-conditioned guardrails improves coverage for non-TS repos.
+Why NOT run linters (ESLint, Ruff, Clippy) programmatically:
 
-## Integration Points in Current Codebase
+| Approach | Complexity | Why Reject |
+|----------|------------|------------|
+| Run ESLint/Ruff/Clippy in workspace | HIGH | Requires installing per-language toolchains in every cloned workspace, managing linter configs per repo, handling version mismatches, and processing structured output. Adds 10-30s per review. |
+| Parse `.eslintrc`/`pyproject.toml` from repo | MEDIUM | Config parsing for 9+ linters is brittle, and the auto-fixable ruleset changes across versions. |
+| Maintain static auto-fixable rule database | MEDIUM | Requires constant maintenance as linters evolve. Becomes stale within months. |
+| **Classify via known patterns in prompt** | **LOW** | Extend existing `LANGUAGE_GUIDANCE` with auto-fixable vs safety-critical annotations. Let Claude's training knowledge determine what is auto-fixable. |
 
-| Area | File(s) | Change |
-|------|---------|--------|
-| Embedding generation | `src/handlers/feedback-sync.ts`, `src/handlers/review.ts` | On new findings/reactions, enqueue embedding jobs and store vectors + metadata. |
-| Vector storage/query | `src/knowledge/store.ts` | Add `embedding_items` metadata table + `vec0` virtual table; add nearest-neighbor lookup methods. |
-| Incremental re-review cache keys | `src/handlers/review.ts` | Compute `patch_id` and lookup prior findings by `repo + file_path + patch_id` before publishing comments. |
-| Language detection | `src/execution/diff-analysis.ts` | Map changed files to languages (via `linguist-languages`) and expose histogram/signals in `DiffAnalysis`. |
-| Prompt adaptation | `src/execution/review-prompt.ts` | Inject language-specific review directives and suppress unsupported-language heuristics. |
-| Config surface | `src/execution/config.ts` | Add `review.embeddings`, `review.incremental`, `review.languages` sections with safe defaults and kill-switches. |
+**Recommended approach:** Extend the existing `LANGUAGE_GUIDANCE` record in `review-prompt.ts` to partition rules into two tiers:
 
-## Data Model Additions (SQLite)
+1. **Auto-fixable / formatter-territory**: Issues that linters or formatters can fix automatically (unused imports, formatting, missing semicolons, import ordering). These get **suppressed by default** or downgraded to MINOR.
+2. **Safety-critical / language-specific**: Issues unique to the language's safety model (Go unchecked errors, Rust `.unwrap()` in production, C buffer overflows, Java unclosed resources). These get **upgraded to at minimum MAJOR**.
 
-Use existing DB initialization pattern in `src/knowledge/store.ts`.
+**What to build:**
+- A `LanguageSeverityRule` type with `language`, `pattern`, `tier` ("auto-fixable" | "safety-critical"), and `severityOverride`
+- A `LANGUAGE_SEVERITY_RULES` registry (static data, no external deps)
+- Extension to `buildLanguageGuidanceSection()` to emit tiered instructions
+- Config surface: `review.languageRules.suppressAutoFixable: boolean` (default: true)
+- Config surface: `review.languageRules.enforceSafetyCritical: boolean` (default: true)
 
-```sql
-CREATE TABLE IF NOT EXISTS embedding_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  repo TEXT NOT NULL,
-  source_type TEXT NOT NULL,            -- finding|reaction|summary
-  source_id TEXT NOT NULL,              -- stable app identifier
-  model TEXT NOT NULL,
-  dim INTEGER NOT NULL,
-  language TEXT,
-  payload_json TEXT,
-  UNIQUE(repo, source_type, source_id, model)
-);
+**What NOT to build:**
+- Do NOT shell out to linters. The workspace may not have toolchains installed.
+- Do NOT parse linter config files. Config formats vary across versions.
+- Do NOT maintain an external database of fixable rules. Use prompt instructions instead.
 
--- sqlite-vec virtual table (1024-d example)
-CREATE VIRTUAL TABLE IF NOT EXISTS embedding_vec
-USING vec0(embedding float[1024], item_id integer primary key);
+**Confidence: HIGH** -- This extends existing patterns (`LANGUAGE_GUIDANCE`, `buildSeverityClassificationGuidelines()`) with zero new dependencies.
 
-CREATE INDEX IF NOT EXISTS idx_embedding_items_repo_source
-ON embedding_items(repo, source_type, created_at);
+### Feature 2: Risk-Weighted File Prioritization for Large PRs
+
+**Approach: Heuristic risk scoring using existing git data, NOT ML models or AST analysis.**
+
+Why NOT use complexity analysis libraries:
+
+| Approach | Complexity | Why Reject |
+|----------|------------|------------|
+| Cyclomatic complexity (ts-cyclomatic-complexity, CodeMetrics CLI) | HIGH | Requires parsing AST for every changed file across all languages. Most tools are TypeScript/JavaScript-only. Adds 5-15s per review. |
+| ML-based risk prediction | VERY HIGH | Requires training data, model serving infrastructure. Massive overengineering for this use case. |
+| **Heuristic scoring from git metadata** | **LOW** | Lines changed, file path signals, category, churn history -- all available from `git diff --numstat` and existing `analyzeDiff()`. |
+
+**Recommended risk scoring formula:**
+
 ```
+fileRisk = (linesChangedWeight * normalizedLinesChanged)
+         + (pathRiskWeight * pathRiskSignalCount)
+         + (categoryWeight * categoryRiskMultiplier)
+         + (churnWeight * recentChurnCount)
+```
+
+Where:
+- `normalizedLinesChanged` = `(added + removed) / maxLinesInPR` (0-1 range)
+- `pathRiskSignalCount` = count of `PATH_RISK_SIGNALS` matching this file (already computed)
+- `categoryRiskMultiplier` = source:1.0, infra:0.8, config:0.3, test:0.2, docs:0.1
+- `recentChurnCount` = number of commits touching this file in recent history (from `git log --follow --oneline -- <file> | wc -l`)
+
+**What to build:**
+- A `computeFileRiskScore()` function in `diff-analysis.ts`
+- Per-file numstat parsing (extend existing `parseNumstat()` to return per-file data)
+- A `prioritizeFiles()` function that sorts files by risk score and applies budget allocation
+- Budget allocation: for large PRs (>200 files or >5000 lines), allocate comment slots proportionally to risk score
+- Extension to `buildDiffAnalysisSection()` to communicate prioritization to the prompt
+- Config surface: `review.largePR.strategy: "risk-weighted" | "equal"` (default: "risk-weighted")
+- Config surface: `review.largePR.maxAnalysisFiles: number` (default: 200)
+
+**Git churn data collection:**
+```typescript
+// Already available: Bun shell $ is used extensively in review.ts
+const churnResult = await $`git -C ${workspaceDir} log --oneline --follow -- ${filePath} | wc -l`.quiet().nothrow();
+```
+
+For large PRs, batch this as:
+```typescript
+// Single git command for all files' churn counts
+const logResult = await $`git -C ${workspaceDir} log --name-only --pretty=format: --since="90 days ago"`.quiet().nothrow();
+```
+
+**What NOT to build:**
+- Do NOT add AST parsing libraries. Too heavy for a review tool.
+- Do NOT build per-language complexity analyzers. Cyclomatic complexity is a distraction -- lines changed + path signals are stronger predictors of review-worthy files.
+- Do NOT add ML models for risk prediction. Heuristics are sufficient and debuggable.
+
+**Confidence: HIGH** -- Uses only `git` commands and extends existing `analyzeDiff()` infrastructure.
+
+### Feature 3: Thumbs-Down Reaction Feedback with Auto-Suppression
+
+**Approach: Extend existing feedback-sync polling pipeline, NOT webhooks.**
+
+**Critical verified constraint:** GitHub does NOT emit webhook events for reactions. This was verified against official GitHub webhook documentation (February 2026) and confirmed by the existing `feedback-sync.ts` which already uses a polling approach.
+
+The existing system already has:
+1. `feedback_reactions` table with `UNIQUE(repo, comment_id, reaction_id)` -- idempotent storage
+2. `createFeedbackSyncHandler()` that polls reactions on PR activity events
+3. `isHumanThumbReaction()` filter that excludes bots
+4. `recordFeedbackReactions()` with `INSERT OR IGNORE` for dedup
+5. Learning memory store with `outcome` field that already supports `"thumbs_down"`
+
+**What to build (the NEW part -- auto-suppression from feedback):**
+
+1. **Feedback aggregation query:** Count thumbs-down reactions per finding pattern (severity + category + title fingerprint) across a repo's history. When a pattern accumulates N thumbs-down reactions (configurable threshold, default 3), it becomes a candidate for auto-suppression.
+
+2. **Feedback-derived suppression rules:** A new table or materialized query that produces suppression patterns from feedback aggregation:
+```sql
+-- Aggregate thumbs-down by finding pattern
+SELECT
+  severity, category,
+  -- FNV-1a fingerprint of normalized title (reuse existing fingerprintFindingTitle)
+  title, COUNT(*) as thumbs_down_count
+FROM feedback_reactions
+WHERE repo = $repo
+  AND reaction_content = '-1'
+  AND created_at >= datetime('now', '-90 days')
+GROUP BY severity, category, title
+HAVING COUNT(*) >= $threshold
+```
+
+3. **Integration with existing suppression pipeline:** Feed feedback-derived suppressions into the existing `matchesSuppression()` check alongside config-defined suppressions. Mark these as `suppressionSource: "feedback"` to distinguish from manual config.
+
+4. **Learning memory feedback loop:** When a thumbs-down is recorded, update the learning memory outcome to `"thumbs_down"`. When similar findings are retrieved during context-aware review, the `outcome: "thumbs_down"` signal tells the model this pattern was previously rejected by humans.
+
+**Schema additions:**
+```sql
+-- Add to existing feedback_reactions table (or new derived table)
+CREATE TABLE IF NOT EXISTS feedback_suppression_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title_fingerprint TEXT NOT NULL,
+  title_sample TEXT NOT NULL,
+  thumbs_down_count INTEGER NOT NULL,
+  thumbs_up_count INTEGER NOT NULL DEFAULT 0,
+  net_sentiment INTEGER NOT NULL, -- thumbs_up - thumbs_down
+  last_updated TEXT NOT NULL DEFAULT (datetime('now')),
+  auto_suppress INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(repo, severity, category, title_fingerprint)
+);
+```
+
+**Config surface:**
+- `review.feedback.autoSuppressThreshold: number` (default: 3) -- thumbs-down count to trigger auto-suppression
+- `review.feedback.autoSuppressEnabled: boolean` (default: false) -- opt-in to start
+- `review.feedback.autoSuppressWindow: number` (default: 90) -- days of feedback history to consider
+
+**What NOT to build:**
+- Do NOT add a reaction webhook handler. GitHub does not support reaction webhooks.
+- Do NOT build real-time reaction processing. Polling on PR activity events is sufficient.
+- Do NOT auto-suppress CRITICAL findings regardless of feedback count. Safety override.
+
+**Confidence: HIGH** -- Extends existing `feedback-sync.ts` and `knowledge/store.ts` with zero new dependencies.
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Auto-fixable detection | Prompt-driven classification | ESLint/Ruff programmatic API | Requires per-language toolchain installation in workspace; 10-30s overhead; brittle config parsing |
+| File risk scoring | Git heuristics (lines + path signals + churn) | Cyclomatic complexity libraries | Language-specific tools, TypeScript-only, AST parsing overhead; lines changed is a better predictor for PR review |
+| File risk scoring | Git heuristics | ML-based risk model | Massive overengineering; no training data; heuristics are sufficient and debuggable |
+| Reaction capture | Polling on PR events (existing pattern) | Webhook-based reaction handler | GitHub does not emit reaction webhooks |
+| Feedback auto-suppression | SQL aggregation + threshold | NLP-based sentiment analysis | Over-complex; thumbs-up/down is already structured sentiment data |
+| Language rule storage | Static TypeScript registry | External database or config file | Rules change infrequently; static data is simpler, testable, and version-controlled |
 
 ## Installation
 
 ```bash
-# Core additions
-bun add sqlite-vec linguist-languages
-
-# Keep executor SDK current
-bun add @anthropic-ai/claude-agent-sdk@^0.2.39
+# No new dependencies required.
+# The entire milestone is built on existing stack.
 ```
 
-No additional DB service is required.
+## Integration Points with Existing Stack
 
-## Alternatives Considered
+### Where Each Feature Connects
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| `sqlite-vec` in-process | Hosted vector DB (Pinecone/Qdrant/Weaviate) | Use only if dataset growth or latency SLOs outgrow single-node SQLite. |
-| Voyage API via Bun `fetch` | `voyageai` SDK (`0.1.0`) | Use SDK if typed client ergonomics outweigh dependency footprint. |
-| `linguist-languages` | Hand-maintained extension map | Only for ultra-minimal deployments; higher long-term drift risk. |
+```
+Feature 1: Language Rules
+  Config:     src/execution/config.ts       -- add review.languageRules schema
+  Rules:      src/execution/review-prompt.ts -- extend LANGUAGE_GUIDANCE with tiers
+  Prompt:     src/execution/review-prompt.ts -- buildLanguageGuidanceSection() enhancement
+  Scoring:    src/knowledge/confidence.ts    -- boost/penalty for language-specific findings
 
-## What NOT to Use
+Feature 2: Large PR Intelligence
+  Analysis:   src/execution/diff-analysis.ts -- add computeFileRiskScore(), prioritizeFiles()
+  Prompt:     src/execution/review-prompt.ts -- buildDiffAnalysisSection() with priority annotations
+  Handler:    src/handlers/review.ts         -- apply file budget before prompt construction
+  Config:     src/execution/config.ts        -- add review.largePR schema
 
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `github-linguist` gem / Ruby runtime in app path | Adds Ruby/native dependency chain and complicates Bun deployment | `linguist-languages` JS package using Linguist data |
-| External message bus (Kafka/NATS) for embedding jobs | Operational overhead is disproportionate to v0.5 workload | Existing in-process queue (`p-queue`) + SQLite job bookkeeping |
-| New ORM migration for vector work | Adds migration + runtime complexity during feature milestone | Continue raw SQL in `src/knowledge/store.ts` with explicit migrations |
-| Immediate cross-provider embedding stack | More keys, more retry logic, harder eval baselines | Single provider (Voyage) for v0.5, revisit after offline evals |
+Feature 3: Feedback Auto-Suppression
+  Sync:       src/handlers/feedback-sync.ts  -- already exists, extend with aggregation trigger
+  Store:      src/knowledge/store.ts         -- add feedback_suppression_rules table + queries
+  Types:      src/knowledge/types.ts         -- add FeedbackSuppressionRule type
+  Confidence: src/knowledge/confidence.ts    -- integrate feedback suppressions into matchesSuppression()
+  Learning:   src/learning/memory-store.ts   -- update outcome on thumbs-down
+  Handler:    src/handlers/review.ts         -- load feedback suppressions alongside config suppressions
+  Config:     src/execution/config.ts        -- add review.feedback schema
+```
 
-## Stack Patterns by Variant
+### Data Flow for Feedback Loop
 
-**If deployment can load SQLite extensions reliably (Linux container baseline):**
-- Use `sqlite-vec` for ANN/KNN lookup in-process.
-- Because it gives the simplest architecture and best fit with existing SQLite persistence.
+```
+1. Review publishes inline comment with finding
+2. Human reacts with thumbs-down on comment
+3. Next PR activity triggers feedback-sync handler (existing)
+4. Sync polls reactions, stores in feedback_reactions table (existing)
+5. Aggregation query computes thumbs-down count per pattern (NEW)
+6. If count >= threshold, pattern added to feedback_suppression_rules (NEW)
+7. Next review loads feedback suppressions alongside config suppressions (NEW)
+8. Finding matching pattern is suppressed or downgraded (NEW)
+9. Learning memory updated with thumbs_down outcome (NEW)
+10. Future retrieval context shows pattern was rejected (existing retrieval)
+```
 
-**If extension loading is blocked (notably some macOS setups):**
-- Keep `embedding_items` table, store vectors as blobs/JSON, and do brute-force cosine in application code as temporary fallback.
-- Because it preserves functionality without blocking rollout; switch to `sqlite-vec` where extension support is guaranteed.
+## What NOT to Add (Avoiding Bloat)
 
-## Migration and Compatibility Notes
-
-- **Native dependency risk:** `sqlite-vec` is alpha and uses platform-specific binaries; validate container image and startup health checks before enabling by default.
-- **macOS caveat:** Bun docs note extension loading may require `Database.setCustomSQLite(...)` with a non-system SQLite dylib.
-- **Runtime compatibility:** `linguist-languages` is pure ESM data and Bun-compatible; low deployment risk.
-- **Schema migration:** introduce additive tables only; keep existing `reviews/findings/feedback_reactions` untouched for backward compatibility.
-- **Rollout safety:** gate v0.5 logic behind config flags (`review.embeddings.enabled`, `review.incremental.enabled`, `review.languages.enabled`).
+| Do NOT Add | Rationale |
+|------------|-----------|
+| ESLint / Ruff / Clippy as runtime deps | Would require per-language toolchains in workspace; Kodiai reviews repos it does not own |
+| AST parsing libraries (tree-sitter, babel, etc.) | Cyclomatic complexity is not needed; lines changed + path signals are better predictors |
+| External vector DB (Pinecone, Qdrant) | sqlite-vec handles the scale; feedback patterns are per-repo, not cross-tenant |
+| External message queue (Kafka, NATS) | Existing p-queue + SQLite job tracking is sufficient |
+| NLP/sentiment analysis libs | Thumbs-up/down is already structured binary sentiment |
+| New HTTP client libraries | Bun native fetch + existing Octokit handles everything |
+| Database migration framework | Continue additive SQL in store.ts; existing pattern is proven |
+| Additional embedding providers | Voyage AI is sufficient; single-provider simplicity |
+| `linguist-languages` package | Existing `EXTENSION_LANGUAGE_MAP` covers 20 languages already |
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
+| Component | Compatible With | Notes |
 |-----------|-----------------|-------|
-| `sqlite-vec@0.1.7-alpha.2` | `bun:sqlite` in Bun `1.3.8` | Works with extension loading; confirm platform binary availability in CI image. |
-| `linguist-languages@9.3.1` | Bun ESM runtime | Data-only package; no native bindings. |
-| `@anthropic-ai/claude-agent-sdk@0.2.39` | `zod@4.3.6` | SDK declares peer compatibility with Zod v4. |
+| All new code | Bun 1.3.8+ | Runtime already installed; all features use Bun builtins |
+| New SQLite tables | `bun:sqlite` WAL mode | Additive schema changes; no migration framework needed |
+| Config extensions | `zod@4.3.6` | Same schema validation pattern as existing config |
+| Reaction API calls | `@octokit/rest@22.0.1` | Methods already verified in `feedback-sync.ts` |
+| Git commands | `git` CLI via `Bun.$` | Same pattern as existing `collectDiffContext()` |
 
 ## Sources
 
-- https://registry.npmjs.org/sqlite-vec/latest - version and package status (`0.1.7-alpha.2`) (HIGH)
-- https://alexgarcia.xyz/sqlite-vec/js.html - Bun usage and extension-loading details (MEDIUM)
-- https://bun.com/docs/runtime/sqlite - `bun:sqlite` and `.loadExtension()` behavior, macOS caveat (HIGH)
-- https://docs.anthropic.com/en/docs/build-with-claude/embeddings - Anthropic guidance to use Voyage for embeddings (HIGH)
-- https://docs.voyageai.com/docs/embeddings - current model lineup (including multilingual and code-focused options) (HIGH)
-- https://registry.npmjs.org/voyageai/latest - TypeScript SDK current npm version (`0.1.0`) (HIGH)
-- https://registry.npmjs.org/linguist-languages/latest - package/version (`9.3.1`) (HIGH)
-- https://raw.githubusercontent.com/ikatyang-collab/linguist-languages/main/README.md - package maps GitHub Linguist language data (MEDIUM)
-- https://raw.githubusercontent.com/github-linguist/linguist/main/README.md - Linguist scope and Ruby dependency burden (HIGH)
-- https://git-scm.com/docs/git-patch-id - stable patch fingerprinting for duplicate/incremental detection (HIGH)
+### Primary (HIGH confidence -- verified in codebase)
+- `src/execution/diff-analysis.ts` -- `EXTENSION_LANGUAGE_MAP`, `PATH_RISK_SIGNALS`, `analyzeDiff()`, `parseNumstat()`
+- `src/execution/review-prompt.ts` -- `LANGUAGE_GUIDANCE`, `buildLanguageGuidanceSection()`, `buildDiffAnalysisSection()`
+- `src/handlers/feedback-sync.ts` -- reaction polling pipeline, `isHumanThumbReaction()`, idempotent storage
+- `src/knowledge/store.ts` -- `feedback_reactions` table, `UNIQUE(repo, comment_id, reaction_id)`, `INSERT OR IGNORE`
+- `src/knowledge/confidence.ts` -- `computeConfidence()`, `matchesSuppression()`, severity/category boosts
+- `src/knowledge/types.ts` -- `FeedbackReaction`, `FindingRecord` with `commentId`/`commentSurface`
+- `src/learning/types.ts` -- `MemoryOutcome` includes `"thumbs_down"`
+- `src/execution/config.ts` -- Zod schema with section fallback parsing
+- `src/handlers/review.ts` -- full review pipeline, finding extraction, suppression application
+
+### Secondary (MEDIUM confidence -- verified via GitHub docs)
+- [GitHub webhook events documentation](https://docs.github.com/en/webhooks/webhook-events-and-payloads) -- confirmed NO reaction webhook events exist (February 2026)
+- [GitHub community discussion on reaction webhooks](https://github.com/orgs/community/discussions/7168) -- reactions do not trigger any webhook
+- [GitHub community feature request for reaction webhooks](https://github.com/orgs/community/discussions/20824) -- open request, not implemented
+- [Octokit reactions API](https://actions-cool.github.io/octokit-rest/api/reactions/) -- `listForPullRequestReviewComment` method verified
+- [ESLint v10.0.0 Node.js API](https://eslint.org/docs/latest/integrate/nodejs-api) -- fixable detection API exists but requires linter runtime (rejected)
+
+### Tertiary (LOW confidence -- general ecosystem knowledge)
+- [Code quality metrics 2026](https://www.qodo.ai/blog/code-quality-metrics-2026/) -- hotspot risk = complexity * churn * ownership
+- [Graphite large PR prioritization](https://graphite.dev/guides/prioritize-code-reviews-large-projects) -- file risk heuristics for code review
+- [Code churn analysis](https://swimm.io/learn/developer-experience/how-to-measure-code-churn-why-it-matters-and-4-ways-to-reduce-it) -- churn as review priority signal
 
 ---
-*Stack research for: Kodiai v0.5 Advanced Learning & Language Support*
-*Researched: 2026-02-12*
+*Stack research for: Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning*
+*Researched: 2026-02-13*
