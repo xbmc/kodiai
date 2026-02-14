@@ -95,3 +95,57 @@ describe("createInlineReviewServer output idempotency", () => {
     expect(secondResult.content[0]?.text).toContain("\"reason\":\"already-published\"");
   });
 });
+
+// --- Phase 50: Mention sanitization regression tests ---
+
+describe("mention sanitization", () => {
+  test("create_inline_comment strips @kodiai from body", async () => {
+    let calledBody: string | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          get: async () => ({ data: { head: { sha: "abcdef1234" } } }),
+          createReviewComment: async ({ body }: { body: string }) => {
+            calledBody = body;
+            return {
+              data: {
+                id: 1,
+                html_url: "https://example.test/comment",
+                path: "src/file.ts",
+                line: 10,
+                original_line: 10,
+              },
+            };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    const server = createInlineReviewServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      101,
+      ["kodiai", "claude"],
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      path: "src/file.ts",
+      body: "@kodiai should fix this",
+      line: 10,
+      side: "RIGHT",
+    });
+
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).not.toContain("@kodiai");
+    expect(calledBody!).toContain("kodiai should fix this");
+  });
+});

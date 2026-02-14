@@ -1063,7 +1063,145 @@ describe("Phase 38: Delta Re-Review Sanitizer", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("unexpected section '## Summary'");
   });
+});
 
+// --- Phase 50: Mention sanitization regression tests ---
+
+describe("mention sanitization", () => {
+  test("create_comment strips @kodiai from body", async () => {
+    let calledBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async (params: { body: string }) => {
+            calledBody = params.body;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      ["kodiai", "claude"],
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 1, body: "@kodiai found an issue" });
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).not.toContain("@kodiai");
+    expect(calledBody!).toContain("kodiai found an issue");
+  });
+
+  test("update_comment strips @kodiai from body", async () => {
+    let calledBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async (params: { body: string }) => {
+            calledBody = params.body;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      ["kodiai", "claude"],
+    );
+    const { update } = getToolHandlers(server);
+
+    const result = await update({ commentId: 99, body: "As @kodiai mentioned earlier" });
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).not.toContain("@kodiai");
+    expect(calledBody!).toContain("kodiai mentioned earlier");
+  });
+
+  test("approval review strips @kodiai from body", async () => {
+    let reviewBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async (params: Record<string, unknown>) => {
+            reviewBody = params.body as string;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      ["kodiai", "claude"],
+      undefined,
+      () => {},
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const body = [
+      "<details>",
+      "<summary>kodiai response</summary>",
+      "",
+      "Decision: APPROVE",
+      "Issues: none",
+      "",
+      "</details>",
+    ].join("\n");
+
+    const result = await create({ issueNumber: 10, body });
+    expect(result.isError).toBeUndefined();
+    expect(reviewBody).toBeDefined();
+    expect(reviewBody!).not.toContain("@kodiai");
+  });
+
+  test("create_comment also strips @claude from body", async () => {
+    let calledBody: string | undefined;
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async (params: { body: string }) => {
+            calledBody = params.body;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      ["kodiai", "claude"],
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 1, body: "@claude and @kodiai reviewed this" });
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).not.toContain("@kodiai");
+    expect(calledBody!).not.toContain("@claude");
+    expect(calledBody!).toContain("claude and kodiai reviewed this");
+  });
+});
+
+describe("Phase 38: Delta Re-Review Sanitizer", () => {
   // --- Discrimination ---
 
   test("initial review summary still validated by five-section sanitizer (not delta)", async () => {
