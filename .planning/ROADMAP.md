@@ -90,11 +90,11 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
   3. "Breaking change" keyword in PR body triggers elevated review attention
   4. `[no-review]` in PR title causes the bot to skip auto-review entirely
   5. Keyword parsing results appear in Review Details appendix for transparency
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 42-01: TBD
-- [ ] 42-02: TBD
+- [ ] 42-01-PLAN.md — TDD: PR intent parser (bracket tags, conventional commits, breaking change detection, commit sampling, section builder)
+- [ ] 42-02-PLAN.md — Wire parser into review handler ([no-review] fast check, commit fetching, profile/focus/style overrides, Review Details transparency, conventional commit prompt context)
 
 ### Phase 43: Auto-Profile Selection
 **Goal**: The bot automatically selects an appropriate review depth profile based on PR size and keyword overrides, so small PRs get thorough reviews and large PRs get focused ones
