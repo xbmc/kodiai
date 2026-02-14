@@ -11,12 +11,12 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Milestone:** v0.8 Conversational Intelligence
 **Phase:** 50-publish-path-mention-sanitization-completion
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 2
-**Status:** In progress
+**Status:** Ready to execute
 **Last Activity:** 2026-02-14
 
-**Progress:** [█████░░░░░] 50%
+**Progress:** [██████████] 101%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 | Phase 49-verification-artifacts-for-phases-47-48 P01 | 3 min | 2 tasks | 2 files |
 | Phase 49-verification-artifacts-for-phases-47-48 P02 | 2 min | 2 tasks | 2 files |
 | Phase 50 P01 | 6 min | 2 tasks | 11 files |
+| Phase 50 P02 | 3min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Recent decisions affecting current work:
 - [Phase 49-verification-artifacts-for-phases-47-48]: Treat .planning/v0.8-v0.8-MILESTONE-AUDIT.md as canonical for 7-phase v0.8 audit coverage and keep .planning/v0.8-MILESTONE-AUDIT.md synchronized to prevent drift.
 - [Phase 50]: Use githubApp.getAppSlug() at review handler call sites instead of caching appSlug variable (synchronous, always in scope)
 - [Phase 50]: Sanitize at utility function level (upsertReviewDetailsComment, appendReviewDetailsToSummary) by adding botHandles parameter for DRY publish-path coverage
+- [Phase 50]: Test all 5 MCP publish paths with botHandles and verify @kodiai stripped to kodiai in regression tests
+- [Phase 50]: Update both audit files in sync to prevent drift between canonical and secondary audit
 
 ### Pending Todos
 
@@ -106,7 +109,7 @@ None yet.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14T20:24:25.213Z
-**Stopped At:** Completed 50-01-PLAN.md
+**Last session:** 2026-02-14T20:29:31.282Z
+**Stopped At:** Completed 50-02-PLAN.md
 **Resume File:** None
 **Next action:** Execute 50-02-PLAN.md
