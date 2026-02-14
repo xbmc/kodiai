@@ -1,14 +1,18 @@
 # Technology Stack
 
-**Project:** Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning
-**Researched:** 2026-02-13
+**Project:** Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval
+**Researched:** 2026-02-14
 **Overall Confidence:** HIGH
 
 ## Executive Summary
 
-This milestone adds three capabilities to an existing, mature codebase: (1) language-specific severity rules that distinguish auto-fixable from safety-critical findings, (2) risk-weighted file prioritization for large PRs, and (3) thumbs-down reaction feedback with auto-suppression. The critical finding from this research is that **zero new dependencies are needed**. Every capability can be built using existing libraries, existing SQLite schema patterns, existing diff analysis infrastructure, and existing GitHub API methods already verified in the codebase.
+This milestone adds three capability areas to the existing Kodiai codebase. The critical finding is that **zero new npm dependencies are needed** for any of the three features. Every capability leverages existing infrastructure: Bun's native `Bun.semver` for version comparison, the already-installed `@octokit/rest` for GitHub Advisory API and GitHub Releases API access, the existing Voyage AI embedding provider for multi-signal queries, and the existing SQLite + sqlite-vec stack for adaptive threshold storage.
 
-The "stack" for this milestone is overwhelmingly about **data structures, heuristics, and configuration schema extensions** -- not new libraries. The existing `diff-analysis.ts` already classifies files by language and category. The existing `feedback-sync.ts` already polls reactions via `octokit.rest.reactions.listForPullRequestReviewComment`. The existing `confidence.ts` already scores findings by severity and category. Each new feature extends these foundations with additional logic, not additional dependencies.
+For dependency bump analysis: `Bun.semver` provides `order()` and `satisfies()` natively (20x faster than node-semver). The missing `diff()` function (major/minor/patch classification) is a 10-line pure function on parsed version strings. CVE lookup uses the GitHub Advisory Database API via `octokit.rest.securityAdvisories.listGlobalAdvisories()` already typed in the installed `@octokit/rest@22.0.1`. Changelog fetching uses `octokit.rest.repos.getReleaseByTag()` for GitHub-hosted projects, with a plain `fetch()` fallback for CHANGELOG.md files on GitHub/npm.
+
+For timeout resilience: the executor already has `AbortController`-based timeout enforcement. Progressive review requires publishing partial results before timeout via the existing MCP comment server. No new timeout or chunking library is needed -- the pattern is "check elapsed time between review phases, publish what you have if running low."
+
+For intelligent retrieval: the existing `isolationLayer.retrieveWithIsolation()` already accepts `queryEmbedding`, `topK`, and `distanceThreshold`. Multi-signal queries are a prompt construction change (build better query text from PR title + file paths + diff hunks + language). Adaptive thresholds are a SQLite table tracking retrieval quality over time and adjusting the `distanceThreshold` config value per-repo.
 
 ## Recommended Stack
 
@@ -16,300 +20,536 @@ The "stack" for this milestone is overwhelmingly about **data structures, heuris
 
 | What's Needed | Already Available | Where |
 |---------------|-------------------|-------|
-| Language classification | `EXTENSION_LANGUAGE_MAP` (20 languages) | `src/execution/diff-analysis.ts` |
-| Language-specific rules | `LANGUAGE_GUIDANCE` (9 languages with detailed rules) | `src/execution/review-prompt.ts` |
-| File risk heuristics | `PATH_RISK_SIGNALS`, `CONTENT_RISK_SIGNALS`, `analyzeDiff()` | `src/execution/diff-analysis.ts` |
-| Numstat parsing (lines changed per file) | `parseNumstat()` | `src/execution/diff-analysis.ts` |
-| File category classification | `DEFAULT_FILE_CATEGORIES` with picomatch | `src/execution/diff-analysis.ts` |
-| Git churn data | `git log --numstat` via Bun shell `$` | `src/handlers/review.ts` |
-| Reaction polling | `octokit.rest.reactions.listForPullRequestReviewComment()` | `src/handlers/feedback-sync.ts` |
-| Reaction storage | `feedback_reactions` table with `UNIQUE(repo, comment_id, reaction_id)` | `src/knowledge/store.ts` |
-| Finding-to-comment correlation | `comment_id`, `comment_surface`, `review_output_key` on findings | `src/knowledge/types.ts` |
-| Confidence scoring | `computeConfidence()` with severity/category boosts | `src/knowledge/confidence.ts` |
-| Suppression matching | `matchesSuppression()` with glob/regex patterns | `src/knowledge/confidence.ts` |
-| Configuration schema | Zod schemas with section fallback parsing | `src/execution/config.ts` |
-| Prompt injection | `buildReviewPrompt()` with conditional sections | `src/execution/review-prompt.ts` |
-| Embedding-backed learning | `LearningMemoryStore` + `sqlite-vec` + Voyage AI | `src/learning/memory-store.ts` |
+| Semver comparison | `Bun.semver.order()`, `Bun.semver.satisfies()` | Bun runtime built-in |
+| Semver diff (major/minor/patch) | 10-line pure function parsing `X.Y.Z` | New utility (zero deps) |
+| CVE/advisory lookup | `octokit.rest.securityAdvisories.listGlobalAdvisories()` | `@octokit/rest@22.0.1` (already installed) |
+| Changelog from GitHub Releases | `octokit.rest.repos.getReleaseByTag()` | `@octokit/rest@22.0.1` (already installed) |
+| Changelog from raw files | `fetch()` to GitHub raw content URLs | Bun built-in `fetch` |
+| Dependency manifest detection | `diffAnalysis.riskSignals` includes "Modifies dependency manifest" | `src/execution/diff-analysis.ts` |
+| Timeout enforcement | `AbortController` with `setTimeout` | `src/execution/executor.ts` (line 43-47) |
+| Partial result publishing | MCP comment server `publishReviewComment` tool | `src/execution/mcp/comment-server.ts` |
+| Vector similarity search | `sqlite-vec` with `learning_memory_vec` table | `src/learning/memory-store.ts` |
+| Embedding generation | Voyage AI `embed()` with `inputType: "query"` | `src/learning/embedding-provider.ts` |
+| Distance threshold filtering | `isolationLayer.retrieveWithIsolation()` | `src/learning/isolation.ts` |
+| Configuration schemas | Zod schemas with section fallback | `src/execution/config.ts` |
 
 ### Existing Dependencies (No Version Changes)
 
 | Technology | Version | Purpose | Used For New Features |
 |------------|---------|---------|----------------------|
-| `bun:sqlite` | builtin | Persistent storage | New tables/columns for feedback aggregation and risk scores |
-| `picomatch` | ^4.0.2 | Glob pattern matching | File path matching in language rules and risk signals |
-| `@octokit/rest` | ^22.0.1 | GitHub API | Reaction polling (already used by feedback-sync) |
-| `zod` | ^4.3.6 | Schema validation | Config schema extensions for language rules |
-| `pino` | ^10.3.0 | Structured logging | Feedback loop and risk scoring telemetry |
-| `p-queue` | ^9.1.0 | Concurrency control | Rate-limited reaction sync jobs |
-| `sqlite-vec` | ^0.1.7-alpha.2 | Vector similarity search | Feedback-to-learning-memory integration |
-| `voyageai` | ^0.1.0 | Embedding generation | Thumbs-down finding embedding for suppression retrieval |
+| `@octokit/rest` | ^22.0.1 | GitHub API | Advisory Database API, Releases API for changelog, repo content fetch |
+| `@octokit/webhooks-types` | ^7.6.1 | Type definitions | No new types needed |
+| `zod` | ^4.3.6 | Schema validation | Config extensions for dep analysis, timeout, retrieval |
+| `bun:sqlite` | builtin | Persistent storage | Adaptive threshold tracking, dep analysis cache |
+| `sqlite-vec` | ^0.1.7-alpha.2 | Vector search | Multi-signal query retrieval (same infrastructure) |
+| `voyageai` | ^0.1.0 | Embeddings | Multi-signal query embedding generation |
+| `pino` | ^10.3.0 | Structured logging | Telemetry for all three feature areas |
+| `p-queue` | ^9.1.0 | Concurrency control | No changes needed |
 | `hono` | ^4.11.8 | HTTP framework | No changes needed |
+| `picomatch` | ^4.0.2 | Glob matching | No changes needed |
 
 ## Feature-Specific Stack Details
 
-### Feature 1: Language-Specific Severity Rules
+### Feature 1: Dependency Bump Analysis
 
-**Approach: Prompt-driven enforcement with heuristic classification, NOT linter integration.**
+**Detection: Which files signal a dependency bump?**
 
-Why NOT run linters (ESLint, Ruff, Clippy) programmatically:
+The diff analysis already detects dependency manifest changes (package.json, go.mod, Cargo.toml, requirements.txt, etc.) via path-based risk signals in `src/execution/diff-analysis.ts` (line 145-157). The new feature extends this detection to parse the actual diff content of these files to extract version changes.
 
-| Approach | Complexity | Why Reject |
-|----------|------------|------------|
-| Run ESLint/Ruff/Clippy in workspace | HIGH | Requires installing per-language toolchains in every cloned workspace, managing linter configs per repo, handling version mismatches, and processing structured output. Adds 10-30s per review. |
-| Parse `.eslintrc`/`pyproject.toml` from repo | MEDIUM | Config parsing for 9+ linters is brittle, and the auto-fixable ruleset changes across versions. |
-| Maintain static auto-fixable rule database | MEDIUM | Requires constant maintenance as linters evolve. Becomes stale within months. |
-| **Classify via known patterns in prompt** | **LOW** | Extend existing `LANGUAGE_GUIDANCE` with auto-fixable vs safety-critical annotations. Let Claude's training knowledge determine what is auto-fixable. |
+**Semver comparison: Use Bun.semver (no library needed)**
 
-**Recommended approach:** Extend the existing `LANGUAGE_GUIDANCE` record in `review-prompt.ts` to partition rules into two tiers:
+Bun provides native semver with `Bun.semver.order()` and `Bun.semver.satisfies()`, which are 20x faster than the `semver` npm package. The one missing function is `diff()` to classify a version change as major/minor/patch/prerelease. This is a trivial pure function:
 
-1. **Auto-fixable / formatter-territory**: Issues that linters or formatters can fix automatically (unused imports, formatting, missing semicolons, import ordering). These get **suppressed by default** or downgraded to MINOR.
-2. **Safety-critical / language-specific**: Issues unique to the language's safety model (Go unchecked errors, Rust `.unwrap()` in production, C buffer overflows, Java unclosed resources). These get **upgraded to at minimum MAJOR**.
-
-**What to build:**
-- A `LanguageSeverityRule` type with `language`, `pattern`, `tier` ("auto-fixable" | "safety-critical"), and `severityOverride`
-- A `LANGUAGE_SEVERITY_RULES` registry (static data, no external deps)
-- Extension to `buildLanguageGuidanceSection()` to emit tiered instructions
-- Config surface: `review.languageRules.suppressAutoFixable: boolean` (default: true)
-- Config surface: `review.languageRules.enforceSafetyCritical: boolean` (default: true)
-
-**What NOT to build:**
-- Do NOT shell out to linters. The workspace may not have toolchains installed.
-- Do NOT parse linter config files. Config formats vary across versions.
-- Do NOT maintain an external database of fixable rules. Use prompt instructions instead.
-
-**Confidence: HIGH** -- This extends existing patterns (`LANGUAGE_GUIDANCE`, `buildSeverityClassificationGuidelines()`) with zero new dependencies.
-
-### Feature 2: Risk-Weighted File Prioritization for Large PRs
-
-**Approach: Heuristic risk scoring using existing git data, NOT ML models or AST analysis.**
-
-Why NOT use complexity analysis libraries:
-
-| Approach | Complexity | Why Reject |
-|----------|------------|------------|
-| Cyclomatic complexity (ts-cyclomatic-complexity, CodeMetrics CLI) | HIGH | Requires parsing AST for every changed file across all languages. Most tools are TypeScript/JavaScript-only. Adds 5-15s per review. |
-| ML-based risk prediction | VERY HIGH | Requires training data, model serving infrastructure. Massive overengineering for this use case. |
-| **Heuristic scoring from git metadata** | **LOW** | Lines changed, file path signals, category, churn history -- all available from `git diff --numstat` and existing `analyzeDiff()`. |
-
-**Recommended risk scoring formula:**
-
-```
-fileRisk = (linesChangedWeight * normalizedLinesChanged)
-         + (pathRiskWeight * pathRiskSignalCount)
-         + (categoryWeight * categoryRiskMultiplier)
-         + (churnWeight * recentChurnCount)
-```
-
-Where:
-- `normalizedLinesChanged` = `(added + removed) / maxLinesInPR` (0-1 range)
-- `pathRiskSignalCount` = count of `PATH_RISK_SIGNALS` matching this file (already computed)
-- `categoryRiskMultiplier` = source:1.0, infra:0.8, config:0.3, test:0.2, docs:0.1
-- `recentChurnCount` = number of commits touching this file in recent history (from `git log --follow --oneline -- <file> | wc -l`)
-
-**What to build:**
-- A `computeFileRiskScore()` function in `diff-analysis.ts`
-- Per-file numstat parsing (extend existing `parseNumstat()` to return per-file data)
-- A `prioritizeFiles()` function that sorts files by risk score and applies budget allocation
-- Budget allocation: for large PRs (>200 files or >5000 lines), allocate comment slots proportionally to risk score
-- Extension to `buildDiffAnalysisSection()` to communicate prioritization to the prompt
-- Config surface: `review.largePR.strategy: "risk-weighted" | "equal"` (default: "risk-weighted")
-- Config surface: `review.largePR.maxAnalysisFiles: number` (default: 200)
-
-**Git churn data collection:**
 ```typescript
-// Already available: Bun shell $ is used extensively in review.ts
-const churnResult = await $`git -C ${workspaceDir} log --oneline --follow -- ${filePath} | wc -l`.quiet().nothrow();
+type SemverDiffType = "major" | "minor" | "patch" | "prerelease" | null;
+
+function semverDiff(from: string, to: string): SemverDiffType {
+  const parse = (v: string) => {
+    const clean = v.replace(/^v/, "");
+    const [core, pre] = clean.split("-", 2);
+    const parts = core.split(".").map(Number);
+    return { major: parts[0], minor: parts[1], patch: parts[2], pre };
+  };
+  const a = parse(from);
+  const b = parse(to);
+  if (a.major !== b.major) return "major";
+  if (a.minor !== b.minor) return "minor";
+  if (a.patch !== b.patch) return "patch";
+  if (a.pre !== b.pre) return "prerelease";
+  return null;
+}
 ```
 
-For large PRs, batch this as:
+Why NOT use the `semver` npm package (7.7.x, 50KB): We need exactly one function (`diff`) that is a 10-line string split. Adding a 50KB dependency with 30+ functions for a single trivial operation is unjustified. `Bun.semver.order()` handles all comparison needs natively.
+
+**CVE lookup: Use GitHub Advisory Database API (already in Octokit)**
+
+The `@octokit/rest@22.0.1` already includes typed endpoints for the GitHub Advisory Database:
+
 ```typescript
-// Single git command for all files' churn counts
-const logResult = await $`git -C ${workspaceDir} log --name-only --pretty=format: --since="90 days ago"`.quiet().nothrow();
+// List advisories for a specific npm package
+const { data: advisories } = await octokit.rest.securityAdvisories.listGlobalAdvisories({
+  ecosystem: "npm",          // npm, pip, go, rubygems, maven, nuget, rust, etc.
+  affects: "lodash@4.17.20", // package@version format
+  severity: "medium,high,critical",
+  type: "reviewed",          // Only reviewed (not unreviewed/malware)
+  per_page: 10,
+});
+
+// Each advisory contains: ghsa_id, cve_id, summary, description,
+// severity, vulnerabilities[].package, vulnerabilities[].vulnerable_version_range,
+// vulnerabilities[].patched_versions
 ```
 
-**What NOT to build:**
-- Do NOT add AST parsing libraries. Too heavy for a review tool.
-- Do NOT build per-language complexity analyzers. Cyclomatic complexity is a distraction -- lines changed + path signals are stronger predictors of review-worthy files.
-- Do NOT add ML models for risk prediction. Heuristics are sufficient and debuggable.
+Rate limit: Uses the standard REST rate limit (5000/hour), NOT the search rate limit. The advisory endpoint supports filtering by ecosystem and package, so a single call per dependency bump is sufficient.
 
-**Confidence: HIGH** -- Uses only `git` commands and extends existing `analyzeDiff()` infrastructure.
+Why NOT use the OSV.dev API: GitHub Advisory Database is the upstream source for npm advisories. Using it directly via the already-installed Octokit avoids adding a new HTTP client, new types, and another API to monitor. OSV.dev aggregates FROM GitHub Advisory Database for npm.
 
-### Feature 3: Thumbs-Down Reaction Feedback with Auto-Suppression
+Why NOT use `npm audit` / `bun audit`: These require a full lockfile and operate on the entire dependency tree. We need per-package version-specific advisory lookup, not a full audit.
 
-**Approach: Extend existing feedback-sync polling pipeline, NOT webhooks.**
+**Changelog fetching: Use GitHub Releases API + raw content fetch (already in Octokit)**
 
-**Critical verified constraint:** GitHub does NOT emit webhook events for reactions. This was verified against official GitHub webhook documentation (February 2026) and confirmed by the existing `feedback-sync.ts` which already uses a polling approach.
+Strategy with prioritized fallback:
 
-The existing system already has:
-1. `feedback_reactions` table with `UNIQUE(repo, comment_id, reaction_id)` -- idempotent storage
-2. `createFeedbackSyncHandler()` that polls reactions on PR activity events
-3. `isHumanThumbReaction()` filter that excludes bots
-4. `recordFeedbackReactions()` with `INSERT OR IGNORE` for dedup
-5. Learning memory store with `outcome` field that already supports `"thumbs_down"`
+```typescript
+// Priority 1: GitHub Releases (most packages publish release notes)
+const { data: release } = await octokit.rest.repos.getReleaseByTag({
+  owner: "lodash",
+  repo: "lodash",
+  tag: `v${version}`, // or just version
+});
+// release.body contains markdown changelog
 
-**What to build (the NEW part -- auto-suppression from feedback):**
+// Priority 2: Fetch CHANGELOG.md from repo
+const response = await fetch(
+  `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/CHANGELOG.md`
+);
+// Parse to extract section for target version
 
-1. **Feedback aggregation query:** Count thumbs-down reactions per finding pattern (severity + category + title fingerprint) across a repo's history. When a pattern accumulates N thumbs-down reactions (configurable threshold, default 3), it becomes a candidate for auto-suppression.
-
-2. **Feedback-derived suppression rules:** A new table or materialized query that produces suppression patterns from feedback aggregation:
-```sql
--- Aggregate thumbs-down by finding pattern
-SELECT
-  severity, category,
-  -- FNV-1a fingerprint of normalized title (reuse existing fingerprintFindingTitle)
-  title, COUNT(*) as thumbs_down_count
-FROM feedback_reactions
-WHERE repo = $repo
-  AND reaction_content = '-1'
-  AND created_at >= datetime('now', '-90 days')
-GROUP BY severity, category, title
-HAVING COUNT(*) >= $threshold
+// Priority 3: npm registry metadata (has repository URL, homepage)
+const npmMeta = await fetch(`https://registry.npmjs.org/${packageName}`);
+// Extract repository.url to find the GitHub repo
 ```
 
-3. **Integration with existing suppression pipeline:** Feed feedback-derived suppressions into the existing `matchesSuppression()` check alongside config-defined suppressions. Mark these as `suppressionSource: "feedback"` to distinguish from manual config.
+The repo owner/name for npm packages comes from the npm registry metadata (`repository.url` field), which is a single unauthenticated `fetch()` call per package. No new dependency needed.
 
-4. **Learning memory feedback loop:** When a thumbs-down is recorded, update the learning memory outcome to `"thumbs_down"`. When similar findings are retrieved during context-aware review, the `outcome: "thumbs_down"` signal tells the model this pattern was previously rejected by humans.
+**Package manifest diff parsing: Pure functions, no library**
 
-**Schema additions:**
+Parsing `package.json` diffs to extract dependency version changes is JSON diffing:
+
+```typescript
+// For package.json: parse old and new versions from git diff
+// The diff is already available in the PR files -- just need to parse
+// the +/- lines in the dependency sections
+type DependencyChange = {
+  name: string;
+  from: string;
+  to: string;
+  diffType: SemverDiffType;
+  section: "dependencies" | "devDependencies" | "peerDependencies";
+};
+```
+
+For non-JSON manifests (go.mod, Cargo.toml, requirements.txt), regex-based parsers handle the well-defined formats. These are formal grammars, not natural language.
+
+**What NOT to add for dependency bump analysis:**
+
+| Do NOT Add | Rationale |
+|------------|-----------|
+| `semver` npm package | `Bun.semver` handles comparison; `diff()` is a 10-line function |
+| `npm-fetch-changelog` | Does too much (full version range iteration); we need a single version lookup |
+| `osv-scanner` or OSV client | GitHub Advisory Database is the primary source for npm; already in Octokit |
+| `lockfile-diff` | We parse specific manifest files from the PR diff, not lockfiles |
+| `snyk` or `sonatype` APIs | Vendor-locked, requires API keys, GitHub Advisory Database is free and sufficient |
+| Dependabot integration | Dependabot creates PRs; we analyze existing PRs -- different concern |
+
+**Confidence: HIGH** -- Bun.semver verified running in current runtime. Octokit advisory types verified in node_modules. GitHub Releases API verified in Octokit types.
+
+---
+
+### Feature 2: Timeout/Chunked Review Resilience
+
+**Current state of timeout handling:**
+
+The executor (`src/execution/executor.ts`, line 39-47) already implements `AbortController`-based timeout with configurable `timeoutSeconds` (default 600s = 10 minutes). When timeout fires, the abort signal kills the Agent SDK query and the handler posts an error comment (line 2279-2293 of `review.ts`).
+
+The problem: on timeout, ALL review work is lost. Zero output is published.
+
+**Solution: Progressive review with checkpoint publishing**
+
+The approach is NOT chunking the review into separate Agent SDK calls (which would lose context). Instead:
+
+1. **Time budget awareness**: Pass remaining time budget to the review prompt so the LLM can prioritize.
+2. **Checkpoint publishing**: Before the Agent SDK call, set up a "safety net" timer that fires at ~80% of timeout. If the review hasn't completed by then, the handler checks if any partial output was published via MCP tools and, if not, publishes a summary comment noting the review was truncated.
+3. **File prioritization**: The existing large PR file triage (`triageFilesByRisk()` in `src/lib/file-risk-scorer.ts`) already prioritizes high-risk files. For timeout resilience, ensure the prompt instructs the LLM to review high-risk files first and publish findings incrementally.
+
+```typescript
+// Existing infrastructure -- no new deps:
+// 1. AbortController timeout (executor.ts)
+// 2. MCP comment server can publish at any time during execution
+// 3. File risk scoring already prioritizes files
+// 4. Large PR triage already limits review scope
+
+// NEW: Safety net timer at 80% of timeout
+const safetyNetMs = timeoutMs * 0.8;
+const safetyNetTimer = setTimeout(async () => {
+  if (!published) {
+    // Post partial results or "review truncated" comment
+    await postTruncatedReviewComment(octokit, { owner, repo, prNumber });
+  }
+}, safetyNetMs);
+```
+
+**What about chunked/progressive review across multiple Agent SDK calls?**
+
+Evaluated and rejected for v0.9. Running multiple sequential Agent SDK calls would:
+1. Lose cross-file context that makes reviews valuable
+2. Multiply cost (each call has system prompt overhead)
+3. Add significant complexity for incremental context passing
+4. Create race conditions with the existing idempotency system
+
+The simpler approach for v0.9: make the single review call more resilient by (a) being time-aware in the prompt, (b) publishing incrementally via MCP tools, and (c) having a safety net for truncated reviews.
+
+**What NOT to add for timeout resilience:**
+
+| Do NOT Add | Rationale |
+|------------|-----------|
+| Message queue (BullMQ, etc.) | Overkill; a setTimeout callback is sufficient for safety net |
+| Streaming response parser | Agent SDK handles streaming; we need checkpoint publishing, not stream parsing |
+| Worker threads | Review execution is already async; parallelism doesn't help single-PR review |
+| External scheduler (cron) | Timeout is per-request, not scheduled |
+| Circuit breaker library (opossum, etc.) | The fail-open pattern with error comments is already the circuit breaker |
+
+**Confidence: HIGH** -- All building blocks exist. This is an orchestration change using existing infrastructure.
+
+---
+
+### Feature 3: Intelligent Retrieval Improvements
+
+**Current retrieval pipeline (verified in codebase):**
+
+1. Query text construction: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}` (review.ts line 1431)
+2. Embedding generation: `embeddingProvider.generate(queryText, "query")` via Voyage AI (embedding-provider.ts)
+3. Vector search: `isolationLayer.retrieveWithIsolation()` with `distanceThreshold: 0.3` (default)
+4. Result filtering: by distance threshold, repo isolation, deduplication
+5. Context injection: matched findings injected into review prompt
+
+**Improvement 1: Multi-signal query construction**
+
+Currently the query text is just PR title + file paths. This misses important signals:
+
+```typescript
+// CURRENT (review.ts:1431)
+const queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`;
+
+// IMPROVED: Multi-signal query
+function buildRetrievalQuery(params: {
+  prTitle: string;
+  reviewFiles: string[];
+  diffAnalysis: DiffAnalysis;
+  prLabels: string[];
+  languages: string[]; // from file extensions
+}): string {
+  const signals: string[] = [];
+
+  // Signal 1: PR title (semantic intent)
+  signals.push(params.prTitle);
+
+  // Signal 2: Top risk files (most relevant paths)
+  const topFiles = params.reviewFiles.slice(0, 10);
+  signals.push(topFiles.join("\n"));
+
+  // Signal 3: Risk signals (detected patterns)
+  if (params.diffAnalysis.riskSignals.length > 0) {
+    signals.push(params.diffAnalysis.riskSignals.join(", "));
+  }
+
+  // Signal 4: Languages (for language-specific patterns)
+  if (params.languages.length > 0) {
+    signals.push(`Languages: ${params.languages.join(", ")}`);
+  }
+
+  // Signal 5: Categories from labels
+  if (params.prLabels.length > 0) {
+    signals.push(`Labels: ${params.prLabels.join(", ")}`);
+  }
+
+  return signals.join("\n");
+}
+```
+
+This is a pure function change with zero new dependencies. The embedding provider already handles arbitrary text input.
+
+**Improvement 2: Adaptive distance thresholds**
+
+Currently `distanceThreshold` is a static config value (default 0.3). Adaptive thresholds track retrieval quality per-repo and adjust:
+
 ```sql
--- Add to existing feedback_reactions table (or new derived table)
-CREATE TABLE IF NOT EXISTS feedback_suppression_rules (
+-- Track retrieval outcome quality
+CREATE TABLE IF NOT EXISTS retrieval_quality_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   repo TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  category TEXT NOT NULL,
-  title_fingerprint TEXT NOT NULL,
-  title_sample TEXT NOT NULL,
-  thumbs_down_count INTEGER NOT NULL,
-  thumbs_up_count INTEGER NOT NULL DEFAULT 0,
-  net_sentiment INTEGER NOT NULL, -- thumbs_up - thumbs_down
-  last_updated TEXT NOT NULL DEFAULT (datetime('now')),
-  auto_suppress INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(repo, severity, category, title_fingerprint)
+  query_hash TEXT NOT NULL,
+  distance_threshold REAL NOT NULL,
+  results_returned INTEGER NOT NULL,
+  results_useful INTEGER DEFAULT 0,  -- updated by feedback
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Computed adaptive threshold per repo
+-- Simple approach: if retrievals at 0.3 consistently return 0 useful results,
+-- tighten to 0.25. If they consistently return useful results, loosen to 0.35.
 ```
 
-**Config surface:**
-- `review.feedback.autoSuppressThreshold: number` (default: 3) -- thumbs-down count to trigger auto-suppression
-- `review.feedback.autoSuppressEnabled: boolean` (default: false) -- opt-in to start
-- `review.feedback.autoSuppressWindow: number` (default: 90) -- days of feedback history to consider
+The adaptive logic is a simple moving average over the last N retrievals per repo, stored in the existing SQLite database. No ML, no optimization library -- just `AVG(results_useful)` over a sliding window.
 
-**What NOT to build:**
-- Do NOT add a reaction webhook handler. GitHub does not support reaction webhooks.
-- Do NOT build real-time reaction processing. Polling on PR activity events is sufficient.
-- Do NOT auto-suppress CRITICAL findings regardless of feedback count. Safety override.
+**Improvement 3: Language-aware boosting**
 
-**Confidence: HIGH** -- Extends existing `feedback-sync.ts` and `knowledge/store.ts` with zero new dependencies.
+When retrieving prior findings, boost results that match the current PR's primary language(s). This is a post-retrieval re-ranking step:
 
-## Alternatives Considered
-
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| Auto-fixable detection | Prompt-driven classification | ESLint/Ruff programmatic API | Requires per-language toolchain installation in workspace; 10-30s overhead; brittle config parsing |
-| File risk scoring | Git heuristics (lines + path signals + churn) | Cyclomatic complexity libraries | Language-specific tools, TypeScript-only, AST parsing overhead; lines changed is a better predictor for PR review |
-| File risk scoring | Git heuristics | ML-based risk model | Massive overengineering; no training data; heuristics are sufficient and debuggable |
-| Reaction capture | Polling on PR events (existing pattern) | Webhook-based reaction handler | GitHub does not emit reaction webhooks |
-| Feedback auto-suppression | SQL aggregation + threshold | NLP-based sentiment analysis | Over-complex; thumbs-up/down is already structured sentiment data |
-| Language rule storage | Static TypeScript registry | External database or config file | Rules change infrequently; static data is simpler, testable, and version-controlled |
-
-## Installation
-
-```bash
-# No new dependencies required.
-# The entire milestone is built on existing stack.
+```typescript
+function rerankByLanguageAffinity(
+  results: RetrievalResult[],
+  prLanguages: Set<string>,
+): RetrievalResult[] {
+  return results.sort((a, b) => {
+    const aLangMatch = prLanguages.has(extractLanguage(a.record.filePath)) ? 0 : 0.05;
+    const bLangMatch = prLanguages.has(extractLanguage(b.record.filePath)) ? 0 : 0.05;
+    return (a.distance + aLangMatch) - (b.distance + bLangMatch);
+  });
+}
 ```
+
+This is a pure function -- no new dependencies. Language detection from file extensions is trivial and already implicit in the codebase via picomatch patterns.
+
+**What NOT to add for intelligent retrieval:**
+
+| Do NOT Add | Rationale |
+|------------|-----------|
+| Second embedding model | One Voyage AI model is sufficient; multi-model adds complexity and cost |
+| Re-ranking model (Cohere, etc.) | Simple heuristic re-ranking (language affinity) is sufficient for v0.9 |
+| Full-text search engine (MeiliSearch, Typesense) | sqlite-vec handles the vector search; adding FTS is premature |
+| Graph database for relationships | SQLite relational queries handle the simple relationships needed |
+| Feature store (Feast, etc.) | Overkill; a SQLite table for threshold tracking is sufficient |
+| Learning-to-rank library | The retrieval set is small (topK=5); sophisticated ranking is unnecessary |
+
+**Confidence: HIGH** -- All improvements operate on existing infrastructure. Multi-signal query is a string construction change. Adaptive thresholds are a SQLite table + simple math. Language boosting is a sort function.
+
+---
+
+## Database Schema Additions
+
+### New Tables
+
+```sql
+-- Dependency advisory cache (Feature 1)
+-- Caches GitHub Advisory Database lookups per package@version
+CREATE TABLE IF NOT EXISTS dep_advisory_cache (
+  ecosystem TEXT NOT NULL,           -- npm, pip, go, etc.
+  package_name TEXT NOT NULL,
+  package_version TEXT NOT NULL,
+  advisories_json TEXT NOT NULL,     -- JSON array of advisory summaries
+  has_advisories INTEGER NOT NULL DEFAULT 0,
+  cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (ecosystem, package_name, package_version)
+);
+
+-- Retrieval quality tracking (Feature 3)
+-- Tracks whether retrieved memories were useful for adaptive thresholds
+CREATE TABLE IF NOT EXISTS retrieval_quality_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  distance_threshold REAL NOT NULL,
+  results_returned INTEGER NOT NULL,
+  results_cited INTEGER DEFAULT 0,   -- how many retrieved findings appeared in final review
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rql_repo ON retrieval_quality_log(repo);
+```
+
+### Schema Changes to Existing Tables
+
+**NONE.** All three features work with existing table structures plus the two new tables above.
+
+## Configuration Schema Extensions
+
+```yaml
+# New config sections for v0.9
+review:
+  # Dependency bump analysis (Feature 1)
+  dependencyAnalysis:
+    enabled: true                # Default: true
+    ecosystems:                  # Which ecosystems to analyze
+      - npm
+      - pip
+      - go
+      - rust
+    advisoryLookup: true         # Look up CVEs for bumped packages
+    changelogFetch: true         # Fetch changelog/release notes
+    maxDepsToAnalyze: 10         # Skip analysis if >10 deps changed (likely lockfile churn)
+
+  # Timeout resilience (Feature 2)
+  timeout:
+    safetyNetPercent: 80         # Publish partial results at this % of timeout
+    truncatedReviewEnabled: true # Post "review truncated" comment on timeout
+
+# Knowledge section extensions (Feature 3)
+knowledge:
+  retrieval:
+    # Existing fields (unchanged)
+    enabled: true
+    topK: 5
+    distanceThreshold: 0.3
+    maxContextChars: 2000
+    # New fields
+    adaptiveThreshold: true      # Adjust distanceThreshold per-repo based on quality
+    multiSignalQuery: true       # Use enhanced query construction
+    languageBoost: 0.05          # Distance penalty for language mismatch
+```
+
+## API Rate Limit Impact
+
+| Feature | API Calls | Rate Limit | Mitigation |
+|---------|-----------|------------|------------|
+| Advisory lookup | 1 per changed dependency (max 10) | 5000/hour (REST) | Cache 24h per package@version; cap at maxDepsToAnalyze |
+| Changelog fetch (GitHub Releases) | 1 per changed dependency | 5000/hour (REST) | Cache; only for major/minor bumps |
+| Changelog fetch (npm registry) | 1 per package needing repo URL | No auth needed | Cache repo URL indefinitely |
+| Changelog fetch (raw CHANGELOG.md) | 1 per package (fallback) | Unauthenticated or REST | Only when GitHub Release not found |
+| Timeout safety net | 0 additional calls | N/A | Uses existing MCP publish path |
+| Multi-signal query | 1 Voyage AI call (same as today) | Voyage AI rate limit | Same call, different input text |
+| Adaptive threshold | 0 additional calls | N/A | Local SQLite reads/writes only |
+
+**Worst case per review with dep bumps:** ~20 additional REST API calls (10 advisory + 10 changelog). With caching, subsequent reviews of the same dependencies cost 0 calls. All calls are fail-open.
 
 ## Integration Points with Existing Stack
 
 ### Where Each Feature Connects
 
 ```
-Feature 1: Language Rules
-  Config:     src/execution/config.ts       -- add review.languageRules schema
-  Rules:      src/execution/review-prompt.ts -- extend LANGUAGE_GUIDANCE with tiers
-  Prompt:     src/execution/review-prompt.ts -- buildLanguageGuidanceSection() enhancement
-  Scoring:    src/knowledge/confidence.ts    -- boost/penalty for language-specific findings
+Feature 1: Dependency Bump Analysis
+  Detection:   src/execution/diff-analysis.ts     -- detect dep manifest changes (EXISTING signal)
+  Parser:      src/lib/dep-bump-parser.ts (new)    -- parse version changes from diff hunks
+  Advisory:    src/lib/advisory-lookup.ts (new)    -- GitHub Advisory Database queries
+  Changelog:   src/lib/changelog-fetch.ts (new)    -- GitHub Releases + raw file fetch
+  Prompt:      src/execution/review-prompt.ts      -- inject dep analysis context section
+  Cache:       src/knowledge/store.ts              -- dep_advisory_cache table
+  Config:      src/execution/config.ts             -- dependencyAnalysis schema
 
-Feature 2: Large PR Intelligence
-  Analysis:   src/execution/diff-analysis.ts -- add computeFileRiskScore(), prioritizeFiles()
-  Prompt:     src/execution/review-prompt.ts -- buildDiffAnalysisSection() with priority annotations
-  Handler:    src/handlers/review.ts         -- apply file budget before prompt construction
-  Config:     src/execution/config.ts        -- add review.largePR schema
+Feature 2: Timeout Resilience
+  Executor:    src/execution/executor.ts           -- safety net timer at 80% timeout
+  Handler:     src/handlers/review.ts              -- truncated review comment posting
+  Prompt:      src/execution/review-prompt.ts      -- time budget awareness section
+  MCP:         src/execution/mcp/comment-server.ts -- incremental publishing (EXISTING)
+  Config:      src/execution/config.ts             -- timeout.safetyNetPercent schema
 
-Feature 3: Feedback Auto-Suppression
-  Sync:       src/handlers/feedback-sync.ts  -- already exists, extend with aggregation trigger
-  Store:      src/knowledge/store.ts         -- add feedback_suppression_rules table + queries
-  Types:      src/knowledge/types.ts         -- add FeedbackSuppressionRule type
-  Confidence: src/knowledge/confidence.ts    -- integrate feedback suppressions into matchesSuppression()
-  Learning:   src/learning/memory-store.ts   -- update outcome on thumbs-down
-  Handler:    src/handlers/review.ts         -- load feedback suppressions alongside config suppressions
-  Config:     src/execution/config.ts        -- add review.feedback schema
+Feature 3: Intelligent Retrieval
+  Query:       src/handlers/review.ts (line 1431)  -- replace simple query with multi-signal
+  Isolation:   src/learning/isolation.ts           -- no changes needed (accepts any embedding)
+  Reranker:    src/learning/reranker.ts (new)      -- language-aware post-retrieval boosting
+  Threshold:   src/learning/adaptive-threshold.ts (new) -- per-repo threshold tracking
+  Store:       src/knowledge/store.ts              -- retrieval_quality_log table
+  Config:      src/execution/config.ts             -- retrieval schema extensions
 ```
 
-### Data Flow for Feedback Loop
+### Data Flow
 
 ```
-1. Review publishes inline comment with finding
-2. Human reacts with thumbs-down on comment
-3. Next PR activity triggers feedback-sync handler (existing)
-4. Sync polls reactions, stores in feedback_reactions table (existing)
-5. Aggregation query computes thumbs-down count per pattern (NEW)
-6. If count >= threshold, pattern added to feedback_suppression_rules (NEW)
-7. Next review loads feedback suppressions alongside config suppressions (NEW)
-8. Finding matching pattern is suppressed or downgraded (NEW)
-9. Learning memory updated with thumbs_down outcome (NEW)
-10. Future retrieval context shows pattern was rejected (existing retrieval)
+PR webhook arrives
+  |
+  +-- Diff analysis detects "Modifies dependency manifest" risk signal (EXISTING)
+  |
+  +-- IF dependency manifest changed:
+  |     +-- Parse diff hunks for package.json/go.mod/etc. to extract version changes
+  |     +-- For each changed dep (up to maxDepsToAnalyze):
+  |     |     +-- Classify bump type via semverDiff() (major/minor/patch)
+  |     |     +-- Lookup CVEs via GitHub Advisory API (cached)
+  |     |     +-- Fetch changelog via GitHub Releases API (cached, major/minor only)
+  |     +-- Build dependency analysis context section for prompt
+  |
+  +-- Build multi-signal retrieval query (Feature 3)
+  |     +-- Embed with Voyage AI (same call, richer text)
+  |     +-- Retrieve via isolation layer with adaptive threshold
+  |     +-- Rerank by language affinity
+  |
+  +-- Set up safety net timer at 80% of timeout (Feature 2)
+  |
+  +-- Execute review via Agent SDK (EXISTING pipeline)
+  |     +-- Prompt includes dep analysis context + retrieval context
+  |     +-- LLM reviews files in risk-priority order (EXISTING)
+  |     +-- LLM publishes findings via MCP tools (EXISTING)
+  |
+  +-- IF safety net fires before completion:
+  |     +-- Post truncated review comment with partial findings
+  |
+  +-- After completion: log retrieval quality for adaptive threshold (Feature 3)
 ```
+
+## Alternatives Considered
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Semver comparison | `Bun.semver` (native) | `semver` npm package (7.7.x) | 50KB for functions Bun provides natively; only need trivial `diff()` |
+| CVE lookup | GitHub Advisory Database API | OSV.dev API | GitHub Advisory DB is upstream source for npm; already in Octokit |
+| CVE lookup | GitHub Advisory Database API | Snyk API | Vendor-locked, requires separate API key, rate-limited |
+| Changelog fetch | GitHub Releases API + raw fetch | `npm-fetch-changelog` library | Library iterates all versions; we need single-version lookup |
+| Changelog fetch | GitHub Releases API | npm registry changelog field | npm registry doesn't have changelog; only has repository URL |
+| Timeout handling | Safety net timer + truncated comment | Chunked multi-call review | Multi-call loses cross-file context, multiplies cost |
+| Timeout handling | Safety net timer | External job queue (BullMQ) | Massive complexity for a setTimeout callback |
+| Retrieval improvement | Multi-signal query text | Multiple embedding queries merged | Single query is cheaper; Voyage AI handles multi-signal text well |
+| Adaptive threshold | SQLite moving average | ML-based threshold optimization | Sliding window average is debuggable; ML is opaque for 5 data points |
+| Language boosting | Post-retrieval distance penalty | Pre-retrieval language filter | Pre-filtering eliminates potentially relevant cross-language findings |
 
 ## What NOT to Add (Avoiding Bloat)
 
 | Do NOT Add | Rationale |
 |------------|-----------|
-| ESLint / Ruff / Clippy as runtime deps | Would require per-language toolchains in workspace; Kodiai reviews repos it does not own |
-| AST parsing libraries (tree-sitter, babel, etc.) | Cyclomatic complexity is not needed; lines changed + path signals are better predictors |
-| External vector DB (Pinecone, Qdrant) | sqlite-vec handles the scale; feedback patterns are per-repo, not cross-tenant |
-| External message queue (Kafka, NATS) | Existing p-queue + SQLite job tracking is sufficient |
-| NLP/sentiment analysis libs | Thumbs-up/down is already structured binary sentiment |
-| New HTTP client libraries | Bun native fetch + existing Octokit handles everything |
-| Database migration framework | Continue additive SQL in store.ts; existing pattern is proven |
-| Additional embedding providers | Voyage AI is sufficient; single-provider simplicity |
-| `linguist-languages` package | Existing `EXTENSION_LANGUAGE_MAP` covers 20 languages already |
+| `semver` npm package | Bun.semver handles comparison; diff() is 10 lines |
+| `npm-fetch-changelog` | Over-fetches; we need single version lookup |
+| `osv-scanner` / OSV client | GitHub Advisory DB is the primary source, already in Octokit |
+| `lockfile-diff` | We parse manifest diffs, not lockfile diffs |
+| Snyk/Sonatype SDKs | Vendor-locked, separate API keys |
+| BullMQ / job queue | setTimeout is sufficient for safety net |
+| Redis | SQLite handles the caching and threshold tracking |
+| Cohere / re-ranking model | Heuristic re-ranking is sufficient for small result sets |
+| MeiliSearch / Typesense | sqlite-vec already handles vector search |
+| Second embedding model | One Voyage AI model is sufficient |
+| Worker threads | Review execution is async; parallelism doesn't help |
 
 ## Version Compatibility
 
 | Component | Compatible With | Notes |
 |-----------|-----------------|-------|
-| All new code | Bun 1.3.8+ | Runtime already installed; all features use Bun builtins |
-| New SQLite tables | `bun:sqlite` WAL mode | Additive schema changes; no migration framework needed |
-| Config extensions | `zod@4.3.6` | Same schema validation pattern as existing config |
-| Reaction API calls | `@octokit/rest@22.0.1` | Methods already verified in `feedback-sync.ts` |
-| Git commands | `git` CLI via `Bun.$` | Same pattern as existing `collectDiffContext()` |
+| `Bun.semver` | Bun 1.1+ | Available since Bun 1.0.11; tested in current runtime |
+| Advisory API | `@octokit/rest@22.0.1` | `securityAdvisories.listGlobalAdvisories()` typed |
+| Releases API | `@octokit/rest@22.0.1` | `repos.getReleaseByTag()`, `repos.listReleases()` typed |
+| New SQLite tables | `bun:sqlite` WAL mode | Additive tables only; no schema changes to existing |
+| Config extensions | `zod@4.3.6` | Same schema patterns as existing config |
+| Embedding generation | `voyageai@0.1.0` | Same `embed()` call, different input text |
 
 ## Sources
 
-### Primary (HIGH confidence -- verified in codebase)
-- `src/execution/diff-analysis.ts` -- `EXTENSION_LANGUAGE_MAP`, `PATH_RISK_SIGNALS`, `analyzeDiff()`, `parseNumstat()`
-- `src/execution/review-prompt.ts` -- `LANGUAGE_GUIDANCE`, `buildLanguageGuidanceSection()`, `buildDiffAnalysisSection()`
-- `src/handlers/feedback-sync.ts` -- reaction polling pipeline, `isHumanThumbReaction()`, idempotent storage
-- `src/knowledge/store.ts` -- `feedback_reactions` table, `UNIQUE(repo, comment_id, reaction_id)`, `INSERT OR IGNORE`
-- `src/knowledge/confidence.ts` -- `computeConfidence()`, `matchesSuppression()`, severity/category boosts
-- `src/knowledge/types.ts` -- `FeedbackReaction`, `FindingRecord` with `commentId`/`commentSurface`
-- `src/learning/types.ts` -- `MemoryOutcome` includes `"thumbs_down"`
-- `src/execution/config.ts` -- Zod schema with section fallback parsing
-- `src/handlers/review.ts` -- full review pipeline, finding extraction, suppression application
+### Primary (HIGH confidence -- verified in codebase and runtime)
+- `src/execution/diff-analysis.ts` (line 145-157) -- dependency manifest risk signal detection patterns
+- `src/execution/executor.ts` (line 39-47) -- AbortController timeout enforcement
+- `src/handlers/review.ts` (line 1427-1460) -- retrieval query construction and isolation layer usage
+- `src/learning/isolation.ts` -- `retrieveWithIsolation()` with distance threshold filtering
+- `src/learning/embedding-provider.ts` -- Voyage AI embedding generation with fail-open
+- `src/learning/memory-store.ts` (line 165-174) -- sqlite-vec vector search query
+- `src/execution/config.ts` (line 255-267) -- retrieval config schema with distanceThreshold
+- `node_modules/@octokit/plugin-rest-endpoint-methods` -- verified `securityAdvisories` and `repos.releases` endpoints
+- Bun runtime -- verified `Bun.semver.order()` and `Bun.semver.satisfies()` working
 
-### Secondary (MEDIUM confidence -- verified via GitHub docs)
-- [GitHub webhook events documentation](https://docs.github.com/en/webhooks/webhook-events-and-payloads) -- confirmed NO reaction webhook events exist (February 2026)
-- [GitHub community discussion on reaction webhooks](https://github.com/orgs/community/discussions/7168) -- reactions do not trigger any webhook
-- [GitHub community feature request for reaction webhooks](https://github.com/orgs/community/discussions/20824) -- open request, not implemented
-- [Octokit reactions API](https://actions-cool.github.io/octokit-rest/api/reactions/) -- `listForPullRequestReviewComment` method verified
-- [ESLint v10.0.0 Node.js API](https://eslint.org/docs/latest/integrate/nodejs-api) -- fixable detection API exists but requires linter runtime (rejected)
+### Secondary (MEDIUM confidence -- verified via official docs)
+- [Bun Semver API Reference](https://bun.com/reference/bun/semver) -- `order()` and `satisfies()` only; NO `diff()` method
+- [GitHub REST API: Global Security Advisories](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories` with ecosystem/affects/severity filters
+- [GitHub REST API: Releases](https://docs.github.com/en/rest/releases) -- `GET /repos/{owner}/{repo}/releases/tags/{tag}`
+- [OSV.dev API](https://google.github.io/osv.dev/post-v1-querybatch/) -- Evaluated as alternative; not recommended (GitHub Advisory DB is upstream for npm)
 
 ### Tertiary (LOW confidence -- general ecosystem knowledge)
-- [Code quality metrics 2026](https://www.qodo.ai/blog/code-quality-metrics-2026/) -- hotspot risk = complexity * churn * ownership
-- [Graphite large PR prioritization](https://graphite.dev/guides/prioritize-code-reviews-large-projects) -- file risk heuristics for code review
-- [Code churn analysis](https://swimm.io/learn/developer-experience/how-to-measure-code-churn-why-it-matters-and-4-ways-to-reduce-it) -- churn as review priority signal
+- [npm-fetch-changelog](https://www.npmjs.com/package/npm-fetch-changelog) -- Evaluated and rejected; iterates all versions
+- [lockfile-diff](https://www.npmjs.com/package/lockfile-diff) -- Evaluated and rejected; parses lockfiles not manifest diffs
+- [semver npm package](https://www.npmjs.com/package/semver) -- v7.7.4; evaluated and rejected in favor of Bun.semver
 
 ---
-*Stack research for: Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning*
-*Researched: 2026-02-13*
+*Stack research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
+*Researched: 2026-02-14*

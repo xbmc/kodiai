@@ -1,0 +1,89 @@
+{
+  "total_prs": 200,
+  "bracket_tags": {
+    "[Video]": 10,
+    "[Estuary]": 7,
+    "[WIP]": 4,
+    "[Windows]": 4,
+    "[cmake]": 4,
+    "[RFC]": 3,
+    "[guilib]": 2,
+    "[ffmpeg]": 2,
+    "[GBM]": 2,
+    "[GUIDialogSubtitleSettings]": 2,
+    "[tools/depends]": 2,
+    "[target]": 2,
+    "[PVR]": 2,
+    "[Videoplayer]": 2,
+    "[VideoVersions]": 2
+  },
+  "conventional_commits": {
+    "test:": 1
+  },
+  "other_patterns": {
+    "WIP:": 1
+  },
+  "body_completeness": {
+    "empty": {
+      "count": 0,
+      "percent": 0.0
+    },
+    "minimal": {
+      "count": 4,
+      "percent": 2.0
+    },
+    "substantial": {
+      "count": 196,
+      "percent": 98.0
+    }
+  },
+  "review_signals": {
+    "breaking change": 153,
+    "draft": 5,
+    "wip": 3,
+    "test this": 2,
+    "do not merge": 1
+  },
+  "all_labels": {
+    "Rebase needed": 94,
+    "PR Cleanup: Abandoned": 91,
+    "Stale": 91,
+    "v22 Piers": 58,
+    "Type: Fix": 50,
+    "Type: Improvement": 49,
+    "Component: Video": 23,
+    "Type: Cleanup": 22,
+    "Type: Feature": 13,
+    "Platform: Linux": 13,
+    "Component: Depends": 12,
+    "WIP": 10,
+    "CMake": 10,
+    "Component: Database": 9,
+    "Component: Skin": 9,
+    "Platform: Android": 9,
+    "Component: GUI engine": 7,
+    "Platform: Windows": 7,
+    "Platform: WindowsStore": 7,
+    "Component: Build system": 7
+  },
+  "type_labels": {
+    "Type: Fix": 50,
+    "Type: Improvement": 49,
+    "Type: Cleanup": 22,
+    "Type: Feature": 13,
+    "Type: Breaking change": 3,
+    "Type: Revert": 1
+  },
+  "component_labels": {
+    "Component: Video": 23,
+    "Component: Depends": 12,
+    "Component: Database": 9,
+    "Component: Skin": 9,
+    "Component: GUI engine": 7,
+    "Component: Build system": 7,
+    "Component: Players": 7,
+    "Component: Music": 7,
+    "Component: GUI rendering": 6,
+    "Component: GLES rendering": 5
+  }
+}

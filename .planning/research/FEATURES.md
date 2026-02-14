@@ -1,59 +1,75 @@
 # Feature Landscape
 
-**Domain:** Language-aware enforcement, large PR intelligence, and feedback-driven learning for AI code review
-**Researched:** 2026-02-13
-**Confidence:** HIGH (grounded in XBMC real-world analysis + competitive landscape + existing codebase audit)
+**Domain:** Dependency bump analysis, timeout resilience, and intelligent retrieval for AI code review
+**Researched:** 2026-02-14
+**Confidence:** MEDIUM-HIGH (GitHub Advisory API verified, retrieval patterns verified in codebase, timeout architecture verified; changelog extraction strategies from training data + competitor analysis)
 
 ## Existing Foundation (Already Built)
 
-Before defining new features, here is what Kodiai already has that these features build on:
+Before defining v0.9 features, here is what Kodiai already has that these features build on:
 
-| Existing Capability | Module | Relevance |
-|---------------------|--------|-----------|
-| Language classification (`classifyFileLanguage`) | `diff-analysis.ts` | Maps file extensions to 20+ languages; used for language guidance injection |
-| Language guidance prompts (`LANGUAGE_GUIDANCE`) | `review-prompt.ts` | Static per-language rule sets for Python, Go, Rust, Java, C++, C, Ruby, PHP, Swift |
-| File category classification (source/test/config/docs/infra) | `diff-analysis.ts` | Categorizes files by glob patterns; used in risk signals |
-| Risk signal detection (auth, secrets, dependencies, DB, crypto) | `diff-analysis.ts` | Path-based and content-based risk heuristics |
-| `isLargePR` flag (>200 files or >5000 lines) | `diff-analysis.ts` | Triggers "focus on most critical changes" prompt instruction |
-| Suppression patterns (string, glob, regex) | `confidence.ts` | Matches finding titles with optional severity/category/path scoping |
-| Feedback sync (thumbs up/down reactions) | `feedback-sync.ts` | Collects human thumb reactions on review comments, stores in knowledge store |
-| Learning memory with embeddings | `learning/` | Writes findings with outcome labels, retrieves similar prior findings via Voyage Code 3 |
-| Isolation layer (repo-scoped + optional owner sharing) | `learning/isolation.ts` | Enforces retrieval boundaries with provenance logging |
-| Delta classification (new/resolved/still-open) | `delta-classifier.ts` | Compares current vs prior findings using FNV-1a fingerprints |
-| Severity filtering (`review.severity.minLevel`) | `config.ts` | Configurable minimum severity threshold |
-| Focus/ignored areas | `config.ts` | Category-level focus and exclusion with CRITICAL override |
-| Confidence scoring (severity + category + known pattern) | `confidence.ts` | Deterministic confidence from -10 to +30 boosts |
+| Existing Capability | Module | Relevance to v0.9 |
+|---------------------|--------|-------------------|
+| PR intent parsing (conventional commits, bracket tags, branch prefixes, labels) | `lib/pr-intent-parser.ts` | Detects `chore(deps):`, `[deps]`, dependency-related labels -- foundation for dep bump detection |
+| Auto-profile selection by PR size/intent | `lib/auto-profile.ts` | Can route dep bumps to a specialized profile |
+| Risk-weighted file prioritization for large PRs (>50 files) | `lib/file-risk-scorer.ts`, `handlers/review.ts` | Already handles large PRs with tiered review depth |
+| Embedding-backed learning memory with sqlite-vec | `learning/memory-store.ts`, `learning/isolation.ts` | Vector retrieval with repo isolation, fixed distance threshold (0.3) |
+| Voyage AI embedding provider with fail-open | `learning/embedding-provider.ts` | Single-model embeddings, 1024-dim, 10s timeout |
+| Retrieval config (topK, distanceThreshold, maxContextChars) | `execution/config.ts` | Static thresholds, no per-query adaptation |
+| Timeout enforcement via AbortController (default 600s) | `execution/executor.ts` | Current approach: binary success/timeout, no partial results |
+| Error classification and error comment posting | `lib/errors.ts`, `handlers/review.ts` | Timeout classified as error, generic "timed out" message posted |
+| Review Details summary comment (upsert pattern) | `handlers/review.ts` | Can be extended for dep bump metadata and partial result status |
+| Diff analysis with language classification (20 languages) | `execution/diff-analysis.ts` | `EXTENSION_LANGUAGE_MAP` provides file-to-language mapping |
+| Multi-factor finding prioritization (severity + fileRisk + category + recurrence) | `lib/finding-prioritizer.ts` | Composite scoring already implemented |
+| Incremental re-review with finding deduplication | `lib/incremental-diff.ts`, `lib/finding-dedup.ts` | Delta classification (new/resolved/still-open) |
+| Knowledge store with review/finding/feedback records | `knowledge/store.ts` | SQLite persistence, can store dep analysis cache |
 
 ---
 
 ## Table Stakes
 
-Features users expect in this domain. Missing these makes the product feel broken or noisy.
+Features users expect when a review tool encounters dependency bumps, times out on large PRs, or uses embedding-based retrieval. Missing these makes the product feel half-finished.
 
-### Language-Aware Enforcement
-
-| Feature | Why Expected | Complexity | Depends On |
-|---------|--------------|------------|------------|
-| **Suppress linter-catchable findings** (formatting, import order, whitespace) | Every competing tool has learned this lesson. XBMC data: 10 formatting violations flagged, 0 addressed (100% noise). Users stop reading bot comments when they see style nits. CodeRabbit, Qodo, Greptile all suppress or filter these. | LOW | Existing suppression engine + `LANGUAGE_GUIDANCE`. Classify via prompt-level instructions (no linter runtime needed). |
-| **Language-specific severity baselines** (e.g., C++ null deref = CRITICAL, Python bare except = MAJOR, Go unchecked error = MAJOR) | Users expect safety issues in their language to be flagged at appropriate severity. CodeRabbit, Qodo Merge, and Greptile all provide language-aware analysis. XBMC evidence: human reviewers consistently flag null deref as critical while bots flag formatting at same severity. | MEDIUM | Existing `LANGUAGE_GUIDANCE` + severity classification guidelines. Partition rules into auto-fixable vs safety-critical tiers. |
-| **Per-language config surface** (`review.languageRules` in `.kodiai.yml`) | Teams need to override defaults. A C++ project using exceptions may not care about RAII; a Python data pipeline may want stricter type hint enforcement. Qodo Merge offers `extra_instructions` per language; Danger.js is entirely user-defined rules. | LOW | Existing config schema extension. |
-| **CRITICAL findings never suppressed by language rules** | Safety override. No language configuration should silence SQL injection, auth bypass, or buffer overflow detection. Universal across all tools. | LOW | Hard floor in suppression logic. |
-
-### Large PR Intelligence
+### 1. Dependency Bump Detection
 
 | Feature | Why Expected | Complexity | Depends On |
 |---------|--------------|------------|------------|
-| **File prioritization by risk** (review core logic first, skip mechanical callsite updates) | XBMC PR #27752: 312 files, humans reviewed 3 core files. CodeRabbit classifies diffs as trivial vs complex. Qodo Merge offers `require_can_be_split_review`. Every user expects large PRs to get focused review, not uniform noise. | HIGH | Existing `filesByCategory` + `riskSignals` from `diff-analysis.ts` |
-| **Explicit coverage disclosure** ("Reviewed 50/312 files, prioritized by risk") | Users need to know what was reviewed and what was not. Incomplete review without disclosure is worse than no review. Transparency is table stakes for trust. | LOW | File prioritization (must know which files were selected) |
-| **Comment budget allocation by risk** | When comment cap is 7, all 7 should go to the riskiest files, not spread evenly across trivial config changes and core logic. | LOW | File risk scoring + existing `maxComments` config |
+| **Detect dependency bump PRs from metadata** | Dependabot and Renovate both signal dependency updates via PR title (`chore(deps): bump X from A to B`), labels (`dependencies`, `Type: Depends`), and branch name (`dependabot/npm_and_yarn/...`). The xbmc reference PR #27860 uses title `[depends][target] Bump libcdio to 2.3.0` and label `Component: Depends`. Users expect the review tool to recognize these signals and behave differently from code-change PRs. | LOW | Existing `parsePRIntent()` already extracts conventional commit types. Extend with: (1) title regex for "bump X from A to B" or "update X to Y", (2) label matching for `dependencies`/`depends`/`renovate`/`dependabot`, (3) branch prefix matching for `dependabot/`, `renovate/`. |
+| **Extract old and new version numbers from PR title/body** | Every dep bump PR from Dependabot/Renovate includes version info: "Bumps lodash from 4.17.20 to 4.17.21" in the title or body. Without extracting these, the tool cannot look up changelogs or advisories. Regex: `/bump\w*\s+(\S+)\s+from\s+(\S+)\s+to\s+(\S+)/i` covers 90%+ of dep bump titles. | LOW | Pure regex parsing. Fallback: scan changed lockfile/manifest for version diffs. |
+| **Extract package name and ecosystem from changed files** | When PR modifies `package.json` / `package-lock.json` (npm), `go.mod` (Go), `Cargo.toml` (Rust), `requirements.txt` (Python), the ecosystem is deterministic. Needed for advisory API queries. | LOW | File path pattern matching. Already have `classifyFileLanguage()` and `filesByCategory` in diff analysis. |
 
-### Feedback-Driven Learning
+### 2. Changelog and Release Notes Extraction
 
 | Feature | Why Expected | Complexity | Depends On |
 |---------|--------------|------------|------------|
-| **Thumbs-down pattern tracking** | Every competitor learns from reactions. Greptile tracks thumbs up/down and improved address rate from 19% to 55%. This is the minimum viable feedback loop. | LOW | Already collected by `feedback-sync.ts`. New work is aggregation only. |
-| **Feedback-informed suppression** (suppress patterns after N thumbs-down) | After repeated rejection of the same pattern, the system should stop flagging it. Greptile does this via embedding clustering. CodeRabbit uses explicit chat-based "Learnings." This is the expected learning behavior. | MEDIUM | Feedback aggregation by title fingerprint + suppression engine integration |
-| **CRITICAL findings exempt from feedback suppression** | Same safety floor as language rules. No amount of thumbs-down should suppress SQL injection detection. | LOW | Hard floor in auto-suppression logic |
+| **Fetch GitHub Releases between old and new version** | Renovate checks for "Releases" metadata and changelog files, then filters to relevant versions. Dependabot includes release notes and changelog entries in PR body. Users expect the review tool to show what changed between versions. GitHub REST API: `GET /repos/{owner}/{repo}/releases` filtered by tag name provides release bodies with breaking change notes. | MEDIUM | Requires: (1) resolving package to source repo (npm registry `repository` field, or GitHub API), (2) listing releases between two version tags, (3) extracting breaking change markers from release body. |
+| **Detect breaking changes from version semantics** | Semver major bumps (1.x to 2.x) signal breaking changes. Conventional commit release notes include `BREAKING CHANGE:` markers. Users expect the tool to flag major version bumps prominently. | LOW | Version comparison: `semver.major(newVersion) > semver.major(oldVersion)`. The `semver` npm package or simple regex handles this. |
+| **Summarize changelog for review context** | When changelog text is available, inject a concise summary into the review prompt so the LLM can assess whether the PR properly adapts to breaking changes. Renovate embeds changelog in PR body; the review tool should use it as review context, not just repeat it. | LOW | Prompt extension: add changelog summary section to `buildReviewPrompt()`. Truncate to `maxContextChars` to avoid prompt bloat. |
+
+### 3. Security Advisory Lookup
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Query GitHub Advisory Database for known CVEs** | GitHub's Global Advisory API (`GET /advisories?affects=package@version&ecosystem=npm`) returns reviewed security advisories including CVE IDs, severity, and patched versions. CodeRabbit integrates OSV-Scanner for vulnerability detection. Users expect a review tool to flag known vulnerabilities in dependency updates. | MEDIUM | GitHub REST API call with `affects` parameter (supports up to 1000 packages). Requires: package name + ecosystem + version range. Response includes: GHSA ID, CVE ID, severity, vulnerable_version_range, patched_versions. |
+| **Report advisory severity and remediation in review** | When advisories exist, embed them in the review summary: "This update resolves CVE-2025-XXXX (HIGH severity) affecting versions <=1.0.2, patched in 1.0.3." | LOW | Format advisory API response into review comment. Already have severity classification infrastructure. |
+| **Distinguish security-motivated from maintenance bumps** | When a dep bump resolves a known CVE, the merge urgency is higher. When it is a routine maintenance bump, the review can be more relaxed. Dependabot distinguishes security updates from version updates. | LOW | Check if any advisory matches the OLD version range. If yes: security-motivated. If no: maintenance. |
+
+### 4. Timeout Resilience and Partial Results
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Progressive review with checkpoint publishing** | Current behavior: timeout = error comment, no review output. With a ~10% failure rate on large/complex PRs, users get zero value. Expected: publish whatever findings were generated before timeout. CodeRabbit uses 3600s timeout and buffers output until complete. A better approach: publish partial results at checkpoints. | HIGH | Requires architecture change: (1) intercept MCP tool calls during execution to detect published inline comments, (2) on timeout, post summary of what was reviewed vs. not, (3) mark the review as "partial" in Review Details. This touches executor.ts and review.ts. |
+| **Pre-review triage to predict timeout risk** | Before invoking the LLM, estimate whether the PR will likely timeout based on file count, total lines, and language complexity. If high risk, proactively reduce scope. | MEDIUM | Heuristic: if `totalFiles * avgLinesPerFile > threshold`, auto-escalate to minimal profile or reduce `fullReviewCount`. Uses existing diff metrics. |
+| **Graceful timeout message with partial context** | Current timeout message: generic "Kodiai timed out." Expected: "Reviewed 45/120 files before timeout. 8 findings published. Re-request review or increase timeoutSeconds." | LOW | Requires tracking published state during execution. The `published` flag already exists in executor.ts but is binary. Extend to track count. |
+| **Chunked review for very large PRs (>200 files)** | Current `MAX_ANALYSIS_FILES = 200` truncates analysis. For extremely large PRs, consider splitting into multiple sequential review passes, each covering a file batch. | HIGH | Requires: (1) batch file selection, (2) multiple executor invocations per PR, (3) merging results across batches, (4) combined summary comment. Significant architecture change. |
+
+### 5. Intelligent Retrieval Improvements
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Multi-signal query construction** | Current query: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}` (line 1431 of review.ts). This is a naive concatenation. Expected: include PR intent type, severity distribution of prior findings, language distribution, and key diff patterns for richer semantic matching. | MEDIUM | Extend query text construction to include: (1) parsed PR intent type and scope, (2) detected languages from `filesByLanguage`, (3) key diff patterns (e.g., function signatures changed), (4) author experience tier. All signals already available at query construction time. |
+| **Adaptive distance threshold** | Current: fixed 0.3 threshold for all queries (config.knowledge.retrieval.distanceThreshold). Research shows higher thresholds yield higher precision but lower recall, and optimal thresholds vary by embedding model, query length, and domain. Expected: adjust threshold based on result distribution. | MEDIUM | Strategy: (1) retrieve with relaxed threshold (e.g., 0.5), (2) examine distance distribution, (3) apply knee-point detection to find natural cluster boundary, (4) filter results above the knee. Alternatively: use percentile-based cutoff (keep results within 1 std-dev of best match). |
+| **Language-aware retrieval boosting** | Current vec0 table has `severity` and `category` metadata columns but no `language` column. A Python finding is less relevant to a TypeScript review. Expected: boost results matching the PR's primary language. | MEDIUM | Options: (1) add `language` column to vec0 table (requires migration), (2) post-retrieval re-ranking by language match, (3) include language in query text for semantic matching. Option 2 (post-retrieval re-rank) is simplest and avoids schema migration. |
 
 ---
 
@@ -61,142 +77,198 @@ Features users expect in this domain. Missing these makes the product feel broke
 
 Features that set Kodiai apart. Not universally expected, but high-value when present.
 
-### Language-Aware Enforcement
+### Dependency Bump Analysis
 
 | Feature | Value Proposition | Complexity | Depends On |
 |---------|-------------------|------------|------------|
-| **Post-execution severity floor enforcement** | Goes beyond "language guidance in prompt" to enforce hard severity floors that the LLM cannot override. No competitor does this deterministically -- CodeRabbit (46% accuracy) and Qodo Merge rely on LLM judgment alone. If the LLM tags a null deref as MEDIUM, Kodiai can upgrade it to CRITICAL based on language rules. | MEDIUM | Post-execution finding processing, severity normalization in `review.ts` |
-| **Auto-detect formatter config files** (detect `.clang-format`, `.prettierrc`, `black.toml` in repo and auto-suppress style findings for those languages) | Eliminates an entire class of false positives automatically without user configuration. XBMC evidence: all formatting violations ignored because clang-format exists but bot did not know. No competitor auto-detects formatters. | MEDIUM | Workspace file detection in review handler |
-| **Graduated language tiers** (explicitly label which languages get "deep" vs "basic" review) | Honest about coverage gaps. `LANGUAGE_GUIDANCE` already covers 9 languages deeply and 11 at basic level. Making tiers visible sets expectations and reduces surprise. | LOW | Existing `LANGUAGE_GUIDANCE` map |
+| **Merge confidence scoring** | Dependabot provides a "compatibility score" based on CI pass rates across GitHub. Kodiai can provide an LLM-assessed confidence score based on: (1) semver analysis (patch vs minor vs major), (2) changelog breaking change markers, (3) CVE resolution status, (4) usage analysis (does the codebase use affected APIs?). No competitor provides LLM-analyzed merge confidence for dependency bumps. | MEDIUM | Requires all table-stakes dep analysis features. Score is a composite of: semver safety (patch=high, major=low), advisory resolution (resolves CVE=boost), breaking changes detected (lower confidence), usage analysis (uses changed APIs=lower). |
+| **Usage analysis: does the codebase use affected APIs?** | When a dependency introduces breaking changes, the key question is "does our code use the changed APIs?" Kodiai can grep the workspace for import statements and function calls matching the dependency's changed exports. No competitor does this analysis. | HIGH | Requires: (1) extracting changed exports/APIs from changelog/release notes (LLM-assisted), (2) searching the workspace for usage patterns (existing Grep/Glob tools), (3) reporting which specific usages are at risk. Complex but extremely valuable. |
+| **Dependency update history tracking** | Track which packages have been updated, how often, and whether past updates caused issues (via feedback). "This package was last updated 3 months ago; the previous bump from 2.0 to 2.1 was merged without issues." | LOW | Knowledge store extension: store dep bump records (package, from_version, to_version, outcome). Query on future bumps. |
+| **Multi-package update correlation** | When a PR updates multiple related packages (e.g., `@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin`), note the coordination and check for version compatibility requirements. | LOW | Parse multiple version changes from lockfile/manifest diffs. Check if packages share a scope prefix (`@scope/`). |
 
-### Large PR Intelligence
-
-| Feature | Value Proposition | Complexity | Depends On |
-|---------|-------------------|------------|------------|
-| **Risk-weighted file scoring algorithm** (score = category_weight + lines_changed + risk_signal_bonus + extension_weight) | Goes beyond binary "large PR / not large PR" to rank every file on a numeric scale. Enables principled selection of top-N files for review. Research shows heuristic risk scoring improves review quality (Springer 2024 study, 3.66/5.0 effectiveness rating). | HIGH | Existing category + risk signal infrastructure in `diff-analysis.ts` |
-| **Adaptive severity by PR size** (large PRs auto-escalate to MAJOR+ only, small PRs allow MEDIUM+) | XBMC evidence: large refactors get architectural focus from humans, small fixes get detailed review. Auto-adapting reduces noise without configuration. | MEDIUM | `isLargePR` flag, severity filter |
-| **Risk heatmap in review summary** | Shows which files got most review attention and why. Builds trust that the tool is focusing correctly. No competitor surfaces the prioritization rationale. | LOW | Risk scoring data, `buildDiffAnalysisSection()` |
-| **Split recommendation** for PRs exceeding threshold (>100 files or >5000 lines) | Qodo Merge has `require_can_be_split_review` but it is an add-on. Proactively recommending split before reviewing is higher value because it shapes contributor behavior. | LOW | File count + line count metrics |
-
-### Feedback-Driven Learning
+### Timeout Resilience
 
 | Feature | Value Proposition | Complexity | Depends On |
 |---------|-------------------|------------|------------|
-| **Feedback-weighted confidence adjustment** (patterns with consistent thumbs-up get +10 confidence; thumbs-down get -20) | Goes beyond binary suppress/allow to graduate confidence. A finding pattern with 2 thumbs-up and 0 thumbs-down should be surfaced more confidently. No competitor does graduated confidence from reactions. | MEDIUM | Existing confidence scoring in `confidence.ts`, feedback aggregation |
-| **Feedback transparency in Review Details** ("3 patterns auto-suppressed based on prior feedback") | Builds trust. Teams need to know WHY a finding was suppressed. CodeRabbit's "Learnings" are inspectable; Kodiai's auto-suppression should be too. Avoids the "automatic behavior mutation" anti-pattern. | LOW | Review Details comment, suppression log |
-| **Learning memory outcome update on thumbs-down** | When a finding gets thumbs-downed, update its outcome in learning memory so future embedding retrievals reflect the rejection. Prevents retrieval from surfacing previously-rejected patterns as positive evidence. | MEDIUM | Existing learning memory write path in `learning/` |
-| **Embedding-based pattern clustering** (group similar downvoted findings and suppress the cluster, not just exact matches) | Greptile's key insight: "most nit comments cluster into a small number of semantic categories." Clustering catches variations that exact-match suppression misses. Their address rate went from 19% to 55% with this approach. | HIGH | Learning memory embeddings, vector similarity, threshold tuning |
+| **Adaptive timeout based on PR complexity** | Instead of a fixed `timeoutSeconds`, compute timeout dynamically: `baseTimeout + (fileCount * perFileTimeout) + (avgLines * lineTimeout)`. Large PRs get longer timeouts automatically. | LOW | Pure math based on diff metrics. Extend executor config with dynamic timeout computation. |
+| **Review progress streaming** | Post a "reviewing..." comment with live progress updates (e.g., "Analyzing file 23/45..."). Delete or update on completion. Provides visibility during long reviews. | MEDIUM | Requires: periodic progress callback from executor, comment creation/update during execution. Risk: notification noise if not done carefully (use a single comment, update in place). |
+| **Retry with reduced scope on timeout** | When a review times out, automatically retry with a reduced file set (top 50% by risk score). Publish the reduced review rather than nothing. | HIGH | Requires: (1) detecting timeout before cleanup, (2) re-invoking executor with reduced scope, (3) coordinating with job queue for retry, (4) marking result as "reduced scope." |
+
+### Intelligent Retrieval
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Query-time severity/category filtering** | Current vec0 table has `severity` and `category` columns. Use them for filtered retrieval: when reviewing a security-focused PR, boost security-category memories. When profile is `minimal`, only retrieve `critical`/`major` severity memories. | LOW | The vec0 virtual table already supports WHERE clauses on metadata columns. Extend retrieval query with optional severity/category filters based on resolved review profile. |
+| **Recency-weighted retrieval** | Older memories may reflect outdated patterns. Boost recent memories: apply a time-decay multiplier to distance scores. Memories from the last 30 days get 0.9x distance (closer), 90+ days get 1.1x (farther). | LOW | Post-retrieval score adjustment using `createdAt` field from memory records. Pure math, no schema changes. |
+| **Cross-language concept mapping** | A "null safety" finding in Java is semantically similar to "optional chaining" in TypeScript. Language-aware retrieval should recognize cross-language concept equivalence. | HIGH | Requires either: (1) embedding model that naturally handles multi-language code concepts (Voyage Code 3 may already do this), (2) explicit concept mapping layer. Test with current embeddings first before adding complexity. |
+| **Retrieval quality metrics** | Track retrieval hit rates: how often retrieved memories influence the review output. If distance thresholds are too tight (few results) or too loose (noisy results), flag for tuning. | LOW | Log retrieval result counts, distances, and whether the finding outcome was used. Aggregate in telemetry. |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build. These are commonly requested but harmful.
+Features to explicitly NOT build. These are commonly requested but harmful or premature.
 
 | Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
 |--------------|-------------|-----------|-------------------|
-| **AST-based language rule engine** (parse code with ast-grep or tree-sitter) | CodeRabbit integrates ast-grep with 35+ linters. Seems comprehensive. | Massive maintenance burden per language. The LLM already understands code structure. AST rules duplicate what the model does natively and add latency. CodeRabbit has 46% accuracy despite 35 linters -- proving more tools does not equal more accuracy. | Use LLM for structural analysis; enforce severity floors and suppressions post-execution. Let linter tools (eslint, clippy) run in CI separately. |
-| **Run linters in workspace** (install ESLint, Ruff, Clippy in review workspace) | Deterministic linter output seems reliable. | Requires per-language toolchains. Workspace is a shallow clone with no dev dependencies. Adds 10-30s latency. Different projects use different linter configs. | Use prompt-driven classification. Claude's training knows what is auto-fixable. |
-| **Auto-learning from every single emoji reaction** | "Zero config learning" sounds great. | CodeRabbit explicitly warns: "thumbs up means... what, exactly?" Ambiguous signal causes sycophantic drift. OpenAI found GPT-4o became "overly agreeable" from binary feedback. Single reactions are noisy. | Learn only from clustered patterns with minimum vote threshold (3+ unique thumbs-down). Never auto-suppress from a single reaction. |
-| **Review all files in large PRs via multi-turn chunking** | "We should review everything for completeness." | Cost scales linearly: 312 files at ~$0.03/file = $9.36 per review. Latency explodes. Findings in file 280 are rarely actionable. | Prioritize by risk score, review top 50, disclose coverage. Offer `@kodiai review-all` escape hatch for explicit full-PR review. |
-| **Cross-repo feedback sharing by default** | One repo's learned suppressions could help another. | One repo's "noise" might be another repo's "critical." Feedback preferences are context-dependent. Data leakage risk. | Keep feedback suppression repo-scoped. Org-level sharing is a separate, opt-in, future feature. |
-| **Merge-blocking based on feedback confidence** | Teams want automation gates. | False positives in auto-learned suppressions can either block merges (frustrating) or allow bugs through (dangerous). Either outcome erodes trust. | Keep advisory mode. Show confidence and feedback history in Review Details. Let humans decide. |
-| **Real-time reaction processing** | Faster learning loop seems better. | GitHub does not emit reaction-specific webhooks. Building workarounds (polling, frequent cron) adds complexity for minimal latency gain. | Sync reactions on next PR activity event (existing `feedback-sync.ts` pattern). |
-| **Language-specific severity that cannot be overridden** | "We know best what's critical in C++." | Power users have valid reasons to downgrade. A team wrapping a C library may accept raw pointers deliberately. | Provide opinionated defaults but honor user overrides. Warn when overriding a safety baseline, but allow it. |
-| **ML-based file risk prediction** | ML model could learn from historical review data. | Requires training data that does not exist yet. Heuristics are sufficient, debuggable, and explainable. | Use deterministic risk formula with configurable weights. |
+| **Full dependency tree analysis** | "Analyze all transitive dependencies for vulnerabilities." | Scope explosion. A single npm project can have 500+ transitive deps. Advisory lookup for each would hit rate limits (GitHub Advisory API is rate-limited) and slow down reviews dramatically. | Analyze only the packages directly changed in the PR diff. Transitive deps are the domain of `npm audit` / Dependabot alerts, not a code review tool. |
+| **Automatic lockfile regeneration** | "If a dep bump has issues, auto-fix the lockfile." | Write operations on lockfiles are dangerous and ecosystem-specific. npm, yarn, pnpm, bun all have different lockfile formats. Getting it wrong breaks installs. | Report the issue; let the developer fix it. Kodiai's review role is advisory, not remedial. |
+| **Real-time CVE monitoring (webhook)** | "Monitor for new CVEs and auto-create PRs." | This is Dependabot's core product. Reimplementing it poorly adds liability. GitHub already provides security alerts, Dependabot security updates, and code scanning. | Look up advisories at review time for the specific versions being bumped. Point-in-time analysis, not continuous monitoring. |
+| **Streaming partial review via SSE/WebSocket** | "Stream review findings to the PR in real-time as they're generated." | GitHub's API is REST-based. Streaming to a PR comment requires repeated API calls (one per finding), generating excessive notification noise and hitting rate limits. CodeRabbit explicitly moved AWAY from streaming to buffered output. | Buffer findings, publish as a batch. For timeout resilience, publish at checkpoints (every N files or at timeout), not per-finding. |
+| **Multi-pass review (review-then-review-the-review)** | "Run a second LLM pass to validate findings from the first." | Doubles cost and latency with diminishing returns. The existing enforcement pipeline (severity floors, tooling detection, confidence scoring, feedback suppression) already filters low-quality findings. | Improve the single-pass prompt quality. Use retrieval context to reduce false positives. The enforcement pipeline IS the validation layer. |
+| **Custom embedding model training** | "Fine-tune embeddings on this repo's code for better retrieval." | Requires substantial training data, GPU infrastructure, and ongoing model management. Voyage Code 3 is already trained on code. The marginal improvement from fine-tuning on a single repo's findings is unlikely to justify the complexity. | Use multi-signal query construction and post-retrieval re-ranking. These are simpler and more maintainable than model fine-tuning. |
+| **Semantic diff for dependency changes** | "Parse the AST of old and new dependency versions to find API changes." | Requires downloading and parsing source code of npm packages, which is infeasible at review time (packages can be megabytes, multi-language, etc.). | Use changelog/release notes as a proxy for API changes. If changelog mentions "removed function X," search the codebase for usage of function X. |
+| **Predictive timeout estimation with ML** | "Train a model to predict review duration and set timeouts dynamically." | No training data, massive overengineering. Heuristics (file count x complexity) are sufficient and debuggable. | Use simple heuristic: `baseTimeout + (fileCount * perFileSeconds)`. Tune the constants empirically from telemetry data. |
 
 ---
 
 ## Feature Dependencies
 
 ```text
-LANGUAGE-AWARE ENFORCEMENT
-==========================
-[Existing: LANGUAGE_GUIDANCE map in review-prompt.ts]
-    |
-    +-- extends --> [Language severity tiers: auto-fixable vs safety-critical]
-    |                   |
-    |                   +-- requires --> [Post-execution severity floor enforcement]
-    |                   |
-    |                   +-- optional --> [Auto-detect formatter config files in workspace]
-    |
-    +-- extends --> [review.languageRules config section]
-                        |
-                        +-- feeds --> [Language severity tier overrides]
-
-LARGE PR INTELLIGENCE
-=====================
-[Existing: diff-analysis.ts (categories + risk signals + numstat)]
-    |
-    +-- extends --> [Per-file risk scoring formula]
-    |                   |
-    |                   +-- requires --> [Token-aware file budget / top-N selection]
-    |                   |                     |
-    |                   |                     +-- requires --> [Coverage disclosure in summary]
-    |                   |
-    |                   +-- optional --> [Risk heatmap in review summary]
-    |                   |
-    |                   +-- optional --> [Adaptive severity by PR size]
-    |
-    +-- optional --> [Split recommendation for oversized PRs]
-
-FEEDBACK-DRIVEN LEARNING
+DEPENDENCY BUMP ANALYSIS
 =========================
-[Existing: feedback-sync.ts + FeedbackReaction table in knowledge store]
+[Existing: PR intent parsing, diff analysis, review prompt]
     |
-    +-- extends --> [Feedback aggregation query: count by title fingerprint per repo]
+    +-- extends --> [Dep bump detection from title/labels/branch/files]
     |                   |
-    |                   +-- requires --> [Auto-suppress rule generation when count >= threshold]
-    |                   |                     |
-    |                   |                     +-- integrates --> [matchesSuppression() in confidence.ts]
+    |                   +-- produces --> [Package name + old version + new version + ecosystem]
     |                   |
-    |                   +-- feeds --> [Feedback-weighted confidence adjustment]
+    |                   +-- feeds --> [GitHub Advisory API lookup]
+    |                   |                   |
+    |                   |                   +-- produces --> [CVE list, severity, patched versions]
+    |                   |                   |
+    |                   |                   +-- feeds --> [Security vs maintenance classification]
+    |                   |
+    |                   +-- feeds --> [GitHub Releases API changelog fetch]
+    |                   |                   |
+    |                   |                   +-- produces --> [Changelog text between versions]
+    |                   |                   |
+    |                   |                   +-- feeds --> [Breaking change detection from changelog]
+    |                   |
+    |                   +-- feeds --> [Merge confidence scoring]
+    |                                     |
+    |                                     +-- integrates --> semver analysis
+    |                                     +-- integrates --> advisory resolution status
+    |                                     +-- integrates --> breaking change count
+    |                                     +-- optional --> usage analysis (grep for affected APIs)
+
+TIMEOUT RESILIENCE
+===================
+[Existing: AbortController timeout, error classification, error comment]
     |
-    +-- extends --> [Learning memory outcome update on thumbs-down]
+    +-- extends --> [Pre-review timeout risk estimation]
+    |                   |
+    |                   +-- feeds --> [Adaptive scope reduction (auto-escalate to minimal)]
+    |                   |
+    |                   +-- feeds --> [Dynamic timeout computation]
     |
-    +-- extends --> [Feedback transparency in Review Details]
+    +-- extends --> [Partial result tracking during execution]
+    |                   |
+    |                   +-- requires --> [Track published inline comments count]
+    |                   |
+    |                   +-- feeds --> [Graceful timeout message with partial context]
+    |
+    +-- deferred --> [Checkpoint-based partial publishing]
+    |
+    +-- deferred --> [Retry with reduced scope]
+
+INTELLIGENT RETRIEVAL
+======================
+[Existing: isolation layer, memory store, embedding provider, retrieval config]
+    |
+    +-- extends --> [Multi-signal query construction]
+    |                   |
+    |                   +-- integrates --> PR intent type/scope
+    |                   +-- integrates --> detected languages
+    |                   +-- integrates --> diff pattern signatures
+    |                   +-- integrates --> author experience tier
+    |
+    +-- extends --> [Adaptive distance threshold]
+    |                   |
+    |                   +-- requires --> [Retrieve with relaxed threshold]
+    |                   +-- requires --> [Knee-point or percentile-based cutoff]
+    |
+    +-- extends --> [Language-aware retrieval boosting]
+    |                   |
+    |                   +-- option A --> [Post-retrieval re-ranking by language]
+    |                   +-- option B --> [Add language to query text]
+    |
+    +-- optional --> [Severity/category filtered retrieval]
+    +-- optional --> [Recency-weighted scoring]
+    +-- optional --> [Retrieval quality metrics in telemetry]
 ```
 
 ### Critical Path
 
-1. **Language severity tiers** depend on the existing `LANGUAGE_GUIDANCE` map but need a new post-execution enforcement step (not just prompt injection)
-2. **File risk scoring** depends on existing `diff-analysis.ts` infrastructure and must happen before the review prompt is built
-3. **Auto-suppress** depends on feedback aggregation reaching threshold, which depends on `feedback-sync.ts` having collected enough data points
+1. **Dep bump detection** is prerequisite for all other dep analysis features. Must extract package name, versions, and ecosystem before anything else can work.
+2. **Advisory lookup** and **changelog fetch** are independent of each other but both depend on dep bump detection.
+3. **Merge confidence scoring** integrates signals from advisory lookup, changelog analysis, and semver analysis -- build last.
+4. **Timeout risk estimation** is independent and can ship first as a pure heuristic.
+5. **Multi-signal query construction** is independent of adaptive thresholds; both improve retrieval but can ship separately.
 
 ### Independence Points
 
-- Language enforcement and large PR intelligence are **independent** -- can be built in parallel
-- Language enforcement and feedback learning are **independent** -- can be built in parallel
-- Large PR intelligence and feedback learning are **independent** -- can be built in parallel
-- All three feature areas share no code dependencies
+- All three feature areas (dep bumps, timeout, retrieval) are **fully independent** of each other
+- Within dep bumps: advisory lookup and changelog fetch are **fully independent**
+- Within retrieval: multi-signal query and adaptive threshold are **fully independent**
+- Timeout resilience features are mostly independent of each other (risk estimation, graceful messages, partial publishing)
+
+### Integration Points
+
+- Dep bump detection feeds into review prompt (new section) and Review Details (new metadata)
+- Timeout risk estimation feeds into auto-profile selection (reduce scope for risky PRs)
+- Multi-signal query uses signals from dep bump detection (if available) and auto-profile resolution
+- All three areas share the review handler entry point in `review.ts`
 
 ---
 
 ## MVP Recommendation
 
-### Build First (P1) -- Highest ROI
+### Build First (P1) -- Core value, low risk
 
-1. **Language severity tiers** (auto-fixable suppression + safety-critical enforcement) -- Highest signal-to-noise improvement per line of code. XBMC data: eliminates 100% of formatting noise and ensures 100% of null deref findings are CRITICAL.
-2. **File risk scoring and top-N prioritization** -- Addresses the 312-file problem directly. Without this, large PR reviews are either incomplete (truncated randomly) or noisy (uniform review of all files).
-3. **Feedback auto-suppression with threshold** -- Closes the feedback loop. The infrastructure (feedback-sync.ts, FeedbackReaction table) already exists. New work is aggregation + threshold + suppression integration.
-4. **Coverage disclosure** -- Required for trust once file selection is active.
-5. **CRITICAL safety floor** (both language and feedback) -- Must ship with auto-suppression to prevent runaway learning.
+1. **Dep bump detection from PR metadata** -- Regex parsing of title/body for version bumps, label matching, branch prefix matching. Extend existing `parsePRIntent()`. Pure logic, zero API calls.
 
-### Build Second (P2) -- Add after P1 validated
+2. **Version extraction (package name, old/new version, ecosystem)** -- Parse "bump X from A to B" pattern and detect ecosystem from changed manifest files. Foundation for all dep analysis.
 
-6. **Auto-detect formatter config files** -- Refines language suppression without user configuration.
-7. **Adaptive severity by PR size** -- Refines large PR noise reduction beyond file selection.
-8. **Feedback-weighted confidence adjustment** -- Refines the confidence model using actual reaction data.
-9. **Feedback transparency reporting** -- Makes auto-suppression auditable.
-10. **Risk heatmap in review summary** -- Trust-building visibility into prioritization logic.
-11. **Learning memory outcome update** -- Prevents retrieval from surfacing rejected patterns.
+3. **GitHub Advisory API lookup** -- Single REST call with `affects=package@version&ecosystem=npm`. Fail-open if API errors. High value: surfaces known CVEs in review.
 
-### Defer (P3) -- Future consideration
+4. **Breaking change detection from semver** -- `major(new) > major(old)` flags as breaking. Zero API calls, zero dependencies beyond simple version comparison.
 
-12. **Split recommendation** -- Low complexity but limited impact; humans already know their PR is too big.
-13. **Embedding-based pattern clustering** -- Powerful but complex. Simple title-fingerprint aggregation handles 80% of cases. Add when exact-match shows insufficient coverage.
-14. **Churn-aware risk scoring** -- Requires additional git commands per review. Add after basic risk scoring is validated.
-15. **Auto-fixable finding grouping** -- Nice UX polish but not critical for initial release.
+5. **Graceful timeout message with context** -- Replace generic "timed out" with "Reviewed X/Y files, N findings published before timeout." Low effort, high UX value.
+
+6. **Pre-review timeout risk estimation** -- Heuristic from file count and line count. Auto-reduce scope for high-risk PRs. Addresses 10% failure rate.
+
+7. **Multi-signal query construction** -- Enrich the retrieval query text with PR intent, languages, and diff patterns. Improves retrieval relevance with no infrastructure changes.
+
+### Build Second (P2) -- Depth and integration
+
+8. **Changelog/release notes fetch from GitHub Releases** -- Resolve package to source repo, list releases between versions, extract breaking change markers. Requires npm registry lookup for source URL.
+
+9. **Dep bump review prompt section** -- Inject advisory results, changelog summary, and breaking change flags into review prompt. Enables LLM-aware dependency analysis.
+
+10. **Merge confidence scoring** -- Composite score from semver, advisories, changelog breaking changes. Reported in Review Details summary.
+
+11. **Adaptive distance threshold** -- Retrieve with relaxed threshold, apply statistical cutoff. Improves retrieval precision without manual tuning.
+
+12. **Language-aware retrieval boosting** -- Post-retrieval re-rank by language match. Boost same-language memories, demote cross-language.
+
+13. **Dynamic timeout computation** -- `baseTimeout + (fileCount * perFileSeconds)`. Replaces fixed 600s default.
+
+### Defer (P3) -- Future value, high complexity
+
+14. **Usage analysis (grep for affected APIs)** -- Search codebase for imports/usage of APIs mentioned in breaking changes. Very high value but complex: requires parsing changelog for API names, then workspace search.
+
+15. **Checkpoint-based partial publishing** -- Detect published inline comments during execution, on timeout publish summary of partial results. Requires executor architecture changes.
+
+16. **Retry with reduced scope on timeout** -- Auto-retry with top 50% files by risk. Requires job queue coordination.
+
+17. **Dependency update history tracking** -- Knowledge store extension for dep bump records. Low effort but depends on dep bump detection being stable.
+
+18. **Retrieval quality metrics** -- Telemetry for retrieval hit rates, distance distributions, outcome correlation. Important for tuning but not user-facing.
+
+19. **Cross-language concept mapping** -- Test if Voyage Code 3 already handles this; only build if it does not.
+
+20. **Review progress streaming** -- Live "reviewing..." comment with progress. Risk of notification noise.
 
 ---
 
@@ -204,86 +276,113 @@ FEEDBACK-DRIVEN LEARNING
 
 | Feature | User Value | Impl. Cost | Risk | Priority |
 |---------|------------|------------|------|----------|
-| Language severity tiers (auto-fixable/safety-critical) | HIGH | LOW | LOW | P1 |
-| Suppress linter-catchable findings | HIGH | LOW | LOW | P1 |
-| Post-execution severity floor enforcement | HIGH | MEDIUM | LOW | P1 |
-| File risk scoring formula | HIGH | HIGH | MEDIUM | P1 |
-| Top-N file selection + token budget | HIGH | MEDIUM | MEDIUM | P1 |
-| Coverage disclosure in summary | HIGH | LOW | LOW | P1 |
-| Comment budget allocation by risk | HIGH | LOW | LOW | P1 |
-| Feedback auto-suppression with threshold | HIGH | MEDIUM | MEDIUM | P1 |
-| CRITICAL findings safety floor | HIGH | LOW | LOW | P1 |
-| Per-language config surface | MEDIUM | LOW | LOW | P1 |
-| Auto-detect formatter config | MEDIUM | MEDIUM | LOW | P2 |
-| Adaptive severity by PR size | MEDIUM | LOW | LOW | P2 |
-| Feedback-weighted confidence | MEDIUM | MEDIUM | LOW | P2 |
-| Feedback transparency reporting | MEDIUM | LOW | LOW | P2 |
-| Risk heatmap in review summary | MEDIUM | LOW | LOW | P2 |
-| Learning memory outcome update | MEDIUM | MEDIUM | LOW | P2 |
-| Graduated language tier visibility | LOW | LOW | LOW | P2 |
-| Split recommendation | LOW | LOW | LOW | P3 |
-| Embedding-based pattern clustering | MEDIUM | HIGH | MEDIUM | P3 |
-| Churn-aware risk scoring | MEDIUM | MEDIUM | LOW | P3 |
-| Auto-fixable finding grouping | LOW | MEDIUM | LOW | P3 |
+| Dep bump detection from PR metadata | **HIGH** | LOW | LOW | **P1** |
+| Version extraction (package, old, new, ecosystem) | **HIGH** | LOW | LOW | **P1** |
+| GitHub Advisory API lookup (CVE check) | **HIGH** | MEDIUM | LOW | **P1** |
+| Breaking change detection from semver | **HIGH** | LOW | LOW | **P1** |
+| Graceful timeout message with context | **HIGH** | LOW | LOW | **P1** |
+| Pre-review timeout risk estimation | **HIGH** | MEDIUM | LOW | **P1** |
+| Multi-signal query construction | MEDIUM | MEDIUM | LOW | **P1** |
+| Changelog/release notes fetch | HIGH | MEDIUM | MEDIUM | **P2** |
+| Dep bump review prompt section | HIGH | LOW | LOW | **P2** |
+| Merge confidence scoring | MEDIUM | MEDIUM | LOW | **P2** |
+| Adaptive distance threshold | MEDIUM | MEDIUM | MEDIUM | **P2** |
+| Language-aware retrieval boosting | MEDIUM | LOW | LOW | **P2** |
+| Dynamic timeout computation | MEDIUM | LOW | LOW | **P2** |
+| Usage analysis (affected APIs) | HIGH | HIGH | MEDIUM | **P3** |
+| Checkpoint-based partial publishing | MEDIUM | HIGH | HIGH | **P3** |
+| Retry with reduced scope | MEDIUM | HIGH | MEDIUM | **P3** |
+| Dep update history tracking | LOW | LOW | LOW | **P3** |
+| Retrieval quality metrics | LOW | LOW | LOW | **P3** |
+| Cross-language concept mapping | LOW | HIGH | MEDIUM | **P3** |
+| Review progress streaming | LOW | MEDIUM | MEDIUM | **P3** |
 
 ---
 
 ## Competitor Feature Analysis
 
-### Language-Aware Enforcement
+### Dependency Bump Analysis
 
 | Tool | Approach | Strength | Weakness |
 |------|----------|----------|----------|
-| **CodeRabbit** | ast-grep rules + 35 linters + LLM; auto-detects style preferences | Broadest static analysis integration; community rule library | 46% bug detection accuracy; heavy infrastructure; rule maintenance burden |
-| **Qodo Merge** | Extra instructions per language; compliance checklist templates; language framework exclusion | Configurable; open-source core; YAML-based compliance | No deterministic severity enforcement; relies entirely on LLM judgment |
-| **Greptile** | Full codebase indexing; semantic understanding per language | Deep context from entire repo, not just diff | Expensive compute; slower review times |
-| **Danger.js** | Programmatic rules in JS/TS; no AI | Deterministic; fully controllable; zero false positives from rules | Manual rule authoring; no semantic understanding; no language awareness |
-| **Kodiai (proposed)** | LLM language guidance + post-execution severity floors + configurable overrides | Best of both: LLM flexibility + deterministic enforcement; low maintenance | Severity floors only apply post-execution; cannot prevent LLM from missing issues |
+| **Dependabot** | Creates PRs for bumps with release notes, changelog, and compatibility score (CI pass rate across GitHub). Distinguishes security updates from version updates. | Ecosystem-wide compatibility scoring from real CI data. Automatic PR creation. | Does not analyze whether the codebase uses affected APIs. Compatibility score often "unknown" for less popular packages. |
+| **Renovate** | Four-stage pipeline (init, extract, lookup, update). Checks GitHub Releases and changelog files, filters to relevant versions, embeds in PR body. `postUpgradeTasks` for custom automation. | Richest changelog extraction. Multi-platform support (GitHub, GitLab, Bitbucket). Groups related updates. | Cannot analyze breaking change impact on the codebase. No LLM-powered analysis. |
+| **CodeRabbit** | Integrates OSV-Scanner for vulnerability detection. Reviews dependency changes alongside code changes. Uses 40+ linters including TruffleHog for secrets. | Combined code + dependency review in one tool. Security scanner integration. | Does not extract changelogs or provide merge confidence scoring. Treats dep bumps like regular code changes. |
+| **Kodiai (proposed)** | Detect dep bump from PR metadata. Extract versions. Query GitHub Advisory API. Fetch changelog from GitHub Releases. Assess semver breaking changes. LLM-analyzed merge confidence with optional usage analysis. | LLM-powered contextual analysis: "does this breaking change affect YOUR code?" Usage analysis is unique. Merge confidence combines multiple signals. | New capability, needs validation. Changelog extraction limited to GitHub Releases (not arbitrary changelog files). |
 
-### Large PR Intelligence
-
-| Tool | Approach | Strength | Weakness |
-|------|----------|----------|----------|
-| **CodeRabbit** | Dual-model: trivial/complex classification; filters trivial changes | Cost-efficient (50% savings); identifies obvious low-risk changes | Binary classification (trivial vs complex) lacks granularity; 1/5 completeness score |
-| **Qodo Merge** | PR compression; split detection; incremental update button | Manages large PRs progressively; suggests splitting | No file-level risk scoring; relies on user to trigger incremental review |
-| **Microsoft Internal** | AI reviews 600K+ PRs/month; PR summarization; conversational follow-up | Massive scale validation; proven workflow integration | No public details on file prioritization algorithm |
-| **Greptile** | Full codebase context; semantic dependency analysis | Cross-file understanding for impact analysis | Cost scales with repo size; latency concerns |
-| **Kodiai (proposed)** | Risk-weighted file scoring; top-N selection; coverage disclosure; adaptive severity | Transparent prioritization; principled token budgeting; honest about coverage gaps | Heuristic scoring requires tuning; may miss important files in edge cases |
-
-### Feedback-Driven Learning
+### Timeout Resilience
 
 | Tool | Approach | Strength | Weakness |
 |------|----------|----------|----------|
-| **CodeRabbit** | Natural language "Learnings" from chat; org/repo scoping; explicit reasoning required | High-quality signals; inspectable; team-specific | High friction (requires typing explanation, not just reacting); slow adoption |
-| **Greptile** | Thumbs up/down + commit-addressed tracking; embedding clustering; team-specific filtering | Low friction; objective metric (did they actually fix it?); improved address rate 19% to 55% | Embedding infrastructure required; commit tracking is lossy |
-| **Qodo Merge** | No persistent learning across PRs; extra instructions per run | Clean, no drift risk | Zero learning; same false positives repeat forever |
-| **Kodiai (proposed)** | Reaction-based + title fingerprint aggregation; threshold-based auto-suppress; transparent reporting | Balanced friction (react, don't type); deterministic threshold (no drift from single reaction); auditable | Requires enough reactions to reach threshold; cold-start period per repo |
+| **CodeRabbit** | 3600s timeout, concurrency of 8. Buffers full output, delivers as batch. Moved away from streaming to buffered. Sends "most relevant callers" to LLM when context window overflows. | Long timeout accommodates most PRs. Smart context selection. | No partial results on timeout. All-or-nothing. |
+| **Qodo Merge** | Independent per-run execution. No persistent state between runs. | Clean, no drift risk. | No progressive review. No partial results. |
+| **GitHub Copilot Code Review** | Static review comments only. Limited to context window. | Fast, single-pass. | Cannot handle very large PRs. No fallback strategy. |
+| **Kodiai (proposed)** | Pre-review risk estimation with auto-scope reduction. Graceful timeout messages with partial context. Dynamic timeout based on PR complexity. Deferred: checkpoint publishing and retry with reduced scope. | Proactive: prevents timeouts rather than just handling them. Informative: tells users what was and was not reviewed. | Checkpoint publishing is architecturally complex. |
+
+### Intelligent Retrieval
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | Automated web queries for recent public information. Project knowledge for coding plans. | Always-current information from web. | Not embedding-based. Not learning from past reviews. |
+| **Research (RAG literature)** | Hybrid retrieval (sparse + dense), query decomposition, re-ranking, multi-stage pipelines. | Proven patterns at scale. | General-purpose, not code-review-specific. |
+| **Kodiai (current)** | Repo-scoped vector retrieval with sqlite-vec. Fixed distance threshold (0.3). Query = title + first 20 file names. Owner-level sharing optional. | Repo isolation by design. Provenance tracking. | Naive query construction. Fixed threshold misses variable quality. No language awareness. |
+| **Kodiai (proposed)** | Multi-signal query (intent + languages + diff patterns). Adaptive threshold (knee-point detection). Language-aware post-retrieval re-ranking. Optional severity/category filtering. | Contextually rich queries. Self-tuning thresholds. Language relevance. | Adaptive threshold adds complexity. Language re-ranking is heuristic-based. |
+
+---
+
+## User Experience Implications
+
+### Dependency Bump Analysis
+
+- **Information density**: Dep bump reviews should be concise. A 100-line changelog dump in the review comment is noise. Summarize to 3-5 key points: semver type, breaking changes, CVEs resolved, confidence score.
+- **Merge signal**: The merge confidence score should be prominent and unambiguous. "Merge confidence: HIGH (patch update, no breaking changes, resolves CVE-2025-1234)" gives the reviewer immediate signal.
+- **False positive risk**: Not all files named `package.json` are npm manifests (could be test fixtures). Use heuristic: must be at root or in a recognized subdirectory pattern.
+- **Ecosystem coverage**: Start with npm/Node.js (most common for GitHub Apps), then Go, Python, Rust. Don't try to support all ecosystems at once.
+
+### Timeout Resilience
+
+- **User trust**: Timeouts erode trust. "Your review tool timed out and produced nothing" is worse than "Your review tool completed a partial review." Even a partial result with 3 findings is better than nothing.
+- **Notification noise**: Timeout messages and partial result updates should not generate excessive notifications. Use the existing upsert pattern for the Review Details comment (single comment, update in place).
+- **Scope transparency**: When auto-reducing scope, disclose it: "PR scope reduced due to complexity: reviewing top 30 files by risk (of 120 total). Full review available with `@kodiai full-review`."
+
+### Intelligent Retrieval
+
+- **Invisible improvement**: Better retrieval manifests as better review quality, not as a visible feature. Users will not see "multi-signal query" but will notice more relevant findings.
+- **Threshold sensitivity**: Adaptive thresholds must have safety bounds. Never return zero results (floor: top 1 result regardless of distance). Never return noise (ceiling: distance > 0.8 regardless of distribution).
+- **Provenance continues**: The existing delta reporting with learning provenance already shows retrieval sources. Improved retrieval feeds directly into this existing UX.
 
 ---
 
 ## Sources
 
-### Direct Evidence (HIGH confidence)
-- XBMC deep PR analysis (100 PRs, 96 review comments): `.planning/xbmc_deep_analysis.md`
-- XBMC high-comment PR analysis (6 PRs, 450+ comments): `.planning/xbmc_high_comment_pr_analysis.md`
-- Kodiai codebase audit: `src/execution/review-prompt.ts`, `src/execution/diff-analysis.ts`, `src/knowledge/confidence.ts`, `src/handlers/feedback-sync.ts`, `src/learning/`
+### Direct Evidence (HIGH confidence -- verified in codebase)
+- `src/handlers/review.ts` lines 1427-1460 -- current retrieval query construction: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`
+- `src/learning/isolation.ts` -- retrieval with fixed `distanceThreshold`, repo isolation, owner-level sharing
+- `src/learning/memory-store.ts` -- vec0 virtual table with `severity`, `category` metadata columns, no `language` column
+- `src/execution/executor.ts` -- AbortController timeout (default 600s), binary success/timeout result
+- `src/lib/errors.ts` -- timeout classified as "timeout" error category, generic error message
+- `src/execution/config.ts` lines 255-267 -- retrieval config: `topK: 5`, `distanceThreshold: 0.3`, `maxContextChars: 2000`
+- `src/execution/diff-analysis.ts` -- `EXTENSION_LANGUAGE_MAP` for 20 languages, `classifyFileLanguage()`
+- `src/lib/pr-intent-parser.ts` -- existing PR intent parsing (conventional commits, bracket tags)
+
+### GitHub API (HIGH confidence -- verified via official docs)
+- [GitHub Global Advisory API](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories?affects=package@version&ecosystem=npm`, returns CVE ID, severity, patched versions. Up to 1000 packages per query.
+- [GitHub Advisory Database](https://github.com/github/advisory-database) -- Open Source Vulnerability (OSV) format, npm ecosystem advisories including malware
 
 ### Competitive Intelligence (MEDIUM confidence)
-- [CodeRabbit Learnings documentation](https://docs.coderabbit.ai/guides/learnings)
-- [CodeRabbit: Why emojis suck for reinforcement learning](https://www.coderabbit.ai/blog/why-emojis-suck-for-reinforcement-learning)
-- [Qodo Merge review tool documentation](https://qodo-merge-docs.qodo.ai/tools/review/)
-- [Qodo Merge compliance documentation](https://qodo-merge-docs.qodo.ai/tools/compliance/)
-- [Microsoft AI code review at scale](https://devblogs.microsoft.com/engineering-at-microsoft/enhancing-code-quality-at-scale-with-ai-powered-code-reviews/)
-- [Greptile embedding-based comment filtering (ZenML case study)](https://www.zenml.io/llmops-database/improving-ai-code-review-bot-comment-quality-through-vector-embeddings)
-- [ast-grep rule configuration](https://ast-grep.github.io/guide/rule-config.html)
-- [Danger.js documentation](https://danger.systems/js/)
+- [Renovate changelog extraction](https://docs.renovatebot.com/key-concepts/changelogs/) -- checks GitHub Releases and changelog files, filters to relevant versions
+- [Dependabot compatibility score](https://github.com/dependabot/dependabot-core/issues/4001) -- CI pass rate from public repos; minimum threshold for score display
+- [CodeRabbit OSV-Scanner integration](https://docs.coderabbit.ai/changelog) -- vulnerability scanning via OSV.dev
+- [CodeRabbit architecture (Google Cloud)](https://cloud.google.com/blog/products/ai-machine-learning/how-coderabbit-built-its-ai-code-review-agent-with-google-cloud-run) -- 3600s timeout, concurrency 8, buffered output over streaming
 
-### Industry Analysis (LOW confidence -- used for context only)
-- [Springer 2024 study on PR change impact analysis](https://link.springer.com/article/10.1007/s10664-024-10600-2)
-- [CodeRabbit 2026 enterprise gap analysis](https://ucstrategies.com/news/coderabbit-review-2026-fast-ai-code-reviews-but-a-critical-gap-enterprises-cant-ignore/)
-- [Qodo best AI code review tools 2026](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/)
-- [GitHub webhook events -- no reaction webhooks](https://docs.github.com/en/webhooks/webhook-events-and-payloads)
+### Research (MEDIUM confidence)
+- [VectorSearch: Enhancing Document Retrieval](https://arxiv.org/html/2409.17383v1) -- similarity threshold tuning, higher thresholds yield higher precision but lower recall
+- [RAG Techniques Repository](https://github.com/NirDiamant/RAG_Techniques) -- multi-signal query construction, hybrid retrieval, re-ranking patterns
+- [BUMP: Breaking Dependency Updates Dataset](https://github.com/chains-project/bump) -- SANER 2024 research on breaking dependency updates
+
+### Reference PR (HIGH confidence)
+- [xbmc/xbmc#27860](https://github.com/xbmc/xbmc/pull/27860) -- `[depends][target] Bump libcdio to 2.3.0`, labels: `Type: Improvement`, `Component: Depends`, 4 files changed including VERSION file and patches
 
 ---
-*Feature research for: Kodiai -- Language-Aware Enforcement, Large PR Intelligence, Feedback-Driven Learning*
-*Researched: 2026-02-13*
+*Feature research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
+*Researched: 2026-02-14*
