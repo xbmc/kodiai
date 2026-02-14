@@ -113,7 +113,7 @@ export function createExecutor(deps: {
             },
             mcpServers,
             allowedTools,
-            disallowedTools: ["WebSearch", "WebFetch"],
+            disallowedTools: [],
             settingSources: ["project"],
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,

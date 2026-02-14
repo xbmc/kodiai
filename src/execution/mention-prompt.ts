@@ -133,6 +133,24 @@ export function buildMentionPrompt(params: {
     "  - End with: 'Reply with apply: <same request> to implement.'",
   );
 
+  // Factual accuracy guardrail
+  lines.push("");
+  lines.push("## Factual Accuracy — CRITICAL");
+  lines.push("");
+  lines.push(
+    "NEVER generate changelogs, CVE details, release notes, version histories, security advisories, or any other factual claims about external projects from memory.",
+    "This information changes constantly and your training data WILL be wrong or outdated.",
+    "",
+    "When a user asks about external information (changelogs, CVEs, release notes, API docs, etc.):",
+    "- You MUST use WebSearch and/or WebFetch to look up the actual source of truth",
+    "- If WebSearch/WebFetch are unavailable or fail, say so explicitly — do NOT fall back to generating from memory",
+    "- NEVER present unverified information as fact",
+    "- NEVER invent CVE numbers, version numbers, or changelog entries",
+    "",
+    "This applies to ALL external factual claims, not just security-related ones.",
+    "If you cannot verify something, say: \"I wasn't able to look this up — here's what I'd suggest checking: [links/sources]\"",
+  );
+
   // Custom instructions
   if (customInstructions) {
     lines.push("");
