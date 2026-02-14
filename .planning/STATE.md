@@ -32,6 +32,7 @@ Progress: [##########] 100%
 | 40-large-pr-intelligence | 4 | ~12 min | ~3 min |
 | 41-feedback-driven-learning | 3 | ~9 min | ~3 min |
 | 42-commit-message-keywords-pr-intent | 2 | ~30 min | ~15 min |
+| Phase 43 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -48,6 +49,8 @@ Recent decisions affecting current work:
 - [Phase 42]: Large PR commit scanning uses strategic sampling (>50 commits): first 10, every 5th middle, last 10.
 - [Phase 42]: [no-review] now short-circuits review before workspace creation and posts acknowledgment.
 - [Phase 42]: Conventional commit metadata is now passed into prompt construction for type-specific review focus guidance.
+- [Phase 43]: Profile precedence is fixed as keyword override > manual config > auto-threshold
+- [Phase 43]: Auto selection metadata includes source and band for observability without handler coupling
 
 ### Pending Todos
 
