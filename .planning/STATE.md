@@ -5,22 +5,22 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.9 Phase 51 — Timeout Resilience
+**Current focus:** v0.9 Phase 52 — Intelligent Retrieval
 
 ## Current Position
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
-**Phase:** 51 of 55 (Timeout Resilience)
-**Plan:** 3 of 3 complete
-**Status:** Phase Complete
-**Last Activity:** 2026-02-14 — Completed 51-03-PLAN.md (timeout_partial test gap closure)
+**Phase:** 52 of 55 (Intelligent Retrieval)
+**Plan:** 1 of 2 complete
+**Status:** In Progress
+**Last Activity:** 2026-02-14 — Completed 52-01-PLAN.md (core retrieval functions)
 
-**Progress:** [██████████] 100%
+**Progress:** [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 148
+- Total plans completed: 149
 - Total milestones shipped: 8
 - Total phases completed: 51
 
@@ -35,6 +35,9 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **51-02:** Scope reduction only applies when profileSelection.source === "auto" (respects explicit user choices)
 - **51-02:** timeout_partial category used when isTimeout=true AND published=true
 - **51-03:** Matched formatErrorComment assertion strings to actual SUGGESTIONS content for timeout_partial
+- **52-01:** Query length capped at 800 chars to prevent embedding quality degradation
+- **52-01:** Language reranking uses mild multipliers (0.85/1.15) as tiebreaker, not dominant factor
+- **52-01:** Unknown-language records treated as neutral (1.0 multiplier) to avoid demoting config/docs
 
 ### Pending Todos
 
@@ -54,6 +57,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-14
-**Stopped At:** Completed 51-03-PLAN.md (phase 51 fully complete with gap closure)
+**Stopped At:** Completed 52-01-PLAN.md (core retrieval functions TDD)
 **Resume File:** None
-**Next action:** `/gsd:execute-phase 52`
+**Next action:** Execute 52-02-PLAN.md (integration)
