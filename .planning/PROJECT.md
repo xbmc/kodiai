@@ -96,10 +96,15 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-- [ ] Multi-signal retrieval query (title + body + commits)
-- [ ] Auto-profile selection based on PR size
-- [ ] Advanced language patterns (method_missing overuse, goroutine leaks)
-- [ ] Feedback analytics dashboard
+- [ ] Conversational review with @kodiai follow-up responses on review findings
+- [ ] Thread context tracking with rate limiting for conversational mode
+- [ ] Auto-profile selection based on PR size (≤100 lines strict, 500+ minimal)
+- [ ] Smart finding prioritization using multi-factor scoring (severity + file risk + category + recurrence)
+- [ ] Author experience detection and tone adaptation (first-time vs regular vs core contributors)
+- [ ] Commit message keyword parsing for review intent (PR title/body analysis)
+- [ ] Bracket tag extraction (`[Component]`, `[WIP]`, etc.)
+- [ ] Breaking change detection from PR metadata
+- [ ] Review mode override via keywords (`[strict-review]`, `[quick-review]`, `[security-review]`, `[style-ok]`, `[no-review]`)
 
 ### Out of Scope
 
@@ -154,15 +159,16 @@ v0.7 ships an installable GitHub App that:
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
 
-## Next Milestone Goals
+## Current Milestone: v0.8 Conversational Intelligence
 
-After v0.7, evaluate:
-- Enhanced language coverage (expand beyond 9 languages, add language-specific anti-patterns)
-- Multi-signal retrieval (PR body + commits, not just title)
-- Auto-profile selection based on PR size
-- Feedback analytics dashboard
-- Marketplace preparation (public listing, broader user base)
-- Platform expansion (additional auth methods, deployment options)
+**Goal:** Transform Kodiai from one-shot reviewer to conversational partner, enabling dialog-based refinement of reviews and intelligent adaptation to PR context.
+
+**Target features:**
+- Conversational review foundation with @kodiai follow-up responses
+- Auto-profile selection based on PR size (strict/balanced/minimal)
+- Smart finding prioritization using multi-factor scoring
+- Author experience adaptation (gentler tone for newcomers)
+- Commit message keyword detection for review intent signaling
 
 ## Constraints
 
@@ -217,4 +223,4 @@ After v0.7, evaluate:
 | Safety floors for feedback | CRITICAL and MAJOR security/correctness never auto-suppressed regardless of feedback volume | ✓ Good — v0.7 |
 
 ---
-*Last updated: 2026-02-14 after v0.7 milestone completion*
+*Last updated: 2026-02-13 after starting v0.8 milestone*

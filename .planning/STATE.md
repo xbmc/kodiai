@@ -5,17 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 41 — Feedback-Driven Learning
+**Current focus:** Milestone v0.8 — Conversational Intelligence
 
 ## Current Position
 
-Milestone: v0.7 Intelligent Review Content
-Phase: 41 of 41 (Feedback-Driven Learning)
-Plan: 3 of 3 complete
-Status: Complete
-Last activity: 2026-02-14 — Completed 41-03 (pipeline integration)
+Milestone: v0.8 Conversational Intelligence
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-13 — Milestone v0.8 started
 
-Progress: [==========] 100%
+Progress: [          ] 0%
 
 ## Performance Metrics
 
