@@ -35,7 +35,7 @@ describe("aggregateSuppressiblePatterns", () => {
     const store = createMockStore([pattern]);
     const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(1);
-    expect(result[0].fingerprint).toBe("fp-test");
+    expect(result[0]!.fingerprint).toBe("fp-test");
   });
 
   test("excludes pattern with thumbsDown below threshold", () => {
@@ -91,6 +91,6 @@ describe("aggregateSuppressiblePatterns", () => {
     const store = createMockStore([good, bad1, bad2]);
     const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(1);
-    expect(result[0].fingerprint).toBe("fp-good");
+    expect(result[0]!.fingerprint).toBe("fp-good");
   });
 });
