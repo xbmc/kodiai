@@ -64,7 +64,20 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] Updated STATE.md manually after state tooling parse failure**
+- **Found during:** Post-task state update
+- **Issue:** `gsd-tools state advance-plan` and `state record-session` could not parse session/position fields in current `STATE.md` format.
+- **Fix:** Applied the expected plan/session progression directly in `STATE.md` (`Plan` counter, last activity, stopped-at, next action).
+- **Files modified:** `.planning/STATE.md`
+- **Verification:** `STATE.md` now reflects `Completed 46-02-PLAN.md` and next action points to plan 46-03.
+- **Committed in:** `9c1f1e5cf9` (metadata commit)
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking)
+**Impact on plan:** Execution completed with expected outputs; only state bookkeeping required manual fallback.
 
 ## Issues Encountered
 - Full `bunx tsc --noEmit` reports pre-existing type errors in unrelated test files (`src/handlers/feedback-sync.test.ts`, `src/learning/memory-store.test.ts`, `src/lib/delta-classifier.test.ts`, `src/lib/finding-dedup.test.ts`). Plan-scoped changes verified via targeted and full `bun test` runs.
