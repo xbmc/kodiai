@@ -29,6 +29,10 @@ import {
   parsePRIntent,
   type ParsedPRIntent,
 } from "../lib/pr-intent-parser.ts";
+import {
+  resolveReviewProfile,
+  type ResolvedReviewProfile,
+} from "../lib/auto-profile.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
@@ -146,6 +150,7 @@ function formatReviewDetailsSummary(params: {
   };
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
+  profileSelection: ResolvedReviewProfile;
 }): string {
   const {
     reviewOutputKey,
@@ -156,7 +161,14 @@ function formatReviewDetailsSummary(params: {
     largePRTriage,
     feedbackSuppressionCount,
     keywordParsing,
+    profileSelection,
   } = params;
+
+  const profileLine = profileSelection.source === "auto"
+    ? `- Profile: ${profileSelection.selectedProfile} (auto, lines changed: ${profileSelection.linesChanged})`
+    : profileSelection.source === "manual"
+      ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
+      : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
 
   const sections = [
     "<details>",
@@ -164,6 +176,7 @@ function formatReviewDetailsSummary(params: {
     "",
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
+    profileLine,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];
@@ -1332,45 +1345,60 @@ export function createReviewHandler(deps: {
         let resolvedFocusAreas = [...config.review.focusAreas];
         let resolvedIgnoredAreas = [...config.review.ignoredAreas];
 
-        if (config.review.profile) {
-          const preset = PROFILE_PRESETS[config.review.profile];
-          if (preset) {
-            if (resolvedSeverityMinLevel === "minor") {
-              resolvedSeverityMinLevel = preset.severityMinLevel;
-            }
-            if (resolvedMaxComments === 7) {
-              resolvedMaxComments = preset.maxComments;
-            }
-            if (resolvedFocusAreas.length === 0) {
-              resolvedFocusAreas = [...preset.focusAreas];
-            }
-            if (resolvedIgnoredAreas.length === 0) {
-              resolvedIgnoredAreas = [...preset.ignoredAreas];
-            }
-          }
-        }
+        const profileSelectionLinesChanged = Math.max(0, (pr.additions ?? 0) + (pr.deletions ?? 0));
+        const profileSelection = resolveReviewProfile({
+          keywordProfileOverride: parsedIntent.profileOverride,
+          manualProfile: config.review.profile ?? null,
+          linesChanged: profileSelectionLinesChanged,
+        });
 
-        if (parsedIntent.profileOverride) {
-          const keywordPreset = PROFILE_PRESETS[parsedIntent.profileOverride];
-          if (keywordPreset) {
-            resolvedSeverityMinLevel = keywordPreset.severityMinLevel;
-            resolvedMaxComments = keywordPreset.maxComments;
-            if (keywordPreset.focusAreas.length > 0) {
-              resolvedFocusAreas = [...keywordPreset.focusAreas];
+        const selectedPreset = PROFILE_PRESETS[profileSelection.selectedProfile];
+        if (selectedPreset) {
+          if (profileSelection.source === "keyword") {
+            resolvedSeverityMinLevel = selectedPreset.severityMinLevel;
+            resolvedMaxComments = selectedPreset.maxComments;
+            if (selectedPreset.focusAreas.length > 0) {
+              resolvedFocusAreas = [...selectedPreset.focusAreas];
             }
-            if (keywordPreset.ignoredAreas.length > 0) {
-              resolvedIgnoredAreas = [...keywordPreset.ignoredAreas];
+            if (selectedPreset.ignoredAreas.length > 0) {
+              resolvedIgnoredAreas = [...selectedPreset.ignoredAreas];
             }
+
             logger.info(
               {
                 ...baseLog,
                 gate: "keyword-profile-override",
-                profile: parsedIntent.profileOverride,
+                profile: profileSelection.selectedProfile,
               },
               "Keyword profile override applied",
             );
+          } else {
+            if (resolvedSeverityMinLevel === "minor") {
+              resolvedSeverityMinLevel = selectedPreset.severityMinLevel;
+            }
+            if (resolvedMaxComments === 7) {
+              resolvedMaxComments = selectedPreset.maxComments;
+            }
+            if (resolvedFocusAreas.length === 0) {
+              resolvedFocusAreas = [...selectedPreset.focusAreas];
+            }
+            if (resolvedIgnoredAreas.length === 0) {
+              resolvedIgnoredAreas = [...selectedPreset.ignoredAreas];
+            }
           }
         }
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "review-profile-selection",
+            selectedProfile: profileSelection.selectedProfile,
+            source: profileSelection.source,
+            linesChanged: profileSelection.linesChanged,
+            autoBand: profileSelection.autoBand,
+          },
+          "Review profile resolved",
+        );
 
         if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
           resolvedIgnoredAreas.push("style");
@@ -1713,6 +1741,7 @@ export function createReviewHandler(deps: {
               } : undefined,
               feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
               keywordParsing: parsedIntent,
+              profileSelection,
             });
 
             if (result.published) {
