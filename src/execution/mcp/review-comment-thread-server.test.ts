@@ -35,7 +35,7 @@ describe("createReviewCommentThreadServer", () => {
       },
     };
 
-    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo");
+    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo", []);
     const handler = getToolHandler(server);
 
     const result = await handler({

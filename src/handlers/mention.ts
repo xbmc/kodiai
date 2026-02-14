@@ -771,6 +771,7 @@ export function createMentionHandler(deps: {
           // so the executor can enable the in-thread reply MCP tool.
           commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
           deliveryId: event.id,
+          botHandles: possibleHandles,
           writeMode: writeEnabled,
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,

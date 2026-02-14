@@ -2,11 +2,13 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
+import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
 
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
   repo: string,
+  botHandles: string[],
   reviewOutputKey?: string,
   onPublish?: () => void,
   prNumber?: number,
@@ -475,8 +477,12 @@ export function createCommentServer(
               owner,
               repo,
               comment_id: commentId,
-              body: maybeStampMarker(
-                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+              // Defense-in-depth: sanitize outgoing mentions on all publish paths (Phase 50, CONV-05)
+              body: sanitizeOutgoingMentions(
+                maybeStampMarker(
+                  sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+                ),
+                botHandles,
               ),
             });
             onPublish?.();
@@ -508,8 +514,11 @@ export function createCommentServer(
         async ({ issueNumber, body }) => {
           try {
             const octokit = await getOctokit();
-            const sanitized = maybeStampMarker(
-              sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+            const sanitized = sanitizeOutgoingMentions(
+              maybeStampMarker(
+                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+              ),
+              botHandles,
             );
 
             const isApproveNoIssues =

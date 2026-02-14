@@ -55,6 +55,7 @@ describe("createInlineReviewServer output idempotency", () => {
       "acme",
       "repo",
       101,
+      [],
       reviewOutputKey,
       "delivery-123",
     );
@@ -76,6 +77,7 @@ describe("createInlineReviewServer output idempotency", () => {
       "acme",
       "repo",
       101,
+      [],
       reviewOutputKey,
       "delivery-123",
     );

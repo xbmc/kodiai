@@ -2,11 +2,13 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import type { Octokit } from "@octokit/rest";
 import { z } from "zod";
 import { wrapInDetails } from "../../lib/formatting.ts";
+import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
 
 export function createReviewCommentThreadServer(
   getOctokit: () => Promise<Octokit>,
   owner: string,
   repo: string,
+  botHandles: string[],
   onPublish?: () => void,
 ) {
   function sanitizeDecisionBody(wrappedBody: string): string {
@@ -55,7 +57,10 @@ export function createReviewCommentThreadServer(
               repo,
               pull_number: pullRequestNumber,
               comment_id: commentId,
-              body: sanitizeDecisionBody(wrapInDetails(body, "kodiai response")),
+              body: sanitizeOutgoingMentions(
+                sanitizeDecisionBody(wrapInDetails(body, "kodiai response")),
+                botHandles,
+              ),
             });
 
             onPublish?.();

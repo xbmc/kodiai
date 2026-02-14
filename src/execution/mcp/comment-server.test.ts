@@ -36,7 +36,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
     const { create } = getToolHandlers(server);
 
     const result = await create({ issueNumber: 1, body: "Hello" });
@@ -58,7 +58,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -100,7 +100,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -146,6 +146,7 @@ describe("createCommentServer", () => {
       async () => octokit as never,
       "acme",
       "repo",
+      [],
       undefined,
       () => { publishCalled = true; },
       42,
@@ -203,6 +204,7 @@ describe("createCommentServer", () => {
       async () => octokit as never,
       "acme",
       "repo",
+      [],
       undefined,
       undefined,
       undefined,
@@ -251,6 +253,7 @@ describe("createCommentServer", () => {
       async () => octokit as never,
       "acme",
       "repo",
+      [],
       undefined,
       undefined,
       42,
@@ -284,7 +287,7 @@ describe("createCommentServer", () => {
       },
     };
 
-    const server = createCommentServer(async () => octokit as never, "acme", "repo");
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
     const { create } = getToolHandlers(server);
 
     const body = [
@@ -346,7 +349,7 @@ function makeOctokit() {
 
 async function callCreate(body: string) {
   const { octokit, getCalledBody } = makeOctokit();
-  const server = createCommentServer(async () => octokit as never, "acme", "repo");
+  const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
   const { create } = getToolHandlers(server);
   const result = await create({ issueNumber: 1, body });
   return { result, calledBody: getCalledBody() };

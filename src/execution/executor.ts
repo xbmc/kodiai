@@ -65,6 +65,7 @@ export function createExecutor(deps: {
           repo: context.repo,
           prNumber: context.prNumber,
           commentId: context.commentId,
+          botHandles: context.botHandles,
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
           logger,

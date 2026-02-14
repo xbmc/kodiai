@@ -1613,6 +1613,7 @@ export function createReviewHandler(deps: {
           repo: apiRepo,
           prNumber: pr.number,
           commentId: undefined,
+          botHandles: [githubApp.getAppSlug(), "claude"],
           eventType: `pull_request.${payload.action}`,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,

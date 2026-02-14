@@ -6,6 +6,7 @@ import {
   buildReviewOutputMarker,
   ensureReviewOutputNotPublished,
 } from "../../handlers/review-idempotency.ts";
+import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
@@ -14,6 +15,7 @@ export function createInlineReviewServer(
   owner: string,
   repo: string,
   prNumber: number,
+  botHandles: string[],
   reviewOutputKey?: string,
   deliveryId?: string,
   logger?: Logger,
@@ -131,13 +133,14 @@ export function createInlineReviewServer(
               pull_number: prNumber,
             });
 
+            const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
             const params: Record<string, unknown> = {
               owner,
               repo,
               pull_number: prNumber,
               body: reviewOutputKey
-                ? `${body}\n\n${buildReviewOutputMarker(reviewOutputKey)}`
-                : body,
+                ? `${sanitizedBody}\n\n${buildReviewOutputMarker(reviewOutputKey)}`
+                : sanitizedBody,
               path,
               side: side || "RIGHT",
               commit_id: pr.data.head.sha,

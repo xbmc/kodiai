@@ -22,6 +22,9 @@ export type ExecutionContext = {
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
 
+  /** Bot mention handles for outgoing sanitization (e.g. ['kodiai', 'claude']). */
+  botHandles?: string[];
+
   /**
    * Enables write-mode execution.
    *
