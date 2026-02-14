@@ -5,24 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 39 — Language-Aware Enforcement
+**Current focus:** Phase 40 — Large PR Intelligence
 
 ## Current Position
 
 Milestone: v0.7 Intelligent Review Content
-Phase: 39 of 41 (Language-Aware Enforcement)
-Plan: 4 of 4 complete
-Status: Phase Complete
-Last activity: 2026-02-14 — Completed 39-04 (enforcement pipeline integration into review handler)
+Phase: 40 of 41 (Large PR Intelligence)
+Plan: 2 of 4 complete
+Status: In Progress
+Last activity: 2026-02-14 — Completed 40-02 (risk scoring and numstat parser tests)
 
-Progress: [==========] 100%
+Progress: [=====-----] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 83
-- Average duration: 5 min
-- Total execution time: 374 min
+- Total plans completed: 84
+- Average duration: 4 min
+- Total execution time: 376 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -41,16 +41,8 @@ Progress: [==========] 100%
 All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.6 decisions archived.
 
 Recent decisions affecting current work:
-- Research recommends extension-over-addition: extend existing pipelines, zero new dependencies
-- Language severity floors enforced post-LLM (deterministic TypeScript, not prompt-driven)
-- Feedback suppression default OFF (explicit opt-in via `.kodiai.yml`)
-- Precedence: user suppressions > user minLevel > language overrides > default
-- Go gofmt treated as always-on when go.mod exists (no config file needed)
-- Tooling detection is fail-open: filesystem errors return empty maps, never block review
-- Only style/documentation findings suppressable by tooling; correctness/security/performance never suppressed
-- Keyword matching uses OR-of-AND groups for finding classification precision
-- Enforcement runs between finding extraction and suppression matching in review pipeline
-- toolingSuppressed flag merged back after severity floors (enforceSeverityFloors resets it)
+- Tests written against pre-existing 40-01 implementation; RED+GREEN phases collapsed since code already passed
+- Used describe blocks to group related tests (computeFileRiskScores, triageFilesByRisk, parseNumstatPerFile)
 
 ### Pending Todos
 
@@ -63,6 +55,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 39-04-PLAN.md (phase 39 complete)
+Stopped at: Completed 40-02-PLAN.md
 Resume file: None
-Next action: Phase 39 verification or next phase
+Next action: Execute 40-03-PLAN.md (prompt triage section)
