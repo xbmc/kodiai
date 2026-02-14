@@ -8,19 +8,33 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.6 Review Output Formatting & UX
+## Latest Release: v0.6 Review Output Formatting & UX
 
-**Goal:** Make review outputs maintainer-friendly, merge-confident, and low-drama by restructuring comment format, adding explicit merge recommendations, and removing noise
+**Shipped:** 2026-02-14
+**Phases:** 34-38 (5 phases, 10 plans)
 
-**Target features:**
-- Structured initial reviews (What changed → Strengths → Observations → Suggestions → Verdict)
-- Explicit merge recommendations (✅ Ready to merge / ⚠️ Address X before merging)
-- Embedded Review Details in summaries (remove standalone comments)
-- Delta-focused re-reviews (only show what's changed/relevant since last review)
-- Remove time-saved estimates from Review Details
-- Use ✅ for verified positives, severity tags for negatives
+**Delivered:**
+- Structured five-section review template (What Changed → Strengths → Observations → Suggestions → Verdict)
+- Impact vs preference categorization separating real risks from style nits with inline severity tags
+- Explicit merge recommendations using blocker-driven verdict logic (Ready to merge / Ready with minor / Address before merging)
+- Embedded Review Details as compact 4-line factual appendix in summary comments (removed time-saved estimates)
+- Delta re-review formatting showing only what changed (new/resolved/still-open findings) with transition-based verdicts
 
-## Latest Release: v0.5 Advanced Learning & Language Support
+<details>
+<summary>Previous Release: v0.5 Advanced Learning & Language Support (2026-02-13)</summary>
+
+**Delivered:**
+- SHA-keyed run state for idempotent webhook processing with force-push detection
+- Embedding-backed learning memory with Voyage AI and sqlite-vec for semantic pattern retrieval
+- Incremental re-review focusing on changed code with fingerprint-based finding deduplication
+- Bounded retrieval context enriching prompts with top-K similar findings
+- Multi-language classification and guidance for 20 languages (detailed guidance for 9 major languages)
+- Explainable delta reporting with new/resolved/still-open labeling and learning provenance citations
+- Configurable output language localization preserving canonical severity/category taxonomy
+
+</details>
+
+## Previous Milestones
 
 **Shipped:** 2026-02-13
 **Phases:** 30-33 (4 phases, 12 plans)
@@ -34,17 +48,6 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Explainable delta reporting with new/resolved/still-open labeling and learning provenance citations
 - Configurable output language localization preserving canonical severity/category taxonomy
 
-<details>
-<summary>Previous Release: v0.4 Intelligent Review System (2026-02-12)</summary>
-
-**Delivered:**
-- Configurable review strictness (mode, severity threshold, focus areas, comment caps)
-- Context-aware review prompts with deterministic diff analysis and path-scoped instructions
-- Repo-scoped knowledge store with explicit suppressions and confidence filtering
-- Quantitative Review Details reporting (files, lines, severity counts, time-saved estimate)
-- Idempotent thumbs-reaction feedback capture linked to persisted findings
-
-</details>
 
 ## Requirements
 
@@ -85,16 +88,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Configurable output language localization preserving code snippet integrity — v0.5
 - ✓ Explainable delta reporting with new/resolved/still-open labels and learning provenance — v0.5
 
+- ✓ Structured review output formatting with predictable sections and explicit merge verdicts — v0.6
+
 ### Active
 
-- [ ] **FORMAT-01**: Initial PR reviews use structured format (What changed → Strengths → Observations → Suggestions → Verdict)
-- [ ] **FORMAT-02**: Verdict section provides explicit merge recommendation (✅ Ready / ⚠️ Address X)
-- [ ] **FORMAT-03**: Review Details embedded as collapsible section in summary (not standalone comment)
-- [ ] **FORMAT-04**: Re-reviews show delta findings only (what changed since last review)
-- [ ] **FORMAT-05**: Remove "Estimated review time saved" from Review Details
-- [ ] **FORMAT-06**: Use ✅ checkmarks for verified positives, severity tags for negatives
-- [ ] **FORMAT-07**: Separate blockers from minor issues explicitly in verdict
-- [ ] **FORMAT-08**: Signal review scope with progress checklist (e.g., "Reviewed: logic ✅, tests ✅")
+None yet — define in next milestone planning
 
 ### Out of Scope
 
@@ -115,11 +113,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
 - **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
-- **Codebase:** ~22,481 lines of TypeScript, 372 tests passing
+- **Codebase:** ~24,161 lines of TypeScript, 460 tests passing (100% pass rate)
 
 ## Current State
 
-v0.5 ships an installable GitHub App that:
+v0.6 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -128,22 +126,27 @@ v0.5 ships an installable GitHub App that:
 - Filters low-confidence and explicitly suppressed findings from visible inline output
 - Captures thumbs-up/down feedback reactions for future learning analysis
 - Records usage telemetry (tokens, cost, duration) for every execution
-- **Deduplicates webhook redeliveries using SHA-keyed run state for idempotent processing**
-- **Learns from past reviews using embedding-backed semantic retrieval with repo isolation**
-- **Performs incremental re-reviews focusing only on changed code hunks**
-- **Enriches review context with bounded top-K similar findings from learning memory**
-- **Classifies and adapts to 20 programming languages with language-specific guidance**
-- **Supports localized output language while preserving code snippet integrity**
-- **Reports finding deltas (new/resolved/still-open) with explainable learning provenance**
+- Deduplicates webhook redeliveries using SHA-keyed run state for idempotent processing
+- Learns from past reviews using embedding-backed semantic retrieval with repo isolation
+- Performs incremental re-reviews focusing only on changed code hunks
+- Enriches review context with bounded top-K similar findings from learning memory
+- Classifies and adapts to 20 programming languages with language-specific guidance
+- Supports localized output language while preserving code snippet integrity
+- Reports finding deltas (new/resolved/still-open) with explainable learning provenance
+- **Formats initial reviews with five predictable sections (What Changed → Strengths → Observations → Suggestions → Verdict)**
+- **Categorizes findings by Impact (real risks) vs Preference (style nits) with inline severity tags**
+- **Delivers explicit merge recommendations using blocker-driven verdict logic**
+- **Embeds Review Details as minimal 4-line appendix in summary comments**
+- **Shows delta-focused re-reviews highlighting only new/resolved/still-open findings with transition verdicts**
 - Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
 
 ## Next Milestone Goals
 
-- Define v0.6 requirement set and roadmap from shipped v0.5 learnings
-- Evaluate whether embeddings-based learning should stay optional or become default behavior
-- Prioritize larger platform bets after v0.5 (marketplace readiness, broader deployment options)
+- Define v0.7 requirements and roadmap from shipped v0.6 learnings
+- Evaluate focus areas: advanced formatting features, marketplace preparation, or platform expansion
+- Consider whether any v0.6 formatting patterns need refinement based on real-world usage
 
 ## Constraints
 
@@ -180,6 +183,15 @@ v0.5 ships an installable GitHub App that:
 | Free-form outputLanguage config | z.string() not enum; LLMs understand both ISO codes and full language names | ✓ Good — v0.5 |
 | Language guidance capped at top 5 | Prevents prompt bloat in multi-language PRs | ✓ Good — v0.5 |
 | Distance thresholds for provenance relevance | <=0.15 high, <=0.25 moderate, else low; provides explainable confidence labels | ✓ Good — v0.5 |
+| Five-section review template | Predictable structure: What Changed → Strengths → Observations → Suggestions → Verdict | ✓ Good — v0.6 |
+| Impact/Preference subsections | Separates real risks from style nits; CRITICAL/MAJOR only under Impact | ✓ Good — v0.6 |
+| Inline severity tags on findings | [SEVERITY] prefix on finding lines, not headings; keeps format flat and scannable | ✓ Good — v0.6 |
+| Blocker-driven verdict logic | CRITICAL/MAJOR under Impact = blockers; verdict must match blocker count | ✓ Good — v0.6 |
+| FORMAT-13 minimal Review Details | Exactly 4 data lines: files, lines changed, findings, timestamp; removed time-saved metric | ✓ Good — v0.6 |
+| Embed-or-standalone Review Details | Published reviews embed in summary, clean reviews use standalone; fallback on append failure | ✓ Good — v0.6 |
+| Conditional delta template | When deltaContext present, use delta template; standard path unchanged | ✓ Good — v0.6 |
+| Transition-based delta verdict | Green=improved, blue=unchanged, yellow=worsened; distinct from initial review verdicts | ✓ Good — v0.6 |
+| Discriminator chain pattern | Each sanitizer checks its tag and returns body unchanged if no match; composable | ✓ Good — v0.6 |
 
 ---
-*Last updated: 2026-02-13 after v0.5 milestone completion*
+*Last updated: 2026-02-14 after v0.6 milestone completion*
