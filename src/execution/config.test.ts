@@ -45,6 +45,12 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.review.focusAreas).toEqual([]);
     expect(config.review.ignoredAreas).toEqual([]);
     expect(config.review.maxComments).toBe(7);
+    expect(config.review.prioritization).toEqual({
+      severity: 0.45,
+      fileRisk: 0.3,
+      category: 0.15,
+      recurrence: 0.1,
+    });
     expect(config.review.pathInstructions).toEqual([]);
     expect(config.review.profile).toBeUndefined();
     expect(config.review.fileCategories).toBeUndefined();
@@ -877,6 +883,63 @@ test("review.minConfidence parses and defaults correctly", async () => {
     await writeFile(join(dir, ".kodiai.yml"), "review:\n  enabled: true\n");
     const defaults = await loadRepoConfig(dir);
     expect(defaults.config.review.minConfidence).toBe(0);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("review.prioritization parses custom weights", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  prioritization:",
+        "    severity: 0.25",
+        "    fileRisk: 0.4",
+        "    category: 0.2",
+        "    recurrence: 0.15",
+      ].join("\n") + "\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.prioritization).toEqual({
+      severity: 0.25,
+      fileRisk: 0.4,
+      category: 0.2,
+      recurrence: 0.15,
+    });
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("invalid review.prioritization falls back review section to defaults", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  maxComments: 12",
+        "  prioritization:",
+        "    severity: 1.2",
+        "    fileRisk: 0.4",
+        "    category: 0.2",
+        "    recurrence: 0.1",
+      ].join("\n") + "\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.review.maxComments).toBe(7);
+    expect(config.review.prioritization).toEqual({
+      severity: 0.45,
+      fileRisk: 0.3,
+      category: 0.15,
+      recurrence: 0.1,
+    });
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]!.section).toBe("review");
   } finally {
     await rm(dir, { recursive: true });
   }

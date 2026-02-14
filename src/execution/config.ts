@@ -92,6 +92,20 @@ const suppressionPatternSchema = z.object({
   paths: z.array(z.string()).optional(),
 });
 
+const findingPrioritizationWeightsSchema = z
+  .object({
+    severity: z.number().min(0).max(1).default(0.45),
+    fileRisk: z.number().min(0).max(1).default(0.3),
+    category: z.number().min(0).max(1).default(0.15),
+    recurrence: z.number().min(0).max(1).default(0.1),
+  })
+  .default({
+    severity: 0.45,
+    fileRisk: 0.3,
+    category: 0.15,
+    recurrence: 0.1,
+  });
+
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -148,6 +162,7 @@ const reviewSchema = z
       .array(z.union([z.string().min(1), suppressionPatternSchema]))
       .default([]),
     minConfidence: z.number().min(0).max(100).default(0),
+    prioritization: findingPrioritizationWeightsSchema,
     pathInstructions: z.array(pathInstructionSchema).default([]),
     profile: z.enum(["strict", "balanced", "minimal"]).optional(),
     /** Output language for review prose. Free-form string (ISO code or full name). Default: "en". */
@@ -181,6 +196,12 @@ const reviewSchema = z
     maxComments: 7,
     suppressions: [],
     minConfidence: 0,
+    prioritization: {
+      severity: 0.45,
+      fileRisk: 0.3,
+      category: 0.15,
+      recurrence: 0.1,
+    },
     pathInstructions: [],
     outputLanguage: "en",
   });
