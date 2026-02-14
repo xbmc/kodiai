@@ -320,6 +320,47 @@ const largePRSchema = z
     },
   });
 
+const feedbackAutoSuppressThresholdsSchema = z
+  .object({
+    minThumbsDown: z.number().min(1).max(50).default(3),
+    minDistinctReactors: z.number().min(1).max(50).default(3),
+    minDistinctPRs: z.number().min(1).max(50).default(2),
+  })
+  .default({
+    minThumbsDown: 3,
+    minDistinctReactors: 3,
+    minDistinctPRs: 2,
+  });
+
+const feedbackAutoSuppressSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    thresholds: feedbackAutoSuppressThresholdsSchema,
+  })
+  .default({
+    enabled: false,
+    thresholds: {
+      minThumbsDown: 3,
+      minDistinctReactors: 3,
+      minDistinctPRs: 2,
+    },
+  });
+
+const feedbackSchema = z
+  .object({
+    autoSuppress: feedbackAutoSuppressSchema,
+  })
+  .default({
+    autoSuppress: {
+      enabled: false,
+      thresholds: {
+        minThumbsDown: 3,
+        minDistinctReactors: 3,
+        minDistinctPRs: 2,
+      },
+    },
+  });
+
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
@@ -336,6 +377,7 @@ const repoConfigSchema = z.object({
   knowledge: knowledgeSchema,
   languageRules: languageRulesSchema,
   largePR: largePRSchema,
+  feedback: feedbackSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -563,6 +605,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // feedback
+  const feedbackResult = feedbackSchema.safeParse(obj.feedback);
+  let feedback: z.infer<typeof feedbackSchema>;
+  if (feedbackResult.success) {
+    feedback = feedbackResult.data;
+  } else {
+    feedback = feedbackSchema.parse({});
+    warnings.push({
+      section: "feedback",
+      issues: feedbackResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
@@ -575,6 +632,7 @@ export async function loadRepoConfig(
     knowledge,
     languageRules,
     largePR,
+    feedback,
   };
 
   return { config, warnings };
