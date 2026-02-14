@@ -1,3 +1,5 @@
+import type { FeedbackPattern } from "../feedback/types.ts";
+
 export type FindingSeverity = "critical" | "major" | "medium" | "minor";
 
 export type FindingCategory =
@@ -159,6 +161,9 @@ export type KnowledgeStore = {
   purgeOldRuns(retentionDays?: number): number;
   getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null;
   getPriorReviewFindings(params: { repo: string; prNumber: number; limit?: number }): PriorFinding[];
+  aggregateFeedbackPatterns(repo: string): FeedbackPattern[];
+  clearFeedbackSuppressions(repo: string): number;
+  listFeedbackSuppressions(repo: string): FeedbackPattern[];
   checkpoint(): void;
   close(): void;
 };

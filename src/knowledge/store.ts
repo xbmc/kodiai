@@ -2,10 +2,13 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "pino";
+import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   FeedbackReaction,
   FindingCommentCandidate,
   FindingRecord,
+  FindingCategory,
+  FindingSeverity,
   GlobalPatternRecord,
   KnowledgeStore,
   PriorFinding,
@@ -78,6 +81,21 @@ function _fingerprintTitle(title: string): string {
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
+
+/** FNV-1a fingerprint matching review.ts fingerprintFindingTitle (includes fp- prefix). */
+function _feedbackFingerprint(title: string): string {
+  return `fp-${_fingerprintTitle(title)}`;
+}
+
+type FeedbackAggregationRow = {
+  title: string;
+  thumbs_down_count: number;
+  thumbs_up_count: number;
+  distinct_reactors: number;
+  distinct_prs: number;
+  latest_severity: string;
+  latest_category: string;
+};
 
 type FindingCommentCandidateRow = {
   finding_id: number;
@@ -242,6 +260,9 @@ export function createKnowledgeStore(opts: {
   db.run(
     "CREATE INDEX IF NOT EXISTS idx_feedback_reactions_finding ON feedback_reactions(finding_id)",
   );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_feedback_reactions_repo_title ON feedback_reactions(repo, title)",
+  );
 
   db.run(`
     CREATE TABLE IF NOT EXISTS run_state (
@@ -394,6 +415,22 @@ export function createKnowledgeStore(opts: {
       AND f.suppressed = 0
     ORDER BY f.id ASC
     LIMIT $limit
+  `);
+
+  const aggregateFeedbackPatternsStmt = db.query(`
+    SELECT
+      fr.title,
+      SUM(CASE WHEN fr.reaction_content = '-1' THEN 1 ELSE 0 END) AS thumbs_down_count,
+      SUM(CASE WHEN fr.reaction_content = '+1' THEN 1 ELSE 0 END) AS thumbs_up_count,
+      COUNT(DISTINCT CASE WHEN fr.reaction_content = '-1' THEN fr.reactor_login END) AS distinct_reactors,
+      COUNT(DISTINCT CASE WHEN fr.reaction_content = '-1' THEN r.pr_number END) AS distinct_prs,
+      (SELECT fr2.severity FROM feedback_reactions fr2 WHERE fr2.repo = $repo AND fr2.title = fr.title ORDER BY fr2.id DESC LIMIT 1) AS latest_severity,
+      (SELECT fr2.category FROM feedback_reactions fr2 WHERE fr2.repo = $repo AND fr2.title = fr.title ORDER BY fr2.id DESC LIMIT 1) AS latest_category
+    FROM feedback_reactions fr
+    INNER JOIN reviews r ON r.id = fr.review_id
+    WHERE fr.repo = $repo
+    GROUP BY fr.title
+    HAVING SUM(CASE WHEN fr.reaction_content = '-1' THEN 1 ELSE 0 END) > 0
   `);
 
   const checkAndClaimRunTxn = db.transaction((params: {
@@ -761,6 +798,32 @@ export function createKnowledgeStore(opts: {
         endLine: row.end_line,
         commentId: row.comment_id,
       }));
+    },
+
+    aggregateFeedbackPatterns(repo: string): FeedbackPattern[] {
+      const rows = aggregateFeedbackPatternsStmt.all({ $repo: repo }) as FeedbackAggregationRow[];
+      return rows.map((row) => ({
+        fingerprint: _feedbackFingerprint(row.title),
+        thumbsDownCount: row.thumbs_down_count,
+        thumbsUpCount: row.thumbs_up_count,
+        distinctReactors: row.distinct_reactors,
+        distinctPRs: row.distinct_prs,
+        severity: row.latest_severity as FindingSeverity,
+        category: row.latest_category as FindingCategory,
+        sampleTitle: row.title,
+      }));
+    },
+
+    clearFeedbackSuppressions(repo: string): number {
+      const result = db.run(
+        "DELETE FROM feedback_reactions WHERE repo = $repo",
+        { $repo: repo },
+      );
+      return result.changes;
+    },
+
+    listFeedbackSuppressions(repo: string): FeedbackPattern[] {
+      return store.aggregateFeedbackPatterns(repo);
     },
 
     checkpoint(): void {
