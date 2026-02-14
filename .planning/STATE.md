@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 41 of 41 (Feedback-Driven Learning)
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In Progress
-Last activity: 2026-02-14 — Completed 41-01 (foundation types and config)
+Last activity: 2026-02-14 — Completed 41-02 (feedback aggregator and safety guard)
 
-Progress: [===-------] 33%
+Progress: [======----] 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 87
+- Total plans completed: 88
 - Average duration: 4 min
-- Total execution time: 386 min
+- Total execution time: 389 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -44,6 +44,9 @@ Recent decisions affecting current work:
 - Duplicated FNV-1a hash into _feedbackFingerprint helper with fp- prefix to match review.ts, avoiding circular imports
 - listFeedbackSuppressions delegates to aggregateFeedbackPatterns for identical logic with distinct API naming
 - autoSuppress.enabled defaults to false (opt-in per FEED-08), thresholds default to 3/3/2 per FEED-09
+- Safety guard protects CRITICAL (all categories) and MAJOR security/correctness from auto-suppression per FEED-04/FEED-05
+- Confidence adjustment uses +10 per thumbs-up, -20 per thumbs-down with [0,100] clamping
+- evaluateFeedbackSuppressions is fail-open: on store errors, logs warning and returns empty suppression set
 
 ### Pending Todos
 
@@ -56,6 +59,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 41-01-PLAN.md (foundation types and config)
+Stopped at: Completed 41-02-PLAN.md (feedback aggregator and safety guard)
 Resume file: None
-Next action: Execute 41-02-PLAN.md (feedback aggregator and safety guard)
+Next action: Execute 41-03-PLAN.md (pipeline integration)
