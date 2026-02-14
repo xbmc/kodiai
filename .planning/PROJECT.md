@@ -8,21 +8,20 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.7 Intelligent Review Content
-
-**Goal:** Improve review content quality through language-aware enforcement, large PR intelligence, and feedback-driven learning
-
-**Target features:**
-- Language-specific severity enforcement (suppress auto-fixable, elevate safety-critical)
-- Risk-weighted file prioritization for large PRs
-- Thumbs-down feedback loop with auto-suppression
-- Multi-signal retrieval (PR body + commits, not just title)
-- Auto-profile selection based on PR size
-
-## Latest Release: v0.6 Review Output Formatting & UX
+## Latest Release: v0.7 Intelligent Review Content
 
 **Shipped:** 2026-02-14
-**Phases:** 34-38 (5 phases, 10 plans)
+**Phases:** 39-41 (3 phases, 11 plans, 16 commits)
+
+**Delivered:**
+- Language-aware enforcement with 10-pattern safety catalog (auto-suppress tooling noise, elevate C++ null deref/Go unchecked errors)
+- Risk-weighted file prioritization for large PRs (5-dimension scoring, tiered analysis for top 50 files)
+- Feedback-driven suppression with safety floors (auto-suppress after 3+ thumbs-down from 3+ users across 2+ PRs)
+- Fail-open enforcement pipeline with composable config schema
+- 616 tests passing (100% pass rate)
+
+<details>
+<summary>Previous Release: v0.6 Review Output Formatting & UX (2026-02-14)</summary>
 
 **Delivered:**
 - Structured five-section review template (What Changed → Strengths → Observations → Suggestions → Verdict)
@@ -31,8 +30,10 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Embedded Review Details as compact 4-line factual appendix in summary comments (removed time-saved estimates)
 - Delta re-review formatting showing only what changed (new/resolved/still-open findings) with transition-based verdicts
 
+</details>
+
 <details>
-<summary>Previous Release: v0.5 Advanced Learning & Language Support (2026-02-13)</summary>
+<summary>v0.5 Advanced Learning & Language Support (2026-02-13)</summary>
 
 **Delivered:**
 - SHA-keyed run state for idempotent webhook processing with force-push detection
@@ -87,15 +88,18 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 - ✓ Structured review output formatting with predictable sections and explicit merge verdicts — v0.6
 
+- ✓ Language-aware enforcement with per-language severity rules — v0.7
+- ✓ Auto-suppress formatting violations flagged by linters/formatters — v0.7
+- ✓ Risk-weighted file prioritization for large PRs (>50 files) — v0.7
+- ✓ Thumbs-down reaction feedback with confidence recalibration — v0.7
+- ✓ Auto-suppression after N ignored occurrences — v0.7
+
 ### Active
 
-- [ ] Language-aware enforcement with per-language severity rules
-- [ ] Auto-suppress formatting violations flagged by linters/formatters
-- [ ] Risk-weighted file prioritization for large PRs (>50 files)
-- [ ] Thumbs-down reaction feedback with confidence recalibration
-- [ ] Auto-suppression after N ignored occurrences
 - [ ] Multi-signal retrieval query (title + body + commits)
 - [ ] Auto-profile selection based on PR size
+- [ ] Advanced language patterns (method_missing overuse, goroutine leaks)
+- [ ] Feedback analytics dashboard
 
 ### Out of Scope
 
@@ -116,11 +120,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
 - **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
-- **Codebase:** ~24,161 lines of TypeScript, 460 tests passing (100% pass rate)
+- **Codebase:** ~29,527 lines of TypeScript, 616 tests passing (100% pass rate)
 
 ## Current State
 
-v0.6 ships an installable GitHub App that:
+v0.7 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -136,21 +140,29 @@ v0.6 ships an installable GitHub App that:
 - Classifies and adapts to 20 programming languages with language-specific guidance
 - Supports localized output language while preserving code snippet integrity
 - Reports finding deltas (new/resolved/still-open) with explainable learning provenance
-- **Formats initial reviews with five predictable sections (What Changed → Strengths → Observations → Suggestions → Verdict)**
-- **Categorizes findings by Impact (real risks) vs Preference (style nits) with inline severity tags**
-- **Delivers explicit merge recommendations using blocker-driven verdict logic**
-- **Embeds Review Details as minimal 4-line appendix in summary comments**
-- **Shows delta-focused re-reviews highlighting only new/resolved/still-open findings with transition verdicts**
-- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language)
+- Formats initial reviews with five predictable sections (What Changed → Strengths → Observations → Suggestions → Verdict)
+- Categorizes findings by Impact (real risks) vs Preference (style nits) with inline severity tags
+- Delivers explicit merge recommendations using blocker-driven verdict logic
+- Embeds Review Details as minimal 4-line appendix in summary comments
+- Shows delta-focused re-reviews highlighting only new/resolved/still-open findings with transition verdicts
+- **Auto-suppresses formatting/import violations when tooling configs detected (7 languages)**
+- **Elevates safety-critical patterns to CRITICAL/MAJOR severity (C++ null deref, Go unchecked errors, Python bare except)**
+- **Applies risk-weighted file prioritization for large PRs (>50 files) with tiered analysis (top 30 full, next 20 abbreviated)**
+- **Learns from thumbs-down reactions and auto-suppresses patterns after 3+ rejections from 3+ users across 2+ PRs**
+- **Enforces safety floors preventing suppression of CRITICAL and MAJOR security/correctness findings**
+- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
 
 ## Next Milestone Goals
 
 After v0.7, evaluate:
+- Enhanced language coverage (expand beyond 9 languages, add language-specific anti-patterns)
+- Multi-signal retrieval (PR body + commits, not just title)
+- Auto-profile selection based on PR size
+- Feedback analytics dashboard
 - Marketplace preparation (public listing, broader user base)
 - Platform expansion (additional auth methods, deployment options)
-- Advanced code understanding (architectural analysis, cross-file context)
 
 ## Constraints
 
@@ -196,6 +208,13 @@ After v0.7, evaluate:
 | Conditional delta template | When deltaContext present, use delta template; standard path unchanged | ✓ Good — v0.6 |
 | Transition-based delta verdict | Green=improved, blue=unchanged, yellow=worsened; distinct from initial review verdicts | ✓ Good — v0.6 |
 | Discriminator chain pattern | Each sanitizer checks its tag and returns body unchanged if no match; composable | ✓ Good — v0.6 |
+| 10-pattern severity floor catalog | C++ null deref/uninitialized, Go unchecked error, Python bare except, etc. with configurable overrides | ✓ Good — v0.7 |
+| Tooling detection for suppression | Auto-suppress formatting when .prettierrc/.clang-format/.black exists | ✓ Good — v0.7 |
+| Post-LLM deterministic enforcement | Enforcement runs after LLM extraction, not prompt-driven; ensures guarantees | ✓ Good — v0.7 |
+| 5-dimension risk scoring | Lines changed + path risk + category + language + executable for composite file risk | ✓ Good — v0.7 |
+| Tiered large PR analysis | Top 30 full review, next 20 abbreviated, rest mention-only; not binary include/exclude | ✓ Good — v0.7 |
+| Feedback aggregation thresholds | 3+ thumbs-down from 3+ reactors across 2+ PRs triggers auto-suppression | ✓ Good — v0.7 |
+| Safety floors for feedback | CRITICAL and MAJOR security/correctness never auto-suppressed regardless of feedback volume | ✓ Good — v0.7 |
 
 ---
-*Last updated: 2026-02-14 after v0.7 milestone started*
+*Last updated: 2026-02-14 after v0.7 milestone completion*

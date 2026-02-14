@@ -70,3 +70,13 @@
 
 ---
 
+
+## v0.7 Intelligent Review Content (Shipped: 2026-02-14)
+
+**Phases completed:** 41 phases, 107 plans, 3 tasks
+
+**Key accomplishments:**
+- (none recorded)
+
+---
+
