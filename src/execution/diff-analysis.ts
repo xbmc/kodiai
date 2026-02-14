@@ -177,6 +177,32 @@ const CONTENT_RISK_SIGNALS: Array<{ pattern: RegExp; signal: string }> = [
   },
 ];
 
+export type PerFileStats = Map<string, { added: number; removed: number }>;
+
+export function parseNumstatPerFile(numstatLines: string[]): PerFileStats {
+  const result: PerFileStats = new Map();
+
+  for (const line of numstatLines) {
+    const parts = line.split("\t");
+    if (parts.length < 3) continue;
+
+    const [addedRaw, removedRaw, ...pathParts] = parts;
+    const filePath = pathParts.join("\t"); // handles paths with tabs (rare)
+
+    if (!addedRaw || !removedRaw || !filePath) continue;
+
+    const added = addedRaw === "-" ? 0 : Number.parseInt(addedRaw, 10);
+    const removed = removedRaw === "-" ? 0 : Number.parseInt(removedRaw, 10);
+
+    result.set(filePath, {
+      added: Number.isNaN(added) ? 0 : added,
+      removed: Number.isNaN(removed) ? 0 : removed,
+    });
+  }
+
+  return result;
+}
+
 function parseNumstat(numstatLines: string[]): { added: number; removed: number } {
   let totalLinesAdded = 0;
   let totalLinesRemoved = 0;
