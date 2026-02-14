@@ -3557,3 +3557,885 @@ describe("createReviewHandler enforcement integration", () => {
     await workspaceFixture.cleanup();
   });
 });
+
+describe("createReviewHandler feedback-driven suppression", () => {
+  // Helper: compute the same FNV-1a fingerprint used by review.ts
+  function fingerprintTitle(title: string): string {
+    const normalized = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ");
+    let hash = 2166136261;
+    for (let i = 0; i < normalized.length; i += 1) {
+      hash ^= normalized.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    const unsigned = hash >>> 0;
+    return `fp-${unsigned.toString(16).padStart(8, "0")}`;
+  }
+
+  test("feedback suppression marks matching findings as suppressed", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    // Enable feedback suppression in config
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "feedback:",
+        "  autoSuppress:",
+        "    enabled: true",
+        "    thresholds:",
+        "      minThumbsDown: 3",
+        "      minDistinctReactors: 3",
+        "      minDistinctPRs: 2",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    const findingTitle = "Unused import detected";
+    const findingFp = fingerprintTitle(findingTitle);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) return { data: [] };
+            return {
+              data: [
+                {
+                  id: 801,
+                  body: [
+                    "```yaml",
+                    "severity: minor",
+                    "category: style",
+                    "```",
+                    "",
+                    `**${findingTitle}**`,
+                    "Remove unused import.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/utils/helpers.ts",
+                  line: 3,
+                  start_line: 3,
+                },
+              ],
+            };
+          },
+          deleteReviewComment: async () => ({ data: {} }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-feedback-suppress",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: () => 1,
+        recordFindings: (findings: Array<Record<string, unknown>>) => {
+          recordedFindings.push(...findings);
+        },
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
+        recordSuppressionLog: () => undefined,
+        recordGlobalPattern: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+        // Return a feedback pattern that matches our finding and exceeds thresholds
+        aggregateFeedbackPatterns: () => [
+          {
+            fingerprint: findingFp,
+            thumbsDownCount: 5,
+            thumbsUpCount: 0,
+            distinctReactors: 4,
+            distinctPRs: 3,
+            severity: "minor" as const,
+            category: "style" as const,
+            sampleTitle: findingTitle,
+          },
+        ],
+        clearFeedbackSuppressions: () => 0,
+        listFeedbackSuppressions: () => [],
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // Finding should be suppressed via feedback
+    expect(recordedFindings).toHaveLength(1);
+    expect(recordedFindings[0]?.suppressed).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("feedback suppression skipped when config.feedback.autoSuppress.enabled is false", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    // Default config: feedback.autoSuppress.enabled = false (not set)
+    let exposeInlineFinding = false;
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    let aggregateCalled = false;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) return { data: [] };
+            return {
+              data: [
+                {
+                  id: 802,
+                  body: [
+                    "```yaml",
+                    "severity: minor",
+                    "category: style",
+                    "```",
+                    "",
+                    "**Unused import detected**",
+                    "Remove unused import.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/utils/helpers.ts",
+                  line: 3,
+                  start_line: 3,
+                },
+              ],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-feedback-disabled",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: () => 1,
+        recordFindings: (findings: Array<Record<string, unknown>>) => {
+          recordedFindings.push(...findings);
+        },
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
+        recordSuppressionLog: () => undefined,
+        recordGlobalPattern: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+        aggregateFeedbackPatterns: () => {
+          aggregateCalled = true;
+          return [];
+        },
+        clearFeedbackSuppressions: () => 0,
+        listFeedbackSuppressions: () => [],
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // Finding should NOT be suppressed (feedback disabled by default)
+    expect(recordedFindings).toHaveLength(1);
+    expect(recordedFindings[0]?.suppressed).toBe(false);
+    // aggregateFeedbackPatterns should NOT be called when enabled=false
+    expect(aggregateCalled).toBe(false);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("CRITICAL findings are not feedback-suppressed", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    // Enable feedback suppression
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "feedback:",
+        "  autoSuppress:",
+        "    enabled: true",
+        "    thresholds:",
+        "      minThumbsDown: 3",
+        "      minDistinctReactors: 3",
+        "      minDistinctPRs: 2",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    const findingTitle = "SQL injection risk";
+    const findingFp = fingerprintTitle(findingTitle);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) return { data: [] };
+            return {
+              data: [
+                {
+                  id: 803,
+                  body: [
+                    "```yaml",
+                    "severity: critical",
+                    "category: security",
+                    "```",
+                    "",
+                    `**${findingTitle}**`,
+                    "User input not sanitized.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/db/query.ts",
+                  line: 22,
+                  start_line: 20,
+                },
+              ],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-feedback-critical",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: () => 1,
+        recordFindings: (findings: Array<Record<string, unknown>>) => {
+          recordedFindings.push(...findings);
+        },
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
+        recordSuppressionLog: () => undefined,
+        recordGlobalPattern: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+        // Return a CRITICAL security pattern -- should be protected by safety guard
+        aggregateFeedbackPatterns: () => [
+          {
+            fingerprint: findingFp,
+            thumbsDownCount: 10,
+            thumbsUpCount: 0,
+            distinctReactors: 5,
+            distinctPRs: 4,
+            severity: "critical" as const,
+            category: "security" as const,
+            sampleTitle: findingTitle,
+          },
+        ],
+        clearFeedbackSuppressions: () => 0,
+        listFeedbackSuppressions: () => [],
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // CRITICAL finding should NOT be suppressed even with matching feedback pattern
+    expect(recordedFindings).toHaveLength(1);
+    expect(recordedFindings[0]?.suppressed).toBe(false);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("feedback evaluation failure is fail-open", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    // Enable feedback suppression
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "feedback:",
+        "  autoSuppress:",
+        "    enabled: true",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    const recordedFindings: Array<Record<string, unknown>> = [];
+    const { logger: capLogger, entries: logEntries } = createCaptureLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) return { data: [] };
+            return {
+              data: [
+                {
+                  id: 804,
+                  body: [
+                    "```yaml",
+                    "severity: minor",
+                    "category: style",
+                    "```",
+                    "",
+                    "**Unused import detected**",
+                    "Remove unused import.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/utils/helpers.ts",
+                  line: 3,
+                  start_line: 3,
+                },
+              ],
+            };
+          },
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-feedback-error",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: () => 1,
+        recordFindings: (findings: Array<Record<string, unknown>>) => {
+          recordedFindings.push(...findings);
+        },
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
+        recordSuppressionLog: () => undefined,
+        recordGlobalPattern: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+        // Throw an error to simulate store failure
+        aggregateFeedbackPatterns: () => {
+          throw new Error("Database connection lost");
+        },
+        clearFeedbackSuppressions: () => 0,
+        listFeedbackSuppressions: () => [],
+      },
+      logger: capLogger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // Review should complete successfully with no feedback suppressions (fail-open)
+    expect(recordedFindings).toHaveLength(1);
+    expect(recordedFindings[0]?.suppressed).toBe(false);
+
+    // Should have logged a warning about the failure
+    const warningEntry = logEntries.find(e =>
+      e.message.includes("Failed to evaluate feedback suppressions"),
+    );
+    expect(warningEntry).toBeDefined();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("Review Details includes feedback suppression count", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    // Enable feedback suppression
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "feedback:",
+        "  autoSuppress:",
+        "    enabled: true",
+        "    thresholds:",
+        "      minThumbsDown: 3",
+        "      minDistinctReactors: 3",
+        "      minDistinctPRs: 2",
+      ].join("\n") + "\n",
+    );
+
+    let exposeInlineFinding = false;
+    let detailsCommentBody: string | undefined;
+    const findingTitle1 = "Unused import detected";
+    const findingTitle2 = "Missing null check in handler";
+    const findingFp1 = fingerprintTitle(findingTitle1);
+    const findingFp2 = fingerprintTitle(findingTitle2);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => {
+            if (!exposeInlineFinding) return { data: [] };
+            return {
+              data: [
+                {
+                  id: 805,
+                  body: [
+                    "```yaml",
+                    "severity: minor",
+                    "category: style",
+                    "```",
+                    "",
+                    `**${findingTitle1}**`,
+                    "Remove unused import.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/utils/helpers.ts",
+                  line: 3,
+                  start_line: 3,
+                },
+                {
+                  id: 806,
+                  body: [
+                    "```yaml",
+                    "severity: medium",
+                    "category: correctness",
+                    "```",
+                    "",
+                    `**${findingTitle2}**`,
+                    "Add null check before accessing property.",
+                    "",
+                    marker,
+                  ].join("\n"),
+                  path: "src/handlers/api.ts",
+                  line: 15,
+                  start_line: 14,
+                },
+              ],
+            };
+          },
+          deleteReviewComment: async () => ({ data: {} }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          exposeInlineFinding = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-feedback-details",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: {
+        recordReview: () => 1,
+        recordFindings: () => undefined,
+        recordFeedbackReactions: () => undefined,
+        listRecentFindingCommentCandidates: () => [],
+        recordSuppressionLog: () => undefined,
+        recordGlobalPattern: () => undefined,
+        getRepoStats: () => ({}) as never,
+        getRepoTrends: () => [],
+        checkpoint: () => undefined,
+        close: () => undefined,
+        // Return 2 patterns matching both findings, both suppressible (medium/minor)
+        aggregateFeedbackPatterns: () => [
+          {
+            fingerprint: findingFp1,
+            thumbsDownCount: 5,
+            thumbsUpCount: 1,
+            distinctReactors: 4,
+            distinctPRs: 3,
+            severity: "minor" as const,
+            category: "style" as const,
+            sampleTitle: findingTitle1,
+          },
+          {
+            fingerprint: findingFp2,
+            thumbsDownCount: 4,
+            thumbsUpCount: 0,
+            distinctReactors: 3,
+            distinctPRs: 2,
+            severity: "medium" as const,
+            category: "correctness" as const,
+            sampleTitle: findingTitle2,
+          },
+        ],
+        clearFeedbackSuppressions: () => 0,
+        listFeedbackSuppressions: () => [],
+      },
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    // Review Details should contain the feedback suppression count
+    expect(detailsCommentBody).toBeDefined();
+    expect(detailsCommentBody).toContain("2 patterns auto-suppressed by feedback");
+
+    await workspaceFixture.cleanup();
+  });
+});
