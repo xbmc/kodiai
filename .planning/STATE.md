@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.7 Intelligent Review Content
 Phase: 40 of 41 (Large PR Intelligence)
-Plan: 3 of 4 complete
-Status: In Progress
-Last activity: 2026-02-14 — Completed 40-03 (prompt triage section and Review Details disclosure)
+Plan: 4 of 4 complete
+Status: Phase Complete
+Last activity: 2026-02-14 — Completed 40-04 (pipeline integration)
 
-Progress: [=======---] 75%
+Progress: [==========] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 85
+- Total plans completed: 86
 - Average duration: 4 min
-- Total execution time: 379 min
+- Total execution time: 382 min
 
 **By latest shipped milestone (v0.6):**
 
@@ -45,6 +45,8 @@ Recent decisions affecting current work:
 - Used describe blocks to group related tests (computeFileRiskScores, triageFilesByRisk, parseNumstatPerFile)
 - Mention-only files excluded from LLM prompt (token waste), listed only in Review Details
 - 100-entry cap on skipped file listing for GitHub comment size limits
+- Abbreviated tier enforcement is post-LLM deterministic suppression, not prompt instruction (safety net)
+- totalFileCount override added to triageFilesByRisk for incremental mode threshold correctness
 
 ### Pending Todos
 
@@ -57,6 +59,6 @@ None currently.
 ## Session Continuity
 
 Last session: 2026-02-14
-Stopped at: Completed 40-03-PLAN.md (prompt triage section and Review Details disclosure)
+Stopped at: Completed 40-04-PLAN.md (pipeline integration) -- Phase 40 complete
 Resume file: None
-Next action: Execute 40-04-PLAN.md (review handler orchestration integration)
+Next action: Phase 40 complete. Proceed to phase 41 or milestone wrap-up.
