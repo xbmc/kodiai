@@ -11,16 +11,16 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
 **Phase:** 51 of 55 (Timeout Resilience)
-**Plan:** Not started
-**Status:** Ready to plan
-**Last Activity:** 2026-02-14 — v0.9 roadmap created (5 phases, 17 requirements)
+**Plan:** 1 of 2 complete
+**Status:** Executing
+**Last Activity:** 2026-02-14 — Completed 51-01-PLAN.md (timeout estimation engine)
 
-**Progress:** [░░░░░░░░░░] 0%
+**Progress:** [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 145
+- Total plans completed: 146
 - Total milestones shipped: 8
 - Total phases completed: 50
 
@@ -29,6 +29,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 ### Decisions
 
 All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisions archived.
+
+- **51-01:** Timeout scales 0.5x-1.5x of base using formula base*(0.5+complexity), clamped [30,1800]
+- **51-01:** Dynamic timeout features default enabled (opt-out via config)
 
 ### Pending Todos
 
@@ -48,6 +51,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-14
-**Stopped At:** v0.9 roadmap created
+**Stopped At:** Completed 51-01-PLAN.md
 **Resume File:** None
-**Next action:** `/gsd:plan-phase 51`
+**Next action:** `/gsd:execute-phase 51` (plan 02)
