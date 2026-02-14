@@ -11,18 +11,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 Milestone: v0.8 Conversational Intelligence
 Phase: 42 of 46 (Commit Message Keywords & PR Intent)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-13 -- v0.8 roadmap created (phases 42-46)
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-02-14 -- completed plan 42-01 PR intent parser
 
-Progress: [..........] 0%
+Progress: [#####.....] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 107
+- Total plans completed: 108
 - Average duration: 4 min
-- Total execution time: ~428 min
+- Total execution time: ~440 min
 
 **By latest shipped milestone (v0.7):**
 
@@ -31,6 +31,7 @@ Progress: [..........] 0%
 | 39-language-aware-enforcement | 4 | ~12 min | ~3 min |
 | 40-large-pr-intelligence | 4 | ~12 min | ~3 min |
 | 41-feedback-driven-learning | 3 | ~9 min | ~3 min |
+| 42-commit-message-keywords-pr-intent | 1 | ~12 min | ~12 min |
 
 ## Accumulated Context
 
@@ -43,6 +44,8 @@ Recent decisions affecting current work:
 - Zero new npm dependencies required for v0.8 -- all features use existing stack
 - One new SQLite table needed: author experience cache (24-hour TTL)
 - `author_association` may return NONE instead of FIRST_TIME_CONTRIBUTOR -- defensive handling required
+- [Phase 42]: Conventional commit parsing now ignores leading bracket tags so [WIP] feat: still resolves intent.
+- [Phase 42]: Large PR commit scanning uses strategic sampling (>50 commits): first 10, every 5th middle, last 10.
 
 ### Pending Todos
 
@@ -55,7 +58,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-13
-Stopped at: v0.8 roadmap created with 5 phases (42-46), 31 requirements mapped
-Resume file: None
-Next action: `/gsd:plan-phase 42` to plan Commit Message Keywords & PR Intent
+Last session: 2026-02-14
+Stopped at: Completed 42-01-PLAN.md
+Resume file: .planning/phases/42-commit-message-keywords-pr-intent/42-02-PLAN.md
+Next action: `/gsd:execute-phase 42` to execute plan 42-02
