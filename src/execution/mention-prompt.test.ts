@@ -20,6 +20,7 @@ function baseMention(): MentionEvent {
     diffHunk: undefined,
     filePath: undefined,
     fileLine: undefined,
+    inReplyToId: undefined,
   };
 }
 
@@ -80,5 +81,25 @@ describe("buildMentionPrompt", () => {
       outputLanguage: "Spanish",
     });
     expect(prompt).toContain("Write your response in Spanish");
+  });
+
+  test("includes finding-specific preamble when finding context is provided", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "How do I fix this?",
+      findingContext: {
+        severity: "major",
+        category: "correctness",
+        filePath: "src/handler.ts",
+        startLine: 42,
+        title: "Handle null check",
+      },
+    });
+
+    expect(prompt).toContain("This is a follow-up to a review finding:");
+    expect(prompt).toContain("- Finding: [MAJOR] correctness");
+    expect(prompt).toContain("- File: src/handler.ts (line 42)");
+    expect(prompt).toContain("- Title: Handle null check");
   });
 });

@@ -11,10 +11,24 @@ export function buildMentionPrompt(params: {
   mention: MentionEvent;
   mentionContext: string;
   userQuestion: string;
+  findingContext?: {
+    severity: string;
+    category: string;
+    filePath: string;
+    startLine: number | null;
+    title: string;
+  };
   customInstructions?: string;
   outputLanguage?: string;
 }): string {
-  const { mention, mentionContext, userQuestion, customInstructions, outputLanguage } = params;
+  const {
+    mention,
+    mentionContext,
+    userQuestion,
+    findingContext,
+    customInstructions,
+    outputLanguage,
+  } = params;
   const lines: string[] = [];
 
   // Context header
@@ -31,6 +45,23 @@ export function buildMentionPrompt(params: {
     );
   }
   lines.push("");
+
+  if (findingContext) {
+    lines.push("This is a follow-up to a review finding:");
+    lines.push(
+      `- Finding: [${findingContext.severity.toUpperCase()}] ${findingContext.category}`,
+    );
+    if (findingContext.startLine !== null) {
+      lines.push(`- File: ${findingContext.filePath} (line ${findingContext.startLine})`);
+    } else {
+      lines.push(`- File: ${findingContext.filePath}`);
+    }
+    lines.push(`- Title: ${findingContext.title}`);
+    lines.push(
+      "Provide a focused response that addresses the user's question about this specific finding. Reference the finding's reasoning and suggest concrete code changes if applicable.",
+    );
+    lines.push("");
+  }
 
   // Context (optional)
   if (mentionContext.trim().length > 0) {
