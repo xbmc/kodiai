@@ -121,7 +121,10 @@ Plans:
   1. Retrieval queries incorporate PR intent, detected languages, diff risk signals, and author tier instead of just title and file paths
   2. Same-language historical findings rank higher than cross-language results in retrieval output
   3. A TypeScript PR retrieves TypeScript-specific historical findings preferentially over Python findings at similar distance
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 52-01-PLAN.md -- TDD: multi-signal query builder + language-aware re-ranker
+- [ ] 52-02-PLAN.md -- Wire query builder and re-ranker into review.ts retrieval path
 
 ### Phase 53: Dependency Bump Detection
 **Goal:** Users see dependency version bumps automatically identified, parsed, and classified in Kodiai reviews
