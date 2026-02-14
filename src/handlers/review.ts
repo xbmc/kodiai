@@ -48,6 +48,7 @@ import picomatch from "picomatch";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
+import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -259,9 +260,11 @@ async function upsertReviewDetailsComment(params: {
   prNumber: number;
   reviewOutputKey: string;
   body: string;
+  botHandles: string[];
 }): Promise<void> {
-  const { octokit, owner, repo, prNumber, reviewOutputKey, body } = params;
+  const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
   const marker = buildReviewDetailsMarker(reviewOutputKey);
+  const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
 
   const commentsResponse = await octokit.rest.issues.listComments({
     owner,
@@ -281,7 +284,7 @@ async function upsertReviewDetailsComment(params: {
       owner,
       repo,
       comment_id: existingComment.id,
-      body,
+      body: sanitizedBody,
     });
     return;
   }
@@ -290,7 +293,7 @@ async function upsertReviewDetailsComment(params: {
     owner,
     repo,
     issue_number: prNumber,
-    body,
+    body: sanitizedBody,
   });
 }
 
@@ -301,8 +304,9 @@ async function appendReviewDetailsToSummary(params: {
   prNumber: number;
   reviewOutputKey: string;
   reviewDetailsBlock: string;
+  botHandles: string[];
 }): Promise<void> {
-  const { octokit, owner, repo, prNumber, reviewOutputKey, reviewDetailsBlock } = params;
+  const { octokit, owner, repo, prNumber, reviewOutputKey, reviewDetailsBlock, botHandles } = params;
   const marker = buildReviewOutputMarker(reviewOutputKey);
 
   const commentsResponse = await octokit.rest.issues.listComments({
@@ -327,7 +331,7 @@ async function appendReviewDetailsToSummary(params: {
     owner,
     repo,
     comment_id: summaryComment.id,
-    body: updatedBody,
+    body: sanitizeOutgoingMentions(updatedBody, botHandles),
   });
 }
 
@@ -849,7 +853,8 @@ export function createReviewHandler(deps: {
           owner: payload.repository.owner.login,
           repo: payload.repository.name,
           issue_number: pr.number,
-          body: "Review skipped per `[no-review]` in PR title.",
+          // Defense-in-depth: sanitize outgoing mentions on all publish paths (Phase 50, CONV-05)
+          body: sanitizeOutgoingMentions("Review skipped per `[no-review]` in PR title.", [githubApp.getAppSlug(), "claude"]),
         });
       } catch (commentErr) {
         logger.warn(
@@ -1935,6 +1940,7 @@ export function createReviewHandler(deps: {
                   prNumber: pr.number,
                   reviewOutputKey,
                   reviewDetailsBlock: reviewDetailsBody,
+                  botHandles: [githubApp.getAppSlug(), "claude"],
                 });
               } catch (appendErr) {
                 // Fallback: post standalone if append fails (e.g., summary comment not found yet)
@@ -1949,6 +1955,7 @@ export function createReviewHandler(deps: {
                   prNumber: pr.number,
                   reviewOutputKey,
                   body: reviewDetailsBody,
+                  botHandles: [githubApp.getAppSlug(), "claude"],
                 });
               }
             } else {
@@ -1961,6 +1968,7 @@ export function createReviewHandler(deps: {
                 prNumber: pr.number,
                 reviewOutputKey,
                 body: reviewDetailsBody,
+                botHandles: [githubApp.getAppSlug(), "claude"],
               });
             }
           } catch (err) {
@@ -2022,7 +2030,7 @@ export function createReviewHandler(deps: {
                 owner: apiOwner,
                 repo: apiRepo,
                 issue_number: pr.number,
-                body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
+                body: sanitizeOutgoingMentions(`> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``, [githubApp.getAppSlug(), "claude"]),
               });
             } catch (err) {
               logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
@@ -2282,7 +2290,7 @@ export function createReviewHandler(deps: {
             owner: apiOwner,
             repo: apiRepo,
             issueNumber: pr.number,
-          }, errorBody, logger);
+          }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
         }
 
         // Auto-approval: only when autoApprove is enabled AND execution succeeded AND
@@ -2338,7 +2346,7 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
-                body: idempotencyCheck.marker,
+                body: sanitizeOutgoingMentions(idempotencyCheck.marker, [appSlug, "claude"]),
               });
 
               logger.info(
@@ -2383,7 +2391,7 @@ export function createReviewHandler(deps: {
             owner: apiOwner,
             repo: apiRepo,
             issueNumber: pr.number,
-          }, errorBody, logger);
+          }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment to PR");
         }
