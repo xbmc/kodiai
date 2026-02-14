@@ -69,11 +69,11 @@ See `.planning/milestones/v0.6-ROADMAP.md` for full phase details.
 
 </details>
 
-### 🚧 v0.7 Intelligent Review Content (In Progress)
+### v0.7 Intelligent Review Content (In Progress)
 
 **Milestone Goal:** Improve review content quality through language-aware severity enforcement that eliminates linter-catchable noise, risk-weighted file prioritization that focuses large PR reviews where they matter, and feedback-driven learning that auto-suppresses patterns users consistently reject.
 
-- [ ] **Phase 39: Language-Aware Enforcement** — Suppress auto-fixable findings, enforce safety-critical severity floors
+- [ ] **Phase 39: Language-Aware Enforcement** (4 plans) — Suppress auto-fixable findings, enforce safety-critical severity floors
 - [ ] **Phase 40: Large PR Intelligence** — Risk-score files and prioritize review attention for oversized PRs
 - [ ] **Phase 41: Feedback-Driven Learning** — Auto-suppress patterns with consistent negative feedback
 
@@ -89,12 +89,13 @@ See `.planning/milestones/v0.6-ROADMAP.md` for full phase details.
   3. C++ null dereference and uninitialized member findings appear as CRITICAL severity in published reviews, even if the LLM classified them lower
   4. Go unchecked error and Python bare except findings appear as MAJOR severity in published reviews, even if the LLM classified them lower
   5. A repo owner can override built-in language rules via `.kodiai.yml` `languageRules` config, and unknown languages receive generic review without errors
-**Plans**: TBD
+**Plans:** 4 plans
 
 Plans:
-- [ ] 39-01: TBD
-- [ ] 39-02: TBD
-- [ ] 39-03: TBD
+- [ ] 39-01-PLAN.md — Foundation types, tooling detection, and config schema extension
+- [ ] 39-02-PLAN.md — Severity floor enforcement with built-in pattern catalog (TDD)
+- [ ] 39-03-PLAN.md — Tooling-aware finding suppression (TDD)
+- [ ] 39-04-PLAN.md — Pipeline integration into review handler
 
 ### Phase 40: Large PR Intelligence
 **Goal**: When a PR exceeds the file threshold, the bot computes per-file risk scores and applies tiered analysis -- full review for highest-risk files, abbreviated review for medium-risk, mention-only for the rest -- with transparent disclosure of what was prioritized and why.
@@ -143,6 +144,6 @@ Phases execute in numeric order: 39 → 40 → 41
 | 26-29 | v0.4 | 17/17 | ✓ Complete | 2026-02-12 |
 | 30-33 | v0.5 | 12/12 | ✓ Complete | 2026-02-13 |
 | 34-38 | v0.6 | 10/10 | ✓ Complete | 2026-02-14 |
-| 39. Language-Aware Enforcement | v0.7 | 0/TBD | Not started | - |
+| 39. Language-Aware Enforcement | v0.7 | 0/4 | Not started | - |
 | 40. Large PR Intelligence | v0.7 | 0/TBD | Not started | - |
 | 41. Feedback-Driven Learning | v0.7 | 0/TBD | Not started | - |
