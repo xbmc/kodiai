@@ -134,11 +134,11 @@ Plans:
   2. A core contributor (MEMBER/OWNER) receives terse review comments that assume context
   3. Author classification is cached in SQLite with a 24-hour TTL to avoid redundant API calls
   4. If the GitHub Search API or classification logic fails, the review proceeds normally (fail-open)
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 45-01: TBD
-- [ ] 45-02: TBD
+- [ ] 45-01-PLAN.md — TDD: author classifier (three-tier mapping from author_association + PR count) and prompt tone section builder
+- [ ] 45-02-PLAN.md — Wire classification into review pipeline (SQLite cache, Search API enrichment, prompt injection, Review Details, fail-open)
 
 ### Phase 46: Conversational Review
 **Goal**: Users can mention @kodiai in a reply to a review finding and receive a contextual follow-up response, turning one-shot reviews into dialog
