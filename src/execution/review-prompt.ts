@@ -489,7 +489,58 @@ export function buildPathInstructionsSection(
   return section.trimEnd();
 }
 
-export function buildDiffAnalysisSection(analysis: DiffAnalysis): string {
+// ---------------------------------------------------------------------------
+// Helper: Large PR triage section builder (FORMAT-40)
+// ---------------------------------------------------------------------------
+export function buildLargePRTriageSection(params: {
+  fullReviewFiles: string[];
+  abbreviatedFiles: string[];
+  mentionOnlyCount: number;
+  totalFiles: number;
+}): string {
+  const { fullReviewFiles, abbreviatedFiles, mentionOnlyCount, totalFiles } = params;
+
+  const lines: string[] = [
+    "## Large PR Triage",
+    "",
+    `This PR contains ${totalFiles} files. Files have been prioritized by risk score for efficient review.`,
+    "",
+  ];
+
+  if (fullReviewFiles.length > 0) {
+    lines.push(
+      `### Full Review (${fullReviewFiles.length} files)`,
+      "",
+      "Review these files thoroughly for all issue categories:",
+    );
+    for (const file of fullReviewFiles) {
+      lines.push(`- ${file}`);
+    }
+    lines.push("");
+  }
+
+  if (abbreviatedFiles.length > 0) {
+    lines.push(
+      `### Abbreviated Review (${abbreviatedFiles.length} files)`,
+      "",
+      "For these files, ONLY flag CRITICAL and MAJOR issues. Skip MEDIUM and MINOR findings.",
+    );
+    for (const file of abbreviatedFiles) {
+      lines.push(`- ${file}`);
+    }
+    lines.push("");
+  }
+
+  if (mentionOnlyCount > 0) {
+    lines.push(
+      `${mentionOnlyCount} additional file(s) were not included for review (lower risk score).`,
+    );
+  }
+
+  return lines.join("\n").trimEnd();
+}
+
+export function buildDiffAnalysisSection(analysis: DiffAnalysis, options?: { suppressLargePRMessage?: boolean }): string {
   if (analysis.metrics.totalFiles === 0) {
     return "";
   }
@@ -502,7 +553,7 @@ export function buildDiffAnalysisSection(analysis: DiffAnalysis): string {
     `This PR modifies ${analysis.metrics.totalFiles} files (+${analysis.metrics.totalLinesAdded} / -${analysis.metrics.totalLinesRemoved} lines)${hunkSuffix}.`,
   );
 
-  if (analysis.isLargePR) {
+  if (analysis.isLargePR && !options?.suppressLargePRMessage) {
     lines.push("", "This is a large PR. Focus on the most critical changes.");
   }
 
@@ -827,6 +878,12 @@ export function buildReviewPrompt(context: {
   outputLanguage?: string;
   prLabels?: string[];
   deltaContext?: DeltaReviewContext | null;
+  largePRContext?: {
+    fullReviewFiles: string[];
+    abbreviatedFiles: string[];
+    mentionOnlyCount: number;
+    totalFiles: number;
+  } | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -885,10 +942,17 @@ export function buildReviewPrompt(context: {
   }
 
   const diffAnalysisSection = context.diffAnalysis
-    ? buildDiffAnalysisSection(context.diffAnalysis)
+    ? buildDiffAnalysisSection(context.diffAnalysis, {
+        suppressLargePRMessage: Boolean(context.largePRContext),
+      })
     : "";
   if (diffAnalysisSection) {
     lines.push("", diffAnalysisSection);
+  }
+
+  // --- Large PR triage section ---
+  if (context.largePRContext) {
+    lines.push("", buildLargePRTriageSection(context.largePRContext));
   }
 
   // --- Incremental review context ---
