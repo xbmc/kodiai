@@ -135,7 +135,10 @@ Plans:
   2. Kodiai extracts the package name, old version, new version, and ecosystem (npm/go/rust/python) from PR metadata and changed manifest files
   3. Kodiai classifies version bumps as major/minor/patch using semver comparison and flags major bumps as potential breaking changes
   4. Non-dependency PRs are unaffected — detection produces no output and adds no latency
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 53-01-PLAN.md — TDD: dep-bump-detector module (detect, extract, classify pipeline)
+- [ ] 53-02-PLAN.md — Wire detection into review.ts and review-prompt.ts
 
 ### Phase 54: Security Advisory & Changelog Analysis
 **Goal:** Users see CVE/advisory information and changelog context for dependency bumps, enabling informed merge decisions
