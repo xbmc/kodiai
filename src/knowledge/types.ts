@@ -147,6 +147,13 @@ export type PriorFinding = {
   commentId: number | null;
 };
 
+export type AuthorCacheEntry = {
+  tier: string;
+  authorAssociation: string;
+  prCount: number | null;
+  cachedAt: string;
+};
+
 export type KnowledgeStore = {
   recordReview(entry: ReviewRecord): number;
   recordFindings(findings: FindingRecord[]): void;
@@ -159,6 +166,9 @@ export type KnowledgeStore = {
   checkAndClaimRun(params: { repo: string; prNumber: number; baseSha: string; headSha: string; deliveryId: string; action: string }): RunStateCheck;
   completeRun(runKey: string): void;
   purgeOldRuns(retentionDays?: number): number;
+  getAuthorCache?(params: { repo: string; authorLogin: string }): AuthorCacheEntry | null;
+  upsertAuthorCache?(params: { repo: string; authorLogin: string; tier: string; authorAssociation: string; prCount: number | null }): void;
+  purgeStaleAuthorCache?(retentionDays?: number): number;
   getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null;
   getPriorReviewFindings(params: { repo: string; prNumber: number; limit?: number }): PriorFinding[];
   aggregateFeedbackPatterns(repo: string): FeedbackPattern[];

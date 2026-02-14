@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { Logger } from "pino";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
+  AuthorCacheEntry,
   FeedbackReaction,
   FindingCommentCandidate,
   FindingRecord,
@@ -64,6 +65,13 @@ type PriorFindingRow = {
   start_line: number | null;
   end_line: number | null;
   comment_id: number | null;
+};
+
+type AuthorCacheRow = {
+  tier: string;
+  author_association: string;
+  pr_count: number | null;
+  cached_at: string;
 };
 
 /** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
@@ -284,6 +292,21 @@ export function createKnowledgeStore(opts: {
   db.run("CREATE INDEX IF NOT EXISTS idx_run_state_repo_pr ON run_state(repo, pr_number)");
   db.run("CREATE INDEX IF NOT EXISTS idx_run_state_status ON run_state(status)");
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS author_cache (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo TEXT NOT NULL,
+      author_login TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      author_association TEXT NOT NULL,
+      pr_count INTEGER,
+      cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(repo, author_login)
+    )
+  `);
+
+  db.run("CREATE INDEX IF NOT EXISTS idx_author_cache_lookup ON author_cache(repo, author_login)");
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -388,6 +411,40 @@ export function createKnowledgeStore(opts: {
   const completeRunStmt = db.query(
     "UPDATE run_state SET status = 'completed', completed_at = datetime('now') WHERE run_key = $runKey",
   );
+
+  const getAuthorCacheStmt = db.query(`
+    SELECT tier, author_association, pr_count, cached_at
+    FROM author_cache
+    WHERE repo = ?1
+      AND author_login = ?2
+      AND cached_at >= datetime('now', '-24 hours')
+  `);
+
+  const upsertAuthorCacheStmt = db.query(`
+    INSERT INTO author_cache (
+      repo,
+      author_login,
+      tier,
+      author_association,
+      pr_count,
+      cached_at
+    ) VALUES (
+      ?1,
+      ?2,
+      ?3,
+      ?4,
+      ?5,
+      datetime('now')
+    )
+    ON CONFLICT(repo, author_login)
+    DO UPDATE SET
+      tier = excluded.tier,
+      author_association = excluded.author_association,
+      pr_count = excluded.pr_count,
+      cached_at = datetime('now')
+  `);
+
+  const purgeStaleAuthorCacheStmt = db.query("DELETE FROM author_cache WHERE cached_at < datetime('now', ?1)");
 
   const getLastReviewedHeadShaStmt = db.query(`
     SELECT head_sha
@@ -762,15 +819,55 @@ export function createKnowledgeStore(opts: {
 
     purgeOldRuns(retentionDays = 30): number {
       const completedResult = db.run(
-        "DELETE FROM run_state WHERE status = 'completed' AND created_at < datetime('now', $modifier)",
-        { $modifier: `-${retentionDays} days` },
+        "DELETE FROM run_state WHERE status = 'completed' AND created_at < datetime('now', ?1)",
+        [`-${retentionDays} days`],
       );
       const supersededRetention = Math.min(retentionDays, 7);
       const supersededResult = db.run(
-        "DELETE FROM run_state WHERE status = 'superseded' AND created_at < datetime('now', $modifier)",
-        { $modifier: `-${supersededRetention} days` },
+        "DELETE FROM run_state WHERE status = 'superseded' AND created_at < datetime('now', ?1)",
+        [`-${supersededRetention} days`],
       );
-      return completedResult.changes + supersededResult.changes;
+      const authorCachePurged = store.purgeStaleAuthorCache?.() ?? 0;
+      return completedResult.changes + supersededResult.changes + authorCachePurged;
+    },
+
+    getAuthorCache(params: { repo: string; authorLogin: string }): AuthorCacheEntry | null {
+      const row = getAuthorCacheStmt.get({
+        1: params.repo,
+        2: params.authorLogin,
+      }) as AuthorCacheRow | null;
+
+      if (!row) return null;
+
+      return {
+        tier: row.tier,
+        authorAssociation: row.author_association,
+        prCount: row.pr_count,
+        cachedAt: row.cached_at,
+      };
+    },
+
+    upsertAuthorCache(params: {
+      repo: string;
+      authorLogin: string;
+      tier: string;
+      authorAssociation: string;
+      prCount: number | null;
+    }): void {
+      upsertAuthorCacheStmt.run({
+        1: params.repo,
+        2: params.authorLogin,
+        3: params.tier,
+        4: params.authorAssociation,
+        5: params.prCount,
+      });
+    },
+
+    purgeStaleAuthorCache(retentionDays = 7): number {
+      const result = purgeStaleAuthorCacheStmt.run({
+        1: `-${retentionDays} days`,
+      });
+      return result.changes;
     },
 
     getLastReviewedHeadSha(params: { repo: string; prNumber: number }): string | null {
@@ -816,8 +913,8 @@ export function createKnowledgeStore(opts: {
 
     clearFeedbackSuppressions(repo: string): number {
       const result = db.run(
-        "DELETE FROM feedback_reactions WHERE repo = $repo",
-        { $repo: repo },
+        "DELETE FROM feedback_reactions WHERE repo = ?1",
+        [repo],
       );
       return result.changes;
     },
