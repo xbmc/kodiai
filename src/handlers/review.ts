@@ -2081,7 +2081,12 @@ export function createReviewHandler(deps: {
               cacheCreationTokens: result.cacheCreationTokens,
               durationMs: result.durationMs,
               costUsd: result.costUsd,
-              conclusion: result.conclusion,
+              // TMO-03: Distinguish timeout_partial from timeout in telemetry
+              conclusion: result.isTimeout && result.published
+                ? "timeout_partial"
+                : result.isTimeout
+                  ? "timeout"
+                  : result.conclusion,
               sessionId: result.sessionId,
               numTurns: result.numTurns,
               stopReason: result.stopReason,
@@ -2357,15 +2362,39 @@ export function createReviewHandler(deps: {
           );
         }
 
-        // Post error comment if execution failed or timed out
+        // Post error or partial-review comment if execution failed or timed out
         if (result.conclusion === "error") {
-          const category = result.isTimeout
-            ? "timeout"
-            : classifyError(new Error(result.errorMessage ?? "Unknown error"), false);
-          const errorBody = formatErrorComment(
-            category,
-            result.errorMessage ?? "An unexpected error occurred during review.",
+          const category = classifyError(
+            new Error(result.errorMessage ?? "Unknown error"),
+            result.isTimeout ?? false,
+            result.published ?? false,
           );
+
+          const timeoutDuration = timeoutEstimate?.dynamicTimeoutSeconds ?? config.timeoutSeconds;
+          const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
+
+          let errorBody: string;
+          if (category === "timeout_partial") {
+            // TMO-03: Partial review -- inline comments were published before timeout
+            errorBody = formatErrorComment(
+              category,
+              `Timed out after ${timeoutDuration}s. ` +
+              `PR complexity: ${complexityInfo}`,
+            );
+          } else if (category === "timeout") {
+            // TMO-03: Full timeout -- nothing was published
+            errorBody = formatErrorComment(
+              category,
+              `Timed out after ${timeoutDuration}s with no review output. ` +
+              `PR complexity: ${complexityInfo}`,
+            );
+          } else {
+            errorBody = formatErrorComment(
+              category,
+              result.errorMessage ?? "An unexpected error occurred during review.",
+            );
+          }
+
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           await postOrUpdateErrorComment(octokit, {
             owner: apiOwner,
