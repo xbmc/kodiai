@@ -38,6 +38,7 @@ import { computeConfidence, matchesSuppression } from "../knowledge/confidence.t
 import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -1465,7 +1466,7 @@ export function createReviewHandler(deps: {
         let resolvedIgnoredAreas = [...config.review.ignoredAreas];
 
         const profileSelectionLinesChanged = Math.max(0, (pr.additions ?? 0) + (pr.deletions ?? 0));
-        const profileSelection = resolveReviewProfile({
+        let profileSelection = resolveReviewProfile({
           keywordProfileOverride: parsedIntent.profileOverride,
           manualProfile: config.review.profile ?? null,
           linesChanged: profileSelectionLinesChanged,
@@ -1518,6 +1519,82 @@ export function createReviewHandler(deps: {
           },
           "Review profile resolved",
         );
+
+        // TMO-01: Estimate timeout risk
+        const languageComplexity = computeLanguageComplexity(
+          diffAnalysis?.filesByLanguage ?? {},
+        );
+        const timeoutEstimate = estimateTimeoutRisk({
+          fileCount: changedFiles.length,
+          linesChanged: (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
+            (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+          languageComplexity,
+          isLargePR: diffAnalysis?.isLargePR ?? false,
+          baseTimeoutSeconds: config.timeoutSeconds,
+        });
+
+        logger.info(
+          {
+            ...baseLog,
+            gate: "timeout-estimation",
+            riskLevel: timeoutEstimate.riskLevel,
+            dynamicTimeout: timeoutEstimate.dynamicTimeoutSeconds,
+            shouldReduceScope: timeoutEstimate.shouldReduceScope,
+            complexity: timeoutEstimate.reasoning,
+          },
+          "Timeout risk estimated",
+        );
+
+        // TMO-02: Scope reduction for high-risk auto-profile PRs
+        const originalProfileSelection = { ...profileSelection };
+        if (
+          timeoutEstimate.shouldReduceScope &&
+          profileSelection.source === "auto" &&
+          config.timeout.autoReduceScope !== false
+        ) {
+          // Override to minimal profile
+          profileSelection.selectedProfile = "minimal";
+          const minimalPreset = PROFILE_PRESETS["minimal"];
+          if (minimalPreset) {
+            resolvedSeverityMinLevel = minimalPreset.severityMinLevel;
+            resolvedMaxComments = minimalPreset.maxComments;
+            resolvedFocusAreas = [...minimalPreset.focusAreas];
+            resolvedIgnoredAreas = [...minimalPreset.ignoredAreas];
+          }
+
+          // Cap file count if needed
+          if (
+            timeoutEstimate.reducedFileCount !== null &&
+            tieredFiles.full.length > timeoutEstimate.reducedFileCount
+          ) {
+            const excess = tieredFiles.full.splice(timeoutEstimate.reducedFileCount);
+            tieredFiles.abbreviated.push(...excess);
+          }
+
+          logger.info(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              originalProfile: originalProfileSelection.selectedProfile,
+              reducedProfile: "minimal",
+              originalFileCount: tieredFiles.full.length + (tieredFiles.abbreviated.length - (timeoutEstimate.reducedFileCount !== null ? tieredFiles.abbreviated.length : 0)),
+              reducedFileCount: timeoutEstimate.reducedFileCount,
+            },
+            "Auto-reduced review scope for high timeout risk",
+          );
+        } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              gateResult: "skipped",
+              skipReason: "explicit-profile",
+              profile: profileSelection.selectedProfile,
+              source: profileSelection.source,
+            },
+            "Skipping scope reduction: user explicitly configured profile",
+          );
+        }
 
         if (parsedIntent.styleOk && !resolvedIgnoredAreas.includes("style")) {
           resolvedIgnoredAreas.push("style");
@@ -1624,6 +1701,10 @@ export function createReviewHandler(deps: {
           prompt: reviewPrompt,
           reviewOutputKey,
           deliveryId: event.id,
+          // TMO-04: Dynamic timeout from risk estimation
+          dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
+            ? timeoutEstimate.dynamicTimeoutSeconds
+            : undefined,
         });
 
         logger.info(
