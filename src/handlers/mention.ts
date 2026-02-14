@@ -677,7 +677,10 @@ export function createMentionHandler(deps: {
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
         try {
-          mentionContext = await buildMentionContext(octokit, mention, { findingLookup });
+          mentionContext = await buildMentionContext(octokit, mention, {
+            findingLookup,
+            maxThreadChars: config.mention.conversation.contextBudgetChars,
+          });
         } catch (err) {
           logger.warn(
             { err, surface: mention.surface, issueNumber: mention.issueNumber },

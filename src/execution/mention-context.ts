@@ -12,6 +12,8 @@ export type BuildMentionContextOptions = {
   maxCommentChars?: number;
   /** Max total characters to include across all included conversation comments. */
   maxConversationChars?: number;
+  /** Max total characters to include across review-thread comments. */
+  maxThreadChars?: number;
   /** Max pages to scan when paginating GitHub list APIs for context. */
   maxApiPages?: number;
   /** Max characters to include from PR description (after sanitization). */
@@ -81,6 +83,7 @@ export async function buildMentionContext(
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
   const maxConversationChars =
     options.maxConversationChars ?? DEFAULT_MAX_CONVERSATION_CHARS;
+  const maxThreadChars = options.maxThreadChars ?? maxConversationChars;
   const maxApiPages = options.maxApiPages ?? DEFAULT_MAX_API_PAGES;
   const maxPrBodyChars = options.maxPrBodyChars ?? DEFAULT_MAX_PR_BODY_CHARS;
 
@@ -412,15 +415,17 @@ export async function buildMentionContext(
         lines.push("No earlier comments found in this thread.");
         lines.push("");
       } else {
-        let remainingThreadChars = Math.max(0, maxConversationChars);
+        const olderThreadCount = Math.max(0, threadComments.length - 3);
+        let remainingThreadChars = Math.max(0, maxThreadChars);
         let didHitThreadCharCap = false;
+        let didTruncateOldThreadTurn = false;
 
-        for (const comment of threadComments) {
+        for (const [index, comment] of threadComments.entries()) {
           if (remainingThreadChars <= 0) {
             if (!didHitThreadCharCap) {
               didHitThreadCharCap = true;
               scaleNotes.push(
-                `Review thread context truncated due to ${maxConversationChars} character cap.`,
+                `Review thread context truncated due to ${maxThreadChars} character cap.`,
               );
             }
             break;
@@ -429,7 +434,14 @@ export async function buildMentionContext(
           const author = comment.user?.login ?? "unknown";
           const bodyRaw = comment.body ?? "(empty)";
           const bodySanitized = sanitizeContent(bodyRaw);
-          const truncatedBody = truncateDeterministic(bodySanitized, maxCommentChars);
+          const isOlderThreadTurn = index < olderThreadCount;
+          const perCommentCap = isOlderThreadTurn ? Math.min(200, maxCommentChars) : maxCommentChars;
+          const truncatedBody = truncateDeterministic(bodySanitized, perCommentCap);
+
+          if (isOlderThreadTurn && truncatedBody.truncated) {
+            didTruncateOldThreadTurn = true;
+          }
+
           const finalBody =
             truncatedBody.text.length <= remainingThreadChars
               ? truncatedBody.text
@@ -438,7 +450,7 @@ export async function buildMentionContext(
           if (finalBody.length < truncatedBody.text.length && !didHitThreadCharCap) {
             didHitThreadCharCap = true;
             scaleNotes.push(
-              `Review thread context truncated due to ${maxConversationChars} character cap.`,
+              `Review thread context truncated due to ${maxThreadChars} character cap.`,
             );
           }
 
@@ -447,6 +459,12 @@ export async function buildMentionContext(
           lines.push(`### @${author} (${comment.created_at})`);
           lines.push(finalBody);
           lines.push("");
+        }
+
+        if (didTruncateOldThreadTurn) {
+          scaleNotes.push(
+            "Older review thread turns were truncated to 200 characters to preserve recent context.",
+          );
         }
       }
     }

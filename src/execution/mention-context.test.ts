@@ -502,4 +502,143 @@ describe("buildMentionContext", () => {
 
     expect(ctx).not.toContain("## Review Comment Thread Context");
   });
+
+  test("truncates older thread turns to 200 chars while keeping recent turns full", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 900,
+        body: "ROOT-" + "r".repeat(260),
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 900,
+          body: "ROOT-" + "r".repeat(260),
+          created_at: "2025-01-15T10:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 901,
+          body: "OLD-" + "o".repeat(260),
+          created_at: "2025-01-15T10:01:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 902,
+          body: "MID-" + "m".repeat(260),
+          created_at: "2025-01-15T10:02:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 903,
+          body: "NEW-1-" + "n".repeat(260),
+          created_at: "2025-01-15T10:03:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 904,
+          body: "NEW-2-" + "p".repeat(260),
+          created_at: "2025-01-15T10:04:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 905,
+          body: "trigger",
+          created_at: "2025-01-15T10:05:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 905,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:05:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 900,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      maxCommentChars: 500,
+      findingLookup: () => null,
+    });
+
+    const truncatedCount = (ctx.match(/\.\.\.\[truncated\]/g) ?? []).length;
+    expect(truncatedCount).toBe(2);
+    expect(ctx).toContain("Older review thread turns were truncated to 200 characters");
+  });
+
+  test("uses maxThreadChars budget for review thread context", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 910,
+        body: "ROOT-" + "x".repeat(400),
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 910,
+          body: "ROOT-" + "x".repeat(400),
+          created_at: "2025-01-15T10:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 911,
+          body: "OLD-" + "y".repeat(400),
+          created_at: "2025-01-15T10:01:00Z",
+          in_reply_to_id: 910,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 912,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:02:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 910,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      maxCommentChars: 500,
+      maxThreadChars: 250,
+      findingLookup: () => null,
+    });
+
+    expect(ctx).toContain("Review thread context truncated due to 250 character cap.");
+  });
 });
