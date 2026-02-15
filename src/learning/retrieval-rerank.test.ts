@@ -39,8 +39,8 @@ describe("rerankByLanguage", () => {
     });
 
     expect(reranked).toHaveLength(1);
-    expect(reranked[0].adjustedDistance).toBeCloseTo(0.5 * 0.85);
-    expect(reranked[0].languageMatch).toBe(true);
+    expect(reranked[0]!.adjustedDistance).toBeCloseTo(0.5 * 0.85);
+    expect(reranked[0]!.languageMatch).toBe(true);
   });
 
   test("cross-language penalty — TypeScript PR with Python finding", () => {
@@ -51,8 +51,8 @@ describe("rerankByLanguage", () => {
     });
 
     expect(reranked).toHaveLength(1);
-    expect(reranked[0].adjustedDistance).toBeCloseTo(0.5 * 1.15);
-    expect(reranked[0].languageMatch).toBe(false);
+    expect(reranked[0]!.adjustedDistance).toBeCloseTo(0.5 * 1.15);
+    expect(reranked[0]!.languageMatch).toBe(false);
   });
 
   test("unknown language neutral — .json filePath gets no boost or penalty", () => {
@@ -63,8 +63,8 @@ describe("rerankByLanguage", () => {
     });
 
     expect(reranked).toHaveLength(1);
-    expect(reranked[0].adjustedDistance).toBeCloseTo(0.5 * 1.0);
-    expect(reranked[0].languageMatch).toBe(false);
+    expect(reranked[0]!.adjustedDistance).toBeCloseTo(0.5 * 1.0);
+    expect(reranked[0]!.languageMatch).toBe(false);
   });
 
   test("re-sort order — mixed results sorted by adjustedDistance ascending", () => {
@@ -80,9 +80,9 @@ describe("rerankByLanguage", () => {
 
     expect(reranked).toHaveLength(3);
     // After re-ranking: auth.ts (0.34) < utils.py (0.345) < config.json (0.35)
-    expect(reranked[0].memoryId).toBe(2);
-    expect(reranked[1].memoryId).toBe(1);
-    expect(reranked[2].memoryId).toBe(3);
+    expect(reranked[0]!.memoryId).toBe(2);
+    expect(reranked[1]!.memoryId).toBe(1);
+    expect(reranked[2]!.memoryId).toBe(3);
   });
 
   test("custom config — custom boost and penalty factors applied correctly", () => {
@@ -100,8 +100,8 @@ describe("rerankByLanguage", () => {
       config,
     });
 
-    expect(reranked[0].adjustedDistance).toBeCloseTo(0.5 * 0.7); // TS match
-    expect(reranked[1].adjustedDistance).toBeCloseTo(0.5 * 1.3); // Python cross
+    expect(reranked[0]!.adjustedDistance).toBeCloseTo(0.5 * 0.7); // TS match
+    expect(reranked[1]!.adjustedDistance).toBeCloseTo(0.5 * 1.3); // Python cross
   });
 
   test("empty results — empty array in, empty array out", () => {
@@ -124,8 +124,8 @@ describe("rerankByLanguage", () => {
     });
 
     // Cross-language with distance 0.10 should still be first (0.115 < 0.2125)
-    expect(reranked[0].memoryId).toBe(1);
-    expect(reranked[1].memoryId).toBe(2);
+    expect(reranked[0]!.memoryId).toBe(1);
+    expect(reranked[1]!.memoryId).toBe(2);
   });
 
   test("multiple PR languages — findings in either language get the boost", () => {
@@ -139,12 +139,12 @@ describe("rerankByLanguage", () => {
       prLanguages: ["TypeScript", "Python"],
     });
 
-    expect(reranked[0].languageMatch).toBe(true);
-    expect(reranked[1].languageMatch).toBe(true);
-    expect(reranked[2].languageMatch).toBe(false);
-    expect(reranked[0].adjustedDistance).toBeCloseTo(0.5 * 0.85);
-    expect(reranked[1].adjustedDistance).toBeCloseTo(0.5 * 0.85);
-    expect(reranked[2].adjustedDistance).toBeCloseTo(0.5 * 1.15);
+    expect(reranked[0]!.languageMatch).toBe(true);
+    expect(reranked[1]!.languageMatch).toBe(true);
+    expect(reranked[2]!.languageMatch).toBe(false);
+    expect(reranked[0]!.adjustedDistance).toBeCloseTo(0.5 * 0.85);
+    expect(reranked[1]!.adjustedDistance).toBeCloseTo(0.5 * 0.85);
+    expect(reranked[2]!.adjustedDistance).toBeCloseTo(0.5 * 1.15);
   });
 
   test("DEFAULT_RERANK_CONFIG has expected values", () => {

@@ -46,9 +46,9 @@ function makeEmbedding(seed: number = 42): Float32Array {
   }
   // Normalize to unit vector (required for meaningful distance computations)
   let norm = 0;
-  for (let i = 0; i < 1024; i++) norm += arr[i] * arr[i];
+  for (let i = 0; i < 1024; i++) norm += arr[i]! * arr[i]!;
   norm = Math.sqrt(norm);
-  for (let i = 0; i < 1024; i++) arr[i] /= norm;
+  for (let i = 0; i < 1024; i++) arr[i] = arr[i]! / norm;
   return arr;
 }
 
@@ -169,7 +169,7 @@ describe("LearningMemoryStore", () => {
 
     expect(results.length).toBe(2);
     // First result should be the exact match (distance ~0)
-    expect(results[0].distance).toBeLessThanOrEqual(results[1].distance);
+    expect(results[0]!.distance).toBeLessThanOrEqual(results[1]!.distance);
   });
 
   test("retrieveMemories enforces repo isolation", () => {
