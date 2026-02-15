@@ -59,6 +59,7 @@ import {
   type DepBumpContext,
 } from "../lib/dep-bump-detector.ts";
 import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
+import { computeMergeConfidence, type MergeConfidence } from "../lib/merge-confidence.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -679,6 +680,12 @@ function normalizeSkipPattern(pattern: string): string {
   if (p.endsWith("/")) return `${p}**`;
   if (p.startsWith("*.")) return `**/${p}`;
   return p;
+}
+
+function renderApprovalConfidence(mc: MergeConfidence): string {
+  const emoji = mc.level === "high" ? ":green_circle:" : mc.level === "medium" ? ":yellow_circle:" : ":red_circle:";
+  const label = mc.level === "high" ? "High" : mc.level === "medium" ? "Review Recommended" : "Careful Review Required";
+  return `${emoji} **Merge Confidence: ${label}** — ${mc.rationale[0] ?? ""}`;
 }
 
 type DiffCollectionStrategy = "triple-dot" | "deepened-triple-dot" | "fallback-two-dot";
@@ -1462,6 +1469,17 @@ export function createReviewHandler(deps: {
             logger.warn({ ...baseLog, err, gate: "dep-bump-enrich" }, "Dep bump enrichment failed (fail-open)");
             // fail-open: depBumpContext.security and .changelog remain undefined
           }
+        }
+
+        // ── Merge confidence scoring (CONF-01/02) ──
+        if (depBumpContext) {
+          depBumpContext.mergeConfidence = computeMergeConfidence(depBumpContext);
+          logger.info({
+            ...baseLog,
+            gate: "merge-confidence",
+            level: depBumpContext.mergeConfidence.level,
+            rationale: depBumpContext.mergeConfidence.rationale,
+          }, "Merge confidence computed");
         }
 
         const skipMatchers = config.review.skipPaths
@@ -2611,7 +2629,12 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
-                body: sanitizeOutgoingMentions(idempotencyCheck.marker, [appSlug, "claude"]),
+                body: sanitizeOutgoingMentions(
+                  depBumpContext?.mergeConfidence
+                    ? `${idempotencyCheck.marker}\n\n${renderApprovalConfidence(depBumpContext.mergeConfidence)}`
+                    : idempotencyCheck.marker,
+                  [appSlug, "claude"],
+                ),
               });
 
               logger.info(
