@@ -40,6 +40,8 @@ export type RetrievalQualityRecord = {
   avgDistance?: number | null;
   /** Matches / resultCount (null/undefined when resultCount=0). */
   languageMatchRatio?: number | null;
+  /** How the distance threshold was selected: 'adaptive', 'percentile', or 'configured'. */
+  thresholdMethod?: string;
 };
 
 /**

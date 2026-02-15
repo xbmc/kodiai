@@ -70,9 +70,18 @@ export function createTelemetryStore(opts: {
       distance_threshold REAL,
       result_count INTEGER NOT NULL,
       avg_distance REAL,
-      language_match_ratio REAL
+      language_match_ratio REAL,
+      threshold_method TEXT
     )
   `);
+
+  // Additive column migration for older telemetry DBs
+  const rqTableInfo = db.prepare("PRAGMA table_info(retrieval_quality)").all() as {
+    name: string;
+  }[];
+  if (!rqTableInfo.some((c) => c.name === "threshold_method")) {
+    db.run("ALTER TABLE retrieval_quality ADD COLUMN threshold_method TEXT");
+  }
 
   // Indexes for retention purge queries and repo-based reporting
   db.run(`
@@ -111,10 +120,12 @@ export function createTelemetryStore(opts: {
   const insertRetrievalQualityStmt = db.query(`
     INSERT OR IGNORE INTO retrieval_quality (
       delivery_id, repo, pr_number, event_type,
-      top_k, distance_threshold, result_count, avg_distance, language_match_ratio
+      top_k, distance_threshold, result_count, avg_distance, language_match_ratio,
+      threshold_method
     ) VALUES (
       $deliveryId, $repo, $prNumber, $eventType,
-      $topK, $distanceThreshold, $resultCount, $avgDistance, $languageMatchRatio
+      $topK, $distanceThreshold, $resultCount, $avgDistance, $languageMatchRatio,
+      $thresholdMethod
     )
   `);
 
@@ -167,6 +178,7 @@ export function createTelemetryStore(opts: {
         $resultCount: entry.resultCount,
         $avgDistance: entry.avgDistance ?? null,
         $languageMatchRatio: entry.languageMatchRatio ?? null,
+        $thresholdMethod: entry.thresholdMethod ?? null,
       });
 
       bumpWriteCount();

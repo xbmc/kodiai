@@ -13,6 +13,7 @@ export type IsolationLayer = {
     sharingEnabled: boolean;
     topK: number;
     distanceThreshold: number;
+    adaptive?: boolean;
     logger: Logger;
   }): RetrievalWithProvenance;
 };
@@ -36,20 +37,25 @@ export function createIsolationLayer(opts: {
         sharingEnabled,
         topK,
         distanceThreshold,
+        adaptive = true,
         logger: reqLogger,
       } = params;
 
       const log = reqLogger || baseLogger;
 
+      const internalTopK = adaptive ? Math.max(20, topK * 4) : topK;
+
       // Step 1: Always query repo-scoped memories first
       const repoResults = memoryStore.retrieveMemories({
         queryEmbedding,
         repo,
-        topK,
+        topK: internalTopK,
       });
 
-      // Step 2: Filter by distance threshold (lower distance = more similar)
-      const filteredRepo = repoResults.filter((r) => r.distance <= distanceThreshold);
+      // Step 2: Optionally filter by distance threshold (lower distance = more similar)
+      const filteredRepo = adaptive
+        ? repoResults
+        : repoResults.filter((r) => r.distance <= distanceThreshold);
 
       let sharedResults: { memoryId: number; distance: number }[] = [];
 
@@ -59,13 +65,15 @@ export function createIsolationLayer(opts: {
           queryEmbedding,
           owner,
           excludeRepo: repo,
-          topK,
+          topK: internalTopK,
         });
 
-        sharedResults = rawShared.filter((r) => r.distance <= distanceThreshold);
+        sharedResults = adaptive
+          ? rawShared
+          : rawShared.filter((r) => r.distance <= distanceThreshold);
       }
 
-      // Step 4: Merge, dedupe by memory_id, sort by distance, take topK
+      // Step 4: Merge, dedupe by memory_id, sort by distance, take topK/internalTopK
       const allCandidates = [...filteredRepo, ...sharedResults];
       const seen = new Set<number>();
       const deduped = allCandidates.filter((r) => {
@@ -75,7 +83,7 @@ export function createIsolationLayer(opts: {
       });
 
       deduped.sort((a, b) => a.distance - b.distance);
-      const topCandidates = deduped.slice(0, topK);
+      const topCandidates = deduped.slice(0, internalTopK);
 
       // Step 5: Resolve full records and build provenance
       const results: RetrievalResult[] = [];
@@ -103,6 +111,8 @@ export function createIsolationLayer(opts: {
           repo,
           topK,
           threshold: distanceThreshold,
+          adaptive,
+          internalTopK,
         },
       };
 
@@ -112,6 +122,8 @@ export function createIsolationLayer(opts: {
           repo,
           owner,
           sharingEnabled,
+          adaptive,
+          internalTopK,
           repoResultCount: filteredRepo.length,
           sharedResultCount: sharedResults.length,
           totalResults: results.length,
