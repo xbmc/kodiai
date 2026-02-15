@@ -93,7 +93,7 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 - [x] **Phase 51: Timeout Resilience** — Users get useful partial reviews instead of error messages when large PRs time out (completed 2026-02-14)
 - [x] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction (completed 2026-02-14)
 - [x] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output (completed 2026-02-14)
-- [ ] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps
+- [x] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps (completed 2026-02-14)
 - [ ] **Phase 55: Merge Confidence Scoring** — Users see a composite confidence assessment synthesizing all dependency signals
 
 ## Phase Details
@@ -152,8 +152,8 @@ Plans:
   5. Changelog context injected into the LLM review prompt is bounded to prevent prompt bloat
 **Plans:** 2 plans
 Plans:
-- [ ] 54-01-PLAN.md — TDD: dep-bump-enrichment module (advisory lookup, changelog fetching, repo resolution)
-- [ ] 54-02-PLAN.md — Wire enrichment into review.ts and extend review-prompt.ts
+- [x] 54-01-PLAN.md — TDD: dep-bump-enrichment module (advisory lookup, changelog fetching, repo resolution)
+- [x] 54-02-PLAN.md — Wire enrichment into review.ts and extend review-prompt.ts
 
 ### Phase 55: Merge Confidence Scoring
 **Goal:** Users see a clear, composite merge confidence assessment that synthesizes semver analysis, advisory status, and breaking change signals into actionable guidance
@@ -170,7 +170,7 @@ Plans:
 **Execution Order:**
 Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
-**Total shipped:** 8 milestones, 53 phases, 152 plans
+**Total shipped:** 8 milestones, 54 phases, 154 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -185,9 +185,9 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 51 | v0.9 | 3/3 | Complete | 2026-02-14 |
 | 52 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 53 | v0.9 | 2/2 | Complete | 2026-02-14 |
-| 54 | v0.9 | 0/2 | Planned | - |
+| 54 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 55 | v0.9 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 54 planned (2 plans)*
+*Roadmap updated: 2026-02-14 -- Phase 54 complete (2/2 plans)*
