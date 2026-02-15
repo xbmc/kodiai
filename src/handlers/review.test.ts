@@ -23,7 +23,13 @@ function createNoopLogger(): Logger {
   } as unknown as Logger;
 }
 
-const noopTelemetryStore = { record: () => {}, purgeOlderThan: () => 0, checkpoint: () => {}, close: () => {} } as never;
+const noopTelemetryStore = {
+  record: () => {},
+  recordRetrievalQuality: () => {},
+  purgeOlderThan: () => 0,
+  checkpoint: () => {},
+  close: () => {},
+} as never;
 
 function createCaptureLogger() {
   const entries: Array<{ message: string; data?: Record<string, unknown> }> = [];
@@ -59,6 +65,7 @@ function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
     listRecentFindingCommentCandidates: () => [],
     recordSuppressionLog: () => undefined,
     recordGlobalPattern: () => undefined,
+    recordDepBumpMergeHistory: () => undefined,
     getRepoStats: () => ({
       totalReviews: 0,
       totalFindings: 0,
@@ -1663,6 +1670,298 @@ describe("createReviewHandler picomatch skipPaths (CONFIG-04)", () => {
 
     // src/index.ts doesn't match docs/**, so executor should be called
     expect(executorCalled).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+});
+
+describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
+  async function createTypeScriptWorkspaceFixture(options: { telemetryEnabled?: boolean } = {}) {
+    const dir = await mkdtemp(join(tmpdir(), "kodiai-review-retrieval-quality-"));
+
+    await $`git -C ${dir} init --initial-branch=main`.quiet();
+    await $`git -C ${dir} config user.email test@example.com`.quiet();
+    await $`git -C ${dir} config user.name "Test User"`.quiet();
+
+    await $`mkdir -p ${join(dir, "src")}`.quiet();
+    await Bun.write(join(dir, "src/index.ts"), "export const base = 1;\n");
+
+    const telemetrySection = options.telemetryEnabled === false
+      ? "telemetry:\n  enabled: false\n"
+      : "";
+
+    await Bun.write(
+      join(dir, ".kodiai.yml"),
+      `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n${telemetrySection}`,
+    );
+
+    await $`git -C ${dir} add src/index.ts .kodiai.yml`.quiet();
+    await $`git -C ${dir} commit -m "base"`.quiet();
+
+    await $`git -C ${dir} checkout -b feature`.quiet();
+    await Bun.write(join(dir, "src/index.ts"), "export const base = 1;\nexport const feature = true;\n");
+    await $`git -C ${dir} add src/index.ts`.quiet();
+    await $`git -C ${dir} commit -m "feature"`.quiet();
+    await $`git -C ${dir} remote add origin ${dir}`.quiet();
+
+    return {
+      dir,
+      cleanup: async () => {
+        await rm(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  test("records retrieval quality metrics from reranked adjusted distances", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createTypeScriptWorkspaceFixture();
+
+    let captured: any = null;
+    const telemetryStore = {
+      record: () => {},
+      recordRetrievalQuality: (entry: any) => {
+        captured = entry;
+      },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 2,
+      generate: async () => ({
+        embedding: new Float32Array([0, 1]),
+        model: "test",
+        dimensions: 2,
+      }),
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: () => {
+        const mkRecord = (filePath: string) => ({
+          repo: "acme/repo",
+          owner: "acme",
+          findingId: 1,
+          reviewId: 1,
+          sourceRepo: "acme/repo",
+          findingText: "Example",
+          severity: "major",
+          category: "correctness",
+          filePath,
+          outcome: "accepted",
+          embeddingModel: "test",
+          embeddingDim: 2,
+          stale: false,
+        });
+
+        return {
+          results: [
+            { memoryId: 1, distance: 0.2, record: mkRecord("src/example.ts"), sourceRepo: "acme/repo" },
+            { memoryId: 2, distance: 0.4, record: mkRecord("src/example.py"), sourceRepo: "acme/repo" },
+          ],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 2,
+            query: { repo: "acme/repo", topK: 5, threshold: 0.3 },
+          },
+        };
+      },
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    if (!captured) {
+      throw new Error("Expected recordRetrievalQuality to be called");
+    }
+
+    const entry = captured;
+    expect(entry.deliveryId).toBe("delivery-123");
+    expect(entry.repo).toBe("acme/repo");
+    expect(entry.prNumber).toBe(101);
+    expect(entry.eventType).toBe("pull_request");
+    expect(entry.topK).toBe(5);
+    expect(entry.distanceThreshold).toBe(0.3);
+    expect(entry.resultCount).toBe(2);
+    expect(entry.languageMatchRatio).toBe(0.5);
+
+    // avgDistance uses adjusted distances: (0.2*0.85 + 0.4*1.15) / 2 = 0.315
+    expect(entry.avgDistance).toBeCloseTo(0.315, 6);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("telemetry.enabled: false suppresses recordRetrievalQuality while still exercising retrieval", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createTypeScriptWorkspaceFixture({ telemetryEnabled: false });
+
+    let retrievalCalls = 0;
+    const telemetryStore = {
+      record: () => {},
+      recordRetrievalQuality: () => {
+        retrievalCalls++;
+      },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 2,
+      generate: async () => ({
+        embedding: new Float32Array([0, 1]),
+        model: "test",
+        dimensions: 2,
+      }),
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: () => ({
+        results: [],
+        provenance: {
+          repoSources: ["acme/repo"],
+          sharedPoolUsed: false,
+          totalCandidates: 0,
+          query: { repo: "acme/repo", topK: 5, threshold: 0.3 },
+        },
+      }),
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(retrievalCalls).toBe(0);
 
     await workspaceFixture.cleanup();
   });

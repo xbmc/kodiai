@@ -1609,11 +1609,44 @@ export function createReviewHandler(deps: {
                 distanceThreshold: config.knowledge.retrieval.distanceThreshold,
                 logger,
               });
-              if (retrieval.results.length > 0) {
-                const reranked = rerankByLanguage({
-                  results: retrieval.results,
-                  prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
-                });
+
+              const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
+              const reranked = retrieval.results.length > 0
+                ? rerankByLanguage({ results: retrieval.results, prLanguages })
+                : [];
+
+              // Retrieval quality telemetry (RET-05): derived from reranked distances.
+              // Guarded by telemetry.enabled and must be fail-open.
+              if (config.telemetry.enabled) {
+                try {
+                  const resultCount = reranked.length;
+                  const avgDistance = resultCount > 0
+                    ? reranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
+                    : null;
+                  const languageMatchRatio = resultCount > 0
+                    ? reranked.filter((r) => r.languageMatch).length / resultCount
+                    : null;
+
+                  telemetryStore.recordRetrievalQuality({
+                    deliveryId: event.id,
+                    repo: `${apiOwner}/${apiRepo}`,
+                    prNumber: pr.number,
+                    eventType: event.name,
+                    topK: config.knowledge.retrieval.topK,
+                    distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                    resultCount,
+                    avgDistance,
+                    languageMatchRatio,
+                  });
+                } catch (err) {
+                  logger.warn(
+                    { ...baseLog, err },
+                    "Retrieval quality telemetry write failed (non-blocking)",
+                  );
+                }
+              }
+
+              if (reranked.length > 0) {
                 retrievalCtx = {
                   findings: reranked.map(r => ({
                     findingText: r.record.findingText,
