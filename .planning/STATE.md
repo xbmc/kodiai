@@ -5,15 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-15)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.10 Advanced Signals — Defining requirements
 
 ## Current Position
 
-**Milestone:** v0.9 Smart Dependencies & Resilience (SHIPPED)
-**Status:** Milestone complete, archived
-**Last Activity:** 2026-02-15
+**Milestone:** v0.10 Advanced Signals
+**Phase:** Not started (defining requirements)
+**Plan:** —
+**Status:** Defining requirements
+**Last Activity:** 2026-02-15 — Milestone v0.10 started
 
-**Progress:** [██████████] 100%
+**Progress:** [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -50,6 +52,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped At:** v0.9 milestone archived
+**Stopped At:** Defining v0.10 requirements
 **Resume File:** None
-**Next action:** `/gsd:new-milestone` to start next milestone
+**Next action:** Define requirements, create roadmap

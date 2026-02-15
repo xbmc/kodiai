@@ -116,7 +116,13 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+#### Current Milestone: v0.10 Advanced Signals
+
+**Goal:** Deepen Kodiai's dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and cross-language equivalence.
+
+- [ ] Dependency usage analysis, trend tracking, and multi-package correlation
+- [ ] Checkpoint publishing on timeout and retry with reduced file scope
+- [ ] Adaptive retrieval thresholds, recency weighting, quality telemetry, and cross-language equivalence
 
 ### Out of Scope
 
@@ -259,4 +265,4 @@ v0.9 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-15 after v0.9 milestone*
+*Last updated: 2026-02-15 after v0.10 milestone start*
