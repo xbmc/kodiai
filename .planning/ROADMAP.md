@@ -10,7 +10,7 @@
 - ✅ **v0.6 Review Output Formatting & UX** — Phases 34-38 (shipped 2026-02-14)
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
 - ✅ **v0.8 Conversational Intelligence** — Phases 42-50 (shipped 2026-02-14)
-- 🚧 **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (in progress)
+- ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-14)
 
 ## Phases
 
@@ -94,7 +94,7 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 - [x] **Phase 52: Intelligent Retrieval** — Users get more relevant historical findings surfaced in reviews through better query construction (completed 2026-02-14)
 - [x] **Phase 53: Dependency Bump Detection** — Users see dependency version changes identified and classified in review output (completed 2026-02-14)
 - [x] **Phase 54: Security Advisory & Changelog Analysis** — Users see CVE advisories and breaking change context for dependency bumps (completed 2026-02-14)
-- [ ] **Phase 55: Merge Confidence Scoring** — Users see a composite confidence assessment synthesizing all dependency signals
+- [x] **Phase 55: Merge Confidence Scoring** — Users see a composite confidence assessment synthesizing all dependency signals (completed 2026-02-14)
 
 ## Phase Details
 
@@ -165,15 +165,15 @@ Plans:
   3. A patch bump with no advisories and no breaking changes produces high confidence; a major bump with known CVEs produces low confidence
 **Plans:** 2 plans
 Plans:
-- [ ] 55-01-PLAN.md — TDD: computeMergeConfidence scoring function + types
-- [ ] 55-02-PLAN.md — Wire confidence into review pipeline and prompt rendering
+- [x] 55-01-PLAN.md — TDD: computeMergeConfidence scoring function + types
+- [x] 55-02-PLAN.md — Wire confidence into review pipeline and prompt rendering
 
 ## Progress
 
 **Execution Order:**
 Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 
-**Total shipped:** 8 milestones, 54 phases, 154 plans
+**Total shipped:** 9 milestones, 55 phases, 156 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -189,8 +189,8 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 52 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 53 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 54 | v0.9 | 2/2 | Complete | 2026-02-14 |
-| 55 | v0.9 | 0/TBD | Not started | - |
+| 55 | v0.9 | 2/2 | Complete | 2026-02-14 |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 54 complete (2/2 plans)*
+*Roadmap updated: 2026-02-14 -- Phase 55 complete (2/2 plans), v0.9 milestone shipped*

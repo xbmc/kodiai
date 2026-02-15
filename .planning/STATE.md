@@ -20,9 +20,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 154
-- Total milestones shipped: 8
-- Total phases completed: 54
+- Total plans completed: 156
+- Total milestones shipped: 9
+- Total phases completed: 55
 
 ## Accumulated Context
 
