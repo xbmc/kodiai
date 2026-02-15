@@ -115,7 +115,12 @@ Plans:
   3. Retrieval results from the last 30 days score higher than equivalent results from 6+ months ago, with a severity-aware decay floor of 0.3 that prevents CRITICAL/MAJOR findings from being forgotten
   4. Usage analysis completes within a 3-second time budget and fails open (missing usage data never blocks the review)
   5. Recency weighting chains after existing language-aware re-ranking without disrupting existing retrieval quality
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 57-01-PLAN.md — Usage analyzer and scope coordinator pure-function modules
+- [ ] 57-02-PLAN.md — Retrieval recency weighting module
+- [ ] 57-03-PLAN.md — Wire all analysis modules into review pipeline and prompt
 
 ### Phase 58: Intelligence Layer
 **Goal**: Kodiai self-tunes retrieval distance thresholds per query using statistical analysis of candidate distances instead of relying on a fixed 0.3 cutoff
@@ -156,10 +161,10 @@ Plans:
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
 | 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
-| 57 | v0.10 | 0/TBD | Not started | - |
+| 57 | v0.10 | 0/3 | Not started | - |
 | 58 | v0.10 | 0/TBD | Not started | - |
 | 59 | v0.10 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- v0.10 milestone roadmap created*
+*Roadmap updated: 2026-02-15 -- Phase 57 plans created*
