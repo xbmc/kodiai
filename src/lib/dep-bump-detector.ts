@@ -40,6 +40,8 @@ export type DepBumpContext = {
   security?: import("./dep-bump-enrichment.ts").SecurityContext | null;
   /** Phase 54: Changelog/release notes data (null when enrichment skipped/failed) */
   changelog?: import("./dep-bump-enrichment.ts").ChangelogContext | null;
+  /** Phase 55: Merge confidence assessment (null when computation skipped) */
+  mergeConfidence?: import("./merge-confidence.ts").MergeConfidence | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
 import type { SecurityContext, ChangelogContext } from "../lib/dep-bump-enrichment.ts";
+import type { MergeConfidenceLevel } from "../lib/merge-confidence.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -982,6 +983,27 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
     "",
   ];
 
+  // ── Merge confidence badge (CONF-01/02) ──
+  if (ctx.mergeConfidence) {
+    const emojiMap: Record<MergeConfidenceLevel, string> = {
+      high: ":green_circle:",
+      medium: ":yellow_circle:",
+      low: ":red_circle:",
+    };
+    const labelMap: Record<MergeConfidenceLevel, string> = {
+      high: "High Confidence",
+      medium: "Review Recommended",
+      low: "Careful Review Required",
+    };
+    lines.push(
+      `**Merge Confidence: ${emojiMap[ctx.mergeConfidence.level]} ${labelMap[ctx.mergeConfidence.level]}**`,
+    );
+    for (const r of ctx.mergeConfidence.rationale) {
+      lines.push(`- ${r}`);
+    }
+    lines.push("");
+  }
+
   if (ctx.details.isGroup) {
     lines.push("This is a **group dependency update** affecting multiple packages.");
   }
@@ -1033,6 +1055,17 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
     if (clogSection) {
       lines.push("", clogSection);
     }
+  }
+
+  // ── Verdict integration instructions (CONF-02) ──
+  if (ctx.mergeConfidence) {
+    lines.push(
+      "",
+      "When writing your ## Verdict, include the merge confidence assessment.",
+      "Merge confidence reflects dependency version change risk (semver, advisories, breaking changes).",
+      "Your Verdict reflects code review findings. Both assessments are independent.",
+      "If they conflict, explain why (e.g., 'dependency change is low-risk but code issues exist').",
+    );
   }
 
   return lines.join("\n");
