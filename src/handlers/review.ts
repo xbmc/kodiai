@@ -58,6 +58,7 @@ import {
   classifyDepBump,
   type DepBumpContext,
 } from "../lib/dep-bump-detector.ts";
+import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -1423,6 +1424,44 @@ export function createReviewHandler(deps: {
           }
         } catch (err) {
           logger.warn({ ...baseLog, err }, "Dep bump detection failed (fail-open)");
+        }
+
+        // ── Dependency bump enrichment (SEC-01/02/03, CLOG-01/02/03) ──
+        if (depBumpContext && depBumpContext.details.packageName && !depBumpContext.details.isGroup) {
+          try {
+            const [secResult, clogResult] = await Promise.allSettled([
+              fetchSecurityAdvisories({
+                packageName: depBumpContext.details.packageName,
+                ecosystem: depBumpContext.details.ecosystem ?? "npm",
+                oldVersion: depBumpContext.details.oldVersion,
+                newVersion: depBumpContext.details.newVersion,
+                octokit: idempotencyOctokit,
+                timeoutMs: 4000,
+              }),
+              fetchChangelog({
+                packageName: depBumpContext.details.packageName,
+                ecosystem: depBumpContext.details.ecosystem ?? "npm",
+                oldVersion: depBumpContext.details.oldVersion,
+                newVersion: depBumpContext.details.newVersion,
+                octokit: idempotencyOctokit,
+                timeoutMs: 4000,
+              }),
+            ]);
+            depBumpContext.security = secResult.status === "fulfilled" ? secResult.value : null;
+            depBumpContext.changelog = clogResult.status === "fulfilled" ? clogResult.value : null;
+
+            logger.info({
+              ...baseLog,
+              gate: "dep-bump-enrich",
+              hasAdvisories: (depBumpContext.security?.advisories?.length ?? 0) > 0,
+              isSecurityBump: depBumpContext.security?.isSecurityBump ?? false,
+              changelogSource: depBumpContext.changelog?.source ?? null,
+              breakingChanges: depBumpContext.changelog?.breakingChanges?.length ?? 0,
+            }, "Dep bump enrichment complete");
+          } catch (err) {
+            logger.warn({ ...baseLog, err, gate: "dep-bump-enrich" }, "Dep bump enrichment failed (fail-open)");
+            // fail-open: depBumpContext.security and .changelog remain undefined
+          }
         }
 
         const skipMatchers = config.review.skipPaths
