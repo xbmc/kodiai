@@ -147,7 +147,12 @@ Plans:
   3. Retry is capped at exactly 1 attempt -- no second retry regardless of outcome
   4. Repos with 3+ recent timeouts skip retry entirely to avoid wasting resources on chronically expensive repos
   5. Checkpoint data and retry metadata are visible in telemetry for operational monitoring
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 59-01-PLAN.md — Checkpoint accumulation infrastructure (MCP tool + knowledge store)
+- [ ] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
+- [ ] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
 
 ## Progress
 
