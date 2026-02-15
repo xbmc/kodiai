@@ -82,7 +82,7 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Deepen dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and quality telemetry.
 
-- [ ] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
+- [x] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
 - [ ] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
 - [ ] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
 - [ ] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
@@ -98,7 +98,12 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
   2. After every review that uses retrieval, Kodiai logs retrieval quality metrics (result count, average distance, threshold used, language match ratio) to the telemetry database
   3. When a PR title contains unrecognized bracket tags like `[Auth]` or `[iOS]`, Kodiai includes those tags as component/platform focus hints in the review prompt rather than silently ignoring them
   4. Schema migrations are additive-only (new tables and nullable columns) with no modifications to existing tables
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] 56-01-PLAN.md — Record dependency bump merge history in knowledge store
+- [x] 56-02-PLAN.md — Log retrieval quality metrics to telemetry store
+- [x] 56-03-PLAN.md — Surface unrecognized bracket tags as focus hints in review prompt
 
 ### Phase 57: Analysis Layer
 **Goal**: Kodiai enriches dependency reviews with workspace-aware usage evidence and multi-package coordination signals, and retrieval results favor recent memories over stale ones
@@ -137,7 +142,7 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 ## Progress
 
-**Total shipped:** 9 milestones, 55 phases, 156 plans
+**Total shipped:** 9 milestones, 56 phases, 159 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -150,7 +155,7 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
-| 56 | v0.10 | 0/TBD | Not started | - |
+| 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 57 | v0.10 | 0/TBD | Not started | - |
 | 58 | v0.10 | 0/TBD | Not started | - |
 | 59 | v0.10 | 0/TBD | Not started | - |
