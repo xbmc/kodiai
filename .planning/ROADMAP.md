@@ -131,7 +131,11 @@ Plans:
   2. When fewer than 8 candidates are returned, Kodiai falls back to a percentile-based threshold rather than attempting unstable gap detection
   3. Adaptive thresholds are bounded by a floor of 0.15 and ceiling of 0.65, preventing pathological cutoffs
   4. The threshold selection (adaptive vs. fallback vs. configured) is logged in retrieval telemetry for observability
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 58-01-PLAN.md — Adaptive threshold computation module (TDD)
+- [ ] 58-02-PLAN.md — Wire adaptive threshold into retrieval pipeline and telemetry
 
 ### Phase 59: Resilience Layer
 **Goal**: Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope
@@ -162,9 +166,9 @@ Plans:
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
 | 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
-| 58 | v0.10 | 0/TBD | Not started | - |
+| 58 | v0.10 | 0/2 | Not started | - |
 | 59 | v0.10 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- Phase 57 plans created*
+*Roadmap updated: 2026-02-15 -- Phase 58 plans created*
