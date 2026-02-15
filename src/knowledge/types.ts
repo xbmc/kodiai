@@ -144,6 +144,18 @@ export type FindingCommentCandidate = {
   createdAt: string;
 };
 
+export type CheckpointRecord = {
+  reviewOutputKey: string;
+  repo: string;
+  prNumber: number;
+  filesReviewed: string[];
+  findingCount: number;
+  summaryDraft: string;
+  totalFiles: number;
+  partialCommentId?: number | null;
+  createdAt?: string;
+};
+
 export type RunStatus = 'pending' | 'running' | 'completed' | 'superseded';
 
 export type RunStateCheck = {
@@ -216,6 +228,10 @@ export type KnowledgeStore = {
   aggregateFeedbackPatterns(repo: string): FeedbackPattern[];
   clearFeedbackSuppressions(repo: string): number;
   listFeedbackSuppressions(repo: string): FeedbackPattern[];
+  saveCheckpoint?(data: CheckpointRecord): void;
+  getCheckpoint?(reviewOutputKey: string): CheckpointRecord | null;
+  deleteCheckpoint?(reviewOutputKey: string): void;
+  updateCheckpointCommentId?(reviewOutputKey: string, commentId: number): void;
   checkpoint(): void;
   close(): void;
 };

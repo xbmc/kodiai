@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
+  CheckpointRecord,
   DepBumpMergeHistoryRecord,
   FeedbackReaction,
   FindingByCommentId,
@@ -82,6 +83,22 @@ type FindingByCommentIdRow = {
   file_path: string;
   start_line: number | null;
   title: string;
+};
+
+type CheckpointRow = {
+  created_at: string;
+  review_output_key: string;
+  repo: string;
+  pr_number: number;
+  checkpoint_data: string;
+  partial_comment_id: number | null;
+};
+
+type CheckpointData = {
+  filesReviewed: string[];
+  findingCount: number;
+  summaryDraft: string;
+  totalFiles: number;
 };
 
 /** FNV-1a fingerprint for title deduplication (duplicated from review.ts to avoid circular imports). */
@@ -347,6 +364,19 @@ export function createKnowledgeStore(opts: {
     "CREATE INDEX IF NOT EXISTS idx_dep_bump_merge_repo_pkg ON dep_bump_merge_history(repo, package_name)",
   );
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS review_checkpoints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      review_output_key TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      checkpoint_data TEXT NOT NULL,
+      partial_comment_id INTEGER,
+      UNIQUE(review_output_key)
+    );
+  `);
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -466,6 +496,47 @@ export function createKnowledgeStore(opts: {
       $isSecurityBump
     )
   `);
+
+  const saveCheckpointStmt = db.query(`
+    INSERT INTO review_checkpoints (
+      review_output_key,
+      repo,
+      pr_number,
+      checkpoint_data,
+      partial_comment_id
+    ) VALUES (
+      $reviewOutputKey,
+      $repo,
+      $prNumber,
+      $checkpointData,
+      $partialCommentId
+    )
+    ON CONFLICT(review_output_key)
+    DO UPDATE SET
+      checkpoint_data = excluded.checkpoint_data,
+      partial_comment_id = COALESCE(excluded.partial_comment_id, review_checkpoints.partial_comment_id)
+  `);
+
+  const getCheckpointStmt = db.query(`
+    SELECT
+      created_at,
+      review_output_key,
+      repo,
+      pr_number,
+      checkpoint_data,
+      partial_comment_id
+    FROM review_checkpoints
+    WHERE review_output_key = ?1
+    LIMIT 1
+  `);
+
+  const deleteCheckpointStmt = db.query(
+    "DELETE FROM review_checkpoints WHERE review_output_key = ?1",
+  );
+
+  const updateCheckpointCommentIdStmt = db.query(
+    "UPDATE review_checkpoints SET partial_comment_id = ?2 WHERE review_output_key = ?1",
+  );
 
   const checkRunExistsStmt = db.query(
     "SELECT run_key, status FROM run_state WHERE run_key = $runKey",
@@ -1048,6 +1119,67 @@ export function createKnowledgeStore(opts: {
 
     listFeedbackSuppressions(repo: string): FeedbackPattern[] {
       return store.aggregateFeedbackPatterns(repo);
+    },
+
+    saveCheckpoint(data: CheckpointRecord): void {
+      const checkpointData: CheckpointData = {
+        filesReviewed: data.filesReviewed,
+        findingCount: data.findingCount,
+        summaryDraft: data.summaryDraft,
+        totalFiles: data.totalFiles,
+      };
+
+      saveCheckpointStmt.run({
+        $reviewOutputKey: data.reviewOutputKey,
+        $repo: data.repo,
+        $prNumber: data.prNumber,
+        $checkpointData: JSON.stringify(checkpointData),
+        $partialCommentId: data.partialCommentId ?? null,
+      });
+    },
+
+    getCheckpoint(reviewOutputKey: string): CheckpointRecord | null {
+      const row = getCheckpointStmt.get({
+        1: reviewOutputKey,
+      }) as CheckpointRow | null;
+
+      if (!row) return null;
+
+      let parsed: CheckpointData | null = null;
+      try {
+        parsed = JSON.parse(row.checkpoint_data) as CheckpointData;
+      } catch (err) {
+        logger.warn(
+          { err, reviewOutputKey },
+          "Failed to parse review checkpoint JSON; returning null",
+        );
+        return null;
+      }
+
+      return {
+        reviewOutputKey: row.review_output_key,
+        repo: row.repo,
+        prNumber: row.pr_number,
+        filesReviewed: Array.isArray(parsed.filesReviewed) ? parsed.filesReviewed : [],
+        findingCount: typeof parsed.findingCount === "number" ? parsed.findingCount : 0,
+        summaryDraft: typeof parsed.summaryDraft === "string" ? parsed.summaryDraft : "",
+        totalFiles: typeof parsed.totalFiles === "number" ? parsed.totalFiles : 0,
+        partialCommentId: row.partial_comment_id,
+        createdAt: row.created_at,
+      };
+    },
+
+    deleteCheckpoint(reviewOutputKey: string): void {
+      deleteCheckpointStmt.run({
+        1: reviewOutputKey,
+      });
+    },
+
+    updateCheckpointCommentId(reviewOutputKey: string, commentId: number): void {
+      updateCheckpointCommentIdStmt.run({
+        1: reviewOutputKey,
+        2: commentId,
+      });
     },
 
     checkpoint(): void {
