@@ -1,14 +1,18 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { createCommentServer } from "./comment-server.ts";
 import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCIStatusServer } from "./ci-status-server.ts";
 import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
+import { createCheckpointServer } from "./checkpoint-server.ts";
+import type { KnowledgeStore } from "../../knowledge/types.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
 export { createCIStatusServer } from "./ci-status-server.ts";
 export { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
+export { createCheckpointServer } from "./checkpoint-server.ts";
 
 export function buildMcpServers(deps: {
   getOctokit: () => Promise<Octokit>;
@@ -23,8 +27,11 @@ export function buildMcpServers(deps: {
   onPublish?: () => void;
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
-}) {
-  const servers: Record<string, ReturnType<typeof createCommentServer>> = {};
+  knowledgeStore?: KnowledgeStore;
+  totalFiles?: number;
+  enableCheckpointTool?: boolean;
+}): Record<string, McpServerConfig> {
+  const servers: Record<string, McpServerConfig> = {};
 
   const enableCommentTools = deps.enableCommentTools ?? true;
   if (enableCommentTools) {
@@ -68,6 +75,23 @@ export function buildMcpServers(deps: {
       deps.owner,
       deps.repo,
       deps.prNumber,
+    );
+  }
+
+  const enableCheckpointTool = deps.enableCheckpointTool ?? false;
+  if (
+    enableCheckpointTool &&
+    deps.knowledgeStore &&
+    deps.prNumber !== undefined &&
+    deps.reviewOutputKey
+  ) {
+    servers.review_checkpoint = createCheckpointServer(
+      deps.knowledgeStore,
+      deps.reviewOutputKey,
+      `${deps.owner}/${deps.repo}`,
+      deps.prNumber,
+      deps.totalFiles ?? 0,
+      deps.logger,
     );
   }
 

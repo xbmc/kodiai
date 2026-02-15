@@ -1126,6 +1126,7 @@ export function buildReviewPrompt(context: {
   headBranch: string;
   changedFiles: string[];
   customInstructions?: string;
+  checkpointEnabled?: boolean;
   // Review mode & severity control fields
   mode?: "standard" | "enhanced";
   severityMinLevel?: "critical" | "major" | "medium" | "minor";
@@ -1298,6 +1299,18 @@ export function buildReviewPrompt(context: {
     "",
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
   );
+
+  if (context.checkpointEnabled === true) {
+    lines.push(
+      "",
+      "IMPORTANT: This review may time out. Call the save_review_checkpoint tool after reviewing every 3-5 files. Include:",
+      "- filesReviewed: list of file paths you have fully analyzed",
+      "- findingCount: total findings generated so far",
+      "- summaryDraft: a brief summary of findings so far",
+      "",
+      "This ensures your work is preserved if the session times out.",
+    );
+  }
 
   // --- Rules ---
   lines.push(
