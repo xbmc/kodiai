@@ -2,7 +2,11 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "pino";
-import type { TelemetryRecord, TelemetryStore } from "./types.ts";
+import type {
+  RetrievalQualityRecord,
+  TelemetryRecord,
+  TelemetryStore,
+} from "./types.ts";
 
 /**
  * Create a TelemetryStore backed by SQLite.
@@ -53,6 +57,23 @@ export function createTelemetryStore(opts: {
     )
   `);
 
+  // Create retrieval_quality table (additive-only migration)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS retrieval_quality (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      delivery_id TEXT,
+      repo TEXT NOT NULL,
+      pr_number INTEGER,
+      event_type TEXT NOT NULL,
+      top_k INTEGER,
+      distance_threshold REAL,
+      result_count INTEGER NOT NULL,
+      avg_distance REAL,
+      language_match_ratio REAL
+    )
+  `);
+
   // Indexes for retention purge queries and repo-based reporting
   db.run(`
     CREATE INDEX IF NOT EXISTS idx_executions_created_at
@@ -61,6 +82,17 @@ export function createTelemetryStore(opts: {
   db.run(`
     CREATE INDEX IF NOT EXISTS idx_executions_repo
     ON executions(repo)
+  `);
+
+  // Indexes for retrieval quality lookups and webhook redelivery idempotency
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_retrieval_quality_delivery
+    ON retrieval_quality(delivery_id)
+    WHERE delivery_id IS NOT NULL
+  `);
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_retrieval_quality_repo_created
+    ON retrieval_quality(repo, created_at)
   `);
 
   // Prepared insert statement (cached for performance)
@@ -76,7 +108,29 @@ export function createTelemetryStore(opts: {
     )
   `);
 
+  const insertRetrievalQualityStmt = db.query(`
+    INSERT OR IGNORE INTO retrieval_quality (
+      delivery_id, repo, pr_number, event_type,
+      top_k, distance_threshold, result_count, avg_distance, language_match_ratio
+    ) VALUES (
+      $deliveryId, $repo, $prNumber, $eventType,
+      $topK, $distanceThreshold, $resultCount, $avgDistance, $languageMatchRatio
+    )
+  `);
+
   let writeCount = 0;
+
+  const runCheckpoint = (): void => {
+    db.run("PRAGMA wal_checkpoint(PASSIVE)");
+  };
+
+  const bumpWriteCount = (): void => {
+    writeCount++;
+    if (writeCount >= 1000) {
+      runCheckpoint();
+      writeCount = 0;
+    }
+  };
 
   const store: TelemetryStore = {
     record(entry: TelemetryRecord): void {
@@ -99,11 +153,23 @@ export function createTelemetryStore(opts: {
         $stopReason: entry.stopReason ?? null,
       });
 
-      writeCount++;
-      if (writeCount >= 1000) {
-        store.checkpoint();
-        writeCount = 0;
-      }
+      bumpWriteCount();
+    },
+
+    recordRetrievalQuality(entry: RetrievalQualityRecord): void {
+      insertRetrievalQualityStmt.run({
+        $deliveryId: entry.deliveryId ?? null,
+        $repo: entry.repo,
+        $prNumber: entry.prNumber ?? null,
+        $eventType: entry.eventType,
+        $topK: entry.topK ?? null,
+        $distanceThreshold: entry.distanceThreshold ?? null,
+        $resultCount: entry.resultCount,
+        $avgDistance: entry.avgDistance ?? null,
+        $languageMatchRatio: entry.languageMatchRatio ?? null,
+      });
+
+      bumpWriteCount();
     },
 
     purgeOlderThan(days: number): number {
@@ -115,7 +181,7 @@ export function createTelemetryStore(opts: {
     },
 
     checkpoint(): void {
-      db.run("PRAGMA wal_checkpoint(PASSIVE)");
+      runCheckpoint();
     },
 
     close(): void {

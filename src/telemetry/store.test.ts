@@ -25,6 +25,17 @@ function makeRecord(overrides: Partial<Parameters<TelemetryStore["record"]>[0]> 
   };
 }
 
+function makeRetrievalQualityRecord(
+  overrides: Partial<Parameters<TelemetryStore["recordRetrievalQuality"]>[0]> = {},
+) {
+  return {
+    repo: "owner/repo",
+    eventType: "pull_request.opened",
+    resultCount: 0,
+    ...overrides,
+  };
+}
+
 /** Remove a temp SQLite database and its WAL/SHM sidecar files. */
 function cleanupDb(path: string): void {
   for (const suffix of ["", "-wal", "-shm"]) {
@@ -199,6 +210,79 @@ describe("TelemetryStore", () => {
 
     // DB should remain functional after checkpoint
     expect(() => store.record(makeRecord({ deliveryId: "write-1001" }))).not.toThrow();
+  });
+
+  test("recordRetrievalQuality() inserts a row and is idempotent by delivery_id", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "deliv-001",
+        repo: "octocat/hello-world",
+        prNumber: 123,
+        eventType: "pull_request.opened",
+        topK: 8,
+        distanceThreshold: 0.3,
+        resultCount: 2,
+        avgDistance: 0.25,
+        languageMatchRatio: 0.5,
+      }),
+    );
+
+    // Duplicate delivery id should not create a second row.
+    fileStore.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "deliv-001",
+        repo: "octocat/hello-world",
+        prNumber: 123,
+        eventType: "pull_request.opened",
+        topK: 8,
+        distanceThreshold: 0.3,
+        resultCount: 2,
+        avgDistance: 0.25,
+        languageMatchRatio: 0.5,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(row).toBeTruthy();
+    expect(row.repo).toBe("octocat/hello-world");
+    expect(row.pr_number).toBe(123);
+    expect(row.event_type).toBe("pull_request.opened");
+    expect(row.top_k).toBe(8);
+    expect(row.distance_threshold).toBe(0.3);
+    expect(row.result_count).toBe(2);
+    expect(row.avg_distance).toBe(0.25);
+    expect(row.language_match_ratio).toBe(0.5);
+    expect(row.created_at).toBeTruthy();
+    expect(count.cnt).toBe(1);
+  });
+
+  test("auto-checkpoint counts retrieval quality writes", () => {
+    // 999 execution writes + 1 retrieval quality write => checkpoint threshold hit
+    for (let i = 0; i < 999; i++) {
+      store.record(makeRecord({ deliveryId: `mixed-${i}` }));
+    }
+    store.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "mixed-999",
+        resultCount: 1,
+        avgDistance: 0.1,
+        languageMatchRatio: 1,
+      }),
+    );
+
+    // DB should remain functional after checkpoint
+    expect(() => store.record(makeRecord({ deliveryId: "mixed-1000" }))).not.toThrow();
   });
 
   test("creates data directory if it does not exist", () => {

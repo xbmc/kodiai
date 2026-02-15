@@ -24,6 +24,25 @@ export type TelemetryRecord = {
 };
 
 /**
+ * Retrieval quality telemetry for a retrieval attempt.
+ *
+ * Maps to the `retrieval_quality` table in the telemetry SQLite database.
+ */
+export type RetrievalQualityRecord = {
+  deliveryId?: string;
+  repo: string;
+  prNumber?: number;
+  eventType: string;
+  topK?: number;
+  distanceThreshold?: number;
+  resultCount: number;
+  /** Mean of reranked/adjusted distances (null/undefined when resultCount=0). */
+  avgDistance?: number | null;
+  /** Matches / resultCount (null/undefined when resultCount=0). */
+  languageMatchRatio?: number | null;
+};
+
+/**
  * TelemetryStore interface for SQLite-backed execution telemetry.
  *
  * Created via `createTelemetryStore({ dbPath, logger })` factory function.
@@ -32,6 +51,8 @@ export type TelemetryRecord = {
 export type TelemetryStore = {
   /** Insert a telemetry record into the executions table. */
   record(entry: TelemetryRecord): void;
+  /** Insert a retrieval quality record into the retrieval_quality table. */
+  recordRetrievalQuality(entry: RetrievalQualityRecord): void;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */
   purgeOlderThan(days: number): number;
   /** Run a WAL checkpoint (PASSIVE mode). */
