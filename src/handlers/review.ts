@@ -1866,22 +1866,24 @@ export function createReviewHandler(deps: {
           // Multi-language context and localized output (LANG-01)
           filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,
-          // PR labels for intent scoping (FORMAT-07)
-          prLabels,
-          conventionalType: parsedIntent.conventionalType,
-          // Delta re-review context (FORMAT-14/15/16)
-          deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
-            ? {
-                lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
-                changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
-                priorFindings: priorFindings.map(f => ({
-                  filePath: f.filePath,
-                  title: f.title,
-                  severity: f.severity,
-                  category: f.category,
-                })),
-              }
-            : null,
+           // PR labels for intent scoping (FORMAT-07)
+           prLabels,
+           // INTENT-01: Treat unrecognized bracket tags as focus hints
+           focusHints: parsedIntent.unrecognized,
+           conventionalType: parsedIntent.conventionalType,
+           // Delta re-review context (FORMAT-14/15/16)
+           deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
+             ? {
+                 lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
+                 changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+                 priorFindings: priorFindings.map(f => ({
+                   filePath: f.filePath,
+                   title: f.title,
+                   severity: f.severity,
+                   category: f.category,
+                 })),
+               }
+             : null,
           // Large PR file triage context (LARGE-01 through LARGE-08)
           largePRContext: tieredFiles.isLargePR ? {
             fullReviewFiles: tieredFiles.full.map(f => f.filePath),

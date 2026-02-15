@@ -1118,6 +1118,7 @@ export function buildReviewPrompt(context: {
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
+  focusHints?: string[];
   conventionalType?: ConventionalCommitType | null;
   deltaContext?: DeltaReviewContext | null;
   largePRContext?: {
@@ -1293,6 +1294,30 @@ export function buildReviewPrompt(context: {
       context.headBranch,
     ),
   );
+
+  // --- Focus hints (INTENT-01) ---
+  if (context.focusHints && context.focusHints.length > 0) {
+    const rendered: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of context.focusHints) {
+      const normalized = raw.trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      rendered.push(`- [${normalized.toUpperCase()}]`);
+    }
+
+    if (rendered.length > 0) {
+      lines.push(
+        "",
+        "## Focus Hints",
+        "",
+        "These tags came from the PR title/commits; treat them as components/platforms to pay extra attention to when reviewing.",
+        "Do not invent context if the diff does not touch the hinted areas.",
+        "",
+        ...rendered,
+      );
+    }
+  }
 
   if (context.conventionalType) {
     const typeGuidance: Record<string, string> = {
