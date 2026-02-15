@@ -150,7 +150,10 @@ Plans:
   3. Kodiai fetches changelog/release notes between old and new versions from GitHub Releases API with fallback to CHANGELOG.md and compare URL
   4. Kodiai detects breaking changes from changelog content (BREAKING CHANGE markers, release notes) and surfaces them in the review
   5. Changelog context injected into the LLM review prompt is bounded to prevent prompt bloat
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 54-01-PLAN.md — TDD: dep-bump-enrichment module (advisory lookup, changelog fetching, repo resolution)
+- [ ] 54-02-PLAN.md — Wire enrichment into review.ts and extend review-prompt.ts
 
 ### Phase 55: Merge Confidence Scoring
 **Goal:** Users see a clear, composite merge confidence assessment that synthesizes semver analysis, advisory status, and breaking change signals into actionable guidance
@@ -182,9 +185,9 @@ Phases execute in numeric order: 51 -> 52 -> 53 -> 54 -> 55
 | 51 | v0.9 | 3/3 | Complete | 2026-02-14 |
 | 52 | v0.9 | 2/2 | Complete | 2026-02-14 |
 | 53 | v0.9 | 2/2 | Complete | 2026-02-14 |
-| 54 | v0.9 | 0/TBD | Not started | - |
+| 54 | v0.9 | 0/2 | Planned | - |
 | 55 | v0.9 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-14 -- Phase 53 complete (2 plans, verified 11/11)*
+*Roadmap updated: 2026-02-14 -- Phase 54 planned (2 plans)*
