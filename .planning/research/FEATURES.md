@@ -1,274 +1,264 @@
 # Feature Landscape
 
-**Domain:** Dependency bump analysis, timeout resilience, and intelligent retrieval for AI code review
-**Researched:** 2026-02-14
-**Confidence:** MEDIUM-HIGH (GitHub Advisory API verified, retrieval patterns verified in codebase, timeout architecture verified; changelog extraction strategies from training data + competitor analysis)
+**Domain:** Advanced dependency analysis, execution resilience, and intelligent retrieval for AI code review
+**Researched:** 2026-02-15
+**Milestone:** v0.10 Advanced Signals
+**Confidence:** MEDIUM-HIGH (existing codebase verified, Aikido and Renovate patterns validated via web, knee-point algorithms verified via academic sources, time-decay models verified via RAG literature)
 
-## Existing Foundation (Already Built)
+## Existing Foundation (Already Built in v0.9)
 
-Before defining v0.9 features, here is what Kodiai already has that these features build on:
+These features are production and form the base for v0.10:
 
-| Existing Capability | Module | Relevance to v0.9 |
-|---------------------|--------|-------------------|
-| PR intent parsing (conventional commits, bracket tags, branch prefixes, labels) | `lib/pr-intent-parser.ts` | Detects `chore(deps):`, `[deps]`, dependency-related labels -- foundation for dep bump detection |
-| Auto-profile selection by PR size/intent | `lib/auto-profile.ts` | Can route dep bumps to a specialized profile |
-| Risk-weighted file prioritization for large PRs (>50 files) | `lib/file-risk-scorer.ts`, `handlers/review.ts` | Already handles large PRs with tiered review depth |
-| Embedding-backed learning memory with sqlite-vec | `learning/memory-store.ts`, `learning/isolation.ts` | Vector retrieval with repo isolation, fixed distance threshold (0.3) |
-| Voyage AI embedding provider with fail-open | `learning/embedding-provider.ts` | Single-model embeddings, 1024-dim, 10s timeout |
-| Retrieval config (topK, distanceThreshold, maxContextChars) | `execution/config.ts` | Static thresholds, no per-query adaptation |
-| Timeout enforcement via AbortController (default 600s) | `execution/executor.ts` | Current approach: binary success/timeout, no partial results |
-| Error classification and error comment posting | `lib/errors.ts`, `handlers/review.ts` | Timeout classified as error, generic "timed out" message posted |
-| Review Details summary comment (upsert pattern) | `handlers/review.ts` | Can be extended for dep bump metadata and partial result status |
-| Diff analysis with language classification (20 languages) | `execution/diff-analysis.ts` | `EXTENSION_LANGUAGE_MAP` provides file-to-language mapping |
-| Multi-factor finding prioritization (severity + fileRisk + category + recurrence) | `lib/finding-prioritizer.ts` | Composite scoring already implemented |
-| Incremental re-review with finding deduplication | `lib/incremental-diff.ts`, `lib/finding-dedup.ts` | Delta classification (new/resolved/still-open) |
-| Knowledge store with review/finding/feedback records | `knowledge/store.ts` | SQLite persistence, can store dep analysis cache |
+| Existing Capability | Module | How v0.10 Extends It |
+|---------------------|--------|---------------------|
+| Three-stage dep bump detection (detect, extract, classify) | `lib/dep-bump-detector.ts` | Usage analysis adds workspace grepping for affected APIs |
+| Security advisory lookup via GitHub Advisory DB | `lib/dep-bump-enrichment.ts` | History tracking adds longitudinal perspective |
+| Changelog fetching with three-tier fallback + breaking change detection | `lib/dep-bump-enrichment.ts` | Multi-package correlation detects grouped updates |
+| Merge confidence scoring (semver + advisory + breaking changes) | `lib/merge-confidence.ts` | Usage analysis integrates as fourth confidence signal |
+| Dynamic timeout scaling + auto scope reduction | `lib/timeout-estimator.ts` | Checkpoint publishing saves partial results; retry reuses them |
+| Informative timeout messages (partial vs full timeout) | `handlers/review.ts` | Checkpoint data makes partial messages richer |
+| Multi-signal retrieval query (intent, languages, diff patterns, author) | `learning/retrieval-query.ts` | Adaptive thresholds auto-tune distance cutoffs |
+| Language-aware re-ranking with same-language boost | `learning/retrieval-rerank.ts` | Cross-language concept equivalence extends this |
+| Bounded retrieval with fixed 0.3 distance threshold | `learning/isolation.ts` | Adaptive thresholds replace the fixed value |
+| Telemetry store with execution records | `telemetry/store.ts` | Retrieval quality telemetry adds new metric types |
 
 ---
 
 ## Table Stakes
 
-Features users expect when a review tool encounters dependency bumps, times out on large PRs, or uses embedding-based retrieval. Missing these makes the product feel half-finished.
+Features that are expected natural extensions of what v0.9 already provides. Without them, the existing features feel incomplete.
 
-### 1. Dependency Bump Detection
-
-| Feature | Why Expected | Complexity | Depends On |
-|---------|--------------|------------|------------|
-| **Detect dependency bump PRs from metadata** | Dependabot and Renovate both signal dependency updates via PR title (`chore(deps): bump X from A to B`), labels (`dependencies`, `Type: Depends`), and branch name (`dependabot/npm_and_yarn/...`). The xbmc reference PR #27860 uses title `[depends][target] Bump libcdio to 2.3.0` and label `Component: Depends`. Users expect the review tool to recognize these signals and behave differently from code-change PRs. | LOW | Existing `parsePRIntent()` already extracts conventional commit types. Extend with: (1) title regex for "bump X from A to B" or "update X to Y", (2) label matching for `dependencies`/`depends`/`renovate`/`dependabot`, (3) branch prefix matching for `dependabot/`, `renovate/`. |
-| **Extract old and new version numbers from PR title/body** | Every dep bump PR from Dependabot/Renovate includes version info: "Bumps lodash from 4.17.20 to 4.17.21" in the title or body. Without extracting these, the tool cannot look up changelogs or advisories. Regex: `/bump\w*\s+(\S+)\s+from\s+(\S+)\s+to\s+(\S+)/i` covers 90%+ of dep bump titles. | LOW | Pure regex parsing. Fallback: scan changed lockfile/manifest for version diffs. |
-| **Extract package name and ecosystem from changed files** | When PR modifies `package.json` / `package-lock.json` (npm), `go.mod` (Go), `Cargo.toml` (Rust), `requirements.txt` (Python), the ecosystem is deterministic. Needed for advisory API queries. | LOW | File path pattern matching. Already have `classifyFileLanguage()` and `filesByCategory` in diff analysis. |
-
-### 2. Changelog and Release Notes Extraction
+### 1. API Usage Analysis for Breaking Changes
 
 | Feature | Why Expected | Complexity | Depends On |
 |---------|--------------|------------|------------|
-| **Fetch GitHub Releases between old and new version** | Renovate checks for "Releases" metadata and changelog files, then filters to relevant versions. Dependabot includes release notes and changelog entries in PR body. Users expect the review tool to show what changed between versions. GitHub REST API: `GET /repos/{owner}/{repo}/releases` filtered by tag name provides release bodies with breaking change notes. | MEDIUM | Requires: (1) resolving package to source repo (npm registry `repository` field, or GitHub API), (2) listing releases between two version tags, (3) extracting breaking change markers from release body. |
-| **Detect breaking changes from version semantics** | Semver major bumps (1.x to 2.x) signal breaking changes. Conventional commit release notes include `BREAKING CHANGE:` markers. Users expect the tool to flag major version bumps prominently. | LOW | Version comparison: `semver.major(newVersion) > semver.major(oldVersion)`. The `semver` npm package or simple regex handles this. |
-| **Summarize changelog for review context** | When changelog text is available, inject a concise summary into the review prompt so the LLM can assess whether the PR properly adapts to breaking changes. Renovate embeds changelog in PR body; the review tool should use it as review context, not just repeat it. | LOW | Prompt extension: add changelog summary section to `buildReviewPrompt()`. Truncate to `maxContextChars` to avoid prompt bloat. |
+| **Grep workspace for imports of bumped package** | When `dep-bump-enrichment.ts` detects breaking changes in a major version bump, the obvious next question is "does our code actually use the changed APIs?" Aikido Security does exactly this -- analyzes the codebase to determine whether breaking changes actually impact the project. Without it, the breaking change warning is generic ("this package has breaking changes") rather than specific ("you import `foo.bar()` which was removed in v3"). | MEDIUM | Existing dep bump detection provides `packageName`. Existing executor has `Grep`/`Glob` tools. Need: (1) extract import patterns for the package from workspace files, (2) cross-reference with breaking change list from changelog. |
+| **Report specific affected files and lines** | Aikido's approach identifies exact files and lines that rely on deprecated behavior. For a code review tool, this means: find `import { X } from 'bumped-package'` across the workspace and list those locations. | MEDIUM | Requires the grep results above. Output is a list of `{file, line, importedSymbol}` tuples that feed into the review prompt and merge confidence scoring. |
+| **Integrate usage analysis into merge confidence** | Currently `computeMergeConfidence()` uses three signals (semver, advisory, breaking changes). Adding "codebase uses affected APIs: yes/no" as a fourth signal provides actionable differentiation: major bump + no usage = safe; major bump + heavy usage = risky. | LOW | Extends `merge-confidence.ts`. Pure logic addition once usage data is available. |
 
-### 3. Security Advisory Lookup
-
-| Feature | Why Expected | Complexity | Depends On |
-|---------|--------------|------------|------------|
-| **Query GitHub Advisory Database for known CVEs** | GitHub's Global Advisory API (`GET /advisories?affects=package@version&ecosystem=npm`) returns reviewed security advisories including CVE IDs, severity, and patched versions. CodeRabbit integrates OSV-Scanner for vulnerability detection. Users expect a review tool to flag known vulnerabilities in dependency updates. | MEDIUM | GitHub REST API call with `affects` parameter (supports up to 1000 packages). Requires: package name + ecosystem + version range. Response includes: GHSA ID, CVE ID, severity, vulnerable_version_range, patched_versions. |
-| **Report advisory severity and remediation in review** | When advisories exist, embed them in the review summary: "This update resolves CVE-2025-XXXX (HIGH severity) affecting versions <=1.0.2, patched in 1.0.3." | LOW | Format advisory API response into review comment. Already have severity classification infrastructure. |
-| **Distinguish security-motivated from maintenance bumps** | When a dep bump resolves a known CVE, the merge urgency is higher. When it is a routine maintenance bump, the review can be more relaxed. Dependabot distinguishes security updates from version updates. | LOW | Check if any advisory matches the OLD version range. If yes: security-motivated. If no: maintenance. |
-
-### 4. Timeout Resilience and Partial Results
+### 2. Dependency Update History Tracking
 
 | Feature | Why Expected | Complexity | Depends On |
 |---------|--------------|------------|------------|
-| **Progressive review with checkpoint publishing** | Current behavior: timeout = error comment, no review output. With a ~10% failure rate on large/complex PRs, users get zero value. Expected: publish whatever findings were generated before timeout. CodeRabbit uses 3600s timeout and buffers output until complete. A better approach: publish partial results at checkpoints. | HIGH | Requires architecture change: (1) intercept MCP tool calls during execution to detect published inline comments, (2) on timeout, post summary of what was reviewed vs. not, (3) mark the review as "partial" in Review Details. This touches executor.ts and review.ts. |
-| **Pre-review triage to predict timeout risk** | Before invoking the LLM, estimate whether the PR will likely timeout based on file count, total lines, and language complexity. If high risk, proactively reduce scope. | MEDIUM | Heuristic: if `totalFiles * avgLinesPerFile > threshold`, auto-escalate to minimal profile or reduce `fullReviewCount`. Uses existing diff metrics. |
-| **Graceful timeout message with partial context** | Current timeout message: generic "Kodiai timed out." Expected: "Reviewed 45/120 files before timeout. 8 findings published. Re-request review or increase timeoutSeconds." | LOW | Requires tracking published state during execution. The `published` flag already exists in executor.ts but is binary. Extend to track count. |
-| **Chunked review for very large PRs (>200 files)** | Current `MAX_ANALYSIS_FILES = 200` truncates analysis. For extremely large PRs, consider splitting into multiple sequential review passes, each covering a file batch. | HIGH | Requires: (1) batch file selection, (2) multiple executor invocations per PR, (3) merging results across batches, (4) combined summary comment. Significant architecture change. |
+| **Store dep bump records in knowledge store** | When a package is bumped, record `{repo, packageName, fromVersion, toVersion, ecosystem, bumpType, isSecurityBump, mergeConfidence, mergedAt}`. On future bumps, query history: "lodash was last bumped 45 days ago from 4.17.20 to 4.17.21 with no issues." This is basic institutional memory. | LOW | Extends `knowledge/store.ts` with a new `dep_bump_history` table. Simple INSERT on merge, SELECT on detection. |
+| **Surface update frequency and lag** | Track how often each package is updated and how far behind the repo is from latest. Key patterns: (1) high-frequency updaters (updated monthly = healthy), (2) long-lag packages (2 years behind = risky), (3) security-motivated velocity (security bumps merged faster). Renovate's Dependency Dashboard tracks similar metrics. | LOW | Computed from history records. Frequency = count of bumps per time window. Lag = current version vs latest (already extracted from PR). |
+| **Feed history into review prompt** | Inject one line: "This package was last updated 45 days ago (v4.17.20 to v4.17.21, merged without issues)." Gives the LLM reviewer longitudinal context. | LOW | Query history table at review time, format as prompt section. |
 
-### 5. Intelligent Retrieval Improvements
+### 3. Checkpoint Publishing for Timeout Recovery
 
 | Feature | Why Expected | Complexity | Depends On |
 |---------|--------------|------------|------------|
-| **Multi-signal query construction** | Current query: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}` (line 1431 of review.ts). This is a naive concatenation. Expected: include PR intent type, severity distribution of prior findings, language distribution, and key diff patterns for richer semantic matching. | MEDIUM | Extend query text construction to include: (1) parsed PR intent type and scope, (2) detected languages from `filesByLanguage`, (3) key diff patterns (e.g., function signatures changed), (4) author experience tier. All signals already available at query construction time. |
-| **Adaptive distance threshold** | Current: fixed 0.3 threshold for all queries (config.knowledge.retrieval.distanceThreshold). Research shows higher thresholds yield higher precision but lower recall, and optimal thresholds vary by embedding model, query length, and domain. Expected: adjust threshold based on result distribution. | MEDIUM | Strategy: (1) retrieve with relaxed threshold (e.g., 0.5), (2) examine distance distribution, (3) apply knee-point detection to find natural cluster boundary, (4) filter results above the knee. Alternatively: use percentile-based cutoff (keep results within 1 std-dev of best match). |
-| **Language-aware retrieval boosting** | Current vec0 table has `severity` and `category` metadata columns but no `language` column. A Python finding is less relevant to a TypeScript review. Expected: boost results matching the PR's primary language. | MEDIUM | Options: (1) add `language` column to vec0 table (requires migration), (2) post-retrieval re-ranking by language match, (3) include language in query text for semantic matching. Option 2 (post-retrieval re-rank) is simplest and avoids schema migration. |
+| **Save partial review state during execution** | Current behavior: timeout = everything lost except published inline comments. Expected: periodically checkpoint what has been reviewed so far. Not "streaming" (anti-feature) -- saving state that can be summarized on timeout. The `published` flag in `executor.ts` already tracks whether inline comments were posted; extend to track what files/findings were covered. | MEDIUM | The executor streams messages via `for await (const message of sdkQuery)`. Track `assistant` messages that indicate file analysis progress. On timeout, the catch block has access to accumulated state. |
+| **Post enriched timeout summary using checkpoint data** | Currently the timeout message says "Timed out after Xs." With checkpoint data: "Reviewed 45/120 files. 8 inline comments published. Files not reviewed: [top 5 by risk]. Consider increasing timeoutSeconds or re-requesting review." | LOW | Consumes checkpoint data in the timeout handler. Extends the existing timeout comment logic in `review.ts`. |
 
 ---
 
 ## Differentiators
 
-Features that set Kodiai apart. Not universally expected, but high-value when present.
+Features that set Kodiai apart from Dependabot, Renovate, CodeRabbit. Not universally expected but high-value.
 
-### Dependency Bump Analysis
-
-| Feature | Value Proposition | Complexity | Depends On |
-|---------|-------------------|------------|------------|
-| **Merge confidence scoring** | Dependabot provides a "compatibility score" based on CI pass rates across GitHub. Kodiai can provide an LLM-assessed confidence score based on: (1) semver analysis (patch vs minor vs major), (2) changelog breaking change markers, (3) CVE resolution status, (4) usage analysis (does the codebase use affected APIs?). No competitor provides LLM-analyzed merge confidence for dependency bumps. | MEDIUM | Requires all table-stakes dep analysis features. Score is a composite of: semver safety (patch=high, major=low), advisory resolution (resolves CVE=boost), breaking changes detected (lower confidence), usage analysis (uses changed APIs=lower). |
-| **Usage analysis: does the codebase use affected APIs?** | When a dependency introduces breaking changes, the key question is "does our code use the changed APIs?" Kodiai can grep the workspace for import statements and function calls matching the dependency's changed exports. No competitor does this analysis. | HIGH | Requires: (1) extracting changed exports/APIs from changelog/release notes (LLM-assisted), (2) searching the workspace for usage patterns (existing Grep/Glob tools), (3) reporting which specific usages are at risk. Complex but extremely valuable. |
-| **Dependency update history tracking** | Track which packages have been updated, how often, and whether past updates caused issues (via feedback). "This package was last updated 3 months ago; the previous bump from 2.0 to 2.1 was merged without issues." | LOW | Knowledge store extension: store dep bump records (package, from_version, to_version, outcome). Query on future bumps. |
-| **Multi-package update correlation** | When a PR updates multiple related packages (e.g., `@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin`), note the coordination and check for version compatibility requirements. | LOW | Parse multiple version changes from lockfile/manifest diffs. Check if packages share a scope prefix (`@scope/`). |
-
-### Timeout Resilience
+### 4. Multi-Package Correlation
 
 | Feature | Value Proposition | Complexity | Depends On |
 |---------|-------------------|------------|------------|
-| **Adaptive timeout based on PR complexity** | Instead of a fixed `timeoutSeconds`, compute timeout dynamically: `baseTimeout + (fileCount * perFileTimeout) + (avgLines * lineTimeout)`. Large PRs get longer timeouts automatically. | LOW | Pure math based on diff metrics. Extend executor config with dynamic timeout computation. |
-| **Review progress streaming** | Post a "reviewing..." comment with live progress updates (e.g., "Analyzing file 23/45..."). Delete or update on completion. Provides visibility during long reviews. | MEDIUM | Requires: periodic progress callback from executor, comment creation/update during execution. Risk: notification noise if not done carefully (use a single comment, update in place). |
-| **Retry with reduced scope on timeout** | When a review times out, automatically retry with a reduced file set (top 50% by risk score). Publish the reduced review rather than nothing. | HIGH | Requires: (1) detecting timeout before cleanup, (2) re-invoking executor with reduced scope, (3) coordinating with job queue for retry, (4) marking result as "reduced scope." |
+| **Detect grouped scope-prefix updates** | When a PR updates `@babel/core`, `@babel/preset-env`, and `@babel/plugin-transform-runtime`, these are a coordinated monorepo release. The review should note "3 packages from @babel/* updated together" rather than treating each independently. Renovate has explicit `groupName` support for this. Detection: group packages sharing a scope prefix (`@scope/`) or known ecosystem family (eslint + @eslint/, typescript-eslint/*). | LOW | Parse all changed packages from manifest diffs (existing `extractDepBumpDetails` handles single packages; extend for multi-package PRs where `isGroup: true`). Group by npm scope prefix or known families. |
+| **Cross-reference version compatibility in groups** | In monorepo ecosystems (Babel, ESLint, Angular), all packages within a group must be at compatible versions. Detect mismatches: `@typescript-eslint/parser@8.0.0` with `@typescript-eslint/eslint-plugin@7.0.0` is likely broken. | MEDIUM | Requires knowing which packages form a compatibility group. Heuristic: same scope prefix + same major version expected. For known ecosystems (Babel, ESLint, Angular, React), maintain a small compatibility rules table. |
+| **Aggregate group confidence** | For grouped updates, compute a single merge confidence rather than per-package. The group confidence is the minimum of individual confidences (weakest link). | LOW | Extends `computeMergeConfidence()` to accept an array of `DepBumpContext` and return a single aggregate. |
 
-### Intelligent Retrieval
+### 5. Retry with Reduced Scope on Timeout
 
 | Feature | Value Proposition | Complexity | Depends On |
 |---------|-------------------|------------|------------|
-| **Query-time severity/category filtering** | Current vec0 table has `severity` and `category` columns. Use them for filtered retrieval: when reviewing a security-focused PR, boost security-category memories. When profile is `minimal`, only retrieve `critical`/`major` severity memories. | LOW | The vec0 virtual table already supports WHERE clauses on metadata columns. Extend retrieval query with optional severity/category filters based on resolved review profile. |
-| **Recency-weighted retrieval** | Older memories may reflect outdated patterns. Boost recent memories: apply a time-decay multiplier to distance scores. Memories from the last 30 days get 0.9x distance (closer), 90+ days get 1.1x (farther). | LOW | Post-retrieval score adjustment using `createdAt` field from memory records. Pure math, no schema changes. |
-| **Cross-language concept mapping** | A "null safety" finding in Java is semantically similar to "optional chaining" in TypeScript. Language-aware retrieval should recognize cross-language concept equivalence. | HIGH | Requires either: (1) embedding model that naturally handles multi-language code concepts (Voyage Code 3 may already do this), (2) explicit concept mapping layer. Test with current embeddings first before adding complexity. |
-| **Retrieval quality metrics** | Track retrieval hit rates: how often retrieved memories influence the review output. If distance thresholds are too tight (few results) or too loose (noisy results), flag for tuning. | LOW | Log retrieval result counts, distances, and whether the finding outcome was used. Aggregate in telemetry. |
+| **Auto-retry with top-N files by risk score** | When a review times out, automatically retry with a reduced file set. The existing `file-risk-scorer.ts` already ranks files. Cut scope to top 50% by risk, retry once. This transforms a zero-value timeout into a partial review. | HIGH | Requires: (1) detecting timeout in the review handler, (2) computing reduced file set from risk scores, (3) re-invoking executor with reduced scope, (4) marking result as "reduced-scope review." Touches job queue coordination and idempotency logic. |
+| **What to cut: abbreviation tier first, then file count** | The existing tiered review system has `full` and `abbreviated` tiers. On retry: (1) drop the `abbreviated` tier entirely, (2) if still too large, halve the `full` tier by risk rank. This preserves the most important files. | MEDIUM | Extends `timeout-estimator.ts` with a `computeRetryScope()` function. Uses existing risk scores. |
+| **Reuse checkpoint data on retry** | If checkpoint publishing captured some findings before timeout, the retry should not re-review files that already have published comments. Skip files with existing inline comments from the same review run. | MEDIUM | Requires checkpoint data from feature 3. Cross-reference published file paths with retry file list. |
+
+### 6. Adaptive Distance Thresholds (Knee-Point Detection)
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Replace fixed 0.3 threshold with data-driven cutoff** | The current fixed `distanceThreshold: 0.3` in `isolation.ts` works for some queries but is suboptimal for others. Short queries produce tighter distance clusters; long queries produce wider spreads. Adaptive thresholds self-tune per query. The Kneedle algorithm (Satopaa et al.) detects knee points in sorted distance curves and is the standard approach. | MEDIUM | Retrieve with relaxed threshold (e.g., 0.8), sort results by distance ascending, apply knee-point detection to find the natural "elbow" where distances jump. Keep results below the knee. Safety bounds: floor = always return top-1 result, ceiling = never accept distance > 0.7. |
+| **Simplified knee-point: maximum gap detection** | Full Kneedle is overkill for 5-20 candidate results. Simpler approach: find the largest gap in the sorted distance array. Everything below the gap is "relevant"; everything above is "noise." This is the L-method simplified -- effective for small result sets. | LOW | Sort distances, compute deltas between consecutive results, find max delta. Split at max delta. O(n) computation, no external libraries needed. |
+| **Fallback to percentile-based cutoff** | When the distance distribution is uniform (no clear knee), fall back to percentile: keep results within 1.5x the distance of the best match. This handles the degenerate case where all results are similarly distant. | LOW | `threshold = bestDistance * 1.5`. Simple multiplier. Combined with the gap detection, this creates a robust two-strategy system. |
+
+### 7. Recency Weighting for Memory Relevance
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Exponential time-decay on retrieval distances** | Older memories reflect outdated patterns. A finding from 6 months ago is less relevant than one from last week. Apply a time-decay multiplier to distances: `adjustedDistance = distance * decayFactor(age)`. The existing `RerankedResult` type already has `adjustedDistance` -- extend the pattern. | LOW | Exponential decay: `decayFactor = 1.0 + decayRate * (ageDays / halfLifeDays)`. With halfLife=90 days and decayRate=0.3: 0 days = 1.0x (no penalty), 90 days = 1.3x (30% farther), 180 days = 1.6x (60% farther). Tune via config. |
+| **Preserve recent security findings regardless of age** | Security-category findings should not decay as aggressively. A "SQL injection" finding from 6 months ago is still highly relevant. Apply reduced decay for `category === "security"`. | LOW | Category-aware decay multiplier. Security findings use 0.5x the normal decay rate. |
+| **Configurable decay parameters** | Expose `recencyDecay.halfLifeDays` and `recencyDecay.rate` in `.kodiai.yml` knowledge section. Default: 90-day half-life, 0.3 rate. Teams updating frequently want shorter half-life; stable codebases want longer. | LOW | Config schema extension. Already have config parsing infrastructure with graceful degradation. |
+
+### 8. Retrieval Quality Telemetry
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Track retrieval metrics per execution** | Record: `{resultCount, avgDistance, minDistance, maxDistance, thresholdUsed, kneePointDetected, languageMatchCount, recencyAdjustedCount}`. These are the key metrics for tuning retrieval quality. RAG evaluation literature emphasizes Precision@K and distance distribution monitoring. | LOW | Extend `TelemetryRecord` type with optional retrieval fields. Log at the point where retrieval results are consumed in the review handler. |
+| **Track retrieval-to-outcome correlation** | When a retrieved memory influences a finding (same file path or same category), record the linkage. Over time, this reveals whether retrieval actually improves review quality. Core RAG metric: contextual relevance. | MEDIUM | Requires post-review analysis: compare retrieved memory categories/file paths with produced finding categories/file paths. Jaccard similarity or simple overlap count. |
+| **Aggregate telemetry for threshold tuning** | Periodically analyze retrieval telemetry to surface: (1) repos where distance threshold is too tight (0 results frequently), (2) repos where threshold is too loose (high avg distance), (3) optimal threshold per repo based on outcome correlation. | LOW | SQL aggregation queries over the telemetry table. Could be a CLI command: `kodiai telemetry retrieval-health`. |
+
+### 9. Cross-Language Concept Equivalence
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Test Voyage Code 3 cross-language retrieval** | Before building anything, empirically test whether the current embedding model (Voyage Code 3, 1024-dim) already captures cross-language equivalences. Embed "null pointer check in Java" and "optional chaining in TypeScript" and measure distance. If distance < 0.4, the model handles it natively. | LOW | Test-only. Generate embeddings for 10 known cross-language concept pairs, measure distances. If the model handles it, this feature is "free." |
+| **Concept normalization layer (if model insufficient)** | If Voyage Code 3 does not capture equivalences: build a small lookup table mapping language-specific patterns to canonical concepts. Example: `{java: "NullPointerException", typescript: "undefined access", python: "AttributeError: NoneType", go: "nil pointer dereference"} -> "null-safety"`. Use canonical concepts as query enrichment. | MEDIUM | Manual curation of ~20-30 common cross-language concept groups. Append canonical concept name to retrieval query when the PR language differs from memory language. |
+| **Language-pair affinity scoring** | Some language pairs share more concepts than others (TypeScript/JavaScript are near-identical; Go/Rust share memory safety patterns; Python/Ruby share dynamic typing patterns). Use affinity scores to weight cross-language retrieval: high-affinity pairs get less penalty in re-ranking. | LOW | Small lookup table: `{ts-js: 0.95, go-rust: 0.7, python-ruby: 0.7, java-kotlin: 0.9, ...}`. Modifies the `crossLanguagePenalty` in `retrieval-rerank.ts` to be pair-aware instead of uniform. |
 
 ---
 
 ## Anti-Features
 
-Features to explicitly NOT build. These are commonly requested but harmful or premature.
+Features to explicitly NOT build. Some are natural-seeming extensions that would harm the product.
 
 | Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
 |--------------|-------------|-----------|-------------------|
-| **Full dependency tree analysis** | "Analyze all transitive dependencies for vulnerabilities." | Scope explosion. A single npm project can have 500+ transitive deps. Advisory lookup for each would hit rate limits (GitHub Advisory API is rate-limited) and slow down reviews dramatically. | Analyze only the packages directly changed in the PR diff. Transitive deps are the domain of `npm audit` / Dependabot alerts, not a code review tool. |
-| **Automatic lockfile regeneration** | "If a dep bump has issues, auto-fix the lockfile." | Write operations on lockfiles are dangerous and ecosystem-specific. npm, yarn, pnpm, bun all have different lockfile formats. Getting it wrong breaks installs. | Report the issue; let the developer fix it. Kodiai's review role is advisory, not remedial. |
-| **Real-time CVE monitoring (webhook)** | "Monitor for new CVEs and auto-create PRs." | This is Dependabot's core product. Reimplementing it poorly adds liability. GitHub already provides security alerts, Dependabot security updates, and code scanning. | Look up advisories at review time for the specific versions being bumped. Point-in-time analysis, not continuous monitoring. |
-| **Streaming partial review via SSE/WebSocket** | "Stream review findings to the PR in real-time as they're generated." | GitHub's API is REST-based. Streaming to a PR comment requires repeated API calls (one per finding), generating excessive notification noise and hitting rate limits. CodeRabbit explicitly moved AWAY from streaming to buffered output. | Buffer findings, publish as a batch. For timeout resilience, publish at checkpoints (every N files or at timeout), not per-finding. |
-| **Multi-pass review (review-then-review-the-review)** | "Run a second LLM pass to validate findings from the first." | Doubles cost and latency with diminishing returns. The existing enforcement pipeline (severity floors, tooling detection, confidence scoring, feedback suppression) already filters low-quality findings. | Improve the single-pass prompt quality. Use retrieval context to reduce false positives. The enforcement pipeline IS the validation layer. |
-| **Custom embedding model training** | "Fine-tune embeddings on this repo's code for better retrieval." | Requires substantial training data, GPU infrastructure, and ongoing model management. Voyage Code 3 is already trained on code. The marginal improvement from fine-tuning on a single repo's findings is unlikely to justify the complexity. | Use multi-signal query construction and post-retrieval re-ranking. These are simpler and more maintainable than model fine-tuning. |
-| **Semantic diff for dependency changes** | "Parse the AST of old and new dependency versions to find API changes." | Requires downloading and parsing source code of npm packages, which is infeasible at review time (packages can be megabytes, multi-language, etc.). | Use changelog/release notes as a proxy for API changes. If changelog mentions "removed function X," search the codebase for usage of function X. |
-| **Predictive timeout estimation with ML** | "Train a model to predict review duration and set timeouts dynamically." | No training data, massive overengineering. Heuristics (file count x complexity) are sufficient and debuggable. | Use simple heuristic: `baseTimeout + (fileCount * perFileSeconds)`. Tune the constants empirically from telemetry data. |
+| **Full AST parsing for usage analysis** | "Parse the dependency source code AST to find all exported API changes." | Downloading and parsing npm packages at review time is slow (packages can be megabytes) and ecosystem-specific (different parsers for npm, Go, Rust, Python). Aikido can do this because they run offline; a webhook handler cannot. | Use the changelog/release notes as a proxy for API changes. Grep workspace for import statements of the bumped package. This covers 80% of cases without AST parsing. |
+| **Transitive dependency impact analysis** | "Track breaking changes in transitive deps too." | A single npm project has 500+ transitive deps. Analyzing all of them per bump is scope explosion and hits GitHub API rate limits. | Analyze only packages directly changed in the PR diff. Transitive analysis belongs to `npm audit` and Dependabot alerts. |
+| **ML-based timeout prediction** | "Train a model to predict review duration from PR features." | No training data exists yet. The heuristic in `timeout-estimator.ts` (weighted file count + lines + language complexity) is sufficient and debuggable. | Collect telemetry on actual vs predicted durations. When enough data exists (1000+ executions), revisit. |
+| **Real-time streaming of review findings** | "Post each finding as it's generated." | GitHub REST API rate limits + notification noise. CodeRabbit explicitly moved away from streaming to buffered output. | Use checkpoint publishing (batch save at intervals), not per-finding streaming. Publish as a batch on completion or on timeout. |
+| **Persistent retry queue for timeouts** | "Queue timed-out reviews for background retry with exponential backoff." | Review relevance decays rapidly. A retry 30 minutes later reviews stale code (new commits may have landed). Adds job queue complexity for diminishing returns. | Single immediate retry with reduced scope. If that also fails, post the partial results and stop. No background queue. |
+| **Global (cross-owner) memory sharing** | "Share learnings across all Kodiai users." | Privacy and relevance concerns. Org A's coding patterns are not relevant to Org B. Data isolation is a feature, not a limitation. | Owner-level sharing (already built) is the right boundary. Cross-language concept mapping handles the "universal patterns" case. |
+| **Automatic threshold auto-tuning** | "Continuously update distance thresholds based on telemetry." | Creates a feedback loop: threshold changes affect retrieval, which affects outcomes, which affects the next threshold update. Drift risk. | Collect telemetry, surface recommendations, let operators tune. Semi-automatic, not fully automatic. |
 
 ---
 
 ## Feature Dependencies
 
 ```text
-DEPENDENCY BUMP ANALYSIS
-=========================
-[Existing: PR intent parsing, diff analysis, review prompt]
-    |
-    +-- extends --> [Dep bump detection from title/labels/branch/files]
-    |                   |
-    |                   +-- produces --> [Package name + old version + new version + ecosystem]
-    |                   |
-    |                   +-- feeds --> [GitHub Advisory API lookup]
-    |                   |                   |
-    |                   |                   +-- produces --> [CVE list, severity, patched versions]
-    |                   |                   |
-    |                   |                   +-- feeds --> [Security vs maintenance classification]
-    |                   |
-    |                   +-- feeds --> [GitHub Releases API changelog fetch]
-    |                   |                   |
-    |                   |                   +-- produces --> [Changelog text between versions]
-    |                   |                   |
-    |                   |                   +-- feeds --> [Breaking change detection from changelog]
-    |                   |
-    |                   +-- feeds --> [Merge confidence scoring]
-    |                                     |
-    |                                     +-- integrates --> semver analysis
-    |                                     +-- integrates --> advisory resolution status
-    |                                     +-- integrates --> breaking change count
-    |                                     +-- optional --> usage analysis (grep for affected APIs)
-
-TIMEOUT RESILIENCE
+API USAGE ANALYSIS
 ===================
-[Existing: AbortController timeout, error classification, error comment]
+[Existing: dep-bump-detector, dep-bump-enrichment, merge-confidence]
     |
-    +-- extends --> [Pre-review timeout risk estimation]
+    +-- extends --> [Grep workspace for imports of bumped package]
     |                   |
-    |                   +-- feeds --> [Adaptive scope reduction (auto-escalate to minimal)]
-    |                   |
-    |                   +-- feeds --> [Dynamic timeout computation]
+    |                   +-- requires --> packageName from dep bump detection
+    |                   +-- requires --> workspace access (existing Grep/Glob tools)
+    |                   +-- produces --> List of {file, line, importedSymbol}
     |
-    +-- extends --> [Partial result tracking during execution]
-    |                   |
-    |                   +-- requires --> [Track published inline comments count]
-    |                   |
-    |                   +-- feeds --> [Graceful timeout message with partial context]
-    |
-    +-- deferred --> [Checkpoint-based partial publishing]
-    |
-    +-- deferred --> [Retry with reduced scope]
+    +-- extends --> [Integrate usage into merge confidence]
+                        |
+                        +-- requires --> usage analysis results
+                        +-- modifies --> computeMergeConfidence() fourth signal
 
-INTELLIGENT RETRIEVAL
-======================
-[Existing: isolation layer, memory store, embedding provider, retrieval config]
+
+DEPENDENCY HISTORY & MULTI-PACKAGE CORRELATION
+================================================
+[Existing: knowledge store, dep-bump-detector]
     |
-    +-- extends --> [Multi-signal query construction]
+    +-- extends --> [dep_bump_history table in knowledge store]
     |                   |
-    |                   +-- integrates --> PR intent type/scope
-    |                   +-- integrates --> detected languages
-    |                   +-- integrates --> diff pattern signatures
-    |                   +-- integrates --> author experience tier
+    |                   +-- INSERT on merge (from review handler)
+    |                   +-- SELECT on detection (prior bump data)
     |
-    +-- extends --> [Adaptive distance threshold]
+    +-- extends --> [Multi-package detection from manifest diffs]
     |                   |
-    |                   +-- requires --> [Retrieve with relaxed threshold]
-    |                   +-- requires --> [Knee-point or percentile-based cutoff]
+    |                   +-- requires --> Parse multiple version changes
+    |                   +-- requires --> Scope prefix grouping logic
+    |                   +-- produces --> Package groups with aggregate confidence
     |
-    +-- extends --> [Language-aware retrieval boosting]
+    +-- extends --> [History + correlation feed into review prompt]
+
+
+CHECKPOINT PUBLISHING & RETRY
+===============================
+[Existing: executor.ts, timeout-estimator.ts, review.ts timeout handler]
+    |
+    +-- extends --> [Checkpoint accumulator in executor]
     |                   |
-    |                   +-- option A --> [Post-retrieval re-ranking by language]
-    |                   +-- option B --> [Add language to query text]
+    |                   +-- intercepts --> assistant messages during streaming
+    |                   +-- tracks --> files analyzed, findings generated
+    |                   +-- available on --> timeout catch block
     |
-    +-- optional --> [Severity/category filtered retrieval]
-    +-- optional --> [Recency-weighted scoring]
-    +-- optional --> [Retrieval quality metrics in telemetry]
+    +-- extends --> [Enriched timeout summary from checkpoint data]
+    |
+    +-- extends --> [Retry with reduced scope]
+                        |
+                        +-- requires --> checkpoint data (what was already reviewed)
+                        +-- requires --> risk-ranked file list (existing)
+                        +-- requires --> re-invocation of executor
+                        +-- produces --> reduced-scope review result
+
+
+ADAPTIVE RETRIEVAL
+===================
+[Existing: isolation.ts, retrieval-rerank.ts, retrieval-query.ts]
+    |
+    +-- extends --> [Adaptive distance threshold (knee-point)]
+    |                   |
+    |                   +-- replaces --> fixed 0.3 threshold
+    |                   +-- requires --> relaxed initial retrieval (0.8 threshold)
+    |                   +-- applies --> gap detection + percentile fallback
+    |
+    +-- extends --> [Recency weighting]
+    |                   |
+    |                   +-- modifies --> adjustedDistance in re-ranking pipeline
+    |                   +-- uses --> createdAt from memory records
+    |
+    +-- extends --> [Cross-language concept equivalence]
+    |                   |
+    |                   +-- step 1 --> empirical test of Voyage Code 3
+    |                   +-- step 2 (conditional) --> concept normalization table
+    |                   +-- step 3 --> language-pair affinity scoring
+    |
+    +-- extends --> [Retrieval quality telemetry]
+                        |
+                        +-- records --> per-execution retrieval metrics
+                        +-- correlates --> retrieval results vs finding outcomes
 ```
 
 ### Critical Path
 
-1. **Dep bump detection** is prerequisite for all other dep analysis features. Must extract package name, versions, and ecosystem before anything else can work.
-2. **Advisory lookup** and **changelog fetch** are independent of each other but both depend on dep bump detection.
-3. **Merge confidence scoring** integrates signals from advisory lookup, changelog analysis, and semver analysis -- build last.
-4. **Timeout risk estimation** is independent and can ship first as a pure heuristic.
-5. **Multi-signal query construction** is independent of adaptive thresholds; both improve retrieval but can ship separately.
+1. **API usage analysis** depends on existing dep bump detection (shipped). Can start immediately.
+2. **Checkpoint publishing** must precede **retry with reduced scope** (retry reuses checkpoint data).
+3. **Adaptive distance thresholds** and **recency weighting** are independent of each other but both modify the retrieval pipeline. Implement adaptive thresholds first (modifies what results come back) then recency weighting (modifies their ranking).
+4. **Cross-language concept equivalence** starts with a test -- if Voyage Code 3 handles it natively, skip the normalization layer.
+5. **Retrieval quality telemetry** should ship early to collect baseline data before adaptive thresholds change behavior.
 
 ### Independence Points
 
-- All three feature areas (dep bumps, timeout, retrieval) are **fully independent** of each other
-- Within dep bumps: advisory lookup and changelog fetch are **fully independent**
-- Within retrieval: multi-signal query and adaptive threshold are **fully independent**
-- Timeout resilience features are mostly independent of each other (risk estimation, graceful messages, partial publishing)
-
-### Integration Points
-
-- Dep bump detection feeds into review prompt (new section) and Review Details (new metadata)
-- Timeout risk estimation feeds into auto-profile selection (reduce scope for risky PRs)
-- Multi-signal query uses signals from dep bump detection (if available) and auto-profile resolution
-- All three areas share the review handler entry point in `review.ts`
+- **All four feature areas are fully independent** of each other (dep analysis, execution resilience, retrieval, telemetry)
+- Within dep analysis: usage analysis, history tracking, and multi-package correlation are independent
+- Within retrieval: adaptive thresholds, recency weighting, and cross-language equivalence are independent
+- Telemetry is read-only/additive and can ship at any time
 
 ---
 
 ## MVP Recommendation
 
-### Build First (P1) -- Core value, low risk
+### Build First (P1) -- High value, builds on shipped v0.9 infrastructure
 
-1. **Dep bump detection from PR metadata** -- Regex parsing of title/body for version bumps, label matching, branch prefix matching. Extend existing `parsePRIntent()`. Pure logic, zero API calls.
+1. **API usage analysis: grep for imports of bumped package** -- The single highest-value extension of the dep bump pipeline. Transforms generic "breaking change" warnings into specific "your code at `src/auth.ts:42` imports the removed function." Aikido charges enterprise pricing for this. We can do a 80% version with `Grep` for import statements.
 
-2. **Version extraction (package name, old/new version, ecosystem)** -- Parse "bump X from A to B" pattern and detect ecosystem from changed manifest files. Foundation for all dep analysis.
+2. **Dependency update history tracking** -- Small schema addition, big context improvement. One line in the review prompt ("last updated 45 days ago, no issues") provides longitudinal context no competitor offers for free.
 
-3. **GitHub Advisory API lookup** -- Single REST call with `affects=package@version&ecosystem=npm`. Fail-open if API errors. High value: surfaces known CVEs in review.
+3. **Retrieval quality telemetry** -- Ship early to establish baseline metrics before any retrieval changes. Low effort, critical for validating that subsequent features (adaptive thresholds, recency) actually improve quality.
 
-4. **Breaking change detection from semver** -- `major(new) > major(old)` flags as breaking. Zero API calls, zero dependencies beyond simple version comparison.
+4. **Checkpoint accumulation during execution** -- Track files analyzed and findings generated during the streaming loop. This is infrastructure for both enriched timeout messages and retry. Low risk: additive tracking, no behavior change.
 
-5. **Graceful timeout message with context** -- Replace generic "timed out" with "Reviewed X/Y files, N findings published before timeout." Low effort, high UX value.
+5. **Recency weighting for retrieval** -- Simple math applied in the existing re-ranking pipeline. Older memories get slight distance penalties. Immediate quality improvement with no infrastructure changes.
 
-6. **Pre-review timeout risk estimation** -- Heuristic from file count and line count. Auto-reduce scope for high-risk PRs. Addresses 10% failure rate.
+6. **Multi-package correlation (scope prefix detection)** -- Parse grouped updates, note coordination in review. Low complexity, fills a gap in the existing `isGroup: true` handling.
 
-7. **Multi-signal query construction** -- Enrich the retrieval query text with PR intent, languages, and diff patterns. Improves retrieval relevance with no infrastructure changes.
+### Build Second (P2) -- Depth features requiring more infrastructure
 
-### Build Second (P2) -- Depth and integration
+7. **Adaptive distance thresholds (max-gap detection)** -- Replace fixed 0.3 with data-driven cutoff. Use simplified max-gap approach, not full Kneedle. Depends on telemetry baseline from P1 to validate improvement.
 
-8. **Changelog/release notes fetch from GitHub Releases** -- Resolve package to source repo, list releases between versions, extract breaking change markers. Requires npm registry lookup for source URL.
+8. **Enriched timeout summary from checkpoint data** -- Consume checkpoint data (P1 item 4) to produce specific timeout messages listing reviewed files and unreviewed remainder.
 
-9. **Dep bump review prompt section** -- Inject advisory results, changelog summary, and breaking change flags into review prompt. Enables LLM-aware dependency analysis.
+9. **Integrate usage analysis into merge confidence** -- Add fourth signal to `computeMergeConfidence()`. Depends on usage analysis (P1 item 1) being stable.
 
-10. **Merge confidence scoring** -- Composite score from semver, advisories, changelog breaking changes. Reported in Review Details summary.
+10. **Language-pair affinity scoring** -- Small lookup table making cross-language retrieval penalty context-aware. Extends existing `retrieval-rerank.ts`.
 
-11. **Adaptive distance threshold** -- Retrieve with relaxed threshold, apply statistical cutoff. Improves retrieval precision without manual tuning.
+### Defer (P3) -- Complex or conditional
 
-12. **Language-aware retrieval boosting** -- Post-retrieval re-rank by language match. Boost same-language memories, demote cross-language.
+11. **Retry with reduced scope on timeout** -- High value but requires job queue coordination, idempotency handling, and checkpoint data. Build after checkpoint publishing is proven stable.
 
-13. **Dynamic timeout computation** -- `baseTimeout + (fileCount * perFileSeconds)`. Replaces fixed 600s default.
+12. **Cross-language concept normalization** -- Conditional on empirical testing of Voyage Code 3. Only build if the model does not handle cross-language equivalence natively.
 
-### Defer (P3) -- Future value, high complexity
+13. **Cross-reference version compatibility in package groups** -- Requires maintaining a compatibility rules table for known ecosystems. Valuable but niche (only matters for monorepo ecosystem updates).
 
-14. **Usage analysis (grep for affected APIs)** -- Search codebase for imports/usage of APIs mentioned in breaking changes. Very high value but complex: requires parsing changelog for API names, then workspace search.
-
-15. **Checkpoint-based partial publishing** -- Detect published inline comments during execution, on timeout publish summary of partial results. Requires executor architecture changes.
-
-16. **Retry with reduced scope on timeout** -- Auto-retry with top 50% files by risk. Requires job queue coordination.
-
-17. **Dependency update history tracking** -- Knowledge store extension for dep bump records. Low effort but depends on dep bump detection being stable.
-
-18. **Retrieval quality metrics** -- Telemetry for retrieval hit rates, distance distributions, outcome correlation. Important for tuning but not user-facing.
-
-19. **Cross-language concept mapping** -- Test if Voyage Code 3 already handles this; only build if it does not.
-
-20. **Review progress streaming** -- Live "reviewing..." comment with progress. Risk of notification noise.
+14. **Retrieval-to-outcome correlation tracking** -- Post-review analysis comparing retrieved memories to produced findings. Important for tuning but requires enough data first.
 
 ---
 
@@ -276,113 +266,126 @@ INTELLIGENT RETRIEVAL
 
 | Feature | User Value | Impl. Cost | Risk | Priority |
 |---------|------------|------------|------|----------|
-| Dep bump detection from PR metadata | **HIGH** | LOW | LOW | **P1** |
-| Version extraction (package, old, new, ecosystem) | **HIGH** | LOW | LOW | **P1** |
-| GitHub Advisory API lookup (CVE check) | **HIGH** | MEDIUM | LOW | **P1** |
-| Breaking change detection from semver | **HIGH** | LOW | LOW | **P1** |
-| Graceful timeout message with context | **HIGH** | LOW | LOW | **P1** |
-| Pre-review timeout risk estimation | **HIGH** | MEDIUM | LOW | **P1** |
-| Multi-signal query construction | MEDIUM | MEDIUM | LOW | **P1** |
-| Changelog/release notes fetch | HIGH | MEDIUM | MEDIUM | **P2** |
-| Dep bump review prompt section | HIGH | LOW | LOW | **P2** |
-| Merge confidence scoring | MEDIUM | MEDIUM | LOW | **P2** |
-| Adaptive distance threshold | MEDIUM | MEDIUM | MEDIUM | **P2** |
-| Language-aware retrieval boosting | MEDIUM | LOW | LOW | **P2** |
-| Dynamic timeout computation | MEDIUM | LOW | LOW | **P2** |
-| Usage analysis (affected APIs) | HIGH | HIGH | MEDIUM | **P3** |
-| Checkpoint-based partial publishing | MEDIUM | HIGH | HIGH | **P3** |
-| Retry with reduced scope | MEDIUM | HIGH | MEDIUM | **P3** |
-| Dep update history tracking | LOW | LOW | LOW | **P3** |
-| Retrieval quality metrics | LOW | LOW | LOW | **P3** |
-| Cross-language concept mapping | LOW | HIGH | MEDIUM | **P3** |
-| Review progress streaming | LOW | MEDIUM | MEDIUM | **P3** |
+| API usage analysis (grep imports) | **HIGH** | MEDIUM | LOW | **P1** |
+| Dep update history tracking | MEDIUM | LOW | LOW | **P1** |
+| Retrieval quality telemetry (baseline) | MEDIUM | LOW | LOW | **P1** |
+| Checkpoint accumulation in executor | MEDIUM | MEDIUM | LOW | **P1** |
+| Recency weighting for retrieval | MEDIUM | LOW | LOW | **P1** |
+| Multi-package scope-prefix correlation | MEDIUM | LOW | LOW | **P1** |
+| Adaptive distance threshold (max-gap) | MEDIUM | MEDIUM | MEDIUM | **P2** |
+| Enriched timeout summary | MEDIUM | LOW | LOW | **P2** |
+| Usage analysis in merge confidence | MEDIUM | LOW | LOW | **P2** |
+| Language-pair affinity scoring | LOW | LOW | LOW | **P2** |
+| Retry with reduced scope | **HIGH** | HIGH | MEDIUM | **P3** |
+| Cross-language concept normalization | LOW | MEDIUM | MEDIUM | **P3** |
+| Group version compatibility check | LOW | MEDIUM | LOW | **P3** |
+| Retrieval-to-outcome correlation | LOW | MEDIUM | LOW | **P3** |
 
 ---
 
-## Competitor Feature Analysis
+## Implementation Notes
 
-### Dependency Bump Analysis
+### API Usage Analysis -- Practical Approach
 
-| Tool | Approach | Strength | Weakness |
-|------|----------|----------|----------|
-| **Dependabot** | Creates PRs for bumps with release notes, changelog, and compatibility score (CI pass rate across GitHub). Distinguishes security updates from version updates. | Ecosystem-wide compatibility scoring from real CI data. Automatic PR creation. | Does not analyze whether the codebase uses affected APIs. Compatibility score often "unknown" for less popular packages. |
-| **Renovate** | Four-stage pipeline (init, extract, lookup, update). Checks GitHub Releases and changelog files, filters to relevant versions, embeds in PR body. `postUpgradeTasks` for custom automation. | Richest changelog extraction. Multi-platform support (GitHub, GitLab, Bitbucket). Groups related updates. | Cannot analyze breaking change impact on the codebase. No LLM-powered analysis. |
-| **CodeRabbit** | Integrates OSV-Scanner for vulnerability detection. Reviews dependency changes alongside code changes. Uses 40+ linters including TruffleHog for secrets. | Combined code + dependency review in one tool. Security scanner integration. | Does not extract changelogs or provide merge confidence scoring. Treats dep bumps like regular code changes. |
-| **Kodiai (proposed)** | Detect dep bump from PR metadata. Extract versions. Query GitHub Advisory API. Fetch changelog from GitHub Releases. Assess semver breaking changes. LLM-analyzed merge confidence with optional usage analysis. | LLM-powered contextual analysis: "does this breaking change affect YOUR code?" Usage analysis is unique. Merge confidence combines multiple signals. | New capability, needs validation. Changelog extraction limited to GitHub Releases (not arbitrary changelog files). |
+Do NOT parse ASTs. Instead:
 
-### Timeout Resilience
+1. From `dep-bump-enrichment.ts`, the `breakingChanges` array contains snippets like "Removed `createClient()` function" or "Renamed `Config` to `Options`"
+2. Extract symbol names from breaking change snippets (LLM-assisted or regex: extract capitalized words, camelCase identifiers, backtick-quoted names)
+3. Grep the workspace for `import.*from ['"]<packageName>['"]` to find all import sites
+4. If specific symbols are known, grep for those symbols in the importing files
+5. Report: "Found 3 files importing `bumped-package`: `src/auth.ts`, `src/db.ts`, `lib/utils.ts`. Breaking change `createClient() removed` may affect `src/auth.ts:42`."
 
-| Tool | Approach | Strength | Weakness |
-|------|----------|----------|----------|
-| **CodeRabbit** | 3600s timeout, concurrency of 8. Buffers full output, delivers as batch. Moved away from streaming to buffered. Sends "most relevant callers" to LLM when context window overflows. | Long timeout accommodates most PRs. Smart context selection. | No partial results on timeout. All-or-nothing. |
-| **Qodo Merge** | Independent per-run execution. No persistent state between runs. | Clean, no drift risk. | No progressive review. No partial results. |
-| **GitHub Copilot Code Review** | Static review comments only. Limited to context window. | Fast, single-pass. | Cannot handle very large PRs. No fallback strategy. |
-| **Kodiai (proposed)** | Pre-review risk estimation with auto-scope reduction. Graceful timeout messages with partial context. Dynamic timeout based on PR complexity. Deferred: checkpoint publishing and retry with reduced scope. | Proactive: prevents timeouts rather than just handling them. Informative: tells users what was and was not reviewed. | Checkpoint publishing is architecturally complex. |
+This approach works across npm, Go (`import "package"`), Python (`import package` / `from package import X`), and Rust (`use package::`).
 
-### Intelligent Retrieval
+### Knee-Point Detection -- Simplified Algorithm
 
-| Tool | Approach | Strength | Weakness |
-|------|----------|----------|----------|
-| **CodeRabbit** | Automated web queries for recent public information. Project knowledge for coding plans. | Always-current information from web. | Not embedding-based. Not learning from past reviews. |
-| **Research (RAG literature)** | Hybrid retrieval (sparse + dense), query decomposition, re-ranking, multi-stage pipelines. | Proven patterns at scale. | General-purpose, not code-review-specific. |
-| **Kodiai (current)** | Repo-scoped vector retrieval with sqlite-vec. Fixed distance threshold (0.3). Query = title + first 20 file names. Owner-level sharing optional. | Repo isolation by design. Provenance tracking. | Naive query construction. Fixed threshold misses variable quality. No language awareness. |
-| **Kodiai (proposed)** | Multi-signal query (intent + languages + diff patterns). Adaptive threshold (knee-point detection). Language-aware post-retrieval re-ranking. Optional severity/category filtering. | Contextually rich queries. Self-tuning thresholds. Language relevance. | Adaptive threshold adds complexity. Language re-ranking is heuristic-based. |
+```typescript
+function findKneePoint(distances: number[]): number {
+  if (distances.length <= 1) return distances.length;
 
----
+  // Compute gaps between consecutive sorted distances
+  let maxGap = 0;
+  let kneeIndex = distances.length;
 
-## User Experience Implications
+  for (let i = 1; i < distances.length; i++) {
+    const gap = distances[i] - distances[i - 1];
+    if (gap > maxGap) {
+      maxGap = gap;
+      kneeIndex = i;
+    }
+  }
 
-### Dependency Bump Analysis
+  // Only split if the max gap is significant (>2x median gap)
+  const gaps = distances.slice(1).map((d, i) => d - distances[i]);
+  const medianGap = gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)] ?? 0;
 
-- **Information density**: Dep bump reviews should be concise. A 100-line changelog dump in the review comment is noise. Summarize to 3-5 key points: semver type, breaking changes, CVEs resolved, confidence score.
-- **Merge signal**: The merge confidence score should be prominent and unambiguous. "Merge confidence: HIGH (patch update, no breaking changes, resolves CVE-2025-1234)" gives the reviewer immediate signal.
-- **False positive risk**: Not all files named `package.json` are npm manifests (could be test fixtures). Use heuristic: must be at root or in a recognized subdirectory pattern.
-- **Ecosystem coverage**: Start with npm/Node.js (most common for GitHub Apps), then Go, Python, Rust. Don't try to support all ecosystems at once.
+  if (maxGap < medianGap * 2) {
+    // No clear knee -- use percentile fallback
+    const threshold = distances[0] * 1.5;
+    return distances.findIndex(d => d > threshold);
+  }
 
-### Timeout Resilience
+  return kneeIndex;
+}
+```
 
-- **User trust**: Timeouts erode trust. "Your review tool timed out and produced nothing" is worse than "Your review tool completed a partial review." Even a partial result with 3 findings is better than nothing.
-- **Notification noise**: Timeout messages and partial result updates should not generate excessive notifications. Use the existing upsert pattern for the Review Details comment (single comment, update in place).
-- **Scope transparency**: When auto-reducing scope, disclose it: "PR scope reduced due to complexity: reviewing top 30 files by risk (of 120 total). Full review available with `@kodiai full-review`."
+### Recency Decay -- Formula
 
-### Intelligent Retrieval
+```typescript
+function computeRecencyMultiplier(createdAt: string, config: {
+  halfLifeDays: number;  // default: 90
+  maxPenalty: number;     // default: 0.5 (50% distance increase cap)
+}): number {
+  const ageDays = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const decay = (ageDays / config.halfLifeDays) * 0.3;
+  return 1.0 + Math.min(decay, config.maxPenalty);
+}
+// 0 days old: 1.0x (no change)
+// 90 days old: 1.3x (30% farther)
+// 180 days old: 1.5x (capped at maxPenalty)
+```
 
-- **Invisible improvement**: Better retrieval manifests as better review quality, not as a visible feature. Users will not see "multi-signal query" but will notice more relevant findings.
-- **Threshold sensitivity**: Adaptive thresholds must have safety bounds. Never return zero results (floor: top 1 result regardless of distance). Never return noise (ceiling: distance > 0.8 regardless of distribution).
-- **Provenance continues**: The existing delta reporting with learning provenance already shows retrieval sources. Improved retrieval feeds directly into this existing UX.
+### Checkpoint Publishing -- What to Track
+
+```typescript
+type ExecutionCheckpoint = {
+  filesAnalyzed: string[];       // file paths mentioned in assistant messages
+  findingsGenerated: number;      // count of inline comments published via MCP
+  lastActivityMs: number;         // timestamp of last assistant message
+  elapsedMs: number;              // total execution time so far
+};
+```
+
+Track by intercepting the message stream in `executor.ts`. On timeout, this data is available in the catch block and passed back to the review handler for the enriched timeout message.
 
 ---
 
 ## Sources
 
 ### Direct Evidence (HIGH confidence -- verified in codebase)
-- `src/handlers/review.ts` lines 1427-1460 -- current retrieval query construction: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`
-- `src/learning/isolation.ts` -- retrieval with fixed `distanceThreshold`, repo isolation, owner-level sharing
-- `src/learning/memory-store.ts` -- vec0 virtual table with `severity`, `category` metadata columns, no `language` column
-- `src/execution/executor.ts` -- AbortController timeout (default 600s), binary success/timeout result
-- `src/lib/errors.ts` -- timeout classified as "timeout" error category, generic error message
-- `src/execution/config.ts` lines 255-267 -- retrieval config: `topK: 5`, `distanceThreshold: 0.3`, `maxContextChars: 2000`
-- `src/execution/diff-analysis.ts` -- `EXTENSION_LANGUAGE_MAP` for 20 languages, `classifyFileLanguage()`
-- `src/lib/pr-intent-parser.ts` -- existing PR intent parsing (conventional commits, bracket tags)
+- `src/lib/dep-bump-detector.ts` -- Three-stage pipeline with `isGroup` flag for multi-package PRs
+- `src/lib/dep-bump-enrichment.ts` -- `breakingChanges` array from changelog, `SecurityContext` with `isSecurityBump`
+- `src/lib/merge-confidence.ts` -- Three-signal scoring (semver + advisory + breaking), extensible to fourth signal
+- `src/learning/retrieval-rerank.ts` -- `adjustedDistance` pattern for post-retrieval score modification
+- `src/learning/isolation.ts` -- Fixed `distanceThreshold` parameter, retrieval with provenance
+- `src/execution/executor.ts` -- Message streaming loop, `published` flag, timeout catch block
+- `src/lib/timeout-estimator.ts` -- Complexity scoring with `shouldReduceScope` and `reducedFileCount`
+- `src/telemetry/types.ts` -- `TelemetryRecord` type, extensible for retrieval metrics
 
-### GitHub API (HIGH confidence -- verified via official docs)
-- [GitHub Global Advisory API](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories?affects=package@version&ecosystem=npm`, returns CVE ID, severity, patched versions. Up to 1000 packages per query.
-- [GitHub Advisory Database](https://github.com/github/advisory-database) -- Open Source Vulnerability (OSV) format, npm ecosystem advisories including malware
+### Competitor Analysis (MEDIUM confidence -- verified via web)
+- [Aikido Upgrade Impact Analysis](https://www.aikido.dev/blog/breaking-changes) -- Analyzes codebase for actual impact of breaking changes, three-bucket classification (all clear / breaking / manual validation). Supports JS, Python, Java, Go, .NET, PHP, Clojure.
+- [Renovate Dependency Dashboard](https://docs.renovatebot.com/key-concepts/dashboard/) -- Tracks dependency state across repos, groups related updates, supports `groupName` configuration for monorepo ecosystems.
 
-### Competitive Intelligence (MEDIUM confidence)
-- [Renovate changelog extraction](https://docs.renovatebot.com/key-concepts/changelogs/) -- checks GitHub Releases and changelog files, filters to relevant versions
-- [Dependabot compatibility score](https://github.com/dependabot/dependabot-core/issues/4001) -- CI pass rate from public repos; minimum threshold for score display
-- [CodeRabbit OSV-Scanner integration](https://docs.coderabbit.ai/changelog) -- vulnerability scanning via OSV.dev
-- [CodeRabbit architecture (Google Cloud)](https://cloud.google.com/blog/products/ai-machine-learning/how-coderabbit-built-its-ai-code-review-agent-with-google-cloud-run) -- 3600s timeout, concurrency 8, buffered output over streaming
-
-### Research (MEDIUM confidence)
-- [VectorSearch: Enhancing Document Retrieval](https://arxiv.org/html/2409.17383v1) -- similarity threshold tuning, higher thresholds yield higher precision but lower recall
-- [RAG Techniques Repository](https://github.com/NirDiamant/RAG_Techniques) -- multi-signal query construction, hybrid retrieval, re-ranking patterns
-- [BUMP: Breaking Dependency Updates Dataset](https://github.com/chains-project/bump) -- SANER 2024 research on breaking dependency updates
-
-### Reference PR (HIGH confidence)
-- [xbmc/xbmc#27860](https://github.com/xbmc/xbmc/pull/27860) -- `[depends][target] Bump libcdio to 2.3.0`, labels: `Type: Improvement`, `Component: Depends`, 4 files changed including VERSION file and patches
+### Research (MEDIUM confidence -- verified via academic sources)
+- [Kneedle Algorithm](https://www.researchgate.net/publication/224249192_Finding_a_Kneedle_in_a_Haystack_Detecting_Knee_Points_in_System_Behavior) -- Standard knee-point detection for sorted curves. Satopaa et al.
+- [Kneeliverse Library](https://www.sciencedirect.com/science/article/pii/S2352711025001281) -- 2025 library implementing Kneedle, L-method, DFDT, and Menger algorithms for multi-knee detection.
+- [kneed Python Library](https://github.com/arvkevi/kneed) -- Python implementation of Kneedle with sensitivity parameter. Validates the max-gap simplified approach for small result sets.
+- [Re3: Relevance & Recency Retrieval](https://arxiv.org/html/2509.01306v1) -- 2025 framework for temporal information retrieval with modular time encoding and enhancement components.
+- [Beyond Basic RAG: Retrieval Weighting](https://www.langflow.org/blog/beyond-basic-rag-retrieval-weighting) -- Exponential decay model: multiply similarity scores by time-based decay factors before ranking.
+- [RAG Evaluation Metrics (2025)](https://deconvoluteai.com/blog/rag/metrics-retrieval) -- Precision@K, Recall@K, MRR, NDCG as core retrieval quality metrics.
+- [Checkpoint-Based Recovery for Long-Running Tasks](https://dev3lop.com/checkpoint-based-recovery-for-long-running-data-transformations/) -- Checkpointing safeguards partial results for fault tolerance.
+- [Byam: Fixing Breaking Dependency Updates with LLMs](https://arxiv.org/html/2505.07522v1) -- LLM-assisted compilation failure fixing for breaking dependency updates.
 
 ---
-*Feature research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
-*Researched: 2026-02-14*
+*Feature research for: Kodiai v0.10 -- Advanced Signals (API Usage Analysis, Dependency History, Multi-Package Correlation, Checkpoint Publishing, Retry, Adaptive Thresholds, Recency Weighting, Retrieval Telemetry, Cross-Language Equivalence)*
+*Researched: 2026-02-15*

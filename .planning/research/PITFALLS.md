@@ -1,200 +1,192 @@
 # Domain Pitfalls
 
-**Domain:** Adding dependency bump analysis, timeout/chunked review resilience, and intelligent retrieval improvements to an existing AI code review system
-**Researched:** 2026-02-14
-**Confidence:** HIGH (integration pitfalls verified against codebase; dependency analysis pitfalls from Renovate/Dependabot ecosystem research + NVD/OSV data quality studies; retrieval pitfalls from Voyage AI docs + sqlite-vec codebase analysis)
+**Domain:** Adding advanced dependency signals (usage analysis, history tracking, multi-package correlation), checkpoint publishing with timeout retry, and advanced retrieval (adaptive thresholds, recency weighting, telemetry, cross-language equivalence) to an existing AI code review bot
+**Researched:** 2026-02-15
+**Confidence:** HIGH (all pitfalls verified against codebase: `src/knowledge/store.ts` schema, `src/learning/memory-store.ts` vec0 tables, `src/learning/isolation.ts` threshold filtering, `src/handlers/review.ts` publish pipeline, `src/execution/executor.ts` AbortController timeout, `src/lib/dep-bump-detector.ts` existing detection; checkpoint/retry race conditions derived from existing `onPublish` callback and `reviewOutputKey` idempotency design)
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause incorrect security advisories, lost review output, data corruption, or require architectural rework.
+Mistakes that cause incorrect reviews, lost output, data corruption, or require architectural rework.
 
 ---
 
-### Pitfall 1: Changelog Fetching Returns Stale, Wrong, or No Data for Most Packages
+### Pitfall 1: API Usage Analysis Produces False Positives from Grep/AST Matching in Large Repos
 
 **What goes wrong:**
-Dependency bump analysis needs to show "what changed" between version A and B. The naive approach: fetch the GitHub release notes or CHANGELOG.md for the new version. In practice, changelog data is unreliable across the ecosystem. npm packages frequently lack a `repository` field, or the field points to a monorepo root rather than the specific package directory. GitHub Releases exist for some versions but not others (maintainers forget, or use a different tagging convention like `v1.0.0` vs `1.0.0` vs `package-name@1.0.0`). CHANGELOG.md files exist in varying formats -- Keep a Changelog, unstructured prose, auto-generated commit logs -- and version headers use inconsistent formats (`## 1.2.0`, `### [1.2.0]`, `# v1.2.0 (2025-01-15)`).
+Usage analysis tries to answer "does the project actually call the API that changed in this dependency bump?" by scanning the workspace for import statements and API references. The naive approach -- grep for `require('lodash')` or `import _ from 'lodash'` -- produces massive false positives in large repos. Test files, example code, documentation, commented-out code, string literals, and dead code all match. A repo like xbmc (62K+ files when submodules are counted) might show 200+ "usages" of a package that is only actually imported in 3 production files.
 
-Renovate's own changelog fetching system, one of the most mature in the ecosystem, still fails to find changelog entries for a significant percentage of packages. Their system uses GitHub GraphQL API to fetch releases (requires authentication), falls back to parsing CHANGELOG.md, and still produces empty results frequently. The problem is fundamental: there is no standard for changelog availability or format.
+AST-based analysis is more accurate but exponentially slower. Parsing every `.ts`/`.js` file in a large workspace through a TypeScript AST takes 10-60 seconds depending on repo size. For the xbmc-sized repos that already hit the timeout boundary (existing `estimateTimeoutRisk` in `timeout-estimator.ts` shows high-risk scoring for repos with 100+ files), adding AST analysis could push the pre-executor pipeline time past the point where the executor itself has no budget left (see existing Pitfall 14 from v0.9 research about budget accounting).
+
+Even AST analysis has blind spots: dynamic imports (`import()` expressions with variable paths), re-exports through barrel files, and framework-level dependency injection (Angular, NestJS) are not caught by static analysis.
 
 **Why it happens:**
-The npm registry `repository` field is optional and often incorrect (points to a monorepo, uses `git+ssh://` URLs that need transformation, or is simply missing). GitHub release tags follow no standard naming convention. CHANGELOG.md parsing requires heuristic version-header detection that fails on non-standard formats. Private registries may strip metadata compared to public registries.
+The workspace is a full git clone (created by `fetchAndCheckoutPullRequestHeadRef` in `jobs/workspace.ts`). It contains everything: source, tests, docs, configs, build output in `.gitignore` (if previously built), and potentially node_modules (if not gitignored). Grep has no concept of "production code vs test code vs dead code." AST parsing is accurate but the cost scales linearly with file count.
 
 **Consequences:**
-- Dependency analysis shows "No changelog available" for 30-50% of bumps, making the feature feel broken.
-- Wrong changelog shown when tag resolution heuristic picks the wrong tag (e.g., `v2.0.0` matched when the package uses `@scope/package@2.0.0`).
-- Monorepo packages show the entire repo's changelog, not the specific package's changes (e.g., showing all Babel package changes when only `@babel/core` was bumped).
-- Users lose trust in the dependency analysis feature and ignore it, including the cases where it correctly identifies breaking changes.
+- False positive: "This project uses lodash.merge (12 call sites)" when 10 of those are in test fixtures. The review implies a breaking change affects production code when it does not.
+- Performance: AST analysis adds 10-60 seconds to the pre-executor pipeline, consuming timeout budget. On repos already near the 600s timeout, this causes timeouts that did not occur before v0.10.
+- False negative: Dynamic imports and re-exports are invisible to static analysis. The review says "this API is not used in your project" when it actually is, giving false confidence to merge.
+- Resource exhaustion: On monorepos with 10K+ source files, AST analysis can consume 500MB+ of memory. Bun's process runs on Azure Container Apps with constrained memory.
 
 **Prevention:**
-- Accept imperfection upfront. Design the UI/output to gracefully degrade: "Changelog: [link to releases page]" when specific version changelog is unavailable, rather than "No changelog found."
-- Use a multi-source cascade with short-circuit: (1) GitHub Releases API for exact tag match, (2) CHANGELOG.md in repo root, (3) package `changelog` field from registry metadata, (4) fallback to a link to the compare URL (`github.com/owner/repo/compare/v1.0.0...v2.0.0`). The compare URL is always constructable if the repo URL and tag convention are known.
-- For monorepo detection: check if the `repository.directory` field exists in package.json metadata. If it does, scope changelog search to that directory. If not, check for Lerna/Nx/Turborepo workspace configuration to identify monorepo structure.
-- Cache changelog results per package+version pair in the knowledge store. Changelogs are immutable once published -- they never change for a given version.
-- Rate limit GitHub API calls for changelog fetching. A PR bumping 20 dependencies means 20+ API calls. Use conditional requests (If-None-Match) and batch where possible.
-- Set a hard time budget for changelog fetching (e.g., 5 seconds total for all dependencies in a PR). Individual fetches that exceed 2 seconds get the fallback compare URL.
+- Never use full-workspace grep. Scope analysis to files that import the bumped package directly. Start with `package.json` dependencies to identify direct dependencies, then scan only import statements (regex is fine for import detection -- it is the API usage search that needs accuracy).
+- Use a two-phase approach: Phase 1 (fast, always runs): regex scan for `import ... from 'package-name'` and `require('package-name')` across `.ts`/`.js`/`.tsx`/`.jsx` files, excluding `node_modules/`, `test/`, `__tests__/`, `*.test.*`, `*.spec.*`. Phase 2 (optional, budget-limited): If Phase 1 finds fewer than 20 import sites AND the bump is major version, do lightweight AST analysis on only those files to extract specific API method calls.
+- Set a hard time budget for usage analysis: 3 seconds maximum. If analysis exceeds budget, return "usage analysis incomplete" rather than blocking the review. The existing `estimateTimeoutRisk` already computes a complexity score -- feed this into the usage analysis budget.
+- Exclude test files by default. Optionally include them with a config flag: `review.depAnalysis.includeTestFiles: false` (default false).
+- Cache import graph per workspace. If the same workspace is used for incremental re-review (same head SHA), the import scan results are reusable.
 
 **Detection:**
-- Changelog hit rate below 50% across all dependency bumps (track as telemetry metric).
-- Users report "wrong changelog shown" for monorepo packages.
-- GitHub API rate limit warnings during dependency analysis.
+- Usage analysis reports more than 50 call sites for a single package (likely includes tests/dead code).
+- Pre-executor pipeline time increases by more than 5 seconds after enabling usage analysis.
+- Memory usage spikes during usage analysis on large repos (monitor via Bun's process metrics).
+- Users report "the bot says I use this API but I don't" (false positive from test/dead code).
 
 **Phase to address:**
-Dependency bump analysis phase -- changelog fetching strategy must be designed before implementation. The fallback cascade and time budget are architectural decisions, not implementation details.
+API usage analysis phase -- the two-phase approach and budget constraint must be designed before implementation. This is an architectural decision, not an implementation detail.
 
 ---
 
-### Pitfall 2: CVE Data Has Massive False Positive and False Negative Rates
+### Pitfall 2: Schema Migration Corrupts Existing SQLite Databases in Production
 
 **What goes wrong:**
-Dependency bump analysis flags a package version as "has known vulnerabilities" based on CVE/NVD data. But the data is fundamentally unreliable: Sonatype's 2025 analysis found nearly 20,000 false positives and over 150,000 false negatives in NVD data. 64% of open source CVEs in 2025 had no CVSS score in the NVD. Of those that were scored after the fact, almost half turned out to be High or Critical. Severity alignment across sources is weak: only 19% of CVE severity categories matched across analysis sources, and 62% overstated severity.
+Dependency history tracking requires new tables and columns in the existing knowledge store SQLite database. The current schema (`src/knowledge/store.ts`) uses `CREATE TABLE IF NOT EXISTS` and `ensureTableColumn` (line 131-141) for additive migrations. This pattern works for adding columns but fails for structural changes: adding indexes on existing columns, changing column types, adding foreign key constraints to existing tables, or creating tables that reference existing tables with new relationships.
 
-The average delay between public disclosure and NVD scoring in 2025 was 6 weeks, with some CVEs waiting over 50 weeks. This means a "clean" scan today may miss actively exploited vulnerabilities.
+The production database has accumulated months of review data. A schema migration that fails mid-transaction leaves the database in a corrupt state. SQLite does not support transactional DDL for all operations -- `ALTER TABLE` cannot be rolled back in all cases. If a migration adds a new table, inserts a foreign key to `reviews`, and then fails on the next step, the partially-created table exists but may have no data or inconsistent foreign keys.
 
-If Kodiai reports CVE data, it inherits these accuracy problems. False positives erode trust ("the bot keeps flagging safe packages"). False negatives create a dangerous illusion of safety ("the bot said no vulnerabilities").
+The existing `ensureTableColumn` function (line 131) uses `PRAGMA table_info()` to check for column existence, then `ALTER TABLE ADD COLUMN`. This works for nullable columns but cannot set `NOT NULL` constraints on new columns (SQLite requires a default value for `NOT NULL` on `ALTER TABLE ADD COLUMN`). If dependency history needs a `NOT NULL` column, the migration must use the SQLite backup/recreate pattern, which risks data loss if interrupted.
 
 **Why it happens:**
-NVD's processing capacity has not kept pace with the 32% increase in CVE submissions in 2024. CPE (Common Platform Enumeration) naming has 50% inconsistency in vendor names. The NVD backlog continues to grow despite processing improvements. OSV.dev, which aggregates from NVD and other sources, can only convert slightly over 50% of in-scope CVEs to OSV records with the current implementation.
+The knowledge store was designed for additive schema evolution (v0.1-v0.8 only added tables and nullable columns). Dependency history introduces relational data (package history linked to reviews) that may require structural changes. The `ensureTableColumn` pattern does not handle: column removal, type changes, constraint changes, or composite index creation on existing data.
 
 **Consequences:**
-- False positive: Bot flags a dependency bump as "vulnerable" when the CVE applies to a different version range, different platform, or has been disputed. Developer wastes time investigating a non-issue. Repeated false positives train developers to ignore all vulnerability warnings.
-- False negative: Bot shows "no known vulnerabilities" for a package that has unscored or unconverted CVEs. Developer merges with false confidence.
-- Stale data: Bot reports a vulnerability that was patched in the exact version being bumped TO, because the fix was released before the NVD entry was updated.
-- The fail-open design philosophy means vulnerability data errors should not block reviews, but presenting inaccurate vulnerability data is arguably worse than presenting none.
+- Migration failure leaves database in inconsistent state. The knowledge store fails to initialize on next app restart.
+- Data loss if migration uses recreate pattern and is interrupted (power failure, OOM kill, container restart during deploy).
+- Foreign key violations if new tables reference existing data that does not conform to new constraints.
+- WAL file corruption if migration runs while a concurrent webhook handler is writing to the database (the `busy_timeout` is 5000ms, but long DDL operations can exceed this).
 
 **Prevention:**
-- Use OSV.dev API over raw NVD. OSV uses package-ecosystem-native identifiers (npm package names, not CPEs), reducing false matches. OSV also has ecosystem-specific advisories from GitHub Security Advisories (GHSA), which are generally higher quality than NVD-only data.
-- Always show vulnerability data as informational, never blocking. Frame as: "Advisory: GHSA-xxxx-xxxx (moderate) may affect versions < 2.1.0" not "VULNERABILITY DETECTED."
-- Include a confidence signal: "Source: GitHub Security Advisory (high confidence)" vs "Source: NVD (moderate confidence, unverified version range)."
-- Cross-reference the bump direction: if bumping FROM a vulnerable version TO a fixed version, frame positively: "This bump resolves GHSA-xxxx-xxxx." If bumping TO a version with known advisories, frame as a warning.
-- Cache advisory lookups per package+version with a 24-hour TTL. Vulnerability databases change, but not minute-to-minute.
-- Never claim "no vulnerabilities" -- say "no known advisories" to accurately reflect the limitations of the data sources.
+- Design ALL new tables as additive-only. Use `CREATE TABLE IF NOT EXISTS` and `ensureTableColumn` patterns that already work. Never modify existing table schemas. If a column needs `NOT NULL`, add it with a `DEFAULT` value: `ensureTableColumn(db, "dep_history", "package_name", "package_name TEXT NOT NULL DEFAULT ''")`.
+- Create a new `dep_history` table rather than adding columns to the existing `reviews` or `findings` tables. Link via `review_id` foreign key. This isolates the migration risk: if the new table fails to create, existing tables are untouched.
+- Run all DDL in a single transaction wrapped in `db.transaction()`. If any step fails, the entire migration rolls back. Test the migration against a copy of the production database before deploying.
+- Add a schema version tracking mechanism. The current code runs all `CREATE TABLE IF NOT EXISTS` on every startup (lines 172-302 of store.ts). Add a `schema_version` table that tracks which migrations have been applied. Only run new migrations, not all DDL on every startup. This prevents re-running expensive migrations on restart.
+- Before deploying, test the migration against a dump of production data. Use `sqlite3 .dump` to create a test database and run the migration against it. Verify all existing queries still work after migration.
+- Size the new tables conservatively. Dependency history for 1000 reviews with 5 dependencies each = 5000 rows. This is trivial for SQLite. But if history includes per-version advisory snapshots, the data grows multiplicatively. Set retention limits from day one.
 
 **Detection:**
-- Users report "the bot flagged X but it's not actually vulnerable" (false positive tracking).
-- Users discover a post-merge vulnerability that the bot should have caught (false negative -- harder to detect).
-- Advisory data shows a CVE with no CVSS score (indicates NVD backlog -- log as low-confidence).
+- App fails to start after deploy with SQLite error messages (table already exists with different schema, constraint violation, etc.).
+- Knowledge store queries fail with "no such column" errors after a partial migration.
+- Database file size grows unexpectedly (failed migration left orphaned data).
+- `PRAGMA integrity_check` returns errors after migration.
 
 **Phase to address:**
-Dependency bump analysis phase -- data source selection (OSV vs NVD) and confidence framing must be decided before implementation. This is a trust design problem.
+Dependency history phase -- schema design must be finalized before implementation. The additive-only constraint must be a design rule, not an afterthought.
 
 ---
 
-### Pitfall 3: Chunked Review Publishes Partial Results Then Full Results, Creating Duplicate Comments
+### Pitfall 3: Checkpoint Publishing Creates Orphaned Partial Comments on Timeout
 
 **What goes wrong:**
-The 10% timeout failure rate on large repos (observed on xbmc) motivates chunked review: split the review into chunks, publish partial results as they complete, so even if the overall review times out, the user gets something. The critical failure mode: chunk 1 (files A-J) completes and publishes 4 inline comments. Chunk 2 (files K-Z) completes and publishes 3 more. The system then attempts to publish the summary comment, which references all 7 findings. But what if chunk 1 times out? The system retries with a recovery strategy. The retry succeeds and publishes findings for files A-J -- but 2 of the 4 findings from the first attempt already exist as inline comments. Now the PR has duplicate inline comments.
+Checkpoint publishing publishes partial results (e.g., findings from the first half of files) before the full review completes, so that users get something even if the review times out. The critical failure: checkpoint publishes 3 inline comments for files A-E. The executor then times out on files F-Z. The review handler receives `isTimeout: true`. The system posts a "review timed out" error comment. Now the PR has: 3 orphaned inline comments (no summary context), plus an error comment saying the review failed.
 
-The existing idempotency system (`ensureReviewOutputNotPublished` at line 1168 of review.ts) uses a `reviewOutputKey` based on head SHA and event action. But chunked reviews would need per-chunk idempotency keys, and the system was not designed for partial success states.
+The orphaned comments are particularly bad because they lack context. The summary comment (which was never published) would have explained the review scope, confidence levels, and finding priorities. Without it, users see random inline comments with severity tags and no framing. They do not know: are these the most important findings? Were high-risk files covered? Should they wait for a retry?
+
+The existing `onPublish` callback (line 75 of executor.ts) tracks whether ANY publication happened (`published = true`), but not WHAT was published or HOW MANY comments exist. The `ensureReviewOutputNotPublished` idempotency check (line 1168 of review.ts) checks for the summary comment marker -- but checkpoint publishing creates inline comments, not the summary. The idempotency system sees "no summary published" and allows retry, but the inline comments already exist.
 
 **Why it happens:**
-The executor (executor.ts) is an all-or-nothing pipeline: it either succeeds and returns a result, or fails with an error. There is no concept of "partial success" -- the `published` boolean is set by the `onPublish` callback when the MCP tool posts a comment, but there is no tracking of WHICH comments were published. The review handler checks for review output existence via the `reviewOutputKey` marker in comment HTML, but inline review comments use a different marker pattern than the summary comment. Chunked review introduces a new state: "some chunks succeeded, some failed" -- which the existing architecture does not model.
+The executor architecture is all-or-nothing by design. The `onPublish` flag is a boolean, not an inventory. MCP tool calls that post comments happen inside the LLM execution loop, interleaved with analysis. There is no "publish phase" separate from the "analysis phase" -- the LLM decides when to publish as part of its tool use. Checkpoint publishing requires intercepting this flow and staging comments rather than immediately publishing them.
 
 **Consequences:**
-- Duplicate inline comments on the same code lines (user sees the same finding twice).
-- Summary comment references findings that were not published (chunk timed out, summary counted it).
-- Summary comment missing findings that WERE published by earlier chunks.
-- If retry logic re-executes a successful chunk, the LLM may produce slightly different findings (non-deterministic), leading to conflicting comments on the same lines.
-- The `extractFindingsFromReviewComments` function (line 1645) extracts findings from ALL review comments with the review output key -- if duplicates exist, finding extraction double-counts.
+- Users see inline comments without a summary comment. The PR looks like the bot malfunctioned.
+- Retry after timeout creates duplicate inline comments (same finding, same line, two comments).
+- Error comment says "review timed out" but published findings suggest it partially worked -- confusing UX.
+- The `extractFindingsFromReviewComments` function (line 539 of review.ts) will find these orphaned comments on the next review attempt, potentially double-counting findings in dedup and delta classification.
+- If the bot deletes the orphaned comments on retry (cleanup), users who already saw and acted on them lose context.
 
 **Prevention:**
-- Do NOT publish inline comments from individual chunks. Instead, accumulate findings from all chunks in memory, then publish once all chunks complete (or after timeout). This preserves the existing all-or-nothing publish model.
-- If progressive publishing is required (publish as you go), implement per-chunk idempotency: each chunk gets a unique key (`reviewOutputKey + "-chunk-1"`). Before publishing chunk results, check if that chunk's marker already exists. Use the same `ensureReviewOutputNotPublished` pattern but scoped to the chunk key.
-- Track published comment IDs in the review handler's state. On retry or timeout recovery, clean up (delete) partial comments from failed chunks before re-publishing. The `onPublish` callback in executor.ts already fires on publish -- extend it to capture the comment ID.
-- Consider a simpler architecture: instead of chunking the LLM execution, chunk the prompt. Send a single LLM call with a subset of files (prioritized by risk score from the existing `computeFileRiskScores`). If it succeeds, publish. If it times out, reduce the file set and retry with a smaller prompt. This is a "progressive reduction" strategy rather than "parallel chunks."
-- The progressive reduction approach integrates cleanly with the existing `tieredFiles` system: first attempt reviews `full + abbreviated` tiers. On timeout, retry with only `full` tier. On second timeout, retry with top-10 highest-risk files only. Each attempt is a complete review with a single publish point.
+- Do NOT publish inline comments incrementally. Buffer all findings in memory. Only publish after the executor returns -- either all findings (success) or top-priority findings (timeout/partial). This preserves the existing single-publish architecture.
+- If checkpoint publishing is required, use a "draft comment" pattern: accumulate findings in a staging area (in-memory array), and publish them all at once when a checkpoint threshold is reached (e.g., every 5 findings). But always publish with a checkpoint summary: "Checkpoint: reviewed 15/42 files so far. Analysis continuing..."
+- Track published checkpoint comment IDs in the review handler's state. On timeout, update the checkpoint summary to: "Review completed partially. 15/42 files reviewed. Below findings are from reviewed files only." This converts orphaned checkpoints into a coherent partial review.
+- On retry after timeout, always check for existing checkpoint comments. If they exist, either (a) keep them and only publish findings for the remaining files, or (b) delete them all and do a fresh reduced-scope review. Never mix checkpoint results with retry results.
+- The simplest approach: publish ALL accumulated findings as a single batch when the timeout signal fires, before the error handler runs. The `AbortController` in executor.ts fires a signal -- add an `onAbort` callback that publishes buffered findings as a coherent partial review (with summary) instead of just setting `published = false`.
 
 **Detection:**
-- Duplicate inline comments on the same PR (same file + same line range + similar finding text).
-- Summary comment count mismatches total inline comment count.
-- Review telemetry shows multiple `published: true` results for the same reviewOutputKey.
+- Inline comments exist on a PR with no corresponding summary comment (orphaned checkpoints).
+- More than one summary comment on a PR for the same head SHA (checkpoint summary + retry summary).
+- `extractFindingsFromReviewComments` returns findings from multiple review output keys on the same PR.
+- Error comment posted on a PR that also has inline findings.
 
 **Phase to address:**
-Timeout resilience phase -- the chunking/progressive strategy must be decided before implementation. Progressive reduction is strongly recommended over parallel chunks because it preserves the existing single-publish architecture.
+Checkpoint publishing phase -- the buffering-vs-incremental decision is the most consequential architecture choice. Strongly recommend the buffer-and-flush approach because it preserves the existing single-publish-point architecture that v0.1-v0.9 infrastructure depends on.
 
 ---
 
-### Pitfall 4: Timeout Recovery Creates Race Condition with In-Flight Job Queue
+### Pitfall 4: Timeout Retry Creates Infinite Retry Loops and Resource Exhaustion
 
 **What goes wrong:**
-The existing job queue uses `PQueue({ concurrency: 1 })` per installation. When a review times out (AbortController fires at line 45 of executor.ts), the executor's catch block returns an `isTimeout: true` result. The review handler receives this and wants to retry with a reduced scope. But the retry is a new job that must go through the queue. If the original timed-out job's cleanup (workspace deletion, telemetry recording) has not completed, the retry job may start before cleanup finishes.
+The retry logic: on timeout, reduce scope (fewer files) and retry. But scope reduction does not guarantee the retry will complete within the timeout. The LLM may spend all its time on the reduced file set -- fewer files does not mean less analysis time if the remaining files are complex. The retry times out again. The system reduces scope further and retries. Each retry costs LLM tokens, API quota, and queue slot time. Without a retry cap, the system enters an infinite loop: timeout -> reduce -> timeout -> reduce -> timeout...
 
-Worse: the AbortController aborts the Claude Agent SDK query, but the SDK may have already issued MCP tool calls that are in-flight. The MCP tool call to `publishReviewComment` might succeed AFTER the abort signal fires but BEFORE the timeout error is returned to the review handler. The review handler sees `isTimeout: true, published: false` and decides to retry -- but a partial review was already published by the in-flight MCP tool call.
+On Azure Container Apps, each retry holds the job queue slot (existing `PQueue({ concurrency: 1 })` per installation). While retrying, all other PRs for that installation are queued. A single large-repo timeout loop can block all reviews for an organization for 30+ minutes (3 retries x 600s timeout each).
 
 **Why it happens:**
-The current executor.ts streams messages from the SDK query (lines 131-144). When the AbortController fires, the `for await` loop terminates with an error. But MCP tool calls are issued by the SDK to external MCP servers (which are in-process but async). The abort signal cancels the SDK's next LLM call, but MCP tool calls already dispatched may complete independently. The `published` flag is set by `onPublish` callback, but this callback fires when the MCP server processes the tool call -- which is asynchronous and may race with the abort.
+Scope reduction is a heuristic, not a guarantee. The timeout is a wall-clock budget for LLM execution, and the LLM's behavior is non-deterministic. Reviewing 10 high-complexity files may take longer than reviewing 30 simple files. The existing `estimateTimeoutRisk` provides complexity scoring but it estimates the INITIAL timeout, not whether a reduced-scope retry will succeed.
 
 **Consequences:**
-- Retry publishes a second review on top of a partial review from the timed-out attempt.
-- `published` flag is false in the timeout result, but a comment was actually published (callback race).
-- Workspace is cleaned up while the timed-out MCP tool call is still accessing it.
-- Knowledge store records a timeout for a review that actually published results.
+- Resource exhaustion: Each retry costs $0.10-$2.00 in LLM tokens (depending on prompt size). 3 retries on a large PR = $3-$6 wasted on reviews that never complete.
+- Queue starvation: The installation's job queue is blocked for the duration of all retries. Other PRs wait.
+- Duplicate comments: If each retry attempt publishes partial results before timing out (interaction with Pitfall 3), the PR accumulates multiple sets of orphaned comments.
+- Token waste: Each retry regenerates the full prompt (diff, context, retrieval results), consuming Voyage AI embedding credits and Anthropic tokens.
+- Exponential backoff trap: If retry spacing uses exponential backoff (common pattern), the total elapsed time grows rapidly: 600s + 1200s + 2400s = 4200s (70 minutes) for 3 retries.
 
 **Prevention:**
-- Before retrying after timeout, ALWAYS check for existing review output using the idempotency check (`ensureReviewOutputNotPublished`). If any output exists for this reviewOutputKey, skip retry or clean it up first.
-- Add a "cooldown" between timeout and retry: wait 5 seconds after timeout to allow in-flight MCP tool calls to settle. Then check idempotency.
-- Track published comment IDs in the `onPublish` callback. On timeout, if any comments were published, either (a) accept the partial review and enhance it, or (b) delete the partial comments before retrying.
-- Do not retry in the same queue execution. Instead, post a "Review timed out, retrying with reduced scope" message and enqueue a new event. This ensures the original job's cleanup completes fully before the retry starts.
-- The error comment system (`postOrUpdateErrorComment` in errors.ts) already posts timeout messages. Extend it to include: "Retrying with reduced scope..." rather than the current generic "Try breaking the task into smaller pieces" suggestion.
+- Hard cap: maximum 1 retry after timeout. If the retry also times out, post an error comment and stop. Do not use exponential backoff for timeout retries -- the second attempt should use the same timeout with reduced scope, not a longer timeout.
+- No-retry for repos that consistently timeout. Track timeout history in the knowledge store. If a repo has timed out on 3 of its last 5 reviews, disable retry for that repo and suggest config changes: "This repository consistently exceeds the review timeout. Consider adding `.kodiai.yml` with `review.timeoutSeconds: 1200` or reducing scope with `review.excludeGlobs`."
+- Budget cap: set a total token budget per review (including retries). If the first attempt uses 80% of the budget, do not retry -- post partial results from the first attempt instead.
+- Enqueue retry as a new job with lower priority. Do not retry in the same job execution. This allows other pending reviews to process between the original attempt and the retry. The existing `checkAndClaimRun` transaction (line 511 of store.ts) already handles job deduplication -- extend it with a `retryCount` field to enforce the retry cap.
+- The retry should use a SMALLER timeout than the original, not the same timeout. If the original was 600s and timed out, the retry with reduced scope should use 300s (half). If it cannot complete in half the time with fewer files, more retries will not help.
 
 **Detection:**
-- Two review summaries on the same PR for the same head SHA.
-- Timeout telemetry followed by a successful review with the same reviewOutputKey.
-- `published: false` in timeout result but review comments exist on the PR.
+- More than 1 retry for a single review (retry cap exceeded).
+- Total elapsed time for a review exceeds 2x the configured timeout (indicates retries).
+- Token cost for a single PR review exceeds the p99 for the installation (indicates retry waste).
+- Queue depth exceeds 5 for an installation (indicates queue starvation from retries).
 
 **Phase to address:**
-Timeout resilience phase -- race condition handling must be designed before retry logic is implemented. The cooldown + idempotency check pattern is non-negotiable.
+Timeout retry phase -- the retry cap and budget constraints must be designed before implementation. The "maximum 1 retry" rule and "smaller timeout for retry" rule are non-negotiable guard rails.
 
 ---
 
-### Pitfall 5: Retrieval Query Construction Is Too Naive for Meaningful Results
+### Pitfall 5: Adaptive Distance Thresholds Become Unstable with Small Sample Sizes
 
 **What goes wrong:**
-The current retrieval query (line 1431 of review.ts) concatenates the PR title with the first 20 file paths: `const queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`;`. This produces embedding queries like:
+Knee-point detection algorithms (L-method, elbow method, Kneedle) estimate the optimal distance threshold by finding the "knee" in the sorted distance curve of retrieval results. With small sample sizes (fewer than 10 retrieval candidates), the knee-point estimate is statistically meaningless. The curve has too few points to identify a meaningful inflection. The algorithm either picks a random point as the "knee" (threshold oscillates between reviews) or defaults to the first/last point (threshold is always too tight or too loose).
 
-```
-fix: update user authentication middleware
-src/auth/middleware.ts
-src/auth/types.ts
-src/routes/login.ts
-...
-```
-
-This text is embedded and compared against stored finding embeddings (which contain finding text like "Missing null check on user.session before accessing session.token"). The semantic overlap between file paths and finding descriptions is weak. The query is optimized for "what files are being changed" not "what kinds of issues were found before" -- these are fundamentally different semantic spaces.
-
-The current `distanceThreshold` (configurable, default likely in the 0.4-0.6 range for cosine distance) either returns too many low-relevance results (threshold too high) or misses relevant findings (threshold too low), because the query is in a different semantic neighborhood than the stored findings.
+The current memory store (`learning_memories` table) starts empty for new repos and grows slowly -- one finding per review, maybe 2-5 findings per review at best. After 20 reviews, a repo might have 50-100 stored findings. The retrieval query returns the top-K nearest neighbors (typically K=5 or K=10). With 50 stored findings, the distance distribution is sparse and noisy. Knee-point detection on 5-10 distances is numerically unstable.
 
 **Why it happens:**
-The retrieval system was built as a v0.7/v0.8 feature with a simple query construction as a starting point. The embedding model (Voyage AI) produces 1024-dimensional vectors, and similarity search works well when query and document are in the same semantic space. But PR titles and file paths are metadata, not finding descriptions. Searching for "auth middleware files" does not reliably find "null check on session" findings, even though they are topically related.
+Knee-point algorithms are designed for smooth, monotonically increasing curves with sufficient samples (typically 50+). Embedding distance distributions with small datasets are noisy: the gap between the 3rd and 4th nearest neighbor may be larger than the gap between the 1st and 2nd, purely due to sparse coverage. The algorithm interprets this noise as signal (a "knee") and sets the threshold at the noisy gap.
 
 **Consequences:**
-- Retrieval returns irrelevant findings (different code area, different issue type) that confuse the LLM's review.
-- Retrieval returns no results even when relevant historical findings exist, because the query is semantically distant.
-- The LLM receives "previous findings" context that is not actually relevant, potentially biasing it to look for similar issues in unrelated code.
-- Users see "Based on prior reviews..." context that references unrelated findings, damaging trust.
-- Wasted Voyage AI API calls (embedding generation) for queries that produce no useful retrieval.
+- Threshold oscillation: similar PRs on the same repo get different thresholds because the knee-point shifts with each new stored finding. Review A returns 5 retrieval results; Review B (similar PR, one day later, one more finding in the store) returns 2 results. Users see inconsistent behavior.
+- Cold-start degeneration: new repos with fewer than 10 memories always get degenerate knee-point estimates. The threshold is either so loose it returns everything (including irrelevant results) or so tight it returns nothing.
+- Numerical edge cases: if all K candidates have the same distance (happens when embeddings cluster), the knee-point algorithm divides by zero or returns the first point. If K=1, there is no curve to analyze.
 
 **Prevention:**
-- Build multi-signal queries. Instead of title + file paths, construct queries that represent the review's semantic intent:
-  - Signal 1: PR title + conventional type (e.g., "fix: authentication" -> "authentication bug fix")
-  - Signal 2: Language + file categories (e.g., "TypeScript authentication middleware")
-  - Signal 3: Risk signals from diff analysis (e.g., "error handling, null checks, input validation" -- the existing `riskSignals` array from `analyzeDiff`)
-  - Combine into: "TypeScript authentication bug fix: error handling, null checks in auth middleware"
-- Use the existing `diffAnalysis.riskSignals` array (already computed at line 1356) to add semantic meaning to the query. Risk signals describe WHAT might be wrong, which aligns with finding descriptions.
-- Consider separate queries for different retrieval intents: one for "findings on similar files" (file-path-based) and one for "findings on similar issues" (risk-signal-based). Merge and deduplicate results.
-- Implement retrieval quality measurement: after a review completes, compare retrieved findings against actual findings produced. Track relevance metrics (was the retrieved finding in the same category/severity as any actual finding?). Use this to tune the distance threshold empirically.
-- For language-aware boosting: when the PR is 80%+ TypeScript, prefer historical findings from TypeScript files. The memory store's vec0 table already has `category` as a partition key -- consider adding language as a filter.
+- Require a minimum sample size for knee-point detection. If the retrieval returns fewer than 8 candidates (below the minimum), fall back to the fixed default threshold (currently configurable via `knowledge.retrieval.distanceThreshold`). This is the single most important guard rail.
+- Use a simple percentile-based fallback for small samples: take the median distance of the K results as the threshold. This is more stable than knee-point for small K but less sophisticated than knee-point for large K. Switch to knee-point only when K >= 15.
+- Add a floor and ceiling to the adaptive threshold: never go below 0.15 (too tight, returns nothing) or above 0.65 (too loose, returns noise). The current fixed threshold is in the 0.3-0.5 range based on config defaults. The adaptive mechanism should stay within this band.
+- Log the effective threshold, candidate count, and detection method (fixed/percentile/knee-point) in the retrieval provenance (existing `RetrievalWithProvenance` type in `learning/types.ts`). This enables post-hoc analysis of threshold stability.
+- Unit test the knee-point algorithm with edge cases: K=1, K=2, all-same-distance, monotonically decreasing distance (all close), monotonically increasing with a gap, and the typical noisy distribution. These edge cases WILL occur in production.
 
 **Detection:**
-- Retrieval results consistently at the distance threshold boundary (indicates poor semantic match -- results are barely passing).
-- Retrieved findings are in a different category/severity distribution than the review's actual findings.
-- Retrieval returns 0 results for repos with 50+ stored findings (indicates query is in wrong semantic space).
-- High retrieval result count but LLM ignores all retrieved context (indicates low relevance).
+- Threshold variance across consecutive reviews on the same repo exceeds 0.15 (oscillation).
+- Retrieval returns 0 results on a repo with 50+ non-stale memories (threshold too tight).
+- Retrieval returns K results all at the distance ceiling (threshold too loose, no filtering occurred).
+- Knee-point algorithm produces NaN or Infinity (numerical edge case).
 
 **Phase to address:**
-Intelligent retrieval improvements phase -- query construction is the highest-leverage improvement. Must be designed before threshold tuning, because better queries change the optimal threshold.
+Adaptive threshold phase -- the minimum sample size guard and fallback strategy must be implemented before any knee-point algorithm. Test the fallback first, add knee-point as an upgrade path.
 
 ---
 
@@ -204,164 +196,172 @@ Mistakes that cause significant rework or degraded user experience but are recov
 
 ---
 
-### Pitfall 6: Dependency Bump Analysis Generates Noise on Routine Updates
+### Pitfall 6: Multi-Package Correlation Over-Groups Unrelated Packages
 
 **What goes wrong:**
-A Dependabot PR bumps 8 dev dependencies (eslint plugins, prettier, type definitions). The dependency analysis feature produces 8 sections of changelog summaries, advisory checks, and breaking change assessments. The review comment is now 3000+ characters of dependency analysis before any code review findings. For a routine `@types/node` patch bump, this is pure noise. The user scrolls past it, and in the process, misses the one meaningful item: a breaking change in an eslint plugin that requires config updates.
+Multi-package correlation detects that packages bumped together in the same PR (or across related PRs) are likely related, enabling grouped analysis: "These 4 packages are all from the React ecosystem." But the correlation logic over-groups: `react`, `eslint-plugin-react`, `@types/react`, and `react-router` are all "react-related" by name, but a breaking change in `react-router` has nothing to do with `react` core. Grouping them suggests they should be evaluated together when they are independent.
+
+Worse: Renovate's group update feature bundles packages into a single PR based on Renovate config (e.g., "group all eslint packages"). These groupings reflect the repo maintainer's CI preference, not semantic dependency relationships. `eslint`, `eslint-plugin-import`, and `eslint-config-prettier` are grouped in a Renovate PR because they are all "eslint stuff," but a major bump in `eslint-config-prettier` has no technical relationship to an `eslint` patch bump.
 
 **Why it happens:**
-The feature treats all dependency bumps equally. A `@types/node` patch bump and a `react` major version bump get the same analysis depth. Without categorization, the system cannot distinguish signal from noise.
+Package name similarity is a weak proxy for technical dependency. Namespace prefixes (`@babel/*`, `@testing-library/*`) group packages by organization, not by coupling. Renovate/Dependabot groupings are CI configuration artifacts, not dependency analysis.
 
 **Consequences:**
-- Users learn to skip the dependency analysis section entirely, missing important warnings.
-- Review comments become excessively long, reducing readability of code review findings.
-- LLM token cost increases for changelog/advisory context that adds no value.
-- Dependabot/Renovate PRs (which already describe the bump) get redundant information.
+- Misleading analysis: "This React ecosystem update includes a breaking change" when the breaking change is only in `react-router` and does not affect `react` core usage.
+- Wasted LLM tokens: grouped analysis sends all package changelogs/advisories as a single context block, increasing prompt size with irrelevant information.
+- False correlation: "Package A and Package B are always bumped together" (because Renovate groups them), treated as evidence that they are technically coupled, when they are not.
 
 **Prevention:**
-- Categorize bumps by impact: (1) major version bumps always get full analysis, (2) minor bumps get changelog summary only, (3) patch bumps get advisory check only (no changelog), (4) dev dependency patch bumps get a single-line summary.
-- Detect Dependabot/Renovate PRs by author (`dependabot[bot]`, `renovate[bot]`) or PR labels (`dependencies`). These PRs already include changelog information in their body -- do not duplicate it.
-- Set a budget: maximum N dependency analyses per review (e.g., 5 most impactful). Group remaining bumps as "N other dependencies updated (all patch)."
-- Separate dependency analysis from code review findings. Use a collapsible `<details>` section or a separate comment. The existing review structure has a summary comment and inline comments -- dependency analysis should be in the summary, not mixed with findings.
-- Allow repos to opt out of dependency analysis for specific packages or scopes: `review.dependencyAnalysis.skipPackages: ["@types/*", "eslint-*"]`.
+- Use package dependency relationships (from the lock file resolved tree), not name similarity or PR co-occurrence, to establish correlation. Package A correlates with Package B only if A depends on B (or vice versa) in the resolved dependency tree.
+- If lock file analysis is too complex for v0.10, use a simpler heuristic: group only packages with the exact same npm scope (`@babel/core` + `@babel/parser`) and only when they appear in the same Renovate group PR. Do NOT group across scopes.
+- Always present correlation as informational, not definitive: "These packages share the `@babel` scope and were bumped together" rather than "These packages are related."
+- Allow package-level analysis to override group-level analysis. If `@babel/parser` has a breaking change but `@babel/core` does not, the individual analysis should be prominent, not hidden inside a group summary.
+- Never correlate based solely on historical co-occurrence. Two packages bumped in the same PR 5 times is not evidence of coupling -- it is evidence of Renovate grouping config.
 
 **Detection:**
-- Dependency analysis section exceeds 2000 characters in the review summary.
-- User feedback (thumbs-down) rate is higher on dependency-bump PRs than on code PRs.
-- More than 5 dependency bumps analyzed in a single review.
+- Group contains more than 5 packages (likely over-grouped).
+- Group contains packages from different npm scopes (name-based grouping, not dependency-based).
+- Breaking change reported at the group level when only one package in the group has a breaking change.
 
 **Phase to address:**
-Dependency bump analysis phase -- categorization and budget must be designed before output formatting.
+Multi-package correlation phase -- the correlation heuristic (dependency tree vs name similarity) must be decided before implementation. Dependency tree is correct but complex; scope-based grouping is simple and good enough for v0.10.
 
 ---
 
-### Pitfall 7: Breaking Change Detection Has High False Positive Rate
+### Pitfall 7: Recency Weighting Makes the System Forget Valuable Old Patterns
 
 **What goes wrong:**
-The dependency analysis reports "BREAKING CHANGE detected" for a minor version bump. The detection logic found the word "breaking" in the changelog, but it was in the context of "breaking: fixed a previously broken behavior" or "this change is non-breaking." Alternatively, the semver major bump is flagged as breaking, but the breaking change is in an API that the project does not use.
+Recency weighting boosts recent retrieval results over older ones, on the theory that recent findings are more relevant to the current code state. But aggressive decay discards the system's most valuable memories: rare, high-severity findings that occurred months ago. A critical security finding from 6 months ago (e.g., "SQL injection in query builder") is far more valuable than a minor style finding from yesterday, but recency weighting ranks them inversely.
 
-Dependabot and Renovate's own research shows that tests can only detect 47% of direct and 35% of indirect artificial faults on average. Breaking change detection through changelog parsing is even less reliable than test detection.
+The failure mode is particularly dangerous because it is invisible: the system silently stops surfacing old high-severity findings. No one notices until a similar vulnerability reappears and the system does not reference the prior finding.
 
 **Why it happens:**
-"Breaking change" detection from text is a natural language understanding problem, not a string matching problem. The word "breaking" appears in many contexts. Semver convention says major bumps MAY contain breaking changes, but not all major bumps break the consumer's usage. Without understanding which APIs the project actually uses, any breaking change report is speculative.
+Recency weighting applies a time-decay multiplier to distance scores. A finding from 6 months ago has its effective distance inflated by the decay factor, pushing it below the threshold even if its semantic distance is excellent. The weighting treats all findings equally -- it does not distinguish between "this is old and irrelevant" and "this is old and critically important."
 
 **Consequences:**
-- False "BREAKING CHANGE" warnings on routine bumps train users to ignore the warning.
-- When an actual breaking change occurs, the user ignores it because the previous 10 warnings were false.
-- "Crying wolf" destroys the credibility of the entire dependency analysis feature.
+- Security findings from past reviews are forgotten. The system fails to warn "you had a similar SQL injection issue 6 months ago" because the recency weight pushed it out of retrieval results.
+- The system's effective memory window shrinks to the decay half-life. With aggressive decay (half-life of 30 days), findings older than 90 days are effectively invisible.
+- The learning system loses its primary value proposition: long-term pattern recognition across reviews.
 
 **Prevention:**
-- Never use "BREAKING CHANGE" as a definitive label. Use "Potential breaking change" with evidence: "Version 2.0.0 is a major bump. Changelog mentions: 'Removed support for Node 14.'" The user decides if it is relevant.
-- For semver: major bump = "This is a major version update. Review changelog for breaking changes." Minor/patch bump = do not flag as potentially breaking unless the changelog explicitly says so.
-- For changelog text: use pattern matching that requires surrounding context. Match `BREAKING CHANGE:` (Conventional Commits format) or `## Breaking Changes` (Keep a Changelog format), not just the word "breaking" anywhere.
-- Cross-reference: if the project's `package.json` or import map references specific APIs from the bumped package, and the changelog mentions those APIs as changed, increase confidence. Otherwise, flag as low-confidence.
-- Include the evidence source: "Source: GitHub Release notes" or "Source: CHANGELOG.md" so users can verify.
+- Use severity-aware decay: critical and major findings decay at a much slower rate (or not at all) compared to minor and style findings. Security findings should have zero decay -- they are always relevant.
+- Implement a minimum decay floor: no finding's recency weight should be lower than 0.3 (30% of its original weight), regardless of age. This ensures old findings can still surface if their semantic match is strong enough.
+- Weight recency as a SECONDARY signal, not primary. The retrieval pipeline should: (1) retrieve by semantic distance (primary), (2) apply recency as a tie-breaker when two results have similar distance (within 0.05). Do NOT multiply distance by recency -- add a small recency bonus to the distance score.
+- Formula recommendation: `effectiveDistance = semanticDistance + recencyPenalty * 0.1` where `recencyPenalty` ranges from 0 (today) to 0.5 (6+ months old). This caps the recency impact at a 0.05 distance penalty, which is minor compared to the typical distance range of 0.1-0.6.
+- Provide a "highlight old patterns" mechanism: if a finding from more than 3 months ago is within the distance threshold WITHOUT recency weighting, include it with a tag: "Historical pattern: similar issue found 4 months ago." This makes the long-term memory visible even with recency weighting.
 
 **Detection:**
-- User manually overrides or dismisses breaking change warnings repeatedly.
-- Breaking change flags on patch bumps (should never happen without exceptional evidence).
-- More than 3 breaking change flags in a single dependency-bump PR.
+- Retrieval never returns findings older than the decay half-life (all results are recent).
+- A critical finding from 3+ months ago is semantically relevant (low distance) but not returned (recency weight excluded it).
+- System repeatedly surfaces the same low-severity recent findings while ignoring high-severity historical ones.
 
 **Phase to address:**
-Dependency bump analysis phase -- breaking change confidence levels must be part of the initial design.
+Recency weighting phase -- the severity-aware decay and minimum floor must be designed before any decay formula is implemented. Test with historical data: take the current memory store contents and verify that enabling recency weighting does not exclude any critical/major findings that are currently returned.
 
 ---
 
-### Pitfall 8: Adaptive Distance Threshold Creates Unpredictable Retrieval Behavior
+### Pitfall 8: Retrieval Telemetry Causes Observer Effect and Metric Spam
 
 **What goes wrong:**
-The intelligent retrieval improvement adds adaptive thresholds: when the memory store has few entries (new repo), use a looser threshold to return any available context; when the store is mature, use a tighter threshold for precision. But the threshold adaptation creates a non-obvious behavior change: as a repo accumulates findings, the retrieval suddenly starts returning fewer results (tighter threshold kicks in). Users who relied on seeing "Based on prior reviews..." context stop seeing it, with no explanation.
+Retrieval telemetry logs every retrieval query, its results, distance scores, threshold used, and relevance assessment. This telemetry serves two purposes: debugging retrieval quality and tuning the distance threshold. But the telemetry itself changes system behavior:
 
-Worse: the threshold may adapt per-query based on result density. A query returning 20 candidates within distance 0.5 gets a tighter threshold than a query returning 2 candidates. This makes retrieval results non-deterministic from the user's perspective: similar PRs get different retrieval context based on what is already in the store.
+1. **Observer effect:** Telemetry writes to the SQLite database (the existing `telemetry/store.ts` pattern). Each retrieval now includes a database write. If the telemetry store uses the same database as the knowledge store (which uses WAL mode with `busy_timeout = 5000`), the telemetry write can block knowledge store reads. On high-traffic installations (10+ concurrent PRs), telemetry writes create WAL contention that slows down retrieval -- making the retrieval slower than it would be without telemetry.
+
+2. **Metric spam:** Every review generates 1-3 retrieval queries (repo-scoped, owner-scoped, retry). Each query produces 5-20 telemetry rows (one per candidate result plus metadata). For an installation processing 50 reviews/day, that is 250-3000 telemetry rows per day. The telemetry store grows faster than the knowledge store, and without aggressive retention, it consumes more disk than the actual review data.
+
+3. **Logging overhead:** If retrieval telemetry uses the existing pino logger at `debug` level (like the current provenance logging at line 110 of isolation.ts), it generates 100+ log lines per review. On Azure Container Apps with log shipping, this increases logging costs and makes relevant logs harder to find.
 
 **Why it happens:**
-Static thresholds are suboptimal -- the ideal threshold depends on the data distribution, which changes as the store grows. But adaptive thresholds trade one problem (static suboptimality) for another (unpredictability). Users cannot understand or debug why retrieval behaves differently on different PRs.
+Telemetry is typically designed with the assumption that writes are cheap and storage is unlimited. In a SQLite-backed system running on container instances with limited disk, writes contend with production reads and storage is finite. The existing telemetry store (telemetry/store.ts) does periodic WAL checkpoints (every 1000 writes, line 103), but retrieval telemetry could push write frequency much higher.
 
 **Consequences:**
-- Users report "the bot used to show prior findings but stopped" (threshold tightened as store grew).
-- Same repo, similar PRs, different retrieval results -- inconsistency damages trust.
-- Debugging retrieval issues requires understanding the threshold adaptation algorithm, which is not exposed to users.
-- If the adaptation is too aggressive, mature repos get very few retrieval results despite having rich history.
+- Retrieval latency increases by 5-20ms per query due to telemetry write contention. For reviews with 3 retrieval queries, that is 15-60ms of added latency on the critical path.
+- Disk usage grows 3-5x faster than expected. Telemetry data dominates the database.
+- Debug logs become 80% retrieval telemetry noise, making it harder to diagnose actual issues.
+- In worst case, WAL file grows unbounded if telemetry writes outpace checkpoints, eventually causing out-of-disk on the container.
 
 **Prevention:**
-- Use a fixed default threshold with a configurable override: `knowledge.retrieval.distanceThreshold: 0.45` (already exists in config). Do not add automatic adaptation in v0.9. Instead, improve query quality (Pitfall 5) which has higher leverage.
-- If adaptive thresholds are implemented later, add them as opt-in: `knowledge.retrieval.adaptiveThreshold.enabled: false` (default false).
-- Always log the effective threshold and result count in retrieval provenance (the existing `provenance` object in `RetrievalWithProvenance`). This enables debugging.
-- If adaptation is added, base it on the REPO's store maturity (total non-stale records), not per-query result density. Repo maturity is stable across queries; per-query density is not.
-- Define clear bands: <50 memories = "early" (threshold 0.55), 50-500 = "growing" (threshold 0.45), 500+ = "mature" (threshold 0.35). These are tuned once and documented.
+- Use a separate SQLite database for retrieval telemetry. The existing pattern already separates the knowledge store and telemetry store into different database files. Create a dedicated retrieval telemetry database with its own retention policy (7-day retention, vs 30-day for knowledge store).
+- Sample telemetry: log detailed telemetry for 10% of retrieval queries, not all. Use a deterministic sampling key (e.g., `reviewId % 10 === 0`) so that all retrieval queries for a given review are either all logged or all skipped. This prevents partial telemetry for a single review.
+- Batch telemetry writes: accumulate telemetry records in memory during the review, then write them all in a single transaction after the review completes. This avoids interleaving telemetry writes with production retrieval reads.
+- Use structured logging (pino) at `info` level for aggregate metrics ("retrieval: 5 results, threshold 0.40, latency 45ms") and `debug` level for per-result details. Do not log per-result details at `info` level.
+- Set a hard retention limit: auto-purge retrieval telemetry older than 7 days. The existing `purgeOlderThan` pattern in `telemetry/store.ts` provides the template.
 
 **Detection:**
-- Retrieval result count drops significantly after repo accumulates N findings (threshold transition).
-- Same PR reviewed twice shows different retrieval results (non-determinism from density-based adaptation).
-- Users file issues about "prior finding context disappeared."
+- Retrieval latency increases after enabling telemetry (A/B comparison with telemetry on/off).
+- Telemetry database file size exceeds knowledge store database file size.
+- WAL file for telemetry database exceeds 10MB (indicates checkpoint backlog).
+- Debug log volume increases by more than 50% after enabling retrieval telemetry.
 
 **Phase to address:**
-Intelligent retrieval improvements phase -- keep fixed threshold for v0.9, improve queries instead. Flag adaptive thresholds for v1.0+ with empirical data from improved queries.
+Retrieval telemetry phase -- the sampling strategy and separate database must be designed before implementation. Telemetry that degrades the system it measures is counter-productive.
 
 ---
 
-### Pitfall 9: Embedding Model Drift Silently Degrades Retrieval Quality
+### Pitfall 9: Cross-Language Equivalence Produces False Equivalences
 
 **What goes wrong:**
-Voyage AI updates their embedding model (e.g., `voyage-code-3` to `voyage-code-4`). The codebase already handles model changes via `markStale` (line 182 of memory-store.ts) which marks all embeddings from the old model as stale, and `purgeStaleEmbeddings` which deletes them. But the transition period is dangerous: after a model change, ALL existing embeddings are stale. The store is effectively empty until new findings are written with the new model. For repos with 500+ historical findings, this means months of accumulated learning are instantly lost.
+Cross-language equivalence maps packages across ecosystems (e.g., `lodash` (npm) == `lodash.py` (PyPI) == `lo-dash` (NuGet)), enabling the system to surface relevant findings from a Python review when reviewing a TypeScript PR that uses the equivalent package. But the mapping is inherently imprecise:
 
-Even without an explicit model change, Voyage AI could update the model weights behind the same model ID (they have done this historically for some models). The embeddings for new documents would be in a slightly different vector space than old documents, degrading similarity search quality without any visible signal.
+- `requests` (Python) and `axios` (npm) are "equivalent" in the sense that both are HTTP clients, but their APIs, failure modes, and security characteristics are completely different. A finding about `requests` session handling is not relevant to `axios` interceptors.
+- `moment` (npm) and `datetime` (Python stdlib) serve similar purposes but are not equivalent -- one is a library with known deprecation issues, the other is a language standard library.
+- Package names are not globally unique across ecosystems. `colors` means different things on npm vs PyPI vs RubyGems.
 
 **Why it happens:**
-The existing `markStale` mechanism assumes a model version change is detectable. But silent model updates (same model ID, different weights) are not detectable. Even with detectable changes, the purge-all-and-rebuild approach loses all historical context until new findings accumulate.
+There is no authoritative cross-ecosystem package equivalence database. Any mapping table is manually curated and reflects subjective judgments about "equivalence." The granularity of equivalence varies: some packages are exact ports (same API), some are spiritual successors (similar purpose, different API), and some are same-name-different-thing.
 
 **Consequences:**
-- After a model upgrade, retrieval returns zero results for weeks/months until new findings rebuild the store.
-- Silent model drift causes retrieval quality to gradually degrade -- stored embeddings from the old model variant are compared against queries from the new variant, producing meaningless distances.
-- Users see irrelevant "prior findings" context because the distance metric is miscalibrated (old embedding + new embedding comparison).
+- False equivalence: The system retrieves a Python `requests` finding when reviewing TypeScript `axios` code. The finding is not applicable, but the LLM treats it as relevant context, potentially producing a misleading review comment.
+- Maintenance burden: The equivalence mapping table must be manually maintained. Every new package addition requires human judgment. The table becomes stale as packages are deprecated, renamed, or superseded.
+- Scope creep: once equivalence mapping exists, there is pressure to expand it to more packages, more ecosystems, and finer-grained mappings (function-level equivalence). Each expansion increases the false positive surface.
+- Inconsistency: the mapping is many-to-many. `requests` (Python) maps to both `axios` and `node-fetch` in npm. Which one is "equivalent" depends on the use case, not the package name.
 
 **Prevention:**
-- Pin the exact Voyage AI model version in config (already done: `knowledge.embedding.model`). If Voyage AI introduces a new model, the upgrade is a deliberate config change, not automatic.
-- When a model change is detected, do NOT purge immediately. Instead, re-embed existing records in batches (background job). Mark old embeddings as stale only after re-embedding completes. This preserves continuity.
-- Monitor embedding quality: periodically (e.g., weekly) pick a random sample of 10 stored records, re-embed them with the current model, and compare the new embedding against the stored embedding using cosine distance. If the self-distance exceeds a threshold (e.g., 0.1), the model has drifted. Alert the operator.
-- The existing `embeddingDim` field in `learning_memories` table provides a sanity check: if the new model has different dimensions than stored records, it is an obvious incompatibility. But same-dimension models can still drift.
-- For the v0.9 improvement: add a `embedding_model_version` field to the `learning_memories` table (or use the existing `embedding_model` field more precisely) and include a model version hash in the provenance log.
+- Start with an extremely small, high-confidence mapping table: only packages that are EXACT ports across ecosystems (e.g., `lodash` npm <-> `pydash` PyPI, `protobuf` npm <-> `protobuf` PyPI). Require that the packages share the same upstream project or explicitly claim equivalence.
+- Maximum 20 mappings in v0.10. Each mapping must have a documented justification and a confidence level.
+- Use equivalence only as a retrieval BOOST (reduce distance by 10%), not as a direct match. A cross-language equivalent result should still compete on semantic distance with same-language results. It should never override a same-language result with better semantic match.
+- Add a user-visible attribution: "Similar pattern found in Python equivalent (`pydash`)" so users understand why a cross-language finding appeared and can judge relevance themselves.
+- Do NOT attempt to auto-generate equivalence mappings from package metadata (descriptions, keywords). This produces massive false positive rates. Manual curation only.
+- Make the mapping table configurable per repo: `review.retrieval.equivalences: { "axios": ["requests", "http-client"] }`. This allows repos to define their own equivalences and override/disable system defaults.
 
 **Detection:**
-- Self-distance check: re-embed a stored record and compare against stored embedding. Distance > 0.1 = drift.
-- Retrieval result quality degrades over time (measured by the relevance metric from Pitfall 5's detection strategy).
-- Retrieval returns results at the distance threshold boundary that were previously well within threshold.
+- Users report "irrelevant cross-language findings" in review context.
+- Retrieved cross-language findings have consistently higher distance than same-language findings (indicates weak equivalence).
+- Mapping table has not been updated in 3+ months (stale mappings).
 
 **Phase to address:**
-Intelligent retrieval improvements phase -- drift detection is a monitoring concern. The re-embedding migration strategy should be designed but can be implemented incrementally.
+Cross-language equivalence phase -- the manual curation approach and 20-mapping cap must be enforced from day one. This feature has the highest false-positive risk of any v0.10 feature.
 
 ---
 
-### Pitfall 10: Timeout Resilience Changes the Review's Error Semantics
+### Pitfall 10: Dependency History Storage Growth Overwhelms SQLite on Active Repos
 
 **What goes wrong:**
-The current system has clean error semantics: a review either succeeds (findings published) or fails (error comment posted via `postOrUpdateErrorComment`). The `classifyError` function in errors.ts maps errors to user-friendly categories. Timeout is handled as a failure with a "try breaking the task into smaller pieces" suggestion.
+Dependency history tracks every dependency bump across all reviews: package name, old version, new version, advisory snapshot, changelog excerpt, and analysis result. For active repos with weekly Dependabot/Renovate runs, this grows linearly. A repo with 50 dependencies, weekly bumps, and 50 weeks of history accumulates 2500 history rows. With advisory snapshots (JSON blobs) and changelog excerpts (text blobs), each row could be 2-10KB. Total: 5-25MB of dependency history data per active repo.
 
-Chunked/progressive review introduces a new semantic: "partial success." The review partially completed, some findings were identified, but the review is incomplete. The existing error classification has no "partial_success" category. If partial results are published with a "review timed out" error comment, users see findings + an error message. They do not know: (1) were all high-risk files reviewed? (2) are there findings that the bot would have reported if it had more time? (3) should they request a re-review or is this "good enough"?
+For a Kodiai installation serving 50 repos, that is 250MB-1.25GB of dependency history data in the knowledge store database. The current knowledge store manages reviews + findings + feedback + suppression logs -- dependency history could exceed all other data combined.
+
+SQLite handles this data volume fine from a correctness standpoint, but performance degrades for aggregate queries: "what is the bump history for package X across all versions?" requires scanning all history rows. Without proper indexing and retention, these queries become slow (100ms+) and compete with the hot path (review recording, finding extraction).
 
 **Why it happens:**
-The `ExecutionResult` type in types.ts has `conclusion: "success" | "failure" | "error"` -- there is no "partial" state. The review handler's post-execution logic (finding extraction, enforcement, suppression) assumes a complete review. Partial results may have findings from high-risk files but miss findings from medium-risk files, creating an inconsistent quality level.
-
-**Consequences:**
-- Users see findings + error message and do not know if the review is complete.
-- The knowledge store records the review with findings, but the head SHA is recorded as "reviewed" -- subsequent incremental reviews assume the full file set was covered.
-- Delta re-review shows "new findings" that are actually "previously missed due to timeout" -- confusing.
-- Feedback collected on partial reviews pollutes the learning memory with skewed data (only high-risk files were reviewed).
+Dependency history is append-only by nature. Unlike reviews (which have natural boundaries per PR), dependency history accumulates indefinitely. Advisory snapshots are particularly large because they include full advisory text, affected version ranges, and severity scores.
 
 **Prevention:**
-- Add a `partial` conclusion to ExecutionResult: `conclusion: "success" | "failure" | "error" | "partial"`.
-- When publishing partial results, clearly communicate incompleteness: "Reviewed 15 of 42 files (review timed out). High-risk files were prioritized. Re-request review for a complete analysis."
-- When recording partial reviews in the knowledge store, store the list of files actually reviewed. Incremental diff computation should compare against this list, not assume all files were covered.
-- Do NOT collect learning memory data from partial reviews. The finding set is biased toward high-risk files and does not represent the full review quality.
-- Add a `coveredFiles` field to the review record: for complete reviews, this is all changed files; for partial reviews, this is only the files that were in the prompt. Incremental diff uses this for accurate delta computation.
+- Set aggressive retention from day one: 90-day retention for full history records, 365-day retention for summary records (package name + version + bump type only, no advisory/changelog blobs). Implement retention in the `purgeOldRuns` cycle (existing pattern at line 838 of store.ts).
+- Store advisory and changelog data as separate rows (or in a separate table) referenced by foreign key, not inline in the history row. This allows pruning large blobs while keeping the lightweight history record.
+- Index the history table on `(repo, package_name, created_at)` for efficient per-package queries and `(created_at)` for efficient retention purge.
+- Set a per-repo row cap: maximum 5000 history rows per repo. When the cap is exceeded, purge oldest records. This prevents any single active repo from dominating the database.
+- Use SQLite's `VACUUM` after large purge operations to reclaim disk space. The existing code does not vacuum -- add periodic vacuum to the maintenance cycle.
+- Consider storing advisory/changelog blobs compressed (gzip). SQLite stores BLOBs efficiently, but text fields are uncompressed. A 5KB JSON advisory compresses to ~1KB.
 
 **Detection:**
-- `conclusion: "partial"` reviews that are later followed by a full review showing many "new" findings on the same PR.
-- Incremental re-review finds issues on files that were in the original PR but not reviewed due to timeout.
-- Users request re-review immediately after a partial review (indicates dissatisfaction with partial output).
+- Knowledge store database file exceeds 100MB (current baseline is likely 5-20MB).
+- Dependency history query latency exceeds 50ms.
+- `dep_history` table row count exceeds 10000 per repo.
+- WAL file grows larger than 10MB during history write operations.
 
 **Phase to address:**
-Timeout resilience phase -- partial result semantics must be designed alongside the chunking strategy. The ExecutionResult type change has downstream effects on telemetry, knowledge store, and delta classification.
+Dependency history phase -- retention policy and storage caps must be implemented alongside the schema, not as a follow-up.
 
 ---
 
@@ -371,82 +371,63 @@ Mistakes that cause friction but are quickly fixable.
 
 ---
 
-### Pitfall 11: Package Lock File Parsing Misidentifies Dependency Bumps
+### Pitfall 11: Checkpoint Publishing Race Condition with GitHub API Rate Limits
 
 **What goes wrong:**
-The dependency analysis detects bumps by parsing lock file changes (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`). But lock file diffs are noisy: a single `npm install` can change hundreds of transitive dependency versions without any change to `package.json`. The analysis flags all of these as "dependency bumps" even though the developer only intentionally changed one or two packages.
-
-**Why it happens:**
-Lock files record the entire resolved dependency tree. Transitive dependency updates cascade: bumping `react` may change 40 transitive dependencies. Parsing the lock file diff without cross-referencing `package.json` changes misattributes transitive updates as intentional bumps.
+Checkpoint publishing makes multiple GitHub API calls in rapid succession (one per inline comment). GitHub's REST API has a secondary rate limit that throttles requests sent too quickly in succession (typically 20+ requests within a few seconds). If a checkpoint publishes 8 findings as 8 individual `createReviewComment` API calls within 1 second, the secondary rate limit kicks in and some calls fail with HTTP 403. The successful comments are published; the failed ones are lost. The checkpoint is partially published with no indication of which findings were lost.
 
 **Prevention:**
-- Always cross-reference lock file changes against `package.json` (or equivalent manifest) changes. Only analyze packages that changed in BOTH files (intentional bumps). Transitive changes get a single summary line: "12 transitive dependencies updated."
-- For PRs that only change lock files (e.g., `npm audit fix`), summarize the advisory resolutions rather than analyzing each transitive bump.
-- If `package.json` is not in the changed files but the lock file is, flag it: "Lock file updated without manifest change -- likely a transitive dependency update or `npm install` refresh."
+- Batch inline comments into a single pull request review submission (`createReview` with multiple comments) rather than individual `createReviewComment` calls. The existing MCP comment server likely already uses `createReview` -- verify this and ensure checkpoint publishing follows the same pattern.
+- If individual comment calls are used, add a 100ms delay between calls. This keeps the rate well below GitHub's secondary limit.
+- Track which comments succeeded and which failed. On failure, retry the failed comments with backoff, or log them for inclusion in the summary comment as text rather than inline comments.
 
 **Detection:**
-- More than 10 dependency bumps analyzed in a single review (likely includes transitive).
-- Lock file in changed files but `package.json` not in changed files.
+- HTTP 403 errors from GitHub API during comment publishing.
+- Published finding count is less than intended finding count after checkpoint.
+- Intermittent "secondary rate limit" error messages in logs.
 
 **Phase to address:**
-Dependency bump analysis phase -- lock file vs manifest cross-referencing must be part of the bump detection logic.
+Checkpoint publishing phase -- API call batching is an implementation detail but must be considered in the design.
 
 ---
 
-### Pitfall 12: Language-Aware Retrieval Boosting Penalizes Polyglot Repos
+### Pitfall 12: Recency Weighting Breaks Deterministic Retrieval Testing
 
 **What goes wrong:**
-The retrieval improvement adds language-aware boosting: prefer historical findings from the same language as the current PR. But polyglot repos (TypeScript + Python + Go) have mixed-language PRs. A PR changing both `auth.ts` and `auth.py` gets TypeScript-biased retrieval (if TypeScript is the majority language), missing relevant Python-specific findings from history.
+Current retrieval tests (e.g., `memory-store.test.ts`, `retrieval-rerank.test.ts`) use fixed embeddings and verify distance-based ordering. Adding recency weighting introduces time-dependency: test results change depending on when the test data was created. A test that passes at midnight fails at noon because the recency weights shifted.
 
 **Prevention:**
-- Do not boost by majority language. Instead, retrieve findings for each language present in the PR and merge results. The existing `classifyLanguages` function in diff-analysis.ts already classifies files by language.
-- Weight results by the proportion of files in each language in the current PR: if 70% TypeScript and 30% Python, weight TypeScript results 70% and Python results 30% in the final merged list.
-- If language boosting is used, apply it as a tie-breaker (same distance, prefer same language), not as a primary filter.
+- Make recency weighting accept an injectable "current time" parameter for testing. Never use `Date.now()` or `datetime('now')` directly in the weighting function. Use a `now` parameter with a default of the current time in production.
+- Create test fixtures with explicit timestamps and test against those timestamps by passing the corresponding `now` value. Tests should be time-independent.
+- Add a "disable recency weighting" flag for tests and for repos that prefer pure semantic retrieval.
 
 **Detection:**
-- Retrieval returns findings only from one language in a multi-language PR.
-- Repos with mixed-language PRs have lower retrieval relevance than single-language repos.
+- Flaky retrieval tests that fail intermittently (time-dependent ordering).
+- Test ordering changes when test data ages past a decay threshold.
 
 **Phase to address:**
-Intelligent retrieval improvements phase -- language-aware boosting design should account for polyglot repos from the start.
+Recency weighting phase -- injectable time is a standard testing pattern. Apply it from the first implementation.
 
 ---
 
-### Pitfall 13: Changelog Fetching Leaks Private Repository Information
+### Pitfall 13: Cross-Language Equivalence Table Becomes a Maintenance Black Hole
 
 **What goes wrong:**
-A dependency's `repository` field in npm metadata points to a private GitHub repository. The changelog fetching logic attempts to access this URL, fails with a 404/403, and logs the URL including the private repo path. If the log is accessible to users (via error comments or telemetry dashboards), it leaks the existence and path of private repositories.
+The equivalence table starts with 20 well-researched mappings. Over time, users request additions ("add X equivalent to Y"). Each request requires research into whether the packages are truly equivalent. Without a clear process, mappings accumulate without review. Eventually the table contains 200+ mappings of varying quality, some added years ago for packages that have been deprecated or renamed.
 
 **Prevention:**
-- Never include raw GitHub URLs in user-facing output or error messages from changelog fetching. Sanitize URLs to remove path components beyond `owner/repo`.
-- Treat all changelog fetch failures as "changelog unavailable" without revealing the failed URL. Log the full URL at debug level only.
-- Do not use the GitHub installation token for changelog fetching on external repositories. Use unauthenticated requests (limited but safe) or a separate, unprivileged token. The installation token has access to the repos it is installed on -- using it to fetch external repos could expose private repo metadata.
+- Store the equivalence table as a versioned JSON file in the repo (e.g., `src/data/cross-language-equivalences.json`), not hardcoded in source. Each entry includes: `confidence` (high/medium), `justification` (one line), `addedDate`, `lastVerified`.
+- Set a calendar reminder: review the equivalence table quarterly. Remove mappings for deprecated packages, lower confidence on mappings with user-reported false positives.
+- Gate community contributions: mappings can only be added through PR review, not config. Each new mapping requires a test case showing a realistic retrieval scenario where the equivalence adds value.
+- Maximum 50 mappings total. If the table needs more than 50 entries, the approach is wrong -- consider a different architecture (e.g., embedding-space proximity rather than explicit mapping).
 
 **Detection:**
-- Changelog fetch errors that include full GitHub URLs in user-facing output.
-- Installation token used for requests to repos outside the installation scope.
+- Table has not been reviewed in 6+ months.
+- More than 20% of mappings have `confidence: medium` (indicates uncertain equivalences).
+- Users report false equivalences more than once per month.
 
 **Phase to address:**
-Dependency bump analysis phase -- URL sanitization and token scoping must be addressed during implementation.
-
----
-
-### Pitfall 14: Timeout Budget Does Not Account for Pre-Review Pipeline Time
-
-**What goes wrong:**
-The current `timeoutSeconds` config (default 600) is applied to the executor's Claude Agent SDK call. But the review handler performs significant work BEFORE executor invocation: workspace creation + git clone (5-30 seconds for large repos), config loading, intent parsing, author classification, incremental diff computation, diff collection, diff analysis, risk scoring, file triage, prior finding dedup, and retrieval context generation. For large repos like xbmc, pre-executor pipeline time can consume 30-60 seconds. The actual LLM execution gets 540-570 seconds of the 600 second budget. If the total wallclock time exceeds 600 seconds, the user perceives a timeout even though the executor technically had adequate time.
-
-**Prevention:**
-- Track pre-executor pipeline time as a separate metric. Log it prominently: "Pre-review pipeline: 45 seconds. Executor budget: 555 seconds."
-- Consider a total wallclock timeout (covering the entire handleReview function) in addition to the executor timeout. The executor timeout stays as-is (prevents runaway LLM calls), but a separate total timeout prevents the queue from holding a job indefinitely.
-- For timeout resilience: the "reduced scope" retry should subtract the pre-executor time from the timeout budget. If pre-executor takes 45 seconds and total budget is 600, the retry's executor timeout should be 555 seconds, not 600.
-
-**Detection:**
-- Total wallclock time exceeds timeoutSeconds even though executor did not timeout.
-- Pre-executor pipeline time exceeds 60 seconds (indicates large repo or slow API responses).
-
-**Phase to address:**
-Timeout resilience phase -- budget accounting is needed for accurate timeout reporting and retry scheduling.
+Cross-language equivalence phase -- the maintenance process must be defined alongside the initial table.
 
 ---
 
@@ -454,107 +435,98 @@ Timeout resilience phase -- budget accounting is needed for accurate timeout rep
 
 | Phase Topic | Likely Pitfall | Severity | Mitigation |
 |-------------|---------------|----------|------------|
-| Dependency bump analysis | Changelog fetch fails for 30-50% of packages (P1) | CRITICAL | Multi-source cascade with compare URL fallback, time budget, cache |
-| Dependency bump analysis | CVE data false positives/negatives (P2) | CRITICAL | Use OSV.dev, frame as "advisory" not "vulnerability", confidence signals |
-| Dependency bump analysis | Noise on routine updates (P6) | MODERATE | Categorize by impact, budget per review, separate section |
-| Dependency bump analysis | Breaking change false positives (P7) | MODERATE | "Potential" framing, evidence-based, Conventional Commits patterns only |
-| Dependency bump analysis | Lock file transitive noise (P11) | MINOR | Cross-reference manifest changes, summarize transitives |
-| Dependency bump analysis | Private repo URL leak (P13) | MINOR | Sanitize URLs, unprivileged token for external repos |
-| Timeout resilience | Duplicate comments from chunks (P3) | CRITICAL | Progressive reduction instead of parallel chunks, single publish point |
-| Timeout resilience | Race condition with in-flight MCP calls (P4) | CRITICAL | Cooldown + idempotency check before retry, track published IDs |
-| Timeout resilience | Partial result error semantics (P10) | MODERATE | Add "partial" conclusion, communicate incompleteness, track covered files |
-| Timeout resilience | Budget does not account for pipeline time (P14) | MINOR | Track pre-executor time, total wallclock timeout |
-| Intelligent retrieval | Naive query construction (P5) | CRITICAL | Multi-signal queries using risk signals + language + conventional type |
-| Intelligent retrieval | Adaptive threshold unpredictability (P8) | MODERATE | Keep fixed threshold for v0.9, improve queries instead |
-| Intelligent retrieval | Embedding model drift (P9) | MODERATE | Pin model version, drift detection sampling, batch re-embedding |
-| Intelligent retrieval | Language boosting penalizes polyglot repos (P12) | MINOR | Retrieve per-language, merge proportionally, boost as tie-breaker only |
+| API usage analysis | False positives from test/dead code (P1) | CRITICAL | Two-phase approach with file exclusions, 3s time budget |
+| Dependency history | Schema migration corruption (P2) | CRITICAL | Additive-only schema, new tables not column changes, test against prod data |
+| Dependency history | Storage growth (P10) | MODERATE | 90-day retention, per-repo row cap, separate blob storage |
+| Multi-package correlation | Over-grouping unrelated packages (P6) | MODERATE | Use dependency tree not name similarity, scope-based grouping only |
+| Checkpoint publishing | Orphaned partial comments (P3) | CRITICAL | Buffer-and-flush on timeout, never publish incrementally |
+| Checkpoint publishing | GitHub API rate limits (P11) | MINOR | Batch into single createReview call, 100ms delay between individual calls |
+| Timeout retry | Infinite retry loops (P4) | CRITICAL | Max 1 retry, smaller timeout on retry, no retry for chronic-timeout repos |
+| Adaptive thresholds | Instability with small samples (P5) | CRITICAL | Minimum 8 candidates for knee-point, percentile fallback, floor/ceiling |
+| Recency weighting | Forgetting valuable old patterns (P7) | MODERATE | Severity-aware decay, minimum 0.3 floor, recency as tie-breaker not primary |
+| Recency weighting | Breaks deterministic testing (P12) | MINOR | Injectable time parameter, explicit test timestamps |
+| Retrieval telemetry | Observer effect and metric spam (P8) | MODERATE | Separate database, 10% sampling, batch writes, 7-day retention |
+| Cross-language equivalence | False equivalences (P9) | MODERATE | Manual curation only, 20-mapping cap, boost not override, user attribution |
+| Cross-language equivalence | Maintenance burden (P13) | MINOR | Versioned JSON, quarterly review, max 50 mappings |
 
-## Integration Pitfalls: Feature Interactions
-
-These pitfalls emerge from the interaction between v0.9 features and with existing v0.1-v0.8 infrastructure.
+## Integration Pitfalls: Feature Interactions Within v0.10
 
 | Interaction | What Goes Wrong | Prevention |
 |-------------|----------------|------------|
-| Dependency analysis + large PR triage | A dependency-bump PR touches 5 source files + 200 lock file lines. Large PR triage kicks in (200+ files when lock file is counted as one large file). The triage system demotes the source files to abbreviated tier because the overall PR "size" is dominated by the lock file. Source files get shallow review while dependency analysis adds noise. | Exclude lock files from file count for triage threshold calculation. Lock files should be analyzed by dependency analysis, not by the code review pipeline. Add lock file patterns to the triage exclusion list. |
-| Dependency analysis + incremental re-review | First review catches a vulnerability advisory for package X. User pushes a commit updating X to a fixed version. Incremental re-review only reviews files changed since last review -- but the dependency analysis should re-evaluate package X. If dependency analysis is tied to the code review pipeline, it may not re-run if the lock file was not in the incremental changed-files set. | Run dependency analysis against the full current state, not the incremental delta. Dependency advisories are a snapshot-in-time assessment, not a diff-based assessment. |
-| Timeout resilience + retrieval context | The retrieval query is generated before executor invocation. It adds retrieved findings to the prompt, increasing its token count. For large PRs already near the timeout boundary, the additional tokens from retrieval context push the LLM into more turns, causing a timeout that would not have occurred without retrieval. | Track the marginal cost of retrieval context (additional tokens). If the PR is already classified as large (`tieredFiles.isLargePR`), reduce retrieval topK or disable retrieval entirely to preserve timeout budget. |
-| Timeout resilience + knowledge store recording | A partial review publishes findings for 15 of 42 files. The knowledge store records the head SHA as "reviewed." On the next push, incremental diff computes delta from this SHA. Files 16-42 were never reviewed but are marked as covered. Findings on those files are not surfaced in the incremental re-review. | When recording a partial review, store `coveredFiles` alongside `headSha`. Incremental diff should only consider files in `coveredFiles` as previously reviewed, not all files from the PR at that SHA. |
-| Intelligent retrieval + dependency bump PRs | A Dependabot PR bumps 5 packages. The retrieval query includes file paths like `package.json`, `package-lock.json`. These paths are in every dependency bump PR, causing retrieval to return findings from ALL previous dependency PRs regardless of which packages changed. The retrieval results are dominated by lock file path matches. | When constructing retrieval queries for dependency bump PRs (detected by author or label), exclude lock file paths and use package names instead: "react 18->19 upgrade, authentication middleware" rather than "package.json, package-lock.json". |
-| Embedding quality + growing memory store | As the memory store grows beyond 1000 entries, sqlite-vec's approximate nearest neighbor search introduces accuracy trade-offs. The vec0 virtual table uses an exact KNN implementation for small datasets but may need index tuning for larger datasets. The current implementation uses default parameters. | Monitor retrieval latency as the store grows. If latency exceeds 50ms per query, investigate vec0 index parameters. For v0.9, add retrieval latency to telemetry. The current prepared statement (line 165 of memory-store.ts) uses vec0's default search -- ensure this scales to 10K+ records. |
+| Usage analysis + timeout retry | Usage analysis adds 10-60s to pre-executor pipeline. First attempt times out. Retry also runs usage analysis, wasting 10-60s of the reduced timeout budget on analysis that already completed. | Cache usage analysis results keyed by (repo, headSha). On retry, reuse cached results. Skip usage analysis entirely if the retry timeout budget is under 300s. |
+| Checkpoint publishing + retrieval telemetry | Each checkpoint triggers a telemetry write (retrieval results for the checkpoint batch). Multiple checkpoints per review multiply the telemetry volume. A review with 3 checkpoints generates 3x the normal telemetry. | Telemetry should log once per review, not per checkpoint. Aggregate checkpoint retrieval data in memory and write a single telemetry record at review completion. |
+| Adaptive thresholds + recency weighting | Both modify the effective distance score. Adaptive threshold sets the cutoff; recency weighting adjusts individual distances. If both are aggressive, the combined effect excludes too many results. A finding at distance 0.35 (within default threshold 0.45) gets a recency penalty of 0.08 (old finding), pushing effective distance to 0.43. Adaptive threshold then tightens to 0.40 (based on knee-point of recent results), and the old finding is excluded. | Apply recency weighting BEFORE adaptive threshold computation. The adaptive threshold should be computed on recency-adjusted distances, not raw distances. This ensures the threshold accounts for the weighting. |
+| Cross-language equivalence + adaptive thresholds | Cross-language results have naturally higher distances (different embedding spaces). Adaptive threshold tightens based on same-language results (which cluster at lower distances). The tightened threshold excludes all cross-language results. | Compute adaptive threshold separately for same-language and cross-language result pools. Or: apply equivalence boost before threshold computation, same as recency weighting. |
+| Multi-package correlation + checkpoint publishing | Correlation analysis groups packages for combined analysis. If the grouped analysis is published as a checkpoint but the individual package analyses are not yet complete, the checkpoint shows a group summary without per-package details. Later, individual analyses complete but the group summary is already published. | Complete all package analyses before computing correlation groupings. Correlation is a post-processing step, not a streaming step. Do not publish correlation results as checkpoints. |
+| Dependency history + schema migration + telemetry | History writes and telemetry writes happen concurrently. Both use the same SQLite WAL journal. Heavy history writes during a Dependabot batch (10 PRs at once) create WAL contention that slows telemetry writes, which delays checkpoint completion. | Use separate database files for dependency history (in knowledge store DB) and retrieval telemetry (in telemetry DB). They already use separate `Database` instances -- verify they also use separate files. |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | ID | Severity | Prevention Phase | Verification Criteria |
 |---------|----|----------|------------------|-----------------------|
-| Changelog fetch unreliability | P1 | CRITICAL | Dependency analysis | Changelog hit rate > 50%. Fallback compare URL always produced. Per-dependency fetch < 2s. Total fetch budget < 5s. |
-| CVE data false positives | P2 | CRITICAL | Dependency analysis | OSV.dev as primary source. "Advisory" framing (never "vulnerability detected"). Confidence level shown on every advisory. Zero false "VULNERABILITY DETECTED" labels. |
-| Duplicate comments from chunks | P3 | CRITICAL | Timeout resilience | No duplicate inline comments on any PR. Single publish point per review attempt. Idempotency check before any publish. |
-| Race condition with in-flight MCP | P4 | CRITICAL | Timeout resilience | Cooldown between timeout and retry. Idempotency check passes before retry publish. Published comment IDs tracked. |
-| Naive query construction | P5 | CRITICAL | Retrieval improvements | Query includes risk signals and language context. Retrieval relevance measured (retrieved findings match actual finding categories > 40% of the time). |
-| Routine update noise | P6 | MODERATE | Dependency analysis | Max 5 full dependency analyses per review. Patch dev-deps get one-line summary. Dependabot PRs get reduced analysis. |
-| Breaking change false positives | P7 | MODERATE | Dependency analysis | "Potential" framing used (never definitive "BREAKING"). Evidence source included. No breaking flags on patch bumps. |
-| Adaptive threshold unpredictability | P8 | MODERATE | Retrieval improvements | Fixed threshold for v0.9. Threshold value logged in provenance. Result count does not drop > 50% between consecutive reviews on same repo. |
-| Embedding model drift | P9 | MODERATE | Retrieval improvements | Model version pinned in config. Drift detection sampling implemented (weekly). Stale records batch re-embedded, not purged-and-lost. |
-| Partial result semantics | P10 | MODERATE | Timeout resilience | "partial" conclusion added to ExecutionResult. Partial reviews clearly communicate incompleteness. coveredFiles tracked in knowledge store. |
-| Lock file transitive noise | P11 | MINOR | Dependency analysis | Manifest cross-reference implemented. Transitive changes summarized in one line. |
-| Polyglot retrieval bias | P12 | MINOR | Retrieval improvements | Multi-language PRs retrieve findings from all languages present. Language used as tie-breaker, not primary filter. |
-| Private repo URL leak | P13 | MINOR | Dependency analysis | No full external URLs in user-facing output. Changelog fetch uses unprivileged requests for external repos. |
-| Budget accounting gap | P14 | MINOR | Timeout resilience | Pre-executor pipeline time tracked. Total wallclock time available for debugging. Retry budget adjusted for pipeline overhead. |
+| Usage analysis false positives | P1 | CRITICAL | API usage analysis | File exclusion list implemented. Test file matches < 10% of results. Time budget enforced (< 3s). Memory usage < 200MB during analysis. |
+| Schema migration corruption | P2 | CRITICAL | Dependency history | All new DDL is additive-only. Migration tested against prod data dump. Schema version table exists. `PRAGMA integrity_check` passes post-migration. |
+| Orphaned checkpoint comments | P3 | CRITICAL | Checkpoint publishing | No inline comments without summary context. Buffer-and-flush architecture verified. Idempotency check covers checkpoint markers. |
+| Infinite retry loops | P4 | CRITICAL | Timeout retry | Max 1 retry enforced. Retry timeout < original timeout. No retry for repos with 3+ recent timeouts. Total elapsed time < 2x configured timeout. |
+| Adaptive threshold instability | P5 | CRITICAL | Adaptive thresholds | Minimum 8 candidates for knee-point. Fallback to percentile for small samples. Threshold floor 0.15, ceiling 0.65. Edge cases unit tested (K=1, K=2, all-same-distance). |
+| Multi-package over-grouping | P6 | MODERATE | Multi-package correlation | Groups based on dependency tree or exact npm scope, not name similarity. No groups larger than 5 packages. Individual analysis visible alongside group summary. |
+| Recency forgets old patterns | P7 | MODERATE | Recency weighting | Severity-aware decay implemented. Critical/major findings have 0.3 minimum floor. Recency impact capped at 0.05 distance penalty. Old critical findings still surface in testing. |
+| Telemetry observer effect | P8 | MODERATE | Retrieval telemetry | Separate database file. 10% sampling rate. Batch writes. 7-day retention. Retrieval latency increase < 5ms with telemetry enabled. |
+| Cross-language false equivalence | P9 | MODERATE | Cross-language equivalence | Manual curation only. Max 20 initial mappings. Each mapping has justification. Equivalence used as boost (10%), not override. User-visible attribution on cross-language results. |
+| Dependency history storage growth | P10 | MODERATE | Dependency history | 90-day full retention, 365-day summary retention. Per-repo 5000 row cap. Database size increase < 50% after enabling history. Purge runs on existing maintenance cycle. |
+| Checkpoint API rate limits | P11 | MINOR | Checkpoint publishing | Comments batched into single createReview call. No HTTP 403 errors in checkpoint path. |
+| Recency breaks test determinism | P12 | MINOR | Recency weighting | Injectable time parameter in weighting function. No `Date.now()` in production code path. All tests time-independent. |
+| Equivalence maintenance burden | P13 | MINOR | Cross-language equivalence | Versioned JSON file with metadata. Max 50 mappings. Quarterly review process documented. |
 
 ## Prioritized Risk Register
 
 | Priority | Pitfall | Impact | Probability | Rationale |
 |----------|---------|--------|-------------|-----------|
-| P0 | Naive query construction (P5) | High | Very High | The current query is demonstrably weak (title + file paths vs finding descriptions). Every retrieval call is suboptimal. Highest leverage improvement in v0.9. |
-| P0 | CVE false positives (P2) | Very High | High | NVD data quality is empirically poor (20K false positives documented). Wrong advisory data is worse than no data -- it destroys trust and creates false safety. |
-| P0 | Duplicate comments from chunks (P3) | High | High | Any chunked review implementation that publishes incrementally WILL produce duplicates without per-chunk idempotency. The existing architecture does not support partial publish state. |
-| P1 | Changelog unreliability (P1) | High | Very High | 30-50% of packages lack accessible changelogs. Without a graceful fallback cascade, half of dependency analyses show "no data." |
-| P1 | Race condition with in-flight MCP (P4) | High | Medium | Occurs when timeout fires during MCP tool execution. Medium probability because MCP calls are fast (single API call), but when it hits, the consequences (duplicate publish, stale state) are severe. |
-| P1 | Routine update noise (P6) | Medium | High | Every Dependabot/Renovate PR will trigger noise if dependency analysis treats all bumps equally. High probability because dependency-bump PRs are common. |
-| P2 | Breaking change false positives (P7) | Medium | High | Text-based "breaking" detection produces false positives frequently. Mitigated by "potential" framing. |
-| P2 | Partial result semantics (P10) | Medium | Medium | Only affects repos that experience timeouts (currently 10% on large repos). Impact grows as timeout resilience enables partial results by design. |
-| P2 | Embedding drift (P9) | Medium | Low | Only triggers on model version change or silent update. Voyage AI models are generally stable. Mitigated by version pinning. |
-| P3 | Adaptive threshold unpredictability (P8) | Low | Medium | Only relevant if adaptive thresholds are implemented (recommendation: skip for v0.9). |
-| P3 | Lock file noise (P11) | Low | Medium | Only affects PRs with lock file changes. Easily fixed with manifest cross-reference. |
-| P3 | Polyglot retrieval bias (P12) | Low | Low | Only affects polyglot repos with mixed-language PRs. Uncommon but addressable. |
-| P3 | Private repo URL leak (P13) | Low | Low | Only affects packages with private repo metadata. URL sanitization is straightforward. |
-| P3 | Budget accounting gap (P14) | Low | Medium | Causes slightly misleading timeout messages. Not functionally dangerous. |
+| P0 | Orphaned checkpoint comments (P3) | High | Very High | Any checkpoint implementation that publishes incrementally WILL leave orphaned comments on timeout. The existing executor architecture has no staged-publish capability. |
+| P0 | Infinite retry loops (P4) | Very High | High | Without explicit retry caps, the first large-repo timeout triggers unlimited retries. Each retry costs real money (LLM tokens) and blocks the queue. |
+| P0 | Adaptive threshold instability (P5) | High | Very High | Most repos have < 100 memories. Knee-point on < 8 samples is mathematically meaningless. Every new repo installation will hit this. |
+| P1 | Usage analysis false positives (P1) | High | High | Large repos (100+ files) with test suites will always produce false positives without file exclusion. Performance impact on timeout-prone repos is additive. |
+| P1 | Schema migration corruption (P2) | Very High | Medium | Only triggers if migration design is non-additive. Medium probability because the existing codebase uses additive patterns -- but the temptation to modify existing tables is strong. |
+| P1 | Recency forgets old patterns (P7) | High | High | Any exponential decay function will exclude old findings within a few half-lives. The default must be conservative or the learning system's value is destroyed. |
+| P2 | Multi-package over-grouping (P6) | Medium | High | Name-based grouping is the obvious-but-wrong first implementation. High probability because it is the simplest approach. |
+| P2 | Cross-language false equivalence (P9) | Medium | Medium | Only manifests when cross-language retrieval fires. Medium probability because polyglot repos are uncommon, but when it hits, the irrelevant findings damage trust. |
+| P2 | Telemetry observer effect (P8) | Medium | Medium | Only manifests under high traffic (10+ concurrent reviews). Medium probability but insidious because the performance degradation is gradual and hard to attribute. |
+| P2 | Dependency history storage growth (P10) | Medium | High | Every active repo with Dependabot/Renovate will accumulate history. Without retention, growth is guaranteed. |
+| P3 | Checkpoint API rate limits (P11) | Low | Medium | Only triggers when publishing 8+ comments in rapid succession. Easily prevented with batching. |
+| P3 | Recency breaks test determinism (P12) | Low | High | Will definitely cause flaky tests if not addressed, but fix is trivial (injectable time). |
+| P3 | Equivalence maintenance burden (P13) | Low | Medium | Only becomes a problem over time (6+ months). Low immediate risk. |
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Changelog unreliability (P1) | LOW | (1) Add compare URL fallback. (2) Add cache layer. No data migration needed. |
-| CVE false positives (P2) | MEDIUM | (1) Switch from NVD to OSV.dev. (2) Add confidence framing to output templates. (3) Audit existing advisory output for false-positive patterns. |
-| Duplicate comments (P3) | MEDIUM | (1) Add per-chunk idempotency or switch to progressive reduction. (2) Clean up duplicate comments on affected PRs via API. (3) Add duplicate detection to finding extraction. |
-| Race condition (P4) | LOW | (1) Add cooldown + idempotency check. Deploy immediately. (2) Clean up any stale partial reviews. |
-| Naive queries (P5) | LOW | (1) Update `queryText` construction to include risk signals. Pure code change, no data migration. (2) Existing embeddings are unaffected (queries change, documents stay). |
-| Routine noise (P6) | LOW | (1) Add categorization logic. (2) Add budget enforcement. No infrastructure changes. |
-| Breaking change false positives (P7) | LOW | (1) Change label from definitive to "potential." (2) Add evidence source. Template change only. |
-| Partial result semantics (P10) | MEDIUM | (1) Add "partial" conclusion to type. (2) Update all consumers (telemetry, knowledge store, error handling). (3) Add coveredFiles tracking. Requires type migration across codebase. |
+| Usage analysis false positives (P1) | LOW | (1) Add file exclusion list. (2) Add time budget. Pure code changes, no data migration. |
+| Schema migration corruption (P2) | HIGH | (1) Restore from backup. (2) Redesign migration as additive-only. (3) Re-deploy. If no backup exists, data loss is permanent. Prevention is essential. |
+| Orphaned checkpoint comments (P3) | MEDIUM | (1) Build cleanup script to delete orphaned comments via GitHub API. (2) Switch to buffer-and-flush architecture. (3) Run cleanup on affected PRs. |
+| Infinite retry loops (P4) | LOW | (1) Add retry cap (code change). (2) Kill any in-progress retry loops. (3) Deploy immediately. |
+| Adaptive threshold instability (P5) | LOW | (1) Add minimum sample size check. (2) Add floor/ceiling. Pure code changes. |
+| Multi-package over-grouping (P6) | LOW | (1) Switch from name-based to scope-based grouping. (2) No data migration needed. |
+| Recency forgets old patterns (P7) | LOW | (1) Adjust decay parameters. (2) Add severity-aware floor. No data changes -- retrieval is computed at query time. |
+| Telemetry observer effect (P8) | MEDIUM | (1) Migrate to separate database file. (2) Add sampling. (3) Purge existing over-sized telemetry data. May require brief downtime for database file reorganization. |
+| Cross-language false equivalence (P9) | LOW | (1) Reduce mapping table to high-confidence entries only. (2) Lower equivalence boost factor. Configuration change. |
+| Dependency history storage growth (P10) | MEDIUM | (1) Add retention purge. (2) Run initial purge (may take minutes for large databases). (3) Add VACUUM to maintenance cycle. |
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Kodiai codebase analysis: `src/execution/executor.ts` (timeout enforcement, AbortController, MCP tool publishing), `src/handlers/review.ts` (review pipeline, retrieval query construction, finding extraction, incremental diff, large PR triage), `src/learning/memory-store.ts` (vec0 virtual table, embedding storage, stale marking), `src/learning/isolation.ts` (retrieval with provenance, distance threshold filtering), `src/learning/embedding-provider.ts` (Voyage AI client, fail-open semantics), `src/lib/errors.ts` (error classification, timeout handling), `src/execution/config.ts` (Zod schemas, timeoutSeconds, retrieval config)
-- [Renovate changelog fetching docs](https://docs.renovatebot.com/key-concepts/changelogs/) -- multi-source changelog resolution, GraphQL API requirement, package registry metadata gaps
-- [Sonatype: The CVE Crisis (2025)](https://www.sonatype.com/resources/research/the-cve-crisis) -- 20K false positives, 150K false negatives, 64% unscored CVEs, 6-week average NVD scoring delay
-- [Sonatype: Vulnerability Scoring Gaps Report (2025)](https://www.helpnetsecurity.com/2025/11/24/sonatype-vulnerability-scoring-gaps-report/) -- 19% severity alignment, 62% overstated severity
-- [Google OSV.dev (2025)](https://github.com/google/osv.dev) -- disputed CVE handling, 50% NVD conversion rate, data quality improvements
+- Kodiai codebase analysis: `src/knowledge/store.ts` (SQLite schema, `ensureTableColumn` migration pattern, `purgeOldRuns` retention, `busy_timeout` WAL settings), `src/execution/executor.ts` (AbortController timeout, `onPublish` callback, MCP tool dispatch), `src/handlers/review.ts` (review pipeline, `extractFindingsFromReviewComments`, `ensureReviewOutputNotPublished` idempotency), `src/learning/memory-store.ts` (vec0 virtual table, `retrieveMemories`, `writeMemory` transaction), `src/learning/isolation.ts` (`distanceThreshold` filtering, `RetrievalWithProvenance`), `src/learning/retrieval-rerank.ts` (distance adjustment multipliers), `src/lib/timeout-estimator.ts` (complexity scoring, dynamic timeout), `src/lib/dep-bump-detector.ts` (existing detection pipeline, ecosystem mapping), `src/telemetry/store.ts` (WAL checkpoint pattern, insert frequency)
 
 ### Secondary (MEDIUM confidence)
-- [ScienceDirect: Can we trust tests to automate dependency updates?](https://www.sciencedirect.com/science/article/pii/S0164121221001941) -- tests detect 47% of direct faults, 35% of indirect faults in dependency updates
-- [Weaviate: When Good Models Go Bad](https://weaviate.io/blog/when-good-models-go-bad) -- embedding drift detection, model versioning, operational monitoring
-- [Voyage AI: voyage-3-large announcement (2025)](https://blog.voyageai.com/2025/01/07/voyage-3-large/) -- Matryoshka learning, dimension reduction, quantization-aware training
-- [npm-fetch-changelog](https://www.npmjs.com/package/npm-fetch-changelog) -- GitHub Release fallback to CHANGELOG.md parsing approach
-- [Renovate GitHub Discussion #14745](https://github.com/renovatebot/renovate/discussions/14745) -- supplying source/changelog URLs, registry metadata gaps
-- [Google OSV: Disputed CVE fix (2025)](https://socket.dev/blog/google-osv-fix-adds-500-new-advisories) -- 500+ advisories restored after policy change on disputed CVEs
+- SQLite documentation on ALTER TABLE limitations and transactional DDL behavior
+- GitHub REST API secondary rate limit documentation (20+ rapid requests trigger throttling)
+- Knee-point detection literature: L-method and Kneedle algorithm require minimum sample sizes for statistical validity (typically 15-50 data points)
+- Embedding retrieval best practices: recency weighting as secondary signal, severity-aware decay patterns from production recommendation systems
 
 ### Tertiary (LOW confidence)
-- General LLM timeout handling patterns from production AI systems (training data, not verified against specific implementations)
-- sqlite-vec scaling characteristics for 10K+ record datasets (documented as exact KNN, not ANN, but performance at scale needs empirical validation)
+- Cross-language package equivalence: no authoritative source exists. The claim that manual curation is the only viable approach is based on the absence of any reliable automated cross-ecosystem mapping system in training data (verified: no such system was found in web searches).
+- sqlite-vec performance characteristics at 10K+ records: documented as exact KNN (not ANN), but real-world performance with WAL contention under concurrent writes needs empirical validation in Kodiai's specific deployment environment.
 
 ---
-*Pitfalls research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
-*Researched: 2026-02-14*
-*Supersedes: 2026-02-13 v0.8 pitfalls research (different feature scope)*
+*Pitfalls research for: Kodiai v0.10 -- Advanced Signals (Usage Analysis, Dependency History, Multi-Package Correlation, Checkpoint Publishing, Timeout Retry, Adaptive Thresholds, Recency Weighting, Retrieval Telemetry, Cross-Language Equivalence)*
+*Researched: 2026-02-15*
+*Supersedes: 2026-02-14 v0.9 pitfalls research (different feature scope)*
