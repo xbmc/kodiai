@@ -41,6 +41,7 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { buildRetrievalQuery } from "../learning/retrieval-query.ts";
 import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
+import { applyRecencyWeighting } from "../learning/retrieval-recency.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -865,6 +866,10 @@ export function createReviewHandler(deps: {
   usageAnalyzer?: { analyzePackageUsage: typeof analyzePackageUsage };
   /** Optional injection for deterministic tests. */
   scopeCoordinator?: { detectScopeCoordination: typeof detectScopeCoordination };
+  /** Optional injection for deterministic tests. */
+  retrievalReranker?: { rerankByLanguage: typeof rerankByLanguage };
+  /** Optional injection for deterministic tests. */
+  retrievalRecency?: { applyRecencyWeighting: typeof applyRecencyWeighting };
   logger: Logger;
 }): void {
   const {
@@ -880,6 +885,8 @@ export function createReviewHandler(deps: {
     isolationLayer,
     usageAnalyzer,
     scopeCoordinator,
+    retrievalReranker,
+    retrievalRecency,
     logger,
   } = deps;
 
@@ -1696,9 +1703,26 @@ export function createReviewHandler(deps: {
               });
 
               const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
-              const reranked = retrieval.results.length > 0
-                ? rerankByLanguage({ results: retrieval.results, prLanguages })
+              const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
+              const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
+
+              const languageReranked = retrieval.results.length > 0
+                ? reranker({ results: retrieval.results, prLanguages })
                 : [];
+              const reranked = languageReranked.length > 0
+                ? recencyWeighter({ results: languageReranked })
+                : [];
+
+              logger.debug(
+                {
+                  ...baseLog,
+                  gate: "retrieval-rerank",
+                  recencyApplied: languageReranked.length > 0,
+                  languageResultCount: languageReranked.length,
+                  finalResultCount: reranked.length,
+                },
+                "Retrieval reranking complete",
+              );
 
               // Retrieval quality telemetry (RET-05): derived from reranked distances.
               // Guarded by telemetry.enabled and must be fail-open.

@@ -1857,6 +1857,207 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("applies recency weighting after language rerank and telemetry captures final distances", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createTypeScriptWorkspaceFixture();
+
+    let captured: any = null;
+    const telemetryStore = {
+      record: () => {},
+      recordRetrievalQuality: (entry: any) => {
+        captured = entry;
+      },
+      purgeOlderThan: () => 0,
+      checkpoint: () => {},
+      close: () => {},
+    } as never;
+
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 2,
+      generate: async () => ({
+        embedding: new Float32Array([0, 1]),
+        model: "test",
+        dimensions: 2,
+      }),
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: () => {
+        const mkRecord = (filePath: string) => ({
+          repo: "acme/repo",
+          owner: "acme",
+          findingId: 1,
+          reviewId: 1,
+          sourceRepo: "acme/repo",
+          findingText: "Example",
+          severity: "major",
+          category: "correctness",
+          filePath,
+          outcome: "accepted",
+          embeddingModel: "test",
+          embeddingDim: 2,
+          stale: false,
+        });
+
+        return {
+          results: [
+            { memoryId: 1, distance: 0.2, record: mkRecord("src/example.ts"), sourceRepo: "acme/repo" },
+            { memoryId: 2, distance: 0.4, record: mkRecord("src/example.py"), sourceRepo: "acme/repo" },
+          ],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 2,
+            query: { repo: "acme/repo", topK: 5, threshold: 0.3 },
+          },
+        };
+      },
+    };
+
+    const callOrder: string[] = [];
+    const languageReranked = [
+      {
+        memoryId: 1,
+        distance: 0.2,
+        adjustedDistance: 0.2,
+        languageMatch: true,
+        record: {
+          repo: "acme/repo",
+          owner: "acme",
+          findingId: 1,
+          reviewId: 1,
+          sourceRepo: "acme/repo",
+          findingText: "Example",
+          severity: "major",
+          category: "correctness",
+          filePath: "src/example.ts",
+          outcome: "accepted",
+          embeddingModel: "test",
+          embeddingDim: 2,
+          stale: false,
+        },
+        sourceRepo: "acme/repo",
+      },
+      {
+        memoryId: 2,
+        distance: 0.4,
+        adjustedDistance: 0.4,
+        languageMatch: false,
+        record: {
+          repo: "acme/repo",
+          owner: "acme",
+          findingId: 1,
+          reviewId: 1,
+          sourceRepo: "acme/repo",
+          findingText: "Example",
+          severity: "major",
+          category: "correctness",
+          filePath: "src/example.py",
+          outcome: "accepted",
+          embeddingModel: "test",
+          embeddingDim: 2,
+          stale: false,
+        },
+        sourceRepo: "acme/repo",
+      },
+    ];
+
+    const rerankMock = mock((_params: any) => {
+      callOrder.push("language");
+      return languageReranked as any;
+    });
+
+    const recencyMock = mock((params: any) => {
+      callOrder.push("recency");
+      expect(params.results).toBe(languageReranked);
+      return [
+        { ...languageReranked[0]!, adjustedDistance: 0.1 },
+        { ...languageReranked[1]!, adjustedDistance: 0.5 },
+      ];
+    });
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session",
+        }),
+      } as never,
+      telemetryStore,
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      retrievalReranker: { rerankByLanguage: rerankMock as any },
+      retrievalRecency: { applyRecencyWeighting: recencyMock as any },
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(callOrder).toEqual(["language", "recency"]);
+
+    if (!captured) {
+      throw new Error("Expected recordRetrievalQuality to be called");
+    }
+
+    // avgDistance must be computed from the final (post-recency) adjustedDistance values.
+    expect(captured.avgDistance).toBeCloseTo((0.1 + 0.5) / 2, 6);
+
+    await workspaceFixture.cleanup();
+  });
+
   test("telemetry.enabled: false suppresses recordRetrievalQuality while still exercising retrieval", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createTypeScriptWorkspaceFixture({ telemetryEnabled: false });
