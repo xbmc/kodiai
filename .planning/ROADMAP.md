@@ -83,7 +83,7 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 **Milestone Goal:** Deepen dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and quality telemetry.
 
 - [x] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
-- [ ] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
+- [x] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
 - [ ] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
 - [ ] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
 
@@ -118,9 +118,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 57-01-PLAN.md — Usage analyzer and scope coordinator pure-function modules
-- [ ] 57-02-PLAN.md — Retrieval recency weighting module
-- [ ] 57-03-PLAN.md — Wire all analysis modules into review pipeline and prompt
+- [x] 57-01-PLAN.md — Usage analyzer and scope coordinator pure-function modules
+- [x] 57-02-PLAN.md — Retrieval recency weighting module
+- [x] 57-03-PLAN.md — Wire all analysis modules into review pipeline and prompt
 
 ### Phase 58: Intelligence Layer
 **Goal**: Kodiai self-tunes retrieval distance thresholds per query using statistical analysis of candidate distances instead of relying on a fixed 0.3 cutoff
@@ -161,7 +161,7 @@ Plans:
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
 | 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
-| 57 | v0.10 | 0/3 | Not started | - |
+| 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 58 | v0.10 | 0/TBD | Not started | - |
 | 59 | v0.10 | 0/TBD | Not started | - |
 
