@@ -11,6 +11,7 @@
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
 - ✅ **v0.8 Conversational Intelligence** — Phases 42-50 (shipped 2026-02-14)
 - ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-15)
+- [ ] **v0.10 Advanced Signals** — Phases 56-59 (in progress)
 
 ## Phases
 
@@ -68,18 +69,6 @@ See `.planning/milestones/v0.7-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 
-**Milestone Goal:** Transform Kodiai from one-shot reviewer to conversational partner, enabling dialog-based refinement of reviews and intelligent adaptation to PR context.
-
-- [x] Phase 42: Commit Message Keywords & PR Intent (2/2 plans) -- completed 2026-02-14
-- [x] Phase 43: Auto-Profile Selection (2/2 plans) -- completed 2026-02-14
-- [x] Phase 44: Smart Finding Prioritization (2/2 plans) -- completed 2026-02-14
-- [x] Phase 45: Author Experience Adaptation (2/2 plans) -- completed 2026-02-14
-- [x] Phase 46: Conversational Review (3/3 plans) -- completed 2026-02-14
-- [x] Phase 47: v0.8 Verification Backfill (2/2 plans) -- completed 2026-02-14
-- [x] Phase 48: Conversational Fail-Open Hardening (2/2 plans) -- completed 2026-02-14
-- [x] Phase 49: Verification Artifacts for Phases 47-48 (2/2 plans) -- completed 2026-02-14
-- [x] Phase 50: Publish-Path Mention Sanitization (2/2 plans) -- completed 2026-02-14
-
 </details>
 
 <details>
@@ -88,6 +77,63 @@ See `.planning/milestones/v0.8-ROADMAP.md` for full phase details.
 See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 </details>
+
+### v0.10 Advanced Signals (In Progress)
+
+**Milestone Goal:** Deepen dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and quality telemetry.
+
+- [ ] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
+- [ ] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
+- [ ] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
+- [ ] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
+
+## Phase Details
+
+### Phase 56: Foundation Layer
+**Goal**: Kodiai has the data infrastructure and low-risk enrichments needed for advanced signals -- new tables for dependency history, retrieval quality telemetry flowing to the existing telemetry store, and unrecognized bracket tags surfaced as useful focus hints instead of being discarded
+**Depends on**: Phase 55 (v0.9 complete)
+**Requirements**: DEP-05, RET-05, INTENT-01
+**Success Criteria** (what must be TRUE):
+  1. When a dependency bump PR is reviewed and merged, Kodiai records the package name, version bump, semver classification, merge confidence, and advisory status in the knowledge store for later trend queries
+  2. After every review that uses retrieval, Kodiai logs retrieval quality metrics (result count, average distance, threshold used, language match ratio) to the telemetry database
+  3. When a PR title contains unrecognized bracket tags like `[Auth]` or `[iOS]`, Kodiai includes those tags as component/platform focus hints in the review prompt rather than silently ignoring them
+  4. Schema migrations are additive-only (new tables and nullable columns) with no modifications to existing tables
+**Plans**: TBD
+
+### Phase 57: Analysis Layer
+**Goal**: Kodiai enriches dependency reviews with workspace-aware usage evidence and multi-package coordination signals, and retrieval results favor recent memories over stale ones
+**Depends on**: Phase 56 (dep_bump_history table and retrieval telemetry must exist)
+**Requirements**: DEP-04, DEP-06, RET-04
+**Success Criteria** (what must be TRUE):
+  1. When a dependency bump has documented breaking changes, Kodiai greps the workspace for imports/usage of affected APIs and surfaces specific file:line evidence in the review (e.g., "you import foo.bar() at src/auth.ts:42 which was removed in v3")
+  2. When multiple packages sharing a scope prefix are updated together (e.g., @babel/core + @babel/parser), Kodiai detects and notes the coordination in the review context
+  3. Retrieval results from the last 30 days score higher than equivalent results from 6+ months ago, with a severity-aware decay floor of 0.3 that prevents CRITICAL/MAJOR findings from being forgotten
+  4. Usage analysis completes within a 3-second time budget and fails open (missing usage data never blocks the review)
+  5. Recency weighting chains after existing language-aware re-ranking without disrupting existing retrieval quality
+**Plans**: TBD
+
+### Phase 58: Intelligence Layer
+**Goal**: Kodiai self-tunes retrieval distance thresholds per query using statistical analysis of candidate distances instead of relying on a fixed 0.3 cutoff
+**Depends on**: Phase 56 (retrieval telemetry baseline needed to validate improvement)
+**Requirements**: RET-03
+**Success Criteria** (what must be TRUE):
+  1. When retrieval returns 8 or more candidates, Kodiai applies max-gap detection to find the natural distance cutoff between relevant and irrelevant results
+  2. When fewer than 8 candidates are returned, Kodiai falls back to a percentile-based threshold rather than attempting unstable gap detection
+  3. Adaptive thresholds are bounded by a floor of 0.15 and ceiling of 0.65, preventing pathological cutoffs
+  4. The threshold selection (adaptive vs. fallback vs. configured) is logged in retrieval telemetry for observability
+**Plans**: TBD
+
+### Phase 59: Resilience Layer
+**Goal**: Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope
+**Depends on**: Phase 56 (stable foundation), Phase 57 (analysis modules stable), Phase 58 (adaptive thresholds stable)
+**Requirements**: TMO-05, TMO-06
+**Success Criteria** (what must be TRUE):
+  1. During review execution, Kodiai accumulates partial review state (files analyzed, findings generated) and on timeout publishes whatever was completed using buffer-and-flush (no incremental/orphaned inline comments)
+  2. When a review times out with no published output, Kodiai retries once with the top 50% of files by risk score and a halved timeout budget
+  3. Retry is capped at exactly 1 attempt -- no second retry regardless of outcome
+  4. Repos with 3+ recent timeouts skip retry entirely to avoid wasting resources on chronically expensive repos
+  5. Checkpoint data and retry metadata are visible in telemetry for operational monitoring
+**Plans**: TBD
 
 ## Progress
 
@@ -104,7 +150,11 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
+| 56 | v0.10 | 0/TBD | Not started | - |
+| 57 | v0.10 | 0/TBD | Not started | - |
+| 58 | v0.10 | 0/TBD | Not started | - |
+| 59 | v0.10 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- v0.9 milestone archived*
+*Roadmap updated: 2026-02-15 -- v0.10 milestone roadmap created*

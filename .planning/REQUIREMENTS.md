@@ -34,7 +34,7 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ### Advanced Retrieval (Deferred)
 
-- **RET-06**: Kodiai recognizes cross-language concept equivalence in retrieval — needs empirical Voyage Code 3 testing before building normalization layer
+- **RET-06**: Kodiai recognizes cross-language concept equivalence in retrieval -- needs empirical Voyage Code 3 testing before building normalization layer
 
 ### Dependency Analysis Extensions (Deferred from v0.9)
 
@@ -44,8 +44,8 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Feature | Reason |
 |---------|--------|
-| Full dependency tree analysis | Scope explosion — transitive deps are npm audit/Dependabot's domain |
-| Automatic lockfile regeneration | Dangerous write operation, ecosystem-specific — advisory role only |
+| Full dependency tree analysis | Scope explosion -- transitive deps are npm audit/Dependabot's domain |
+| Automatic lockfile regeneration | Dangerous write operation, ecosystem-specific -- advisory role only |
 | Real-time CVE monitoring webhooks | Reimplements Dependabot; point-in-time analysis at review is sufficient |
 | Streaming partial review via SSE | GitHub API is REST; buffered output is the established pattern |
 | Multi-pass review-the-review | Doubles cost; enforcement pipeline IS the validation layer |
@@ -58,21 +58,21 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEP-04 | TBD | Pending |
-| DEP-05 | TBD | Pending |
-| DEP-06 | TBD | Pending |
-| TMO-05 | TBD | Pending |
-| TMO-06 | TBD | Pending |
-| RET-03 | TBD | Pending |
-| RET-04 | TBD | Pending |
-| RET-05 | TBD | Pending |
-| INTENT-01 | TBD | Pending |
+| DEP-04 | Phase 57 | Pending |
+| DEP-05 | Phase 56 | Pending |
+| DEP-06 | Phase 57 | Pending |
+| TMO-05 | Phase 59 | Pending |
+| TMO-06 | Phase 59 | Pending |
+| RET-03 | Phase 58 | Pending |
+| RET-04 | Phase 57 | Pending |
+| RET-05 | Phase 56 | Pending |
+| INTENT-01 | Phase 56 | Pending |
 
 **Coverage:**
 - v0.10 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-15*
-*Last updated: 2026-02-15 after initial definition*
+*Last updated: 2026-02-15 -- traceability updated with phase mappings*

@@ -5,17 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-15)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.10 Advanced Signals — Defining requirements
+**Current focus:** Phase 56 - Foundation Layer (v0.10 Advanced Signals)
 
 ## Current Position
 
 **Milestone:** v0.10 Advanced Signals
-**Phase:** Not started (defining requirements)
-**Plan:** —
-**Status:** Defining requirements
-**Last Activity:** 2026-02-15 — Milestone v0.10 started
+**Phase:** 56 (1 of 4 in v0.10)
+**Plan:** 0 of TBD in current phase
+**Status:** Ready to plan
+**Last Activity:** 2026-02-15 -- v0.10 roadmap created (Phases 56-59)
 
-**Progress:** [░░░░░░░░░░] 0%
+**Progress:** [░░░░░░░░░░] 0% (of v0.10)
 
 ## Performance Metrics
 
@@ -29,6 +29,14 @@ See: `.planning/PROJECT.md` (updated 2026-02-15)
 ### Decisions
 
 All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
+
+### Key Constraints for v0.10
+
+- Timeout retry capped at 1 max to avoid queue starvation
+- Adaptive thresholds need minimum 8-candidate guard
+- Recency weighting needs severity-aware decay floor (0.3 minimum)
+- Checkpoint publishing must use buffer-and-flush on abort, not streaming
+- Schema migrations must be additive-only (new tables, nullable columns)
 
 ### Pending Todos
 
@@ -52,6 +60,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped At:** Defining v0.10 requirements
+**Stopped At:** v0.10 roadmap created, ready to plan Phase 56
 **Resume File:** None
-**Next action:** Define requirements, create roadmap
+**Next action:** Plan Phase 56 (Foundation Layer)
