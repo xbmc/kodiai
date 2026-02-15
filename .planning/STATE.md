@@ -5,17 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.9 Phase 53 — Dependency Bump Detection
+**Current focus:** v0.9 Phase 54 — Security Advisory & Changelog Enrichment
 
 ## Current Position
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
-**Phase:** 53 of 55 (Dependency Bump Detection)
-**Plan:** 2 of 2 complete
-**Status:** Phase Complete
-**Last Activity:** 2026-02-14 — Completed 53-02-PLAN.md (integration wiring)
+**Phase:** 54 of 55 (Security Advisory & Changelog)
+**Plan:** 1 of 2 complete
+**Status:** In Progress
+**Last Activity:** 2026-02-15 — Completed 54-01-PLAN.md (enrichment module)
 
-**Progress:** [██████████] 100%
+**Progress:** [█████████░] 50%
 
 ## Performance Metrics
 
@@ -45,6 +45,9 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **53-01:** Group bumps marked isGroup: true with ecosystem only, no per-package extraction
 - **53-02:** Dep bump detection placed after diff collection since allChangedFiles needed for ecosystem resolution
 - **53-02:** Dep bump prompt section injected after author tier, before path instructions
+- **54-01:** Breaking change markers ordered most-specific first to prevent duplicate matches
+- **54-01:** Removed generic BREAKING word marker; kept INCOMPATIBLE, heading, and bold patterns
+- **54-01:** Both advisory API calls failing returns null (fail-open); one failing returns partial data
 
 ### Pending Todos
 
@@ -69,7 +72,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-14
-**Stopped At:** Completed 53-02-PLAN.md (integration wiring) — Phase 53 complete
+**Last session:** 2026-02-15
+**Stopped At:** Completed 54-01-PLAN.md (enrichment module)
 **Resume File:** None
-**Next action:** Begin Phase 54 (Changelog Enrichment)
+**Next action:** Execute 54-02-PLAN.md (integration wiring)
