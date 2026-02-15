@@ -11,16 +11,16 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
 **Phase:** 54 of 55 (Security Advisory & Changelog)
-**Plan:** 1 of 2 complete
-**Status:** In Progress
-**Last Activity:** 2026-02-15 — Completed 54-01-PLAN.md (enrichment module)
+**Plan:** 2 of 2 complete
+**Status:** Phase Complete
+**Last Activity:** 2026-02-15 — Completed 54-02-PLAN.md (integration wiring)
 
-**Progress:** [█████████░] 50%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 152
+- Total plans completed: 153
 - Total milestones shipped: 8
 - Total phases completed: 53
 
@@ -48,6 +48,8 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **54-01:** Breaking change markers ordered most-specific first to prevent duplicate matches
 - **54-01:** Removed generic BREAKING word marker; kept INCOMPATIBLE, heading, and bold patterns
 - **54-01:** Both advisory API calls failing returns null (fail-open); one failing returns partial data
+- **54-02:** Reuse idempotencyOctokit for enrichment calls (octokit not in scope at enrichment point)
+- **54-02:** Advisory section capped at 3 advisories max; informational framing per STATE.md concern
 
 ### Pending Todos
 
@@ -73,6 +75,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped At:** Completed 54-01-PLAN.md (enrichment module)
+**Stopped At:** Completed 54-02-PLAN.md (integration wiring) — Phase 54 complete
 **Resume File:** None
-**Next action:** Execute 54-02-PLAN.md (integration wiring)
+**Next action:** Phase 55 or milestone wrap-up
