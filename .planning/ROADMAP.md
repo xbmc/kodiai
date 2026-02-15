@@ -163,7 +163,10 @@ Plans:
   1. Kodiai produces a merge confidence score computed from semver classification, advisory presence/absence, and breaking change detection
   2. The merge confidence is displayed prominently in the review summary with human-readable rationale explaining what contributed to the score
   3. A patch bump with no advisories and no breaking changes produces high confidence; a major bump with known CVEs produces low confidence
-**Plans:** TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 55-01-PLAN.md — TDD: computeMergeConfidence scoring function + types
+- [ ] 55-02-PLAN.md — Wire confidence into review pipeline and prompt rendering
 
 ## Progress
 
