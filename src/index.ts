@@ -13,6 +13,7 @@ import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
+import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
@@ -144,6 +145,13 @@ createMentionHandler({
   logger,
 });
 createFeedbackSyncHandler({
+  eventRouter,
+  jobQueue,
+  githubApp,
+  knowledgeStore,
+  logger,
+});
+createDepBumpMergeHistoryHandler({
   eventRouter,
   jobQueue,
   githubApp,
