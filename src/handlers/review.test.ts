@@ -1847,7 +1847,10 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     expect(entry.prNumber).toBe(101);
     expect(entry.eventType).toBe("pull_request");
     expect(entry.topK).toBe(5);
-    expect(entry.distanceThreshold).toBe(0.3);
+    // < 8 candidates -> percentile fallback (idx=floor(2*0.75)=1)
+    // adjusted distances: 0.2*0.85=0.17, 0.4*1.15=0.46 -> threshold=0.46
+    expect(entry.distanceThreshold).toBeCloseTo(0.46, 6);
+    expect(entry.thresholdMethod).toBe("percentile");
     expect(entry.resultCount).toBe(2);
     expect(entry.languageMatchRatio).toBe(0.5);
 
