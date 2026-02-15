@@ -82,6 +82,38 @@ export type GlobalPatternRecord = {
   count: number;
 };
 
+export type DepBumpSource = "dependabot" | "renovate" | "unknown";
+
+export type SemverBumpType = "major" | "minor" | "patch" | "unknown";
+
+export type MergeConfidenceLevel = "high" | "medium" | "low";
+
+export type AdvisoryStatus = "none" | "present" | "unknown";
+
+export type AdvisoryMaxSeverity = "critical" | "high" | "medium" | "low" | "unknown";
+
+export type DepBumpMergeHistoryRecord = {
+  repo: string;
+  prNumber: number;
+
+  mergedAt?: string | null;
+  deliveryId?: string | null;
+  source: DepBumpSource;
+
+  signalsJson?: string | null;
+  packageName?: string | null;
+  oldVersion?: string | null;
+  newVersion?: string | null;
+  semverBumpType?: SemverBumpType | null;
+
+  mergeConfidenceLevel?: MergeConfidenceLevel | null;
+  mergeConfidenceRationaleJson?: string | null;
+
+  advisoryStatus?: AdvisoryStatus | null;
+  advisoryMaxSeverity?: AdvisoryMaxSeverity | null;
+  isSecurityBump?: boolean | null;
+};
+
 export type FeedbackReaction = {
   repo: string;
   reviewId: number;
@@ -169,6 +201,7 @@ export type KnowledgeStore = {
   listRecentFindingCommentCandidates(repo: string, limit?: number): FindingCommentCandidate[];
   recordSuppressionLog(entries: SuppressionLogEntry[]): void;
   recordGlobalPattern(entry: GlobalPatternRecord): void;
+  recordDepBumpMergeHistory(entry: DepBumpMergeHistoryRecord): void;
   getRepoStats(repo: string, sinceDays?: number): RepoStats;
   getRepoTrends(repo: string, days: number): TrendData[];
   checkAndClaimRun(params: { repo: string; prNumber: number; baseSha: string; headSha: string; deliveryId: string; action: string }): RunStateCheck;

@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
+  DepBumpMergeHistoryRecord,
   FeedbackReaction,
   FindingByCommentId,
   FindingCommentCandidate,
@@ -316,6 +317,36 @@ export function createKnowledgeStore(opts: {
 
   db.run("CREATE INDEX IF NOT EXISTS idx_author_cache_lookup ON author_cache(repo, author_login)");
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS dep_bump_merge_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      repo TEXT NOT NULL,
+      pr_number INTEGER NOT NULL,
+      merged_at TEXT,
+      delivery_id TEXT,
+      source TEXT,
+      signals_json TEXT,
+      package_name TEXT,
+      old_version TEXT,
+      new_version TEXT,
+      semver_bump_type TEXT,
+      merge_confidence_level TEXT,
+      merge_confidence_rationale_json TEXT,
+      advisory_status TEXT,
+      advisory_max_severity TEXT,
+      is_security_bump INTEGER,
+      UNIQUE(repo, pr_number)
+    )
+  `);
+
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_dep_bump_merge_repo_created ON dep_bump_merge_history(repo, created_at)",
+  );
+  db.run(
+    "CREATE INDEX IF NOT EXISTS idx_dep_bump_merge_repo_pkg ON dep_bump_merge_history(repo, package_name)",
+  );
+
   const recordReviewStmt = db.query(`
     INSERT INTO reviews (
       repo, pr_number, head_sha, delivery_id,
@@ -398,6 +429,42 @@ export function createKnowledgeStore(opts: {
     )
     ON CONFLICT(severity, category, confidence_band, pattern_fingerprint)
     DO UPDATE SET count = count + excluded.count
+  `);
+
+  const recordDepBumpMergeHistoryStmt = db.query(`
+    INSERT OR IGNORE INTO dep_bump_merge_history (
+      repo,
+      pr_number,
+      merged_at,
+      delivery_id,
+      source,
+      signals_json,
+      package_name,
+      old_version,
+      new_version,
+      semver_bump_type,
+      merge_confidence_level,
+      merge_confidence_rationale_json,
+      advisory_status,
+      advisory_max_severity,
+      is_security_bump
+    ) VALUES (
+      $repo,
+      $prNumber,
+      $mergedAt,
+      $deliveryId,
+      $source,
+      $signalsJson,
+      $packageName,
+      $oldVersion,
+      $newVersion,
+      $semverBumpType,
+      $mergeConfidenceLevel,
+      $mergeConfidenceRationaleJson,
+      $advisoryStatus,
+      $advisoryMaxSeverity,
+      $isSecurityBump
+    )
   `);
 
   const checkRunExistsStmt = db.query(
@@ -697,6 +764,31 @@ export function createKnowledgeStore(opts: {
         $confidenceBand: entry.confidenceBand,
         $patternFingerprint: entry.patternFingerprint,
         $count: entry.count,
+      });
+    },
+
+    recordDepBumpMergeHistory(entry: DepBumpMergeHistoryRecord): void {
+      recordDepBumpMergeHistoryStmt.run({
+        $repo: entry.repo,
+        $prNumber: entry.prNumber,
+        $mergedAt: entry.mergedAt ?? null,
+        $deliveryId: entry.deliveryId ?? null,
+        $source: entry.source,
+        $signalsJson: entry.signalsJson ?? null,
+        $packageName: entry.packageName ?? null,
+        $oldVersion: entry.oldVersion ?? null,
+        $newVersion: entry.newVersion ?? null,
+        $semverBumpType: entry.semverBumpType ?? null,
+        $mergeConfidenceLevel: entry.mergeConfidenceLevel ?? null,
+        $mergeConfidenceRationaleJson: entry.mergeConfidenceRationaleJson ?? null,
+        $advisoryStatus: entry.advisoryStatus ?? null,
+        $advisoryMaxSeverity: entry.advisoryMaxSeverity ?? null,
+        $isSecurityBump:
+          entry.isSecurityBump === undefined || entry.isSecurityBump === null
+            ? null
+            : entry.isSecurityBump
+              ? 1
+              : 0,
       });
     },
 

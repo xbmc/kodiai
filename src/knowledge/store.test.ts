@@ -428,6 +428,53 @@ describe("KnowledgeStore", () => {
     expect(row.count).toBe(5);
   });
 
+  test("recordDepBumpMergeHistory persists idempotent dep bump merge row", () => {
+    fixture.store.recordDepBumpMergeHistory({
+      repo: "owner/repo",
+      prNumber: 123,
+      mergedAt: "2026-02-15T00:00:00Z",
+      deliveryId: "delivery-merge-1",
+      source: "dependabot",
+      signalsJson: '["title","sender"]',
+      packageName: "lodash",
+      oldVersion: "4.17.21",
+      newVersion: "4.17.22",
+      semverBumpType: "patch",
+      mergeConfidenceLevel: "high",
+      mergeConfidenceRationaleJson: '["title-match"]',
+      advisoryStatus: "none",
+      advisoryMaxSeverity: "unknown",
+      isSecurityBump: false,
+    });
+
+    fixture.store.recordDepBumpMergeHistory({
+      repo: "owner/repo",
+      prNumber: 123,
+      source: "dependabot",
+      packageName: "lodash",
+    });
+
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const countRow = db
+      .query(
+        "SELECT COUNT(*) AS count FROM dep_bump_merge_history WHERE repo = ? AND pr_number = ?",
+      )
+      .get("owner/repo", 123) as { count: number };
+    const row = db
+      .query(
+        "SELECT repo, pr_number, source, package_name, semver_bump_type FROM dep_bump_merge_history WHERE repo = ? AND pr_number = ?",
+      )
+      .get("owner/repo", 123) as Record<string, unknown>;
+    db.close();
+
+    expect(countRow.count).toBe(1);
+    expect(row.repo).toBe("owner/repo");
+    expect(row.pr_number).toBe(123);
+    expect(row.source).toBe("dependabot");
+    expect(row.package_name).toBe("lodash");
+    expect(row.semver_bump_type).toBe("patch");
+  });
+
   test("getRepoStats returns aggregate totals and top files", () => {
     const reviewId = fixture.store.recordReview({
       repo: "owner/repo",
