@@ -8,10 +8,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.8 Conversational Intelligence
+## Latest Release: v0.9 Smart Dependencies & Resilience
 
-**Shipped:** 2026-02-14
-**Phases:** 42-50 (9 phases, 19 plans, ~66 commits)
+**Shipped:** 2026-02-15
+**Phases:** 51-55 (5 phases, 11 plans)
+
+**Delivered:**
+- Dynamic timeout scaling and auto scope reduction for large PRs, with informative partial review messages instead of generic errors
+- Multi-signal retrieval query builder incorporating PR intent, languages, diff patterns, and author tier with language-aware re-ranking
+- Three-stage dependency bump detection pipeline (detect, extract, classify) identifying Dependabot/Renovate PRs with semver analysis
+- Security advisory lookup via GitHub Advisory Database and changelog fetching with three-tier fallback and breaking change detection
+- Composite merge confidence scoring synthesizing semver, advisory status, and breaking change signals into actionable guidance
+- 865 tests passing (100% pass rate)
+
+<details>
+<summary>Previous Release: v0.8 Conversational Intelligence (2026-02-14)</summary>
 
 **Delivered:**
 - PR intent parser extracting bracket tags, conventional commit prefixes, and breaking change signals from PR metadata
@@ -20,28 +31,17 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Author experience adaptation classifying contributors into tiers with tone-adjusted review feedback
 - Conversational review enabling @kodiai follow-up responses on review findings with thread context and rate limiting
 - Defense-in-depth mention sanitization across all 12 outbound publish paths preventing self-trigger loops
-- 736 tests passing (100% pass rate)
+
+</details>
 
 <details>
-<summary>Previous Release: v0.7 Intelligent Review Content (2026-02-14)</summary>
+<summary>v0.7 Intelligent Review Content (2026-02-14)</summary>
 
 **Delivered:**
 - Language-aware enforcement with 10-pattern safety catalog (auto-suppress tooling noise, elevate C++ null deref/Go unchecked errors)
 - Risk-weighted file prioritization for large PRs (5-dimension scoring, tiered analysis for top 50 files)
 - Feedback-driven suppression with safety floors (auto-suppress after 3+ thumbs-down from 3+ users across 2+ PRs)
 - Fail-open enforcement pipeline with composable config schema
-
-</details>
-
-<details>
-<summary>v0.6 Review Output Formatting & UX (2026-02-14)</summary>
-
-**Delivered:**
-- Structured five-section review template (What Changed → Strengths → Observations → Suggestions → Verdict)
-- Impact vs preference categorization separating real risks from style nits with inline severity tags
-- Explicit merge recommendations using blocker-driven verdict logic
-- Embedded Review Details as compact 4-line factual appendix in summary comments
-- Delta re-review formatting showing only what changed with transition-based verdicts
 
 </details>
 
@@ -104,15 +104,19 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - ✓ Review mode override via keywords (`[strict-review]`, `[quick-review]`, `[security-review]`, `[style-ok]`, `[no-review]`) — v0.8
 - ✓ Defense-in-depth mention sanitization across all outbound publish paths — v0.8
 
+- ✓ Dynamic timeout scaling from PR complexity with auto scope reduction for high-risk PRs — v0.9
+- ✓ Informative partial review messages replacing generic timeout errors — v0.9
+- ✓ Multi-signal retrieval queries using PR intent, languages, diff patterns, and author tier — v0.9
+- ✓ Language-aware post-retrieval re-ranking boosting same-language findings — v0.9
+- ✓ Three-stage dependency bump detection (detect, extract, classify) for Dependabot/Renovate PRs — v0.9
+- ✓ Security advisory lookup via GitHub Advisory Database with severity and remediation info — v0.9
+- ✓ Changelog fetching with three-tier fallback (GitHub Releases, CHANGELOG.md, compare URL) — v0.9
+- ✓ Breaking change detection from changelog content and release notes — v0.9
+- ✓ Composite merge confidence scoring synthesizing semver, advisory, and breaking change signals — v0.9
+
 ### Active
 
-#### Current Milestone: v0.9 Smart Dependencies & Resilience
-
-**Goal:** Make Kodiai smarter about dependency bumps, resilient to large PR timeouts, and more precise in knowledge retrieval.
-
-- [ ] Dependency bump analysis with changelog, CVE, and breaking change reporting
-- [ ] Timeout and large PR resilience with progressive/chunked review and partial result publishing
-- [ ] Intelligent retrieval improvements with multi-signal queries, adaptive thresholds, and language-aware boosting
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -133,11 +137,11 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
 - **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
-- **Codebase:** ~58,594 lines of TypeScript, 736 tests passing (100% pass rate)
+- **Codebase:** ~62,385 lines of TypeScript, 865 tests passing (100% pass rate)
 
 ## Current State
 
-v0.8 ships an installable GitHub App that:
+v0.9 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -158,18 +162,29 @@ v0.8 ships an installable GitHub App that:
 - Delivers explicit merge recommendations using blocker-driven verdict logic
 - Embeds Review Details as minimal 4-line appendix in summary comments
 - Shows delta-focused re-reviews highlighting only new/resolved/still-open findings with transition verdicts
-- **Auto-suppresses formatting/import violations when tooling configs detected (7 languages)**
-- **Elevates safety-critical patterns to CRITICAL/MAJOR severity (C++ null deref, Go unchecked errors, Python bare except)**
-- **Applies risk-weighted file prioritization for large PRs (>50 files) with tiered analysis (top 30 full, next 20 abbreviated)**
-- **Learns from thumbs-down reactions and auto-suppresses patterns after 3+ rejections from 3+ users across 2+ PRs**
-- **Enforces safety floors preventing suppression of CRITICAL and MAJOR security/correctness findings**
-- **Parses PR title keywords and conventional commit prefixes for structured review intent signaling**
-- **Auto-selects review depth profile based on PR size (strict ≤100, balanced 101-500, minimal >500 lines)**
-- **Prioritizes findings using multi-factor composite scoring (severity + file risk + category + recurrence)**
-- **Adapts review tone based on author experience tier (first-time/regular/core contributors)**
-- **Enables conversational follow-up via @kodiai replies to review findings with thread context and rate limiting**
-- **Sanitizes outgoing mentions across all 12 publish paths to prevent self-trigger loops**
-- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression, prioritization weights, conversation limits)
+- Auto-suppresses formatting/import violations when tooling configs detected (7 languages)
+- Elevates safety-critical patterns to CRITICAL/MAJOR severity (C++ null deref, Go unchecked errors, Python bare except)
+- Applies risk-weighted file prioritization for large PRs (>50 files) with tiered analysis (top 30 full, next 20 abbreviated)
+- Learns from thumbs-down reactions and auto-suppresses patterns after 3+ rejections from 3+ users across 2+ PRs
+- Enforces safety floors preventing suppression of CRITICAL and MAJOR security/correctness findings
+- Parses PR title keywords and conventional commit prefixes for structured review intent signaling
+- Auto-selects review depth profile based on PR size (strict ≤100, balanced 101-500, minimal >500 lines)
+- Prioritizes findings using multi-factor composite scoring (severity + file risk + category + recurrence)
+- Adapts review tone based on author experience tier (first-time/regular/core contributors)
+- Enables conversational follow-up via @kodiai replies to review findings with thread context and rate limiting
+- Sanitizes outgoing mentions across all 12 publish paths to prevent self-trigger loops
+- **Estimates timeout risk and dynamically scales timeouts based on PR complexity (file count, LOC, language)**
+- **Auto-reduces review scope for high-risk PRs (minimal profile + capped files) when auto-profile selected**
+- **Replaces generic timeout errors with informative messages showing what was/was not reviewed**
+- **Constructs multi-signal retrieval queries using PR intent, languages, diff patterns, and author tier**
+- **Applies language-aware post-retrieval re-ranking to boost same-language historical findings**
+- **Detects dependency bump PRs from title patterns, labels, and branch prefixes (Dependabot/Renovate)**
+- **Extracts and classifies version bumps (major/minor/patch) with semver analysis**
+- **Queries GitHub Advisory Database for known CVEs affecting dependency versions**
+- **Fetches changelog/release notes with three-tier fallback (releases, CHANGELOG.md, compare URL)**
+- **Detects breaking changes from changelog content and surfaces them in reviews**
+- **Produces composite merge confidence scores with human-readable rationale**
+- Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression, prioritization weights, conversation limits, timeout settings)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
 
@@ -231,6 +246,17 @@ v0.8 ships an installable GitHub App that:
 | Optional finding enrichment via callback | Decoupled knowledge store from mention context via findingLookup callback | ✓ Good — v0.8 |
 | Narrow fail-open guards on enrichment | Catch only enrichment failures, not structural errors; preserves degraded response path | ✓ Good — v0.8 |
 | Defense-in-depth publish-path sanitization | botHandles threaded through ExecutionContext to all MCP servers for self-trigger prevention | ✓ Good — v0.8 |
+| Dynamic timeout scaling formula | base*(0.5+complexity), clamped [30,1800]; opt-out via config | ✓ Good — v0.9 |
+| Scope reduction respects explicit profiles | Auto-reduce only when profileSelection.source === "auto" | ✓ Good — v0.9 |
+| Retrieval query 800-char cap | Prevents embedding quality degradation from long queries | ✓ Good — v0.9 |
+| Mild language reranking multipliers (0.85/1.15) | Tiebreaker not dominant factor; unknown-language neutral | ✓ Good — v0.9 |
+| Two-signal dep bump detection | Requires both title pattern AND (label OR branch prefix) to prevent false positives | ✓ Good — v0.9 |
+| Hand-rolled semver parser | ~15 lines vs 376KB npm semver package; sufficient for comparison | ✓ Good — v0.9 |
+| Both advisory calls failing = null (fail-open) | One failing returns partial data; never blocks review | ✓ Good — v0.9 |
+| Advisory cap at 3 + informational framing | Prevents prompt bloat; avoids false alarm language | ✓ Good — v0.9 |
+| Changelog three-tier fallback | GitHub Releases → CHANGELOG.md → compare URL; bounded to 1500 chars | ✓ Good — v0.9 |
+| Severity numeric map for O(1) comparison | Avoids indexOf in confidence scoring hot path | ✓ Good — v0.9 |
+| Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-14 after v0.9 milestone start*
+*Last updated: 2026-02-15 after v0.9 milestone*
