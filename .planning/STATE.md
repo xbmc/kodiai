@@ -11,18 +11,19 @@ See: `.planning/PROJECT.md` (updated 2026-02-15)
 
 **Milestone:** v0.10 Advanced Signals
 **Phase:** 56 (1 of 4 in v0.10)
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 3
 **Status:** Ready to execute
 **Last Activity:** 2026-02-15
 
-**Progress:** [███░░░░░░░] 33% (of v0.10)
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
 | Plan | Duration | Scope | Files |
 |------|----------|-------|-------|
 | Phase 56 P01 | 6min | 2 tasks | 6 files |
+| Phase 56 P02 | 9m | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -30,6 +31,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-15)
 
 All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 56]: Store dep bump merge history in knowledge DB keyed by (repo, pr_number) using INSERT OR IGNORE to handle redeliveries
+- [Phase 56]: Use INSERT OR IGNORE with a partial unique index on retrieval_quality(delivery_id) to dedupe webhook redeliveries
+- [Phase 56]: Compute retrieval avg_distance and language_match_ratio from reranked adjustedDistance/languageMatch (not raw distances)
 
 ### Key Constraints for v0.10
 
@@ -60,7 +63,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-15T18:11:08.406Z
-**Stopped At:** Completed 56-01-PLAN.md
+**Last session:** 2026-02-15T18:25:20.046Z
+**Stopped At:** Completed 56-02-PLAN.md
 **Resume File:** None
 **Next action:** Execute Phase 56 Plan 02
