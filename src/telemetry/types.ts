@@ -8,6 +8,7 @@ export type TelemetryRecord = {
   deliveryId?: string;
   repo: string;
   prNumber?: number;
+  prAuthor?: string;
   eventType: string;
   provider?: string;
   model: string;
@@ -53,6 +54,8 @@ export type RetrievalQualityRecord = {
 export type TelemetryStore = {
   /** Insert a telemetry record into the executions table. */
   record(entry: TelemetryRecord): void;
+  /** Count timeouts for repo+author in last 7 days. */
+  countRecentTimeouts?(repo: string, author: string): number;
   /** Insert a retrieval quality record into the retrieval_quality table. */
   recordRetrievalQuality(entry: RetrievalQualityRecord): void;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */

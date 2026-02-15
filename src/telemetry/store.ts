@@ -41,6 +41,7 @@ export function createTelemetryStore(opts: {
       delivery_id TEXT,
       repo TEXT NOT NULL,
       pr_number INTEGER,
+      pr_author TEXT,
       event_type TEXT NOT NULL,
       provider TEXT NOT NULL DEFAULT 'anthropic',
       model TEXT NOT NULL,
@@ -56,6 +57,13 @@ export function createTelemetryStore(opts: {
       stop_reason TEXT
     )
   `);
+
+  // Additive column migration for older telemetry DBs
+  try {
+    db.run("ALTER TABLE executions ADD COLUMN pr_author TEXT");
+  } catch {
+    // Column already exists -- safe to ignore
+  }
 
   // Create retrieval_quality table (additive-only migration)
   db.run(`
@@ -107,11 +115,11 @@ export function createTelemetryStore(opts: {
   // Prepared insert statement (cached for performance)
   const insertStmt = db.query(`
     INSERT INTO executions (
-      delivery_id, repo, pr_number, event_type, provider, model,
+      delivery_id, repo, pr_number, pr_author, event_type, provider, model,
       input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
       duration_ms, cost_usd, conclusion, session_id, num_turns, stop_reason
     ) VALUES (
-      $deliveryId, $repo, $prNumber, $eventType, $provider, $model,
+      $deliveryId, $repo, $prNumber, $prAuthor, $eventType, $provider, $model,
       $inputTokens, $outputTokens, $cacheReadTokens, $cacheCreationTokens,
       $durationMs, $costUsd, $conclusion, $sessionId, $numTurns, $stopReason
     )
@@ -149,6 +157,7 @@ export function createTelemetryStore(opts: {
         $deliveryId: entry.deliveryId ?? null,
         $repo: entry.repo,
         $prNumber: entry.prNumber ?? null,
+        $prAuthor: entry.prAuthor ?? null,
         $eventType: entry.eventType,
         $provider: entry.provider ?? "anthropic",
         $model: entry.model,
@@ -165,6 +174,18 @@ export function createTelemetryStore(opts: {
       });
 
       bumpWriteCount();
+    },
+
+    countRecentTimeouts(repo: string, author: string): number {
+      const row = db
+        .prepare(
+          `SELECT COUNT(*) as cnt FROM executions
+           WHERE repo = ? AND pr_author = ?
+           AND conclusion IN ('timeout', 'timeout_partial')
+           AND created_at > datetime('now', '-7 days')`,
+        )
+        .get(repo, author) as { cnt: number } | null;
+      return row?.cnt ?? 0;
     },
 
     recordRetrievalQuality(entry: RetrievalQualityRecord): void {
