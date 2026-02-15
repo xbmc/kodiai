@@ -172,8 +172,8 @@ Plans:
 | 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 58 | v0.10 | 0/2 | Not started | - |
-| 59 | v0.10 | 0/TBD | Not started | - |
+| 59 | v0.10 | 0/3 | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- Phase 58 plans created*
+*Roadmap updated: 2026-02-15 -- Phase 59 plans created*
