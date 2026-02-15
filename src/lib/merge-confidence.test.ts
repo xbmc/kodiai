@@ -26,11 +26,11 @@ function makeCtx(overrides: {
       bumpType: overrides.bumpType ?? "patch",
       isBreaking: overrides.isBreaking ?? false,
     },
-    security: overrides.security !== undefined ? overrides.security : {
+    security: "security" in overrides ? overrides.security : {
       advisories: [],
       isSecurityBump: false,
     },
-    changelog: overrides.changelog !== undefined ? overrides.changelog : {
+    changelog: "changelog" in overrides ? overrides.changelog : {
       releaseNotes: [],
       breakingChanges: [],
       compareUrl: null,
@@ -181,7 +181,7 @@ describe("computeMergeConfidence", () => {
         changelog: undefined,
       }));
       expect(result.level).toBe("high");
-      expect(result.rationale).not.toContainEqual(expect.stringMatching(/security|advisory/i));
+      expect(result.rationale.some(r => /security|advisory/i.test(r))).toBe(false);
       expect(result.rationale).toHaveLength(1); // only semver rationale
     });
   });
@@ -248,7 +248,7 @@ describe("computeMergeConfidence", () => {
         changelog: undefined,
       }));
       expect(result.level).toBe("high");
-      expect(result.rationale).not.toContainEqual(expect.stringMatching(/breaking/i));
+      expect(result.rationale.some(r => /breaking/i.test(r))).toBe(false);
     });
   });
 
