@@ -1,220 +1,388 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** GitHub App AI code review bot
-**Researched:** 2026-02-07
-**Confidence:** HIGH
+**Domain:** Dependency bump analysis, timeout resilience, and intelligent retrieval for AI code review
+**Researched:** 2026-02-14
+**Confidence:** MEDIUM-HIGH (GitHub Advisory API verified, retrieval patterns verified in codebase, timeout architecture verified; changelog extraction strategies from training data + competitor analysis)
 
-## Feature Landscape
+## Existing Foundation (Already Built)
 
-### Table Stakes (Users Expect These)
+Before defining v0.9 features, here is what Kodiai already has that these features build on:
 
-Features users assume exist. Missing these = product feels incomplete.
+| Existing Capability | Module | Relevance to v0.9 |
+|---------------------|--------|-------------------|
+| PR intent parsing (conventional commits, bracket tags, branch prefixes, labels) | `lib/pr-intent-parser.ts` | Detects `chore(deps):`, `[deps]`, dependency-related labels -- foundation for dep bump detection |
+| Auto-profile selection by PR size/intent | `lib/auto-profile.ts` | Can route dep bumps to a specialized profile |
+| Risk-weighted file prioritization for large PRs (>50 files) | `lib/file-risk-scorer.ts`, `handlers/review.ts` | Already handles large PRs with tiered review depth |
+| Embedding-backed learning memory with sqlite-vec | `learning/memory-store.ts`, `learning/isolation.ts` | Vector retrieval with repo isolation, fixed distance threshold (0.3) |
+| Voyage AI embedding provider with fail-open | `learning/embedding-provider.ts` | Single-model embeddings, 1024-dim, 10s timeout |
+| Retrieval config (topK, distanceThreshold, maxContextChars) | `execution/config.ts` | Static thresholds, no per-query adaptation |
+| Timeout enforcement via AbortController (default 600s) | `execution/executor.ts` | Current approach: binary success/timeout, no partial results |
+| Error classification and error comment posting | `lib/errors.ts`, `handlers/review.ts` | Timeout classified as error, generic "timed out" message posted |
+| Review Details summary comment (upsert pattern) | `handlers/review.ts` | Can be extended for dep bump metadata and partial result status |
+| Diff analysis with language classification (20 languages) | `execution/diff-analysis.ts` | `EXTENSION_LANGUAGE_MAP` provides file-to-language mapping |
+| Multi-factor finding prioritization (severity + fileRisk + category + recurrence) | `lib/finding-prioritizer.ts` | Composite scoring already implemented |
+| Incremental re-review with finding deduplication | `lib/incremental-diff.ts`, `lib/finding-dedup.ts` | Delta classification (new/resolved/still-open) |
+| Knowledge store with review/finding/feedback records | `knowledge/store.ts` | SQLite persistence, can store dep analysis cache |
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **PR auto-review on open/ready** | Every competitor (CodeRabbit, Copilot, Qodo, Bugbot, Greptile) does this automatically. Users expect zero-config review on PR creation. | MEDIUM | Trigger on `pull_request.opened` and `pull_request.ready_for_review`. Must handle draft PR transitions correctly. Already planned in Phase 2. |
-| **Inline review comments on changed lines** | All tools post comments anchored to specific diff lines, not just top-level PR comments. Line-level feedback is the core value proposition. | MEDIUM | Use GitHub's pull request review API to batch inline comments into a single review submission. Batching avoids notification spam. |
-| **Code suggestion blocks** | GitHub Copilot, CodeRabbit, and Qodo all provide `suggestion` code blocks that users can accept with one click. This is the mechanism that makes AI review *actionable* rather than advisory. | LOW | Use GitHub's suggestion markdown syntax (triple-backtick with `suggestion` tag). Users commit suggestions directly from the GitHub UI. Already planned. |
-| **PR summary / description** | CodeRabbit, Qodo (`/describe`), and Graphite all auto-generate PR summaries. Reviewers use these to quickly understand "what changed and why" before diving into code. | LOW | Post a top-level PR comment with a structured summary: what changed, why, files affected. Do NOT auto-edit the PR description body -- that overwrites author intent. |
-| **Per-repo configuration** | CodeRabbit uses `.coderabbit.yaml`, Qodo uses TOML config, Bugbot uses `.cursor/BUGBOT.md`. Users expect to customize review behavior per repository. | LOW | `.kodiai.yml` in repo root. Already planned. Include: review enable/disable, path filters, skip authors, custom prompts, trigger phrase. |
-| **@mention conversational interaction** | CodeRabbit, Greptile (`@greptileai`), Ellipsis (`@ellipsis-dev`), and Qodo (`/ask`) all support conversational interaction in PR comments. Users expect to ask follow-up questions and get contextual answers. | MEDIUM | Already planned in Phase 3. Handle `issue_comment`, `pull_request_review_comment`, `pull_request_review`, and `issues` events containing the trigger phrase. |
-| **Webhook-based (no YAML in repo)** | GitHub App install model (CodeRabbit, Greptile, Bugbot) requires zero workflow files. This is the whole point of being a GitHub App vs a GitHub Action. | LOW | Already the core architectural decision. One-click install, webhook-driven. |
-| **Bot self-reference prevention** | Every bot must ignore its own comments to prevent infinite loops. Standard engineering requirement. | LOW | Check `sender.type === 'Bot'` and/or match sender login against the app's own identity. Already planned in filters. |
-| **Content sanitization** | Prevent prompt injection via PR descriptions, comments, or file contents that contain adversarial instructions. CodeRabbit and Qodo both deal with this. | MEDIUM | Strip invisible characters, HTML comments, token-like patterns. Port from claude-code-action's `sanitizer.ts`. Already planned. |
-| **Timeout and resource limits** | Long-running reviews must not block the system. All production bots enforce timeouts. | LOW | Per-job timeout (e.g., 300s). Kill job gracefully, post error comment. Already planned in Phase 4. |
-| **Error handling with user feedback** | When something fails (API error, timeout, LLM error), the user must see a comment explaining what happened -- not silence. | LOW | Post a clear error comment on failure. Already planned in Phase 4. |
-| **Fork PR support** | Open-source projects receive many fork PRs. CodeRabbit and tools that run as GitHub Apps handle this natively because the App has its own identity and tokens. | LOW | GitHub Apps receive webhooks for fork PRs. Clone the fork repo with the installation token. Already a key motivator for Kodiai. |
+---
 
-### Differentiators (Competitive Advantage)
+## Table Stakes
 
-Features that set the product apart. Not required, but valuable.
+Features users expect when a review tool encounters dependency bumps, times out on large PRs, or uses embedding-based retrieval. Missing these makes the product feel half-finished.
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Code modification via @mention** | Ellipsis is the only major competitor that auto-commits fixes. Most tools (CodeRabbit, Greptile, Copilot) only *suggest* changes. The ability to say `@kodiai fix this` and have it create a branch, commit, and push is a strong differentiator. Users save the round-trip of applying fixes manually. | HIGH | Requires write access to repo, branch creation, commit, push. Already planned in Phase 3 via file-ops MCP server. This is the hardest feature and the highest-value one. |
-| **Full agentic loop (Claude Code toolchain)** | Most competitors use single-shot LLM calls (Qodo explicitly states "each tool has a single LLM call"). Kodiai uses Claude Code's full agent loop with multi-turn tool use, file editing, and MCP servers. This enables deeper analysis and multi-step fixes that single-shot tools cannot do. | MEDIUM | Already the architecture via `@anthropic-ai/claude-agent-sdk`. The agent can read files, run commands, and iteratively refine -- not just comment on the diff. |
-| **Silent approval for clean PRs** | CodeRabbit is widely criticized for being noisy -- inventing concerns when none exist. Kodiai's "if no issues, approve silently" approach directly addresses the #1 complaint about AI code review bots: noise. This is an explicit design choice, not a missing feature. | LOW | Prompt engineering: instruct the LLM to only comment when there are real issues. No comment = implicit approval. This reduces alert fatigue dramatically. |
-| **Minimal noise / high signal** | Cursor Bugbot has differentiated itself specifically on "less noise, more signal" -- only flagging high-impact issues. CodeRabbit's review fatigue problem is well documented. Kodiai can win by being the bot developers do NOT mute. | LOW | Prompt design + configurable review intensity. Default to "only real problems" rather than style nitpicks. Let users opt into more verbose reviews via `.kodiai.yml`. |
-| **Unified review + chat in one bot** | Some tools do review only (Bugbot, Greptile). Some do chat only. Having both auto-review AND @mention chat AND code modification in one installable app eliminates needing multiple bots. CodeRabbit is the closest competitor here. | MEDIUM | Already planned. The three modes (auto-review, mention-response, code-modification) share infrastructure but have different handlers. |
-| **Custom review prompts per repo** | CodeRabbit supports path-based instructions and AST rules. Qodo has TOML config. Kodiai's `.kodiai.yml` with custom `review.prompt` and `mention.prompt` fields lets teams define exactly what the bot focuses on -- "check for SQL injection", "enforce our naming convention", etc. | LOW | Already planned. The YAML schema includes prompt customization. Could expand to path-specific prompts later. |
-| **Eyes emoji reaction on trigger** | Small UX touch. When a user @mentions the bot, it immediately reacts with an eyes emoji to signal "I see your request." This provides instant feedback before the actual response (which may take 30-60s). Most competitors do not do this. | LOW | Already planned. Use GitHub Reactions API. Adds ~1 API call but dramatically improves perceived responsiveness. |
-| **TOCTOU protection** | Prevent time-of-check-to-time-of-use attacks where malicious users edit comments between when the bot reads them and when it acts. This is a security feature most competitors do not advertise. | MEDIUM | Timestamp-based comment filtering. Port from claude-code-action. Important for any bot that takes code-modification actions based on user comments. |
-| **Collapse long responses** | Wrap verbose bot responses in `<details>` tags so they don't dominate the PR conversation. Keeps the timeline clean while preserving full information for those who want it. | LOW | Already planned in settings. `collapse_responses: true`. |
+### 1. Dependency Bump Detection
 
-### Anti-Features (Commonly Requested, Often Problematic)
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Detect dependency bump PRs from metadata** | Dependabot and Renovate both signal dependency updates via PR title (`chore(deps): bump X from A to B`), labels (`dependencies`, `Type: Depends`), and branch name (`dependabot/npm_and_yarn/...`). The xbmc reference PR #27860 uses title `[depends][target] Bump libcdio to 2.3.0` and label `Component: Depends`. Users expect the review tool to recognize these signals and behave differently from code-change PRs. | LOW | Existing `parsePRIntent()` already extracts conventional commit types. Extend with: (1) title regex for "bump X from A to B" or "update X to Y", (2) label matching for `dependencies`/`depends`/`renovate`/`dependabot`, (3) branch prefix matching for `dependabot/`, `renovate/`. |
+| **Extract old and new version numbers from PR title/body** | Every dep bump PR from Dependabot/Renovate includes version info: "Bumps lodash from 4.17.20 to 4.17.21" in the title or body. Without extracting these, the tool cannot look up changelogs or advisories. Regex: `/bump\w*\s+(\S+)\s+from\s+(\S+)\s+to\s+(\S+)/i` covers 90%+ of dep bump titles. | LOW | Pure regex parsing. Fallback: scan changed lockfile/manifest for version diffs. |
+| **Extract package name and ecosystem from changed files** | When PR modifies `package.json` / `package-lock.json` (npm), `go.mod` (Go), `Cargo.toml` (Rust), `requirements.txt` (Python), the ecosystem is deterministic. Needed for advisory API queries. | LOW | File path pattern matching. Already have `classifyFileLanguage()` and `filesByCategory` in diff analysis. |
 
-Features that seem good but create problems.
+### 2. Changelog and Release Notes Extraction
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Auto-approve PRs** | "If the bot finds no issues, just approve it." | AI cannot take accountability for approvals. GitHub Copilot explicitly only leaves "Comment" reviews, never "Approve" or "Request Changes." Auto-approval bypasses the human review gate that catches business logic, architectural, and intentional security issues the AI cannot understand. | Silent approval (no comment = implicitly fine). Humans still click the Approve button. The bot reduces review burden, not replaces reviewers. |
-| **Multi-LLM provider selector** | "Let users pick GPT-4, Claude, Gemini per repo." | Over-engineering for a small user group. Creates testing/maintenance burden across providers. Each provider has different capabilities, token limits, and failure modes. The Graphite article explicitly warns against "dropdown of LLMs" as a product trap. | Ship with Claude (via Agent SDK) as the single provider. It is the best agentic coding model. Add a second provider only if a specific user need arises, not speculatively. |
-| **Full codebase indexing / RAG** | "Index the entire repo so the bot understands everything." | Massive infrastructure cost (vector DB, embedding pipeline, incremental updates). Greptile does this but requires SOC2-level infra. For a small-user tool, the ROI does not justify the complexity. The diff + file context from the clone is sufficient for PR review. | Clone the repo (already planned). Claude Code can read any file during the agent loop. This gives full codebase access without the overhead of maintaining an index. |
-| **Sequence diagrams / architecture diagrams** | "Auto-generate Mermaid diagrams for every PR." | CodeRabbit and Greptile generate these but users report they are rarely useful and add visual noise. Diagrams for a 3-file PR are unnecessary overhead. | Do not generate diagrams by default. If a user wants one, they can ask via @mention: `@kodiai draw a sequence diagram of this change`. On-demand, not automatic. |
-| **PR description auto-editing** | "Rewrite the PR description with an AI summary." | Overwrites the author's original description and intent. Authors write descriptions for context that AI summaries lose. CodeRabbit posts a separate summary comment instead of editing the description. | Post a summary as a separate comment. Never modify the PR description body. |
-| **Style / formatting enforcement** | "Flag missing semicolons, wrong indentation, unused imports." | This is what linters do, better and faster. AI code review that flags style issues is the #1 source of noise and the #1 reason developers mute bots. Qodo and Bugbot explicitly focus on "bugs, not style." | Delegate style enforcement to existing linters (ESLint, Prettier, Ruff). Kodiai should focus on bugs, security, logic errors, and performance -- things linters cannot catch. |
-| **Cross-repo / multi-repo analysis** | "Understand how changes in repo A affect repo B." | Requires indexing multiple repos, understanding their relationships, and maintaining dependency graphs. Qodo does this for enterprise ($30/user/month+). Massive scope for a small-user tool. | Stay single-repo. The clone gives full context for one repo. If users need cross-repo analysis, that is a different product category entirely. |
-| **PR labeling / auto-categorization** | "Auto-label PRs as bug/feature/refactor." | Low value, easy to get wrong, and teams have their own labeling conventions. Getting a wrong label is worse than no label. | Do not auto-label. If users want categorization, include it in the summary comment as text, not as applied labels. |
-| **Test generation** | "Auto-generate unit tests for changed code." | Test quality from AI is inconsistent. Generated tests often test implementation details rather than behavior, creating brittle test suites. Teams have strong opinions about test patterns. | Do not auto-generate tests. The bot can *suggest* that tests are missing ("this function has no test coverage for the error path") but should not write them unsolicited. Users can ask via @mention if they want test scaffolding. |
-| **Ticket/issue alignment validation** | "Check if the PR actually solves the linked Jira/Linear ticket." | Requires integration with external issue trackers, understanding ticket descriptions, and making subjective judgments about whether code "solves" a problem. High false-positive rate. | Do not integrate with external issue trackers. Stay focused on code quality. If users link issues in PR descriptions, the bot can see that context naturally. |
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Fetch GitHub Releases between old and new version** | Renovate checks for "Releases" metadata and changelog files, then filters to relevant versions. Dependabot includes release notes and changelog entries in PR body. Users expect the review tool to show what changed between versions. GitHub REST API: `GET /repos/{owner}/{repo}/releases` filtered by tag name provides release bodies with breaking change notes. | MEDIUM | Requires: (1) resolving package to source repo (npm registry `repository` field, or GitHub API), (2) listing releases between two version tags, (3) extracting breaking change markers from release body. |
+| **Detect breaking changes from version semantics** | Semver major bumps (1.x to 2.x) signal breaking changes. Conventional commit release notes include `BREAKING CHANGE:` markers. Users expect the tool to flag major version bumps prominently. | LOW | Version comparison: `semver.major(newVersion) > semver.major(oldVersion)`. The `semver` npm package or simple regex handles this. |
+| **Summarize changelog for review context** | When changelog text is available, inject a concise summary into the review prompt so the LLM can assess whether the PR properly adapts to breaking changes. Renovate embeds changelog in PR body; the review tool should use it as review context, not just repeat it. | LOW | Prompt extension: add changelog summary section to `buildReviewPrompt()`. Truncate to `maxContextChars` to avoid prompt bloat. |
+
+### 3. Security Advisory Lookup
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Query GitHub Advisory Database for known CVEs** | GitHub's Global Advisory API (`GET /advisories?affects=package@version&ecosystem=npm`) returns reviewed security advisories including CVE IDs, severity, and patched versions. CodeRabbit integrates OSV-Scanner for vulnerability detection. Users expect a review tool to flag known vulnerabilities in dependency updates. | MEDIUM | GitHub REST API call with `affects` parameter (supports up to 1000 packages). Requires: package name + ecosystem + version range. Response includes: GHSA ID, CVE ID, severity, vulnerable_version_range, patched_versions. |
+| **Report advisory severity and remediation in review** | When advisories exist, embed them in the review summary: "This update resolves CVE-2025-XXXX (HIGH severity) affecting versions <=1.0.2, patched in 1.0.3." | LOW | Format advisory API response into review comment. Already have severity classification infrastructure. |
+| **Distinguish security-motivated from maintenance bumps** | When a dep bump resolves a known CVE, the merge urgency is higher. When it is a routine maintenance bump, the review can be more relaxed. Dependabot distinguishes security updates from version updates. | LOW | Check if any advisory matches the OLD version range. If yes: security-motivated. If no: maintenance. |
+
+### 4. Timeout Resilience and Partial Results
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Progressive review with checkpoint publishing** | Current behavior: timeout = error comment, no review output. With a ~10% failure rate on large/complex PRs, users get zero value. Expected: publish whatever findings were generated before timeout. CodeRabbit uses 3600s timeout and buffers output until complete. A better approach: publish partial results at checkpoints. | HIGH | Requires architecture change: (1) intercept MCP tool calls during execution to detect published inline comments, (2) on timeout, post summary of what was reviewed vs. not, (3) mark the review as "partial" in Review Details. This touches executor.ts and review.ts. |
+| **Pre-review triage to predict timeout risk** | Before invoking the LLM, estimate whether the PR will likely timeout based on file count, total lines, and language complexity. If high risk, proactively reduce scope. | MEDIUM | Heuristic: if `totalFiles * avgLinesPerFile > threshold`, auto-escalate to minimal profile or reduce `fullReviewCount`. Uses existing diff metrics. |
+| **Graceful timeout message with partial context** | Current timeout message: generic "Kodiai timed out." Expected: "Reviewed 45/120 files before timeout. 8 findings published. Re-request review or increase timeoutSeconds." | LOW | Requires tracking published state during execution. The `published` flag already exists in executor.ts but is binary. Extend to track count. |
+| **Chunked review for very large PRs (>200 files)** | Current `MAX_ANALYSIS_FILES = 200` truncates analysis. For extremely large PRs, consider splitting into multiple sequential review passes, each covering a file batch. | HIGH | Requires: (1) batch file selection, (2) multiple executor invocations per PR, (3) merging results across batches, (4) combined summary comment. Significant architecture change. |
+
+### 5. Intelligent Retrieval Improvements
+
+| Feature | Why Expected | Complexity | Depends On |
+|---------|--------------|------------|------------|
+| **Multi-signal query construction** | Current query: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}` (line 1431 of review.ts). This is a naive concatenation. Expected: include PR intent type, severity distribution of prior findings, language distribution, and key diff patterns for richer semantic matching. | MEDIUM | Extend query text construction to include: (1) parsed PR intent type and scope, (2) detected languages from `filesByLanguage`, (3) key diff patterns (e.g., function signatures changed), (4) author experience tier. All signals already available at query construction time. |
+| **Adaptive distance threshold** | Current: fixed 0.3 threshold for all queries (config.knowledge.retrieval.distanceThreshold). Research shows higher thresholds yield higher precision but lower recall, and optimal thresholds vary by embedding model, query length, and domain. Expected: adjust threshold based on result distribution. | MEDIUM | Strategy: (1) retrieve with relaxed threshold (e.g., 0.5), (2) examine distance distribution, (3) apply knee-point detection to find natural cluster boundary, (4) filter results above the knee. Alternatively: use percentile-based cutoff (keep results within 1 std-dev of best match). |
+| **Language-aware retrieval boosting** | Current vec0 table has `severity` and `category` metadata columns but no `language` column. A Python finding is less relevant to a TypeScript review. Expected: boost results matching the PR's primary language. | MEDIUM | Options: (1) add `language` column to vec0 table (requires migration), (2) post-retrieval re-ranking by language match, (3) include language in query text for semantic matching. Option 2 (post-retrieval re-rank) is simplest and avoids schema migration. |
+
+---
+
+## Differentiators
+
+Features that set Kodiai apart. Not universally expected, but high-value when present.
+
+### Dependency Bump Analysis
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Merge confidence scoring** | Dependabot provides a "compatibility score" based on CI pass rates across GitHub. Kodiai can provide an LLM-assessed confidence score based on: (1) semver analysis (patch vs minor vs major), (2) changelog breaking change markers, (3) CVE resolution status, (4) usage analysis (does the codebase use affected APIs?). No competitor provides LLM-analyzed merge confidence for dependency bumps. | MEDIUM | Requires all table-stakes dep analysis features. Score is a composite of: semver safety (patch=high, major=low), advisory resolution (resolves CVE=boost), breaking changes detected (lower confidence), usage analysis (uses changed APIs=lower). |
+| **Usage analysis: does the codebase use affected APIs?** | When a dependency introduces breaking changes, the key question is "does our code use the changed APIs?" Kodiai can grep the workspace for import statements and function calls matching the dependency's changed exports. No competitor does this analysis. | HIGH | Requires: (1) extracting changed exports/APIs from changelog/release notes (LLM-assisted), (2) searching the workspace for usage patterns (existing Grep/Glob tools), (3) reporting which specific usages are at risk. Complex but extremely valuable. |
+| **Dependency update history tracking** | Track which packages have been updated, how often, and whether past updates caused issues (via feedback). "This package was last updated 3 months ago; the previous bump from 2.0 to 2.1 was merged without issues." | LOW | Knowledge store extension: store dep bump records (package, from_version, to_version, outcome). Query on future bumps. |
+| **Multi-package update correlation** | When a PR updates multiple related packages (e.g., `@typescript-eslint/parser` + `@typescript-eslint/eslint-plugin`), note the coordination and check for version compatibility requirements. | LOW | Parse multiple version changes from lockfile/manifest diffs. Check if packages share a scope prefix (`@scope/`). |
+
+### Timeout Resilience
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Adaptive timeout based on PR complexity** | Instead of a fixed `timeoutSeconds`, compute timeout dynamically: `baseTimeout + (fileCount * perFileTimeout) + (avgLines * lineTimeout)`. Large PRs get longer timeouts automatically. | LOW | Pure math based on diff metrics. Extend executor config with dynamic timeout computation. |
+| **Review progress streaming** | Post a "reviewing..." comment with live progress updates (e.g., "Analyzing file 23/45..."). Delete or update on completion. Provides visibility during long reviews. | MEDIUM | Requires: periodic progress callback from executor, comment creation/update during execution. Risk: notification noise if not done carefully (use a single comment, update in place). |
+| **Retry with reduced scope on timeout** | When a review times out, automatically retry with a reduced file set (top 50% by risk score). Publish the reduced review rather than nothing. | HIGH | Requires: (1) detecting timeout before cleanup, (2) re-invoking executor with reduced scope, (3) coordinating with job queue for retry, (4) marking result as "reduced scope." |
+
+### Intelligent Retrieval
+
+| Feature | Value Proposition | Complexity | Depends On |
+|---------|-------------------|------------|------------|
+| **Query-time severity/category filtering** | Current vec0 table has `severity` and `category` columns. Use them for filtered retrieval: when reviewing a security-focused PR, boost security-category memories. When profile is `minimal`, only retrieve `critical`/`major` severity memories. | LOW | The vec0 virtual table already supports WHERE clauses on metadata columns. Extend retrieval query with optional severity/category filters based on resolved review profile. |
+| **Recency-weighted retrieval** | Older memories may reflect outdated patterns. Boost recent memories: apply a time-decay multiplier to distance scores. Memories from the last 30 days get 0.9x distance (closer), 90+ days get 1.1x (farther). | LOW | Post-retrieval score adjustment using `createdAt` field from memory records. Pure math, no schema changes. |
+| **Cross-language concept mapping** | A "null safety" finding in Java is semantically similar to "optional chaining" in TypeScript. Language-aware retrieval should recognize cross-language concept equivalence. | HIGH | Requires either: (1) embedding model that naturally handles multi-language code concepts (Voyage Code 3 may already do this), (2) explicit concept mapping layer. Test with current embeddings first before adding complexity. |
+| **Retrieval quality metrics** | Track retrieval hit rates: how often retrieved memories influence the review output. If distance thresholds are too tight (few results) or too loose (noisy results), flag for tuning. | LOW | Log retrieval result counts, distances, and whether the finding outcome was used. Aggregate in telemetry. |
+
+---
+
+## Anti-Features
+
+Features to explicitly NOT build. These are commonly requested but harmful or premature.
+
+| Anti-Feature | Why Tempting | Why Avoid | What to Do Instead |
+|--------------|-------------|-----------|-------------------|
+| **Full dependency tree analysis** | "Analyze all transitive dependencies for vulnerabilities." | Scope explosion. A single npm project can have 500+ transitive deps. Advisory lookup for each would hit rate limits (GitHub Advisory API is rate-limited) and slow down reviews dramatically. | Analyze only the packages directly changed in the PR diff. Transitive deps are the domain of `npm audit` / Dependabot alerts, not a code review tool. |
+| **Automatic lockfile regeneration** | "If a dep bump has issues, auto-fix the lockfile." | Write operations on lockfiles are dangerous and ecosystem-specific. npm, yarn, pnpm, bun all have different lockfile formats. Getting it wrong breaks installs. | Report the issue; let the developer fix it. Kodiai's review role is advisory, not remedial. |
+| **Real-time CVE monitoring (webhook)** | "Monitor for new CVEs and auto-create PRs." | This is Dependabot's core product. Reimplementing it poorly adds liability. GitHub already provides security alerts, Dependabot security updates, and code scanning. | Look up advisories at review time for the specific versions being bumped. Point-in-time analysis, not continuous monitoring. |
+| **Streaming partial review via SSE/WebSocket** | "Stream review findings to the PR in real-time as they're generated." | GitHub's API is REST-based. Streaming to a PR comment requires repeated API calls (one per finding), generating excessive notification noise and hitting rate limits. CodeRabbit explicitly moved AWAY from streaming to buffered output. | Buffer findings, publish as a batch. For timeout resilience, publish at checkpoints (every N files or at timeout), not per-finding. |
+| **Multi-pass review (review-then-review-the-review)** | "Run a second LLM pass to validate findings from the first." | Doubles cost and latency with diminishing returns. The existing enforcement pipeline (severity floors, tooling detection, confidence scoring, feedback suppression) already filters low-quality findings. | Improve the single-pass prompt quality. Use retrieval context to reduce false positives. The enforcement pipeline IS the validation layer. |
+| **Custom embedding model training** | "Fine-tune embeddings on this repo's code for better retrieval." | Requires substantial training data, GPU infrastructure, and ongoing model management. Voyage Code 3 is already trained on code. The marginal improvement from fine-tuning on a single repo's findings is unlikely to justify the complexity. | Use multi-signal query construction and post-retrieval re-ranking. These are simpler and more maintainable than model fine-tuning. |
+| **Semantic diff for dependency changes** | "Parse the AST of old and new dependency versions to find API changes." | Requires downloading and parsing source code of npm packages, which is infeasible at review time (packages can be megabytes, multi-language, etc.). | Use changelog/release notes as a proxy for API changes. If changelog mentions "removed function X," search the codebase for usage of function X. |
+| **Predictive timeout estimation with ML** | "Train a model to predict review duration and set timeouts dynamically." | No training data, massive overengineering. Heuristics (file count x complexity) are sufficient and debuggable. | Use simple heuristic: `baseTimeout + (fileCount * perFileSeconds)`. Tune the constants empirically from telemetry data. |
+
+---
 
 ## Feature Dependencies
 
+```text
+DEPENDENCY BUMP ANALYSIS
+=========================
+[Existing: PR intent parsing, diff analysis, review prompt]
+    |
+    +-- extends --> [Dep bump detection from title/labels/branch/files]
+    |                   |
+    |                   +-- produces --> [Package name + old version + new version + ecosystem]
+    |                   |
+    |                   +-- feeds --> [GitHub Advisory API lookup]
+    |                   |                   |
+    |                   |                   +-- produces --> [CVE list, severity, patched versions]
+    |                   |                   |
+    |                   |                   +-- feeds --> [Security vs maintenance classification]
+    |                   |
+    |                   +-- feeds --> [GitHub Releases API changelog fetch]
+    |                   |                   |
+    |                   |                   +-- produces --> [Changelog text between versions]
+    |                   |                   |
+    |                   |                   +-- feeds --> [Breaking change detection from changelog]
+    |                   |
+    |                   +-- feeds --> [Merge confidence scoring]
+    |                                     |
+    |                                     +-- integrates --> semver analysis
+    |                                     +-- integrates --> advisory resolution status
+    |                                     +-- integrates --> breaking change count
+    |                                     +-- optional --> usage analysis (grep for affected APIs)
+
+TIMEOUT RESILIENCE
+===================
+[Existing: AbortController timeout, error classification, error comment]
+    |
+    +-- extends --> [Pre-review timeout risk estimation]
+    |                   |
+    |                   +-- feeds --> [Adaptive scope reduction (auto-escalate to minimal)]
+    |                   |
+    |                   +-- feeds --> [Dynamic timeout computation]
+    |
+    +-- extends --> [Partial result tracking during execution]
+    |                   |
+    |                   +-- requires --> [Track published inline comments count]
+    |                   |
+    |                   +-- feeds --> [Graceful timeout message with partial context]
+    |
+    +-- deferred --> [Checkpoint-based partial publishing]
+    |
+    +-- deferred --> [Retry with reduced scope]
+
+INTELLIGENT RETRIEVAL
+======================
+[Existing: isolation layer, memory store, embedding provider, retrieval config]
+    |
+    +-- extends --> [Multi-signal query construction]
+    |                   |
+    |                   +-- integrates --> PR intent type/scope
+    |                   +-- integrates --> detected languages
+    |                   +-- integrates --> diff pattern signatures
+    |                   +-- integrates --> author experience tier
+    |
+    +-- extends --> [Adaptive distance threshold]
+    |                   |
+    |                   +-- requires --> [Retrieve with relaxed threshold]
+    |                   +-- requires --> [Knee-point or percentile-based cutoff]
+    |
+    +-- extends --> [Language-aware retrieval boosting]
+    |                   |
+    |                   +-- option A --> [Post-retrieval re-ranking by language]
+    |                   +-- option B --> [Add language to query text]
+    |
+    +-- optional --> [Severity/category filtered retrieval]
+    +-- optional --> [Recency-weighted scoring]
+    +-- optional --> [Retrieval quality metrics in telemetry]
 ```
-[Webhook Server + Event Router]
-    |
-    +--requires--> [GitHub App Auth]
-    |                  |
-    |                  +--requires--> [Installation Token Minting]
-    |
-    +--requires--> [Config Loader (.kodiai.yml)]
-    |
-    +--enables--> [PR Auto-Review]
-    |                 |
-    |                 +--requires--> [Job Queue]
-    |                 +--requires--> [Repo Cloning / Workspace]
-    |                 +--requires--> [Claude CLI Executor]
-    |                 +--requires--> [Context Builder (PR data fetching)]
-    |                 +--requires--> [Inline Comment MCP Server]
-    |                 +--requires--> [Progress Comment MCP Server]
-    |
-    +--enables--> [@mention Handler]
-    |                 |
-    |                 +--requires--> [All PR Auto-Review dependencies]
-    |                 +--requires--> [Content Sanitizer]
-    |                 +--requires--> [TOCTOU Protection]
-    |                 +--enhances--> [Eyes Emoji Reaction]
-    |
-    +--enables--> [Code Modification via @mention]
-                      |
-                      +--requires--> [@mention Handler]
-                      +--requires--> [File Ops MCP Server]
-                      +--requires--> [Branch Creation]
-                      +--requires--> [Git Push via Installation Token]
 
-[Silent Approval] --enhances--> [PR Auto-Review]
-[Collapse Responses] --enhances--> [@mention Handler]
-[Custom Prompts] --enhances--> [PR Auto-Review, @mention Handler]
-[Timeout Enforcement] --enhances--> [Job Queue]
-[Error Handling] --enhances--> [All Handlers]
-```
+### Critical Path
 
-### Dependency Notes
+1. **Dep bump detection** is prerequisite for all other dep analysis features. Must extract package name, versions, and ecosystem before anything else can work.
+2. **Advisory lookup** and **changelog fetch** are independent of each other but both depend on dep bump detection.
+3. **Merge confidence scoring** integrates signals from advisory lookup, changelog analysis, and semver analysis -- build last.
+4. **Timeout risk estimation** is independent and can ship first as a pure heuristic.
+5. **Multi-signal query construction** is independent of adaptive thresholds; both improve retrieval but can ship separately.
 
-- **PR Auto-Review requires Job Queue:** Reviews are async (30-120s). Must not block the webhook response. Queue ensures per-installation concurrency limits.
-- **@mention Handler requires all PR Auto-Review deps:** The mention handler uses the same infrastructure (clone, context building, Claude execution) but with different prompt/context construction.
-- **Code Modification requires @mention Handler:** Code changes are triggered by mentions (`@kodiai fix this`). The mention handler detects the request, and the file-ops MCP server + branch creation enable the actual modification.
-- **TOCTOU Protection enhances Code Modification:** Without TOCTOU checks, a malicious user could edit their comment between when the bot reads it and when it acts. Critical for any bot that commits code based on user instructions.
-- **Content Sanitizer is critical for @mention:** User-authored comments are direct LLM input. Sanitization prevents prompt injection attacks that could make the bot execute unintended actions.
+### Independence Points
 
-## MVP Definition
+- All three feature areas (dep bumps, timeout, retrieval) are **fully independent** of each other
+- Within dep bumps: advisory lookup and changelog fetch are **fully independent**
+- Within retrieval: multi-signal query and adaptive threshold are **fully independent**
+- Timeout resilience features are mostly independent of each other (risk estimation, graceful messages, partial publishing)
 
-### Launch With (v1)
+### Integration Points
 
-Minimum viable product -- what is needed to validate the concept and replace the current GitHub Action workflow.
+- Dep bump detection feeds into review prompt (new section) and Review Details (new metadata)
+- Timeout risk estimation feeds into auto-profile selection (reduce scope for risky PRs)
+- Multi-signal query uses signals from dep bump detection (if available) and auto-profile resolution
+- All three areas share the review handler entry point in `review.ts`
 
-- [x] **Webhook server + GitHub App auth** -- Foundation. Without this, nothing works.
-- [x] **PR auto-review with inline comments + suggestion blocks** -- The core value proposition. This is why users install the app.
-- [x] **Per-repo .kodiai.yml configuration** -- Users need to customize review behavior (enable/disable, custom prompts, path filters).
-- [x] **Silent approval for clean PRs** -- Anti-noise strategy. The default should be "no comment if no problems."
-- [x] **Fork PR support** -- Key motivator for building Kodiai. Must work from day one.
-- [x] **Bot self-reference prevention** -- Safety. Infinite loops would make the product unusable.
-- [x] **Timeout enforcement** -- Safety. Runaway jobs must be killed.
-- [x] **Error handling with user feedback** -- UX. Silence on failure is the worst user experience.
+---
 
-### Add After Validation (v1.x)
+## MVP Recommendation
 
-Features to add once core review is working and validated with real users.
+### Build First (P1) -- Core value, low risk
 
-- [ ] **@mention conversational interaction** -- Add when auto-review is stable. Users will naturally want to ask follow-up questions about review comments.
-- [ ] **Eyes emoji reaction** -- Add alongside @mention. Small UX improvement for perceived responsiveness.
-- [ ] **Content sanitization (full)** -- Harden before enabling @mention on repos with external contributors.
-- [ ] **TOCTOU protection** -- Add before enabling code modification features.
-- [ ] **Collapse long responses** -- Add when users report that bot responses are too long in the PR timeline.
-- [ ] **Custom review prompts** -- Add when users request repo-specific review focus areas.
+1. **Dep bump detection from PR metadata** -- Regex parsing of title/body for version bumps, label matching, branch prefix matching. Extend existing `parsePRIntent()`. Pure logic, zero API calls.
 
-### Future Consideration (v2+)
+2. **Version extraction (package name, old/new version, ecosystem)** -- Parse "bump X from A to B" pattern and detect ecosystem from changed manifest files. Foundation for all dep analysis.
 
-Features to defer until the product is proven and user needs are clear.
+3. **GitHub Advisory API lookup** -- Single REST call with `affects=package@version&ecosystem=npm`. Fail-open if API errors. High value: surfaces known CVEs in review.
 
-- [ ] **Code modification via @mention** -- Highest complexity, highest risk. Defer until mention handling is stable and trusted. Requires careful security review (the bot is committing code).
-- [ ] **Direct SDK agent loop (non-Claude providers)** -- Only build if a specific user needs a non-Claude provider. Do not build speculatively.
-- [ ] **Path-specific review instructions** -- Add if users have repos with very different review needs per directory (e.g., `src/` vs `tests/` vs `docs/`).
-- [ ] **CI status reading** -- Add if users want the bot to incorporate CI failure context into its review. Low priority for small user group.
+4. **Breaking change detection from semver** -- `major(new) > major(old)` flags as breaking. Zero API calls, zero dependencies beyond simple version comparison.
+
+5. **Graceful timeout message with context** -- Replace generic "timed out" with "Reviewed X/Y files, N findings published before timeout." Low effort, high UX value.
+
+6. **Pre-review timeout risk estimation** -- Heuristic from file count and line count. Auto-reduce scope for high-risk PRs. Addresses 10% failure rate.
+
+7. **Multi-signal query construction** -- Enrich the retrieval query text with PR intent, languages, and diff patterns. Improves retrieval relevance with no infrastructure changes.
+
+### Build Second (P2) -- Depth and integration
+
+8. **Changelog/release notes fetch from GitHub Releases** -- Resolve package to source repo, list releases between versions, extract breaking change markers. Requires npm registry lookup for source URL.
+
+9. **Dep bump review prompt section** -- Inject advisory results, changelog summary, and breaking change flags into review prompt. Enables LLM-aware dependency analysis.
+
+10. **Merge confidence scoring** -- Composite score from semver, advisories, changelog breaking changes. Reported in Review Details summary.
+
+11. **Adaptive distance threshold** -- Retrieve with relaxed threshold, apply statistical cutoff. Improves retrieval precision without manual tuning.
+
+12. **Language-aware retrieval boosting** -- Post-retrieval re-rank by language match. Boost same-language memories, demote cross-language.
+
+13. **Dynamic timeout computation** -- `baseTimeout + (fileCount * perFileSeconds)`. Replaces fixed 600s default.
+
+### Defer (P3) -- Future value, high complexity
+
+14. **Usage analysis (grep for affected APIs)** -- Search codebase for imports/usage of APIs mentioned in breaking changes. Very high value but complex: requires parsing changelog for API names, then workspace search.
+
+15. **Checkpoint-based partial publishing** -- Detect published inline comments during execution, on timeout publish summary of partial results. Requires executor architecture changes.
+
+16. **Retry with reduced scope on timeout** -- Auto-retry with top 50% files by risk. Requires job queue coordination.
+
+17. **Dependency update history tracking** -- Knowledge store extension for dep bump records. Low effort but depends on dep bump detection being stable.
+
+18. **Retrieval quality metrics** -- Telemetry for retrieval hit rates, distance distributions, outcome correlation. Important for tuning but not user-facing.
+
+19. **Cross-language concept mapping** -- Test if Voyage Code 3 already handles this; only build if it does not.
+
+20. **Review progress streaming** -- Live "reviewing..." comment with progress. Risk of notification noise.
+
+---
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| PR auto-review (inline + suggestions) | HIGH | MEDIUM | P1 |
-| Per-repo .kodiai.yml config | HIGH | LOW | P1 |
-| Silent approval for clean PRs | HIGH | LOW | P1 |
-| Fork PR support | HIGH | LOW | P1 |
-| Webhook server + App auth | HIGH (prerequisite) | MEDIUM | P1 |
-| Bot self-reference prevention | HIGH (safety) | LOW | P1 |
-| Timeout enforcement | HIGH (safety) | LOW | P1 |
-| Error handling with feedback | HIGH | LOW | P1 |
-| @mention conversational chat | HIGH | MEDIUM | P2 |
-| Eyes emoji reaction | MEDIUM | LOW | P2 |
-| Content sanitization (full) | HIGH (security) | MEDIUM | P2 |
-| TOCTOU protection | MEDIUM (security) | MEDIUM | P2 |
-| Collapse long responses | MEDIUM | LOW | P2 |
-| Custom review prompts per repo | MEDIUM | LOW | P2 |
-| Code modification via @mention | HIGH | HIGH | P3 |
-| Path-specific review instructions | LOW | LOW | P3 |
-| CI status reading | LOW | MEDIUM | P3 |
-| Direct SDK agent loop | LOW | HIGH | P3 |
+| Feature | User Value | Impl. Cost | Risk | Priority |
+|---------|------------|------------|------|----------|
+| Dep bump detection from PR metadata | **HIGH** | LOW | LOW | **P1** |
+| Version extraction (package, old, new, ecosystem) | **HIGH** | LOW | LOW | **P1** |
+| GitHub Advisory API lookup (CVE check) | **HIGH** | MEDIUM | LOW | **P1** |
+| Breaking change detection from semver | **HIGH** | LOW | LOW | **P1** |
+| Graceful timeout message with context | **HIGH** | LOW | LOW | **P1** |
+| Pre-review timeout risk estimation | **HIGH** | MEDIUM | LOW | **P1** |
+| Multi-signal query construction | MEDIUM | MEDIUM | LOW | **P1** |
+| Changelog/release notes fetch | HIGH | MEDIUM | MEDIUM | **P2** |
+| Dep bump review prompt section | HIGH | LOW | LOW | **P2** |
+| Merge confidence scoring | MEDIUM | MEDIUM | LOW | **P2** |
+| Adaptive distance threshold | MEDIUM | MEDIUM | MEDIUM | **P2** |
+| Language-aware retrieval boosting | MEDIUM | LOW | LOW | **P2** |
+| Dynamic timeout computation | MEDIUM | LOW | LOW | **P2** |
+| Usage analysis (affected APIs) | HIGH | HIGH | MEDIUM | **P3** |
+| Checkpoint-based partial publishing | MEDIUM | HIGH | HIGH | **P3** |
+| Retry with reduced scope | MEDIUM | HIGH | MEDIUM | **P3** |
+| Dep update history tracking | LOW | LOW | LOW | **P3** |
+| Retrieval quality metrics | LOW | LOW | LOW | **P3** |
+| Cross-language concept mapping | LOW | HIGH | MEDIUM | **P3** |
+| Review progress streaming | LOW | MEDIUM | MEDIUM | **P3** |
 
-**Priority key:**
-- P1: Must have for launch
-- P2: Should have, add when possible
-- P3: Nice to have, future consideration
+---
 
 ## Competitor Feature Analysis
 
-| Feature | CodeRabbit | Qodo/PR-Agent | Copilot Review | Bugbot | Ellipsis | Kodiai (Our Approach) |
-|---------|------------|---------------|----------------|--------|----------|----------------------|
-| Auto-review on PR open | Yes | Yes | Yes (org-wide) | Yes | Yes | Yes |
-| Inline comments | Yes | Yes | Yes | Yes | Yes | Yes |
-| Suggestion blocks | Yes | Yes (`/improve`) | Yes (one-click apply) | Yes | Yes | Yes |
-| PR summary | Yes (walkthrough) | Yes (`/describe`) | Yes | No | Yes | Yes (as comment, not description edit) |
-| @mention chat | Yes (in PR comments) | Yes (`/ask`) | Limited | No | Yes (`@ellipsis-dev`) | Yes (`@kodiai`) |
-| Auto-commit fixes | No | No | Via Copilot Agent | Via Cursor IDE | Yes (from reviewer comments) | Yes (via @mention, Phase 3) |
-| Per-repo config | `.coderabbit.yaml` | TOML config | No (org-level) | `.cursor/BUGBOT.md` | Not documented | `.kodiai.yml` |
-| Custom review prompts | Yes (path + AST rules) | Yes | Yes (custom instructions) | Yes (BUGBOT.md rules) | Not documented | Yes (prompt field in YAML) |
-| Fork PR support | Yes (App model) | Yes | Yes (GitHub-native) | Yes (App model) | Yes (App model) | Yes (App model) |
-| Noise level | High (known issue) | Medium | Medium | Low (by design) | Medium | Low (by design -- silent approval) |
-| Sequence diagrams | Yes | No | No | No | No | No (anti-feature -- on-demand only) |
-| Multi-repo analysis | No | Yes (enterprise) | No | No | No | No (anti-feature -- single repo) |
-| Linter integration | 50+ linters built in | Some | No | No | No | No (delegate to existing linters) |
-| Pricing model | $24-30/user/mo | $30/user/mo (Teams) | Included in Copilot | Included in Cursor | Custom | Self-hosted (target audience is small known group) |
-| Self-hostable | Enterprise only ($15k/mo) | Yes (open-source PR-Agent) | No | No | No | Yes (by design -- Azure Container Apps) |
+### Dependency Bump Analysis
 
-### Key Competitive Insights
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **Dependabot** | Creates PRs for bumps with release notes, changelog, and compatibility score (CI pass rate across GitHub). Distinguishes security updates from version updates. | Ecosystem-wide compatibility scoring from real CI data. Automatic PR creation. | Does not analyze whether the codebase uses affected APIs. Compatibility score often "unknown" for less popular packages. |
+| **Renovate** | Four-stage pipeline (init, extract, lookup, update). Checks GitHub Releases and changelog files, filters to relevant versions, embeds in PR body. `postUpgradeTasks` for custom automation. | Richest changelog extraction. Multi-platform support (GitHub, GitLab, Bitbucket). Groups related updates. | Cannot analyze breaking change impact on the codebase. No LLM-powered analysis. |
+| **CodeRabbit** | Integrates OSV-Scanner for vulnerability detection. Reviews dependency changes alongside code changes. Uses 40+ linters including TruffleHog for secrets. | Combined code + dependency review in one tool. Security scanner integration. | Does not extract changelogs or provide merge confidence scoring. Treats dep bumps like regular code changes. |
+| **Kodiai (proposed)** | Detect dep bump from PR metadata. Extract versions. Query GitHub Advisory API. Fetch changelog from GitHub Releases. Assess semver breaking changes. LLM-analyzed merge confidence with optional usage analysis. | LLM-powered contextual analysis: "does this breaking change affect YOUR code?" Usage analysis is unique. Merge confidence combines multiple signals. | New capability, needs validation. Changelog extraction limited to GitHub Releases (not arbitrary changelog files). |
 
-1. **CodeRabbit is the feature leader** but is criticized for noise. Kodiai competes on signal quality, not feature quantity.
-2. **Qodo/PR-Agent is the open-source alternative** with self-hosting. Kodiai's Claude Code agent loop is more capable than Qodo's single-LLM-call design.
-3. **Copilot Review is integrated but limited.** It only does Comment reviews (never Approve/Request Changes) and has no @mention chat.
-4. **Bugbot is the noise-reducer** but is IDE-only (Cursor). Kodiai brings the low-noise philosophy to a GitHub App.
-5. **Ellipsis is the auto-fix pioneer** but is not widely adopted. Kodiai's code modification via @mention is a similar capability built on a stronger agent foundation (Claude Code toolchain vs single-shot LLM).
-6. **No competitor combines auto-review + @mention chat + code modification in a self-hosted GitHub App.** This is Kodiai's unique positioning.
+### Timeout Resilience
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | 3600s timeout, concurrency of 8. Buffers full output, delivers as batch. Moved away from streaming to buffered. Sends "most relevant callers" to LLM when context window overflows. | Long timeout accommodates most PRs. Smart context selection. | No partial results on timeout. All-or-nothing. |
+| **Qodo Merge** | Independent per-run execution. No persistent state between runs. | Clean, no drift risk. | No progressive review. No partial results. |
+| **GitHub Copilot Code Review** | Static review comments only. Limited to context window. | Fast, single-pass. | Cannot handle very large PRs. No fallback strategy. |
+| **Kodiai (proposed)** | Pre-review risk estimation with auto-scope reduction. Graceful timeout messages with partial context. Dynamic timeout based on PR complexity. Deferred: checkpoint publishing and retry with reduced scope. | Proactive: prevents timeouts rather than just handling them. Informative: tells users what was and was not reviewed. | Checkpoint publishing is architecturally complex. |
+
+### Intelligent Retrieval
+
+| Tool | Approach | Strength | Weakness |
+|------|----------|----------|----------|
+| **CodeRabbit** | Automated web queries for recent public information. Project knowledge for coding plans. | Always-current information from web. | Not embedding-based. Not learning from past reviews. |
+| **Research (RAG literature)** | Hybrid retrieval (sparse + dense), query decomposition, re-ranking, multi-stage pipelines. | Proven patterns at scale. | General-purpose, not code-review-specific. |
+| **Kodiai (current)** | Repo-scoped vector retrieval with sqlite-vec. Fixed distance threshold (0.3). Query = title + first 20 file names. Owner-level sharing optional. | Repo isolation by design. Provenance tracking. | Naive query construction. Fixed threshold misses variable quality. No language awareness. |
+| **Kodiai (proposed)** | Multi-signal query (intent + languages + diff patterns). Adaptive threshold (knee-point detection). Language-aware post-retrieval re-ranking. Optional severity/category filtering. | Contextually rich queries. Self-tuning thresholds. Language relevance. | Adaptive threshold adds complexity. Language re-ranking is heuristic-based. |
+
+---
+
+## User Experience Implications
+
+### Dependency Bump Analysis
+
+- **Information density**: Dep bump reviews should be concise. A 100-line changelog dump in the review comment is noise. Summarize to 3-5 key points: semver type, breaking changes, CVEs resolved, confidence score.
+- **Merge signal**: The merge confidence score should be prominent and unambiguous. "Merge confidence: HIGH (patch update, no breaking changes, resolves CVE-2025-1234)" gives the reviewer immediate signal.
+- **False positive risk**: Not all files named `package.json` are npm manifests (could be test fixtures). Use heuristic: must be at root or in a recognized subdirectory pattern.
+- **Ecosystem coverage**: Start with npm/Node.js (most common for GitHub Apps), then Go, Python, Rust. Don't try to support all ecosystems at once.
+
+### Timeout Resilience
+
+- **User trust**: Timeouts erode trust. "Your review tool timed out and produced nothing" is worse than "Your review tool completed a partial review." Even a partial result with 3 findings is better than nothing.
+- **Notification noise**: Timeout messages and partial result updates should not generate excessive notifications. Use the existing upsert pattern for the Review Details comment (single comment, update in place).
+- **Scope transparency**: When auto-reducing scope, disclose it: "PR scope reduced due to complexity: reviewing top 30 files by risk (of 120 total). Full review available with `@kodiai full-review`."
+
+### Intelligent Retrieval
+
+- **Invisible improvement**: Better retrieval manifests as better review quality, not as a visible feature. Users will not see "multi-signal query" but will notice more relevant findings.
+- **Threshold sensitivity**: Adaptive thresholds must have safety bounds. Never return zero results (floor: top 1 result regardless of distance). Never return noise (ceiling: distance > 0.8 regardless of distribution).
+- **Provenance continues**: The existing delta reporting with learning provenance already shows retrieval sources. Improved retrieval feeds directly into this existing UX.
+
+---
 
 ## Sources
 
-- [CodeRabbit Documentation](https://docs.coderabbit.ai/) -- Feature details, configuration options (HIGH confidence)
-- [CodeRabbit Configuration Reference](https://docs.coderabbit.ai/reference/configuration) -- YAML schema, path instructions, AST rules (HIGH confidence)
-- [CodeRabbit Review Instructions Guide](https://docs.coderabbit.ai/guides/review-instructions) -- Custom review instructions (HIGH confidence)
-- [Qodo Merge Review Tool Docs](https://qodo-merge-docs.qodo.ai/tools/review/) -- /review features and config (HIGH confidence)
-- [Qodo PR-Agent GitHub](https://github.com/qodo-ai/pr-agent) -- Open-source PR agent features (HIGH confidence)
-- [GitHub Copilot Code Review Docs](https://docs.github.com/en/copilot/concepts/agents/code-review) -- Copilot review capabilities and limitations (HIGH confidence)
-- [Cursor Bugbot Docs](https://docs.cursor.com/bugbot) -- Bugbot features, BUGBOT.md rules (HIGH confidence)
-- [8 Best AI Code Review Tools 2026 - Qodo Blog](https://www.qodo.ai/blog/best-ai-code-review-tools-2026/) -- Competitor comparison (MEDIUM confidence)
-- [State of AI Code Review Tools 2025 - DevTools Academy](https://www.devtoolsacademy.com/blog/state-of-ai-code-review-tools-2025/) -- Tool comparison, strengths/weaknesses (MEDIUM confidence)
-- [6 Best AI Code Review Tools for PRs 2025 - DEV Community](https://dev.to/heraldofsolace/the-6-best-ai-code-review-tools-for-pull-requests-in-2025-4n43) -- Feature comparison across tools (MEDIUM confidence)
-- [Problems with AI Code Review - Graphite](https://graphite.com/blog/problems-with-ai-code-review) -- Anti-patterns, noise problems, philosophical issues (MEDIUM confidence)
-- [3 Best CodeRabbit Alternatives 2026 - Cubic](https://www.cubic.dev/blog/the-3-best-coderabbit-alternatives-for-ai-code-review-in-2025) -- Competitor analysis (MEDIUM confidence)
-- [9 Best GitHub AI Code Review Tools 2026 - CodeAnt](https://www.codeant.ai/blogs/best-github-ai-code-review-tools-2025) -- Broad tool survey (MEDIUM confidence)
+### Direct Evidence (HIGH confidence -- verified in codebase)
+- `src/handlers/review.ts` lines 1427-1460 -- current retrieval query construction: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`
+- `src/learning/isolation.ts` -- retrieval with fixed `distanceThreshold`, repo isolation, owner-level sharing
+- `src/learning/memory-store.ts` -- vec0 virtual table with `severity`, `category` metadata columns, no `language` column
+- `src/execution/executor.ts` -- AbortController timeout (default 600s), binary success/timeout result
+- `src/lib/errors.ts` -- timeout classified as "timeout" error category, generic error message
+- `src/execution/config.ts` lines 255-267 -- retrieval config: `topK: 5`, `distanceThreshold: 0.3`, `maxContextChars: 2000`
+- `src/execution/diff-analysis.ts` -- `EXTENSION_LANGUAGE_MAP` for 20 languages, `classifyFileLanguage()`
+- `src/lib/pr-intent-parser.ts` -- existing PR intent parsing (conventional commits, bracket tags)
+
+### GitHub API (HIGH confidence -- verified via official docs)
+- [GitHub Global Advisory API](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories?affects=package@version&ecosystem=npm`, returns CVE ID, severity, patched versions. Up to 1000 packages per query.
+- [GitHub Advisory Database](https://github.com/github/advisory-database) -- Open Source Vulnerability (OSV) format, npm ecosystem advisories including malware
+
+### Competitive Intelligence (MEDIUM confidence)
+- [Renovate changelog extraction](https://docs.renovatebot.com/key-concepts/changelogs/) -- checks GitHub Releases and changelog files, filters to relevant versions
+- [Dependabot compatibility score](https://github.com/dependabot/dependabot-core/issues/4001) -- CI pass rate from public repos; minimum threshold for score display
+- [CodeRabbit OSV-Scanner integration](https://docs.coderabbit.ai/changelog) -- vulnerability scanning via OSV.dev
+- [CodeRabbit architecture (Google Cloud)](https://cloud.google.com/blog/products/ai-machine-learning/how-coderabbit-built-its-ai-code-review-agent-with-google-cloud-run) -- 3600s timeout, concurrency 8, buffered output over streaming
+
+### Research (MEDIUM confidence)
+- [VectorSearch: Enhancing Document Retrieval](https://arxiv.org/html/2409.17383v1) -- similarity threshold tuning, higher thresholds yield higher precision but lower recall
+- [RAG Techniques Repository](https://github.com/NirDiamant/RAG_Techniques) -- multi-signal query construction, hybrid retrieval, re-ranking patterns
+- [BUMP: Breaking Dependency Updates Dataset](https://github.com/chains-project/bump) -- SANER 2024 research on breaking dependency updates
+
+### Reference PR (HIGH confidence)
+- [xbmc/xbmc#27860](https://github.com/xbmc/xbmc/pull/27860) -- `[depends][target] Bump libcdio to 2.3.0`, labels: `Type: Improvement`, `Component: Depends`, 4 files changed including VERSION file and patches
 
 ---
-*Feature research for: GitHub App AI code review bot*
-*Researched: 2026-02-07*
+*Feature research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
+*Researched: 2026-02-14*

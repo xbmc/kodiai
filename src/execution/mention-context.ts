@@ -12,10 +12,20 @@ export type BuildMentionContextOptions = {
   maxCommentChars?: number;
   /** Max total characters to include across all included conversation comments. */
   maxConversationChars?: number;
+  /** Max total characters to include across review-thread comments. */
+  maxThreadChars?: number;
   /** Max pages to scan when paginating GitHub list APIs for context. */
   maxApiPages?: number;
   /** Max characters to include from PR description (after sanitization). */
   maxPrBodyChars?: number;
+  /** Optional callback to hydrate finding metadata for review-thread parent comments. */
+  findingLookup?: (repo: string, commentId: number) => {
+    severity: string;
+    category: string;
+    filePath: string;
+    startLine: number | null;
+    title: string;
+  } | null;
 };
 
 const DEFAULT_MAX_COMMENTS = 20;
@@ -29,6 +39,14 @@ type IssueComment = {
   body?: string | null;
   created_at: string;
   updated_at?: string;
+  user?: { login?: string | null } | null;
+};
+
+type ReviewComment = {
+  id: number;
+  body?: string | null;
+  created_at: string;
+  in_reply_to_id?: number;
   user?: { login?: string | null } | null;
 };
 
@@ -65,6 +83,7 @@ export async function buildMentionContext(
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
   const maxConversationChars =
     options.maxConversationChars ?? DEFAULT_MAX_CONVERSATION_CHARS;
+  const maxThreadChars = options.maxThreadChars ?? maxConversationChars;
   const maxApiPages = options.maxApiPages ?? DEFAULT_MAX_API_PAGES;
   const maxPrBodyChars = options.maxPrBodyChars ?? DEFAULT_MAX_PR_BODY_CHARS;
 
@@ -309,6 +328,159 @@ export async function buildMentionContext(
       lines.push(sanitizeContent(mention.diffHunk));
       lines.push("```");
       lines.push("");
+    }
+  }
+
+  if (
+    mention.surface === "pr_review_comment" &&
+    mention.inReplyToId !== undefined &&
+    mention.prNumber !== undefined
+  ) {
+    let parent: ReviewComment | null = null;
+    try {
+      const parentResponse = await octokit.rest.pulls.getReviewComment({
+        owner: mention.owner,
+        repo: mention.repo,
+        comment_id: mention.inReplyToId,
+      });
+      parent = parentResponse.data as ReviewComment;
+    } catch (error) {
+      const status = (error as { status?: number }).status;
+      if (status === 404) {
+        console.warn(
+          {
+            owner: mention.owner,
+            repo: mention.repo,
+            parentCommentId: mention.inReplyToId,
+          },
+          "Skipping review comment thread context because parent comment was not found",
+        );
+      } else {
+        throw error;
+      }
+    }
+
+    if (parent) {
+      lines.push("## Review Comment Thread Context");
+
+      const reviewOutputMarkerRe = /<!-- kodiai:review-output-key:[^>]+ -->/;
+      const isKodiaiFinding = reviewOutputMarkerRe.test(parent.body ?? "");
+      if (isKodiaiFinding && options.findingLookup) {
+        let finding: ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>;
+        try {
+          finding = options.findingLookup(
+            `${mention.owner}/${mention.repo}`,
+            mention.inReplyToId,
+          );
+        } catch (error) {
+          console.warn(
+            {
+              owner: mention.owner,
+              repo: mention.repo,
+              parentCommentId: mention.inReplyToId,
+              error,
+            },
+            "Skipping finding metadata in mention context because lookup failed",
+          );
+          finding = null;
+        }
+        if (finding) {
+          lines.push(
+            `Original finding: [${finding.severity.toUpperCase()}] ${finding.category}`,
+          );
+          lines.push(`File: ${finding.filePath}`);
+          if (finding.startLine !== null) {
+            lines.push(`Line: ${finding.startLine}`);
+          }
+          lines.push(`Title: ${finding.title}`);
+          lines.push("");
+        }
+      }
+
+      const threadResponse = await octokit.rest.pulls.listReviewComments({
+        owner: mention.owner,
+        repo: mention.repo,
+        pull_number: mention.prNumber,
+        per_page: 100,
+        sort: "created",
+        direction: "asc",
+      });
+
+      let threadRoot = mention.inReplyToId;
+      if (parent.in_reply_to_id !== undefined) {
+        threadRoot = parent.in_reply_to_id;
+      }
+
+      const allReviewComments = threadResponse.data as ReviewComment[];
+      const threadComments = allReviewComments
+        .filter(
+          (comment) =>
+            comment.id === threadRoot || comment.in_reply_to_id === threadRoot,
+        )
+        .filter((comment) => comment.id !== mention.commentId)
+        .sort((a, b) => {
+          const aTime = new Date(a.created_at).getTime();
+          const bTime = new Date(b.created_at).getTime();
+          if (aTime !== bTime) return aTime - bTime;
+          return a.id - b.id;
+        });
+
+      if (threadComments.length === 0) {
+        lines.push("No earlier comments found in this thread.");
+        lines.push("");
+      } else {
+        const olderThreadCount = Math.max(0, threadComments.length - 3);
+        let remainingThreadChars = Math.max(0, maxThreadChars);
+        let didHitThreadCharCap = false;
+        let didTruncateOldThreadTurn = false;
+
+        for (const [index, comment] of threadComments.entries()) {
+          if (remainingThreadChars <= 0) {
+            if (!didHitThreadCharCap) {
+              didHitThreadCharCap = true;
+              scaleNotes.push(
+                `Review thread context truncated due to ${maxThreadChars} character cap.`,
+              );
+            }
+            break;
+          }
+
+          const author = comment.user?.login ?? "unknown";
+          const bodyRaw = comment.body ?? "(empty)";
+          const bodySanitized = sanitizeContent(bodyRaw);
+          const isOlderThreadTurn = index < olderThreadCount;
+          const perCommentCap = isOlderThreadTurn ? Math.min(200, maxCommentChars) : maxCommentChars;
+          const truncatedBody = truncateDeterministic(bodySanitized, perCommentCap);
+
+          if (isOlderThreadTurn && truncatedBody.truncated) {
+            didTruncateOldThreadTurn = true;
+          }
+
+          const finalBody =
+            truncatedBody.text.length <= remainingThreadChars
+              ? truncatedBody.text
+              : truncateDeterministic(truncatedBody.text, remainingThreadChars).text;
+
+          if (finalBody.length < truncatedBody.text.length && !didHitThreadCharCap) {
+            didHitThreadCharCap = true;
+            scaleNotes.push(
+              `Review thread context truncated due to ${maxThreadChars} character cap.`,
+            );
+          }
+
+          remainingThreadChars = Math.max(0, remainingThreadChars - finalBody.length);
+
+          lines.push(`### @${author} (${comment.created_at})`);
+          lines.push(finalBody);
+          lines.push("");
+        }
+
+        if (didTruncateOldThreadTurn) {
+          scaleNotes.push(
+            "Older review thread turns were truncated to 200 characters to preserve recent context.",
+          );
+        }
+      }
     }
   }
 

@@ -60,11 +60,20 @@ if [[ ${#missing[@]} -gt 0 ]]; then
 fi
 
 echo "==> Installing / upgrading Azure CLI extensions..."
-az extension add --name containerapp --upgrade -y 2>/dev/null
+if ! az extension show --name containerapp >/dev/null 2>&1; then
+  az extension add --name containerapp --upgrade -y 2>/dev/null
+fi
 
 echo "==> Registering resource providers (may take a minute on first run)..."
-az provider register --namespace Microsoft.App --wait
-az provider register --namespace Microsoft.OperationalInsights --wait
+APP_PROVIDER_STATE=$(az provider show --namespace Microsoft.App --query registrationState --output tsv 2>/dev/null || true)
+if [[ "$APP_PROVIDER_STATE" != "Registered" ]]; then
+  az provider register --namespace Microsoft.App --wait
+fi
+
+OPS_PROVIDER_STATE=$(az provider show --namespace Microsoft.OperationalInsights --query registrationState --output tsv 2>/dev/null || true)
+if [[ "$OPS_PROVIDER_STATE" != "Registered" ]]; then
+  az provider register --namespace Microsoft.OperationalInsights --wait
+fi
 
 # -- Resource Group -----------------------------------------------------------
 echo "==> Creating resource group: $RESOURCE_GROUP in $LOCATION..."
@@ -75,19 +84,23 @@ az group create \
 
 # -- Azure Container Registry ------------------------------------------------
 echo "==> Creating Azure Container Registry: $ACR_NAME..."
-az acr create \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "$ACR_NAME" \
-  --sku Basic \
-  --location "$LOCATION" \
-  --output none
+if ! az acr show --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" --output none 2>/dev/null; then
+  az acr create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$ACR_NAME" \
+    --sku Basic \
+    --location "$LOCATION" \
+    --output none
+fi
 
 # -- Managed Identity ---------------------------------------------------------
 echo "==> Creating managed identity: $IDENTITY_NAME..."
-az identity create \
-  --name "$IDENTITY_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --output none
+if ! az identity show --name "$IDENTITY_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  az identity create \
+    --name "$IDENTITY_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --output none
+fi
 
 # Grant AcrPull to the managed identity on the ACR
 IDENTITY_PRINCIPAL_ID=$(az identity show \
@@ -124,46 +137,77 @@ az acr build \
 
 # -- Container Apps Environment -----------------------------------------------
 echo "==> Creating Container Apps environment: $ENVIRONMENT..."
-az containerapp env create \
-  --name "$ENVIRONMENT" \
-  --resource-group "$RESOURCE_GROUP" \
-  --location "$LOCATION" \
-  --output none
+if ! az containerapp env show --name "$ENVIRONMENT" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  az containerapp env create \
+    --name "$ENVIRONMENT" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$LOCATION" \
+    --output none
+fi
 
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
-FQDN=$(az containerapp create \
-  --name "$APP_NAME" \
-  --resource-group "$RESOURCE_GROUP" \
-  --environment "$ENVIRONMENT" \
-  --image "$ACR_NAME.azurecr.io/kodiai:latest" \
-  --user-assigned "$IDENTITY_RESOURCE_ID" \
-  --registry-server "$ACR_NAME.azurecr.io" \
-  --registry-identity "$IDENTITY_RESOURCE_ID" \
-  --target-port 3000 \
-  --ingress external \
-  --min-replicas 1 \
-  --max-replicas 1 \
-  --secrets \
-    github-app-id="$GITHUB_APP_ID" \
-    github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
-    github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
-    claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
-  --env-vars \
-    GITHUB_APP_ID=secretref:github-app-id \
-    GITHUB_PRIVATE_KEY=secretref:github-private-key \
-    GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
-    CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
-    PORT=3000 \
-    LOG_LEVEL=info \
-  --query properties.configuration.ingress.fqdn \
-  --output tsv)
+if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  REVISION_SUFFIX="deploy-$(date +%Y%m%d-%H%M%S)"
+  echo "==> Updating existing container app (revision: $REVISION_SUFFIX)..."
+  az containerapp secret set \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --secrets \
+      github-app-id="$GITHUB_APP_ID" \
+      github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
+      github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
+      claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
+    --output none
 
-# -- Health Probes (via YAML update) ------------------------------------------
-echo "==> Configuring health probes..."
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --revision-suffix "$REVISION_SUFFIX" \
+    --image "$ACR_NAME.azurecr.io/kodiai:latest" \
+    --set-env-vars \
+      GITHUB_APP_ID=secretref:github-app-id \
+      GITHUB_PRIVATE_KEY=secretref:github-private-key \
+      GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
+      CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
+      PORT=3000 \
+      LOG_LEVEL=info \
+    --min-replicas 1 \
+    --max-replicas 1 \
+    --output none
+else
+  echo "==> Creating container app: $APP_NAME..."
+  az containerapp create \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --environment "$ENVIRONMENT" \
+    --image "$ACR_NAME.azurecr.io/kodiai:latest" \
+    --user-assigned "$IDENTITY_RESOURCE_ID" \
+    --registry-server "$ACR_NAME.azurecr.io" \
+    --registry-identity "$IDENTITY_RESOURCE_ID" \
+    --target-port 3000 \
+    --ingress external \
+    --min-replicas 1 \
+    --max-replicas 1 \
+    --secrets \
+      github-app-id="$GITHUB_APP_ID" \
+      github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
+      github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
+      claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
+    --env-vars \
+      GITHUB_APP_ID=secretref:github-app-id \
+      GITHUB_PRIVATE_KEY=secretref:github-private-key \
+      GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
+      CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
+      PORT=3000 \
+      LOG_LEVEL=info \
+    --output none
 
-PROBE_YAML=$(mktemp)
-cat > "$PROBE_YAML" <<YAML
+  # Configure health probes on first create.
+  echo "==> Configuring health probes..."
+
+  PROBE_YAML=$(mktemp)
+  cat > "$PROBE_YAML" <<YAML
 properties:
   template:
     containers:
@@ -206,13 +250,20 @@ properties:
             failureThreshold: 30
 YAML
 
-az containerapp update \
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --yaml "$PROBE_YAML" \
+    --output none
+
+  rm -f "$PROBE_YAML"
+fi
+
+FQDN=$(az containerapp show \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --yaml "$PROBE_YAML" \
-  --output none
-
-rm -f "$PROBE_YAML"
+  --query properties.configuration.ingress.fqdn \
+  --output tsv)
 
 # -- Done ---------------------------------------------------------------------
 echo ""

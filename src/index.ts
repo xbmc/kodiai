@@ -12,6 +12,15 @@ import { createWorkspaceManager } from "./jobs/workspace.ts";
 import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
+import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
+import { createTelemetryStore } from "./telemetry/store.ts";
+import { createKnowledgeStore } from "./knowledge/store.ts";
+import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
+import { createLearningMemoryStore } from "./learning/memory-store.ts";
+import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
+import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
+import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
+import { Database } from "bun:sqlite";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -33,6 +42,76 @@ if (staleCount > 0) {
   logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
 }
 
+// Telemetry storage (SQLite with WAL mode)
+const telemetryDbPath = process.env.TELEMETRY_DB_PATH ?? "./data/kodiai-telemetry.db";
+const telemetryStore = createTelemetryStore({ dbPath: telemetryDbPath, logger });
+
+// Startup maintenance: purge old rows (TELEM-07) and checkpoint WAL (TELEM-08)
+const purgedCount = telemetryStore.purgeOlderThan(90);
+if (purgedCount > 0) {
+  logger.info({ purgedCount }, "Telemetry retention purge complete");
+}
+telemetryStore.checkpoint();
+
+const knowledgeDb = resolveKnowledgeDbPath();
+const knowledgeStore = createKnowledgeStore({ dbPath: knowledgeDb.dbPath, logger });
+logger.info(
+  { knowledgeDbPath: knowledgeDb.dbPath, source: knowledgeDb.source },
+  "Knowledge store path resolved",
+);
+knowledgeStore.checkpoint();
+
+// Learning memory (v0.5 LEARN-06)
+let learningMemoryStore: LearningMemoryStore | undefined;
+let embeddingProvider: EmbeddingProvider | undefined;
+
+try {
+  const learningDb = new Database(knowledgeDb.dbPath, { create: true });
+  learningDb.run("PRAGMA journal_mode = WAL");
+  learningDb.run("PRAGMA synchronous = NORMAL");
+  learningDb.run("PRAGMA busy_timeout = 5000");
+
+  learningMemoryStore = createLearningMemoryStore({ db: learningDb, logger });
+  logger.info("Learning memory store initialized");
+} catch (err) {
+  logger.warn({ err }, "Learning memory store failed to initialize (fail-open, learning disabled)");
+}
+
+const voyageApiKey = process.env.VOYAGE_API_KEY?.trim();
+if (voyageApiKey && learningMemoryStore) {
+  embeddingProvider = createEmbeddingProvider({
+    apiKey: voyageApiKey,
+    model: "voyage-code-3",
+    dimensions: 1024,
+    logger,
+  });
+  logger.info({ model: "voyage-code-3", dimensions: 1024 }, "Embedding provider initialized");
+} else {
+  embeddingProvider = createNoOpEmbeddingProvider(logger);
+  if (!voyageApiKey) {
+    logger.info("VOYAGE_API_KEY not set, embedding generation disabled (no-op provider)");
+  }
+}
+
+// Learning memory isolation layer (LEARN-07)
+let isolationLayer: IsolationLayer | undefined;
+if (learningMemoryStore) {
+  isolationLayer = createIsolationLayer({ memoryStore: learningMemoryStore, logger });
+  logger.info("Learning memory isolation layer initialized");
+}
+
+// Startup maintenance: purge old run state entries
+if (knowledgeStore) {
+  try {
+    const runsPurged = knowledgeStore.purgeOldRuns(30);
+    if (runsPurged > 0) {
+      logger.info({ runsPurged }, "Run state retention purge complete");
+    }
+  } catch (err) {
+    logger.warn({ err }, "Run state purge failed (non-fatal)");
+  }
+}
+
 // Event processing pipeline: bot filter -> event router
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
@@ -47,6 +126,11 @@ createReviewHandler({
   workspaceManager,
   githubApp,
   executor,
+  telemetryStore,
+  knowledgeStore,
+  learningMemoryStore,
+  embeddingProvider,
+  isolationLayer,
   logger,
 });
 createMentionHandler({
@@ -55,6 +139,15 @@ createMentionHandler({
   workspaceManager,
   githubApp,
   executor,
+  telemetryStore,
+  knowledgeStore,
+  logger,
+});
+createFeedbackSyncHandler({
+  eventRouter,
+  jobQueue,
+  githubApp,
+  knowledgeStore,
   logger,
 });
 

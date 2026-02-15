@@ -15,6 +15,11 @@ describe("classifyError", () => {
     expect(classifyError("string error", true)).toBe("timeout");
   });
 
+  test("returns 'timeout_partial' when isTimeout is true and published is true", () => {
+    expect(classifyError(new Error("some error"), true, true)).toBe("timeout_partial");
+    expect(classifyError(new Error("clone failed"), true, true)).toBe("timeout_partial");
+  });
+
   test("returns 'config_error' when message contains .kodiai.yml", () => {
     expect(
       classifyError(new Error("Invalid .kodiai.yml: parse error"), false),
@@ -79,6 +84,7 @@ describe("classifyError", () => {
 describe("formatErrorComment", () => {
   const categories: ErrorCategory[] = [
     "timeout",
+    "timeout_partial",
     "api_error",
     "config_error",
     "clone_error",
@@ -88,6 +94,7 @@ describe("formatErrorComment", () => {
   test("produces correct markdown structure for each category", () => {
     const expectedHeaders: Record<ErrorCategory, string> = {
       timeout: "Kodiai timed out",
+      timeout_partial: "Kodiai completed a partial review",
       api_error: "Kodiai encountered an API error",
       config_error: "Kodiai found a configuration problem",
       clone_error: "Kodiai couldn't access the repository",
@@ -105,6 +112,12 @@ describe("formatErrorComment", () => {
     const result = formatErrorComment("timeout", "detail");
     expect(result).toContain("smaller pieces");
     expect(result).toContain("`.kodiai.yml`");
+  });
+
+  test("includes suggestion for timeout_partial", () => {
+    const result = formatErrorComment("timeout_partial", "detail");
+    expect(result).toContain("partial review");
+    expect(result).toContain("inline comments");
   });
 
   test("includes suggestion for api_error", () => {

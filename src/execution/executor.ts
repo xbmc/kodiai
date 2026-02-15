@@ -24,7 +24,13 @@ export function createExecutor(deps: {
 
       try {
         // Load repo config (.kodiai.yml) with defaults
-        const config = await loadRepoConfig(context.workspace.dir);
+        const { config, warnings } = await loadRepoConfig(context.workspace.dir);
+        for (const w of warnings) {
+          logger.warn(
+            { section: w.section, issues: w.issues },
+            "Config section invalid, using defaults",
+          );
+        }
         logger.info(
           { model: config.model, maxTurns: config.maxTurns },
           "Loaded repo config",
@@ -32,14 +38,17 @@ export function createExecutor(deps: {
 
         // Set up timeout enforcement via AbortController (not AbortSignal.timeout()
         // because we need to clearTimeout on success -- Pitfall 5 from research)
-        timeoutSeconds = config.timeoutSeconds;
+        timeoutSeconds = context.dynamicTimeoutSeconds ?? config.timeoutSeconds;
         const timeoutMs = timeoutSeconds * 1000;
         controller = new AbortController();
         timeoutId = setTimeout(
           () => controller!.abort(new Error("timeout")),
           timeoutMs,
         );
-        logger.info({ timeoutMs }, "Timeout enforcement configured");
+        logger.info(
+          { timeoutMs, source: context.dynamicTimeoutSeconds ? "dynamic" : "config" },
+          "Timeout enforcement configured",
+        );
 
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>
@@ -59,6 +68,7 @@ export function createExecutor(deps: {
           repo: context.repo,
           prNumber: context.prNumber,
           commentId: context.commentId,
+          botHandles: context.botHandles,
           reviewOutputKey: context.reviewOutputKey,
           deliveryId: context.deliveryId,
           logger,
@@ -107,7 +117,7 @@ export function createExecutor(deps: {
             },
             mcpServers,
             allowedTools,
-            disallowedTools: ["WebSearch", "WebFetch"],
+            disallowedTools: [],
             settingSources: ["project"],
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
@@ -150,8 +160,34 @@ export function createExecutor(deps: {
             durationMs,
             sessionId: undefined,
             errorMessage: "No result message received from Claude Code CLI",
+            model: undefined,
+            inputTokens: undefined,
+            outputTokens: undefined,
+            cacheReadTokens: undefined,
+            cacheCreationTokens: undefined,
+            stopReason: undefined,
           };
         }
+
+        // Extract token usage from SDK result (TELEM-01)
+        const modelEntries = Object.entries(resultMessage.modelUsage ?? {});
+        const primaryModel = modelEntries[0]?.[0] ?? "unknown";
+        const totalInput = modelEntries.reduce(
+          (sum, [, u]) => sum + u.inputTokens,
+          0,
+        );
+        const totalOutput = modelEntries.reduce(
+          (sum, [, u]) => sum + u.outputTokens,
+          0,
+        );
+        const totalCacheRead = modelEntries.reduce(
+          (sum, [, u]) => sum + u.cacheReadInputTokens,
+          0,
+        );
+        const totalCacheCreation = modelEntries.reduce(
+          (sum, [, u]) => sum + u.cacheCreationInputTokens,
+          0,
+        );
 
         return {
           conclusion:
@@ -162,6 +198,12 @@ export function createExecutor(deps: {
           sessionId: resultMessage.session_id,
           published,
           errorMessage: undefined,
+          model: primaryModel,
+          inputTokens: totalInput,
+          outputTokens: totalOutput,
+          cacheReadTokens: totalCacheRead,
+          cacheCreationTokens: totalCacheCreation,
+          stopReason: resultMessage.stop_reason ?? undefined,
         };
       } catch (err) {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -182,6 +224,12 @@ export function createExecutor(deps: {
             published: false,
             errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
+            model: undefined,
+            inputTokens: undefined,
+            outputTokens: undefined,
+            cacheReadTokens: undefined,
+            cacheCreationTokens: undefined,
+            stopReason: undefined,
           };
         }
 
@@ -197,6 +245,12 @@ export function createExecutor(deps: {
           sessionId: undefined,
           published: false,
           errorMessage,
+          model: undefined,
+          inputTokens: undefined,
+          outputTokens: undefined,
+          cacheReadTokens: undefined,
+          cacheCreationTokens: undefined,
+          stopReason: undefined,
         };
       }
     },

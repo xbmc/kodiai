@@ -1,192 +1,555 @@
-# Stack Research
+# Technology Stack
 
-**Domain:** GitHub App webhook bot with AI code review (Claude Code CLI backend)
-**Researched:** 2026-02-07
-**Confidence:** HIGH
+**Project:** Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval
+**Researched:** 2026-02-14
+**Overall Confidence:** HIGH
+
+## Executive Summary
+
+This milestone adds three capability areas to the existing Kodiai codebase. The critical finding is that **zero new npm dependencies are needed** for any of the three features. Every capability leverages existing infrastructure: Bun's native `Bun.semver` for version comparison, the already-installed `@octokit/rest` for GitHub Advisory API and GitHub Releases API access, the existing Voyage AI embedding provider for multi-signal queries, and the existing SQLite + sqlite-vec stack for adaptive threshold storage.
+
+For dependency bump analysis: `Bun.semver` provides `order()` and `satisfies()` natively (20x faster than node-semver). The missing `diff()` function (major/minor/patch classification) is a 10-line pure function on parsed version strings. CVE lookup uses the GitHub Advisory Database API via `octokit.rest.securityAdvisories.listGlobalAdvisories()` already typed in the installed `@octokit/rest@22.0.1`. Changelog fetching uses `octokit.rest.repos.getReleaseByTag()` for GitHub-hosted projects, with a plain `fetch()` fallback for CHANGELOG.md files on GitHub/npm.
+
+For timeout resilience: the executor already has `AbortController`-based timeout enforcement. Progressive review requires publishing partial results before timeout via the existing MCP comment server. No new timeout or chunking library is needed -- the pattern is "check elapsed time between review phases, publish what you have if running low."
+
+For intelligent retrieval: the existing `isolationLayer.retrieveWithIsolation()` already accepts `queryEmbedding`, `topK`, and `distanceThreshold`. Multi-signal queries are a prompt construction change (build better query text from PR title + file paths + diff hunks + language). Adaptive thresholds are a SQLite table tracking retrieval quality over time and adjusting the `distanceThreshold` config value per-repo.
 
 ## Recommended Stack
 
-### Core Technologies
+### No New Dependencies Required
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Bun | ^1.3.7 | JavaScript runtime | Pre-selected constraint. Fastest JS runtime, native TypeScript, built-in test runner. Reference codebase (`claude-code-action`) already uses Bun. Docker image: `oven/bun:1-alpine`. |
-| Hono | ^4.11.8 | HTTP framework | Pre-selected constraint. Built on Web Standards `fetch` API, works natively with Bun (no adapter needed). Ultrafast, tiny bundle. `export default app` pattern integrates directly with `Bun.serve()`. Has built-in JWT helper, testing helper (`testClient`), and middleware system. |
-| TypeScript | ^5.8.3 | Type safety | Pre-selected constraint. Use Bun's bundler mode (`moduleResolution: "bundler"`, `noEmit: true`, `verbatimModuleSyntax: true`). Reference codebase uses strict config with `noUncheckedIndexedAccess`. |
-| @anthropic-ai/claude-agent-sdk | ^0.2.37 | AI agent execution | Pre-selected constraint. The `query()` function streams `SDKMessage` events. Supports `mcpServers` config (stdio, SSE, HTTP, in-process SDK servers), `allowedTools`, `permissionMode`, `systemPrompt` presets, `cwd`, custom `env`. Returns `SDKResultMessage` with `conclusion: "success" | "failure"`. This is the core execution engine. |
+| What's Needed | Already Available | Where |
+|---------------|-------------------|-------|
+| Semver comparison | `Bun.semver.order()`, `Bun.semver.satisfies()` | Bun runtime built-in |
+| Semver diff (major/minor/patch) | 10-line pure function parsing `X.Y.Z` | New utility (zero deps) |
+| CVE/advisory lookup | `octokit.rest.securityAdvisories.listGlobalAdvisories()` | `@octokit/rest@22.0.1` (already installed) |
+| Changelog from GitHub Releases | `octokit.rest.repos.getReleaseByTag()` | `@octokit/rest@22.0.1` (already installed) |
+| Changelog from raw files | `fetch()` to GitHub raw content URLs | Bun built-in `fetch` |
+| Dependency manifest detection | `diffAnalysis.riskSignals` includes "Modifies dependency manifest" | `src/execution/diff-analysis.ts` |
+| Timeout enforcement | `AbortController` with `setTimeout` | `src/execution/executor.ts` (line 43-47) |
+| Partial result publishing | MCP comment server `publishReviewComment` tool | `src/execution/mcp/comment-server.ts` |
+| Vector similarity search | `sqlite-vec` with `learning_memory_vec` table | `src/learning/memory-store.ts` |
+| Embedding generation | Voyage AI `embed()` with `inputType: "query"` | `src/learning/embedding-provider.ts` |
+| Distance threshold filtering | `isolationLayer.retrieveWithIsolation()` | `src/learning/isolation.ts` |
+| Configuration schemas | Zod schemas with section fallback | `src/execution/config.ts` |
 
-**Confidence: HIGH** -- Versions verified against npm registry and official docs (2026-02-07).
+### Existing Dependencies (No Version Changes)
 
-### GitHub Integration
+| Technology | Version | Purpose | Used For New Features |
+|------------|---------|---------|----------------------|
+| `@octokit/rest` | ^22.0.1 | GitHub API | Advisory Database API, Releases API for changelog, repo content fetch |
+| `@octokit/webhooks-types` | ^7.6.1 | Type definitions | No new types needed |
+| `zod` | ^4.3.6 | Schema validation | Config extensions for dep analysis, timeout, retrieval |
+| `bun:sqlite` | builtin | Persistent storage | Adaptive threshold tracking, dep analysis cache |
+| `sqlite-vec` | ^0.1.7-alpha.2 | Vector search | Multi-signal query retrieval (same infrastructure) |
+| `voyageai` | ^0.1.0 | Embeddings | Multi-signal query embedding generation |
+| `pino` | ^10.3.0 | Structured logging | Telemetry for all three feature areas |
+| `p-queue` | ^9.1.0 | Concurrency control | No changes needed |
+| `hono` | ^4.11.8 | HTTP framework | No changes needed |
+| `picomatch` | ^4.0.2 | Glob matching | No changes needed |
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| @octokit/auth-app | ^8.1.2 | GitHub App authentication | `createAppAuth()` handles JWT generation from `appId` + `privateKey`, installation token minting with automatic caching (up to 15K tokens), auto-refresh on expiry. Replaces the action's OIDC token exchange entirely. Use `auth({ type: "installation", installationId })` per webhook event. |
-| @octokit/rest | ^22.0.1 | GitHub REST API client | Typed REST client. Pair with `createAppAuth` as `authStrategy`. Reference codebase uses `^21.1.1`; v22 is current stable. |
-| @octokit/graphql | ^9.0.3 | GitHub GraphQL API client | PR data fetching (diff, comments, reviews, CI status) is far more efficient via GraphQL -- single request vs many REST calls. Reference codebase uses `^8.2.2`; v9 is current. |
-| @octokit/webhooks-methods | ^5.0.0 | Webhook signature verification | Lightweight: just `verify(secret, payload, signature)` returning boolean. Does NOT pull in the full `@octokit/webhooks` event handler system. Use this with a custom Hono middleware that reads raw body via `c.req.text()`, checks `X-Hub-Signature-256` header. |
-| @octokit/webhooks-types | ^7.6.1 | TypeScript types for webhook payloads | Provides `PullRequestEvent`, `IssueCommentEvent`, etc. Reference codebase uses this exact package. Requires `strictNullChecks: true` in tsconfig (which we already have via `strict: true`). |
+## Feature-Specific Stack Details
 
-**Confidence: HIGH** -- All packages verified on npm. `@octokit/auth-app` API confirmed via official GitHub README.
+### Feature 1: Dependency Bump Analysis
 
-### Supporting Libraries
+**Detection: Which files signal a dependency bump?**
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| @modelcontextprotocol/sdk | ^1.26.0 | MCP server implementation | For porting the 4 MCP servers from the reference codebase (comment, inline-comment, actions, file-ops). These run as stdio child processes alongside Claude Code. The SDK provides `Server` class, `CallToolResult` type. Reference uses `^1.11.0`; v1.26.0 is current. |
-| zod | ^3.24.4 | Schema validation | Validate `.kodiai.yml` config, webhook payloads, environment variables. Stay on Zod 3.x -- Zod 4.x (v4.3.6) has breaking import changes (`zod/v4`). The Claude Agent SDK `tool()` function uses Zod schemas for MCP tool input definitions, so Zod is already a transitive dependency. |
-| p-queue | ^8.1.0 | In-process job queue | Concurrency-limited async queue for job processing. Pure ESM, no Redis required. Set `concurrency: 2-4` per container to limit parallel Claude Code invocations (each is memory-heavy). Per-installation rate limiting via separate queue instances or priority. |
-| shell-quote | ^1.8.3 | Shell argument parsing | For safely constructing CLI arguments. Reference codebase uses this for parsing `claudeArgs` strings. |
+The diff analysis already detects dependency manifest changes (package.json, go.mod, Cargo.toml, requirements.txt, etc.) via path-based risk signals in `src/execution/diff-analysis.ts` (line 145-157). The new feature extends this detection to parse the actual diff content of these files to extract version changes.
 
-**Confidence: HIGH** -- Zod version pinning rationale verified (Zod 4.x is a separate import path). p-queue ESM-only confirmed.
+**Semver comparison: Use Bun.semver (no library needed)**
 
-### Development Tools
+Bun provides native semver with `Bun.semver.order()` and `Bun.semver.satisfies()`, which are 20x faster than the `semver` npm package. The one missing function is `diff()` to classify a version change as major/minor/patch/prerelease. This is a trivial pure function:
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| bun test | Test runner | Built into Bun runtime. Vitest-compatible API (`describe`, `it`, `expect`). Use Hono's `testClient()` helper for route testing. Known issue: `testClient` headers may not pass correctly in some Bun versions (GitHub issue #4065). Workaround: use `app.request()` directly for header-sensitive tests. |
-| smee-client | ^4.3.1 | Local webhook proxy | Proxies GitHub webhook payloads to localhost via Server-Sent Events. Essential for development -- no need for ngrok or public tunnels. Run: `npx smee -u https://smee.io/YOUR_CHANNEL -t http://localhost:3000/webhooks/github`. Dev-only dependency. |
-| prettier | ^3.5.3 | Code formatting | Reference codebase uses Prettier. Consistent with ecosystem conventions. |
-| @types/bun | ^1.2.11 | Bun type definitions | TypeScript types for Bun-specific APIs (`Bun.serve`, `Bun.env`, etc.). |
+```typescript
+type SemverDiffType = "major" | "minor" | "patch" | "prerelease" | null;
 
-**Confidence: HIGH** -- smee-client verified as standard GitHub App dev tool. testClient issue verified on GitHub.
+function semverDiff(from: string, to: string): SemverDiffType {
+  const parse = (v: string) => {
+    const clean = v.replace(/^v/, "");
+    const [core, pre] = clean.split("-", 2);
+    const parts = core.split(".").map(Number);
+    return { major: parts[0], minor: parts[1], patch: parts[2], pre };
+  };
+  const a = parse(from);
+  const b = parse(to);
+  if (a.major !== b.major) return "major";
+  if (a.minor !== b.minor) return "minor";
+  if (a.patch !== b.patch) return "patch";
+  if (a.pre !== b.pre) return "prerelease";
+  return null;
+}
+```
 
-### Infrastructure
+Why NOT use the `semver` npm package (7.7.x, 50KB): We need exactly one function (`diff`) that is a 10-line string split. Adding a 50KB dependency with 30+ functions for a single trivial operation is unjustified. `Bun.semver.order()` handles all comparison needs natively.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Docker (oven/bun:1-alpine) | latest 1.x tag | Container base image | Alpine variant is smallest (~130MB vs ~300MB for debian). Must install `git` and `openssh-client` via `apk add` for repo cloning. Install Claude Code CLI in build step (`curl -fsSL https://claude.ai/install.sh \| bash`). |
-| Azure Container Apps | N/A | Deployment target | Pre-selected constraint. Supports scale-to-zero, HTTP ingress, environment variable secrets, container health probes. Single replica to start, scale based on HTTP request count. |
+**CVE lookup: Use GitHub Advisory Database API (already in Octokit)**
 
-**Confidence: MEDIUM** -- Docker image variants confirmed on Docker Hub. Azure Container Apps is a constraint, not a recommendation. Bun + Alpine + Claude Code CLI combination needs validation in actual build (Claude CLI installer may assume debian packages).
+The `@octokit/rest@22.0.1` already includes typed endpoints for the GitHub Advisory Database:
 
-## Architecture Decisions
+```typescript
+// List advisories for a specific npm package
+const { data: advisories } = await octokit.rest.securityAdvisories.listGlobalAdvisories({
+  ecosystem: "npm",          // npm, pip, go, rubygems, maven, nuget, rust, etc.
+  affects: "lodash@4.17.20", // package@version format
+  severity: "medium,high,critical",
+  type: "reviewed",          // Only reviewed (not unreviewed/malware)
+  per_page: 10,
+});
 
-### Why @octokit/webhooks-methods Instead of @octokit/webhooks
+// Each advisory contains: ghsa_id, cve_id, summary, description,
+// severity, vulnerabilities[].package, vulnerabilities[].vulnerable_version_range,
+// vulnerabilities[].patched_versions
+```
 
-The full `@octokit/webhooks` package (v14.2.0) includes an event handler system with `createNodeMiddleware()` for Express/Node.js HTTP servers. This is unnecessary with Hono because:
+Rate limit: Uses the standard REST rate limit (5000/hour), NOT the search rate limit. The advisory endpoint supports filtering by ecosystem and package, so a single call per dependency bump is sufficient.
 
-1. Hono has its own middleware and routing system
-2. `createNodeMiddleware()` creates a Node.js-specific handler incompatible with Bun's Web Standards fetch API
-3. We only need signature verification, not the event dispatch system
-4. Our event routing is custom (webhook -> event router -> handler -> queue -> worker)
+Why NOT use the OSV.dev API: GitHub Advisory Database is the upstream source for npm advisories. Using it directly via the already-installed Octokit avoids adding a new HTTP client, new types, and another API to monitor. OSV.dev aggregates FROM GitHub Advisory Database for npm.
 
-Use `@octokit/webhooks-methods` for just `verify()` + `@octokit/webhooks-types` for TypeScript types. This is lighter and framework-agnostic.
+Why NOT use `npm audit` / `bun audit`: These require a full lockfile and operate on the entire dependency tree. We need per-package version-specific advisory lookup, not a full audit.
 
-### Why @octokit/auth-app Instead of Manual JWT
+**Changelog fetching: Use GitHub Releases API + raw content fetch (already in Octokit)**
 
-The reference codebase uses manual OIDC token exchange via Anthropic's API (because it runs inside GitHub Actions). As a standalone GitHub App, we hold the private key and must:
+Strategy with prioritized fallback:
 
-1. Generate JWTs ourselves (RS256, 10-minute expiry)
-2. Exchange JWTs for installation access tokens (1-hour expiry)
-3. Cache and refresh tokens
+```typescript
+// Priority 1: GitHub Releases (most packages publish release notes)
+const { data: release } = await octokit.rest.repos.getReleaseByTag({
+  owner: "lodash",
+  repo: "lodash",
+  tag: `v${version}`, // or just version
+});
+// release.body contains markdown changelog
 
-`@octokit/auth-app` handles all three with built-in caching (15K tokens), auto-refresh, and typed API. Rolling your own JWT signing with `jsonwebtoken` is error-prone (clock skew, expiry handling, cache invalidation).
+// Priority 2: Fetch CHANGELOG.md from repo
+const response = await fetch(
+  `https://raw.githubusercontent.com/${owner}/${repo}/HEAD/CHANGELOG.md`
+);
+// Parse to extract section for target version
 
-### Why Zod 3.x Not 4.x
+// Priority 3: npm registry metadata (has repository URL, homepage)
+const npmMeta = await fetch(`https://registry.npmjs.org/${packageName}`);
+// Extract repository.url to find the GitHub repo
+```
 
-Zod 4.x (released as v4.3.6) has a different import path (`import { z } from "zod/v4"`) and API changes. The Claude Agent SDK's `tool()` function takes `ZodRawShape` from Zod 3.x. Mixing Zod versions will cause type incompatibilities in MCP tool definitions. Stay on 3.x until the Agent SDK explicitly supports Zod 4.
+The repo owner/name for npm packages comes from the npm registry metadata (`repository.url` field), which is a single unauthenticated `fetch()` call per package. No new dependency needed.
 
-### Why p-queue Not BullMQ/Redis
+**Package manifest diff parsing: Pure functions, no library**
 
-Each Claude Code invocation is a heavyweight process (clones a repo, spawns CLI, runs for 30-300 seconds). The bottleneck is not queue throughput but parallel execution capacity. p-queue provides:
+Parsing `package.json` diffs to extract dependency version changes is JSON diffing:
 
-- In-process concurrency limiting (no external dependencies)
-- Per-queue isolation (separate queues per installation for fairness)
-- Priority support (review jobs vs mention jobs)
-- No Redis infrastructure to manage
+```typescript
+// For package.json: parse old and new versions from git diff
+// The diff is already available in the PR files -- just need to parse
+// the +/- lines in the dependency sections
+type DependencyChange = {
+  name: string;
+  from: string;
+  to: string;
+  diffType: SemverDiffType;
+  section: "dependencies" | "devDependencies" | "peerDependencies";
+};
+```
 
-If the system needs horizontal scaling (multiple container replicas), migrate to Azure Service Bus or BullMQ. But for a single-container MVP, p-queue is the right choice.
+For non-JSON manifests (go.mod, Cargo.toml, requirements.txt), regex-based parsers handle the well-defined formats. These are formal grammars, not natural language.
 
-### Why No Pino Logger
+**What NOT to add for dependency bump analysis:**
 
-The reference codebase uses `console.log` with structured data. For Azure Container Apps, `console.log(JSON.stringify({...}))` is sufficient -- Azure captures stdout as structured logs. Pino adds complexity (worker threads, transport config, `bun-plugin-pino` needed for bundling). Use a thin wrapper around `console.log` that adds timestamp, level, and correlation ID. Add Pino later only if log volume or performance demands it.
+| Do NOT Add | Rationale |
+|------------|-----------|
+| `semver` npm package | `Bun.semver` handles comparison; `diff()` is a 10-line function |
+| `npm-fetch-changelog` | Does too much (full version range iteration); we need a single version lookup |
+| `osv-scanner` or OSV client | GitHub Advisory Database is the primary source for npm; already in Octokit |
+| `lockfile-diff` | We parse specific manifest files from the PR diff, not lockfiles |
+| `snyk` or `sonatype` APIs | Vendor-locked, requires API keys, GitHub Advisory Database is free and sufficient |
+| Dependabot integration | Dependabot creates PRs; we analyze existing PRs -- different concern |
+
+**Confidence: HIGH** -- Bun.semver verified running in current runtime. Octokit advisory types verified in node_modules. GitHub Releases API verified in Octokit types.
+
+---
+
+### Feature 2: Timeout/Chunked Review Resilience
+
+**Current state of timeout handling:**
+
+The executor (`src/execution/executor.ts`, line 39-47) already implements `AbortController`-based timeout with configurable `timeoutSeconds` (default 600s = 10 minutes). When timeout fires, the abort signal kills the Agent SDK query and the handler posts an error comment (line 2279-2293 of `review.ts`).
+
+The problem: on timeout, ALL review work is lost. Zero output is published.
+
+**Solution: Progressive review with checkpoint publishing**
+
+The approach is NOT chunking the review into separate Agent SDK calls (which would lose context). Instead:
+
+1. **Time budget awareness**: Pass remaining time budget to the review prompt so the LLM can prioritize.
+2. **Checkpoint publishing**: Before the Agent SDK call, set up a "safety net" timer that fires at ~80% of timeout. If the review hasn't completed by then, the handler checks if any partial output was published via MCP tools and, if not, publishes a summary comment noting the review was truncated.
+3. **File prioritization**: The existing large PR file triage (`triageFilesByRisk()` in `src/lib/file-risk-scorer.ts`) already prioritizes high-risk files. For timeout resilience, ensure the prompt instructs the LLM to review high-risk files first and publish findings incrementally.
+
+```typescript
+// Existing infrastructure -- no new deps:
+// 1. AbortController timeout (executor.ts)
+// 2. MCP comment server can publish at any time during execution
+// 3. File risk scoring already prioritizes files
+// 4. Large PR triage already limits review scope
+
+// NEW: Safety net timer at 80% of timeout
+const safetyNetMs = timeoutMs * 0.8;
+const safetyNetTimer = setTimeout(async () => {
+  if (!published) {
+    // Post partial results or "review truncated" comment
+    await postTruncatedReviewComment(octokit, { owner, repo, prNumber });
+  }
+}, safetyNetMs);
+```
+
+**What about chunked/progressive review across multiple Agent SDK calls?**
+
+Evaluated and rejected for v0.9. Running multiple sequential Agent SDK calls would:
+1. Lose cross-file context that makes reviews valuable
+2. Multiply cost (each call has system prompt overhead)
+3. Add significant complexity for incremental context passing
+4. Create race conditions with the existing idempotency system
+
+The simpler approach for v0.9: make the single review call more resilient by (a) being time-aware in the prompt, (b) publishing incrementally via MCP tools, and (c) having a safety net for truncated reviews.
+
+**What NOT to add for timeout resilience:**
+
+| Do NOT Add | Rationale |
+|------------|-----------|
+| Message queue (BullMQ, etc.) | Overkill; a setTimeout callback is sufficient for safety net |
+| Streaming response parser | Agent SDK handles streaming; we need checkpoint publishing, not stream parsing |
+| Worker threads | Review execution is already async; parallelism doesn't help single-PR review |
+| External scheduler (cron) | Timeout is per-request, not scheduled |
+| Circuit breaker library (opossum, etc.) | The fail-open pattern with error comments is already the circuit breaker |
+
+**Confidence: HIGH** -- All building blocks exist. This is an orchestration change using existing infrastructure.
+
+---
+
+### Feature 3: Intelligent Retrieval Improvements
+
+**Current retrieval pipeline (verified in codebase):**
+
+1. Query text construction: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}` (review.ts line 1431)
+2. Embedding generation: `embeddingProvider.generate(queryText, "query")` via Voyage AI (embedding-provider.ts)
+3. Vector search: `isolationLayer.retrieveWithIsolation()` with `distanceThreshold: 0.3` (default)
+4. Result filtering: by distance threshold, repo isolation, deduplication
+5. Context injection: matched findings injected into review prompt
+
+**Improvement 1: Multi-signal query construction**
+
+Currently the query text is just PR title + file paths. This misses important signals:
+
+```typescript
+// CURRENT (review.ts:1431)
+const queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`;
+
+// IMPROVED: Multi-signal query
+function buildRetrievalQuery(params: {
+  prTitle: string;
+  reviewFiles: string[];
+  diffAnalysis: DiffAnalysis;
+  prLabels: string[];
+  languages: string[]; // from file extensions
+}): string {
+  const signals: string[] = [];
+
+  // Signal 1: PR title (semantic intent)
+  signals.push(params.prTitle);
+
+  // Signal 2: Top risk files (most relevant paths)
+  const topFiles = params.reviewFiles.slice(0, 10);
+  signals.push(topFiles.join("\n"));
+
+  // Signal 3: Risk signals (detected patterns)
+  if (params.diffAnalysis.riskSignals.length > 0) {
+    signals.push(params.diffAnalysis.riskSignals.join(", "));
+  }
+
+  // Signal 4: Languages (for language-specific patterns)
+  if (params.languages.length > 0) {
+    signals.push(`Languages: ${params.languages.join(", ")}`);
+  }
+
+  // Signal 5: Categories from labels
+  if (params.prLabels.length > 0) {
+    signals.push(`Labels: ${params.prLabels.join(", ")}`);
+  }
+
+  return signals.join("\n");
+}
+```
+
+This is a pure function change with zero new dependencies. The embedding provider already handles arbitrary text input.
+
+**Improvement 2: Adaptive distance thresholds**
+
+Currently `distanceThreshold` is a static config value (default 0.3). Adaptive thresholds track retrieval quality per-repo and adjust:
+
+```sql
+-- Track retrieval outcome quality
+CREATE TABLE IF NOT EXISTS retrieval_quality_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  query_hash TEXT NOT NULL,
+  distance_threshold REAL NOT NULL,
+  results_returned INTEGER NOT NULL,
+  results_useful INTEGER DEFAULT 0,  -- updated by feedback
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Computed adaptive threshold per repo
+-- Simple approach: if retrievals at 0.3 consistently return 0 useful results,
+-- tighten to 0.25. If they consistently return useful results, loosen to 0.35.
+```
+
+The adaptive logic is a simple moving average over the last N retrievals per repo, stored in the existing SQLite database. No ML, no optimization library -- just `AVG(results_useful)` over a sliding window.
+
+**Improvement 3: Language-aware boosting**
+
+When retrieving prior findings, boost results that match the current PR's primary language(s). This is a post-retrieval re-ranking step:
+
+```typescript
+function rerankByLanguageAffinity(
+  results: RetrievalResult[],
+  prLanguages: Set<string>,
+): RetrievalResult[] {
+  return results.sort((a, b) => {
+    const aLangMatch = prLanguages.has(extractLanguage(a.record.filePath)) ? 0 : 0.05;
+    const bLangMatch = prLanguages.has(extractLanguage(b.record.filePath)) ? 0 : 0.05;
+    return (a.distance + aLangMatch) - (b.distance + bLangMatch);
+  });
+}
+```
+
+This is a pure function -- no new dependencies. Language detection from file extensions is trivial and already implicit in the codebase via picomatch patterns.
+
+**What NOT to add for intelligent retrieval:**
+
+| Do NOT Add | Rationale |
+|------------|-----------|
+| Second embedding model | One Voyage AI model is sufficient; multi-model adds complexity and cost |
+| Re-ranking model (Cohere, etc.) | Simple heuristic re-ranking (language affinity) is sufficient for v0.9 |
+| Full-text search engine (MeiliSearch, Typesense) | sqlite-vec handles the vector search; adding FTS is premature |
+| Graph database for relationships | SQLite relational queries handle the simple relationships needed |
+| Feature store (Feast, etc.) | Overkill; a SQLite table for threshold tracking is sufficient |
+| Learning-to-rank library | The retrieval set is small (topK=5); sophisticated ranking is unnecessary |
+
+**Confidence: HIGH** -- All improvements operate on existing infrastructure. Multi-signal query is a string construction change. Adaptive thresholds are a SQLite table + simple math. Language boosting is a sort function.
+
+---
+
+## Database Schema Additions
+
+### New Tables
+
+```sql
+-- Dependency advisory cache (Feature 1)
+-- Caches GitHub Advisory Database lookups per package@version
+CREATE TABLE IF NOT EXISTS dep_advisory_cache (
+  ecosystem TEXT NOT NULL,           -- npm, pip, go, etc.
+  package_name TEXT NOT NULL,
+  package_version TEXT NOT NULL,
+  advisories_json TEXT NOT NULL,     -- JSON array of advisory summaries
+  has_advisories INTEGER NOT NULL DEFAULT 0,
+  cached_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (ecosystem, package_name, package_version)
+);
+
+-- Retrieval quality tracking (Feature 3)
+-- Tracks whether retrieved memories were useful for adaptive thresholds
+CREATE TABLE IF NOT EXISTS retrieval_quality_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  repo TEXT NOT NULL,
+  distance_threshold REAL NOT NULL,
+  results_returned INTEGER NOT NULL,
+  results_cited INTEGER DEFAULT 0,   -- how many retrieved findings appeared in final review
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rql_repo ON retrieval_quality_log(repo);
+```
+
+### Schema Changes to Existing Tables
+
+**NONE.** All three features work with existing table structures plus the two new tables above.
+
+## Configuration Schema Extensions
+
+```yaml
+# New config sections for v0.9
+review:
+  # Dependency bump analysis (Feature 1)
+  dependencyAnalysis:
+    enabled: true                # Default: true
+    ecosystems:                  # Which ecosystems to analyze
+      - npm
+      - pip
+      - go
+      - rust
+    advisoryLookup: true         # Look up CVEs for bumped packages
+    changelogFetch: true         # Fetch changelog/release notes
+    maxDepsToAnalyze: 10         # Skip analysis if >10 deps changed (likely lockfile churn)
+
+  # Timeout resilience (Feature 2)
+  timeout:
+    safetyNetPercent: 80         # Publish partial results at this % of timeout
+    truncatedReviewEnabled: true # Post "review truncated" comment on timeout
+
+# Knowledge section extensions (Feature 3)
+knowledge:
+  retrieval:
+    # Existing fields (unchanged)
+    enabled: true
+    topK: 5
+    distanceThreshold: 0.3
+    maxContextChars: 2000
+    # New fields
+    adaptiveThreshold: true      # Adjust distanceThreshold per-repo based on quality
+    multiSignalQuery: true       # Use enhanced query construction
+    languageBoost: 0.05          # Distance penalty for language mismatch
+```
+
+## API Rate Limit Impact
+
+| Feature | API Calls | Rate Limit | Mitigation |
+|---------|-----------|------------|------------|
+| Advisory lookup | 1 per changed dependency (max 10) | 5000/hour (REST) | Cache 24h per package@version; cap at maxDepsToAnalyze |
+| Changelog fetch (GitHub Releases) | 1 per changed dependency | 5000/hour (REST) | Cache; only for major/minor bumps |
+| Changelog fetch (npm registry) | 1 per package needing repo URL | No auth needed | Cache repo URL indefinitely |
+| Changelog fetch (raw CHANGELOG.md) | 1 per package (fallback) | Unauthenticated or REST | Only when GitHub Release not found |
+| Timeout safety net | 0 additional calls | N/A | Uses existing MCP publish path |
+| Multi-signal query | 1 Voyage AI call (same as today) | Voyage AI rate limit | Same call, different input text |
+| Adaptive threshold | 0 additional calls | N/A | Local SQLite reads/writes only |
+
+**Worst case per review with dep bumps:** ~20 additional REST API calls (10 advisory + 10 changelog). With caching, subsequent reviews of the same dependencies cost 0 calls. All calls are fail-open.
+
+## Integration Points with Existing Stack
+
+### Where Each Feature Connects
+
+```
+Feature 1: Dependency Bump Analysis
+  Detection:   src/execution/diff-analysis.ts     -- detect dep manifest changes (EXISTING signal)
+  Parser:      src/lib/dep-bump-parser.ts (new)    -- parse version changes from diff hunks
+  Advisory:    src/lib/advisory-lookup.ts (new)    -- GitHub Advisory Database queries
+  Changelog:   src/lib/changelog-fetch.ts (new)    -- GitHub Releases + raw file fetch
+  Prompt:      src/execution/review-prompt.ts      -- inject dep analysis context section
+  Cache:       src/knowledge/store.ts              -- dep_advisory_cache table
+  Config:      src/execution/config.ts             -- dependencyAnalysis schema
+
+Feature 2: Timeout Resilience
+  Executor:    src/execution/executor.ts           -- safety net timer at 80% timeout
+  Handler:     src/handlers/review.ts              -- truncated review comment posting
+  Prompt:      src/execution/review-prompt.ts      -- time budget awareness section
+  MCP:         src/execution/mcp/comment-server.ts -- incremental publishing (EXISTING)
+  Config:      src/execution/config.ts             -- timeout.safetyNetPercent schema
+
+Feature 3: Intelligent Retrieval
+  Query:       src/handlers/review.ts (line 1431)  -- replace simple query with multi-signal
+  Isolation:   src/learning/isolation.ts           -- no changes needed (accepts any embedding)
+  Reranker:    src/learning/reranker.ts (new)      -- language-aware post-retrieval boosting
+  Threshold:   src/learning/adaptive-threshold.ts (new) -- per-repo threshold tracking
+  Store:       src/knowledge/store.ts              -- retrieval_quality_log table
+  Config:      src/execution/config.ts             -- retrieval schema extensions
+```
+
+### Data Flow
+
+```
+PR webhook arrives
+  |
+  +-- Diff analysis detects "Modifies dependency manifest" risk signal (EXISTING)
+  |
+  +-- IF dependency manifest changed:
+  |     +-- Parse diff hunks for package.json/go.mod/etc. to extract version changes
+  |     +-- For each changed dep (up to maxDepsToAnalyze):
+  |     |     +-- Classify bump type via semverDiff() (major/minor/patch)
+  |     |     +-- Lookup CVEs via GitHub Advisory API (cached)
+  |     |     +-- Fetch changelog via GitHub Releases API (cached, major/minor only)
+  |     +-- Build dependency analysis context section for prompt
+  |
+  +-- Build multi-signal retrieval query (Feature 3)
+  |     +-- Embed with Voyage AI (same call, richer text)
+  |     +-- Retrieve via isolation layer with adaptive threshold
+  |     +-- Rerank by language affinity
+  |
+  +-- Set up safety net timer at 80% of timeout (Feature 2)
+  |
+  +-- Execute review via Agent SDK (EXISTING pipeline)
+  |     +-- Prompt includes dep analysis context + retrieval context
+  |     +-- LLM reviews files in risk-priority order (EXISTING)
+  |     +-- LLM publishes findings via MCP tools (EXISTING)
+  |
+  +-- IF safety net fires before completion:
+  |     +-- Post truncated review comment with partial findings
+  |
+  +-- After completion: log retrieval quality for adaptive threshold (Feature 3)
+```
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| @octokit/webhooks-methods | @octokit/webhooks (full) | If you want built-in event type dispatch with `.on("pull_request.opened", handler)` pattern. But duplicates Hono's routing. |
-| @octokit/auth-app | Manual JWT + jsonwebtoken | If you need custom token exchange logic (e.g., multi-tenant with different private keys per tenant). auth-app handles this via constructor options. |
-| p-queue | BullMQ + Redis | When running multiple container replicas that need shared job state, dead-letter queues, or job persistence across restarts. Phase 4+ concern. |
-| console.log wrapper | Pino | When log volume exceeds what console-based logging handles efficiently, or when you need log levels, child loggers, and serializers. |
-| Zod 3.x | Zod 4.x | When @anthropic-ai/claude-agent-sdk updates its `tool()` function to accept Zod 4 schemas. Monitor their changelog. |
-| Bun built-in test | Vitest | If you need more advanced test features (coverage UI, browser testing, mocking plugins). Bun test is sufficient for unit + integration tests. |
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Semver comparison | `Bun.semver` (native) | `semver` npm package (7.7.x) | 50KB for functions Bun provides natively; only need trivial `diff()` |
+| CVE lookup | GitHub Advisory Database API | OSV.dev API | GitHub Advisory DB is upstream source for npm; already in Octokit |
+| CVE lookup | GitHub Advisory Database API | Snyk API | Vendor-locked, requires separate API key, rate-limited |
+| Changelog fetch | GitHub Releases API + raw fetch | `npm-fetch-changelog` library | Library iterates all versions; we need single-version lookup |
+| Changelog fetch | GitHub Releases API | npm registry changelog field | npm registry doesn't have changelog; only has repository URL |
+| Timeout handling | Safety net timer + truncated comment | Chunked multi-call review | Multi-call loses cross-file context, multiplies cost |
+| Timeout handling | Safety net timer | External job queue (BullMQ) | Massive complexity for a setTimeout callback |
+| Retrieval improvement | Multi-signal query text | Multiple embedding queries merged | Single query is cheaper; Voyage AI handles multi-signal text well |
+| Adaptive threshold | SQLite moving average | ML-based threshold optimization | Sliding window average is debuggable; ML is opaque for 5 data points |
+| Language boosting | Post-retrieval distance penalty | Pre-retrieval language filter | Pre-filtering eliminates potentially relevant cross-language findings |
 
-## What NOT to Use
+## What NOT to Add (Avoiding Bloat)
 
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| Probot framework | Opinionated framework designed for simpler bots. Bundles its own server (Express), auth, and event system. Conflicts with Hono, adds unnecessary abstraction over Octokit. | @octokit/auth-app + @octokit/rest + Hono directly |
-| Express / Fastify | Node.js frameworks. Hono on Bun is faster, smaller, and uses Web Standards. No adapter needed. | Hono |
-| jsonwebtoken (manual) | Error-prone for GitHub App auth (clock skew, token caching, expiry). | @octokit/auth-app |
-| @actions/core / @actions/github | GitHub Actions-specific packages. These read from `process.env.GITHUB_*` variables set by Actions runners. Won't work in a standalone server. | @octokit/rest + @octokit/graphql |
-| node-fetch | Bun has native `fetch()` built in (Web Standards). node-fetch is a polyfill for Node.js. Reference codebase includes it but we don't need it. | Built-in `fetch()` |
-| dotenv | Bun has built-in `.env` file loading. No need for dotenv package. | `Bun.env` / `process.env` (auto-loaded) |
-| nodemon | Bun has built-in hot reload with `--hot` flag. | `bun run --hot src/index.ts` |
-| Jest | Bun has a built-in test runner compatible with Jest/Vitest API. | `bun test` |
-| Zod 4.x | Import path change (`zod/v4`), incompatible with Claude Agent SDK `tool()` function which uses Zod 3 `ZodRawShape`. | Zod ^3.24.4 |
+| Do NOT Add | Rationale |
+|------------|-----------|
+| `semver` npm package | Bun.semver handles comparison; diff() is 10 lines |
+| `npm-fetch-changelog` | Over-fetches; we need single version lookup |
+| `osv-scanner` / OSV client | GitHub Advisory DB is the primary source, already in Octokit |
+| `lockfile-diff` | We parse manifest diffs, not lockfile diffs |
+| Snyk/Sonatype SDKs | Vendor-locked, separate API keys |
+| BullMQ / job queue | setTimeout is sufficient for safety net |
+| Redis | SQLite handles the caching and threshold tracking |
+| Cohere / re-ranking model | Heuristic re-ranking is sufficient for small result sets |
+| MeiliSearch / Typesense | sqlite-vec already handles vector search |
+| Second embedding model | One Voyage AI model is sufficient |
+| Worker threads | Review execution is async; parallelism doesn't help |
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
+| Component | Compatible With | Notes |
 |-----------|-----------------|-------|
-| @anthropic-ai/claude-agent-sdk@^0.2.37 | zod@^3.24.4 | SDK's `tool()` function uses `ZodRawShape` from Zod 3. Do NOT use Zod 4.x. |
-| @anthropic-ai/claude-agent-sdk@^0.2.37 | @modelcontextprotocol/sdk@^1.26.0 | SDK accepts MCP servers via `mcpServers` option. MCP SDK provides `McpServer` class for in-process servers (`type: "sdk"`). |
-| @octokit/rest@^22.0.1 | @octokit/auth-app@^8.1.2 | Pass `createAppAuth` as `authStrategy` to Octokit constructor. Tokens auto-refresh. |
-| @octokit/graphql@^9.0.3 | @octokit/auth-app@^8.1.2 | Create graphql client with `auth.hook` for automatic token injection. |
-| hono@^4.11.8 | Bun@^1.3.7 | Native support. `export default app` works directly with `Bun.serve()`. No adapter package needed. |
-| p-queue@^8.1.0 | Bun@^1.3.7 | Pure ESM. Works with Bun's ESM-native module system. |
-| @types/bun@^1.2.11 | TypeScript@^5.8.3 | Bun type definitions for current TypeScript. |
-
-## Installation
-
-```bash
-# Core dependencies
-bun add hono @octokit/rest @octokit/graphql @octokit/auth-app @octokit/webhooks-methods @octokit/webhooks-types @anthropic-ai/claude-agent-sdk @modelcontextprotocol/sdk zod@3 p-queue shell-quote
-
-# Dev dependencies
-bun add -d @types/bun @types/shell-quote typescript prettier smee-client
-```
-
-## Stack Patterns by Variant
-
-**If running behind Azure Front Door or reverse proxy:**
-- Trust `X-Forwarded-For` headers in Hono (set `app = new Hono({ getPath: ... })` or use proxy middleware)
-- Webhook signature verification uses raw body, unaffected by proxying
-
-**If adding horizontal scaling (multiple replicas):**
-- Replace p-queue with Azure Service Bus or BullMQ + Redis
-- Add Azure Cache for Redis for token caching (currently in-memory via @octokit/auth-app)
-- Add health check that includes queue depth
-
-**If adding non-Claude LLM providers (Phase 4+):**
-- Add `@anthropic-ai/sdk` or provider-specific SDK
-- Custom agentic loop with tool definitions (no Claude Code CLI)
-- GitHub API for all file operations (no local checkout needed)
+| `Bun.semver` | Bun 1.1+ | Available since Bun 1.0.11; tested in current runtime |
+| Advisory API | `@octokit/rest@22.0.1` | `securityAdvisories.listGlobalAdvisories()` typed |
+| Releases API | `@octokit/rest@22.0.1` | `repos.getReleaseByTag()`, `repos.listReleases()` typed |
+| New SQLite tables | `bun:sqlite` WAL mode | Additive tables only; no schema changes to existing |
+| Config extensions | `zod@4.3.6` | Same schema patterns as existing config |
+| Embedding generation | `voyageai@0.1.0` | Same `embed()` call, different input text |
 
 ## Sources
 
-- [Hono official docs - Bun getting started](https://hono.dev/docs/getting-started/bun) -- Server entry point pattern, middleware system, testing helper (HIGH confidence)
-- [Hono npm](https://www.npmjs.com/package/hono) -- v4.11.8 verified (HIGH confidence)
-- [Bun official site](https://bun.com/) -- v1.3.7 verified (HIGH confidence)
-- [@octokit/auth-app README](https://github.com/octokit/auth-app.js/blob/main/README.md) -- Full API reference, `createAppAuth()` params, token caching behavior (HIGH confidence)
-- [@octokit/auth-app npm](https://www.npmjs.com/package/@octokit/auth-app) -- v8.1.2 verified (HIGH confidence)
-- [@octokit/rest npm](https://www.npmjs.com/package/@octokit/rest) -- v22.0.1 verified (HIGH confidence)
-- [@octokit/graphql npm](https://www.npmjs.com/package/@octokit/graphql) -- v9.0.3 verified (HIGH confidence)
-- [@octokit/webhooks-methods npm](https://www.npmjs.com/package/@octokit/webhooks-methods) -- v5.0.0, `verify()` and `verifyWithFallback()` API confirmed (HIGH confidence)
-- [@octokit/webhooks-types npm](https://www.npmjs.com/package/@octokit/webhooks-types) -- v7.6.1 verified (HIGH confidence)
-- [Claude Agent SDK TypeScript reference](https://platform.claude.com/docs/en/agent-sdk/typescript) -- Full `Options` type, `query()` API, `McpServerConfig`, message types, `tool()` function (HIGH confidence)
-- [Claude Agent SDK quickstart](https://platform.claude.com/docs/en/agent-sdk/quickstart) -- Installation, basic usage, permission modes (HIGH confidence)
-- [@anthropic-ai/claude-agent-sdk npm](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) -- v0.2.37 verified (HIGH confidence)
-- [@modelcontextprotocol/sdk npm](https://www.npmjs.com/package/@modelcontextprotocol/sdk) -- v1.26.0 verified (HIGH confidence)
-- [p-queue npm](https://www.npmjs.com/package/p-queue) -- v8.1.0+, ESM-only confirmed (HIGH confidence)
-- [zod npm](https://www.npmjs.com/package/zod) -- v3.24.4 (3.x), v4.3.6 (4.x) coexistence confirmed (HIGH confidence)
-- [smee-client npm](https://www.npmjs.com/package/smee-client) -- v4.3.1 verified (HIGH confidence)
-- [Docker Hub oven/bun](https://hub.docker.com/r/oven/bun) -- Alpine/slim variants confirmed (HIGH confidence)
-- [Azure Container Apps best practices](https://learn.microsoft.com/en-us/azure/well-architected/service-guides/azure-container-apps) -- Deployment patterns, scaling, security (MEDIUM confidence)
-- Reference codebase: `tmp/claude-code-action/` -- package.json, source code, MCP servers, SDK usage patterns (HIGH confidence, direct code review)
+### Primary (HIGH confidence -- verified in codebase and runtime)
+- `src/execution/diff-analysis.ts` (line 145-157) -- dependency manifest risk signal detection patterns
+- `src/execution/executor.ts` (line 39-47) -- AbortController timeout enforcement
+- `src/handlers/review.ts` (line 1427-1460) -- retrieval query construction and isolation layer usage
+- `src/learning/isolation.ts` -- `retrieveWithIsolation()` with distance threshold filtering
+- `src/learning/embedding-provider.ts` -- Voyage AI embedding generation with fail-open
+- `src/learning/memory-store.ts` (line 165-174) -- sqlite-vec vector search query
+- `src/execution/config.ts` (line 255-267) -- retrieval config schema with distanceThreshold
+- `node_modules/@octokit/plugin-rest-endpoint-methods` -- verified `securityAdvisories` and `repos.releases` endpoints
+- Bun runtime -- verified `Bun.semver.order()` and `Bun.semver.satisfies()` working
+
+### Secondary (MEDIUM confidence -- verified via official docs)
+- [Bun Semver API Reference](https://bun.com/reference/bun/semver) -- `order()` and `satisfies()` only; NO `diff()` method
+- [GitHub REST API: Global Security Advisories](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories` with ecosystem/affects/severity filters
+- [GitHub REST API: Releases](https://docs.github.com/en/rest/releases) -- `GET /repos/{owner}/{repo}/releases/tags/{tag}`
+- [OSV.dev API](https://google.github.io/osv.dev/post-v1-querybatch/) -- Evaluated as alternative; not recommended (GitHub Advisory DB is upstream for npm)
+
+### Tertiary (LOW confidence -- general ecosystem knowledge)
+- [npm-fetch-changelog](https://www.npmjs.com/package/npm-fetch-changelog) -- Evaluated and rejected; iterates all versions
+- [lockfile-diff](https://www.npmjs.com/package/lockfile-diff) -- Evaluated and rejected; parses lockfiles not manifest diffs
+- [semver npm package](https://www.npmjs.com/package/semver) -- v7.7.4; evaluated and rejected in favor of Bun.semver
 
 ---
-*Stack research for: Kodiai GitHub App webhook bot*
-*Researched: 2026-02-07*
+*Stack research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
+*Researched: 2026-02-14*

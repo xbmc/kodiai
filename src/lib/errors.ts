@@ -14,9 +14,10 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { redactGitHubTokens } from "./sanitizer.ts";
 
-/** The five user-facing error categories */
+/** The six user-facing error categories */
 export type ErrorCategory =
   | "timeout"
+  | "timeout_partial"
   | "api_error"
   | "config_error"
   | "clone_error"
@@ -27,12 +28,15 @@ export type ErrorCategory =
  *
  * @param error - The caught error (unknown type from catch blocks)
  * @param isTimeout - Whether the execution was terminated by timeout
+ * @param published - Whether any inline comments were published before the error
  * @returns The error category for formatting
  */
 export function classifyError(
   error: unknown,
   isTimeout: boolean,
+  published?: boolean,
 ): ErrorCategory {
+  if (isTimeout && published) return "timeout_partial";
   if (isTimeout) return "timeout";
 
   const message =
@@ -52,6 +56,7 @@ export function classifyError(
 /** Human-readable headers for each error category */
 const HEADERS: Record<ErrorCategory, string> = {
   timeout: "Kodiai timed out",
+  timeout_partial: "Kodiai completed a partial review",
   api_error: "Kodiai encountered an API error",
   config_error: "Kodiai found a configuration problem",
   clone_error: "Kodiai couldn't access the repository",
@@ -62,6 +67,8 @@ const HEADERS: Record<ErrorCategory, string> = {
 const SUGGESTIONS: Record<ErrorCategory, string> = {
   timeout:
     "Try breaking the task into smaller pieces, or increase `timeoutSeconds` in `.kodiai.yml`.",
+  timeout_partial:
+    "Some inline comments were posted above. To get a full review, increase `timeoutSeconds` in `.kodiai.yml` or break the PR into smaller changes.",
   api_error: "This is usually temporary. Try again in a few minutes.",
   config_error:
     "Check your `.kodiai.yml` file for syntax or schema errors.",

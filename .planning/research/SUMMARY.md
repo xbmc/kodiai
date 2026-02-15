@@ -1,328 +1,217 @@
 # Project Research Summary
 
-**Project:** Kodiai - GitHub App AI Code Review Bot
-**Domain:** Webhook-driven GitHub App with AI agent backend (Claude Code CLI)
-**Researched:** 2026-02-07
+**Project:** Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval
+**Domain:** AI Code Review System Enhancement
+**Researched:** 2026-02-14
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Kodiai is a GitHub App that provides AI-powered code review via webhook-driven automation. Unlike GitHub Actions, it operates as a standalone webhook server receiving events from GitHub, processing them asynchronously, and responding via GitHub API calls. The architecture uses Claude Code CLI (via `@anthropic-ai/claude-agent-sdk`) as the agentic backend, with custom MCP servers providing GitHub integration capabilities.
+This milestone enhances an existing AI code review system with three independent capability areas that address current pain points. The critical finding is that **all three features leverage existing infrastructure** with minimal new dependencies. Dependency bump analysis uses Bun's native semver and the already-installed Octokit for GitHub Advisory API access. Timeout resilience builds on the existing AbortController pattern to capture partial results rather than failing completely (addressing a documented 10% failure rate on large repos). Intelligent retrieval improves the existing embedding-based learning memory through better query construction and adaptive thresholds, not by adding new models or vector databases.
 
-The recommended approach is a webhook-to-queue-to-worker architecture built on Bun + Hono + Octokit + Claude Agent SDK. The core insight from architecture research is that this MUST be async-first: webhooks have a 10-second response timeout, but AI reviews take 30-300 seconds. The Acknowledge-Then-Process pattern is mandatory. Stack research confirms all pre-selected technologies (Bun, Hono, TypeScript, Claude Agent SDK) are the correct choices with battle-tested integrations. Feature research reveals the competitive landscape is dominated by tools that create noise (CodeRabbit) or lack agentic depth (single-shot LLM calls). Kodiai's differentiators are the full Claude Code agent loop and a "silent approval" anti-noise strategy.
+The recommended approach prioritizes timeout resilience first (highest impact, lowest risk), followed by retrieval improvements (pure functions, no external APIs), then dependency bump analysis (most complex, requires external API coordination). All three features follow established patterns in the codebase: pure function enrichment, fail-open design, and config-gated progressive rollout. The architecture integrates into the existing review pipeline as preprocessing and enrichment layers—no new services, no new databases, no architectural overhaul.
 
-The primary risks are webhook timeout failures (causes duplicate processing), bot self-triggering loops (infinite cost burn), prompt injection (security), and process leaks (resource exhaustion). All four have documented prevention strategies from the reference implementation and require architectural enforcement from Phase 1. The research provides high confidence that with proper implementation of the Acknowledge-Then-Process pattern, per-installation job queues, ephemeral workspaces, and robust content sanitization, these risks are manageable.
+The key risk is data quality for dependency analysis: changelog availability is 50-70% at best, and CVE databases have documented false positive rates approaching 20,000 entries. Mitigation requires graceful degradation (fallback URLs when changelogs unavailable), OSV.dev over raw NVD for higher-quality advisories, and framing all vulnerability data as "advisory/informational" rather than blocking. The timeout resilience risk is duplicate comment publication during chunked reviews, prevented by using progressive scope reduction (single publish point) rather than parallel chunk execution.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The pre-selected stack (Bun + Hono + TypeScript + Claude Agent SDK) is optimal for this domain. All components have verified compatible versions and battle-tested integration patterns from the reference implementation (`tmp/claude-code-action/`).
+**Zero new npm dependencies required.** Every capability leverages existing infrastructure:
 
 **Core technologies:**
-- **Bun 1.3.7**: JavaScript runtime — Pre-selected constraint, fastest JS runtime, native TypeScript, built-in test runner, works natively with Hono
-- **Hono 4.11.8**: HTTP framework — Pre-selected constraint, built on Web Standards, works natively with Bun (no adapter), ultrafast, tiny bundle
-- **@anthropic-ai/claude-agent-sdk 0.2.37**: AI agent execution — Pre-selected constraint, the core execution engine with `query()` function streaming `SDKMessage` events, supports MCP servers
-- **@octokit/auth-app 8.1.2**: GitHub App authentication — Handles JWT generation, installation token minting with automatic caching (up to 15K tokens), auto-refresh on expiry
-- **@octokit/rest 22.0.1 + @octokit/graphql 9.0.3**: GitHub API clients — Typed REST + GraphQL clients for efficient PR data fetching
-- **@modelcontextprotocol/sdk 1.26.0**: MCP server implementation — For the 4 MCP servers (comment, inline-comment, actions, file-ops) running as stdio child processes
-- **p-queue 8.1.0**: In-process job queue — Concurrency-limited async queue for job processing, per-installation rate limiting
-- **Zod 3.24.4**: Schema validation — Validate `.kodiai.yml` config, webhook payloads; stay on 3.x (Zod 4.x breaks Claude Agent SDK compatibility)
+- **Bun.semver (native)**: semver comparison and validation — 20x faster than node-semver, already in runtime
+- **@octokit/rest@22.0.1**: GitHub Advisory Database API and Releases API — already installed, typed endpoints available
+- **Voyage AI + sqlite-vec**: embedding generation and vector retrieval — existing learning memory stack, no changes needed
+- **SQLite (bun:sqlite)**: adaptive threshold tracking and dep analysis cache — existing persistence layer
+- **AbortController + MCP tools**: timeout enforcement and partial result publishing — already implemented in executor.ts
 
-**Critical version constraints:**
-- Must use Zod 3.x (not 4.x) because Claude Agent SDK's `tool()` function uses Zod 3 `ZodRawShape`
-- Must use `@octokit/webhooks-methods` (lightweight sig verify) instead of full `@octokit/webhooks` package (duplicates Hono routing)
-- p-queue is pure ESM (no Redis needed for MVP, migrate to external queue only when scaling beyond single instance)
+**Critical rejection:** Do NOT add `semver` npm package (50KB for one missing function), OSV-scanner (GitHub Advisory DB is upstream), BullMQ (setTimeout is sufficient), or second embedding models (Voyage AI handles multi-signal queries).
 
-**Infrastructure:**
-- Docker base: `oven/bun:1-alpine` (~130MB)
-- Deployment: Azure Container Apps (pre-selected constraint, scale-to-zero capable)
-- Logging: Structured JSON to stdout (Azure ingests directly, no Pino needed for MVP)
+**Version compatibility:** All features compatible with existing dependency versions. No breaking changes to APIs, schemas, or data formats beyond additive tables.
 
 ### Expected Features
 
-Feature research reveals that users expect zero-config operation (table stakes) but the market is frustrated with noise (60-80% of AI review comments are low-value). Kodiai's competitive advantage is the full agentic loop combined with anti-noise prompt engineering.
-
 **Must have (table stakes):**
-- **PR auto-review on open/ready** — Every competitor does this; users expect zero-config review on PR creation
-- **Inline review comments on changed lines** — Line-level feedback with GitHub's suggestion blocks (one-click apply)
-- **Per-repo configuration** — `.kodiai.yml` in repo root (CodeRabbit uses `.coderabbit.yaml`, Qodo uses TOML)
-- **@mention conversational interaction** — CodeRabbit, Greptile, Ellipsis all support this; users expect it
-- **Webhook-based (no YAML in repo)** — One-click install, no workflow files (the whole point of being a GitHub App vs Action)
-- **Bot self-reference prevention** — Standard engineering requirement to prevent infinite loops
-- **Fork PR support** — Key motivator for building Kodiai (GitHub Apps handle fork PRs natively)
-- **Error handling with user feedback** — Silence on failure is unacceptable UX
+- **Dependency bump detection from PR metadata** — Dependabot/Renovate signal updates via title, labels, branch name; users expect recognition
+- **Security advisory lookup** — GitHub Advisory API for known CVEs; CodeRabbit integrates OSV-Scanner, users expect vulnerability flagging
+- **Timeout resilience with partial results** — 10% failure rate means users get zero value; partial reviews better than error comments
+- **Multi-signal retrieval queries** — Current query (title + file paths) produces weak semantic matches; risk signals + language context required
 
-**Should have (competitive differentiators):**
-- **Silent approval for clean PRs** — CodeRabbit is widely criticized for noise; "no comment = implicitly fine" addresses this directly
-- **Full agentic loop (Claude Code toolchain)** — Most competitors use single-shot LLM calls; Kodiai's multi-turn tool use enables deeper analysis
-- **Code modification via @mention** — Ellipsis is the only major competitor that auto-commits fixes; saying `@kodiai fix this` and having it create a branch, commit, push is high-value but high-complexity
-- **Minimal noise / high signal** — Bugbot differentiated on this; Kodiai can win by being the bot developers do NOT mute
-- **Eyes emoji reaction on trigger** — Small UX touch; instant feedback before actual response (30-60s)
-- **TOCTOU protection** — Security feature most competitors don't advertise; prevents time-of-check-to-time-of-use attacks
+**Should have (competitive):**
+- **Changelog extraction with fallback** — Renovate/Dependabot embed changelogs; review tool should surface version changes
+- **Merge confidence scoring** — LLM-assessed confidence based on semver + advisories + breaking changes; no competitor provides this
+- **Language-aware retrieval boosting** — Python findings less relevant for Go PRs; boost same-language historical matches
+- **Adaptive timeout based on PR size** — Large PRs get proportionally longer timeouts, dependency bumps get shorter
 
 **Defer (v2+):**
-- **Multi-LLM provider selector** — Over-engineering; ship with Claude only, add second provider only if specific user need arises
-- **Full codebase indexing / RAG** — Massive infrastructure cost (vector DB, embedding pipeline); repo clone gives full access without overhead
-- **Sequence diagrams / architecture diagrams** — CodeRabbit generates these but users report they're rarely useful; make on-demand via @mention, not automatic
-- **Test generation** — AI-generated test quality is inconsistent; bot can suggest tests are missing but shouldn't write them unsolicited
-
-**Anti-features (explicitly avoid):**
-- **Auto-approve PRs** — AI cannot take accountability; humans must click Approve
-- **PR description auto-editing** — Overwrites author intent
-- **Style / formatting enforcement** — This is what linters do; AI flagging style issues is the #1 noise source
-- **PR labeling / auto-categorization** — Low value, easy to get wrong
+- **Usage analysis** (affected API grep) — HIGH value but HIGH complexity; requires changelog parsing + workspace search
+- **Chunked parallel review** — Architectural complexity with duplicate comment risk; progressive reduction simpler
+- **Real-time CVE monitoring** — This is Dependabot's core product; point-in-time lookup at review time sufficient
+- **Custom embedding fine-tuning** — Voyage Code 3 already trained on code; marginal improvement not worth ML infrastructure
 
 ### Architecture Approach
 
-Standard webhook-driven GitHub App architecture with Acknowledge-Then-Process pattern. The webhook handler responds 200 within milliseconds, then processes asynchronously via a per-installation job queue. Each job gets an ephemeral workspace (fresh git clone in temp directory), fetches PR context via GraphQL, generates MCP config, and invokes Claude Code CLI.
+All three features integrate into the existing review pipeline as additional preprocessing, enrichment, and resilience layers. No new services, processes, or databases. The established fail-open pattern continues: every feature degrades gracefully on failure.
 
 **Major components:**
-1. **Ingress Layer** (Webhook Endpoint, Signature Verify, Health Check, Event Router, Delivery Dedup) — Trust boundary, responds to GitHub within 10s
-2. **Orchestration Layer** (Event Filters, Config Loader, GitHub Auth, Handler Dispatch, Job Queue) — Per-installation concurrency control, config merging
-3. **Execution Layer** (Workspace Manager, Context Builder, MCP Config Generator, Claude Code CLI Executor, 4 MCP Servers) — Heavyweight AI review execution
-4. **Cleanup** (Update tracking comment, remove temp dir, log result) — Resource reclamation
 
-**Key architectural patterns:**
-- **Acknowledge-Then-Process**: Return 200 immediately, process async (mandatory for webhook timeout compliance)
-- **Per-Installation Job Queue**: Each installation gets its own p-queue concurrency slot (prevents one noisy repo from starving others)
-- **Ephemeral Workspace Per Job**: Each job gets a fresh git clone in temp dir, fully isolated, destroyed after completion (~2-5s clone overhead acceptable)
-- **MCP Servers as Stdio Child Processes**: 4 servers (comment, inline-comment, CI status, file-ops) run as child processes, communicate via JSON-RPC on stdin/stdout
-- **TOCTOU-Safe Context Fetching**: Use webhook payload timestamp to filter comments, preventing attacker-edited content
+1. **Dependency Bump Detector** (`src/lib/`) — Pure function analyzes changed files + diff content to detect bumps, extract versions, classify ecosystems (npm/go/rust/python). Runs after diff analysis, before prompt building. ~250 LOC + tests.
 
-**Data flow for PR auto-review:**
-```
-GitHub webhook -> Signature verify -> Dedup -> Event router -> Filters ->
-Config loader -> Auth -> ReviewHandler -> Job queue (when slot available) ->
-Workspace clone -> Context builder (GraphQL fetch + sanitize) ->
-MCP config generation -> Claude CLI executor -> Cleanup
-```
+2. **Changelog Fetcher** (`src/lib/`) — Async, fail-open HTTP with multi-source cascade: GitHub Releases API → CHANGELOG.md in repo → compare URL fallback. Time-budgeted (5s total), cached per package+version. ~150 LOC + tests.
 
-**Scaling considerations:**
-- 1-10 installations: Single container, in-process p-queue, in-memory dedup (MVP)
-- 10-100 installations: Still single container, monitor queue depth
-- 100-1K installations: External queue (Azure Service Bus or BullMQ), persistent dedup (Redis)
-- First bottleneck: Claude CLI cold start (~12s overhead per invocation)
-- Second bottleneck: Concurrent workspace clones (concurrency: 4 means 4 concurrent clones)
-- Third bottleneck: GitHub API rate limits (5,000 req/hr per installation token)
+3. **Advisory Lookup** (`src/lib/`) — Async, fail-open queries to GitHub Advisory Database via existing Octokit. Returns GHSA ID, severity, patched versions. Cached 24h. ~120 LOC + tests.
+
+4. **Timeout Partial Capture** (executor.ts modification) — Track MCP publish events during streaming. On timeout, return `published: true` if any inline comments posted. Review handler extracts findings from published comments instead of posting error. ~20 LOC change.
+
+5. **Multi-Signal Query Builder** (`src/lib/`) — Pure function replaces naive query construction. Combines PR intent + top risk files + risk signals + language context into semantic query. ~120 LOC + tests.
+
+6. **Adaptive Threshold Computer** (`src/lib/`) — Pure function adjusts distance threshold based on repo memory count + primary language + query context. Bounded by floor (0.1) and ceiling (0.5). ~60 LOC + tests.
+
+**Integration point:** Review handler (`src/handlers/review.ts`) wires all features between existing pipeline stages. Dependency analysis runs post-diff-analysis. Retrieval enhancements replace current query construction. Timeout capture modifies executor result handling. Total modified: ~150 LOC in review handler.
 
 ### Critical Pitfalls
 
-Research identified 7 critical pitfalls from GitHub official docs, Claude Code issue tracker, and reference implementation battle scars.
+1. **Changelog fetching returns stale/wrong/no data for 30-50% of packages** — npm registry `repository` field optional/incorrect, GitHub release tags inconsistent, CHANGELOG.md formats vary wildly. **Avoid:** Multi-source cascade with compare URL fallback always available. Cache results. Time budget (2s per package, 5s total). Accept graceful degradation upfront.
 
-1. **Webhook Response Timeout Causing Duplicate Deliveries** — GitHub terminates connections after 10s; AI reviews take minutes; timeout causes retries and duplicate processing. **Prevention:** Acknowledge-Then-Process pattern (respond 200 immediately, queue async). **Phase 1 (Foundation).**
+2. **CVE data has massive false positive/negative rates** — Sonatype 2025 analysis: 20K false positives, 150K false negatives, 64% unscored CVEs, 6-week average NVD scoring delay. **Avoid:** Use OSV.dev (package-native identifiers), frame as "advisory" not "vulnerability detected," show confidence signals, never claim "no vulnerabilities" (say "no known advisories").
 
-2. **Bot Self-Triggering Infinite Loops** — Bot's own comments trigger webhooks; without filtering, creates infinite loop burning credits. **Prevention:** Multi-layer checks (sender.type === "Bot", sender.id comparison, per-PR cooldown). **Phase 1 (Foundation).**
+3. **Chunked review publishes duplicate comments** — Chunk 1 succeeds, chunk 2 times out, retry publishes chunk 1 again. Existing idempotency uses single reviewOutputKey, doesn't track partial states. **Avoid:** Progressive scope reduction (single publish point) instead of parallel chunks. First attempt: full+abbreviated tiers. On timeout: retry with only full tier. On second timeout: top-10 files. Preserves existing architecture.
 
-3. **Prompt Injection via Malicious PR Content** — Attacker embeds instructions in PR body/comments to override system prompt. **Prevention:** Port full sanitizer (`sanitizer.ts`) to strip HTML comments, invisible unicode, markdown injection; TOCTOU protections; path validation; tool restrictions. **Phase 2 (PR Auto-Review) for initial sanitization; Phase 3 (Mention) for TOCTOU.**
+4. **Timeout recovery races with in-flight MCP tool calls** — AbortController cancels SDK but MCP calls already dispatched may complete async. Retry starts before cleanup finishes. **Avoid:** Cooldown (5s) + idempotency check before retry. Track published comment IDs in onPublish callback. Never retry in same queue execution.
 
-4. **Claude Code Process Leaks Exhausting Container Resources** — Claude CLI spawns child processes that become orphaned on crash/timeout, consuming memory (~200MB each); temp files (`/tmp/claude-*-cwd`) never cleaned up; cache in `~/.claude/` grows to gigabytes. **Prevention:** Process group isolation with `kill -TERM -pgid`, temp directory isolation per job, periodic cache cleanup, hard timeout enforcement, container restart policy. **Phase 2 (basic cleanup); Phase 4 (robust process group management).**
-
-5. **Installation Token Expiration Mid-Job** — Tokens expire after 1 hour; long jobs (10+ min) start with valid token but it expires before completion, causing GitHub API failures mid-review. **Prevention:** Token freshness check before job start, Octokit auto-refresh wrapper, short-circuit for old webhooks, graceful mid-job retry on 401. **Phase 2 (basic token management); Phase 4 (automatic refresh).**
-
-6. **Webhook Signature Verification Done Wrong** — Common mistakes: using `===` instead of `crypto.timingSafeEqual` (timing attack), computing HMAC on parsed body instead of raw bytes (signature mismatch), proxy modifying body. **Prevention:** Raw body access via `c.req.raw.clone().arrayBuffer()`, timing-safe comparison, SHA-256 only, test with real webhooks. **Phase 1 (Foundation).**
-
-7. **Noisy Reviews Causing Developer Fatigue** — Bot floods PRs with low-value comments (style, naming, obvious observations); developers mute all feedback including genuine bugs; trust lost. **Prevention:** Review prompt engineering ("only report actual bugs, security, logic errors; if no issues, approve silently"), comment budget (max 10 per review), configurable strictness in `.kodiai.yml`, track signal-to-noise ratio. **Phase 2 (PR Auto-Review) — prompt engineering is core.**
-
-**Additional UX pitfalls:**
-- Silent failures (job crashes with no GitHub comment) — Always post error comment
-- "Thinking..." comment that never updates — Use single tracking comment with status updates
-- Auto-reviewing every PR including bots (Dependabot, Renovate) — Skip known bot authors
-- Reviewing draft PRs — Only auto-review on `opened` (non-draft) and `ready_for_review`
+5. **Naive retrieval query produces weak semantic matches** — Current: `${pr.title}\n${reviewFiles.slice(0,20).join("\n")}` searches "file paths" against "finding descriptions" (different semantic spaces). **Avoid:** Build multi-signal queries: PR intent + language + risk signals + diff context. Example: "TypeScript authentication bug fix: error handling, null checks in auth middleware." Use existing diffAnalysis.riskSignals for semantic enrichment.
 
 ## Implications for Roadmap
 
-Based on combined research, the roadmap should follow the dependency chain discovered in architecture analysis. The critical insight is that Phase 1 MUST establish the trust boundary and async processing pattern before ANY feature work begins, because webhook timeout compliance and bot loop prevention are existential requirements.
+Based on research, this milestone naturally decomposes into **5 phases** ordered by impact and risk:
 
-### Phase 1: Foundation (Webhook Server + Authentication)
-**Rationale:** Establishes the trust boundary (webhook signature verification, GitHub App auth) and the Acknowledge-Then-Process pattern. Without this, everything fails (webhook timeouts cause duplicate processing, bot loops burn credits). This is pure infrastructure with no user-facing features, but it's the architectural skeleton that everything else hangs on.
+### Phase 1: Timeout Resilience — Partial Result Capture
+**Rationale:** Highest impact (addresses 10% failure rate), lowest risk (25 LOC in executor, 60 LOC in review handler), immediate measurable value. Turns total failures into graceful partial reviews.
 
-**Delivers:**
-- Webhook server (Hono) with signature verification (HMAC-SHA256, timing-safe comparison)
-- GitHub App authentication (JWT generation, installation token minting via `@octokit/auth-app`)
-- Health check endpoint (Azure Container Apps liveness probe)
-- Event router (dispatch based on `X-GitHub-Event` header + action field)
-- Event filters (bot self-reference prevention, mention detection, permission checks)
-- Delivery deduplication (in-memory Set with TTL for `X-GitHub-Delivery` header)
+**Delivers:** Modified executor tracks published state on timeout. Review handler extracts findings from already-published inline comments, applies full post-LLM pipeline, posts summary with "partial review" notice.
 
-**Addresses features:** Webhook-based (no YAML), bot self-reference prevention, fork PR support (infrastructure)
+**Addresses:** Must-have timeout resilience with partial results (table stakes from FEATURES.md)
 
-**Avoids pitfalls:**
-- Pitfall 1 (webhook timeout) via Acknowledge-Then-Process
-- Pitfall 2 (bot loops) via event filters
-- Pitfall 6 (signature verification) via correct HMAC implementation
+**Avoids:** Pitfall P3 (duplicate comments) by NOT implementing chunked parallel execution yet. Pitfall P4 (race conditions) by verifying idempotency before any publish.
 
-**Research needs:** Standard patterns, well-documented. Skip `/gsd:research-phase`.
+**Stack:** Existing AbortController, MCP comment server, finding extraction pipeline (STACK.md confirms zero new dependencies)
 
----
+**Research needed:** None — well-understood pattern, verified in codebase
 
-### Phase 2: PR Auto-Review (Core Value Proposition)
-**Rationale:** Delivers the core user value (AI code review on PR open). This is the most complex phase because it requires ALL infrastructure: job queue, workspace management, context building, Claude Code execution, and MCP servers. But it's the highest payoff — this is why users install the app. Dependencies force this to come after Phase 1 (needs auth and webhook routing).
+### Phase 2: Intelligent Retrieval — Multi-Signal Queries
+**Rationale:** Pure functions only, no external APIs, high leverage improvement (every retrieval benefits). Can be measured via telemetry. Independent of other features.
 
-**Delivers:**
-- Config loader (fetch + parse `.kodiai.yml` from repo default branch, Zod validation, merge with defaults)
-- Job queue (`p-queue` with per-installation concurrency limits)
-- Workspace manager (ephemeral git clone in temp dir, cleanup in `finally` block)
-- GitHub service (Octokit wrapper with retry logic, shared REST + GraphQL clients)
-- Context builder (GraphQL queries for PR data, content sanitization, prompt formatting)
-- MCP servers: comment-server (tracking comments), inline-comment-server (suggestion blocks), actions-server (CI status)
-- Claude Code CLI executor (`query()` invocation, message streaming, result handling)
-- Job worker (wires workspace + context + executor together)
-- ReviewHandler (orchestrates PR auto-review flow end-to-end)
+**Delivers:** New query builder using PR intent + top risk files + diffAnalysis.riskSignals + language. Post-retrieval language boosting for same-language findings.
 
-**Addresses features:**
-- PR auto-review on open/ready (table stakes)
-- Inline review comments + suggestion blocks (table stakes)
-- Per-repo .kodiai.yml config (table stakes)
-- Silent approval for clean PRs (differentiator)
-- Minimal noise / high signal (differentiator)
+**Addresses:** Must-have multi-signal queries (table stakes), should-have language-aware boosting (competitive edge)
 
-**Avoids pitfalls:**
-- Pitfall 3 (prompt injection) via content sanitizer
-- Pitfall 4 (process leaks) via ephemeral workspace + basic cleanup
-- Pitfall 5 (token expiration) via basic token management
-- Pitfall 7 (noisy reviews) via prompt engineering
+**Avoids:** Pitfall P5 (naive queries) by enriching semantic context. Pitfall P8 (adaptive threshold unpredictability) by keeping fixed threshold for v0.9, improving queries instead.
 
-**Uses stack:**
-- `@anthropic-ai/claude-agent-sdk` for `query()`
-- `@modelcontextprotocol/sdk` for MCP servers
-- `@octokit/rest` + `@octokit/graphql` for PR data fetching
-- `p-queue` for job queue
-- `zod` for config validation
+**Stack:** Existing Voyage AI + sqlite-vec, existing diffAnalysis.riskSignals, existing language classification (STACK.md)
 
-**Implements architecture components:** Entire Orchestration Layer + Execution Layer
+**Research needed:** None — extends existing patterns with known signals
 
-**Research needs:** Most patterns are standard, but prompt engineering for noise reduction may need iteration during implementation. Consider `/gsd:research-phase` focused specifically on "anti-noise prompt strategies" if initial attempts produce too many low-value comments.
+### Phase 3: Dependency Bump Analysis — Detection + Advisory Lookup
+**Rationale:** Foundation for all dep analysis features. Detection is pure function (zero API calls). Advisory lookup is single REST endpoint, fail-open. Delivers immediate security value before changelog complexity.
 
----
+**Delivers:** Detect bumps from PR metadata + diff content. Extract package names + versions. Query GitHub Advisory API for CVEs. Inject into review prompt as dedicated section.
 
-### Phase 3: Mention Handler (Conversational Interaction + Code Modification)
-**Rationale:** Reuses almost all infrastructure from Phase 2 but adds conversation context, TOCTOU protections, and code modification support. This is the second highest-value feature (users naturally want to ask follow-up questions about reviews). Code modification (`@kodiai fix this`) is the most complex feature and the highest-risk (bot is committing code), so it comes last.
+**Addresses:** Must-have dependency detection and security advisory lookup (table stakes)
 
-**Delivers:**
-- MentionHandler (orchestrates @mention response flow)
-- Eyes emoji reaction (immediate feedback on trigger comment)
-- Extended context builder (conversation history, TOCTOU timestamp filtering)
-- Full content sanitization hardening (before enabling on repos with external contributors)
-- File-ops MCP server (branch creation, commit, push via Git Data API for signed commits)
+**Avoids:** Pitfall P2 (CVE false positives) by using OSV.dev framing and confidence signals. Pitfall P11 (lock file noise) by cross-referencing manifest changes.
 
-**Addresses features:**
-- @mention conversational interaction (table stakes)
-- Eyes emoji reaction (differentiator)
-- Code modification via @mention (differentiator — highest complexity, highest value)
-- TOCTOU protection (differentiator)
+**Stack:** Bun.semver for version comparison, Octokit Advisory API (STACK.md confirms already available)
 
-**Avoids pitfalls:**
-- Pitfall 3 (prompt injection) via TOCTOU timestamp filtering
-- Ensures only pre-trigger content is processed
+**Research needed:** Advisory API response format (verify GHSA structure) — LOW effort, official docs available
 
-**Research needs:** TOCTOU patterns are well-documented in reference implementation. Code modification via Git Data API is standard. Skip `/gsd:research-phase`.
+### Phase 4: Dependency Bump Analysis — Changelog Fetching
+**Rationale:** Depends on Phase 3 detection. Higher complexity (multi-source cascade, time budgets). Lower urgency than advisory lookup.
 
----
+**Delivers:** Fetch changelogs from GitHub Releases API, fallback to CHANGELOG.md, final fallback to compare URL. Cache per package+version. Time-budgeted (5s).
 
-### Phase 4: Polish (Hardening + Monitoring)
-**Rationale:** Makes the system production-ready. Adds robustness, monitoring, and operational tools. No new user-facing features, but essential for reliability at scale.
+**Addresses:** Should-have changelog extraction (competitive feature from FEATURES.md)
 
-**Delivers:**
-- Robust process group management (kill entire process group on timeout, not just parent PID)
-- Periodic cache cleanup (Claude Code's `~/.claude/` directories)
-- Structured logging / monitoring (Azure Application Insights integration)
-- Rate limiting per user/repo (prevent abuse via @mention spam)
-- Timeout enforcement hardening (watchdog timer, SIGKILL handling)
-- Webhook deduplication persistence (if scaling to external queue)
-- Error handling improvements (clear error messages, unique error IDs)
-- Collapse long responses (wrap in `<details>` tags via config)
-- Custom review prompts (per-repo prompt customization in `.kodiai.yml`)
+**Avoids:** Pitfall P1 (changelog unreliability) by multi-source cascade with compare URL always available. Pitfall P6 (routine noise) by categorizing bumps (major gets full analysis, patch gets summary).
 
-**Addresses features:**
-- Timeout enforcement (table stakes)
-- Error handling with user feedback (table stakes)
-- Collapse long responses (differentiator)
-- Custom review prompts per repo (differentiator)
+**Stack:** Octokit Releases API, npm registry metadata for repo URLs (STACK.md)
 
-**Avoids pitfalls:**
-- Pitfall 4 (process leaks) via robust process group cleanup
-- Pitfall 5 (token expiration) via automatic refresh
+**Research needed:** npm registry API structure, monorepo detection heuristics — MEDIUM effort
 
-**Research needs:** Standard operational patterns. Skip `/gsd:research-phase`.
+### Phase 5: Timeout Resilience — Adaptive Timeout + Progressive Scope Reduction
+**Rationale:** Depends on Phase 1 partial capture being stable. Extends timeout handling with predictive risk assessment and retry with reduced scope.
 
----
+**Delivers:** Compute timeout dynamically based on file count + lines changed. On timeout, retry with reduced file set (top 50% by risk). Dependency bumps get shorter timeout (300s).
+
+**Addresses:** Should-have adaptive timeout (competitive edge)
+
+**Avoids:** Pitfall P14 (budget accounting) by tracking pre-executor pipeline time. Pitfall P10 (partial semantics) by adding "partial" conclusion to ExecutionResult and tracking coveredFiles.
+
+**Stack:** Existing tieredFiles from large PR triage, existing risk scoring (STACK.md)
+
+**Research needed:** None — extends Phase 1 patterns
 
 ### Phase Ordering Rationale
 
-**Why this order:**
-1. **Phase 1 first** because webhook timeout compliance and bot loop prevention are existential — without these, the system doesn't work at all (duplicate processing, infinite loops).
-2. **Phase 2 second** because it delivers the core value proposition (PR auto-review). This is the most complex phase, but it has the highest payoff. All infrastructure (queue, workspace, executor, MCP) is built here because review needs it all.
-3. **Phase 3 third** because it reuses Phase 2 infrastructure but adds conversational features. Code modification is deferred to Phase 3 because it's high-risk (bot is committing code) and should only be enabled after mention handling is stable and trusted.
-4. **Phase 4 last** because it's hardening that makes the system production-ready but doesn't add new features. Error handling, monitoring, and resource management are important but can be layered on after core features work.
-
-**How this avoids pitfalls:**
-- Phases 1-2 address all 7 critical pitfalls at their foundation (webhook timeout, bot loops, signature verification, prompt injection, process leaks, token expiration, noisy reviews)
-- Phase 3 hardens security (TOCTOU) before enabling code modification
-- Phase 4 adds operational robustness (monitoring, rate limiting, graceful degradation)
-
-**Dependency chain validated by architecture research:**
-```
-Phase 1 (auth + webhook) -> Phase 2 (all infrastructure + review) ->
-Phase 3 (mention + code mod, reuses Phase 2) -> Phase 4 (hardening)
-```
+- **Independence:** All 5 phases are independent. Phases 1-2 have zero external dependencies between them. Phases 3-4 are sequential (changelog depends on detection). Phase 5 depends on Phase 1 for semantics.
+- **Risk mitigation:** Start with lowest-risk (Phase 1-2) before higher-risk external API coordination (Phase 3-4).
+- **Value delivery:** Phases 1-2 benefit ALL reviews. Phases 3-4 benefit only dependency-bump PRs (subset). Prioritize universal improvements.
+- **Complexity gradient:** Pure functions (Phase 2) → simple modifications (Phase 1) → single API integration (Phase 3) → multi-source coordination (Phase 4) → orchestration changes (Phase 5).
 
 ### Research Flags
 
-**Phases needing deeper research during planning:**
-- **Phase 2** (if noise persists): Anti-noise prompt engineering may need iteration. If initial reviews produce too many low-value comments, run `/gsd:research-phase` focused on "prompt strategies for high signal-to-noise ratio in AI code review."
-- **Phase 3** (if code modification is complex): Git Data API for signed commits has edge cases. If branch creation/push fails during implementation, research GitHub's tree/blob/commit creation patterns.
-
 **Phases with standard patterns (skip research-phase):**
-- **Phase 1**: Webhook signature verification, GitHub App auth, event routing are well-documented standard patterns
-- **Phase 3**: TOCTOU protections are documented in reference implementation (`fetcher.ts`)
-- **Phase 4**: Operational patterns (logging, monitoring, rate limiting) are standard
+- **Phase 1:** Executor modification follows existing AbortController pattern. Finding extraction already implemented.
+- **Phase 2:** Query construction is pure function. Language classification already exists in diff-analysis.ts.
+- **Phase 5:** Extends Phase 1 patterns. Tiered files and risk scoring already implemented.
+
+**Phases needing validation during planning:**
+- **Phase 3:** Verify GitHub Advisory API response structure (GHSA fields, severity enum values). Check rate limits for batch queries. **Effort: 1 hour, official docs available.**
+- **Phase 4:** Test npm registry metadata completeness (% with `repository` field). Evaluate monorepo detection heuristics (Lerna/Nx patterns). Test CHANGELOG.md parsing on top 50 npm packages. **Effort: 3-4 hours, requires sampling.**
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified against npm registry and official docs (2026-02-07). Reference implementation validates Bun + Hono + Claude Agent SDK + Octokit integration. Critical constraint: Zod 3.x (not 4.x) due to Agent SDK compatibility. |
-| Features | HIGH | Competitor analysis across 6 major tools (CodeRabbit, Qodo, Copilot, Bugbot, Ellipsis, Greptile). Table stakes identified from market expectations. Differentiators (silent approval, agentic loop) address documented pain points (noise). Anti-features explicitly called out to prevent over-engineering. |
-| Architecture | HIGH | Standard webhook-driven GitHub App architecture. Acknowledge-Then-Process pattern is mandatory (GitHub official docs). Per-installation job queue, ephemeral workspaces, MCP stdio servers all battle-tested in reference implementation. Scaling path clear (in-process p-queue -> external queue at 100+ installations). |
-| Pitfalls | HIGH | All 7 critical pitfalls verified against GitHub official docs, Claude Code issue tracker (#13126, #8856, #8865), and reference implementation. Prevention strategies documented with code examples. Pitfall-to-phase mapping ensures each is addressed at the right time. |
+| Stack | **HIGH** | All technologies verified in codebase or official docs. Bun.semver tested in runtime. Octokit types inspected in node_modules. Zero new dependencies confirmed. |
+| Features | **HIGH** | Table stakes validated against Dependabot/Renovate/CodeRabbit feature sets. xbmc reference PR analyzed for dep bump patterns. 10% timeout failure rate from internal telemetry. |
+| Architecture | **HIGH** | Full review pipeline analyzed (2340 LOC in review.ts). Executor timeout mechanism verified. Retrieval query construction located at line 1431. Integration points identified with LOC estimates. |
+| Pitfalls | **HIGH** | Changelog reliability from Renovate docs. CVE false positives from Sonatype 2025 research (20K FP documented). Duplicate comment risk from existing idempotency implementation analysis. |
 
 **Overall confidence:** HIGH
 
-All four research files sourced from high-confidence materials: official documentation (GitHub, Claude, npm), verified issue trackers, and working reference code. The pre-selected stack (Bun, Hono, TypeScript, Claude Agent SDK) is optimal and proven. The competitive landscape is well-understood. The architecture follows standard patterns with clear anti-patterns documented. The pitfalls are real but preventable.
-
 ### Gaps to Address
 
-**Gaps discovered during research:**
+- **npm registry metadata completeness:** What % of packages have valid `repository` field? What % are monorepos? — **Handle:** Sample top 100 npm packages during Phase 4 planning. Design fallback strategy (compare URL) before implementation.
 
-1. **Claude Code CLI cold start performance** — Each `query()` call has ~12s overhead (verified via GitHub issue #34). For MVP with low volume, this is acceptable. If it becomes a bottleneck, investigate when upstream SDK releases optimizations or session reuse. **Handle during Phase 2 implementation:** Monitor job duration, log cold start overhead separately from AI execution time.
+- **OSV.dev API response latency:** GitHub Advisory API uses standard REST limits (5000/hr). What is typical response time for 10 package queries? — **Handle:** Test during Phase 3 planning. Set 2s per-package timeout if latency exceeds 500ms.
 
-2. **Large PR handling** — Research didn't specify exact thresholds for "too large" (file count, diff size). CodeRabbit and competitors don't document their limits. **Handle during Phase 2 implementation:** Start with a conservative threshold (e.g., skip auto-review if PR changes >200 files or diff >500KB). Make configurable in `.kodiai.yml`. Validate against real monorepo PRs.
+- **Retrieval quality measurement:** How to quantify "better queries" beyond distance thresholds? — **Handle:** Add telemetry during Phase 2: track whether retrieved findings appear in same category/severity as actual findings. Target >40% category match rate.
 
-3. **Fork PR security boundary** — Feature research identifies that fork PRs should run in read-only mode (no file-ops MCP server), but architecture research doesn't detail the permission check mechanism. **Handle during Phase 2 implementation:** Check if `pull_request.head.repo.full_name !== pull_request.base.repo.full_name` to detect fork PRs. Conditionally exclude file-ops from MCP config.
+- **Partial review coverage tracking:** How to store which files were reviewed in timeout-partial cases for incremental diff? — **Handle:** Design `coveredFiles` field in knowledge store during Phase 1 planning. Extends existing review record schema.
 
-4. **Prompt engineering for noise reduction** — High confidence that anti-noise prompts are critical, but the exact prompt wording needs validation. **Handle during Phase 2 implementation:** Start with reference implementation's prompt, add explicit "silent approval" instruction, test on 5-10 real PRs, iterate based on comment signal-to-noise ratio.
-
-5. **Azure Container Apps deployment specifics** — Stack research notes this is a pre-selected constraint but marks confidence as MEDIUM because "Bun + Alpine + Claude Code CLI combination needs validation in actual build." **Handle during Phase 1 implementation:** Test Docker build locally first. Claude CLI installer (`curl -fsSL https://claude.ai/install.sh | bash`) may assume debian packages; if it fails on Alpine, use debian-slim base image instead.
+- **Embedding model drift detection:** How often to sample for drift? What distance threshold indicates drift? — **Handle:** Defer to post-v0.9 monitoring. Phase 2 implementation pins model version explicitly. Weekly sampling suggested but not required for launch.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- **GitHub Official Documentation:** Webhook best practices, signature verification, App authentication, rate limits, GraphQL API (official docs verified 2026-02-07)
-- **Claude Agent SDK Official Documentation:** TypeScript reference, quickstart, MCP integration (platform.claude.com/docs verified 2026-02-07)
-- **npm Registry:** All package versions verified (Bun 1.3.7, Hono 4.11.8, @anthropic-ai/claude-agent-sdk 0.2.37, @octokit/* packages, etc.)
-- **Reference Implementation:** `tmp/claude-code-action/` — Battle-tested patterns for MCP servers, prompt construction, context fetching, sanitization, and Claude SDK invocation (direct code review)
-- **Claude Code Issue Tracker:** GitHub issues #13126 (OOM from subprocesses), #8856 (temp file cleanup), #8865 (background task cleanup) — Primary sources for process leak pitfall
+- Kodiai codebase: `src/handlers/review.ts` (2340 LOC, full pipeline), `src/execution/executor.ts` (256 LOC, timeout), `src/learning/isolation.ts` (128 LOC, retrieval), `src/execution/diff-analysis.ts` (366 LOC, risk signals), `src/learning/memory-store.ts` (349 LOC, vec0)
+- [GitHub Advisory Database REST API docs](https://docs.github.com/en/rest/security-advisories/global-advisories) — `GET /advisories` with ecosystem/affects filters
+- [Bun Semver API Reference](https://bun.com/reference/bun/semver) — `order()` and `satisfies()` only; NO `diff()` method
+- [Sonatype: The CVE Crisis (2025)](https://www.sonatype.com/resources/research/the-cve-crisis) — 20K false positives, 150K false negatives documented
+- `.planning/xbmc_deep_analysis.md` — 10% timeout failure rate internal data
 
 ### Secondary (MEDIUM confidence)
-- **Competitor Analysis Articles:** Qodo blog (Best AI Code Review Tools 2026), DevTools Academy (State of AI Code Review 2025), DEV Community (tool comparisons) — Factual feature comparisons, corroborated across multiple sources
-- **CodeRabbit, Qodo, Bugbot, Ellipsis Official Docs:** Feature details, configuration options — Vendor docs but factual about capabilities
-- **Security Research:** Orca Security (pull_request_nightmare), GitHub Security Lab (preventing pwn requests), Google Cloud Build TOCTOU writeup — Verified security research, applicable patterns
-- **Community Analysis:** DEV Community articles on AI review noise (80% noise claim) — Anecdotal but corroborated by multiple independent sources
+- [Renovate changelog extraction docs](https://docs.renovatebot.com/key-concepts/changelogs/) — GitHub Releases + CHANGELOG.md parsing strategy
+- [Dependabot compatibility score](https://github.com/dependabot/dependabot-core/issues/4001) — CI pass rate methodology
+- [CodeRabbit architecture (Google Cloud)](https://cloud.google.com/blog/products/ai-machine-learning/how-coderabbit-built-its-ai-code-review-agent-with-google-cloud-run) — 3600s timeout, buffered output
+- [OSV.dev: Disputed CVE fix (2025)](https://socket.dev/blog/google-osv-fix-adds-500-new-advisories) — 500+ advisories restored, data quality improvements
 
 ### Tertiary (LOW confidence)
-- None — All research sources are HIGH or MEDIUM confidence. No findings requiring validation.
+- [ScienceDirect: Trust tests for dependency updates?](https://www.sciencedirect.com/science/article/pii/S0164121221001941) — 47% direct fault detection via tests
+- RAG Techniques Repository (GitHub) — multi-signal query patterns, hybrid retrieval (general-purpose, adapted for code review)
 
 ---
-*Research completed: 2026-02-07*
+*Research completed: 2026-02-14*
 *Ready for roadmap: yes*
+*Estimated total implementation: ~1,250 LOC new + ~310 LOC modifications + ~1,230 LOC tests*

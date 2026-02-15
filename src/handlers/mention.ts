@@ -10,6 +10,8 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { TelemetryStore } from "../telemetry/types.ts";
+import type { KnowledgeStore } from "../knowledge/types.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -31,7 +33,8 @@ import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
-import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
+import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+
 
 /**
  * Create the mention handler and register it with the event router.
@@ -47,13 +50,17 @@ export function createMentionHandler(deps: {
   workspaceManager: WorkspaceManager;
   githubApp: GitHubApp;
   executor: ReturnType<typeof createExecutor>;
+  telemetryStore: TelemetryStore;
+  knowledgeStore?: KnowledgeStore;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, logger } = deps;
+  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
   const lastWriteAt = new Map<string, number>();
+  const prConversationTurns = new Map<string, number>();
+  const prConversationTouchedAt = new Map<string, number>();
 
   const inFlightWriteKeys = new Set<string>();
 
@@ -108,6 +115,29 @@ export function createMentionHandler(deps: {
     for (let i = 0; i < toDelete; i++) {
       const k = entries[i]?.[0];
       if (k) lastWriteAt.delete(k);
+    }
+  }
+
+  function pruneConversationTurns(now: number): void {
+    const ttlMs = 24 * 60 * 60 * 1000;
+    for (const [key, ts] of prConversationTouchedAt.entries()) {
+      if (now - ts > ttlMs) {
+        prConversationTurns.delete(key);
+        prConversationTouchedAt.delete(key);
+      }
+    }
+
+    const maxEntries = 10_000;
+    if (prConversationTurns.size <= maxEntries) return;
+
+    const entries = [...prConversationTouchedAt.entries()].sort((a, b) => a[1] - b[1]);
+    const toDelete = entries.length - maxEntries;
+    for (let i = 0; i < toDelete; i++) {
+      const k = entries[i]?.[0];
+      if (k) {
+        prConversationTurns.delete(k);
+        prConversationTouchedAt.delete(k);
+      }
     }
   }
 
@@ -167,6 +197,24 @@ export function createMentionHandler(deps: {
     const appHandle = `@${appSlug.toLowerCase()}`;
     if (!bodyLower.includes(appHandle) && !bodyLower.includes("@claude")) return;
 
+    const normalizedCommentAuthor = mention.commentAuthor.toLowerCase();
+    if (
+      normalizedCommentAuthor === appSlug.toLowerCase() ||
+      normalizedCommentAuthor.endsWith("[bot]")
+    ) {
+      logger.debug(
+        {
+          owner: mention.owner,
+          repo: mention.repo,
+          commentAuthor: mention.commentAuthor,
+          issueNumber: mention.issueNumber,
+          prNumber: mention.prNumber,
+        },
+        "Skipping mention from self (comment-author defense)",
+      );
+      return;
+    }
+
     // No tracking comment. Tracking is via eyes reaction only.
     // The response will be posted as a new comment.
 
@@ -177,6 +225,7 @@ export function createMentionHandler(deps: {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
         async function postMentionReply(replyBody: string): Promise<void> {
+          const sanitizedBody = sanitizeOutgoingMentions(replyBody, possibleHandles);
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
@@ -185,7 +234,7 @@ export function createMentionHandler(deps: {
                 repo: mention.repo,
                 pull_number: mention.prNumber,
                 comment_id: mention.commentId,
-                body: replyBody,
+                body: sanitizedBody,
               });
               return;
             } catch (err) {
@@ -200,11 +249,12 @@ export function createMentionHandler(deps: {
             owner: mention.owner,
             repo: mention.repo,
             issue_number: mention.issueNumber,
-            body: replyBody,
+            body: sanitizedBody,
           });
         }
 
         async function postMentionError(errorBody: string): Promise<void> {
+          const sanitizedBody = sanitizeOutgoingMentions(errorBody, possibleHandles);
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
@@ -213,7 +263,7 @@ export function createMentionHandler(deps: {
                 repo: mention.repo,
                 pull_number: mention.prNumber,
                 comment_id: mention.commentId,
-                body: errorBody,
+                body: sanitizedBody,
               });
               return;
             } catch (err) {
@@ -231,7 +281,7 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               issueNumber: mention.issueNumber,
             },
-            errorBody,
+            sanitizedBody,
             logger,
           );
         }
@@ -316,7 +366,13 @@ export function createMentionHandler(deps: {
         }
 
         // Load repo config
-        const config = await loadRepoConfig(workspace.dir);
+        const { config, warnings } = await loadRepoConfig(workspace.dir);
+        for (const w of warnings) {
+          logger.warn(
+            { section: w.section, issues: w.issues },
+            "Config section invalid, using defaults",
+          );
+        }
 
         // Check mention.enabled
         if (!config.mention.enabled) {
@@ -325,6 +381,31 @@ export function createMentionHandler(deps: {
             "Mentions disabled in config, skipping",
           );
           return;
+        }
+
+        const findingLookup = deps.knowledgeStore?.getFindingByCommentId
+          ? (repo: string, commentId: number) =>
+              deps.knowledgeStore!.getFindingByCommentId!({ repo, commentId })
+          : undefined;
+
+        // Check mention.allowedUsers (CONFIG-07)
+        if (config.mention.allowedUsers.length > 0) {
+          const normalizedAuthor = mention.commentAuthor.toLowerCase();
+          const allowed = config.mention.allowedUsers.map((u) => u.toLowerCase());
+          if (!allowed.includes(normalizedAuthor)) {
+            logger.info(
+              {
+                owner: mention.owner,
+                repo: mention.repo,
+                commentAuthor: mention.commentAuthor,
+                gate: "mention-allowed-users",
+                gateResult: "skipped",
+                skipReason: "user-not-allowlisted",
+              },
+              "Mention author not in allowedUsers, skipping",
+            );
+            return;
+          }
         }
 
         // Global alias: treat @claude as an always-on alias for mentions.
@@ -537,6 +618,22 @@ export function createMentionHandler(deps: {
           return;
         }
 
+        if (mention.inReplyToId !== undefined) {
+          const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;
+          const now = Date.now();
+          pruneConversationTurns(now);
+          const turns = prConversationTurns.get(conversationKey) ?? 0;
+          if (turns >= config.mention.conversation.maxTurnsPerPr) {
+            await postMentionReply(
+              [
+                `Conversation limit reached (${config.mention.conversation.maxTurnsPerPr} turns per PR).`,
+                "Start a new thread or open a new issue for further questions.",
+              ].join("\n"),
+            );
+            return;
+          }
+        }
+
         logger.info(
           {
             surface: mention.surface,
@@ -576,37 +673,45 @@ export function createMentionHandler(deps: {
           logger.warn({ err, surface: mention.surface }, "Failed to add eyes reaction");
         }
 
-        // Minimal rereview trigger: allow @kodiai review / @kodiai recheck.
-        // Goal: retrigger review without adding any new PR thread comments.
-        // Signal is via best-effort reviewer request + eyes reaction (above).
-        if (
-          mention.prNumber !== undefined &&
-          (normalizedQuestion === "review" || normalizedQuestion === "recheck")
-        ) {
-          const configuredTeam = (config.review.uiRereviewTeam ?? "").trim() || "aireview";
-          await requestRereviewTeamBestEffort({
-            octokit,
-            owner: mention.owner,
-            repo: mention.repo,
-            prNumber: mention.prNumber,
-            configuredTeam,
-            fallbackReviewer: githubApp.getAppSlug(),
-            logger,
-          });
-
-          return;
-        }
-
         // Build mention context (conversation + PR metadata + inline diff context)
         // Non-fatal: if context fails to load, still attempt an answer with minimal prompt.
         let mentionContext = "";
         try {
-          mentionContext = await buildMentionContext(octokit, mention);
+          mentionContext = await buildMentionContext(octokit, mention, {
+            findingLookup,
+            maxThreadChars: config.mention.conversation.contextBudgetChars,
+          });
         } catch (err) {
           logger.warn(
             { err, surface: mention.surface, issueNumber: mention.issueNumber },
             "Failed to build mention context; proceeding with empty context",
           );
+        }
+
+        let findingContext:
+          | {
+              severity: string;
+              category: string;
+              filePath: string;
+              startLine: number | null;
+              title: string;
+            }
+          | undefined;
+        if (mention.inReplyToId !== undefined && findingLookup) {
+          try {
+            findingContext =
+              findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId) ?? undefined;
+          } catch (err) {
+            logger.warn(
+              {
+                err,
+                owner: mention.owner,
+                repo: mention.repo,
+                inReplyToId: mention.inReplyToId,
+              },
+              "Failed to hydrate finding context; proceeding without finding metadata",
+            );
+          }
         }
 
         const planOnlyInstructions = isPlanOnly
@@ -648,9 +753,11 @@ export function createMentionHandler(deps: {
           mention,
           mentionContext,
           userQuestion: writeIntent.request,
+          findingContext,
           customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
             .filter((s) => (s ?? "").trim().length > 0)
             .join("\n\n"),
+          outputLanguage: config.review.outputLanguage,
         });
 
         // Execute via Claude
@@ -664,6 +771,7 @@ export function createMentionHandler(deps: {
           // so the executor can enable the in-thread reply MCP tool.
           commentId: mention.surface === "pr_review_comment" ? mention.commentId : undefined,
           deliveryId: event.id,
+          botHandles: possibleHandles,
           writeMode: writeEnabled,
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,
@@ -684,6 +792,65 @@ export function createMentionHandler(deps: {
           },
           "Mention execution completed",
         );
+
+        if (mention.inReplyToId !== undefined && result.conclusion === "success") {
+          const conversationKey = `${mention.owner}/${mention.repo}#${mention.prNumber ?? mention.issueNumber}`;
+          prConversationTurns.set(conversationKey, (prConversationTurns.get(conversationKey) ?? 0) + 1);
+          prConversationTouchedAt.set(conversationKey, Date.now());
+        }
+
+        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
+        if (config.telemetry.enabled) {
+          try {
+            telemetryStore.record({
+              deliveryId: event.id,
+              repo: `${mention.owner}/${mention.repo}`,
+              prNumber: mention.prNumber,
+              eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
+              model: result.model ?? "unknown",
+              inputTokens: result.inputTokens,
+              outputTokens: result.outputTokens,
+              cacheReadTokens: result.cacheReadTokens,
+              cacheCreationTokens: result.cacheCreationTokens,
+              durationMs: result.durationMs,
+              costUsd: result.costUsd,
+              conclusion: result.conclusion,
+              sessionId: result.sessionId,
+              numTurns: result.numTurns,
+              stopReason: result.stopReason,
+            });
+          } catch (err) {
+            logger.warn({ err }, "Telemetry write failed (non-blocking)");
+          }
+
+          // Cost warning (CONFIG-11)
+          if (
+            config.telemetry.costWarningUsd > 0 &&
+            result.costUsd !== undefined &&
+            result.costUsd > config.telemetry.costWarningUsd
+          ) {
+            logger.warn(
+              {
+                costUsd: result.costUsd,
+                threshold: config.telemetry.costWarningUsd,
+                repo: `${mention.owner}/${mention.repo}`,
+                prNumber: mention.prNumber,
+              },
+              "Execution cost exceeded warning threshold",
+            );
+            try {
+              const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
+              await warnOctokit.rest.issues.createComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                issue_number: mention.issueNumber,
+                body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
+              });
+            } catch (err) {
+              logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
+            }
+          }
+        }
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && mention.prNumber !== undefined && writeOutputKey && writeBranchName) {
@@ -1017,6 +1184,7 @@ export function createMentionHandler(deps: {
             ].join("\n"),
             "kodiai response",
           );
+          const sanitizedFallbackBody = sanitizeOutgoingMentions(fallbackBody, possibleHandles);
 
           const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
@@ -1025,14 +1193,14 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               pull_number: mention.prNumber,
               comment_id: mention.commentId,
-              body: fallbackBody,
+              body: sanitizedFallbackBody,
             });
           } else {
             await replyOctokit.rest.issues.createComment({
               owner: mention.owner,
               repo: mention.repo,
               issue_number: mention.issueNumber,
-              body: fallbackBody,
+              body: sanitizedFallbackBody,
             });
           }
         }
@@ -1061,6 +1229,7 @@ export function createMentionHandler(deps: {
         const category = classifyError(err, false);
         const detail = err instanceof Error ? err.message : "An unexpected error occurred";
         const errorBody = wrapInDetails(formatErrorComment(category, detail), "Kodiai encountered an error");
+        const sanitizedErrorBody = sanitizeOutgoingMentions(errorBody, possibleHandles);
         try {
           // Prefer in-thread reply for inline review comments.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
@@ -1070,7 +1239,7 @@ export function createMentionHandler(deps: {
               repo: mention.repo,
               pull_number: mention.prNumber,
               comment_id: mention.commentId,
-              body: errorBody,
+              body: sanitizedErrorBody,
             });
           } else {
             const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
@@ -1081,7 +1250,7 @@ export function createMentionHandler(deps: {
                 repo: mention.repo,
                 issueNumber: mention.issueNumber,
               },
-              errorBody,
+              sanitizedErrorBody,
               logger,
             );
           }

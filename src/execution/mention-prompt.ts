@@ -11,9 +11,24 @@ export function buildMentionPrompt(params: {
   mention: MentionEvent;
   mentionContext: string;
   userQuestion: string;
+  findingContext?: {
+    severity: string;
+    category: string;
+    filePath: string;
+    startLine: number | null;
+    title: string;
+  };
   customInstructions?: string;
+  outputLanguage?: string;
 }): string {
-  const { mention, mentionContext, userQuestion, customInstructions } = params;
+  const {
+    mention,
+    mentionContext,
+    userQuestion,
+    findingContext,
+    customInstructions,
+    outputLanguage,
+  } = params;
   const lines: string[] = [];
 
   // Context header
@@ -30,6 +45,23 @@ export function buildMentionPrompt(params: {
     );
   }
   lines.push("");
+
+  if (findingContext) {
+    lines.push("This is a follow-up to a review finding:");
+    lines.push(
+      `- Finding: [${findingContext.severity.toUpperCase()}] ${findingContext.category}`,
+    );
+    if (findingContext.startLine !== null) {
+      lines.push(`- File: ${findingContext.filePath} (line ${findingContext.startLine})`);
+    } else {
+      lines.push(`- File: ${findingContext.filePath}`);
+    }
+    lines.push(`- Title: ${findingContext.title}`);
+    lines.push(
+      "Provide a focused response that addresses the user's question about this specific finding. Reference the finding's reasoning and suggest concrete code changes if applicable.",
+    );
+    lines.push("");
+  }
 
   // Context (optional)
   if (mentionContext.trim().length > 0) {
@@ -132,12 +164,38 @@ export function buildMentionPrompt(params: {
     "  - End with: 'Reply with apply: <same request> to implement.'",
   );
 
+  // Factual accuracy guardrail
+  lines.push("");
+  lines.push("## Factual Accuracy — CRITICAL");
+  lines.push("");
+  lines.push(
+    "NEVER generate changelogs, CVE details, release notes, version histories, security advisories, or any other factual claims about external projects from memory.",
+    "This information changes constantly and your training data WILL be wrong or outdated.",
+    "",
+    "When a user asks about external information (changelogs, CVEs, release notes, API docs, etc.):",
+    "- You MUST use WebSearch and/or WebFetch to look up the actual source of truth",
+    "- If WebSearch/WebFetch are unavailable or fail, say so explicitly — do NOT fall back to generating from memory",
+    "- NEVER present unverified information as fact",
+    "- NEVER invent CVE numbers, version numbers, or changelog entries",
+    "",
+    "This applies to ALL external factual claims, not just security-related ones.",
+    "If you cannot verify something, say: \"I wasn't able to look this up — here's what I'd suggest checking: [links/sources]\"",
+  );
+
   // Custom instructions
   if (customInstructions) {
     lines.push("");
     lines.push("## Custom Instructions");
     lines.push("");
     lines.push(customInstructions);
+  }
+
+  // Output language localization
+  if (outputLanguage && outputLanguage.toLowerCase() !== "en") {
+    lines.push(
+      "",
+      `Write your response in ${outputLanguage}. Keep code identifiers, snippets, file paths, and technical terms in their original form.`,
+    );
   }
 
   return lines.join("\n");

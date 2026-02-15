@@ -35,7 +35,7 @@ describe("createReviewCommentThreadServer", () => {
       },
     };
 
-    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo");
+    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo", []);
     const handler = getToolHandler(server);
 
     const result = await handler({
@@ -55,5 +55,43 @@ describe("createReviewCommentThreadServer", () => {
     expect(result.content[0]?.text).toContain("\"success\":true");
     expect(result.content[0]?.text).toContain("\"comment_id\":123");
     expect(result.content[0]?.text).toContain("\"html_url\":\"https://example.test/reply\"");
+  });
+});
+
+// --- Phase 50: Mention sanitization regression tests ---
+
+describe("mention sanitization", () => {
+  test("reply_to_pr_review_comment strips @kodiai from body", async () => {
+    let calledBody: string | undefined;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          createReplyForReviewComment: async (params: Record<string, unknown>) => {
+            calledBody = params.body as string;
+            return { data: { id: 456, html_url: "https://example.test/reply" } };
+          },
+        },
+      },
+    };
+
+    const server = createReviewCommentThreadServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      ["kodiai", "claude"],
+    );
+    const handler = getToolHandler(server);
+
+    const result = await handler({
+      pullRequestNumber: 42,
+      commentId: 9001,
+      body: "As @kodiai noted, this needs fixing",
+    });
+
+    expect(result.content[0]?.text).toContain("\"success\":true");
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).not.toContain("@kodiai");
+    expect(calledBody!).toContain("kodiai noted");
   });
 });

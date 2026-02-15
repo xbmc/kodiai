@@ -18,6 +18,21 @@ function makeOctokit(params: {
     head: { ref: string };
     base: { ref: string };
   };
+  reviewComments?: Array<{
+    id: number;
+    body?: string | null;
+    created_at: string;
+    in_reply_to_id?: number;
+    user?: { login?: string | null } | null;
+  }>;
+  parentComment?: {
+    id: number;
+    body?: string | null;
+    created_at: string;
+    in_reply_to_id?: number;
+    user?: { login?: string | null } | null;
+  };
+  parentCommentErrorStatus?: number;
 }): Octokit {
   const pr =
     params.pr ??
@@ -36,6 +51,22 @@ function makeOctokit(params: {
       },
       pulls: {
         get: async () => ({ data: pr }),
+        getReviewComment: async () => {
+          if (params.parentCommentErrorStatus) {
+            throw { status: params.parentCommentErrorStatus };
+          }
+          return {
+            data:
+              params.parentComment ??
+              ({
+                id: 999,
+                body: "<!-- kodiai:review-output-key:test --> parent",
+                created_at: "2025-01-15T10:00:00Z",
+                user: { login: "kodiai" },
+              } as const),
+          };
+        },
+        listReviewComments: async () => ({ data: params.reviewComments ?? [] }),
       },
     },
   } as unknown as Octokit;
@@ -79,6 +110,7 @@ describe("buildMentionContext", () => {
       diffHunk: undefined,
       filePath: undefined,
       fileLine: undefined,
+      inReplyToId: undefined,
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -120,6 +152,7 @@ describe("buildMentionContext", () => {
       diffHunk: undefined,
       filePath: undefined,
       fileLine: undefined,
+      inReplyToId: undefined,
     };
 
     const ctx = await buildMentionContext(octokit, mention);
@@ -160,6 +193,7 @@ describe("buildMentionContext", () => {
       diffHunk: undefined,
       filePath: undefined,
       fileLine: undefined,
+      inReplyToId: undefined,
     };
 
     const ctx = await buildMentionContext(octokit, mention, { maxPrBodyChars: 8 });
@@ -213,6 +247,7 @@ describe("buildMentionContext", () => {
       diffHunk: undefined,
       filePath: undefined,
       fileLine: undefined,
+      inReplyToId: undefined,
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -250,6 +285,7 @@ describe("buildMentionContext", () => {
       diffHunk: "@@ -1,1 +1,1\n- old\n+ new",
       filePath: "src/index.ts",
       fileLine: 42,
+      inReplyToId: undefined,
     };
 
     const ctx = await buildMentionContext(octokit, mention);
@@ -259,5 +295,411 @@ describe("buildMentionContext", () => {
     expect(ctx).toContain("Line: 42");
     expect(ctx).toContain("```diff");
     expect(ctx).toContain("+ new");
+  });
+
+  test("includes review thread context when inReplyToId is present", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 900,
+        body: "<!-- kodiai:review-output-key:abc --> parent finding",
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 900,
+          body: "<!-- kodiai:review-output-key:abc --> parent finding",
+          created_at: "2025-01-15T10:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 901,
+          body: "Can you explain this?",
+          created_at: "2025-01-15T10:05:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 902,
+          body: "Triggering mention",
+          created_at: "2025-01-15T10:06:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 902,
+      commentBody: "@kodiai what should I change?",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: "@@ -1,1 +1,1 @@",
+      filePath: "src/index.ts",
+      fileLine: 10,
+      inReplyToId: 900,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => null,
+    });
+
+    expect(ctx).toContain("## Review Comment Thread Context");
+    expect(ctx).toContain("Can you explain this?");
+    expect(ctx).not.toContain("Triggering mention");
+  });
+
+  test("includes finding metadata when findingLookup returns data", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 700,
+        body: "<!-- kodiai:review-output-key:def --> finding",
+        created_at: "2025-01-15T08:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 700,
+          body: "<!-- kodiai:review-output-key:def --> finding",
+          created_at: "2025-01-15T08:00:00Z",
+          user: { login: "kodiai" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "owner",
+      repo: "repo",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 701,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T08:05:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 700,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => ({
+        severity: "major",
+        category: "correctness",
+        filePath: "src/app.ts",
+        startLine: 22,
+        title: "Handle undefined input",
+      }),
+    });
+
+    expect(ctx).toContain("Original finding: [MAJOR] correctness");
+    expect(ctx).toContain("File: src/app.ts");
+    expect(ctx).toContain("Line: 22");
+    expect(ctx).toContain("Title: Handle undefined input");
+  });
+
+  test("thread context omits finding metadata when lookup returns null", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 710,
+        body: "<!-- kodiai:review-output-key:ghi --> finding",
+        created_at: "2025-01-15T08:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 710,
+          body: "<!-- kodiai:review-output-key:ghi --> finding",
+          created_at: "2025-01-15T08:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 711,
+          body: "What does this mean?",
+          created_at: "2025-01-15T08:04:00Z",
+          in_reply_to_id: 710,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 712,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T08:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 710,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => null,
+    });
+
+    expect(ctx).toContain("## Review Comment Thread Context");
+    expect(ctx).toContain("What does this mean?");
+    expect(ctx).not.toContain("Original finding:");
+    expect(ctx).not.toContain("File:");
+    expect(ctx).not.toContain("Line:");
+  });
+
+  test("thread context stays available when finding lookup throws", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 720,
+        body: "<!-- kodiai:review-output-key:jkl --> finding",
+        created_at: "2025-01-15T08:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 720,
+          body: "<!-- kodiai:review-output-key:jkl --> finding",
+          created_at: "2025-01-15T08:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 721,
+          body: "Can you break this down?",
+          created_at: "2025-01-15T08:04:00Z",
+          in_reply_to_id: 720,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 722,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T08:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 720,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => {
+        throw new Error("lookup unavailable");
+      },
+    });
+
+    expect(ctx).toContain("## Review Comment Thread Context");
+    expect(ctx).toContain("Can you break this down?");
+    expect(ctx).not.toContain("Original finding:");
+    expect(ctx).not.toContain("File:");
+    expect(ctx).not.toContain("Line:");
+  });
+
+  test("skips thread context gracefully when parent review comment is missing", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      reviewComments: [],
+      parentCommentErrorStatus: 404,
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 800,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T08:06:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 799,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      findingLookup: () => null,
+    });
+
+    expect(ctx).not.toContain("## Review Comment Thread Context");
+  });
+
+  test("truncates older thread turns to 200 chars while keeping recent turns full", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 900,
+        body: "ROOT-" + "r".repeat(260),
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 900,
+          body: "ROOT-" + "r".repeat(260),
+          created_at: "2025-01-15T10:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 901,
+          body: "OLD-" + "o".repeat(260),
+          created_at: "2025-01-15T10:01:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 902,
+          body: "MID-" + "m".repeat(260),
+          created_at: "2025-01-15T10:02:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 903,
+          body: "NEW-1-" + "n".repeat(260),
+          created_at: "2025-01-15T10:03:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 904,
+          body: "NEW-2-" + "p".repeat(260),
+          created_at: "2025-01-15T10:04:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+        {
+          id: 905,
+          body: "trigger",
+          created_at: "2025-01-15T10:05:00Z",
+          in_reply_to_id: 900,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 905,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:05:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 900,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      maxCommentChars: 500,
+      findingLookup: () => null,
+    });
+
+    const truncatedCount = (ctx.match(/\.\.\.\[truncated\]/g) ?? []).length;
+    expect(truncatedCount).toBe(2);
+    expect(ctx).toContain("Older review thread turns were truncated to 200 characters");
+  });
+
+  test("uses maxThreadChars budget for review thread context", async () => {
+    const octokit = makeOctokit({
+      comments: [],
+      parentComment: {
+        id: 910,
+        body: "ROOT-" + "x".repeat(400),
+        created_at: "2025-01-15T10:00:00Z",
+        user: { login: "kodiai" },
+      },
+      reviewComments: [
+        {
+          id: 910,
+          body: "ROOT-" + "x".repeat(400),
+          created_at: "2025-01-15T10:00:00Z",
+          user: { login: "kodiai" },
+        },
+        {
+          id: 911,
+          body: "OLD-" + "y".repeat(400),
+          created_at: "2025-01-15T10:01:00Z",
+          in_reply_to_id: 910,
+          user: { login: "alice" },
+        },
+      ],
+    });
+
+    const mention: MentionEvent = {
+      surface: "pr_review_comment",
+      owner: "o",
+      repo: "r",
+      issueNumber: 1,
+      prNumber: 1,
+      commentId: 912,
+      commentBody: "@kodiai follow-up",
+      commentAuthor: "alice",
+      commentCreatedAt: "2025-01-15T10:02:00Z",
+      headRef: "feature",
+      baseRef: "main",
+      headRepoOwner: undefined,
+      headRepoName: undefined,
+      diffHunk: undefined,
+      filePath: undefined,
+      fileLine: undefined,
+      inReplyToId: 910,
+    };
+
+    const ctx = await buildMentionContext(octokit, mention, {
+      maxCommentChars: 500,
+      maxThreadChars: 250,
+      findingLookup: () => null,
+    });
+
+    expect(ctx).toContain("Review thread context truncated due to 250 character cap.");
   });
 });

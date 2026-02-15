@@ -1,628 +1,1009 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** GitHub App webhook bot with AI code review backend
-**Researched:** 2026-02-07
-**Confidence:** HIGH
+**Domain:** v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval
+**Researched:** 2026-02-14
+**Confidence:** HIGH (based on direct codebase analysis of all source files + API documentation)
 
-## Standard Architecture
+## Recommended Architecture
 
-### System Overview
+All three v0.9 features integrate into the existing review pipeline as additional preprocessing, enrichment, and resilience layers. No new services, no new databases, no new processes. The established pattern continues: fail-open enrichments that degrade gracefully.
 
-```
-                           GitHub.com
-                               |
-                    Webhook POST (signed)
-                               |
-                               v
-+----------------------------------------------------------------------+
-|                        INGRESS LAYER                                  |
-|  +---------------------+  +------------------+  +----------------+   |
-|  | Webhook Endpoint    |  | Signature Verify |  | Health Check   |   |
-|  | POST /webhooks/gh   |->| HMAC-SHA256      |  | GET /health    |   |
-|  +---------------------+  +------------------+  +----------------+   |
-|            |                       |                                  |
-|            v                       v                                  |
-|  +---------------------+  +------------------+                       |
-|  | Event Router        |  | Delivery Dedup   |                       |
-|  | X-GitHub-Event +    |  | X-GitHub-Delivery |                       |
-|  | action dispatch     |  | (Set w/ TTL)     |                       |
-|  +---------------------+  +------------------+                       |
-+----------------------------------------------------------------------+
-              |
-              v
-+----------------------------------------------------------------------+
-|                        ORCHESTRATION LAYER                            |
-|  +---------------------+  +------------------+  +----------------+   |
-|  | Event Filters       |  | Config Loader    |  | GitHub Auth    |   |
-|  | Bot check, perms,   |  | .kodiai.yml from |  | JWT -> install |   |
-|  | mention detect      |  | default branch   |  | access token   |   |
-|  +---------------------+  +------------------+  +----------------+   |
-|            |                       |                    |             |
-|            v                       v                    v             |
-|  +---------------------+  +-------------------------------+          |
-|  | Handler Dispatch    |  | GitHub Service (Octokit)      |          |
-|  | ReviewHandler or    |  | REST + GraphQL, retry logic   |          |
-|  | MentionHandler      |  +-------------------------------+          |
-|  +---------------------+                                             |
-|            |                                                         |
-|            v                                                         |
-|  +---------------------+                                             |
-|  | Job Queue (p-queue) |  Per-installation concurrency limits        |
-|  | In-process async    |  Future: external queue                     |
-|  +---------------------+                                             |
-+----------------------------------------------------------------------+
-              |
-              v
-+----------------------------------------------------------------------+
-|                        EXECUTION LAYER                                |
-|  +---------------------+  +------------------+  +----------------+   |
-|  | Workspace Manager   |  | Context Builder  |  | MCP Config     |   |
-|  | Clone, git auth,    |  | Fetch PR/issue   |  | Generate JSON  |   |
-|  | temp dir lifecycle  |  | data, sanitize,  |  | for 4 servers  |   |
-|  |                     |  | build prompt     |  |                |   |
-|  +---------------------+  +------------------+  +----------------+   |
-|            |                       |                    |             |
-|            v                       v                    v             |
-|  +------------------------------------------------------------------+|
-|  | Claude Code CLI (@anthropic-ai/claude-agent-sdk query())          |
-|  |                                                                   |
-|  | Spawns child process with:                                        |
-|  | - Prompt file (instructions + PR context)                         |
-|  | - MCP config (4 stdio servers as child processes)                 |
-|  | - Working dir = cloned repo                                       |
-|  | - Env: CLAUDE_CODE_OAUTH_TOKEN, GITHUB_TOKEN                     |
-|  | - permissionMode: bypassPermissions                               |
-|  |                                                                   |
-|  | Returns: AsyncGenerator<SDKMessage>                               |
-|  +------------------------------------------------------------------+|
-|            |                                                         |
-|  +---------+---------+---------+---------+                           |
-|  v         v         v         v         v                           |
-|  +---------+ +-------+ +------+ +-------+ +--------+                |
-|  |Comment  | |Inline | |CI    | |FileOps| |Claude  |                |
-|  |MCP      | |Comment| |Status| |MCP    | |Code    |                |
-|  |Server   | |MCP    | |MCP   | |Server | |Tools   |                |
-|  |(stdio)  | |Server | |Server| |(stdio)| |(built  |                |
-|  |         | |(stdio)| |(stdio)| |       | | in)    |                |
-|  +---------+ +-------+ +------+ +-------+ +--------+                |
-+----------------------------------------------------------------------+
-              |
-              v
-+----------------------------------------------------------------------+
-|                        CLEANUP                                        |
-|  +---------------------+  +------------------+  +----------------+   |
-|  | Update tracking     |  | Remove temp dir  |  | Log result     |   |
-|  | comment w/ status   |  | (cloned repo)    |  | metrics, cost  |   |
-|  +---------------------+  +------------------+  +----------------+   |
-+----------------------------------------------------------------------+
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| Webhook Endpoint | Accept GitHub POST, capture raw body for sig verify | Hono route handler, `c.req.text()` for raw body |
-| Signature Verifier | Validate `X-Hub-Signature-256` HMAC-SHA256 | `crypto.timingSafeEqual` with `crypto.createHmac('sha256', secret)` |
-| Delivery Deduplicator | Prevent duplicate processing from GitHub retries | In-memory `Set<string>` with TTL eviction (LRU or Map + setTimeout) |
-| Event Router | Parse `X-GitHub-Event` header + `action` field, dispatch | Switch/map on event type, route to correct handler |
-| Event Filters | Bot filtering, mention detection, permission checks | Regex word-boundary trigger match, `sender.type !== 'Bot'`, write-access validation |
-| Config Loader | Fetch `.kodiai.yml` from repo default branch | Octokit `repos.getContent()`, Zod schema validation, merge with defaults |
-| GitHub App Auth | JWT creation, installation access token minting | `@octokit/auth-app` handles JWT lifecycle + token caching |
-| GitHub Service | All GitHub API calls (REST + GraphQL) | Octokit wrapper with retry logic, shared across components |
-| Handler (Review) | Orchestrate PR auto-review flow end-to-end | Receives PR event, queues job, wires workspace + context + executor |
-| Handler (Mention) | Orchestrate @kodiai mention response flow | Receives comment event, queues job, detects intent (review vs. code mod vs. Q&A) |
-| Job Queue | Concurrency control, per-installation throttling | `p-queue` with `concurrency` per install, prevents overload |
-| Workspace Manager | Clone repo, configure git identity + auth, cleanup temp dirs | `git clone --depth=50`, set remote URL with token, `rm -rf` on completion |
-| Context Builder | Fetch PR/issue data, format prompt, apply TOCTOU protections | GraphQL queries for diff/comments/reviews, timestamp-based comment filtering, content sanitization |
-| MCP Config Generator | Build MCP server config JSON for Claude CLI | Assemble `mcpServers` object with server commands, args, env vars |
-| Claude CLI Executor | Invoke `query()`, stream messages, handle result | `@anthropic-ai/claude-agent-sdk` `query()` with async generator consumption |
-| Comment MCP Server | Create/update tracking comments showing progress | `@modelcontextprotocol/sdk` stdio server, Octokit for comment CRUD |
-| Inline Comment MCP Server | Create inline PR review comments with suggestion blocks | `@modelcontextprotocol/sdk` stdio server, `pulls.createReviewComment()` |
-| CI Status MCP Server | Read GitHub Actions workflow/check run status | `@modelcontextprotocol/sdk` stdio server, `actions.listWorkflowRuns()` |
-| File Ops MCP Server | Create/update files via Git Data API (for signed commits) | `@modelcontextprotocol/sdk` stdio server, tree/blob/commit creation |
-
-## Recommended Project Structure
+### System Integration Map
 
 ```
-src/
-  index.ts                      # Entry: create Hono app, wire middleware, start server
-  server/
-    webhook.ts                  # POST /webhooks/github - raw body, sig verify, dispatch
-    health.ts                   # GET /health - liveness probe for Azure
-  auth/
-    github-app.ts               # GitHub App JWT, installation tokens, sig verification
-  config/
-    loader.ts                   # Fetch + parse .kodiai.yml from repo default branch
-    schema.ts                   # Zod schema for .kodiai.yml config
-    defaults.ts                 # Default config values + review/mention prompts
-  events/
-    router.ts                   # Map event type + action to handler functions
-    filters.ts                  # Mention detection, bot filtering, permission validation
-  jobs/
-    queue.ts                    # p-queue wrapper with per-installation concurrency
-    worker.ts                   # Job execution orchestrator (wires workspace + executor)
-    workspace.ts                # Clone, git auth, temp dir lifecycle, cleanup
-  handlers/
-    review.ts                   # PR auto-review handler (opened, ready_for_review)
-    mention.ts                  # @kodiai mention handler (all comment event types)
-  context/
-    builder.ts                  # Fetch PR/issue data, format prompt, TOCTOU protections
-    sanitizer.ts                # Content sanitization (tokens, invisible chars, HTML comments)
-  executor/
-    claude-cli.ts               # Claude Code CLI via query(), message streaming
-    types.ts                    # Execution result types, message filtering
-  mcp/
-    comment-server.ts           # Tracking comment updates (create/update progress)
-    inline-comment-server.ts    # Inline PR review comments with suggestion blocks
-    actions-server.ts           # CI/workflow status reading
-    file-ops-server.ts          # File CRUD via Git Data API
-    config.ts                   # MCP config JSON generation
-  github/
-    service.ts                  # Octokit wrapper (REST + GraphQL, retry, token refresh)
-    queries.ts                  # GraphQL queries for PR data (diff, comments, reviews)
-    types.ts                    # GitHub API response types
-  utils/
-    retry.ts                    # Retry with exponential backoff
-    logger.ts                   # Structured JSON logging (Azure-compatible)
-    dedup.ts                    # Delivery ID deduplication with TTL
-Dockerfile
-docker-compose.yml
-package.json
-tsconfig.json
++--------------------------------------------------------------------------------+
+| Existing Review Pipeline                                                       |
+|                                                                                |
+| [Webhook] -> [Router] -> [Review Handler] -> [Executor] -> [Post-process]     |
+|                               |                                                |
+|                               | (v0.9 ENHANCEMENTS)                            |
+|                               v                                                |
+|  +-------------------------------------------+                                |
+|  | Early Pipeline (pre-execution)             |                                |
+|  |                                            |                                |
+|  | 1. loadRepoConfig()           [existing]   |                                |
+|  | 2. parsePRIntent()            [existing]   |                                |
+|  | 3. resolveAuthorTier()        [existing]   |                                |
+|  | 4. computeIncrementalDiff()   [existing]   |                                |
+|  | 5. collectDiffContext()       [existing]   |                                |
+|  | 6. analyzeDiff()             [existing]    |                                |
+|  | 7. detectDependencyBump()        [NEW]     | <-- Feature 1                  |
+|  |    a. classifyBumpType()                   |                                |
+|  |    b. fetchChangelogContext()              |                                |
+|  |    c. lookupAdvisories()                   |                                |
+|  | 8. computeFileRiskScores()    [existing]   |                                |
+|  | 9. triageFilesByRisk()        [existing]   |                                |
+|  | 10. retrievalWithMultiSignal()   [MOD]     | <-- Feature 3                  |
+|  | 11. resolveReviewProfile()    [existing]   |                                |
+|  | 12. buildReviewPrompt()       [MODIFIED]   | <-- Features 1, 3              |
+|  +-------------------------------------------+                                |
+|                                                                                |
+|  +-------------------------------------------+                                |
+|  | Execution Layer                             |                                |
+|  |                                            |                                |
+|  | 13. executor.execute()        [MODIFIED]   | <-- Feature 2                  |
+|  |     a. Chunked execution for large PRs     |                                |
+|  |     b. Partial result capture on timeout   |                                |
+|  +-------------------------------------------+                                |
+|                                                                                |
+|  +-------------------------------------------+                                |
+|  | Post-Execution (timeout resilience)         |                                |
+|  |                                            |                                |
+|  | 14. capturePartialResults()      [NEW]     | <-- Feature 2                  |
+|  | 15. extractFindings()         [existing]   |                                |
+|  | 16. applyEnforcement()        [existing]   |                                |
+|  | 17. formatReviewDetails()     [MODIFIED]   | <-- Features 1, 2              |
+|  +-------------------------------------------+                                |
++--------------------------------------------------------------------------------+
 ```
 
-### Structure Rationale
+---
 
-- **server/:** Thin HTTP layer. Only knows about request/response. No business logic. This makes it easy to swap Hono for something else or add additional endpoints.
-- **auth/:** Isolated authentication concerns. GitHub App JWT creation, token caching, and signature verification are tightly coupled and belong together.
-- **config/:** Separated from event handling because config loading is a cross-cutting concern used by both handlers. Zod schema provides runtime validation and type inference.
-- **events/:** Routing and filtering are pre-handler concerns. The router decides *which* handler; filters decide *whether* to handle. Separating from handlers keeps handler code focused on orchestration.
-- **jobs/:** Queue management, workspace lifecycle, and job orchestration are execution infrastructure separate from the *what* (handlers) and the *how* (executor). The worker wires everything together for a single job execution.
-- **handlers/:** Business logic entry points. Each handler orchestrates a complete flow: validate -> queue -> execute -> cleanup. Thin orchestrators, not monoliths.
-- **context/:** Prompt construction is complex (~800 lines in reference implementation) and shared between review and mention flows. Isolating it prevents handler bloat and enables independent testing.
-- **executor/:** Abstraction over the Claude Code CLI invocation. When adding a direct SDK agent loop backend later, it slots in alongside `claude-cli.ts` without touching handlers.
-- **mcp/:** Each MCP server is a standalone stdio process. Keeping them in a dedicated directory with shared config generation simplifies the MCP lifecycle.
-- **github/:** All GitHub API interactions centralized. Octokit wrapper with retry logic used by every component that talks to GitHub. Prevents scattered API calls.
+## Feature 1: Dependency Bump Analysis
 
-## Architectural Patterns
+### Problem
 
-### Pattern 1: Acknowledge-Then-Process (Webhook Fast-Return)
+Dependency bump PRs (Dependabot, Renovate, manual updates) modify lock files and manifests but contain no meaningful code diff. The current pipeline treats them identically to code PRs, producing low-value style/correctness findings on generated lock file content while missing what actually matters: breaking changes, CVEs, and changelog context.
 
-**What:** Respond 200 to GitHub within milliseconds, process the event asynchronously via the job queue.
-**When to use:** Every webhook event. GitHub terminates connections after 10 seconds and marks deliveries as failed.
-**Trade-offs:** Adds queue complexity but is mandatory for production. Without this, long-running AI tasks would cause GitHub to retry, creating duplicate work.
+### Architecture: Dependency Bump Detector
 
-**Example:**
+**Detection strategy:** Pure diff analysis -- no new API calls needed for detection.
+
+A dependency bump PR is identified by analyzing what files changed and what the diff content looks like. The detector runs AFTER `analyzeDiff()` (which already classifies files by category and detects `riskSignals` including "Modifies dependency manifest") but BEFORE prompt building.
+
+```
+[analyzeDiff()]
+    |
+    | Already detects "Modifies dependency manifest" risk signal
+    | Already classifies files into categories (config, source, etc.)
+    |
+    v
+[NEW: detectDependencyBump()]
+    |
+    | Input:
+    |   changedFiles: string[]
+    |   filesByCategory: Record<string, string[]>
+    |   riskSignals: string[]
+    |   diffContent: string | undefined
+    |   prTitle: string
+    |   prBody: string | null
+    |
+    | Step 1: Is this a dependency bump PR?
+    |   - riskSignals includes "Modifies dependency manifest"
+    |   - Majority of changed files are manifest/lock files
+    |   - OR PR title matches Dependabot/Renovate patterns
+    |
+    | Step 2: What ecosystem(s)?
+    |   - package.json / package-lock.json / yarn.lock / pnpm-lock.yaml => npm
+    |   - go.mod / go.sum => go
+    |   - Cargo.toml / Cargo.lock => rust (cargo)
+    |   - requirements.txt / Pipfile.lock => pip
+    |   - Gemfile / Gemfile.lock => rubygems
+    |
+    | Step 3: Extract version transitions from diff
+    |   - Parse old/new versions from manifest diff
+    |   - Classify: patch / minor / major using semver
+    |
+    | Output: DependencyBumpAnalysis | null
+    |
+    v
+[When DependencyBumpAnalysis is non-null:]
+    |
+    v
+[NEW: enrichDependencyContext()]
+    |
+    | Async enrichments (each fail-open):
+    |
+    | a. fetchChangelogContext()
+    |    - npm: fetch from registry.npmjs.org/<pkg>
+    |      The npm registry returns `repository` field with GitHub URL
+    |      Fetch CHANGELOG.md / CHANGES.md from GitHub repo via octokit
+    |    - go: parse pkg.go.dev or module proxy
+    |    - Generic: attempt GitHub releases API from repository URL
+    |    - Cap at 2000 chars of changelog per package, 5 packages max
+    |
+    | b. lookupAdvisories()
+    |    - GitHub Advisory Database REST API:
+    |      GET /advisories?affects=<pkg>@<old_version>&ecosystem=<eco>
+    |    - Filter to advisories fixed between old and new versions
+    |    - Extract: GHSA ID, severity, summary, patched_versions
+    |    - This API is available without authentication (public data)
+    |    - Rate limit: use installation octokit for higher limits
+    |
+    | c. assessBreakingChange()
+    |    - If semver diff is "major": flag as breaking
+    |    - If changelog contains "BREAKING" / "breaking change": flag
+    |    - If Dependabot/Renovate body contains compatibility score: extract
+    |
+    | Output: DependencyContext {
+    |   packages: Array<{
+    |     name: string;
+    |     ecosystem: string;
+    |     fromVersion: string;
+    |     toVersion: string;
+    |     semverDiff: "patch" | "minor" | "major";
+    |     changelog: string | null;        // truncated
+    |     advisories: Advisory[];
+    |     isBreaking: boolean;
+    |     compatibilityScore: number | null; // from Dependabot
+    |   }>;
+    |   mergeConfidence: "high" | "medium" | "low";
+    | }
+```
+
+### Merge Confidence Score
+
+A deterministic merge confidence score based on bump characteristics:
+
 ```typescript
-// webhook.ts - respond immediately
-app.post("/webhooks/github", async (c) => {
-  const rawBody = await c.req.text();
-  const signature = c.req.header("x-hub-signature-256");
-
-  if (!verifySignature(rawBody, signature, webhookSecret)) {
-    return c.text("Invalid signature", 401);
+function computeMergeConfidence(packages: DependencyPackage[]): "high" | "medium" | "low" {
+  // Any unpatched CVE with severity >= high => low confidence
+  if (packages.some(p => p.advisories.some(a => a.severity === "critical" || a.severity === "high"))) {
+    return "low";
   }
 
-  const event = c.req.header("x-github-event");
-  const deliveryId = c.req.header("x-github-delivery");
-  const payload = JSON.parse(rawBody);
-
-  // Deduplicate retries
-  if (deliveryStore.has(deliveryId)) {
-    return c.text("Already processed", 200);
+  // Any major version bump => medium confidence (breaking potential)
+  if (packages.some(p => p.semverDiff === "major")) {
+    return "medium";
   }
-  deliveryStore.set(deliveryId);
 
-  // Fire-and-forget into the queue
-  router.dispatch(event, payload).catch((err) => {
-    logger.error("Event dispatch failed", { event, deliveryId, err });
-  });
+  // Any medium-severity advisory => medium confidence
+  if (packages.some(p => p.advisories.length > 0)) {
+    return "medium";
+  }
 
-  return c.text("OK", 200);
+  // All patch/minor, no advisories => high confidence
+  return "high";
+}
+```
+
+### Prompt Integration
+
+When `DependencyBumpAnalysis` is detected, the review prompt is augmented with a dedicated section:
+
+```
+[buildReviewPrompt()]
+    |
+    | [NEW] buildDependencyBumpSection()
+    |   - "This PR bumps N dependencies. Review with dependency-specific focus:"
+    |   - Package table: name | from | to | diff type | CVEs | breaking
+    |   - Changelog excerpts (if available)
+    |   - Advisory details (if any)
+    |   - "Focus on: breaking API changes in consuming code, deprecated usage,
+    |     security advisories, and lock file consistency."
+    |   - "DO NOT review lock file content line-by-line."
+    |   - "Merge confidence: HIGH/MEDIUM/LOW based on [reasoning]"
+```
+
+### Review Details Integration
+
+The Review Details comment (post-execution deterministic summary) is enhanced:
+
+```
+## Dependency Analysis
+| Package | From | To | Bump | CVEs | Breaking |
+|---------|------|----|------|------|----------|
+| lodash  | 4.17.20 | 4.17.21 | patch | 0 | No |
+| express | 4.x | 5.0.0 | major | 0 | Yes |
+
+Merge Confidence: MEDIUM (major version bump in express)
+```
+
+### Integration with Existing Architecture
+
+| Existing Component | Change | Details |
+|-------------------|--------|---------|
+| `src/execution/diff-analysis.ts` | NONE | Already detects manifest files in risk signals |
+| `src/handlers/review.ts` | INSERT ~40 lines | Wire `detectDependencyBump()` and `enrichDependencyContext()` between diff analysis and prompt building |
+| `src/execution/review-prompt.ts` | ADD section builder | `buildDependencyBumpSection()` -- ~80 lines |
+| `src/execution/config.ts` | ADD schema | `dependencyAnalysis` config section -- ~20 lines |
+| `src/handlers/review.ts` (formatReviewDetailsSummary) | MODIFY | Add dependency table to Review Details -- ~30 lines |
+
+### New Modules
+
+| Module | Location | Type | Lines (est.) |
+|--------|----------|------|-------------|
+| `dep-bump-detector.ts` | `src/lib/` | Pure function + async enrichment | ~250 |
+| `dep-bump-detector.test.ts` | `src/lib/` | Unit tests | ~300 |
+| `changelog-fetcher.ts` | `src/lib/` | Async, fail-open HTTP | ~150 |
+| `changelog-fetcher.test.ts` | `src/lib/` | Unit tests | ~200 |
+| `advisory-lookup.ts` | `src/lib/` | Async, fail-open HTTP | ~120 |
+| `advisory-lookup.test.ts` | `src/lib/` | Unit tests | ~150 |
+
+---
+
+## Feature 2: Timeout / Chunked Review Resilience
+
+### Problem
+
+The xbmc repository (and other large C++ projects) has a ~10% review failure rate due to timeouts. Current behavior: the executor's 600-second timeout fires, the AbortController cancels the Claude SDK query, and the review handler posts an error comment ("Kodiai timed out"). Any inline comments Claude already published before the timeout are orphaned -- no summary comment, no Review Details, no knowledge store recording.
+
+### Current Timeout Flow
+
+```
+[executor.execute()]
+    |
+    | AbortController with setTimeout(600s)
+    |
+    v
+[Claude SDK query() -- streaming messages]
+    |
+    | message.type === "assistant" -> logged
+    | message.type === "result" -> captured as resultMessage
+    |
+    | If timeout fires DURING streaming:
+    |   controller.abort() -> SDK throws AbortError
+    |   catch block returns { conclusion: "error", isTimeout: true }
+    |
+    v
+[review handler]
+    |
+    | result.conclusion === "error" && result.isTimeout
+    |   -> postOrUpdateErrorComment("timeout")
+    |   -> NO finding extraction
+    |   -> NO knowledge store recording
+    |   -> NO learning memory write
+    |   -> Orphaned inline comments remain on PR
+```
+
+### Architecture: Timeout Resilience (Three-Layer Approach)
+
+#### Layer 1: Progressive Timeout with Partial Result Capture
+
+**Modify the executor to capture partial results when timeout occurs.**
+
+The key insight: Claude publishes inline review comments via MCP tools DURING execution, not after. By the time a timeout fires at 600s, Claude may have already published 5-7 inline comments via the `mcp__inline_review__submit_inline_comments` tool. Those comments are already on GitHub.
+
+```
+[executor.execute()]
+    |
+    | EXISTING: AbortController with setTimeout(config.timeoutSeconds * 1000)
+    |
+    | [NEW] Track MCP tool calls during streaming:
+    |   - Count published inline comments (onPublish callback already exists)
+    |   - Capture publish timestamps
+    |
+    | If timeout fires:
+    |   [EXISTING] controller.abort()
+    |   [NEW] Return { conclusion: "timeout_partial", isTimeout: true,
+    |                   published: true/false (from onPublish tracking) }
+    |
+    v
+[review handler -- MODIFIED timeout handling]
+    |
+    | When result.isTimeout === true AND result.published === true:
+    |   [NEW] Proceed to finding extraction (extractFindingsFromReviewComments)
+    |   [NEW] Apply post-LLM enforcement pipeline as normal
+    |   [NEW] Append "partial review" notice to Review Details
+    |   [NEW] Record to knowledge store with conclusion: "timeout_partial"
+    |   [NEW] Post/update summary note: "This is a partial review (timed out
+    |          after Xs). N comments were posted. Re-request review to retry."
+    |
+    | When result.isTimeout === true AND result.published === false:
+    |   [EXISTING] Post error comment as today
+```
+
+This is the simplest and highest-impact change. It turns the 10% failure rate into a graceful degradation: partial reviews instead of error comments.
+
+#### Layer 2: Chunked Execution for Large PRs
+
+**For PRs that exceed a configurable threshold, split the review into chunks.**
+
+The existing large PR triage system (`triageFilesByRisk`) already divides files into full/abbreviated/mention-only tiers. Chunked execution extends this by running separate executor passes per chunk when the PR is large enough to risk timeout.
+
+```
+[triageFilesByRisk()] -- existing
+    |
+    | TieredFiles: { full: [], abbreviated: [], mentionOnly: [] }
+    |
+    v
+[NEW: shouldChunkReview()]
+    |
+    | Decision heuristic (pure function):
+    |   totalFiles > chunkThreshold (default: 100)
+    |   OR estimatedTokens > tokenBudget (heuristic from lines + files)
+    |   AND config.review.chunkedReview.enabled (default: false initially)
+    |
+    | If NO: proceed with single execution as today
+    | If YES:
+    |
+    v
+[NEW: partitionReviewChunks()]
+    |
+    | Partition full-review files into chunks of ~30 files each
+    | Each chunk gets its own executor.execute() call
+    | Chunks share the same reviewOutputKey prefix but with chunk suffix
+    |
+    | Chunk 1: files[0..29]   -> reviewOutputKey + "-chunk-1"
+    | Chunk 2: files[30..59]  -> reviewOutputKey + "-chunk-2"
+    | ...
+    |
+    v
+[Sequential execution per chunk]
+    |
+    | For each chunk:
+    |   1. Build chunk-specific prompt (subset of files, shared context)
+    |   2. Execute with per-chunk timeout (timeoutSeconds / numChunks, min 120s)
+    |   3. Capture results (success or partial timeout)
+    |   4. If any chunk succeeds, mark overall as partial success
+    |
+    v
+[Merge chunk results]
+    |
+    | Merge findings from all successful chunks
+    | Apply post-LLM pipeline (enforcement, suppression, prioritization)
+    | Build unified Review Details with chunk completion status
+```
+
+**Important constraint:** Chunks run sequentially (not parallel) because:
+1. Per-installation concurrency is already limited by p-queue
+2. Each chunk needs the workspace git state
+3. Rate limit budget must be shared
+
+#### Layer 3: Adaptive Timeout Based on PR Size
+
+**Scale the timeout based on PR complexity.**
+
+```typescript
+function computeAdaptiveTimeout(params: {
+  baseTimeout: number;     // config.timeoutSeconds (default 600)
+  fileCount: number;
+  linesChanged: number;
+  isLargePR: boolean;
+  isDependencyBump: boolean;
+}): number {
+  // Dependency bumps: shorter timeout (less review needed)
+  if (params.isDependencyBump) {
+    return Math.min(params.baseTimeout, 300);
+  }
+
+  // Small PRs: keep base timeout
+  if (params.fileCount <= 10 && params.linesChanged <= 500) {
+    return params.baseTimeout;
+  }
+
+  // Large PRs: extend timeout proportionally, cap at 1.5x
+  if (params.isLargePR) {
+    return Math.min(params.baseTimeout * 1.5, 900);
+  }
+
+  return params.baseTimeout;
+}
+```
+
+### Config Schema Addition
+
+```typescript
+const chunkedReviewSchema = z.object({
+  enabled: z.boolean().default(false),
+  chunkThreshold: z.number().min(50).max(500).default(100),
+  maxChunks: z.number().min(2).max(10).default(3),
+  minChunkTimeout: z.number().min(60).max(600).default(120),
+}).default({
+  enabled: false,
+  chunkThreshold: 100,
+  maxChunks: 3,
+  minChunkTimeout: 120,
 });
 ```
 
-### Pattern 2: Per-Installation Job Queue
+### Integration with Existing Architecture
 
-**What:** Each GitHub App installation (org/user) gets its own concurrency slot in p-queue, preventing one noisy installation from starving others.
-**When to use:** Always. Without per-installation limits, a repo with rapid PR activity could monopolize all worker capacity.
-**Trade-offs:** Slightly more complex than a single global queue, but essential for fair scheduling across installations. In-process p-queue is sufficient for single-instance deployment; migrate to external queue (Azure Service Bus, Redis-backed BullMQ) only when scaling to multiple instances.
+| Existing Component | Change | Details |
+|-------------------|--------|---------|
+| `src/execution/executor.ts` | MODIFY ~20 lines | Return `published: true` flag on timeout when onPublish was called |
+| `src/execution/types.ts` | MODIFY ~5 lines | Add `isTimeoutPartial` to ExecutionResult |
+| `src/handlers/review.ts` | MODIFY ~60 lines | Timeout branch: extract findings instead of posting error |
+| `src/handlers/review.ts` | ADD ~80 lines | Chunked execution loop (when enabled) |
+| `src/handlers/review.ts` (formatReviewDetailsSummary) | MODIFY ~15 lines | Partial review / chunk status in Review Details |
+| `src/execution/config.ts` | ADD schema ~15 lines | `chunkedReview` config section |
+| `src/lib/errors.ts` | MODIFY ~5 lines | New error category "timeout_partial" |
 
-**Example:**
+### New Modules
+
+| Module | Location | Type | Lines (est.) |
+|--------|----------|------|-------------|
+| `chunk-partitioner.ts` | `src/lib/` | Pure function | ~80 |
+| `chunk-partitioner.test.ts` | `src/lib/` | Unit tests | ~120 |
+| `adaptive-timeout.ts` | `src/lib/` | Pure function | ~40 |
+| `adaptive-timeout.test.ts` | `src/lib/` | Unit tests | ~60 |
+
+---
+
+## Feature 3: Intelligent Retrieval Improvements
+
+### Problem
+
+Current retrieval query construction is naive: `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`. This single-signal approach misses several dimensions that would improve retrieval relevance:
+
+1. **File path context** -- similar findings are more likely on similar file paths
+2. **Finding categories** -- past security findings should surface for security-relevant code
+3. **Diff content** -- the actual changes matter more than file names
+4. **Language awareness** -- Python findings are less relevant for Go code
+5. **Static distance threshold** -- 0.3 works for some repos but not others
+
+### Current Retrieval Flow
+
+```
+[review handler, lines 1427-1460]
+    |
+    | queryText = `${pr.title}\n${reviewFiles.slice(0, 20).join("\n")}`
+    | embedResult = embeddingProvider.generate(queryText, "query")
+    |
+    | retrieval = isolationLayer.retrieveWithIsolation({
+    |   queryEmbedding: embedResult.embedding,
+    |   repo, owner, sharingEnabled,
+    |   topK: config.knowledge.retrieval.topK,          // default 5
+    |   distanceThreshold: config.knowledge.retrieval.distanceThreshold,  // default 0.3
+    | })
+    |
+    | retrievalCtx = { findings: retrieval.results.map(...) }
+    |
+    v
+[buildReviewPrompt()] -- existing retrievalContext parameter
+```
+
+### Architecture: Multi-Signal Query Construction
+
+**Replace the naive query with a multi-signal composite query.**
+
+```
+[NEW: buildRetrievalQuery()]
+    |
+    | Input:
+    |   prTitle: string
+    |   reviewFiles: string[]
+    |   diffAnalysis: DiffAnalysis
+    |   riskSignals: string[]
+    |   conventionalType: ConventionalCommitType | null
+    |   dependencyBumpDetected: boolean
+    |
+    | Signal 1: PR Intent (title + conventional type)
+    |   "fix: null pointer dereference in auth handler"
+    |   -> "[fix] [correctness] null pointer dereference auth handler"
+    |
+    | Signal 2: File Path Context (top-5 risk-scored files)
+    |   Filter to source files only (skip lock files, docs, tests)
+    |   Include directory structure: "src/auth/jwt-validator.ts"
+    |
+    | Signal 3: Risk Signal Amplification
+    |   If "Modifies authentication/authorization code" in riskSignals:
+    |     Append "authentication authorization security"
+    |   If "Modifies database schema or migrations" in riskSignals:
+    |     Append "database migration schema safety"
+    |
+    | Signal 4: Language Context
+    |   Primary language from diffAnalysis.filesByLanguage
+    |   Append language name to bias toward same-language findings
+    |
+    | Signal 5: Diff Summary (first 500 chars of actual diff)
+    |   Extract key identifiers from added lines
+    |   Dedupe and include as retrieval signal
+    |
+    | Output: string (structured query text for embedding)
+    |   Format: "[type] [categories] <intent>\n<files>\n<risk context>\n<language>"
+```
+
+### Architecture: Adaptive Distance Thresholds
+
+**Replace the static 0.3 threshold with per-repo adaptive thresholds.**
+
+```
+[NEW: computeAdaptiveThreshold()]
+    |
+    | Input:
+    |   baseThreshold: number        // config.knowledge.retrieval.distanceThreshold
+    |   repoMemoryCount: number      // how many memories exist for this repo
+    |   primaryLanguage: string      // from diffAnalysis
+    |   isSharedPoolQuery: boolean   // whether querying across repos
+    |
+    | Adjustments (multiplicative):
+    |
+    | 1. Repository maturity adjustment
+    |    - < 50 memories: threshold * 1.3 (more permissive, less data)
+    |    - 50-200 memories: threshold * 1.0 (baseline)
+    |    - > 200 memories: threshold * 0.8 (more selective, rich data)
+    |
+    | 2. Language-specific adjustment
+    |    - C/C++: threshold * 0.9 (findings more specific, tighter match needed)
+    |    - Python/JS/TS: threshold * 1.0 (baseline)
+    |    - Mixed/Unknown: threshold * 1.1 (more permissive)
+    |
+    | 3. Shared pool penalty
+    |    - Same repo: threshold * 1.0
+    |    - Shared pool: threshold * 0.85 (cross-repo needs tighter match)
+    |
+    | Output: number (adjusted distance threshold)
+    |
+    | Constraints: floor 0.1, ceiling 0.5
+```
+
+### Architecture: Language-Aware Retrieval Boosting
+
+**Post-retrieval re-ranking that boosts same-language findings.**
+
+```
+[isolationLayer.retrieveWithIsolation()]
+    |
+    | Returns: RetrievalWithProvenance { results, provenance }
+    |
+    v
+[NEW: boostRetrievalResults()]
+    |
+    | Input:
+    |   results: RetrievalResult[]
+    |   primaryLanguage: string
+    |   queryCategories: string[]  // from risk signals
+    |
+    | For each result:
+    |   1. Language match boost:
+    |      Extract language from result.record.filePath extension
+    |      If matches primaryLanguage: distance * 0.85 (boost)
+    |
+    |   2. Category match boost:
+    |      If result.record.category in queryCategories: distance * 0.9
+    |
+    |   3. Recency boost (if applicable):
+    |      More recent findings get slight distance reduction
+    |
+    | Re-sort by adjusted distance, re-apply topK
+    |
+    | Output: RetrievalResult[] (re-ranked)
+```
+
+### Config Schema Changes
+
 ```typescript
-// queue.ts
-import PQueue from "p-queue";
+const retrievalSchema = z.object({
+  enabled: z.boolean().default(true),
+  topK: z.number().min(1).max(20).default(5),
+  distanceThreshold: z.number().min(0).max(2).default(0.3),
+  maxContextChars: z.number().min(0).max(5000).default(2000),
+  // NEW: Adaptive threshold configuration
+  adaptiveThreshold: z.boolean().default(true),
+  // NEW: Language-aware boosting
+  languageBoosting: z.boolean().default(true),
+}).default({
+  enabled: true,
+  topK: 5,
+  distanceThreshold: 0.3,
+  maxContextChars: 2000,
+  adaptiveThreshold: true,
+  languageBoosting: true,
+});
+```
 
-class JobQueueManager {
-  private queues = new Map<number, PQueue>();
-  private globalQueue = new PQueue({ concurrency: 4 }); // total cap
+### Integration with Existing Architecture
 
-  getQueue(installationId: number): PQueue {
-    if (!this.queues.has(installationId)) {
-      this.queues.set(installationId, new PQueue({ concurrency: 1 }));
-    }
-    return this.queues.get(installationId)!;
+| Existing Component | Change | Details |
+|-------------------|--------|---------|
+| `src/handlers/review.ts` (retrieval block, lines 1427-1460) | MODIFY ~30 lines | Replace naive query with `buildRetrievalQuery()`, add adaptive threshold + boosting |
+| `src/learning/isolation.ts` | NONE | Retrieval interface unchanged; boosting is post-retrieval |
+| `src/learning/memory-store.ts` | ADD method ~10 lines | `getMemoryCount(repo: string): number` for adaptive threshold |
+| `src/learning/types.ts` | MODIFY ~3 lines | Add `getMemoryCount` to `LearningMemoryStore` interface |
+| `src/execution/config.ts` | MODIFY ~5 lines | Add `adaptiveThreshold` and `languageBoosting` to retrieval schema |
+
+### New Modules
+
+| Module | Location | Type | Lines (est.) |
+|--------|----------|------|-------------|
+| `retrieval-query-builder.ts` | `src/lib/` | Pure function | ~120 |
+| `retrieval-query-builder.test.ts` | `src/lib/` | Unit tests | ~200 |
+| `adaptive-threshold.ts` | `src/lib/` | Pure function | ~60 |
+| `adaptive-threshold.test.ts` | `src/lib/` | Unit tests | ~80 |
+| `retrieval-booster.ts` | `src/lib/` | Pure function | ~80 |
+| `retrieval-booster.test.ts` | `src/lib/` | Unit tests | ~120 |
+
+---
+
+## Component Boundaries
+
+### New Components
+
+| Component | Responsibility | Type | Communicates With |
+|-----------|---------------|------|-------------------|
+| `src/lib/dep-bump-detector.ts` | Detect dependency bump PRs from diff data | Pure function | Review handler |
+| `src/lib/changelog-fetcher.ts` | Fetch changelog data from npm registry / GitHub | Async, fail-open | Dep bump detector |
+| `src/lib/advisory-lookup.ts` | Query GitHub Advisory Database for CVEs | Async, fail-open | Dep bump detector |
+| `src/lib/chunk-partitioner.ts` | Partition files into review chunks | Pure function | Review handler |
+| `src/lib/adaptive-timeout.ts` | Compute timeout based on PR size | Pure function | Review handler |
+| `src/lib/retrieval-query-builder.ts` | Build multi-signal retrieval query | Pure function | Review handler |
+| `src/lib/adaptive-threshold.ts` | Compute per-repo distance threshold | Pure function | Review handler |
+| `src/lib/retrieval-booster.ts` | Post-retrieval language/category boosting | Pure function | Review handler |
+
+### Modified Components
+
+| Component | Modification | Scope |
+|-----------|-------------|-------|
+| `src/handlers/review.ts` | Wire all three features into pipeline | Medium (~150 lines) |
+| `src/execution/executor.ts` | Track published state on timeout | Small (~20 lines) |
+| `src/execution/types.ts` | Add timeout-partial to result type | Tiny (~5 lines) |
+| `src/execution/config.ts` | Add config schemas for all three features | Small (~40 lines) |
+| `src/execution/review-prompt.ts` | Add dependency bump section builder | Small (~80 lines) |
+| `src/learning/memory-store.ts` | Add `getMemoryCount()` method | Tiny (~10 lines) |
+| `src/learning/types.ts` | Add method to interface | Tiny (~3 lines) |
+
+---
+
+## Data Flow: Complete Pipeline with v0.9
+
+```
+[Webhook arrives]
+    |
+    v
+[Event Router] -> pull_request.opened / synchronize / review_requested
+    |
+    v
+[Review Handler]
+    |-- Skip draft, skip [no-review], bot filter
+    |-- Job queue enqueue (per-installation concurrency)
+    |
+    v
+[Workspace creation + git clone (depth 50)]
+    |
+    v
+[loadRepoConfig(.kodiai.yml)]
+    |
+    v
+[parsePRIntent(title, body, commits)]  -- keyword parsing
+    |-- [no-review] / [wip] / [strict-review] etc.
+    |
+    v
+[resolveAuthorTier()] -- webhook payload + cache
+    |
+    v
+[computeIncrementalDiff()] -- incremental re-review detection
+    |
+    v
+[collectDiffContext()] -- git diff with merge-base recovery
+    |-- changedFiles, numstatLines, diffContent
+    |
+    v
+[analyzeDiff()] -- file categories, languages, risk signals
+    |
+    v
+[NEW: detectDependencyBump()]                    <-- v0.9 Feature 1
+    |-- Classify: pure dependency bump vs mixed
+    |-- Extract: packages, old/new versions
+    |
+    v
+[NEW: enrichDependencyContext()]                 <-- v0.9 Feature 1
+    |-- Fetch changelogs (npm registry, GitHub releases)
+    |-- Lookup CVEs (GitHub Advisory Database REST API)
+    |-- Compute merge confidence score
+    |
+    v
+[computeFileRiskScores() + triageFilesByRisk()]
+    |-- Existing large PR triage
+    |
+    v
+[NEW: shouldChunkReview()]                       <-- v0.9 Feature 2
+    |-- If no: single execution path (existing)
+    |-- If yes: partition into chunks
+    |
+    v
+[NEW: buildRetrievalQuery()]                     <-- v0.9 Feature 3
+    |-- Multi-signal composite query
+    |-- PR title + top files + risk signals + language
+    |
+    v
+[embeddingProvider.generate(multiSignalQuery)]
+    |
+    v
+[NEW: computeAdaptiveThreshold()]                <-- v0.9 Feature 3
+    |-- Per-repo memory count adjustment
+    |-- Language-specific adjustment
+    |
+    v
+[isolationLayer.retrieveWithIsolation()]
+    |-- Existing repo-scoped + shared pool retrieval
+    |
+    v
+[NEW: boostRetrievalResults()]                   <-- v0.9 Feature 3
+    |-- Language match boost
+    |-- Category match boost
+    |
+    v
+[resolveReviewProfile()]  -- keyword > auto > manual > config
+    |
+    v
+[buildReviewPrompt()]
+    |-- [EXISTING] All review context sections
+    |-- [NEW] Dependency bump section (if detected)
+    |-- [NEW] Enhanced retrieval context (with provenance detail)
+    |
+    v
+[executor.execute()]                             <-- v0.9 Feature 2
+    |-- [MODIFIED] Track MCP publish events during streaming
+    |-- [MODIFIED] On timeout: capture partial state
+    |
+    v
+[Post-execution]
+    |
+    |-- If timeout AND published:                <-- v0.9 Feature 2
+    |     [NEW] Extract findings from already-posted comments
+    |     [NEW] Apply full post-LLM pipeline
+    |     [NEW] Post partial review summary
+    |
+    |-- If timeout AND NOT published:
+    |     [EXISTING] Post error comment
+    |
+    |-- If success:
+    |     [EXISTING] Full post-LLM pipeline
+    |
+    v
+[extractFindingsFromReviewComments()]
+    |
+    v
+[applyEnforcement()] -> [evaluateFeedbackSuppressions()]
+    |
+    v
+[prioritizeFindings()] -> [formatReviewDetailsSummary()]
+    |-- [NEW] Dependency analysis table (if dep bump)
+    |-- [NEW] Partial review status (if timeout-partial)
+    |
+    v
+[Knowledge store recording]
+    |-- [MODIFIED] Record with conclusion: "timeout_partial" when applicable
+    |
+    v
+[Learning memory write (async, fail-open)]
+```
+
+---
+
+## Patterns to Follow
+
+### Pattern 1: Pure Function Enrichment (Established, MUST Follow)
+
+All new detection and computation modules are pure functions with typed inputs and outputs.
+
+```typescript
+// All new modules follow this pattern:
+export function detectDependencyBump(input: BumpDetectionInput): DependencyBumpAnalysis | null;
+export function shouldChunkReview(input: ChunkDecisionInput): boolean;
+export function buildRetrievalQuery(input: QueryBuildInput): string;
+export function computeAdaptiveThreshold(input: ThresholdInput): number;
+export function boostRetrievalResults(input: BoostInput): RetrievalResult[];
+```
+
+### Pattern 2: Fail-Open Enrichment (Established, MUST Follow)
+
+Every v0.9 feature wraps in try/catch and continues on failure. No v0.9 feature should block a review from completing.
+
+```typescript
+let dependencyContext: DependencyContext | null = null;
+try {
+  const bumpAnalysis = detectDependencyBump({ changedFiles, filesByCategory, riskSignals, diffContent, prTitle, prBody });
+  if (bumpAnalysis) {
+    dependencyContext = await enrichDependencyContext({
+      packages: bumpAnalysis.packages,
+      octokit,
+      logger,
+    });
   }
-
-  async enqueue(installationId: number, job: () => Promise<void>): Promise<void> {
-    const installQueue = this.getQueue(installationId);
-    // Nest per-install queue inside global concurrency limit
-    return this.globalQueue.add(() => installQueue.add(job));
-  }
+} catch (err) {
+  logger.warn({ ...baseLog, err }, "Dependency bump analysis failed (fail-open, proceeding without dep context)");
 }
 ```
 
-### Pattern 3: Ephemeral Workspace Per Job
+### Pattern 3: Config-Gated with Progressive Defaults
 
-**What:** Each job gets a fresh `git clone` in a temp directory, fully isolated from other jobs. The workspace is destroyed after the job completes (success or failure).
-**When to use:** Every job execution. Shared workspaces would cause data leakage between PRs and race conditions on concurrent jobs.
-**Trade-offs:** Clone overhead (~2-5s for shallow clone) is acceptable given that the AI review itself takes 30-120 seconds. Disk usage is bounded by cleanup.
+- Dependency bump detection: **enabled by default** (detection only, no API calls)
+- Changelog/advisory enrichment: **enabled by default** (fail-open, bounded API calls)
+- Chunked review: **disabled by default** (opt-in, changes execution model)
+- Timeout partial capture: **enabled by default** (pure improvement, no behavior change for successful reviews)
+- Adaptive retrieval threshold: **enabled by default** (transparent improvement)
+- Language retrieval boosting: **enabled by default** (transparent improvement)
 
-**Example:**
+### Pattern 4: Bounded External API Calls
+
+All new external API calls have hard limits:
+
 ```typescript
-// workspace.ts
-import { mkdtemp, rm } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
+const CHANGELOG_LIMITS = {
+  maxPackages: 5,           // Only fetch changelogs for top-5 packages
+  maxCharsPerPackage: 2000, // Truncate changelog excerpts
+  timeoutMs: 5000,          // Per-package fetch timeout
+  totalTimeoutMs: 15000,    // Total changelog fetch budget
+};
 
-async function withWorkspace<T>(
-  cloneUrl: string,
-  ref: string,
-  installToken: string,
-  fn: (workDir: string) => Promise<T>,
-): Promise<T> {
-  const workDir = await mkdtemp(join(tmpdir(), "kodiai-"));
-  try {
-    // Shallow clone with auth
-    const authedUrl = cloneUrl.replace("https://", `https://x-access-token:${installToken}@`);
-    await exec(`git clone --depth=50 ${authedUrl} ${workDir}`);
-    await exec(`git -C ${workDir} checkout ${ref}`);
-    // Configure git identity for commits
-    await exec(`git -C ${workDir} config user.name "kodiai[bot]"`);
-    await exec(`git -C ${workDir} config user.email "kodiai[bot]@users.noreply.github.com"`);
-
-    return await fn(workDir);
-  } finally {
-    await rm(workDir, { recursive: true, force: true });
-  }
-}
+const ADVISORY_LIMITS = {
+  maxPackages: 10,          // Only lookup advisories for top-10 packages
+  timeoutMs: 5000,          // Advisory API timeout
+};
 ```
 
-### Pattern 4: MCP Servers as Stdio Child Processes
+---
 
-**What:** Each MCP server runs as a separate child process communicating via stdin/stdout using JSON-RPC 2.0. Claude Code CLI manages their lifecycle.
-**When to use:** For all 4 MCP servers (comment, inline comment, CI status, file ops). This is the standard MCP transport for local servers.
-**Trade-offs:** Each job spawns 4+ child processes (MCP servers) plus the Claude CLI process itself. The overhead is acceptable because processes are short-lived (job duration) and the alternative (in-process `createSdkMcpServer`) has known concurrency bugs. Stdio servers are battle-tested in the reference implementation.
+## Anti-Patterns to Avoid
 
-**Important:** MCP servers must keep `stdout` reserved for JSON-RPC protocol messages. All logging must go to `stderr`.
+### Anti-Pattern 1: Parsing Lock File Diffs Line-by-Line
 
-**Example:**
-```typescript
-// config.ts - MCP config generation
-function buildMcpConfig(params: McpConfigParams): Record<string, McpStdioServerConfig> {
-  const servers: Record<string, McpStdioServerConfig> = {};
+**What:** Extracting version bumps by parsing lock file content (package-lock.json, yarn.lock).
+**Why bad:** Lock files are enormous, auto-generated, and format varies by tool version. Parsing is fragile and slow.
+**Instead:** Extract version transitions from the MANIFEST file diff (package.json, go.mod, Cargo.toml) where entries are human-readable and stable. Use manifest as source of truth; lock file presence only confirms the ecosystem.
 
-  servers.github_comment = {
-    command: "bun",
-    args: ["run", resolve(__dirname, "comment-server.ts")],
-    env: {
-      GITHUB_TOKEN: params.installToken,
-      REPO_OWNER: params.owner,
-      REPO_NAME: params.repo,
-      COMMENT_ID: params.trackingCommentId,
-    },
-  };
+### Anti-Pattern 2: Parallel Chunk Execution
 
-  if (params.isPR) {
-    servers.github_inline_comment = {
-      command: "bun",
-      args: ["run", resolve(__dirname, "inline-comment-server.ts")],
-      env: {
-        GITHUB_TOKEN: params.installToken,
-        REPO_OWNER: params.owner,
-        REPO_NAME: params.repo,
-        PR_NUMBER: String(params.prNumber),
-      },
-    };
-  }
+**What:** Running multiple review chunks simultaneously for faster large PR review.
+**Why bad:** Per-installation concurrency is already limited by p-queue (prevents GitHub API abuse). Multiple concurrent Claude executions would consume rate limits faster, risk timeouts from resource contention, and complicate finding deduplication.
+**Instead:** Sequential chunk execution with early termination if timeout pressure increases.
 
-  return servers;
-}
-```
+### Anti-Pattern 3: Persisting Retrieval Threshold Calibration
 
-### Pattern 5: TOCTOU-Safe Context Fetching
+**What:** Storing learned thresholds in SQLite and training them over time.
+**Why bad:** Adds schema complexity, migration burden, and cold-start problems for new repos. The adaptive threshold is deterministic from observable signals.
+**Instead:** Compute threshold dynamically from memory count + language. Log the computed threshold for monitoring. If a repo consistently gets bad results, the operator adjusts `distanceThreshold` in `.kodiai.yml`.
 
-**What:** Use the webhook payload's timestamp to filter comments fetched via GraphQL, preventing time-of-check-to-time-of-use attacks where an attacker edits content between when the webhook fires and when the bot reads it.
-**When to use:** All mention handling where comment content informs the prompt sent to the AI.
-**Trade-offs:** Requires extracting `created_at` from the webhook payload and passing it through the data pipeline. Small complexity cost for significant security benefit.
+### Anti-Pattern 4: Breaking the Single-Pass Post-LLM Pipeline
 
-**Example:**
-```typescript
-// context/builder.ts
-function filterCommentsByTimestamp(
-  comments: GitHubComment[],
-  triggerTimestamp: string | undefined,
-): GitHubComment[] {
-  if (!triggerTimestamp) return comments;
+**What:** Adding dependency-specific finding extraction or timeout-specific enforcement logic that branches before the existing post-LLM pipeline.
+**Why bad:** The post-LLM pipeline (enforcement -> suppression -> prioritization -> formatting) is the single most complex code path. Branching it creates divergent behavior and doubles the testing surface.
+**Instead:** All reviews (normal, dependency bump, timeout-partial, chunked) converge to the same post-LLM pipeline. The only difference is the input: which findings were extracted, and whether a partial review notice is appended.
 
-  const triggerTime = new Date(triggerTimestamp).getTime();
-  return comments.filter((comment) => {
-    const commentTime = new Date(comment.created_at).getTime();
-    // Only include comments created at or before the trigger
-    return commentTime <= triggerTime;
-  });
-}
-```
+### Anti-Pattern 5: Modifying the Executor for Chunking
 
-## Data Flow
+**What:** Adding chunk awareness to `executor.ts` -- passing chunk index, coordinating between chunks inside the executor.
+**Why bad:** The executor is correctly generic: it takes a prompt, a workspace, and a timeout, and returns a result. Chunk orchestration is a review handler concern.
+**Instead:** The review handler calls `executor.execute()` N times (once per chunk) with different prompts. The executor is unaware of chunking.
 
-### Flow 1: PR Auto-Review
+---
+
+## Dependency Analysis and Build Order
+
+### Feature Dependencies
 
 ```
-GitHub fires pull_request.opened webhook
+Timeout Resilience (Feature 2)      -- INDEPENDENT
     |
-    v
-Webhook Endpoint
-    | raw body + headers
-    v
-Signature Verification (HMAC-SHA256)
-    | verified payload
-    v
-Delivery Deduplication (X-GitHub-Delivery)
-    | unique event
-    v
-Event Router (X-GitHub-Event: pull_request, action: opened)
-    | dispatches to ReviewHandler
-    v
-Event Filters
-    | - Is sender a bot? Skip if so
-    | - Is PR a draft? Skip if so
-    | - Does config allow this event? Check .kodiai.yml
-    v
-Config Loader (fetch .kodiai.yml from default branch)
-    | merged config
-    v
-GitHub App Auth (mint installation access token)
-    | token
-    v
-ReviewHandler.handle()
-    | enqueue job
-    v
-Job Queue (p-queue, per-installation slot)
-    | when slot available
-    v
-Workspace Manager
-    | git clone --depth=50, checkout PR head
-    v
-Context Builder
-    | GraphQL: fetch PR diff, body, existing comments, CI status
-    | Format as structured prompt
-    | Sanitize content (strip tokens, invisible chars)
-    v
-MCP Config Generator
-    | Build JSON config for: comment-server, inline-comment-server,
-    | actions-server (+ file-ops-server if needed)
-    v
-Claude CLI Executor (query())
-    | prompt + mcpServers + allowedTools + cwd + env
+    | Layer 1 (partial capture) has zero deps
+    | Layer 2 (chunking) benefits from partial capture
+    | Layer 3 (adaptive timeout) benefits from dep bump detection
     |
-    | Claude reads cloned repo files via built-in tools
-    | Claude posts inline comments via MCP (mcp__github_inline_comment__create_inline_comment)
-    | Claude updates tracking comment via MCP (mcp__github_comment__update_comment)
+Dependency Bump Analysis (Feature 1) -- INDEPENDENT
     |
-    v
-SDKResultMessage
-    | success/failure + cost + turns + duration
-    v
-Cleanup
-    | Update tracking comment with final status
-    | Remove temp workspace directory
-    | Log metrics
-```
-
-### Flow 2: @kodiai Mention (Conversational)
-
-```
-GitHub fires issue_comment.created webhook (body contains @kodiai)
+    | Detection is pure function
+    | Enrichment uses existing octokit
+    | Prompt section is independent
     |
-    v
-Webhook Endpoint -> Signature Verify -> Dedup -> Event Router
-    | dispatches to MentionHandler
-    v
-Event Filters
-    | - Mention detection: word-boundary regex for trigger phrase
-    | - Is sender the bot itself? Skip (prevent loops)
-    | - Does sender have write access? Check permissions
-    v
-Eyes Emoji Reaction (immediate feedback on trigger comment)
-    v
-Config Loader + GitHub App Auth
-    v
-MentionHandler.handle()
-    | Create tracking comment ("Working on it...")
-    | Enqueue job
-    v
-Job Queue (per-installation)
-    | when slot available
-    v
-Workspace Manager (clone + checkout)
-    v
-Context Builder
-    | Extract trigger timestamp from webhook payload (TOCTOU)
-    | GraphQL: fetch issue/PR body, all comments (filtered by timestamp)
-    | For PR context: fetch diff, reviews, CI status
-    | Sanitize all content
-    | Build prompt with conversation history
-    v
-MCP Config (all 4 servers, include file-ops for code modifications)
-    v
-Claude CLI Executor (query())
-    | Claude reads context, may modify files (git add, commit, push)
-    | Claude updates tracking comment with progress
-    | Claude may post inline comments or responses
-    v
-Cleanup (update tracking comment, rm workspace, log)
+Intelligent Retrieval (Feature 3)    -- INDEPENDENT
+    |
+    | Multi-signal query replaces existing query
+    | Adaptive threshold is pure computation
+    | Boosting is post-retrieval decoration
 ```
 
-### Key Data Flows
+All three features are independent. None requires another to function. The recommended build order considers risk, impact, and complexity.
 
-1. **Token flow:** App private key -> JWT -> POST /installations/{id}/access_tokens -> installation token. Tokens cached by `@octokit/auth-app`, auto-refreshed on expiry (1 hour TTL). Installation token passed to workspace (git remote auth), MCP servers (GitHub API calls), and context builder (GraphQL queries).
+### Recommended Build Order
 
-2. **Config flow:** Webhook payload provides `installation.id` + `repository.full_name` -> Config loader fetches `.kodiai.yml` from repo default branch -> Zod validates and merges with defaults -> Config object threaded through handler, context builder, and executor (controls prompts, max_turns, allowed_tools, etc.).
+1. **Timeout Resilience (Layer 1: Partial Capture) FIRST** -- Highest impact, lowest risk. Turns 10% failure rate into graceful partial reviews. Requires only ~25 lines of executor change and ~60 lines of review handler change. Immediately measurable impact on xbmc and other large repos.
 
-3. **Prompt flow:** Context builder fetches raw data (diff, comments, reviews) via GraphQL -> Sanitizer strips dangerous content -> Formatter structures as markdown sections -> Merged with system instructions from config -> Written to temp file -> Passed to `query()` as prompt path or string.
+2. **Intelligent Retrieval SECOND** -- Medium complexity, pure functions only, no external API calls. Improves quality for all repos with learning memory. Can be measured by retrieval relevance metrics in telemetry.
 
-## Scaling Considerations
+3. **Dependency Bump Analysis THIRD** -- Highest complexity (external API calls to npm registry, GitHub Advisory API). Requires careful rate limiting and timeout management. Benefits a specific PR type (dependency bumps) rather than all reviews.
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 1-10 installations (MVP) | Single container, in-process p-queue, in-memory delivery dedup. No database needed. This handles tens of events per hour comfortably. |
-| 10-100 installations | Still single container. Monitor queue depth and job duration. Add structured logging and basic metrics (Azure Application Insights). Consider increasing container CPU/memory for concurrent clone + AI jobs. |
-| 100-1K installations | Move job queue to external broker (Azure Service Bus or Redis + BullMQ). This enables multiple container instances. Add persistent delivery dedup (Redis with TTL). Add request-rate monitoring per installation. |
-| 1K+ installations | Horizontal scaling with multiple worker containers. Separate webhook receiver from job workers. Consider dedicated storage for workspace clones (Azure Files or local SSD). Rate limiting at the installation and global level. |
+4. **Timeout Resilience (Layer 2: Chunking) FOURTH** -- Depends on Layer 1 being stable. More complex orchestration. Opt-in only (config-gated). Should be implemented after partial capture proves reliable.
 
-### Scaling Priorities
+5. **Timeout Resilience (Layer 3: Adaptive Timeout) FIFTH** -- Simplest layer but benefits from dependency bump detection being in place (dependency bumps get shorter timeouts). Can be delivered with any other layer.
 
-1. **First bottleneck: Claude CLI cold start (~12s per invocation).** Each `query()` call spawns a new Claude Code process with ~12s overhead before the AI even starts working. For MVP with low volume, this is acceptable. If it becomes a problem, investigate the V2 SDK interface or session reuse when available. This is an upstream SDK limitation, not something Kodiai can optimize around.
+### Independence Verification
 
-2. **Second bottleneck: Concurrent workspace clones.** Each job clones a repo to disk. With `concurrency: 4` on the global queue, this means up to 4 concurrent clones. Monitor disk I/O and temp directory size. Shallow clones (`--depth=50`) keep this manageable.
+| Feature | Needs Timeout? | Needs Dep Bump? | Needs Retrieval? |
+|---------|---------------|-----------------|------------------|
+| Timeout Resilience | -- | NO | NO |
+| Dep Bump Analysis | NO | -- | NO |
+| Intelligent Retrieval | NO | NO | -- |
 
-3. **Third bottleneck: GitHub API rate limits.** Installation tokens get 5,000 requests/hour. GraphQL queries are efficient (one call fetches PR + comments + reviews), but heavy usage could approach limits. The Octokit retry wrapper with exponential backoff handles transient 403s. Monitor `X-RateLimit-Remaining` headers.
+However, there are beneficial interactions:
+- Adaptive timeout (Layer 3) can use dependency bump detection to set shorter timeouts for dep bump PRs
+- Retrieval query builder benefits from dependency bump detection (skip retrieval for pure dep bumps)
+- Chunked review (Layer 2) benefits from partial capture (Layer 1) for per-chunk timeout handling
 
-## Anti-Patterns
+---
 
-### Anti-Pattern 1: Synchronous Webhook Processing
+## Scalability Considerations
 
-**What people do:** Process the entire AI review in the webhook handler before returning 200.
-**Why it's wrong:** GitHub terminates webhook connections after 10 seconds. An AI review takes 30-120+ seconds. GitHub will retry the webhook, causing duplicate processing. The retry storm compounds the problem.
-**Do this instead:** Return 200 immediately after signature verification and delivery dedup. Enqueue the job asynchronously. Use the Acknowledge-Then-Process pattern.
+| Concern | At 10 repos | At 100 repos | At 1000 repos |
+|---------|-------------|--------------|---------------|
+| Dep bump detection | Instant (regex + set ops) | Same | Same |
+| Changelog fetch | 5-15s per dep bump PR (bounded) | Same per PR | Monitor npm registry rate limits |
+| Advisory lookup | 1-3s per dep bump PR (bounded) | Same per PR | Advisory API has generous limits |
+| Partial timeout capture | Zero overhead (tracking already exists) | Same | Same |
+| Chunked review | N * executor time (sequential) | Same per PR | Monitor per-installation queue depth |
+| Multi-signal query | Instant (string concatenation) | Same | Same |
+| Adaptive threshold | Instant + 1 SQL COUNT query | Same | Same |
+| Retrieval boosting | Instant (array re-sort, topK items) | Same | Same |
 
-### Anti-Pattern 2: Shared Mutable Workspace
+The primary scalability concern is changelog fetching for repos with many Dependabot PRs. Mitigation: bounded per-package timeouts and max-5-packages limit. For very active repos, consider caching changelog data in SQLite (future optimization, not v0.9 scope).
 
-**What people do:** Clone the repo once and reuse the workspace across multiple jobs, or use a persistent checkout.
-**Why it's wrong:** Concurrent jobs on different PRs would conflict (different branches, dirty working trees). Even sequential jobs risk stale state from previous runs. Claude Code modifies files during execution.
-**Do this instead:** Ephemeral workspace per job. Clone fresh, use, destroy. The 2-5s clone overhead is negligible compared to the 30-120s AI execution time.
+---
 
-### Anti-Pattern 3: Logging to stdout in MCP Servers
+## Files Changed Summary
 
-**What people do:** Use `console.log()` in MCP stdio servers for debugging.
-**Why it's wrong:** The stdio transport uses stdout for JSON-RPC protocol messages. Any stray text on stdout corrupts the protocol stream and causes the MCP client (Claude CLI) to fail with parse errors.
-**Do this instead:** Use `console.error()` (stderr) for all logging in MCP servers. Or use a dedicated logging sink. Keep stdout reserved exclusively for JSON-RPC messages.
+### New Files
 
-### Anti-Pattern 4: Trusting Webhook Body Without TOCTOU Protection
+| File | Lines (est.) | Purpose |
+|------|-------------|---------|
+| `src/lib/dep-bump-detector.ts` | ~250 | Detect dependency bump PRs, extract version transitions |
+| `src/lib/dep-bump-detector.test.ts` | ~300 | Unit tests for detection across ecosystems |
+| `src/lib/changelog-fetcher.ts` | ~150 | Fetch changelogs from npm registry / GitHub |
+| `src/lib/changelog-fetcher.test.ts` | ~200 | Unit tests with mocked HTTP |
+| `src/lib/advisory-lookup.ts` | ~120 | Query GitHub Advisory Database |
+| `src/lib/advisory-lookup.test.ts` | ~150 | Unit tests with mocked API |
+| `src/lib/chunk-partitioner.ts` | ~80 | Partition files into review chunks |
+| `src/lib/chunk-partitioner.test.ts` | ~120 | Unit tests for partitioning logic |
+| `src/lib/adaptive-timeout.ts` | ~40 | Compute timeout from PR characteristics |
+| `src/lib/adaptive-timeout.test.ts` | ~60 | Unit tests |
+| `src/lib/retrieval-query-builder.ts` | ~120 | Multi-signal retrieval query construction |
+| `src/lib/retrieval-query-builder.test.ts` | ~200 | Unit tests for query building |
+| `src/lib/adaptive-threshold.ts` | ~60 | Per-repo distance threshold computation |
+| `src/lib/adaptive-threshold.test.ts` | ~80 | Unit tests |
+| `src/lib/retrieval-booster.ts` | ~80 | Post-retrieval language/category boosting |
+| `src/lib/retrieval-booster.test.ts` | ~120 | Unit tests |
 
-**What people do:** Fetch the latest issue/PR body and comments via API, assuming they match what triggered the webhook.
-**Why it's wrong:** An attacker can edit the issue body or a comment between the webhook firing and the bot reading the content. The bot then processes attacker-controlled content that differs from what triggered the event. This is a real TOCTOU (time-of-check-to-time-of-use) vulnerability.
-**Do this instead:** Extract the trigger timestamp from the webhook payload. Use it to filter comments (only include those created at or before the trigger). Prefer the body from the webhook payload over re-fetching when possible.
+### Modified Files
 
-### Anti-Pattern 5: Single Global Queue Without Installation Isolation
+| File | Change | Scope |
+|------|--------|-------|
+| `src/handlers/review.ts` | Wire all three features | Medium (~150 lines) |
+| `src/execution/executor.ts` | Track published on timeout | Small (~20 lines) |
+| `src/execution/types.ts` | Add timeout-partial result | Tiny (~5 lines) |
+| `src/execution/config.ts` | Add 3 config schema sections | Small (~40 lines) |
+| `src/execution/review-prompt.ts` | Add dependency bump section | Small (~80 lines) |
+| `src/learning/memory-store.ts` | Add getMemoryCount method | Tiny (~10 lines) |
+| `src/learning/types.ts` | Add method to interface | Tiny (~3 lines) |
 
-**What people do:** Use one p-queue with a fixed concurrency limit, processing jobs FIFO regardless of which installation they belong to.
-**Why it's wrong:** A single busy repo (e.g., a monorepo with 20 PRs opened simultaneously) monopolizes all concurrency slots, starving other installations. Users on other repos experience unbounded delays.
-**Do this instead:** Per-installation concurrency limits nested inside a global concurrency cap. Each installation gets a fair share of capacity.
+**Total new code: ~1,250 lines implementation + ~1,230 lines tests**
+**Total modified code: ~310 lines changes across existing files**
 
-### Anti-Pattern 6: Not Checking For Bot's Own Comments
-
-**What people do:** Process all `issue_comment.created` events without checking if the comment author is the bot itself.
-**Why it's wrong:** When the bot posts a comment (e.g., a tracking comment or review response), GitHub fires an `issue_comment.created` webhook for that comment. If the comment contains the trigger phrase (which it might, when quoting the user), the bot processes its own comment, posts another comment, which triggers another webhook, creating an infinite loop.
-**Do this instead:** Check `payload.sender.type === "Bot"` or compare `payload.sender.id` to the bot's own app ID. Filter these out before any processing.
-
-## Integration Points
-
-### External Services
-
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| GitHub API (REST) | `@octokit/rest` with `@octokit/auth-app` | Installation tokens auto-refreshed. Retry with exponential backoff on 5xx and 403 rate limits. |
-| GitHub API (GraphQL) | `@octokit/graphql` with same auth | Single query fetches PR + diff + comments + reviews. More efficient than multiple REST calls. |
-| Claude Code CLI | `@anthropic-ai/claude-agent-sdk` `query()` | Spawns child process. ~12s cold start overhead. OAuth token via env var. |
-| MCP Servers (4x) | `@modelcontextprotocol/sdk` stdio transport | Spawned as child processes by Claude CLI. Communicate via stdin/stdout JSON-RPC. |
-| Azure Container Apps | Docker container deployment | Single container, scale-to-zero capable. Health endpoint at `/health`. |
-| Azure Application Insights | Structured JSON logging | Optional. Logs via stdout in JSON format, ingested by Azure. |
-
-### Internal Boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Webhook Endpoint <-> Event Router | Direct function call (same process) | Router receives parsed payload + event type |
-| Event Router <-> Handlers | Direct function call | Router calls `handler.handle(event, config, auth)` |
-| Handlers <-> Job Queue | `queue.enqueue(installationId, jobFn)` | Handler creates closure, queue manages concurrency |
-| Job Worker <-> Workspace | `withWorkspace(url, ref, token, fn)` | Workspace provides clean dir, worker uses it |
-| Job Worker <-> Context Builder | `buildContext(octokit, prData, config)` | Returns structured prompt string |
-| Job Worker <-> Executor | `executor.run(prompt, mcpConfig, workDir, env)` | Returns `AsyncGenerator<SDKMessage>` |
-| MCP Servers <-> GitHub API | Octokit REST calls from within each server process | Each server gets its own Octokit instance with the installation token |
-| MCP Servers <-> Claude CLI | Stdio JSON-RPC (MCP protocol) | Claude CLI is the MCP client; servers are MCP servers |
-
-## Build Order (Dependency Chain)
-
-The architecture has clear dependency layers that dictate build order:
-
-```
-Phase 1: Foundation (no deps)
-  auth/github-app.ts          # Can test independently with GitHub App credentials
-  server/webhook.ts           # Depends on auth (signature verify)
-  server/health.ts            # No deps
-  events/router.ts            # Depends on webhook (receives events)
-  events/filters.ts           # Pure functions, no deps
-  config/schema.ts            # Pure Zod schema, no deps
-  config/defaults.ts          # Static data, no deps
-  config/loader.ts            # Depends on auth (needs token to fetch from repo)
-  utils/logger.ts             # No deps
-  utils/dedup.ts              # No deps
-  github/types.ts             # No deps (type definitions)
-
-Phase 2: GitHub Service + PR Review (depends on Phase 1)
-  github/service.ts           # Depends on auth (installation tokens)
-  github/queries.ts           # Depends on service
-  context/sanitizer.ts        # Pure functions, no deps (but needed by builder)
-  context/builder.ts          # Depends on github/service, sanitizer
-  jobs/queue.ts               # No deps (p-queue wrapper)
-  jobs/workspace.ts           # Depends on auth (token for git clone)
-  mcp/comment-server.ts       # Standalone stdio process
-  mcp/inline-comment-server.ts # Standalone stdio process
-  mcp/actions-server.ts       # Standalone stdio process
-  mcp/config.ts               # Depends on knowing MCP server paths
-  executor/types.ts           # No deps
-  executor/claude-cli.ts      # Depends on agent SDK
-  jobs/worker.ts              # Depends on workspace, context, executor, mcp/config
-  handlers/review.ts          # Depends on worker, queue, config, filters
-
-Phase 3: Mention Handling (depends on Phase 2)
-  mcp/file-ops-server.ts      # Standalone stdio process
-  handlers/mention.ts         # Depends on worker, queue, config, filters
-                              # (adds TOCTOU, eyes reaction, code modification support)
-  context/builder.ts          # Extended for mention context (conversation history)
-  utils/retry.ts              # Used across github service calls
-
-Phase 4: Hardening (depends on Phase 3)
-  Error handling & graceful failures
-  Rate limiting per installation
-  Timeout enforcement per job
-  Structured logging / monitoring
-  Input sanitization hardening
-```
-
-**Build order rationale:**
-- Phase 1 establishes the trust boundary (auth + webhook verification) and the event pipeline. You can deploy this and verify webhooks arrive correctly.
-- Phase 2 adds the core value: PR auto-review. This is the most complex phase but has the highest payoff. All infrastructure (queue, workspace, executor, MCP) is built here because review needs it all.
-- Phase 3 adds mention handling, which reuses almost everything from Phase 2 but adds conversation context, TOCTOU protections, and code modification support.
-- Phase 4 is hardening that makes the system production-ready but does not add new features.
+---
 
 ## Sources
 
-- [GitHub Webhooks Best Practices](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) - Official GitHub docs on response time (10s), async processing, idempotency (HIGH confidence)
-- [Validating Webhook Deliveries](https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries) - HMAC-SHA256 signature verification (HIGH confidence)
-- [MCP Architecture Overview](https://modelcontextprotocol.io/docs/learn/architecture) - Official MCP spec: host/client/server, stdio/HTTP transports, JSON-RPC 2.0 (HIGH confidence)
-- [Claude Agent SDK TypeScript Reference](https://platform.claude.com/docs/en/agent-sdk/typescript) - `query()` API, message types, MCP config, permission modes (HIGH confidence)
-- [Claude Agent SDK MCP Integration](https://platform.claude.com/docs/en/agent-sdk/mcp) - stdio/HTTP/SDK MCP server configuration with `query()` (HIGH confidence)
-- [@octokit/auth-app](https://github.com/octokit/auth-app.js/) - GitHub App JWT auth, installation token creation and caching (HIGH confidence)
-- [p-queue](https://github.com/sindresorhus/p-queue) - Promise queue with concurrency control (HIGH confidence)
-- [Claude Agent SDK ~12s cold start](https://github.com/anthropics/claude-agent-sdk-typescript/issues/34) - Performance issue: each `query()` call has ~12s overhead (HIGH confidence - verified via issue tracker)
-- [Claude Agent SDK in-process MCP concurrency bug](https://github.com/anthropics/claude-agent-sdk-typescript/issues/41) - Stream closed errors with concurrent `createSdkMcpServer` tool calls (MEDIUM confidence - may be fixed in newer versions)
-- [Hono Stripe Webhook Example](https://hono.dev/examples/stripe-webhook) - Raw body access via `c.req.text()` for signature verification (HIGH confidence)
-- [GitHub App Authentication Best Practices](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token-for-a-github-app) - Installation token generation flow (HIGH confidence)
-- Reference implementation: `tmp/claude-code-action/` and `tmp/claude-code-base-action/` - Battle-tested patterns for MCP servers, prompt construction, context fetching, sanitization, and Claude SDK invocation (HIGH confidence - actual working code)
+- Direct codebase analysis (HIGH confidence):
+  - `src/handlers/review.ts` (~2340 lines -- full pipeline with line-level annotations)
+  - `src/execution/executor.ts` (~256 lines -- timeout handling via AbortController)
+  - `src/execution/types.ts` (~63 lines -- ExecutionContext/ExecutionResult types)
+  - `src/execution/config.ts` (~674 lines -- Zod config schema with all sections)
+  - `src/execution/diff-analysis.ts` (~366 lines -- file classification, risk signals)
+  - `src/execution/review-prompt.ts` (~1300 lines -- all prompt section builders)
+  - `src/lib/file-risk-scorer.ts` (~317 lines -- risk scoring and large PR triage)
+  - `src/lib/auto-profile.ts` (~67 lines -- profile resolution)
+  - `src/lib/pr-intent-parser.ts` (~80+ lines -- keyword parsing)
+  - `src/lib/errors.ts` (~142 lines -- error classification and formatting)
+  - `src/knowledge/store.ts` (~841 lines -- SQLite schema)
+  - `src/knowledge/types.ts` (~189 lines -- knowledge store interface)
+  - `src/learning/memory-store.ts` (~349 lines -- vec0 virtual table, retrieval)
+  - `src/learning/types.ts` (~84 lines -- LearningMemoryStore interface)
+  - `src/learning/embedding-provider.ts` (~88 lines -- Voyage AI wrapper)
+  - `src/learning/isolation.ts` (~128 lines -- repo-scoped retrieval with provenance)
+- [GitHub Advisory Database REST API](https://docs.github.com/en/rest/security-advisories/global-advisories) -- `GET /advisories` with `affects` and `ecosystem` filters (HIGH confidence)
+- [npm registry API](https://registry.npmjs.org/) -- package metadata including `repository` field for changelog discovery (HIGH confidence)
+- [semver npm package](https://www.npmjs.com/package/semver) -- `diff()` function for version comparison (HIGH confidence)
+- `.planning/xbmc_deep_analysis.md` -- 10% timeout failure rate context (HIGH confidence, internal data)
 
 ---
-*Architecture research for: GitHub App webhook bot with AI code review backend*
-*Researched: 2026-02-07*
+*Architecture research for: Kodiai v0.9 -- Dependency Bump Analysis, Timeout Resilience, Intelligent Retrieval*
+*Researched: 2026-02-14*

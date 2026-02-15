@@ -16,6 +16,7 @@ export function buildMcpServers(deps: {
   repo: string;
   prNumber?: number;
   commentId?: number;
+  botHandles?: string[];
   reviewOutputKey?: string;
   deliveryId?: string;
   logger?: Logger;
@@ -31,8 +32,10 @@ export function buildMcpServers(deps: {
       deps.getOctokit,
       deps.owner,
       deps.repo,
+      deps.botHandles ?? [],
       deps.reviewOutputKey,
       deps.onPublish,
+      deps.prNumber,
     );
   }
 
@@ -41,6 +44,7 @@ export function buildMcpServers(deps: {
       deps.getOctokit,
       deps.owner,
       deps.repo,
+      deps.botHandles ?? [],
       deps.onPublish,
     );
   }
@@ -53,6 +57,7 @@ export function buildMcpServers(deps: {
       deps.owner,
       deps.repo,
       deps.prNumber,
+      deps.botHandles ?? [],
       deps.reviewOutputKey,
       deps.deliveryId,
       deps.logger,

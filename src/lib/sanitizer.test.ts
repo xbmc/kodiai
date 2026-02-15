@@ -9,6 +9,7 @@ import {
   redactGitHubTokens,
   sanitizeContent,
   filterCommentsToTriggerTime,
+  sanitizeOutgoingMentions,
 } from "./sanitizer";
 
 // --- stripHtmlComments ---
@@ -342,5 +343,65 @@ describe("filterCommentsToTriggerTime", () => {
     expect(result[0]?.created_at).toBe("2025-01-15T10:00:00Z");
     expect(result[1]?.created_at).toBe("2025-01-15T11:00:00Z");
     expect(result[2]?.created_at).toBe("2025-01-15T11:59:59Z");
+  });
+});
+
+describe("sanitizeOutgoingMentions", () => {
+  test("strips @kodiai mention prefix", () => {
+    expect(
+      sanitizeOutgoingMentions("Thanks @kodiai for the help", ["kodiai"]),
+    ).toBe("Thanks kodiai for the help");
+  });
+
+  test("strips @claude mention prefix", () => {
+    expect(sanitizeOutgoingMentions("cc @claude please review", ["claude"])).toBe(
+      "cc claude please review",
+    );
+  });
+
+  test("matches mentions case-insensitively", () => {
+    expect(
+      sanitizeOutgoingMentions("@Kodiai @KODIAI and @Claude", [
+        "kodiai",
+        "claude",
+      ]),
+    ).toBe("kodiai kodiai and claude");
+  });
+
+  test("strips multiple handles in one body", () => {
+    expect(
+      sanitizeOutgoingMentions("@kodiai asked @claude to help", [
+        "kodiai",
+        "claude",
+      ]),
+    ).toBe("kodiai asked claude to help");
+  });
+
+  test("strips repeated mentions", () => {
+    expect(
+      sanitizeOutgoingMentions("@kodiai ping @kodiai again", ["kodiai"]),
+    ).toBe("kodiai ping kodiai again");
+  });
+
+  test("returns unchanged body when handles are empty", () => {
+    const body = "no handles here @kodiai";
+    expect(sanitizeOutgoingMentions(body, [])).toBe(body);
+  });
+
+  test("escapes regex characters in handle names", () => {
+    expect(
+      sanitizeOutgoingMentions("please check @kodi.ai", ["kodi.ai"]),
+    ).toBe("please check kodi.ai");
+  });
+
+  test("uses word boundary to avoid partial match", () => {
+    expect(sanitizeOutgoingMentions("@kodiaibot responded", ["kodiai"])).toBe(
+      "@kodiaibot responded",
+    );
+  });
+
+  test("returns unchanged body when no mention exists", () => {
+    const body = "thanks team";
+    expect(sanitizeOutgoingMentions(body, ["kodiai", "claude"])).toBe(body);
   });
 });

@@ -22,6 +22,12 @@ export type ExecutionContext = {
   /** Webhook delivery identifier for correlation logging. */
   deliveryId?: string;
 
+  /** Optional dynamic timeout override (seconds). When set, overrides config.timeoutSeconds. */
+  dynamicTimeoutSeconds?: number;
+
+  /** Bot mention handles for outgoing sanitization (e.g. ['kodiai', 'claude']). */
+  botHandles?: string[];
+
   /**
    * Enables write-mode execution.
    *
@@ -44,4 +50,16 @@ export type ExecutionResult = {
   errorMessage: string | undefined;
   /** Set to true when the execution was terminated by timeout */
   isTimeout?: boolean;
+  /** Primary model used for execution (from SDK modelUsage keys) */
+  model: string | undefined;
+  /** Total input tokens across all models */
+  inputTokens: number | undefined;
+  /** Total output tokens across all models */
+  outputTokens: number | undefined;
+  /** Total cache read input tokens across all models */
+  cacheReadTokens: number | undefined;
+  /** Total cache creation input tokens across all models */
+  cacheCreationTokens: number | undefined;
+  /** SDK stop reason (e.g., "end_turn", "max_tokens") */
+  stopReason: string | undefined;
 };
