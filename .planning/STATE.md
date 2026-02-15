@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
 **Phase:** 55 of 55 (Merge Confidence Scoring)
-**Plan:** 1 of 2 complete
-**Status:** In Progress
-**Last Activity:** 2026-02-15 — Completed 55-01-PLAN.md (scoring function)
+**Plan:** 2 of 2 complete
+**Status:** Complete
+**Last Activity:** 2026-02-15 — Completed 55-02-PLAN.md (integration wiring)
 
-**Progress:** [█████████░] 50%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -53,6 +53,8 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **55-01:** Used bun:test (not vitest) to match existing project test patterns
 - **55-01:** Severity ordering uses numeric map for O(1) comparison instead of indexOf
 - **55-01:** downgrade helper caps at 'low' to prevent invalid states
+- **55-02:** Confidence badge placed before package details for prominence in dep bump section
+- **55-02:** renderApprovalConfidence shows only first rationale item for concise approval body
 
 ### Pending Todos
 
@@ -78,6 +80,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped At:** Completed 55-01-PLAN.md (scoring function)
+**Stopped At:** Completed 55-02-PLAN.md (integration wiring) — Phase 55 complete
 **Resume File:** None
-**Next action:** 55-02-PLAN.md (integration wiring)
+**Next action:** Phase 55 complete. All plans delivered.
