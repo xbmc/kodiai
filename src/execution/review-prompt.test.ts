@@ -1069,6 +1069,49 @@ describe("depBumpContext", () => {
     expect(prompt).toContain("group dependency update");
   });
 
+  test("renders workspace usage evidence when present", () => {
+    const depBumpContext = makeDepBumpContext({
+      usageEvidence: {
+        evidence: [
+          {
+            filePath: "src/auth.ts",
+            line: 42,
+            snippet: "import { merge } from 'lodash';",
+          },
+        ],
+        searchTerms: ["lodash", "merge"],
+        timedOut: false,
+      },
+    });
+
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Workspace Usage Evidence");
+    expect(prompt).toContain("`src/auth.ts:42`");
+    expect(prompt).toContain("lodash");
+  });
+
+  test("renders multi-package coordination groups when present", () => {
+    const depBumpContext = makeDepBumpContext({
+      details: {
+        packageName: null,
+        oldVersion: null,
+        newVersion: null,
+        ecosystem: "npm",
+        isGroup: true,
+      },
+      scopeGroups: [
+        {
+          scope: "@babel",
+          packages: ["@babel/core", "@babel/parser"],
+        },
+      ],
+    });
+
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Multi-Package Coordination");
+    expect(prompt).toContain("@babel/core, @babel/parser");
+  });
+
   test("omits section when depBumpContext is null", () => {
     const prompt = buildReviewPrompt(baseContext({ depBumpContext: null }));
     expect(prompt).not.toContain("Dependency Bump Context");

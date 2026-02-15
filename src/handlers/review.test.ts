@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
 import { $ } from "bun";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -5292,5 +5292,191 @@ describe("createReviewHandler finding prioritization", () => {
     expect(result.detailsCommentBody).toContain("Prioritization: scored 2 findings");
     expect(result.detailsCommentBody).toContain("top score");
     expect(result.detailsCommentBody).toContain("threshold score");
+  });
+});
+
+describe("createReviewHandler dep bump analysis wiring (Phase 57)", () => {
+  let previousFetch: typeof globalThis.fetch | undefined;
+  let fetchMock: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    previousFetch = globalThis.fetch;
+
+    fetchMock = mock(async (input: any) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url.includes("https://registry.npmjs.org/lodash")) {
+        return new Response(
+          JSON.stringify({ repository: { url: "https://github.com/lodash/lodash" } }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+
+    globalThis.fetch = fetchMock as any;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = previousFetch as any;
+  });
+
+  async function runDepBumpScenario(params: {
+    analyzeImpl: (p: any) => Promise<any>;
+  }): Promise<{ prompt: string }> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        securityAdvisories: {
+          listGlobalAdvisories: async () => ({ data: [] }),
+        },
+        repos: {
+          listReleases: async () => ({
+            data: [
+              {
+                draft: false,
+                tag_name: "v4.17.21",
+                body: "BREAKING CHANGES:\n- `merge()` removed\n",
+              },
+            ],
+          }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-dep-bump-usage-analysis",
+          };
+        },
+      } as never,
+      usageAnalyzer: { analyzePackageUsage: params.analyzeImpl as any },
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Bump lodash from 4.17.20 to 4.17.21",
+          body: "",
+          commits: 0,
+          additions: 10,
+          deletions: 0,
+          user: { login: "dependabot[bot]" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "dependabot/npm_and_yarn/lodash-4.17.21",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [{ name: "dependencies" }],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    return { prompt: capturedPrompt };
+  }
+
+  test("calls usage analyzer when breaking changes exist", async () => {
+    const analyzeImpl = mock(async (_params: any) => {
+      return {
+        evidence: [
+          {
+            filePath: "src/index.ts",
+            line: 1,
+            snippet: "import { merge } from 'lodash';",
+          },
+        ],
+        searchTerms: ["lodash", "merge"],
+        timedOut: false,
+      };
+    });
+
+    const result = await runDepBumpScenario({ analyzeImpl });
+
+    expect(analyzeImpl).toHaveBeenCalledTimes(1);
+    const call0 = (analyzeImpl as any).mock.calls[0]?.[0];
+    expect(call0.packageName).toBe("lodash");
+    expect(call0.ecosystem).toBe("npm");
+    expect(call0.timeBudgetMs).toBe(3000);
+    expect(call0.breakingChangeSnippets.length).toBeGreaterThan(0);
+
+    expect(result.prompt).toContain("Workspace Usage Evidence");
+    expect(result.prompt).toContain("`src/index.ts:1`");
+  });
+
+  test("usage analysis is fail-open when analyzer throws", async () => {
+    const analyzeImpl = mock(async () => {
+      throw new Error("boom");
+    });
+
+    const result = await runDepBumpScenario({ analyzeImpl });
+    expect(result.prompt).not.toContain("Workspace Usage Evidence");
   });
 });

@@ -1057,6 +1057,43 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
     }
   }
 
+  // ── Workspace usage evidence (DEP-04) ──
+  if (ctx.usageEvidence?.evidence?.length && ctx.usageEvidence.evidence.length > 0) {
+    lines.push(
+      "",
+      "### Workspace Usage Evidence",
+      "",
+      "The following files in this repo import or use APIs affected by this bump:",
+    );
+
+    const capped = ctx.usageEvidence.evidence.slice(0, 10);
+    for (const ev of capped) {
+      const snippet = (ev.snippet ?? "").replace(/`/g, "'").slice(0, 200);
+      lines.push(`- \`${ev.filePath}:${ev.line}\` -- \`${snippet}\``);
+    }
+
+    const remaining = ctx.usageEvidence.evidence.length - capped.length;
+    if (remaining > 0) {
+      lines.push(`- ... and ${remaining} more locations`);
+    }
+
+    if (ctx.usageEvidence.timedOut) {
+      lines.push("", "(usage analysis timed out -- evidence may be incomplete)");
+    }
+  } else if (ctx.usageEvidence?.timedOut) {
+    lines.push("", "(usage analysis timed out -- evidence may be incomplete)");
+  }
+
+  // ── Multi-package scope coordination (DEP-06) ──
+  if (ctx.scopeGroups?.length && ctx.scopeGroups.length > 0) {
+    lines.push("", "### Multi-Package Coordination", "");
+    for (const group of ctx.scopeGroups) {
+      lines.push(
+        `- Packages from \`${group.scope}\` scope updated together: ${group.packages.join(", ")}. Review for cross-package compatibility.`,
+      );
+    }
+  }
+
   // ── Verdict integration instructions (CONF-02) ──
   if (ctx.mergeConfidence) {
     lines.push(

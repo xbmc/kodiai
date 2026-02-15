@@ -58,6 +58,8 @@ import {
   classifyDepBump,
   type DepBumpContext,
 } from "../lib/dep-bump-detector.ts";
+import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
+import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
 import { computeMergeConfidence, type MergeConfidence } from "../lib/merge-confidence.ts";
 
@@ -859,6 +861,10 @@ export function createReviewHandler(deps: {
   learningMemoryStore?: LearningMemoryStore;
   embeddingProvider?: EmbeddingProvider;
   isolationLayer?: IsolationLayer;
+  /** Optional injection for deterministic tests. */
+  usageAnalyzer?: { analyzePackageUsage: typeof analyzePackageUsage };
+  /** Optional injection for deterministic tests. */
+  scopeCoordinator?: { detectScopeCoordination: typeof detectScopeCoordination };
   logger: Logger;
 }): void {
   const {
@@ -872,6 +878,8 @@ export function createReviewHandler(deps: {
     learningMemoryStore,
     embeddingProvider,
     isolationLayer,
+    usageAnalyzer,
+    scopeCoordinator,
     logger,
   } = deps;
 
@@ -1480,6 +1488,83 @@ export function createReviewHandler(deps: {
             level: depBumpContext.mergeConfidence.level,
             rationale: depBumpContext.mergeConfidence.rationale,
           }, "Merge confidence computed");
+        }
+
+        // ── Workspace usage analysis for breaking changes (DEP-04) ──
+        // Fail-open: errors/timeouts never block the review.
+        if (
+          depBumpContext &&
+          depBumpContext.details.packageName &&
+          !depBumpContext.details.isGroup &&
+          (depBumpContext.changelog?.breakingChanges?.length ?? 0) > 0
+        ) {
+          depBumpContext.usageEvidence = null;
+          const packageName = depBumpContext.details.packageName;
+          const breakingChangeSnippets = depBumpContext.changelog?.breakingChanges ?? [];
+
+          try {
+            const analyzer = usageAnalyzer?.analyzePackageUsage ?? analyzePackageUsage;
+            const result = await analyzer({
+              workspaceDir: workspace.dir,
+              packageName,
+              breakingChangeSnippets,
+              ecosystem: depBumpContext.details.ecosystem ?? "npm",
+              timeBudgetMs: 3000,
+            });
+
+            depBumpContext.usageEvidence = result;
+
+            logger.info(
+              {
+                ...baseLog,
+                gate: "usage-analysis",
+                evidenceCount: result.evidence.length,
+                timedOut: result.timedOut,
+                searchTerms: result.searchTerms,
+              },
+              "Workspace usage analysis complete",
+            );
+          } catch (err) {
+            depBumpContext.usageEvidence = null;
+            logger.warn(
+              { ...baseLog, gate: "usage-analysis", err },
+              "Workspace usage analysis failed (fail-open)",
+            );
+          }
+        }
+
+        // ── Multi-package scope coordination (DEP-06) ──
+        // Only relevant for group bumps, where Dependabot/Renovate list packages in the PR body.
+        if (depBumpContext && depBumpContext.details.isGroup) {
+          depBumpContext.scopeGroups = null;
+
+          try {
+            const prBody = pr.body ?? "";
+            const matches = prBody.match(/@[\w-]+\/[\w.-]+/g) ?? [];
+            const packageNames = Array.from(new Set(matches));
+
+            if (packageNames.length > 0) {
+              const coordinator = scopeCoordinator?.detectScopeCoordination ?? detectScopeCoordination;
+              const groups = coordinator(packageNames);
+              if (groups.length > 0) {
+                depBumpContext.scopeGroups = groups;
+                logger.info(
+                  {
+                    ...baseLog,
+                    gate: "scope-coordination",
+                    groupCount: groups.length,
+                  },
+                  "Scope coordination groups detected",
+                );
+              }
+            }
+          } catch (err) {
+            depBumpContext.scopeGroups = null;
+            logger.warn(
+              { ...baseLog, gate: "scope-coordination", err },
+              "Scope coordination detection failed (fail-open)",
+            );
+          }
         }
 
         const skipMatchers = config.review.skipPaths
