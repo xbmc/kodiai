@@ -5,17 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-14)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.9 Phase 54 — Security Advisory & Changelog Enrichment
+**Current focus:** v0.9 Phase 55 — Merge Confidence Scoring
 
 ## Current Position
 
 **Milestone:** v0.9 Smart Dependencies & Resilience
-**Phase:** 54 of 55 (Security Advisory & Changelog)
-**Plan:** 2 of 2 complete
-**Status:** Phase Complete
-**Last Activity:** 2026-02-15 — Completed 54-02-PLAN.md (integration wiring)
+**Phase:** 55 of 55 (Merge Confidence Scoring)
+**Plan:** 1 of 2 complete
+**Status:** In Progress
+**Last Activity:** 2026-02-15 — Completed 55-01-PLAN.md (scoring function)
 
-**Progress:** [██████████] 100%
+**Progress:** [█████████░] 50%
 
 ## Performance Metrics
 
@@ -50,6 +50,9 @@ All decisions logged in `.planning/PROJECT.md` Key Decisions table. v0.8 decisio
 - **54-01:** Both advisory API calls failing returns null (fail-open); one failing returns partial data
 - **54-02:** Reuse idempotencyOctokit for enrichment calls (octokit not in scope at enrichment point)
 - **54-02:** Advisory section capped at 3 advisories max; informational framing per STATE.md concern
+- **55-01:** Used bun:test (not vitest) to match existing project test patterns
+- **55-01:** Severity ordering uses numeric map for O(1) comparison instead of indexOf
+- **55-01:** downgrade helper caps at 'low' to prevent invalid states
 
 ### Pending Todos
 
@@ -75,6 +78,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-15
-**Stopped At:** Completed 54-02-PLAN.md (integration wiring) — Phase 54 complete
+**Stopped At:** Completed 55-01-PLAN.md (scoring function)
 **Resume File:** None
-**Next action:** Phase 55 or milestone wrap-up
+**Next action:** 55-02-PLAN.md (integration wiring)
