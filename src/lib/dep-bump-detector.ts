@@ -31,11 +31,15 @@ export type DepBumpClassification = {
   isBreaking: boolean;
 };
 
-/** Composite context combining all three pipeline stages */
+/** Composite context combining all three pipeline stages + optional enrichment */
 export type DepBumpContext = {
   detection: DepBumpDetection;
   details: DepBumpDetails;
   classification: DepBumpClassification;
+  /** Phase 54: Security advisory data (null when enrichment skipped/failed) */
+  security?: import("./dep-bump-enrichment.ts").SecurityContext | null;
+  /** Phase 54: Changelog/release notes data (null when enrichment skipped/failed) */
+  changelog?: import("./dep-bump-enrichment.ts").ChangelogContext | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
