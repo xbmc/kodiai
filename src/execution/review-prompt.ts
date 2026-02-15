@@ -5,6 +5,7 @@ import type { PriorFinding } from "../knowledge/types.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
+import type { SecurityContext, ChangelogContext } from "../lib/dep-bump-enrichment.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -875,6 +876,102 @@ export function buildOutputLanguageSection(outputLanguage: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Character budget utilities for enrichment sections
+// ---------------------------------------------------------------------------
+const MAX_ADVISORY_SECTION_CHARS = 500;
+const MAX_CHANGELOG_SECTION_CHARS = 1500;
+
+function truncateToCharBudget(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const truncated = text.slice(0, maxChars);
+  const lastNewline = truncated.lastIndexOf("\n");
+  if (lastNewline > 0) {
+    return truncated.slice(0, lastNewline) + "\n...(truncated)";
+  }
+  return truncated + "\n...(truncated)";
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Security advisory section (SEC-01/02/03)
+// ---------------------------------------------------------------------------
+function buildSecuritySection(security: SecurityContext): string {
+  if (security.advisories.length === 0) return "";
+
+  const lines: string[] = [];
+
+  if (security.isSecurityBump) {
+    lines.push(
+      "### Security-Motivated Bump",
+      "",
+      "The old version has known advisories that the new version patches. This bump addresses security concerns.",
+      "",
+    );
+  } else {
+    lines.push(
+      "### Security Advisories (informational)",
+      "",
+      "The following advisories exist for this package. They may or may not affect your specific usage.",
+      "",
+    );
+  }
+
+  const advisoriesToShow = security.advisories.slice(0, 3);
+  for (const adv of advisoriesToShow) {
+    lines.push(`- **${adv.ghsaId}** (${adv.severity}): ${adv.summary}`);
+    if (adv.cveId) {
+      lines.push(`  CVE: ${adv.cveId}`);
+    }
+    if (adv.firstPatchedVersion) {
+      lines.push(`  Patched in: ${adv.firstPatchedVersion}`);
+    }
+    lines.push(`  Details: ${adv.url}`);
+  }
+
+  return truncateToCharBudget(lines.join("\n"), MAX_ADVISORY_SECTION_CHARS);
+}
+
+// ---------------------------------------------------------------------------
+// Helper: Changelog section (CLOG-01/02/03)
+// ---------------------------------------------------------------------------
+function buildChangelogSection(changelog: ChangelogContext): string {
+  const lines: string[] = [];
+
+  if (changelog.source === "releases" && changelog.releaseNotes.length > 0) {
+    lines.push("### Release Notes", "");
+    for (const note of changelog.releaseNotes) {
+      const body = note.body.length > 500 ? note.body.slice(0, 500) + "..." : note.body;
+      lines.push(`**${note.tag}:**`, body, "");
+    }
+  } else if (changelog.source === "changelog-file" && changelog.releaseNotes.length > 0) {
+    lines.push("### Changelog Excerpt", "");
+    for (const note of changelog.releaseNotes) {
+      const body = note.body.length > 500 ? note.body.slice(0, 500) + "..." : note.body;
+      lines.push(body, "");
+    }
+  }
+
+  if (changelog.breakingChanges.length > 0) {
+    lines.push("**Breaking Changes Detected:**", "");
+    for (const bc of changelog.breakingChanges) {
+      lines.push(`- ${bc}`);
+    }
+    lines.push("");
+  }
+
+  if (changelog.compareUrl) {
+    if (changelog.source === "compare-url-only") {
+      lines.push(`No release notes or changelog found. [View full diff](${changelog.compareUrl})`);
+    } else {
+      lines.push(`[View full diff](${changelog.compareUrl})`);
+    }
+  }
+
+  if (lines.length === 0) return "";
+
+  return truncateToCharBudget(lines.join("\n"), MAX_CHANGELOG_SECTION_CHARS);
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Dependency bump context section (DEP-01/02/03)
 // ---------------------------------------------------------------------------
 function buildDepBumpSection(ctx: DepBumpContext): string {
@@ -922,6 +1019,20 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
       "- Check for unexpected additions to the dependency tree",
       "- Keep review concise — minor/patch bumps are routine maintenance",
     );
+  }
+
+  // Append enrichment sections if available
+  if (ctx.security) {
+    const secSection = buildSecuritySection(ctx.security);
+    if (secSection) {
+      lines.push("", secSection);
+    }
+  }
+  if (ctx.changelog) {
+    const clogSection = buildChangelogSection(ctx.changelog);
+    if (clogSection) {
+      lines.push("", clogSection);
+    }
   }
 
   return lines.join("\n");
