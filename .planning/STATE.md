@@ -13,10 +13,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** None (planning complete)
 **Current Plan:** 00
 **Total Plans in Phase:** 0
-**Status:** v0.12 milestone initialized
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-16
 
-**Progress:** [██░░░░░░░░] 20%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 65 P01 | 2m14s | 2 tasks | 2 files |
 | Phase 65 P02 | 3m18s | 2 tasks | 2 files |
 | Phase 64 P02 | 9m | 2 tasks | 4 files |
+| Phase 66 P01 | 1m43s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 65]: Permission remediation includes minimum Contents/Pull requests/Issues write scopes plus same-command retry instructions.
 - [Phase 64]: Export enforceWritePolicy and buildWritePolicyRefusalMessage for direct unit testing of write-policy contracts.
 - [Phase 64]: Lock refusal messaging with unit assertions for deny, allow, secret-scan, and no-change outcomes.
+- [Phase 66]: Cache keys now serialize normalized repo/searchType/query plus recursively sorted semantic fields for deterministic equivalence.
+- [Phase 66]: Search cache internals fail open by reporting bookkeeping errors through onError while preserving loader success/error behavior.
 
 ### Key Constraints (Carry-Forward)
 
@@ -121,7 +124,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T22:40:00.000Z
-**Stopped At:** Initialized v0.12 requirements and roadmap
+**Last session:** 2026-02-16T23:46:07.387Z
+**Stopped At:** Completed 66-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 66
