@@ -5,14 +5,14 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.11 Issue Workflows -- phase 61 plan 01 complete; plan 02 ready
+**Current focus:** Milestone v0.11 Issue Workflows -- phase 61 plans 01-03 complete; ready for phase verification
 
 ## Current Position
 
 **Milestone:** v0.11 Issue Workflows
 **Phase:** Phase 61 (Read-Only + Intent Gating)
-**Current Plan:** 02
-**Total Plans in Phase:** 2
+**Current Plan:** 03
+**Total Plans in Phase:** 3
 **Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-16
 
@@ -38,6 +38,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 60-issue-q-a P03 | 3 min | 2 tasks | 2 files |
 | Phase 61 P01 | 0 min | 2 tasks | 2 files |
 | Phase 61 P02 | 2 min | 2 tasks | 2 files |
+| Phase 61 P03 | 2 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 61]: Change-request replies without write prefixes must include both exact opt-in commands: @kodiai apply: <same request> and @kodiai change: <same request>.
 - [Phase 61]: Gate issue implementation asks before executor invocation by matching conservative implementation verbs when no apply:/change:/plan: prefix is present.
 - [Phase 61]: Post issue opt-in guidance through direct issue comment creation so exact @kodiai apply/change commands are preserved in output.
+- [Phase 61]: Normalize issue requests before intent matching and before generating apply/change command suggestions so wrapped phrasing stays deterministic.
+- [Phase 61]: Add explicit anti-completion wording to issue prompt requirements to prevent non-prefixed read-only replies from implying repository edits were already made.
 
 ### Key Constraints (Carry-Forward)
 
@@ -90,7 +93,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T06:35:37.068Z
-**Stopped At:** Completed 61-02-PLAN.md
+**Last session:** 2026-02-16T16:47:58.854Z
+**Stopped At:** Completed 61-03-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-execute-phase 61
