@@ -11,7 +11,8 @@
 - ✅ **v0.7 Intelligent Review Content** — Phases 39-41 (shipped 2026-02-14)
 - ✅ **v0.8 Conversational Intelligence** — Phases 42-50 (shipped 2026-02-14)
 - ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-15)
-- [ ] **v0.10 Advanced Signals** — Phases 56-59 (in progress)
+- ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
+- [ ] **v0.11 Issue Workflows** — Phases 60-65 (planned)
 
 ## Phases
 
@@ -78,14 +79,28 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 </details>
 
-### v0.10 Advanced Signals (In Progress)
+<details>
+<summary>v0.10 Advanced Signals (Phases 56-59) -- SHIPPED 2026-02-16</summary>
 
 **Milestone Goal:** Deepen dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and quality telemetry.
 
 - [x] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
 - [x] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
-- [ ] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
-- [ ] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
+- [x] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
+- [x] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
+
+</details>
+
+### v0.11 Issue Workflows (Planned)
+
+**Milestone Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
+
+- [ ] **Phase 60: Issue Q&A** - In-thread answers with concrete, actionable guidance
+- [ ] **Phase 61: Read-Only + Intent Gating** - Default read-only behavior and explicit write trigger safety
+- [ ] **Phase 62: Issue Write-Mode PR Creation** - `apply:` / `change:` creates a PR when enabled
+- [ ] **Phase 63: Idempotency + De-Dupe** - Replays reuse the same PR; rate limiting prevents duplicates
+- [ ] **Phase 64: Policy Guardrails** - allow/deny paths + secret scanning enforced with clear refusal UX
+- [ ] **Phase 65: Permission + Disabled UX** - Missing perms and disabled write-mode get actionable guidance
 
 ## Phase Details
 
@@ -134,8 +149,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 58-01-PLAN.md — Adaptive threshold computation module (TDD)
-- [ ] 58-02-PLAN.md — Wire adaptive threshold into retrieval pipeline and telemetry
+- [x] 58-01-PLAN.md — Adaptive threshold computation module (TDD)
+- [x] 58-02-PLAN.md — Wire adaptive threshold into retrieval pipeline and telemetry
 
 ### Phase 59: Resilience Layer
 **Goal**: Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope
@@ -150,13 +165,73 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 59-01-PLAN.md — Checkpoint accumulation infrastructure (MCP tool + knowledge store)
-- [ ] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
-- [ ] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
+- [x] 59-01-PLAN.md — Checkpoint accumulation infrastructure (MCP tool + knowledge store)
+- [x] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
+- [x] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
+
+### Phase 60: Issue Q&A
+**Goal**: When mentioned in an issue comment, Kodiai replies in-thread with a concrete, actionable answer that includes file-path pointers when relevant
+**Depends on**: Phase 59 (v0.10 complete)
+**Requirements**: ISSUE-01
+**Success Criteria** (what must be TRUE):
+  1. When a user comments `@kodiai <question>` in an issue, Kodiai posts a single in-thread reply that directly answers the question (not a generic restatement)
+  2. When the answer depends on code in the repo, the reply includes specific file-path pointers (and optionally line anchors) so the user can quickly verify and act
+  3. When required context is missing or the question is underspecified, Kodiai asks targeted clarifying questions rather than guessing
+**Plans**: TBD
+
+### Phase 61: Read-Only + Intent Gating
+**Goal**: Issue Q&A stays read-only by default, and write-mode is only entered with explicit user intent
+**Depends on**: Phase 60
+**Requirements**: ISSUE-02, SAFE-01
+**Success Criteria** (what must be TRUE):
+  1. For issue Q&A replies that do not include an explicit `apply:` / `change:` prefix, Kodiai clearly frames output as read-only guidance (no implied edits or PR creation)
+  2. Kodiai never opens a PR or performs repository writes from an issue thread unless the triggering comment starts with `apply:` or `change:`
+  3. If a user asks for changes without using `apply:` / `change:`, Kodiai responds with the exact prefix-based command they can use to opt into write-mode
+**Plans**: TBD
+
+### Phase 62: Issue Write-Mode PR Creation
+**Goal**: Users can request a change from an issue comment and receive a PR against the default branch when write-mode is enabled
+**Depends on**: Phase 61
+**Requirements**: IWR-01
+**Success Criteria** (what must be TRUE):
+  1. When a user comments `@kodiai apply: <request>` (or `change:`) in an issue and the repo has `write.enabled: true`, Kodiai opens a PR targeting the repo default branch
+  2. The resulting PR contains commits that implement the requested change (or a clear refusal if the request cannot be safely executed)
+  3. Kodiai replies back in the issue thread with a link to the created PR
+**Plans**: TBD
+
+### Phase 63: Idempotency + De-Dupe
+**Goal**: Replayed triggers do not create duplicate PRs, and operational controls prevent duplicate work
+**Depends on**: Phase 62
+**Requirements**: IWR-02, SAFE-02
+**Success Criteria** (what must be TRUE):
+  1. Replaying the same `apply:` / `change:` trigger results in the same deterministic branch name, and Kodiai reuses the existing PR when present
+  2. When multiple identical triggers occur while a write-mode job is already in flight, Kodiai de-dupes the work and avoids creating multiple PRs
+  3. When rate limits are hit, Kodiai does not thrash or spam; it responds with a single clear message indicating the user should retry later
+**Plans**: TBD
+
+### Phase 64: Policy Guardrails
+**Goal**: Issue write-mode obeys existing write policy guardrails and refuses unsafe changes with clear explanations
+**Depends on**: Phase 63
+**Requirements**: IWR-03
+**Success Criteria** (what must be TRUE):
+  1. If a requested change touches a denied path (or falls outside allowPaths), Kodiai refuses to write and explains which policy constraint was violated
+  2. If secret scanning detects likely credentials/secrets in proposed changes, Kodiai refuses to commit/push and explains the refusal in the issue thread
+  3. When a request is refused, Kodiai provides a concrete next step (e.g., re-scope the request or update policy) without exposing sensitive data
+**Plans**: TBD
+
+### Phase 65: Permission + Disabled UX
+**Goal**: When write-mode cannot proceed due to configuration or GitHub App permissions, Kodiai explains what to change and nothing sensitive is leaked
+**Depends on**: Phase 64
+**Requirements**: PERM-01, PERM-02
+**Success Criteria** (what must be TRUE):
+  1. When PR creation or push fails due to missing GitHub App permissions, Kodiai replies in-thread listing the minimum required permissions (without leaking tokens or secrets)
+  2. When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` snippet needed to enable it
+  3. In both cases, the error message is actionable (user can fix config/permissions and successfully retry the same `apply:` / `change:` command)
+**Plans**: TBD
 
 ## Progress
 
-**Total shipped:** 9 milestones, 56 phases, 159 plans
+**Total shipped:** 10 milestones, 59 phases, 159 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -171,9 +246,15 @@ Plans:
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
 | 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
-| 58 | v0.10 | 0/2 | Not started | - |
-| 59 | v0.10 | 0/3 | Not started | - |
+| 58 | v0.10 | 2/2 | Complete | 2026-02-16 |
+| 59 | v0.10 | 3/3 | Complete | 2026-02-16 |
+| 60 | v0.11 | 0/TBD | Not started | - |
+| 61 | v0.11 | 0/TBD | Not started | - |
+| 62 | v0.11 | 0/TBD | Not started | - |
+| 63 | v0.11 | 0/TBD | Not started | - |
+| 64 | v0.11 | 0/TBD | Not started | - |
+| 65 | v0.11 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- Phase 59 plans created*
+*Roadmap updated: 2026-02-16 -- v0.11 roadmap created; v0.10 marked shipped*

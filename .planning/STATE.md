@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.11 -- defining requirements
+**Current focus:** Milestone v0.11 Issue Workflows -- roadmap created; ready to plan Phase 60
 
 ## Current Position
 
 **Milestone:** v0.11 Issue Workflows
-**Phase:** Not started (defining requirements)
+**Phase:** Phase 60 (Issue Q&A)
 **Current Plan:** —
 **Total Plans in Phase:** —
-**Status:** Defining requirements
-**Last Activity:** 2026-02-16 — Milestone v0.11 started
+**Status:** Ready to plan
+**Last Activity:** 2026-02-16 — v0.11 roadmap created (phases 60-65)
 
 **Progress:** [░░░░░░░░░░] 0%
 
@@ -76,6 +76,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16T00:02:37.145Z
-**Stopped At:** Milestone v0.11 started (requirements pending)
+**Stopped At:** v0.11 roadmap created; Phase 60 ready for planning
 **Resume File:** None
-**Next action:** Define v0.11 requirements
+**Next action:** /gsd-plan-phase 60

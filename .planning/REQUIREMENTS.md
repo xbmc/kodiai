@@ -48,21 +48,21 @@ Deferred to a future milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ISSUE-01 | Phase ? | Pending |
-| ISSUE-02 | Phase ? | Pending |
-| IWR-01 | Phase ? | Pending |
-| IWR-02 | Phase ? | Pending |
-| IWR-03 | Phase ? | Pending |
-| PERM-01 | Phase ? | Pending |
-| PERM-02 | Phase ? | Pending |
-| SAFE-01 | Phase ? | Pending |
-| SAFE-02 | Phase ? | Pending |
+| ISSUE-01 | Phase 60 | Pending |
+| ISSUE-02 | Phase 61 | Pending |
+| IWR-01 | Phase 62 | Pending |
+| IWR-02 | Phase 63 | Pending |
+| IWR-03 | Phase 64 | Pending |
+| PERM-01 | Phase 65 | Pending |
+| PERM-02 | Phase 65 | Pending |
+| SAFE-01 | Phase 61 | Pending |
+| SAFE-02 | Phase 63 | Pending |
 
 **Coverage:**
 - v0.11 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-16 -- v0.11 requirements defined*
+*Last updated: 2026-02-16 -- v0.11 roadmap created (phases assigned)*
