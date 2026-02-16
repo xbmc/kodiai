@@ -44,6 +44,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 62 P03 | 0 min | 3 tasks | 2 files |
 | Phase 63 P01 | 1 min | 2 tasks | 2 files |
 | Phase 63 P02 | 3 min | 2 tasks | 1 files |
+| Phase 64 P01 | 2 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 63]: User-directed policy override re-enables implicit write-mode auto-promotion for conversational issue implementation asks because write actions stay PR-only and non-destructive.
 - [Phase 63]: Assert concurrent in-flight dedupe via order-insensitive reply checks to avoid race-dependent flakes.
 - [Phase 63]: Validate repo-scoped write minInterval behavior using distinct issue comment IDs to isolate rate limiting from dedupe keys.
+- [Phase 64]: Mirror PR policy refusal fixtures in issue_comment tests to keep guardrail coverage surface-consistent.
+- [Phase 64]: Include an explicit .kodiai.yml update hint for allowPaths refusals so issue guidance is directly actionable.
 
 ### Key Constraints (Carry-Forward)
 
@@ -109,7 +112,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T20:45:25.733Z
-**Stopped At:** Completed 63-02-PLAN.md
+**Last session:** 2026-02-16T21:03:20.624Z
+**Stopped At:** Completed 64-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 62
