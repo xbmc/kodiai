@@ -2544,6 +2544,7 @@ describe("createMentionHandler write intent gating", () => {
     expect(issueReplies[0]).toContain("Smallest config change");
     expect(issueReplies[0]).toContain("allowPaths");
     expect(issueReplies[0]).toContain("- 'README.md'");
+    expect(issueReplies[0]).toContain(".kodiai.yml");
 
     await workspaceFixture.cleanup();
   });
@@ -2643,11 +2644,14 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(pullCreateCalls).toBe(0);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Reason: write-policy-secret-detected");
-    expect(issueReplies[0]).toContain("Rule: secretScan");
-    expect(issueReplies[0]).toContain("File: README.md");
-    expect(issueReplies[0]).toContain("Detector: regex:github-pat");
-    expect(issueReplies[0]).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD");
+    const reply = issueReplies[0]!;
+    expect(reply).toContain("Reason: write-policy-secret-detected");
+    expect(reply).toContain("Rule: secretScan");
+    expect(reply).toContain("File: README.md");
+    expect(reply).toContain("Detector: regex:github-pat");
+    expect(reply).toContain("Remove/redact the secret");
+    expect(reply.indexOf("Remove/redact the secret")).toBeLessThan(reply.indexOf("disable secretScan"));
+    expect(reply).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD");
 
     await workspaceFixture.cleanup();
   });

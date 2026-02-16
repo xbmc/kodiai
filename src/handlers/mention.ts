@@ -1475,6 +1475,7 @@ export function createMentionHandler(deps: {
       const escapedPath = yamlSingleQuote(err.path);
       lines.push("");
       lines.push("Smallest config change (if intended):");
+      lines.push("Update `.kodiai.yml`:");
       lines.push("```yml");
       lines.push("write:");
       lines.push("  allowPaths:");
