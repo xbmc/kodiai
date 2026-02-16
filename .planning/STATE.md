@@ -11,12 +11,12 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Milestone:** v0.11 Issue Workflows
 **Phase:** Phase 60 (Issue Q&A)
-**Current Plan:** —
-**Total Plans in Phase:** —
-**Status:** Ready to plan
-**Last Activity:** 2026-02-16 — v0.11 roadmap created (phases 60-65)
+**Current Plan:** 02
+**Total Plans in Phase:** 03
+**Status:** In progress
+**Last Activity:** 2026-02-16 — completed 60-01 (issue Q&A prompt contract + regression tests)
 
-**Progress:** [░░░░░░░░░░] 0%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -33,6 +33,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 59 P01 | 2min | 2 tasks | 4 files |
 | Phase 59 P02 | 1min | 2 tasks | 6 files |
 | Phase 59 P03 | 9min | 2 tasks | 5 files |
+| Phase 60 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -45,6 +46,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 57-analysis-layer]: Expose a test-only grep runner hook to make timeout behavior deterministic in unit tests
 - [Phase 57-analysis-layer]: Added optional dependency injection hooks in createReviewHandler for deterministic unit tests (no behavior change in production).
 - [Phase 58]: Made adaptive thresholds default-on via retrieval.adaptive (opt-out) to preserve legacy behavior while meeting RET-03 requirements.
+- [Phase 60]: Issue Q&A guarantees are gated to mention.surface === issue_comment to avoid changing PR mention behavior.
+- [Phase 60]: Issue prompt guidance now requires concrete path/path:line evidence or targeted clarifying questions when path context is missing.
 
 ### Key Constraints (Carry-Forward)
 
@@ -75,7 +78,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T00:02:37.145Z
-**Stopped At:** v0.11 roadmap created; Phase 60 ready for planning
+**Last session:** 2026-02-16T06:05:23.306Z
+**Stopped At:** Completed 60-01-PLAN.md
 **Resume File:** None
-**Next action:** /gsd-plan-phase 60
+**Next action:** /gsd-execute-phase 60
