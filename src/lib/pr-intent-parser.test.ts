@@ -211,7 +211,7 @@ describe("buildKeywordParsingSection", () => {
 
     const section = buildKeywordParsingSection(intent);
     expect(section).toContain("[WIP] in title");
-    expect(section).toContain("ignored [foobar]");
+    expect(section).toContain("focus hints: [FOOBAR]");
     expect(section).toContain("conventional type: feat (breaking)");
     expect(section).toContain("breaking change in commit abc1234");
   });

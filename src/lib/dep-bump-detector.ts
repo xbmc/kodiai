@@ -42,6 +42,10 @@ export type DepBumpContext = {
   changelog?: import("./dep-bump-enrichment.ts").ChangelogContext | null;
   /** Phase 55: Merge confidence assessment (null when computation skipped) */
   mergeConfidence?: import("./merge-confidence.ts").MergeConfidence | null;
+  /** Phase 57: Workspace usage evidence for breaking changes (null when analysis skipped/failed) */
+  usageEvidence?: import("./usage-analyzer.ts").UsageAnalysisResult | null;
+  /** Phase 57: Multi-package scope coordination groups */
+  scopeGroups?: import("./scope-coordinator.ts").ScopeGroup[] | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────

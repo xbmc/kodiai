@@ -5,30 +5,46 @@
 See: `.planning/PROJECT.md` (updated 2026-02-15)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 56 - Foundation Layer (v0.10 Advanced Signals)
+**Current focus:** Phase 59 - Resilience Layer (v0.10 Advanced Signals)
 
 ## Current Position
 
 **Milestone:** v0.10 Advanced Signals
-**Phase:** 56 (1 of 4 in v0.10)
-**Plan:** 0 of TBD in current phase
-**Status:** Ready to plan
-**Last Activity:** 2026-02-15 -- v0.10 roadmap created (Phases 56-59)
+**Phase:** 59 (4 of 4 in v0.10)
+**Current Plan:** 3
+**Total Plans in Phase:** 3
+**Status:** Phase complete — ready for verification
+**Last Activity:** 2026-02-16
 
-**Progress:** [░░░░░░░░░░] 0% (of v0.10)
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
-**Velocity:**
-- Total plans completed: 156
-- Total milestones shipped: 9
-- Total phases completed: 55
+| Plan | Duration | Scope | Files |
+|------|----------|-------|-------|
+| Phase 56 P01 | 6min | 2 tasks | 6 files |
+| Phase 56 P02 | 9m | 2 tasks | 5 files |
+| Phase 56 P03 | 4m | 2 tasks | 5 files |
+| Phase 57 P01 | 6m | 2 tasks | 4 files |
+| Phase 57 P02 | 0m | 1 task | 2 files |
+| Phase 57 P03 | 11m | 2 tasks | 5 files |
+| Phase 58 P01 | 3m | 1 tasks | 2 files |
+| Phase 58 P02 | 7m | 2 tasks | 11 files |
+| Phase 59 P01 | 2min | 2 tasks | 4 files |
+| Phase 59 P02 | 1min | 2 tasks | 6 files |
+| Phase 59 P03 | 9min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
+- [Phase 56]: Store dep bump merge history in knowledge DB keyed by (repo, pr_number) using INSERT OR IGNORE to handle redeliveries
+- [Phase 56]: Use INSERT OR IGNORE with a partial unique index on retrieval_quality(delivery_id) to dedupe webhook redeliveries
+- [Phase 56]: Compute retrieval avg_distance and language_match_ratio from reranked adjustedDistance/languageMatch (not raw distances)
+- [Phase 57-analysis-layer]: Expose a test-only grep runner hook to make timeout behavior deterministic in unit tests
+- [Phase 57-analysis-layer]: Added optional dependency injection hooks in createReviewHandler for deterministic unit tests (no behavior change in production).
+- [Phase 58]: Made adaptive thresholds default-on via retrieval.adaptive (opt-out) to preserve legacy behavior while meeting RET-03 requirements.
 
 ### Key Constraints for v0.10
 
@@ -59,7 +75,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-15
-**Stopped At:** v0.10 roadmap created, ready to plan Phase 56
+**Last session:** 2026-02-16T00:02:37.145Z
+**Stopped At:** Completed 59-03-PLAN.md
 **Resume File:** None
-**Next action:** Plan Phase 56 (Foundation Layer)
+**Next action:** Verify Phase 59

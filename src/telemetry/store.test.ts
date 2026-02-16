@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, unlinkSync, rmSync } from "node:fs";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
+import type { ResilienceEventRecord } from "./types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -21,6 +22,27 @@ function makeRecord(overrides: Partial<Parameters<TelemetryStore["record"]>[0]> 
     eventType: "pull_request.opened",
     model: "claude-sonnet-4-5-20250929",
     conclusion: "success",
+    ...overrides,
+  };
+}
+
+function makeRetrievalQualityRecord(
+  overrides: Partial<Parameters<TelemetryStore["recordRetrievalQuality"]>[0]> = {},
+) {
+  return {
+    repo: "owner/repo",
+    eventType: "pull_request.opened",
+    resultCount: 0,
+    ...overrides,
+  };
+}
+
+function makeResilienceEventRecord(overrides: Partial<ResilienceEventRecord> = {}): ResilienceEventRecord {
+  return {
+    deliveryId: "delivery-xyz",
+    repo: "owner/repo",
+    eventType: "pull_request.review_requested",
+    kind: "timeout",
     ...overrides,
   };
 }
@@ -201,6 +223,79 @@ describe("TelemetryStore", () => {
     expect(() => store.record(makeRecord({ deliveryId: "write-1001" }))).not.toThrow();
   });
 
+  test("recordRetrievalQuality() inserts a row and is idempotent by delivery_id", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "deliv-001",
+        repo: "octocat/hello-world",
+        prNumber: 123,
+        eventType: "pull_request.opened",
+        topK: 8,
+        distanceThreshold: 0.3,
+        resultCount: 2,
+        avgDistance: 0.25,
+        languageMatchRatio: 0.5,
+      }),
+    );
+
+    // Duplicate delivery id should not create a second row.
+    fileStore.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "deliv-001",
+        repo: "octocat/hello-world",
+        prNumber: 123,
+        eventType: "pull_request.opened",
+        topK: 8,
+        distanceThreshold: 0.3,
+        resultCount: 2,
+        avgDistance: 0.25,
+        languageMatchRatio: 0.5,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(row).toBeTruthy();
+    expect(row.repo).toBe("octocat/hello-world");
+    expect(row.pr_number).toBe(123);
+    expect(row.event_type).toBe("pull_request.opened");
+    expect(row.top_k).toBe(8);
+    expect(row.distance_threshold).toBe(0.3);
+    expect(row.result_count).toBe(2);
+    expect(row.avg_distance).toBe(0.25);
+    expect(row.language_match_ratio).toBe(0.5);
+    expect(row.created_at).toBeTruthy();
+    expect(count.cnt).toBe(1);
+  });
+
+  test("auto-checkpoint counts retrieval quality writes", () => {
+    // 999 execution writes + 1 retrieval quality write => checkpoint threshold hit
+    for (let i = 0; i < 999; i++) {
+      store.record(makeRecord({ deliveryId: `mixed-${i}` }));
+    }
+    store.recordRetrievalQuality(
+      makeRetrievalQualityRecord({
+        deliveryId: "mixed-999",
+        resultCount: 1,
+        avgDistance: 0.1,
+        languageMatchRatio: 1,
+      }),
+    );
+
+    // DB should remain functional after checkpoint
+    expect(() => store.record(makeRecord({ deliveryId: "mixed-1000" }))).not.toThrow();
+  });
+
   test("creates data directory if it does not exist", () => {
     const baseDir = `/tmp/kodiai-test-dir-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const nestedDir = `${baseDir}/nested/path`;
@@ -233,5 +328,67 @@ describe("TelemetryStore", () => {
     const indexNames = indexes.map((i) => i.name);
     expect(indexNames).toContain("idx_executions_created_at");
     expect(indexNames).toContain("idx_executions_repo");
+  });
+
+  test("recordResilienceEvent() inserts a row and is idempotent by delivery_id", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    expect(typeof fileStore.recordResilienceEvent).toBe("function");
+
+    fileStore.recordResilienceEvent?.(
+      makeResilienceEventRecord({
+        deliveryId: "res-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        prAuthor: "octocat",
+        kind: "timeout",
+        eventType: "pull_request.opened",
+        reviewOutputKey: "rok-1",
+        executionConclusion: "timeout",
+        checkpointFilesReviewed: 3,
+        checkpointFindingCount: 2,
+        checkpointTotalFiles: 10,
+        partialCommentId: 123,
+        retryEnqueued: true,
+        retryFilesCount: 4,
+        retryScopeRatio: 0.6,
+        retryTimeoutSeconds: 120,
+        retryRiskLevel: "medium",
+        retryCheckpointEnabled: true,
+      }),
+    );
+
+    // Re-write same delivery id with different fields.
+    fileStore.recordResilienceEvent?.(
+      makeResilienceEventRecord({
+        deliveryId: "res-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        prAuthor: "octocat",
+        kind: "timeout",
+        eventType: "pull_request.opened",
+        executionConclusion: "timeout_partial",
+        checkpointFilesReviewed: 4,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM resilience_events WHERE delivery_id = 'res-001'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM resilience_events WHERE delivery_id = 'res-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(1);
+    expect(row.repo).toBe("octocat/hello-world");
+    expect(row.pr_number).toBe(7);
+    expect(row.pr_author).toBe("octocat");
+    expect(row.kind).toBe("timeout");
+    expect(row.execution_conclusion).toBe("timeout_partial");
+    expect(row.checkpoint_files_reviewed).toBe(4);
+    expect(row.created_at).toBeTruthy();
   });
 });

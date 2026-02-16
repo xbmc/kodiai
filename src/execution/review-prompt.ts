@@ -1057,6 +1057,43 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
     }
   }
 
+  // ── Workspace usage evidence (DEP-04) ──
+  if (ctx.usageEvidence?.evidence?.length && ctx.usageEvidence.evidence.length > 0) {
+    lines.push(
+      "",
+      "### Workspace Usage Evidence",
+      "",
+      "The following files in this repo import or use APIs affected by this bump:",
+    );
+
+    const capped = ctx.usageEvidence.evidence.slice(0, 10);
+    for (const ev of capped) {
+      const snippet = (ev.snippet ?? "").replace(/`/g, "'").slice(0, 200);
+      lines.push(`- \`${ev.filePath}:${ev.line}\` -- \`${snippet}\``);
+    }
+
+    const remaining = ctx.usageEvidence.evidence.length - capped.length;
+    if (remaining > 0) {
+      lines.push(`- ... and ${remaining} more locations`);
+    }
+
+    if (ctx.usageEvidence.timedOut) {
+      lines.push("", "(usage analysis timed out -- evidence may be incomplete)");
+    }
+  } else if (ctx.usageEvidence?.timedOut) {
+    lines.push("", "(usage analysis timed out -- evidence may be incomplete)");
+  }
+
+  // ── Multi-package scope coordination (DEP-06) ──
+  if (ctx.scopeGroups?.length && ctx.scopeGroups.length > 0) {
+    lines.push("", "### Multi-Package Coordination", "");
+    for (const group of ctx.scopeGroups) {
+      lines.push(
+        `- Packages from \`${group.scope}\` scope updated together: ${group.packages.join(", ")}. Review for cross-package compatibility.`,
+      );
+    }
+  }
+
   // ── Verdict integration instructions (CONF-02) ──
   if (ctx.mergeConfidence) {
     lines.push(
@@ -1089,6 +1126,7 @@ export function buildReviewPrompt(context: {
   headBranch: string;
   changedFiles: string[];
   customInstructions?: string;
+  checkpointEnabled?: boolean;
   // Review mode & severity control fields
   mode?: "standard" | "enhanced";
   severityMinLevel?: "critical" | "major" | "medium" | "minor";
@@ -1118,6 +1156,7 @@ export function buildReviewPrompt(context: {
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
+  focusHints?: string[];
   conventionalType?: ConventionalCommitType | null;
   deltaContext?: DeltaReviewContext | null;
   largePRContext?: {
@@ -1261,6 +1300,18 @@ export function buildReviewPrompt(context: {
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
   );
 
+  if (context.checkpointEnabled === true) {
+    lines.push(
+      "",
+      "IMPORTANT: This review may time out. Call the save_review_checkpoint tool after reviewing every 3-5 files. Include:",
+      "- filesReviewed: list of file paths you have fully analyzed",
+      "- findingCount: total findings generated so far",
+      "- summaryDraft: a brief summary of findings so far",
+      "",
+      "This ensures your work is preserved if the session times out.",
+    );
+  }
+
   // --- Rules ---
   lines.push(
     "",
@@ -1293,6 +1344,30 @@ export function buildReviewPrompt(context: {
       context.headBranch,
     ),
   );
+
+  // --- Focus hints (INTENT-01) ---
+  if (context.focusHints && context.focusHints.length > 0) {
+    const rendered: string[] = [];
+    const seen = new Set<string>();
+    for (const raw of context.focusHints) {
+      const normalized = raw.trim().toLowerCase();
+      if (!normalized || seen.has(normalized)) continue;
+      seen.add(normalized);
+      rendered.push(`- [${normalized.toUpperCase()}]`);
+    }
+
+    if (rendered.length > 0) {
+      lines.push(
+        "",
+        "## Focus Hints",
+        "",
+        "These tags came from the PR title/commits; treat them as components/platforms to pay extra attention to when reviewing.",
+        "Do not invent context if the diff does not touch the hinted areas.",
+        "",
+        ...rendered,
+      );
+    }
+  }
 
   if (context.conventionalType) {
     const typeGuidance: Record<string, string> = {

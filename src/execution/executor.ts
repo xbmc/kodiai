@@ -21,6 +21,7 @@ export function createExecutor(deps: {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       let controller: AbortController | undefined;
       let timeoutSeconds = 600; // default, updated from config
+      let published = false;
 
       try {
         // Load repo config (.kodiai.yml) with defaults
@@ -53,7 +54,6 @@ export function createExecutor(deps: {
         // Build MCP servers with fresh Octokit per API call (Pitfall 6)
         const getOctokit = () =>
           githubApp.getInstallationOctokit(context.installationId);
-        let published = false;
 
         const isMentionEvent =
           context.eventType === "issue_comment.created" ||
@@ -61,6 +61,14 @@ export function createExecutor(deps: {
           context.eventType === "pull_request_review.submitted";
 
         const isWriteMode = context.writeMode === true;
+
+        const enableInlineTools =
+          isMentionEvent || isWriteMode
+            ? false
+            : (context.enableInlineTools ?? true);
+        const enableCommentTools = isWriteMode
+          ? false
+          : (context.enableCommentTools ?? true);
 
         const mcpServers = buildMcpServers({
           getOctokit,
@@ -77,9 +85,12 @@ export function createExecutor(deps: {
           },
           // Mentions should not create new inline review comments; they should reply in-thread
           // (when available) or post a top-level PR/issue comment.
-          enableInlineTools: !isMentionEvent && !isWriteMode,
+          enableInlineTools,
           // In write-mode, trusted code publishes results (PR link, etc.)
-          enableCommentTools: !isWriteMode,
+          enableCommentTools,
+          knowledgeStore: context.knowledgeStore,
+          totalFiles: context.totalFiles,
+          enableCheckpointTool: context.enableCheckpointTool,
         });
 
         // Build allowed tools list
@@ -221,7 +232,7 @@ export function createExecutor(deps: {
             numTurns: undefined,
             durationMs,
             sessionId: undefined,
-            published: false,
+            published,
             errorMessage: `Job timed out after ${timeoutSeconds} seconds. The operation was taking too long and was automatically terminated.`,
             isTimeout: true,
             model: undefined,
@@ -243,7 +254,7 @@ export function createExecutor(deps: {
           numTurns: undefined,
           durationMs,
           sessionId: undefined,
-          published: false,
+          published,
           errorMessage,
           model: undefined,
           inputTokens: undefined,

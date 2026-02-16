@@ -257,12 +257,14 @@ const retrievalSchema = z
     enabled: z.boolean().default(true),
     topK: z.number().min(1).max(20).default(5),
     distanceThreshold: z.number().min(0).max(2).default(0.3),
+    adaptive: z.boolean().default(true),
     maxContextChars: z.number().min(0).max(5000).default(2000),
   })
   .default({
     enabled: true,
     topK: 5,
     distanceThreshold: 0.3,
+    adaptive: true,
     maxContextChars: 2000,
   });
 
@@ -285,7 +287,13 @@ const knowledgeSchema = z
     shareGlobal: false,
     sharing: { enabled: false },
     embeddings: { enabled: true, model: "voyage-code-3", dimensions: 1024 },
-    retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, maxContextChars: 2000 },
+    retrieval: {
+      enabled: true,
+      topK: 5,
+      distanceThreshold: 0.3,
+      adaptive: true,
+      maxContextChars: 2000,
+    },
   });
 
 const severityFloorOverrideSchema = z.object({

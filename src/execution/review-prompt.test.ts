@@ -410,6 +410,20 @@ test("buildReviewPrompt remains backward compatible without new fields", () => {
   expect(prompt).not.toContain("## Path-Specific Review Instructions");
 });
 
+test("buildReviewPrompt includes Focus Hints section when focusHints provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({ focusHints: ["auth", "ios"] }),
+  );
+  expect(prompt).toContain("## Focus Hints");
+  expect(prompt).toContain("- [AUTH]");
+  expect(prompt).toContain("- [IOS]");
+});
+
+test("buildReviewPrompt omits Focus Hints section when focusHints empty", () => {
+  const prompt = buildReviewPrompt(baseContext({ focusHints: [] }));
+  expect(prompt).not.toContain("## Focus Hints");
+});
+
 test("buildAuthorExperienceSection returns educational directives for first-time tier", () => {
   const section = buildAuthorExperienceSection({
     tier: "first-time",
@@ -1053,6 +1067,49 @@ describe("depBumpContext", () => {
     });
     const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
     expect(prompt).toContain("group dependency update");
+  });
+
+  test("renders workspace usage evidence when present", () => {
+    const depBumpContext = makeDepBumpContext({
+      usageEvidence: {
+        evidence: [
+          {
+            filePath: "src/auth.ts",
+            line: 42,
+            snippet: "import { merge } from 'lodash';",
+          },
+        ],
+        searchTerms: ["lodash", "merge"],
+        timedOut: false,
+      },
+    });
+
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Workspace Usage Evidence");
+    expect(prompt).toContain("`src/auth.ts:42`");
+    expect(prompt).toContain("lodash");
+  });
+
+  test("renders multi-package coordination groups when present", () => {
+    const depBumpContext = makeDepBumpContext({
+      details: {
+        packageName: null,
+        oldVersion: null,
+        newVersion: null,
+        ecosystem: "npm",
+        isGroup: true,
+      },
+      scopeGroups: [
+        {
+          scope: "@babel",
+          packages: ["@babel/core", "@babel/parser"],
+        },
+      ],
+    });
+
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext }));
+    expect(prompt).toContain("Multi-Package Coordination");
+    expect(prompt).toContain("@babel/core, @babel/parser");
   });
 
   test("omits section when depBumpContext is null", () => {

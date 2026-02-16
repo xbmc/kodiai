@@ -50,8 +50,8 @@ describe("classifyFindingDeltas", () => {
     });
 
     expect(result.current).toHaveLength(2);
-    expect(result.current[0].deltaStatus).toBe("new");
-    expect(result.current[1].deltaStatus).toBe("new");
+    expect(result.current[0]!.deltaStatus).toBe("new");
+    expect(result.current[1]!.deltaStatus).toBe("new");
     expect(result.resolved).toHaveLength(0);
     expect(result.counts).toEqual({ new: 2, resolved: 0, stillOpen: 0 });
   });
@@ -74,7 +74,7 @@ describe("classifyFindingDeltas", () => {
     });
 
     expect(result.current).toHaveLength(1);
-    expect(result.current[0].deltaStatus).toBe("still-open");
+    expect(result.current[0]!.deltaStatus).toBe("still-open");
     expect(result.resolved).toHaveLength(0);
     expect(result.counts).toEqual({ new: 0, resolved: 0, stillOpen: 1 });
   });
@@ -98,7 +98,7 @@ describe("classifyFindingDeltas", () => {
 
     expect(result.current).toHaveLength(0);
     expect(result.resolved).toHaveLength(1);
-    expect(result.resolved[0]).toEqual({
+    expect(result.resolved[0]!).toEqual({
       filePath: "src/db.ts",
       title: "SQL injection risk",
       severity: "critical",
@@ -162,8 +162,8 @@ describe("classifyFindingDeltas", () => {
 
     // SQL injection risk was in prior but not in current -> resolved
     expect(result.resolved).toHaveLength(1);
-    expect(result.resolved[0].title).toBe("SQL injection risk");
-    expect(result.resolved[0].filePath).toBe("src/db.ts");
+    expect(result.resolved[0]!.title).toBe("SQL injection risk");
+    expect(result.resolved[0]!.filePath).toBe("src/db.ts");
   });
 
   test("counts are accurate for mixed scenario", () => {
@@ -260,7 +260,7 @@ describe("classifyFindingDeltas", () => {
 
     // Both titles produce the same fingerprint "unused-variable-detected"
     // so this should be classified as still-open
-    expect(result.current[0].deltaStatus).toBe("still-open");
+    expect(result.current[0]!.deltaStatus).toBe("still-open");
     expect(result.counts.stillOpen).toBe(1);
     expect(result.counts.new).toBe(0);
   });

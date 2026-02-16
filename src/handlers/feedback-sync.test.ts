@@ -136,7 +136,7 @@ function createHarness(opts: {
     }) as never,
   } as never;
 
-  const knowledgeStore: KnowledgeStore = {
+  const knowledgeStore = {
     recordReview: () => 0,
     recordFindings: () => undefined,
     listRecentFindingCommentCandidates: () => opts.candidates ?? [buildCandidate()],
@@ -161,7 +161,7 @@ function createHarness(opts: {
     getRepoTrends: () => [],
     checkpoint: () => undefined,
     close: () => undefined,
-  };
+  } as unknown as KnowledgeStore;
 
   createFeedbackSyncHandler({
     eventRouter,

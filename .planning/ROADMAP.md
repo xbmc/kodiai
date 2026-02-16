@@ -82,8 +82,8 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Deepen dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and quality telemetry.
 
-- [ ] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
-- [ ] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
+- [x] **Phase 56: Foundation Layer** - Data infrastructure, retrieval telemetry, and bracket tag focus hints
+- [x] **Phase 57: Analysis Layer** - API usage analysis, multi-package correlation, and recency weighting
 - [ ] **Phase 58: Intelligence Layer** - Adaptive distance thresholds with statistical cutoff
 - [ ] **Phase 59: Resilience Layer** - Checkpoint publishing on timeout and retry with reduced scope
 
@@ -98,7 +98,12 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
   2. After every review that uses retrieval, Kodiai logs retrieval quality metrics (result count, average distance, threshold used, language match ratio) to the telemetry database
   3. When a PR title contains unrecognized bracket tags like `[Auth]` or `[iOS]`, Kodiai includes those tags as component/platform focus hints in the review prompt rather than silently ignoring them
   4. Schema migrations are additive-only (new tables and nullable columns) with no modifications to existing tables
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] 56-01-PLAN.md — Record dependency bump merge history in knowledge store
+- [x] 56-02-PLAN.md — Log retrieval quality metrics to telemetry store
+- [x] 56-03-PLAN.md — Surface unrecognized bracket tags as focus hints in review prompt
 
 ### Phase 57: Analysis Layer
 **Goal**: Kodiai enriches dependency reviews with workspace-aware usage evidence and multi-package coordination signals, and retrieval results favor recent memories over stale ones
@@ -110,7 +115,12 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
   3. Retrieval results from the last 30 days score higher than equivalent results from 6+ months ago, with a severity-aware decay floor of 0.3 that prevents CRITICAL/MAJOR findings from being forgotten
   4. Usage analysis completes within a 3-second time budget and fails open (missing usage data never blocks the review)
   5. Recency weighting chains after existing language-aware re-ranking without disrupting existing retrieval quality
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [x] 57-01-PLAN.md — Usage analyzer and scope coordinator pure-function modules
+- [x] 57-02-PLAN.md — Retrieval recency weighting module
+- [x] 57-03-PLAN.md — Wire all analysis modules into review pipeline and prompt
 
 ### Phase 58: Intelligence Layer
 **Goal**: Kodiai self-tunes retrieval distance thresholds per query using statistical analysis of candidate distances instead of relying on a fixed 0.3 cutoff
@@ -121,7 +131,11 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
   2. When fewer than 8 candidates are returned, Kodiai falls back to a percentile-based threshold rather than attempting unstable gap detection
   3. Adaptive thresholds are bounded by a floor of 0.15 and ceiling of 0.65, preventing pathological cutoffs
   4. The threshold selection (adaptive vs. fallback vs. configured) is logged in retrieval telemetry for observability
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 58-01-PLAN.md — Adaptive threshold computation module (TDD)
+- [ ] 58-02-PLAN.md — Wire adaptive threshold into retrieval pipeline and telemetry
 
 ### Phase 59: Resilience Layer
 **Goal**: Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope
@@ -133,11 +147,16 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
   3. Retry is capped at exactly 1 attempt -- no second retry regardless of outcome
   4. Repos with 3+ recent timeouts skip retry entirely to avoid wasting resources on chronically expensive repos
   5. Checkpoint data and retry metadata are visible in telemetry for operational monitoring
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 59-01-PLAN.md — Checkpoint accumulation infrastructure (MCP tool + knowledge store)
+- [ ] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
+- [ ] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
 
 ## Progress
 
-**Total shipped:** 9 milestones, 55 phases, 156 plans
+**Total shipped:** 9 milestones, 56 phases, 159 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -150,11 +169,11 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 | 39-41 | v0.7 | 11/11 | Complete | 2026-02-14 |
 | 42-50 | v0.8 | 19/19 | Complete | 2026-02-14 |
 | 51-55 | v0.9 | 11/11 | Complete | 2026-02-15 |
-| 56 | v0.10 | 0/TBD | Not started | - |
-| 57 | v0.10 | 0/TBD | Not started | - |
-| 58 | v0.10 | 0/TBD | Not started | - |
-| 59 | v0.10 | 0/TBD | Not started | - |
+| 56 | v0.10 | 3/3 | Complete | 2026-02-15 |
+| 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
+| 58 | v0.10 | 0/2 | Not started | - |
+| 59 | v0.10 | 0/3 | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-15 -- v0.10 milestone roadmap created*
+*Roadmap updated: 2026-02-15 -- Phase 59 plans created*

@@ -51,7 +51,7 @@ describe("buildPriorFindingContext", () => {
     });
 
     expect(result.unresolvedOnUnchangedCode).toHaveLength(1);
-    expect(result.unresolvedOnUnchangedCode[0].filePath).toBe("src/utils.ts");
+    expect(result.unresolvedOnUnchangedCode[0]!.filePath).toBe("src/utils.ts");
   });
 
   test("suppressionFingerprints contains filePath:titleFingerprint for unchanged-file findings", () => {

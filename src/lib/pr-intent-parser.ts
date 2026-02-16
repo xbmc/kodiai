@@ -165,7 +165,10 @@ export function buildKeywordParsingSection(intent: ParsedPRIntent): string {
   const lines = ["- Keyword parsing:"];
   const recognizedSources = intent.bracketTags.filter((tag) => tag.recognized).map(formatTagSource);
   if (recognizedSources.length > 0) lines.push(`  - recognized: ${recognizedSources.join(", ")}`);
-  if (intent.unrecognized.length > 0) lines.push(`  - ignored [${intent.unrecognized.join("], [")}]`);
+  if (intent.unrecognized.length > 0) {
+    const hints = intent.unrecognized.map((tag) => `[${tag.toUpperCase()}]`).join(", ");
+    lines.push(`  - focus hints: ${hints}`);
+  }
   if (intent.conventionalType) {
     const suffix = intent.conventionalType.isBreaking ? " (breaking)" : "";
     lines.push(`  - conventional type: ${intent.conventionalType.type}${suffix}`);

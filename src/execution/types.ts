@@ -1,5 +1,7 @@
 export type { RepoConfig } from "./config.ts";
 
+import type { KnowledgeStore } from "../knowledge/types.ts";
+
 /** Everything needed to invoke Claude against a workspace */
 export type ExecutionContext = {
   /** The ephemeral workspace with the cloned repo */
@@ -27,6 +29,17 @@ export type ExecutionContext = {
 
   /** Bot mention handles for outgoing sanitization (e.g. ['kodiai', 'claude']). */
   botHandles?: string[];
+
+  /** Optional KnowledgeStore for checkpoint accumulation MCP tools. */
+  knowledgeStore?: KnowledgeStore;
+  /** Total files in the PR (used for checkpoint coverage metadata). */
+  totalFiles?: number;
+  /** Enable review checkpoint MCP tool (save_review_checkpoint). */
+  enableCheckpointTool?: boolean;
+
+  /** Optional overrides for MCP tool surfaces (used for retry flows). */
+  enableInlineTools?: boolean;
+  enableCommentTools?: boolean;
 
   /**
    * Enables write-mode execution.
