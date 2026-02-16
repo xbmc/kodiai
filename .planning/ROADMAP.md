@@ -214,19 +214,22 @@ Plans:
 - [ ] 62-02-PLAN.md — Add regression tests for issue write-mode PR link and refusal outcomes
 
 ### Phase 63: Idempotency + De-Dupe
-**Goal**: Replayed triggers do not create duplicate PRs, and operational controls prevent duplicate work
+**Goal**: Restore explicit issue intent safety while completing idempotency/de-dupe guarantees so replayed or concurrent issue write requests cannot create duplicate PRs
 **Depends on**: Phase 62
-**Requirements**: IWR-02, SAFE-02
+**Requirements**: ISSUE-02, SAFE-01, IWR-02, SAFE-02
+**Gap Closure:** Closes milestone audit gaps for non-prefixed write-intent drift and incomplete replay/in-flight duplicate handling
 **Success Criteria** (what must be TRUE):
-  1. Replaying the same `apply:` / `change:` trigger results in the same deterministic branch name, and Kodiai reuses the existing PR when present
-  2. When multiple identical triggers occur while a write-mode job is already in flight, Kodiai de-dupes the work and avoids creating multiple PRs
-  3. When rate limits are hit, Kodiai does not thrash or spam; it responds with a single clear message indicating the user should retry later
+  1. Non-prefixed implementation asks in issue comments no longer auto-enter write mode; they follow explicit opt-in guidance aligned with ISSUE-02/SAFE-01
+  2. Replaying the same `apply:` / `change:` trigger results in deterministic branch reuse and existing-PR reuse (no duplicate PR)
+  3. Concurrent/in-flight duplicate issue write requests are de-duped with a clear single response instead of duplicate work
+  4. When rate limits are hit, Kodiai does not thrash or spam; it responds with a single clear retry-later message
 **Plans**: TBD
 
 ### Phase 64: Policy Guardrails
-**Goal**: Issue write-mode obeys existing write policy guardrails and refuses unsafe changes with clear explanations
+**Goal**: Complete and verify issue write-mode policy guardrails so allow/deny path and secret-scan refusals are deterministic and user-actionable
 **Depends on**: Phase 63
 **Requirements**: IWR-03
+**Gap Closure:** Closes milestone audit gap for missing completed/verified policy-guardrail phase artifacts
 **Success Criteria** (what must be TRUE):
   1. If a requested change touches a denied path (or falls outside allowPaths), Kodiai refuses to write and explains which policy constraint was violated
   2. If secret scanning detects likely credentials/secrets in proposed changes, Kodiai refuses to commit/push and explains the refusal in the issue thread
@@ -234,9 +237,10 @@ Plans:
 **Plans**: TBD
 
 ### Phase 65: Permission + Disabled UX
-**Goal**: When write-mode cannot proceed due to configuration or GitHub App permissions, Kodiai explains what to change and nothing sensitive is leaked
+**Goal**: Complete permission and disabled-write UX so blocked issue write requests always return actionable, non-sensitive remediation guidance
 **Depends on**: Phase 64
 **Requirements**: PERM-01, PERM-02
+**Gap Closure:** Closes milestone audit gap for incomplete permission failure UX and phase-level verification coverage
 **Success Criteria** (what must be TRUE):
   1. When PR creation or push fails due to missing GitHub App permissions, Kodiai replies in-thread listing the minimum required permissions (without leaking tokens or secrets)
   2. When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` snippet needed to enable it
@@ -271,4 +275,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-16 -- phase 61 executed and verified; phase 62 ready for planning*
+*Roadmap updated: 2026-02-16 -- milestone audit gaps mapped to phase 63-65 closure goals*
