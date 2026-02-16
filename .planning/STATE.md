@@ -45,6 +45,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 63 P01 | 1 min | 2 tasks | 2 files |
 | Phase 63 P02 | 3 min | 2 tasks | 1 files |
 | Phase 64 P01 | 2 min | 2 tasks | 2 files |
+| Phase 65 P01 | 2m14s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 63]: Validate repo-scoped write minInterval behavior using distinct issue comment IDs to isolate rate limiting from dedupe keys.
 - [Phase 64]: Mirror PR policy refusal fixtures in issue_comment tests to keep guardrail coverage surface-consistent.
 - [Phase 64]: Include an explicit .kodiai.yml update hint for allowPaths refusals so issue guidance is directly actionable.
+- [Phase 65]: Disabled write-mode issue replies now include a fixed .kodiai.yml snippet and same-command retry instruction.
+- [Phase 65]: Write-disabled retry commands are posted unsanitized so @kodiai apply/change remains copyable.
 
 ### Key Constraints (Carry-Forward)
 
@@ -112,7 +115,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T21:03:20.624Z
-**Stopped At:** Completed 64-01-PLAN.md
+**Last session:** 2026-02-16T21:32:21.979Z
+**Stopped At:** Completed 65-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 62
