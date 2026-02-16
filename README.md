@@ -144,3 +144,7 @@ Runbook for diagnosing manual re-request issues:
 
 - Release notes are in `.planning/MILESTONES.md`
 - Archived planning artifacts live in `.planning/milestones/`
+
+## Kodiai Validation
+
+summary-format-smoke
