@@ -115,14 +115,16 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-#### Current Milestone: Planning Next Milestone
+#### Current Milestone: v0.12 Operator Reliability & Retrieval Quality
 
-**Goal:** Define and scope the next milestone after v0.11 completion.
+**Goal:** Improve reliability under Search API pressure, increase retrieval quality, and standardize conversational UX across issue/PR/review surfaces.
 
 **Target features:**
-- [ ] Finalize next milestone requirements and roadmap scope
-- [ ] Prioritize operator-facing reliability items (rate-limit caching strategy and production load validation)
-- [ ] Define post-v0.11 improvements for retrieval quality and cross-surface conversational UX
+- [ ] Search API cache + request de-dupe to stay within 30/min budget
+- [ ] Graceful rate-limit degradation with operator telemetry for production tuning
+- [ ] Multi-query retrieval with deterministic merge/rerank
+- [ ] Snippet evidence with path anchors and strict prompt-budget controls
+- [ ] Cross-surface conversational contract with targeted clarifying-question fallback
 
 ### Out of Scope
 
@@ -270,4 +272,4 @@ v0.11 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-16 after v0.11 milestone completion*
+*Last updated: 2026-02-16 after v0.12 milestone initialization*

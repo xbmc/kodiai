@@ -13,6 +13,7 @@
 - ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-15)
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
+- 🎯 **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-70 (planned)
 
 ## Phases
 
@@ -98,6 +99,18 @@ See `.planning/milestones/v0.11-ROADMAP.md` for full phase details.
 
 </details>
 
+### v0.12 Operator Reliability & Retrieval Quality (Planned)
+
+**Milestone Goal:** Improve operator reliability under Search API rate limits, raise retrieval signal quality, and make conversational behavior consistent across issue/PR/review surfaces.
+
+See `.planning/milestones/v0.12-ROADMAP.md` for milestone snapshot.
+
+- [ ] **Phase 66: Search Cache Foundation** - Repository-scoped cache keys, de-duplication, and bounded TTL strategy for Search API usage
+- [ ] **Phase 67: Rate-Limit Resilience + Telemetry** - Graceful degradation, single bounded retry strategy, and production-facing rate-limit metrics
+- [ ] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
+- [ ] **Phase 69: Snippet Anchors + Prompt Budgeting** - Code-snippet extraction with path anchors and strict prompt-budget controls
+- [ ] **Phase 70: Cross-Surface Conversational UX** - Consistent response contracts and clarifying-question fallback across issue/PR/review threads
+
 ## Phase Details
 
 ### Phase 56: Foundation Layer
@@ -165,6 +178,76 @@ Plans:
 - [x] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
 - [x] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
 
+### Phase 66: Search Cache Foundation
+**Goal**: Search-based enrichment stays within GitHub Search API budgets by reusing recent equivalent queries and de-duplicating concurrent requests
+**Depends on**: Phase 65 (v0.11 complete)
+**Requirements**: OPS-01
+**Success Criteria** (what must be TRUE):
+  1. Equivalent Search API requests within a bounded window are served from cache instead of issuing duplicate remote calls
+  2. Cache keys are deterministic for repo + query semantics, and cache scope does not leak across repositories
+  3. Cache behavior fails open: cache storage/lookup errors never block review or mention completion
+**Plans**: 2 plans
+
+Plans:
+- [ ] 66-01-PLAN.md — Implement deterministic search cache module with repo-scoped keys
+- [ ] 66-02-PLAN.md — Wire cache into enrichment flows and add concurrency de-dupe tests
+
+### Phase 67: Rate-Limit Resilience + Telemetry
+**Goal**: When Search API limits are reached, Kodiai degrades gracefully and provides measurable signals for production tuning
+**Depends on**: Phase 66
+**Requirements**: OPS-02, OPS-03
+**Success Criteria** (what must be TRUE):
+  1. On rate-limit responses, Kodiai applies bounded retry/backoff once and then proceeds with reduced context instead of failing hard
+  2. User-facing output clearly states that analysis was partial due to API limits when degradation occurs
+  3. Telemetry records cache hit rate, skipped queries, retry attempts, and degradation path so operators can validate behavior under load
+**Plans**: 2 plans
+
+Plans:
+- [ ] 67-01-PLAN.md — Implement bounded retry/backoff and degrade-to-partial behavior
+- [ ] 67-02-PLAN.md — Add rate-limit telemetry schema + regression coverage for degraded messaging
+
+### Phase 68: Multi-Query Retrieval Core
+**Goal**: Retrieval quality improves by expanding a single request into multiple focused queries and merging results deterministically
+**Depends on**: Phase 67
+**Requirements**: RET-07
+**Success Criteria** (what must be TRUE):
+  1. Retrieval generates multiple bounded query variants (intent, file-path, and code-shape signals) from the same request context
+  2. Result merge/rerank is deterministic and stable for equivalent inputs
+  3. Multi-query mode keeps latency within current operational budgets and fails open when one variant errors
+**Plans**: 2 plans
+
+Plans:
+- [ ] 68-01-PLAN.md — Build multi-query generation + deterministic merge module (TDD)
+- [ ] 68-02-PLAN.md — Integrate multi-query retrieval into review and mention pipelines
+
+### Phase 69: Snippet Anchors + Prompt Budgeting
+**Goal**: Retrieved context is more actionable by including concise snippet evidence and precise path anchors while preserving prompt size limits
+**Depends on**: Phase 68
+**Requirements**: RET-08
+**Success Criteria** (what must be TRUE):
+  1. Retrieval context includes bounded snippet excerpts with `path:line` anchors when evidence exists
+  2. Snippet assembly respects strict character/token caps and drops lowest-value context first when over budget
+  3. Missing snippet extraction never blocks response generation; output degrades to path-only evidence
+**Plans**: 2 plans
+
+Plans:
+- [ ] 69-01-PLAN.md — Implement snippet extraction and anchor formatting utilities
+- [ ] 69-02-PLAN.md — Wire snippet budgeting into prompt builders with overflow tests
+
+### Phase 70: Cross-Surface Conversational UX
+**Goal**: Conversational behavior feels consistent across issue, PR, and review threads while preserving surface-specific expectations
+**Depends on**: Phase 69
+**Requirements**: CONV-01, CONV-02
+**Success Criteria** (what must be TRUE):
+  1. Response contracts (direct answer, evidence pointers, next-step framing) are consistent across supported comment surfaces
+  2. When context is insufficient, Kodiai asks one targeted clarifying question rather than speculating
+  3. Surface-specific safety/UX rules remain intact (no unsolicited responses, no implicit write-mode entry)
+**Plans**: 2 plans
+
+Plans:
+- [ ] 70-01-PLAN.md — Unify conversational response contract and surface adapters
+- [ ] 70-02-PLAN.md — Add cross-surface clarification + safety regression suite
+
 ## Progress
 
 **Total shipped:** 11 milestones, 65 phases, 173 plans
@@ -190,7 +273,12 @@ Plans:
 | 63 | v0.11 | 2/2 | Complete | 2026-02-16 |
 | 64 | v0.11 | 2/2 | Complete | 2026-02-16 |
 | 65 | v0.11 | 2/2 | Complete | 2026-02-16 |
+| 66 | v0.12 | 0/2 | Planned | - |
+| 67 | v0.12 | 0/2 | Planned | - |
+| 68 | v0.12 | 0/2 | Planned | - |
+| 69 | v0.12 | 0/2 | Planned | - |
+| 70 | v0.12 | 0/2 | Planned | - |
 
 ---
 
-*Roadmap updated: 2026-02-16 -- v0.11 Issue Workflows shipped (phase 60-65 complete and verified)*
+*Roadmap updated: 2026-02-16 -- initialized v0.12 Operator Reliability & Retrieval Quality (phases 66-70 planned)*
