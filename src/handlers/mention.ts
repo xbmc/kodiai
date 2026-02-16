@@ -514,9 +514,10 @@ export function createMentionHandler(deps: {
         }
 
         const writeIntent = parseWriteIntent(userQuestion);
+        const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
 
         if (
-          mention.surface === "issue_comment" &&
+          isIssueThreadComment &&
           !writeIntent.writeIntent &&
           isImplementationRequestWithoutPrefix(writeIntent.request)
         ) {
@@ -666,7 +667,7 @@ export function createMentionHandler(deps: {
           }
         }
 
-        if (isWriteRequest && mention.prNumber === undefined && mention.surface !== "issue_comment") {
+        if (isWriteRequest && mention.prNumber === undefined && !isIssueThreadComment) {
           const replyBody = wrapInDetails(
             [
               "I can only apply changes in a PR context.",
@@ -785,7 +786,7 @@ export function createMentionHandler(deps: {
           );
         }
 
-        if (mention.surface === "issue_comment") {
+        if (isIssueThreadComment) {
           try {
             const issueCodeContext = await buildIssueCodeContext({
               workspaceDir: workspace.dir,
@@ -1310,7 +1311,7 @@ export function createMentionHandler(deps: {
         // This prevents "silent success" where the model chose not to call any comment tools.
         if (!writeEnabled && result.conclusion === "success" && !result.published) {
           const fallbackLines =
-            mention.surface === "issue_comment"
+            isIssueThreadComment
               ? [
                   "I can answer this, but I need a bit more context first.",
                   "",
