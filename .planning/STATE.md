@@ -42,6 +42,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 62 P01 | 2 min | 2 tasks | 2 files |
 | Phase 62 P02 | 1 min | 2 tasks | 1 files |
 | Phase 62 P03 | 0 min | 3 tasks | 2 files |
+| Phase 63 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 62]: Issue write-mode refusal outcomes must always respond in issue comments with explicit no-change or policy-denied messaging instead of silent success.
 - [Phase 62]: Use a fresh live @kodiai apply trigger on issue #52 and capture direct comment URLs as evidence.
 - [Phase 62]: Treat write-mode-disabled bot reply as validation failure evidence and do not claim PR creation success.
+- [Phase 63]: Implicit issue intent detection now gates to read-only opt-in guidance and never auto-promotes to write mode.
+- [Phase 63]: Issue opt-in guidance replies bypass mention sanitization so exact @kodiai apply/change commands remain copyable.
 
 ### Key Constraints (Carry-Forward)
 
@@ -102,7 +105,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T18:31:45.759Z
-**Stopped At:** Completed 62-03-PLAN.md
+**Last session:** 2026-02-16T20:27:09.378Z
+**Stopped At:** Completed 63-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 62
