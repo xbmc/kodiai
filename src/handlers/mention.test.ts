@@ -2446,6 +2446,212 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("issue apply intent allowPaths violation posts refusal with config snippet in issue thread", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n  allowPaths:\n    - 'src/'\n",
+    );
+
+    let pullCreateCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nupdated from issue\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 78,
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(pullCreateCalls).toBe(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Reason: write-policy-not-allowed");
+    expect(issueReplies[0]).toContain("Rule: allowPaths");
+    expect(issueReplies[0]).toContain("File: README.md");
+    expect(issueReplies[0]).toContain("Smallest config change");
+    expect(issueReplies[0]).toContain("allowPaths");
+    expect(issueReplies[0]).toContain("- 'README.md'");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue apply intent secretScan violation posts refusal with detector in issue thread", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let pullCreateCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(
+            join(ctx.workspace.dir, "README.md"),
+            "base\nupdated from issue\nTOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD\n",
+          );
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 79,
+        commentBody: "@kodiai apply: add the config",
+      }),
+    );
+
+    expect(pullCreateCalls).toBe(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Reason: write-policy-secret-detected");
+    expect(issueReplies[0]).toContain("Rule: secretScan");
+    expect(issueReplies[0]).toContain("File: README.md");
+    expect(issueReplies[0]).toContain("Detector: regex:github-pat");
+    expect(issueReplies[0]).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("write intent is refused when write.enabled is false", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
