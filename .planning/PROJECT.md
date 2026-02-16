@@ -116,13 +116,15 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-#### Current Milestone: v0.10 Advanced Signals
+#### Current Milestone: v0.11 Issue Workflows
 
-**Goal:** Deepen Kodiai's dependency analysis with usage-aware breaking change detection, improve timeout resilience with checkpoint publishing and retry, and sharpen retrieval with adaptive thresholds, recency weighting, and cross-language equivalence.
+**Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
 
-- [ ] Dependency usage analysis, trend tracking, and multi-package correlation
-- [ ] Checkpoint publishing on timeout and retry with reduced file scope
-- [ ] Adaptive retrieval thresholds, recency weighting, quality telemetry, and cross-language equivalence
+**Target features:**
+- [ ] Issue Q&A: consistent, actionable responses in issue threads with concrete file-path pointers
+- [ ] Issue write-mode: `apply:` / `change:` in an issue comment can create a PR against the default branch (idempotent branch naming)
+- [ ] Guardrails: reuse existing write policy (allow/deny paths + secret scan), rate limits, and explicit opt-in via `write.enabled: true`
+- [ ] Permission clarity: when missing App permissions/installation, fail open with a clear explanation instead of silent failure
 
 ### Out of Scope
 
@@ -265,4 +267,4 @@ v0.9 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-15 after v0.10 milestone start*
+*Last updated: 2026-02-16 after v0.11 milestone start*

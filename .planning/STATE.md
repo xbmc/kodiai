@@ -2,21 +2,21 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-15)
+See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 59 - Resilience Layer (v0.10 Advanced Signals)
+**Current focus:** Milestone v0.11 -- defining requirements
 
 ## Current Position
 
-**Milestone:** v0.10 Advanced Signals
-**Phase:** 59 (4 of 4 in v0.10)
-**Current Plan:** 3
-**Total Plans in Phase:** 3
-**Status:** Phase complete — ready for verification
-**Last Activity:** 2026-02-16
+**Milestone:** v0.11 Issue Workflows
+**Phase:** Not started (defining requirements)
+**Current Plan:** —
+**Total Plans in Phase:** —
+**Status:** Defining requirements
+**Last Activity:** 2026-02-16 — Milestone v0.11 started
 
-**Progress:** [██████████] 100%
+**Progress:** [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -46,7 +46,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 57-analysis-layer]: Added optional dependency injection hooks in createReviewHandler for deterministic unit tests (no behavior change in production).
 - [Phase 58]: Made adaptive thresholds default-on via retrieval.adaptive (opt-out) to preserve legacy behavior while meeting RET-03 requirements.
 
-### Key Constraints for v0.10
+### Key Constraints (Carry-Forward)
 
 - Timeout retry capped at 1 max to avoid queue starvation
 - Adaptive thresholds need minimum 8-candidate guard
@@ -76,6 +76,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-16T00:02:37.145Z
-**Stopped At:** Completed 59-03-PLAN.md
+**Stopped At:** Milestone v0.11 started (requirements pending)
 **Resume File:** None
-**Next action:** Verify Phase 59
+**Next action:** Define v0.11 requirements
