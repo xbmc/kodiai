@@ -13,10 +13,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** Phase 61 (Read-Only + Intent Gating)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** In progress
-**Last Activity:** 2026-02-16 — completed phase 61 plan 01 execution
+**Status:** Phase complete — ready for verification
+**Last Activity:** 2026-02-16
 
-**Progress:** [██░░░░░░░░] 18%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -37,6 +37,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 60-issue-q-a P02 | 3 min | 2 tasks | 2 files |
 | Phase 60-issue-q-a P03 | 3 min | 2 tasks | 2 files |
 | Phase 61 P01 | 0 min | 2 tasks | 2 files |
+| Phase 61 P02 | 2 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -57,6 +58,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 60-issue-q-a]: Use issue-specific fallback questions that ask for desired outcome, target files/areas, and constraints when published output is absent.
 - [Phase 61]: Read-only guidance is explicit and default on issue_comment unless a message starts with apply: or change:.
 - [Phase 61]: Change-request replies without write prefixes must include both exact opt-in commands: @kodiai apply: <same request> and @kodiai change: <same request>.
+- [Phase 61]: Gate issue implementation asks before executor invocation by matching conservative implementation verbs when no apply:/change:/plan: prefix is present.
+- [Phase 61]: Post issue opt-in guidance through direct issue comment creation so exact @kodiai apply/change commands are preserved in output.
 
 ### Key Constraints (Carry-Forward)
 
@@ -87,7 +90,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T06:33:18.680Z
-**Stopped At:** Completed 61-01-PLAN.md
+**Last session:** 2026-02-16T06:35:37.068Z
+**Stopped At:** Completed 61-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-execute-phase 61
