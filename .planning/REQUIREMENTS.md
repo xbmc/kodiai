@@ -9,7 +9,7 @@ Requirements for v0.12 Operator Reliability and Retrieval Quality. Each maps to 
 
 ### Operator Reliability
 
-- [ ] **OPS-01**: Search-based enrichment stays within the 30/min Search API budget through repository-scoped caching and request de-duplication.
+- [x] **OPS-01**: Search-based enrichment stays within the 30/min Search API budget through repository-scoped caching and request de-duplication.
 - [ ] **OPS-02**: When rate limits are approached or exceeded, Kodiai degrades gracefully (bounded retries, reduced scope, and explicit user-facing messaging).
 - [ ] **OPS-03**: Rate-limit behavior is observable with telemetry fields that support production tuning (cache hit rate, skipped queries, retry outcomes).
 
@@ -42,7 +42,7 @@ Deferred to a future milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OPS-01 | Phase 66 | Pending |
+| OPS-01 | Phase 66 | Satisfied |
 | OPS-02 | Phase 67 | Pending |
 | OPS-03 | Phase 67 | Pending |
 | RET-07 | Phase 68 | Pending |
@@ -57,4 +57,4 @@ Deferred to a future milestone.
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-16 -- initialized v0.12 requirements and traceability*
+*Last updated: 2026-02-16 -- marked OPS-01 satisfied after phase 66 verification*

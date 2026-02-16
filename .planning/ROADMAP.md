@@ -105,7 +105,7 @@ See `.planning/milestones/v0.11-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.12-ROADMAP.md` for milestone snapshot.
 
-- [ ] **Phase 66: Search Cache Foundation** - Repository-scoped cache keys, de-duplication, and bounded TTL strategy for Search API usage
+- [x] **Phase 66: Search Cache Foundation** - Repository-scoped cache keys, de-duplication, and bounded TTL strategy for Search API usage
 - [ ] **Phase 67: Rate-Limit Resilience + Telemetry** - Graceful degradation, single bounded retry strategy, and production-facing rate-limit metrics
 - [ ] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
 - [ ] **Phase 69: Snippet Anchors + Prompt Budgeting** - Code-snippet extraction with path anchors and strict prompt-budget controls
@@ -273,7 +273,7 @@ Plans:
 | 63 | v0.11 | 2/2 | Complete | 2026-02-16 |
 | 64 | v0.11 | 2/2 | Complete | 2026-02-16 |
 | 65 | v0.11 | 2/2 | Complete | 2026-02-16 |
-| 66 | v0.12 | 0/2 | Planned | - |
+| 66 | v0.12 | 2/2 | Complete | 2026-02-16 |
 | 67 | v0.12 | 0/2 | Planned | - |
 | 68 | v0.12 | 0/2 | Planned | - |
 | 69 | v0.12 | 0/2 | Planned | - |
@@ -281,4 +281,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-16 -- initialized v0.12 Operator Reliability & Retrieval Quality (phases 66-70 planned)*
+*Roadmap updated: 2026-02-16 -- phase 66 completed (Search Cache Foundation); phases 67-70 planned*
