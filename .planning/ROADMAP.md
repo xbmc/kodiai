@@ -253,7 +253,11 @@ Plans:
   1. When PR creation or push fails due to missing GitHub App permissions, Kodiai replies in-thread listing the minimum required permissions (without leaking tokens or secrets)
   2. When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` snippet needed to enable it
   3. In both cases, the error message is actionable (user can fix config/permissions and successfully retry the same `apply:` / `change:` command)
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 65-01-PLAN.md — Lock disabled write-mode issue guidance with minimal `.kodiai.yml` enablement + retry UX
+- [ ] 65-02-PLAN.md — Add permission-failure remediation for issue write-mode push/PR creation errors
 
 ## Progress
 
