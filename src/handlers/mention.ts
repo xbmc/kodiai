@@ -30,6 +30,7 @@ import {
   stripMention,
 } from "./mention-types.ts";
 import { buildMentionContext } from "../execution/mention-context.ts";
+import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
@@ -688,6 +689,30 @@ export function createMentionHandler(deps: {
           );
         }
 
+        if (mention.surface === "issue_comment") {
+          try {
+            const issueCodeContext = await buildIssueCodeContext({
+              workspaceDir: workspace.dir,
+              question: writeIntent.request,
+            });
+
+            if (issueCodeContext.contextBlock.trim().length > 0) {
+              const contextParts = [
+                mentionContext.trim(),
+                "## Candidate Code Pointers",
+                "",
+                issueCodeContext.contextBlock.trim(),
+              ].filter((part) => part.length > 0);
+              mentionContext = `${contextParts.join("\n")}`;
+            }
+          } catch (err) {
+            logger.warn(
+              { err, surface: mention.surface, issueNumber: mention.issueNumber },
+              "Failed to build issue code context; proceeding without code pointers",
+            );
+          }
+        }
+
         let findingContext:
           | {
               severity: string;
@@ -1174,14 +1199,25 @@ export function createMentionHandler(deps: {
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
         if (!writeEnabled && result.conclusion === "success" && !result.published) {
+          const fallbackLines =
+            mention.surface === "issue_comment"
+              ? [
+                  "I can answer this, but I need a bit more context first.",
+                  "",
+                  "(1) What exact outcome do you want from this change (bug fix, refactor, behavior change, or explanation)?",
+                  "(2) Which files, directories, or modules should I focus on first?",
+                  "(3) Are there constraints I should respect (API contract, tests to preserve, or timeline)?",
+                ]
+              : [
+                  "I saw your mention, but I didn't publish a reply automatically.",
+                  "",
+                  "Can you clarify what you want me to do?",
+                  "- (1) What outcome are you aiming for?",
+                  "- (2) Which file(s) / line(s) should I focus on?",
+                ];
+
           const fallbackBody = wrapInDetails(
-            [
-              "I saw your mention, but I didn't publish a reply automatically.",
-              "",
-              "Can you clarify what you want me to do?",
-              "- (1) What outcome are you aiming for?",
-              "- (2) Which file(s) / line(s) should I focus on?",
-            ].join("\n"),
+            fallbackLines.join("\n"),
             "kodiai response",
           );
           const sanitizedFallbackBody = sanitizeOutgoingMentions(fallbackBody, possibleHandles);
