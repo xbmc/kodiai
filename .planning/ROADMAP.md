@@ -180,9 +180,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 60-01-PLAN.md — Enforce issue Q&A answer contract in mention prompt and tests
-- [ ] 60-02-PLAN.md — Build bounded issue code-context helper for file-path pointers
-- [ ] 60-03-PLAN.md — Wire issue context into mention handler with clarifying fallback tests
+- [x] 60-01-PLAN.md — Enforce issue Q&A answer contract in mention prompt and tests
+- [x] 60-02-PLAN.md — Build bounded issue code-context helper for file-path pointers
+- [x] 60-03-PLAN.md — Wire issue context into mention handler with clarifying fallback tests
 
 ### Phase 61: Read-Only + Intent Gating
 **Goal**: Issue Q&A stays read-only by default, and write-mode is only entered with explicit user intent
@@ -236,7 +236,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 10 milestones, 59 phases, 159 plans
+**Total shipped:** 10 milestones, 60 phases, 162 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -253,7 +253,7 @@ Plans:
 | 57 | v0.10 | 3/3 | Complete | 2026-02-15 |
 | 58 | v0.10 | 2/2 | Complete | 2026-02-16 |
 | 59 | v0.10 | 3/3 | Complete | 2026-02-16 |
-| 60 | v0.11 | 0/TBD | Not started | - |
+| 60 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 61 | v0.11 | 0/TBD | Not started | - |
 | 62 | v0.11 | 0/TBD | Not started | - |
 | 63 | v0.11 | 0/TBD | Not started | - |
@@ -262,4 +262,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-16 -- v0.11 roadmap created; v0.10 marked shipped*
+*Roadmap updated: 2026-02-16 -- phase 60 executed and verified; phase 61 ready for planning*
