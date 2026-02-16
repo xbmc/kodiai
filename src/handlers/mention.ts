@@ -164,6 +164,25 @@ export function createMentionHandler(deps: {
     return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
   }
 
+  function isImplementationRequestWithoutPrefix(userQuestion: string): boolean {
+    const normalized = userQuestion.trim().toLowerCase().replace(/\s+/g, " ");
+    if (normalized.length === 0) return false;
+
+    const implementationVerb =
+      "(?:fix|update|change|refactor|add|remove|implement|create|rename|rewrite|patch)";
+    const directCommand = new RegExp(`^${implementationVerb}\\b`);
+    const politeCommand = new RegExp(`^(?:please\\s+)?${implementationVerb}\\b`);
+    const explicitAsk = new RegExp(
+      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?${implementationVerb}\\b`,
+    );
+
+    return (
+      directCommand.test(normalized) ||
+      politeCommand.test(normalized) ||
+      explicitAsk.test(normalized)
+    );
+  }
+
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
     const possibleHandles = [appSlug, "claude"];
@@ -454,6 +473,33 @@ export function createMentionHandler(deps: {
         }
 
         const writeIntent = parseWriteIntent(userQuestion);
+
+        if (
+          mention.surface === "issue_comment" &&
+          !writeIntent.writeIntent &&
+          isImplementationRequestWithoutPrefix(writeIntent.request)
+        ) {
+          const request = writeIntent.request.replace(/\s+/g, " ").trim();
+          const replyBody = wrapInDetails(
+            [
+              "Issue comments are read-only by default.",
+              "",
+              "To opt in to a change request, use one of these exact commands:",
+              "",
+              `@kodiai apply: ${request}`,
+              `@kodiai change: ${request}`,
+            ].join("\n"),
+            "kodiai response",
+          );
+
+          await octokit.rest.issues.createComment({
+            owner: mention.owner,
+            repo: mention.repo,
+            issue_number: mention.issueNumber,
+            body: replyBody,
+          });
+          return;
+        }
 
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";

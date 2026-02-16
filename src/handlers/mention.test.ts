@@ -413,7 +413,7 @@ describe("createMentionHandler conversational review wiring", () => {
     await handler!(
       buildIssueCommentMentionEvent({
         issueNumber: 77,
-        commentBody: "@kodiai can you fix the auth issue?",
+        commentBody: "@kodiai what does the auth middleware do?",
       }),
     );
 
