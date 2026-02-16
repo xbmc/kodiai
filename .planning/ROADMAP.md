@@ -96,7 +96,7 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 **Milestone Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
 
 - [ ] **Phase 60: Issue Q&A** - In-thread answers with concrete, actionable guidance
-- [ ] **Phase 61: Read-Only + Intent Gating** - Default read-only behavior and explicit write trigger safety
+- [x] **Phase 61: Read-Only + Intent Gating** - Default read-only behavior and explicit write trigger safety
 - [ ] **Phase 62: Issue Write-Mode PR Creation** - `apply:` / `change:` creates a PR when enabled
 - [ ] **Phase 63: Idempotency + De-Dupe** - Replays reuse the same PR; rate limiting prevents duplicates
 - [ ] **Phase 64: Policy Guardrails** - allow/deny paths + secret scanning enforced with clear refusal UX
@@ -146,7 +146,7 @@ Plans:
   2. When fewer than 8 candidates are returned, Kodiai falls back to a percentile-based threshold rather than attempting unstable gap detection
   3. Adaptive thresholds are bounded by a floor of 0.15 and ceiling of 0.65, preventing pathological cutoffs
   4. The threshold selection (adaptive vs. fallback vs. configured) is logged in retrieval telemetry for observability
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [x] 58-01-PLAN.md — Adaptive threshold computation module (TDD)
@@ -192,11 +192,12 @@ Plans:
   1. For issue Q&A replies that do not include an explicit `apply:` / `change:` prefix, Kodiai clearly frames output as read-only guidance (no implied edits or PR creation)
   2. Kodiai never opens a PR or performs repository writes from an issue thread unless the triggering comment starts with `apply:` or `change:`
   3. If a user asks for changes without using `apply:` / `change:`, Kodiai responds with the exact prefix-based command they can use to opt into write-mode
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 61-01-PLAN.md — Enforce issue prompt read-only framing and exact apply/change opt-in command guidance
-- [ ] 61-02-PLAN.md — Add runtime issue intent gating and deterministic non-prefixed change-request command replies
+- [x] 61-01-PLAN.md — Enforce issue prompt read-only framing and exact apply/change opt-in command guidance
+- [x] 61-02-PLAN.md — Add runtime issue intent gating and deterministic non-prefixed change-request command replies
+- [x] 61-03-PLAN.md — Close live non-prefixed issue gating gap with fail-closed detection and anti-completion guardrails
 
 ### Phase 62: Issue Write-Mode PR Creation
 **Goal**: Users can request a change from an issue comment and receive a PR against the default branch when write-mode is enabled
@@ -240,7 +241,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 10 milestones, 60 phases, 162 plans
+**Total shipped:** 10 milestones, 61 phases, 165 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -258,7 +259,7 @@ Plans:
 | 58 | v0.10 | 2/2 | Complete | 2026-02-16 |
 | 59 | v0.10 | 3/3 | Complete | 2026-02-16 |
 | 60 | v0.11 | 3/3 | Complete | 2026-02-16 |
-| 61 | v0.11 | 0/TBD | Not started | - |
+| 61 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 62 | v0.11 | 0/TBD | Not started | - |
 | 63 | v0.11 | 0/TBD | Not started | - |
 | 64 | v0.11 | 0/TBD | Not started | - |
@@ -266,4 +267,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-16 -- phase 60 executed and verified; phase 61 ready for planning*
+*Roadmap updated: 2026-02-16 -- phase 61 executed and verified; phase 62 ready for planning*
