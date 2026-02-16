@@ -191,7 +191,8 @@ export function buildMentionPrompt(params: {
     "  - Files: <1-6 paths>",
     "  - Steps: 3-7 steps",
     "  - Do NOT claim any edits were made, and do NOT use words like 'Done', 'Implemented', or 'Appended'",
-    "  - End with: 'Reply with apply: <same request> to implement.'",
+    "  - Do NOT ask the user to re-run with `apply:` / `change:` prefixes",
+    "  - End with: 'If you want, I can implement this next.'",
   );
 
   // Factual accuracy guardrail

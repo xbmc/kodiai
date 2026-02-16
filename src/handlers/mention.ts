@@ -860,9 +860,10 @@ export function createMentionHandler(deps: {
               "- Do NOT run git commands.",
               "- Do NOT propose opening a PR.",
               "- Do NOT claim any change was completed.",
+              "- Do NOT ask for `apply:` / `change:` prefixes.",
               "- Never use status phrases like: 'Done', 'Implemented', 'Updated', or 'Appended'.",
               "Return a concise plan with 3-7 steps and a list of files you would touch.",
-              "End by asking the user to proceed with `apply:` if they want you to implement it.",
+              "End by asking whether they want you to implement the plan next.",
             ].join("\n")
           : undefined;
 

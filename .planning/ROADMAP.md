@@ -207,7 +207,11 @@ Plans:
   1. When a user comments `@kodiai apply: <request>` (or `change:`) in an issue and the repo has `write.enabled: true`, Kodiai opens a PR targeting the repo default branch
   2. The resulting PR contains commits that implement the requested change (or a clear refusal if the request cannot be safely executed)
   3. Kodiai replies back in the issue thread with a link to the created PR
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 62-01-PLAN.md — Enable issue-surface write-mode PR creation against default branch
+- [ ] 62-02-PLAN.md — Add regression tests for issue write-mode PR link and refusal outcomes
 
 ### Phase 63: Idempotency + De-Dupe
 **Goal**: Replayed triggers do not create duplicate PRs, and operational controls prevent duplicate work
@@ -260,7 +264,7 @@ Plans:
 | 59 | v0.10 | 3/3 | Complete | 2026-02-16 |
 | 60 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 61 | v0.11 | 3/3 | Complete | 2026-02-16 |
-| 62 | v0.11 | 0/TBD | Not started | - |
+| 62 | v0.11 | 0/2 | Not started | - |
 | 63 | v0.11 | 0/TBD | Not started | - |
 | 64 | v0.11 | 0/TBD | Not started | - |
 | 65 | v0.11 | 0/TBD | Not started | - |
