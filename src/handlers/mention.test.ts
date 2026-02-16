@@ -2025,6 +2025,228 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("concurrent issue apply: requests are de-duped with in-flight lock", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let executorCalls = 0;
+    let releaseExecution: (() => void) | undefined;
+    const issueReplies: string[] = [];
+    let pullCreateCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          executorCalls++;
+          await new Promise<void>((resolve) => {
+            releaseExecution = resolve;
+          });
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nissue lock test\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    const event = buildIssueCommentMentionEvent({
+      issueNumber: 77,
+      commentBody: "@kodiai apply: fix the login bug",
+    });
+
+    const firstRequest = handler!(event);
+    while (executorCalls === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    const secondRequest = handler!(event);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    releaseExecution?.();
+    await Promise.all([firstRequest, secondRequest]);
+
+    expect(executorCalls).toBe(1);
+    expect(pullCreateCalls).toBe(1);
+    expect(issueReplies).toHaveLength(2);
+    expect(issueReplies.some((body) => body.includes("already in progress"))).toBe(true);
+    expect(issueReplies.filter((body) => body.includes("Opened PR:")).length).toBe(1);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue apply: rate limiting returns retry-later message", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n  minIntervalSeconds: 60\n",
+    );
+
+    const issueReplies: string[] = [];
+    let pullCreateCalls = 0;
+    let executorCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          executorCalls++;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), `base\nissue-rate-${executorCalls}\n`);
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai apply: fix A",
+        commentId: 777,
+      }),
+    );
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai apply: fix B",
+        commentId: 778,
+      }),
+    );
+
+    expect(executorCalls).toBe(1);
+    expect(pullCreateCalls).toBe(1);
+    expect(issueReplies).toHaveLength(2);
+    expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
+    expect(issueReplies[1]).toContain("rate-limited");
+    expect(issueReplies[1]).toContain("Try again in");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("production-shape issue_comment without apply/change auto-promotes to write mode", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
