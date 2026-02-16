@@ -135,6 +135,38 @@ function buildIssueCommentMentionEvent(params: {
   };
 }
 
+function buildLiveIssueCommentMentionEvent(params: {
+  commentBody: string;
+  commentAuthor?: string;
+  commentId?: number;
+  defaultBranch?: string;
+}): WebhookEvent {
+  return {
+    id: "delivery-issue-mention-live-shape",
+    name: "issue_comment",
+    installationId: 42,
+    payload: {
+      action: "created",
+      repository: {
+        name: "repo",
+        owner: { login: "acme" },
+        default_branch: params.defaultBranch ?? "main",
+      },
+      issue: {
+        pull_request: {
+          url: "https://api.github.com/repos/acme/repo/pulls/77",
+        },
+      },
+      comment: {
+        id: params.commentId ?? 778,
+        body: params.commentBody,
+        user: { login: params.commentAuthor ?? "alice" },
+        created_at: "2025-01-15T12:00:00Z",
+      },
+    } as unknown as WebhookEvent["payload"],
+  };
+}
+
 describe("createMentionHandler fork PR workspace strategy", () => {
   test("PR mentions clone base ref and fetch pull/<n>/head (fork-safe)", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
@@ -1592,6 +1624,217 @@ describe("createMentionHandler write intent gating", () => {
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
     expect(issueReplies[0]).toContain("re-run with a more specific request");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("production-shape issue_comment apply intent opens PR and replies with Opened PR URL", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let executorCalled = false;
+    let capturedWriteMode: boolean | undefined;
+    let pullCreateCalls = 0;
+    let createdPrBase: string | undefined;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async (params: { base: string }) => {
+            pullCreateCalls++;
+            createdPrBase = params.base;
+            return { data: { html_url: "https://example.com/pr/live-shape" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { writeMode?: boolean; workspace: { dir: string } }) => {
+          executorCalled = true;
+          capturedWriteMode = ctx.writeMode;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nlive-shape update\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildLiveIssueCommentMentionEvent({
+        commentBody: "@kodiai apply: update README wording",
+        defaultBranch: "feature",
+      }),
+    );
+
+    expect(executorCalled).toBe(true);
+    expect(capturedWriteMode).toBe(true);
+    expect(pullCreateCalls).toBe(1);
+    expect(createdPrBase).toBe("feature");
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/live-shape");
+    expect(issueReplies[0]).not.toContain("I can only apply changes in a PR context.");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("production-shape issue_comment without apply/change stays read-only guidance", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let executorCalled = false;
+    let pullCreateCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/live-shape" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildLiveIssueCommentMentionEvent({
+        commentBody: "@kodiai can you update the README wording for clarity?",
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(pullCreateCalls).toBe(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
+    expect(issueReplies[0]).toContain(
+      "@kodiai apply: can you update the README wording for clarity?",
+    );
+    expect(issueReplies[0]).toContain(
+      "@kodiai change: can you update the README wording for clarity?",
+    );
 
     await workspaceFixture.cleanup();
   });
