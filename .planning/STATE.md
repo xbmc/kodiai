@@ -11,10 +11,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Milestone:** v0.11 Issue Workflows
 **Phase:** Phase 60 (Issue Q&A)
-**Current Plan:** 02
+**Current Plan:** 3
 **Total Plans in Phase:** 03
-**Status:** In progress
-**Last Activity:** 2026-02-16 — completed 60-01 (issue Q&A prompt contract + regression tests)
+**Status:** Ready to execute
+**Last Activity:** 2026-02-16
 
 **Progress:** [██████████] 100%
 
@@ -34,6 +34,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 59 P02 | 1min | 2 tasks | 6 files |
 | Phase 59 P03 | 9min | 2 tasks | 5 files |
 | Phase 60 P01 | 1 min | 2 tasks | 2 files |
+| Phase 60-issue-q-a P02 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -48,6 +49,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 58]: Made adaptive thresholds default-on via retrieval.adaptive (opt-out) to preserve legacy behavior while meeting RET-03 requirements.
 - [Phase 60]: Issue Q&A guarantees are gated to mention.surface === issue_comment to avoid changing PR mention behavior.
 - [Phase 60]: Issue prompt guidance now requires concrete path/path:line evidence or targeted clarifying questions when path context is missing.
+- [Phase 60-issue-q-a]: Use adapter injection (globFiles, grepInFiles, readFile) to keep issue code-context extraction deterministic and testable without external services.
+- [Phase 60-issue-q-a]: Enforce fail-open behavior for weak-signal or adapter-error scenarios by returning empty code context instead of blocking issue replies.
 
 ### Key Constraints (Carry-Forward)
 
@@ -78,7 +81,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T06:05:23.306Z
-**Stopped At:** Completed 60-01-PLAN.md
+**Last session:** 2026-02-16T06:06:52.307Z
+**Stopped At:** Completed 60-issue-q-a-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-execute-phase 60
