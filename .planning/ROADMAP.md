@@ -238,7 +238,11 @@ Plans:
   1. If a requested change touches a denied path (or falls outside allowPaths), Kodiai refuses to write and explains which policy constraint was violated
   2. If secret scanning detects likely credentials/secrets in proposed changes, Kodiai refuses to commit/push and explains the refusal in the issue thread
   3. When a request is refused, Kodiai provides a concrete next step (e.g., re-scope the request or update policy) without exposing sensitive data
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 64-01-PLAN.md — Issue-surface allowPaths and secretScan refusal regression tests (TDD)
+- [ ] 64-02-PLAN.md — Unit tests for enforceWritePolicy and buildWritePolicyRefusalMessage
 
 ### Phase 65: Permission + Disabled UX
 **Goal**: Complete permission and disabled-write UX so blocked issue write requests always return actionable, non-sensitive remediation guidance
