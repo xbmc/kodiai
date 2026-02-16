@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** Phase 60 (Issue Q&A)
 **Current Plan:** 3
 **Total Plans in Phase:** 03
-**Status:** Ready to execute
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-16
 
 **Progress:** [██████████] 100%
@@ -35,6 +35,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 59 P03 | 9min | 2 tasks | 5 files |
 | Phase 60 P01 | 1 min | 2 tasks | 2 files |
 | Phase 60-issue-q-a P02 | 3 min | 2 tasks | 2 files |
+| Phase 60-issue-q-a P03 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -51,6 +52,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 60]: Issue prompt guidance now requires concrete path/path:line evidence or targeted clarifying questions when path context is missing.
 - [Phase 60-issue-q-a]: Use adapter injection (globFiles, grepInFiles, readFile) to keep issue code-context extraction deterministic and testable without external services.
 - [Phase 60-issue-q-a]: Enforce fail-open behavior for weak-signal or adapter-error scenarios by returning empty code context instead of blocking issue replies.
+- [Phase 60-issue-q-a]: Apply buildIssueCodeContext only for mention.surface === issue_comment before prompt construction.
+- [Phase 60-issue-q-a]: Use issue-specific fallback questions that ask for desired outcome, target files/areas, and constraints when published output is absent.
 
 ### Key Constraints (Carry-Forward)
 
@@ -81,7 +84,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T06:06:52.307Z
-**Stopped At:** Completed 60-issue-q-a-02-PLAN.md
+**Last session:** 2026-02-16T06:11:22.841Z
+**Stopped At:** Completed 60-03-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-execute-phase 60
