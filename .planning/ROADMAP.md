@@ -91,18 +91,12 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 </details>
 
-### v0.11 Issue Workflows (Shipped)
+<details>
+<summary>v0.11 Issue Workflows (Phases 60-65) -- SHIPPED 2026-02-16</summary>
 
-**Milestone Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
+See `.planning/milestones/v0.11-ROADMAP.md` for full phase details.
 
-See `.planning/milestones/v0.11-ROADMAP.md` for archived snapshot of this milestone.
-
-- [x] **Phase 60: Issue Q&A** - In-thread answers with concrete, actionable guidance
-- [x] **Phase 61: Read-Only + Intent Gating** - Default read-only behavior and explicit write trigger safety
-- [x] **Phase 62: Issue Write-Mode PR Creation** - `apply:` / `change:` creates a PR when enabled
-- [x] **Phase 63: Idempotency + De-Dupe** - Replays reuse the same PR; rate limiting prevents duplicates
-- [x] **Phase 64: Policy Guardrails** - allow/deny paths + secret scanning enforced with clear refusal UX
-- [x] **Phase 65: Permission + Disabled UX** - Missing perms and disabled write-mode get actionable guidance
+</details>
 
 ## Phase Details
 
@@ -170,96 +164,6 @@ Plans:
 - [x] 59-01-PLAN.md — Checkpoint accumulation infrastructure (MCP tool + knowledge store)
 - [x] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
 - [x] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
-
-### Phase 60: Issue Q&A
-**Goal**: When mentioned in an issue comment, Kodiai replies in-thread with a concrete, actionable answer that includes file-path pointers when relevant
-**Depends on**: Phase 59 (v0.10 complete)
-**Requirements**: ISSUE-01
-**Success Criteria** (what must be TRUE):
-  1. When a user comments `@kodiai <question>` in an issue, Kodiai posts a single in-thread reply that directly answers the question (not a generic restatement)
-  2. When the answer depends on code in the repo, the reply includes specific file-path pointers (and optionally line anchors) so the user can quickly verify and act
-  3. When required context is missing or the question is underspecified, Kodiai asks targeted clarifying questions rather than guessing
-**Plans**: 3 plans
-
-Plans:
-- [x] 60-01-PLAN.md — Enforce issue Q&A answer contract in mention prompt and tests
-- [x] 60-02-PLAN.md — Build bounded issue code-context helper for file-path pointers
-- [x] 60-03-PLAN.md — Wire issue context into mention handler with clarifying fallback tests
-
-### Phase 61: Read-Only + Intent Gating
-**Goal**: Issue Q&A stays read-only by default, and write-mode is only entered with explicit user intent
-**Depends on**: Phase 60
-**Requirements**: ISSUE-02, SAFE-01
-**Success Criteria** (what must be TRUE):
-  1. For issue Q&A replies that do not include an explicit `apply:` / `change:` prefix, Kodiai clearly frames output as read-only guidance (no implied edits or PR creation)
-  2. Kodiai never opens a PR or performs repository writes from an issue thread unless the triggering comment starts with `apply:` or `change:`
-  3. If a user asks for changes without using `apply:` / `change:`, Kodiai responds with the exact prefix-based command they can use to opt into write-mode
-**Plans**: 3 plans
-
-Plans:
-- [x] 61-01-PLAN.md — Enforce issue prompt read-only framing and exact apply/change opt-in command guidance
-- [x] 61-02-PLAN.md — Add runtime issue intent gating and deterministic non-prefixed change-request command replies
-- [x] 61-03-PLAN.md — Close live non-prefixed issue gating gap with fail-closed detection and anti-completion guardrails
-
-### Phase 62: Issue Write-Mode PR Creation
-**Goal**: Users can request a change from an issue comment and receive a PR against the default branch when write-mode is enabled
-**Depends on**: Phase 61
-**Requirements**: IWR-01
-**Success Criteria** (what must be TRUE):
-  1. When a user comments `@kodiai apply: <request>` (or `change:`) in an issue and the repo has `write.enabled: true`, Kodiai opens a PR targeting the repo default branch
-  2. The resulting PR contains commits that implement the requested change (or a clear refusal if the request cannot be safely executed)
-  3. Kodiai replies back in the issue thread with a link to the created PR
-**Plans**: 2 plans
-
-Plans:
-- [x] 62-01-PLAN.md — Enable issue-surface write-mode PR creation against default branch
-- [x] 62-02-PLAN.md — Add regression tests for issue write-mode PR link and refusal outcomes
-
-### Phase 63: Idempotency + De-Dupe
-**Goal**: Restore explicit issue intent safety while completing idempotency/de-dupe guarantees so replayed or concurrent issue write requests cannot create duplicate PRs
-**Depends on**: Phase 62
-**Requirements**: ISSUE-02, SAFE-01, IWR-02, SAFE-02
-**Gap Closure:** Closes milestone audit gaps for non-prefixed write-intent drift and incomplete replay/in-flight duplicate handling
-**Success Criteria** (what must be TRUE):
-  1. Non-prefixed implementation asks in issue comments no longer auto-enter write mode; they follow explicit opt-in guidance aligned with ISSUE-02/SAFE-01
-  2. Replaying the same `apply:` / `change:` trigger results in deterministic branch reuse and existing-PR reuse (no duplicate PR)
-  3. Concurrent/in-flight duplicate issue write requests are de-duped with a clear single response instead of duplicate work
-  4. When rate limits are hit, Kodiai does not thrash or spam; it responds with a single clear retry-later message
-**Plans**: 2 plans
-
-Plans:
-- [x] 63-01-PLAN.md — Restore explicit opt-in safety for non-prefixed issue implementation asks (TDD)
-- [x] 63-02-PLAN.md — Lock issue-surface idempotency, in-flight de-dupe, and rate limiting with regression tests (TDD)
-
-### Phase 64: Policy Guardrails
-**Goal**: Complete and verify issue write-mode policy guardrails so allow/deny path and secret-scan refusals are deterministic and user-actionable
-**Depends on**: Phase 63
-**Requirements**: IWR-03
-**Gap Closure:** Closes milestone audit gap for missing completed/verified policy-guardrail phase artifacts
-**Success Criteria** (what must be TRUE):
-  1. If a requested change touches a denied path (or falls outside allowPaths), Kodiai refuses to write and explains which policy constraint was violated
-  2. If secret scanning detects likely credentials/secrets in proposed changes, Kodiai refuses to commit/push and explains the refusal in the issue thread
-  3. When a request is refused, Kodiai provides a concrete next step (e.g., re-scope the request or update policy) without exposing sensitive data
-**Plans**: 2 plans
-
-Plans:
-- [x] 64-01-PLAN.md — Issue-surface allowPaths and secretScan refusal regression tests (TDD)
-- [x] 64-02-PLAN.md — Unit tests for enforceWritePolicy and buildWritePolicyRefusalMessage
-
-### Phase 65: Permission + Disabled UX
-**Goal**: Complete permission and disabled-write UX so blocked issue write requests always return actionable, non-sensitive remediation guidance
-**Depends on**: Phase 64
-**Requirements**: PERM-01, PERM-02
-**Gap Closure:** Closes milestone audit gap for incomplete permission failure UX and phase-level verification coverage
-**Success Criteria** (what must be TRUE):
-  1. When PR creation or push fails due to missing GitHub App permissions, Kodiai replies in-thread listing the minimum required permissions (without leaking tokens or secrets)
-  2. When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` snippet needed to enable it
-  3. In both cases, the error message is actionable (user can fix config/permissions and successfully retry the same `apply:` / `change:` command)
-**Plans**: 2 plans
-
-Plans:
-- [x] 65-01-PLAN.md — Lock disabled write-mode issue guidance with minimal `.kodiai.yml` enablement + retry UX
-- [x] 65-02-PLAN.md — Add permission-failure remediation for issue write-mode push/PR creation errors
 
 ## Progress
 
