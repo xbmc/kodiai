@@ -1406,9 +1406,13 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
-    expect(issueReplies[0]).toContain("write:");
-    expect(issueReplies[0]).toContain("enabled: true");
+    expect(issueReplies[0]).toContain("This looks like a code change request.");
+    expect(issueReplies[0]).toContain(
+      "@kodiai apply: fix the issue intent gating copy so it is clearer for users",
+    );
+    expect(issueReplies[0]).toContain(
+      "@kodiai change: fix the issue intent gating copy so it is clearer for users",
+    );
 
     await workspaceFixture.cleanup();
   });
@@ -1500,9 +1504,9 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
-    expect(issueReplies[0]).toContain("write:");
-    expect(issueReplies[0]).toContain("enabled: true");
+    expect(issueReplies[0]).toContain("This looks like a code change request.");
+    expect(issueReplies[0]).toContain("@kodiai apply:");
+    expect(issueReplies[0]).toContain("@kodiai change:");
 
     await workspaceFixture.cleanup();
   });
@@ -1928,7 +1932,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("production-shape issue_comment without apply/change still executes write intent", async () => {
+  test("production-shape issue_comment without apply/change gets opt-in guidance", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -2018,10 +2022,12 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(true);
+    expect(executorCalled).toBe(false);
     expect(pullCreateCalls).toBe(0);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
+    expect(issueReplies[0]).toContain("This looks like a code change request.");
+    expect(issueReplies[0]).toContain("@kodiai apply: update the README wording for clarity");
+    expect(issueReplies[0]).toContain("@kodiai change: update the README wording for clarity");
 
     await workspaceFixture.cleanup();
   });

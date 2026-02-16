@@ -321,8 +321,14 @@ export function createMentionHandler(deps: {
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
-        async function postMentionReply(replyBody: string): Promise<void> {
-          const sanitizedBody = sanitizeOutgoingMentions(replyBody, possibleHandles);
+        async function postMentionReply(
+          replyBody: string,
+          options?: { sanitizeMentions?: boolean },
+        ): Promise<void> {
+          const sanitizedBody =
+            options?.sanitizeMentions === false
+              ? replyBody
+              : sanitizeOutgoingMentions(replyBody, possibleHandles);
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
@@ -555,14 +561,22 @@ export function createMentionHandler(deps: {
           isIssueThreadComment && !parsedWriteIntent.writeIntent
             ? detectImplicitIssueIntent(parsedWriteIntent.request)
             : undefined;
-        const writeIntent =
-          implicitIntent !== undefined
-            ? {
-                writeIntent: true,
-                keyword: implicitIntent,
-                request: parsedWriteIntent.request,
-              }
-            : parsedWriteIntent;
+        const writeIntent = parsedWriteIntent;
+
+        if (isIssueThreadComment && implicitIntent !== undefined && !parsedWriteIntent.writeIntent) {
+          const normalized = summarizeWriteRequest(parsedWriteIntent.request);
+          const guidanceBody = wrapInDetails(
+            [
+              "This looks like a code change request. To proceed, use an explicit command:",
+              "",
+              `\`@kodiai apply: ${normalized}\``,
+              `\`@kodiai change: ${normalized}\``,
+            ].join("\n"),
+            "kodiai response",
+          );
+          await postMentionReply(guidanceBody, { sanitizeMentions: false });
+          return;
+        }
 
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";
