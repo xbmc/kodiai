@@ -582,7 +582,7 @@ export function createMentionHandler(deps: {
             ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}#issuecomment-${mention.commentId}`
             : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}#issuecomment-${mention.commentId}`;
 
-        if (writeEnabled && writeOutputKey && writeBranchName && mention.prNumber !== undefined) {
+        if (writeEnabled && writeOutputKey && writeBranchName) {
           // Idempotency: if a PR already exists for this deterministic head branch, reuse it.
           try {
             const { data: prs } = await octokit.rest.pulls.list({
@@ -666,7 +666,7 @@ export function createMentionHandler(deps: {
           }
         }
 
-        if (isWriteRequest && mention.prNumber === undefined) {
+        if (isWriteRequest && mention.prNumber === undefined && mention.surface !== "issue_comment") {
           const replyBody = wrapInDetails(
             [
               "I can only apply changes in a PR context.",
@@ -974,7 +974,7 @@ export function createMentionHandler(deps: {
         }
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
-        if (writeEnabled && mention.prNumber !== undefined && writeOutputKey && writeBranchName) {
+        if (writeEnabled && writeOutputKey && writeBranchName) {
           const status = await getGitStatusPorcelain(workspace.dir);
           if (status.trim().length === 0) {
             const replyBody = wrapInDetails(
@@ -989,7 +989,10 @@ export function createMentionHandler(deps: {
             return;
           }
 
-          const sourcePrUrl = `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`;
+          const sourcePrUrl =
+            mention.prNumber !== undefined
+              ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+              : undefined;
 
           const normalizeName = (s: string | undefined): string => (s ?? "").trim().toLowerCase();
           const sameRepoHead =
@@ -999,7 +1002,7 @@ export function createMentionHandler(deps: {
             mention.headRef.length > 0;
 
           // Preferred path: update existing PR branch when possible.
-          if (sameRepoHead && mention.headRef) {
+          if (mention.prNumber !== undefined && sameRepoHead && mention.headRef) {
             const headRef = mention.headRef;
             const idempotencyMarker = `kodiai-write-output-key: ${writeOutputKey}`;
 
@@ -1171,8 +1174,12 @@ export function createMentionHandler(deps: {
           }
 
           const branchName = writeBranchName;
+          const sourceLabel =
+            mention.prNumber !== undefined
+              ? `PR #${mention.prNumber}`
+              : `issue #${mention.issueNumber}`;
           const commitMessage = [
-            `kodiai: apply requested changes (pr #${mention.prNumber})`,
+            `kodiai: apply requested changes (${sourceLabel})`,
             "",
             `kodiai-write-output-key: ${writeOutputKey}`,
             `deliveryId: ${event.id}`,
@@ -1235,7 +1242,10 @@ export function createMentionHandler(deps: {
             throw err;
           }
 
-          const prTitle = `kodiai: apply changes for PR #${mention.prNumber}`;
+          const prTitle =
+            mention.prNumber !== undefined
+              ? `kodiai: apply changes for PR #${mention.prNumber}`
+              : `kodiai: apply changes for issue #${mention.issueNumber}`;
           const prBody = [
             "Requested via mention write intent.",
             "",
@@ -1243,17 +1253,21 @@ export function createMentionHandler(deps: {
             "",
             `Request: ${writeIntent.request}`,
             "",
-            `Source PR: #${mention.prNumber}`,
+            mention.prNumber !== undefined
+              ? `Source PR: #${mention.prNumber}`
+              : `Source issue: #${mention.issueNumber}`,
             `Delivery: ${event.id}`,
             `Commit: ${pushed.headSha}`,
           ].join("\n");
+
+          const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
 
           const { data: createdPr } = await octokit.rest.pulls.create({
             owner: mention.owner,
             repo: mention.repo,
             title: prTitle,
             head: pushed.branchName,
-            base: mention.baseRef ?? "main",
+            base: prBaseRef,
             body: prBody,
           });
 

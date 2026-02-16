@@ -1375,7 +1375,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("issue apply intent remains non-writing in phase 61", async () => {
+  test("issue apply intent creates a PR against the default branch", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -1383,6 +1383,9 @@ describe("createMentionHandler write intent gating", () => {
 
     let executorCalled = false;
     let pullCreateCalls = 0;
+    let createdPrBase: string | undefined;
+    let createdPrTitle: string | undefined;
+    let createdPrBody: string | undefined;
     const issueReplies: string[] = [];
 
     const eventRouter: EventRouter = {
@@ -1422,8 +1425,11 @@ describe("createMentionHandler write intent gating", () => {
         pulls: {
           list: async () => ({ data: [] }),
           get: async () => ({ data: {} }),
-          create: async () => {
+          create: async (params: { base: string; title: string; body: string }) => {
             pullCreateCalls++;
+            createdPrBase = params.base;
+            createdPrTitle = params.title;
+            createdPrBody = params.body;
             return { data: { html_url: "https://example.com/pr/123" } };
           },
           createReplyForReviewComment: async () => ({ data: {} }),
@@ -1440,11 +1446,12 @@ describe("createMentionHandler write intent gating", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async () => {
+        execute: async (ctx: { workspace: { dir: string } }) => {
           executorCalled = true;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nupdated from issue\n");
           return {
             conclusion: "success",
-            published: true,
+            published: false,
             costUsd: 0,
             numTurns: 1,
             durationMs: 1,
@@ -1466,10 +1473,15 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
-    expect(pullCreateCalls).toBe(0);
+    expect(executorCalled).toBe(true);
+    expect(pullCreateCalls).toBe(1);
+    expect(createdPrBase).toBe("main");
+    expect(createdPrTitle).toContain("issue #77");
+    expect(createdPrBody).toContain("Source issue: #77");
+    expect(createdPrBody).toContain("Request: update the README");
+    expect(createdPrBody).toContain("Delivery: delivery-issue-mention-123");
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I can only apply changes in a PR context.");
+    expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
 
     await workspaceFixture.cleanup();
   });
