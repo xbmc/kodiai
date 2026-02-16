@@ -5684,3 +5684,149 @@ describe("createReviewHandler dep bump analysis wiring (Phase 57)", () => {
     expect(result.prompt).not.toContain("Workspace Usage Evidence");
   });
 });
+
+describe("createReviewHandler timeout resilience", () => {
+  test("full timeout with no output posts partial timeout comment and enqueues a reduced-scope retry", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const createdCommentBodies: string[] = [];
+    const enqueuedContexts: Array<{ action?: string; jobType?: string }> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: () => Promise<T>,
+        context?: {
+          deliveryId?: string;
+          eventName?: string;
+          action?: string;
+          jobType?: string;
+          prNumber?: number;
+        },
+      ) => {
+        enqueuedContexts.push({ action: context?.action, jobType: context?.jobType });
+        if (context?.action === "review-retry") {
+          // Do not execute the retry job in this unit test.
+          return undefined as T;
+        }
+        return fn();
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    let nextCommentId = 100;
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            createdCommentBodies.push(params.body);
+            return { data: { id: nextCommentId++ } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          return {
+            conclusion: "error",
+            isTimeout: true,
+            published: false,
+            errorMessage: "timeout",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-timeout",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "timeout",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub({
+        getCheckpoint: () => null,
+        updateCheckpointCommentId: () => undefined,
+        deleteCheckpoint: () => undefined,
+      }) as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Timeout test",
+          body: "",
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    const partial = createdCommentBodies.find((b) => b.includes("**Partial review**"));
+    expect(partial).toBeDefined();
+    expect(partial!).toContain("timed out after analyzing 0");
+    expect(partial!).toContain("Scheduling a reduced-scope retry");
+
+    expect(enqueuedContexts.some((c) => c.action === "review-retry")).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+});
