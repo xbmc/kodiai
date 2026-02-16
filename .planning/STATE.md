@@ -41,6 +41,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 61 P03 | 2 min | 2 tasks | 4 files |
 | Phase 62 P01 | 2 min | 2 tasks | 2 files |
 | Phase 62 P02 | 1 min | 2 tasks | 1 files |
+| Phase 62 P03 | 0 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 62]: Issue apply/change requests publish via deterministic bot branches and open PRs against the cloned default branch instead of requiring PR-only context.
 - [Phase 62]: Success-path issue write-mode tests assert writeMode=true, deterministic branch push, and PR base derived from issue payload default branch.
 - [Phase 62]: Issue write-mode refusal outcomes must always respond in issue comments with explicit no-change or policy-denied messaging instead of silent success.
+- [Phase 62]: Use a fresh live @kodiai apply trigger on issue #52 and capture direct comment URLs as evidence.
+- [Phase 62]: Treat write-mode-disabled bot reply as validation failure evidence and do not claim PR creation success.
 
 ### Key Constraints (Carry-Forward)
 
@@ -99,7 +102,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T17:47:11.181Z
-**Stopped At:** Completed 62-02-PLAN.md
+**Last session:** 2026-02-16T18:31:45.759Z
+**Stopped At:** Completed 62-03-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 62
