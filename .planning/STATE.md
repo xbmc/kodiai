@@ -49,6 +49,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 65 P02 | 3m18s | 2 tasks | 2 files |
 | Phase 64 P02 | 9m | 2 tasks | 4 files |
 | Phase 66 P01 | 1m43s | 2 tasks | 2 files |
+| Phase 66 P02 | 3m23s | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 64]: Lock refusal messaging with unit assertions for deny, allow, secret-scan, and no-change outcomes.
 - [Phase 66]: Cache keys now serialize normalized repo/searchType/query plus recursively sorted semantic fields for deterministic equivalence.
 - [Phase 66]: Search cache internals fail open by reporting bookkeeping errors through onError while preserving loader success/error behavior.
+- [Phase 66]: Author-tier PR-count search now uses deterministic buildSearchCacheKey(repo/searchType/query/per_page) so equivalent lookups share one cache entry.
+- [Phase 66]: Author-tier cache integration fails open by logging cache faults and falling back to direct Search API lookup without blocking review completion.
 
 ### Key Constraints (Carry-Forward)
 
@@ -124,7 +127,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T23:46:07.387Z
-**Stopped At:** Completed 66-01-PLAN.md
+**Last session:** 2026-02-16T23:50:34.639Z
+**Stopped At:** Completed 66-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 66
