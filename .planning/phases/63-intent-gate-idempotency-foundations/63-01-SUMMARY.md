@@ -83,6 +83,13 @@ Each task was committed atomically:
 **Total deviations:** 1 auto-fixed (1 bug)
 **Impact on plan:** Auto-fix was necessary to satisfy explicit opt-in command correctness; no scope creep.
 
+### Post-Execution Policy Override
+
+- **Change source:** User direction after 63-01 execution.
+- **Policy update:** Relax explicit prefix requirement for issue implementation asks; conversational non-prefixed asks can auto-promote to write mode.
+- **Rationale:** Write operations are PR-only and non-destructive, so explicit opt-in is no longer required for issue implementation intent.
+- **Follow-up:** Handler and tests were updated after 63-01 to reflect this override while keeping idempotency, de-dupe, and rate-limit safeguards intact.
+
 ## Issues Encountered
 - None.
 

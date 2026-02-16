@@ -75,6 +75,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 62]: Treat write-mode-disabled bot reply as validation failure evidence and do not claim PR creation success.
 - [Phase 63]: Implicit issue intent detection now gates to read-only opt-in guidance and never auto-promotes to write mode.
 - [Phase 63]: Issue opt-in guidance replies bypass mention sanitization so exact @kodiai apply/change commands remain copyable.
+- [Phase 63]: User-directed policy override re-enables implicit write-mode auto-promotion for conversational issue implementation asks because write actions stay PR-only and non-destructive.
 
 ### Key Constraints (Carry-Forward)
 

@@ -1123,13 +1123,14 @@ describe("createMentionHandler conversational review wiring", () => {
 });
 
 describe("createMentionHandler write intent gating", () => {
-  test("non-prefixed implementation ask in issue comment receives opt-in guidance instead of write mode", async () => {
+  test("non-prefixed implementation ask in issue comment auto-promotes to write mode", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
     );
 
     let executorCalled = false;
+    let capturedWriteMode: boolean | undefined;
     const issueReplies: string[] = [];
     let pullCreateCalls = 0;
 
@@ -1188,11 +1189,13 @@ describe("createMentionHandler write intent gating", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async () => {
+        execute: async (ctx: { writeMode?: boolean; workspace: { dir: string } }) => {
           executorCalled = true;
+          capturedWriteMode = ctx.writeMode;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nupdated from implicit issue intent\n");
           return {
             conclusion: "success",
-            published: true,
+            published: false,
             costUsd: 0,
             numTurns: 1,
             durationMs: 1,
@@ -1214,12 +1217,11 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
+    expect(executorCalled).toBe(true);
+    expect(capturedWriteMode).toBe(true);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("This looks like a code change request.");
-    expect(issueReplies[0]).toContain("@kodiai apply: fix the login bug");
-    expect(issueReplies[0]).toContain("@kodiai change: fix the login bug");
-    expect(pullCreateCalls).toBe(0);
+    expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
+    expect(pullCreateCalls).toBe(1);
 
     await workspaceFixture.cleanup();
   });
@@ -1320,7 +1322,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("issue trigger A wording without apply/change returns deterministic opt-in commands", async () => {
+  test("issue trigger A wording without apply/change is treated as implicit write intent", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -1406,13 +1408,7 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("This looks like a code change request.");
-    expect(issueReplies[0]).toContain(
-      "@kodiai apply: fix the issue intent gating copy so it is clearer for users",
-    );
-    expect(issueReplies[0]).toContain(
-      "@kodiai change: fix the issue intent gating copy so it is clearer for users",
-    );
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
 
     await workspaceFixture.cleanup();
   });
@@ -1504,9 +1500,7 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("This looks like a code change request.");
-    expect(issueReplies[0]).toContain("@kodiai apply:");
-    expect(issueReplies[0]).toContain("@kodiai change:");
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
 
     await workspaceFixture.cleanup();
   });
@@ -1932,7 +1926,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("production-shape issue_comment without apply/change gets opt-in guidance", async () => {
+  test("production-shape issue_comment without apply/change auto-promotes to write mode", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -1997,8 +1991,9 @@ describe("createMentionHandler write intent gating", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async () => {
+        execute: async (ctx: { workspace: { dir: string } }) => {
           executorCalled = true;
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nlive-shape implicit intent\n");
           return {
             conclusion: "success",
             published: false,
@@ -2022,12 +2017,10 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
-    expect(pullCreateCalls).toBe(0);
+    expect(executorCalled).toBe(true);
+    expect(pullCreateCalls).toBe(1);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("This looks like a code change request.");
-    expect(issueReplies[0]).toContain("@kodiai apply: update the README wording for clarity");
-    expect(issueReplies[0]).toContain("@kodiai change: update the README wording for clarity");
+    expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/live-shape");
 
     await workspaceFixture.cleanup();
   });
