@@ -1,78 +1,68 @@
 # Requirements: Kodiai
 
-**Defined:** 2026-02-15
+**Defined:** 2026-02-16
 **Core Value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
 
-## v0.10 Requirements
+## v0.11 Requirements
 
-Requirements for v0.10 Advanced Signals. Each maps to roadmap phases.
+Requirements for v0.11 Issue Workflows. Each maps to roadmap phases.
 
-### Dependency Analysis Extensions
+### Issue Q&A
 
-- [ ] **DEP-04**: Kodiai greps workspace for usage of APIs affected by breaking changes (usage analysis)
-- [ ] **DEP-05**: Kodiai tracks dependency update history in knowledge store for trend analysis
-- [ ] **DEP-06**: Kodiai correlates multi-package updates sharing a scope prefix
+- [ ] **ISSUE-01**: When mentioned in an issue comment, Kodiai replies in-thread with a concrete, actionable answer (includes file-path pointers when relevant)
+- [ ] **ISSUE-02**: Issue Q&A responses are clearly read-only unless explicitly triggered into write-mode via `apply:` / `change:`
 
-### Advanced Timeout Handling
+### Issue Write-Mode
 
-- [ ] **TMO-05**: Kodiai accumulates partial review state during execution and publishes partial results on timeout (checkpoint publishing)
-- [ ] **TMO-06**: Kodiai retries with reduced file scope on timeout (top 50% by risk score, max 1 retry)
+- [ ] **IWR-01**: In an issue comment, `@kodiai apply: <request>` (or `change:`) can create a PR against the repo default branch when `write.enabled: true`
+- [ ] **IWR-02**: Replays of the same trigger are idempotent (deterministic branch name; existing PR is reused)
+- [ ] **IWR-03**: Issue write-mode enforces existing write policy guardrails (allowPaths/denyPaths + secret scanning) and posts a clear refusal message on violation
 
-### Advanced Retrieval
+### Permissions and Failure UX
 
-- [ ] **RET-03**: Kodiai applies adaptive distance thresholds using statistical cutoff (max-gap detection with minimum 8-candidate guard)
-- [ ] **RET-04**: Kodiai applies recency-weighted scoring to boost recent memories and decay older ones (severity-aware floor)
-- [ ] **RET-05**: Kodiai logs retrieval quality metrics (hit rates, distance distributions) to telemetry
+- [ ] **PERM-01**: When PR creation/push is blocked by missing GitHub App permissions, Kodiai replies with the minimum required permissions (no token leakage)
+- [ ] **PERM-02**: When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` config to enable it
 
-### PR Intent Enhancement
+### Operational Safety
 
-- [ ] **INTENT-01**: Kodiai uses unrecognized bracket tags as component/platform focus hints in the review prompt instead of showing them as "ignored"
+- [ ] **SAFE-01**: Issue write-mode is never triggered without an explicit `apply:` / `change:` prefix
+- [ ] **SAFE-02**: Rate limiting and in-flight de-dupe apply to issue write-mode, preventing duplicate PR creation
 
 ## Future Requirements
 
-Deferred to future release. Tracked but not in current roadmap.
+Deferred to a future milestone.
 
-### Advanced Retrieval (Deferred)
-
-- **RET-06**: Kodiai recognizes cross-language concept equivalence in retrieval -- needs empirical Voyage Code 3 testing before building normalization layer
-
-### Dependency Analysis Extensions (Deferred from v0.9)
-
-- **DEP-04-EXT**: Kodiai uses AST-based structural analysis (not just grep) for usage detection in high-value ecosystems
+- **SLACK-01**: Slack integration for `#kodiai` thread-only support
+- **RET-07**: Multi-query retrieval and code snippet indexing improvements
+- **LLM-01**: Multi-LLM pluggable providers (Codex CLI, etc.)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Full dependency tree analysis | Scope explosion -- transitive deps are npm audit/Dependabot's domain |
-| Automatic lockfile regeneration | Dangerous write operation, ecosystem-specific -- advisory role only |
-| Real-time CVE monitoring webhooks | Reimplements Dependabot; point-in-time analysis at review is sufficient |
-| Streaming partial review via SSE | GitHub API is REST; buffered output is the established pattern |
-| Multi-pass review-the-review | Doubles cost; enforcement pipeline IS the validation layer |
-| Custom embedding fine-tuning | Voyage Code 3 is sufficient; complexity not justified |
-| Semantic AST diff for dependency changes | Infeasible at review time; use changelog as proxy |
-| Predictive timeout estimation with ML | No training data; simple heuristics are sufficient and debuggable |
-| Separate retrieval telemetry database | Over-engineered; extend existing telemetry schema |
+| Automatic PR creation from read-only issue mention | Too risky; requires explicit `apply:` / `change:` intent |
+| Writing changes without `write.enabled: true` | Must remain explicit opt-in per repo |
+| Multi-repo issue context inference | Keep v0.11 scoped; require explicit repo context (GitHub issue already supplies it) |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DEP-04 | Phase 57 | Pending |
-| DEP-05 | Phase 56 | Pending |
-| DEP-06 | Phase 57 | Pending |
-| TMO-05 | Phase 59 | Pending |
-| TMO-06 | Phase 59 | Pending |
-| RET-03 | Phase 58 | Pending |
-| RET-04 | Phase 57 | Pending |
-| RET-05 | Phase 56 | Pending |
-| INTENT-01 | Phase 56 | Pending |
+| ISSUE-01 | Phase ? | Pending |
+| ISSUE-02 | Phase ? | Pending |
+| IWR-01 | Phase ? | Pending |
+| IWR-02 | Phase ? | Pending |
+| IWR-03 | Phase ? | Pending |
+| PERM-01 | Phase ? | Pending |
+| PERM-02 | Phase ? | Pending |
+| SAFE-01 | Phase ? | Pending |
+| SAFE-02 | Phase ? | Pending |
 
 **Coverage:**
-- v0.10 requirements: 9 total
-- Mapped to phases: 9
-- Unmapped: 0
+- v0.11 requirements: 9 total
+- Mapped to phases: 0
+- Unmapped: 9
 
 ---
-*Requirements defined: 2026-02-15*
-*Last updated: 2026-02-15 -- traceability updated with phase mappings*
+*Requirements defined: 2026-02-16*
+*Last updated: 2026-02-16 -- v0.11 requirements defined*
