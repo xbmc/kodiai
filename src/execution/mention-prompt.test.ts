@@ -126,6 +126,10 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("src/file.ts:42");
     expect(prompt).toContain("path context is missing");
     expect(prompt).toContain("do not ask generic questions like 'can you clarify?'");
+    expect(prompt).toContain("Read-only by default");
+    expect(prompt).toContain("unless the user message starts with `apply:` or `change:`");
+    expect(prompt).toContain("`@kodiai apply: <same request>`");
+    expect(prompt).toContain("`@kodiai change: <same request>`");
     expect(prompt).toContain("one final in-thread response only");
   });
 
@@ -137,5 +141,8 @@ describe("buildMentionPrompt", () => {
     });
 
     expect(prompt).not.toContain("## Issue Q&A Requirements");
+    expect(prompt).not.toContain("Read-only by default");
+    expect(prompt).not.toContain("`@kodiai apply: <same request>`");
+    expect(prompt).not.toContain("`@kodiai change: <same request>`");
   });
 });
