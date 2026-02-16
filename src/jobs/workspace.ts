@@ -264,7 +264,7 @@ function extractAddedLines(patch: string): string[] {
     .map((l) => l.slice(1));
 }
 
-async function enforceWritePolicy(options: {
+export async function enforceWritePolicy(options: {
   dir: string;
   stagedPaths: string[];
   allowPaths: string[];
