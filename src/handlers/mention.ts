@@ -166,6 +166,42 @@ export function createMentionHandler(deps: {
     return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
   }
 
+  function detectImplicitIssueIntent(userQuestion: string): "apply" | "plan" | undefined {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
+    if (normalized.length === 0) return undefined;
+
+    const planDirect = /^(?:please\s+)?(?:plan|draft|outline|propose)\b/;
+    const planAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:plan|draft|outline|propose)\b/;
+    const planPhrase = /(?:\bwork\s+up\b|\bput\s+together\b)(?:.{0,30})\bplan\b/;
+
+    if (planDirect.test(normalized) || planAsk.test(normalized) || planPhrase.test(normalized)) {
+      return "plan";
+    }
+
+    if (isImplementationRequestWithoutPrefix(normalized)) {
+      return "apply";
+    }
+
+    return undefined;
+  }
+
+  function summarizeWriteRequest(request: string): string {
+    const condensed = request
+      .replace(/\s+/g, " ")
+      .replace(/^[@`'"([{\s]+/, "")
+      .replace(/[@`'"\])}\s]+$/, "")
+      .replace(/^(?:can|could|would|will)\s+you\s+/i, "")
+      .replace(/^(?:please\s+)+/i, "")
+      .replace(/[?.!]+$/, "")
+      .trim();
+
+    const fallback = "requested update";
+    const normalized = condensed.length > 0 ? condensed : fallback;
+    const maxLen = 72;
+    return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
+  }
+
   function stripIssueIntentWrappers(userQuestion: string): string {
     let normalized = userQuestion.trim().replace(/\s+/g, " ");
 
@@ -513,38 +549,20 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        const writeIntent = parseWriteIntent(userQuestion);
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
-
-        if (
-          isIssueThreadComment &&
-          !writeIntent.writeIntent &&
-          isImplementationRequestWithoutPrefix(writeIntent.request)
-        ) {
-          const strippedRequest = stripIssueIntentWrappers(writeIntent.request);
-          const request = (strippedRequest.length > 0 ? strippedRequest : writeIntent.request)
-            .replace(/\s+/g, " ")
-            .trim();
-          const replyBody = wrapInDetails(
-            [
-              "Issue comments are read-only by default.",
-              "",
-              "To opt in to a change request, use one of these exact commands:",
-              "",
-              `@kodiai apply: ${request}`,
-              `@kodiai change: ${request}`,
-            ].join("\n"),
-            "kodiai response",
-          );
-
-          await octokit.rest.issues.createComment({
-            owner: mention.owner,
-            repo: mention.repo,
-            issue_number: mention.issueNumber,
-            body: replyBody,
-          });
-          return;
-        }
+        const parsedWriteIntent = parseWriteIntent(userQuestion);
+        const implicitIntent =
+          isIssueThreadComment && !parsedWriteIntent.writeIntent
+            ? detectImplicitIssueIntent(parsedWriteIntent.request)
+            : undefined;
+        const writeIntent =
+          implicitIntent !== undefined
+            ? {
+                writeIntent: true,
+                keyword: implicitIntent,
+                request: parsedWriteIntent.request,
+              }
+            : parsedWriteIntent;
 
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";
@@ -706,8 +724,6 @@ export function createMentionHandler(deps: {
               "write:",
               "  enabled: true",
               "```",
-              "",
-              "Then re-run your request starting with `apply:` or `change:`.",
             ].join("\n"),
             "kodiai response",
           );
@@ -1243,20 +1259,28 @@ export function createMentionHandler(deps: {
             throw err;
           }
 
+          const requestSummary = summarizeWriteRequest(writeIntent.request);
           const prTitle =
             mention.prNumber !== undefined
-              ? `kodiai: apply changes for PR #${mention.prNumber}`
-              : `kodiai: apply changes for issue #${mention.issueNumber}`;
+              ? `chore(pr-${mention.prNumber}): ${requestSummary}`
+              : `chore(issue-${mention.issueNumber}): ${requestSummary}`;
+          const sourceUrl =
+            mention.prNumber !== undefined
+              ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+              : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
           const prBody = [
-            "Requested via mention write intent.",
+            "Requested via @kodiai mention write intent.",
             "",
             `Keyword: ${writeIntent.keyword ?? "apply/change"}`,
+            "",
+            `Summary: ${requestSummary}`,
             "",
             `Request: ${writeIntent.request}`,
             "",
             mention.prNumber !== undefined
-              ? `Source PR: #${mention.prNumber}`
-              : `Source issue: #${mention.issueNumber}`,
+              ? `Source PR: ${sourceUrl}`
+              : `Source issue: ${sourceUrl}`,
+            `Trigger comment: ${triggerCommentUrl}`,
             `Delivery: ${event.id}`,
             `Commit: ${pushed.headSha}`,
           ].join("\n");

@@ -109,13 +109,13 @@ export function buildMentionPrompt(params: {
       "- Clarification quality: when the request is underspecified, ask 1-3 targeted questions that unblock implementation-level guidance; do not ask generic questions like 'can you clarify?'.",
     );
     lines.push(
-      "- Read-only by default: unless the user message starts with `apply:` or `change:`, keep the reply guidance-only and do not imply files were edited, a branch was pushed, or a PR was opened.",
+      "- Intent-based execution: if the user asks you to implement/fix/change something in the issue, treat it as a write request (no exact `apply:`/`change:` prefix required).",
     );
     lines.push(
-      "- Anti-completion wording: for non-prefixed issue comments, never claim work is already done (forbidden phrasing includes 'updated', 'implemented', 'fixed', 'completed', or statements that imply repository edits already happened).",
+      "- Plan requests: if the user asks for a plan, return a concise plan-only response and avoid claiming edits were made.",
     );
     lines.push(
-      "- Write-mode opt-in wording: if the user asks for implementation without an `apply:`/`change:` prefix, include both exact commands: `@kodiai apply: <same request>` and `@kodiai change: <same request>`.",
+      "- Accuracy wording: never claim files were edited, branches were pushed, or PRs were opened unless those actions actually occurred in this run.",
     );
     lines.push(
       "- Single-response rule: post one final in-thread response only; do not add extra acknowledgement comments.",

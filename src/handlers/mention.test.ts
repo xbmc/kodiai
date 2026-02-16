@@ -1209,18 +1209,14 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
-    expect(issueReplies[0]).toContain(
-      "@kodiai apply: can you fix the issue intent gating copy so it is clearer for users?",
-    );
-    expect(issueReplies[0]).toContain(
-      "@kodiai change: can you fix the issue intent gating copy so it is clearer for users?",
-    );
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
+    expect(issueReplies[0]).toContain("write:");
+    expect(issueReplies[0]).toContain("enabled: true");
 
     await workspaceFixture.cleanup();
   });
 
-  test("quoted and prefixed issue rewrite ask is normalized and gated", async () => {
+  test("quoted issue rewrite ask is treated as write intent and refused when write mode is disabled", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -1307,13 +1303,9 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
-    expect(issueReplies[0]).toContain(
-      "@kodiai apply: can you improve the issue intent gating copy so it is clearer for users?",
-    );
-    expect(issueReplies[0]).toContain(
-      "@kodiai change: can you improve the issue intent gating copy so it is clearer for users?",
-    );
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
+    expect(issueReplies[0]).toContain("write:");
+    expect(issueReplies[0]).toContain("enabled: true");
 
     await workspaceFixture.cleanup();
   });
@@ -1523,8 +1515,12 @@ describe("createMentionHandler write intent gating", () => {
       .trim();
     expect(pushedHeadSha.length).toBeGreaterThan(0);
     expect(createdPrBase).toBe("feature");
-    expect(createdPrTitle).toContain("issue #77");
-    expect(createdPrBody).toContain("Source issue: #77");
+    expect(createdPrTitle).toContain("chore(issue-77):");
+    expect(createdPrBody).toContain("Summary: update the README");
+    expect(createdPrBody).toContain("Source issue: https://github.com/acme/repo/issues/77");
+    expect(createdPrBody).toContain(
+      "Trigger comment: https://github.com/acme/repo/issues/77#issuecomment-777",
+    );
     expect(createdPrBody).toContain("Request: update the README");
     expect(createdPrBody).toContain("Delivery: delivery-issue-mention-123");
     expect(issueReplies).toHaveLength(1);
@@ -1735,7 +1731,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("production-shape issue_comment without apply/change stays read-only guidance", async () => {
+  test("production-shape issue_comment without apply/change still executes write intent", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -1825,16 +1821,10 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
+    expect(executorCalled).toBe(true);
     expect(pullCreateCalls).toBe(0);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
-    expect(issueReplies[0]).toContain(
-      "@kodiai apply: can you update the README wording for clarity?",
-    );
-    expect(issueReplies[0]).toContain(
-      "@kodiai change: can you update the README wording for clarity?",
-    );
+    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
 
     await workspaceFixture.cleanup();
   });
