@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.11 Issue Workflows complete and verified through phase 65; ready for milestone completion workflow
+**Current focus:** Milestone v0.11 shipped; define next milestone scope and requirements
 
 ## Current Position
 
-**Milestone:** v0.11 Issue Workflows
-**Phase:** Phase 65 (Permission + Disabled UX)
-**Current Plan:** 02
-**Total Plans in Phase:** 2
-**Status:** Phase complete and verified
+**Milestone:** v0.11 Issue Workflows (shipped)
+**Phase:** None (milestone complete)
+**Current Plan:** 00
+**Total Plans in Phase:** 0
+**Status:** v0.11 milestone complete
 **Last Activity:** 2026-02-16
 
 **Progress:** [██████████] 100%
@@ -47,6 +47,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 64 P01 | 2 min | 2 tasks | 2 files |
 | Phase 65 P01 | 2m14s | 2 tasks | 2 files |
 | Phase 65 P02 | 3m18s | 2 tasks | 2 files |
+| Phase 64 P02 | 9m | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 65]: Write-disabled retry commands are posted unsanitized so @kodiai apply/change remains copyable.
 - [Phase 65]: Permission-classified write failures now bypass generic error comments and emit deterministic remediation guidance.
 - [Phase 65]: Permission remediation includes minimum Contents/Pull requests/Issues write scopes plus same-command retry instructions.
+- [Phase 64]: Export enforceWritePolicy and buildWritePolicyRefusalMessage for direct unit testing of write-policy contracts.
+- [Phase 64]: Lock refusal messaging with unit assertions for deny, allow, secret-scan, and no-change outcomes.
 
 ### Key Constraints (Carry-Forward)
 
@@ -118,7 +121,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T21:39:53.210Z
-**Stopped At:** Completed Phase 65 execution + verification
+**Last session:** 2026-02-16T21:55:08.827Z
+**Stopped At:** Completed v0.11 milestone completion workflow
 **Resume File:** None
-**Next action:** /gsd-complete-milestone
+**Next action:** /gsd-new-milestone

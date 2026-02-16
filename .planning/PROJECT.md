@@ -8,10 +8,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.9 Smart Dependencies & Resilience
+## Latest Release: v0.11 Issue Workflows
 
-**Shipped:** 2026-02-15
-**Phases:** 51-55 (5 phases, 11 plans)
+**Shipped:** 2026-02-16
+**Phases:** 60-65 (6 phases, 15 plans)
+
+**Delivered:**
+- In-thread issue Q&A with direct, actionable answers and code-path pointers when repository context is relevant
+- Explicit issue write-mode via `apply:` / `change:` opens PRs against default branch when `write.enabled: true`
+- Issue write-mode idempotency and in-flight de-dupe prevent duplicate PR creation on replayed or concurrent triggers
+- Issue write policy guardrails enforce allow/deny path + secret-scan refusals with clear, actionable remediation
+- Missing-permission and disabled-write failures now return deterministic guidance for minimum scopes/config and same-command retry
+- 959 tests passing (100% pass rate)
+
+<details>
+<summary>Previous Release: v0.9 Smart Dependencies & Resilience (2026-02-15)</summary>
 
 **Delivered:**
 - Dynamic timeout scaling and auto scope reduction for large PRs, with informative partial review messages instead of generic errors
@@ -19,18 +30,6 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Three-stage dependency bump detection pipeline (detect, extract, classify) identifying Dependabot/Renovate PRs with semver analysis
 - Security advisory lookup via GitHub Advisory Database and changelog fetching with three-tier fallback and breaking change detection
 - Composite merge confidence scoring synthesizing semver, advisory status, and breaking change signals into actionable guidance
-- 865 tests passing (100% pass rate)
-
-<details>
-<summary>Previous Release: v0.8 Conversational Intelligence (2026-02-14)</summary>
-
-**Delivered:**
-- PR intent parser extracting bracket tags, conventional commit prefixes, and breaking change signals from PR metadata
-- Deterministic auto-profile selection adapting review depth to PR size (strict/balanced/minimal)
-- Multi-factor finding prioritization with composite scoring and configurable weights
-- Author experience adaptation classifying contributors into tiers with tone-adjusted review feedback
-- Conversational review enabling @kodiai follow-up responses on review findings with thread context and rate limiting
-- Defense-in-depth mention sanitization across all 12 outbound publish paths preventing self-trigger loops
 
 </details>
 
@@ -116,15 +115,14 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-#### Current Milestone: v0.11 Issue Workflows
+#### Current Milestone: Planning Next Milestone
 
-**Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
+**Goal:** Define and scope the next milestone after v0.11 completion.
 
 **Target features:**
-- [ ] Issue Q&A: consistent, actionable responses in issue threads with concrete file-path pointers
-- [ ] Issue write-mode: `apply:` / `change:` in an issue comment can create a PR against the default branch (idempotent branch naming)
-- [ ] Guardrails: reuse existing write policy (allow/deny paths + secret scan), rate limits, and explicit opt-in via `write.enabled: true`
-- [ ] Permission clarity: when missing App permissions/installation, fail open with a clear explanation instead of silent failure
+- [ ] Finalize next milestone requirements and roadmap scope
+- [ ] Prioritize operator-facing reliability items (rate-limit caching strategy and production load validation)
+- [ ] Define post-v0.11 improvements for retrieval quality and cross-surface conversational UX
 
 ### Out of Scope
 
@@ -149,7 +147,7 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ## Current State
 
-v0.9 ships an installable GitHub App that:
+v0.11 ships an installable GitHub App that:
 - Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
 - Responds to `@kodiai` mentions across GitHub comment surfaces with write-mode support
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
@@ -192,6 +190,11 @@ v0.9 ships an installable GitHub App that:
 - **Fetches changelog/release notes with three-tier fallback (releases, CHANGELOG.md, compare URL)**
 - **Detects breaking changes from changelog content and surfaces them in reviews**
 - **Produces composite merge confidence scores with human-readable rationale**
+- **Answers issue-thread questions with concrete guidance and repository file-path pointers when relevant**
+- **Supports explicit issue-thread write-mode (`apply:` / `change:`) that opens PRs against default branch**
+- **Reuses existing issue write PRs for replayed triggers and de-dupes in-flight duplicate write requests**
+- **Enforces issue write policy guardrails (allow/deny paths + secret scanning) with actionable refusal messaging**
+- **Returns deterministic missing-permission and disabled-write remediation in issue thread replies**
 - Provides per-repo configuration via `.kodiai.yml` (review control, mention allowlists, write-mode guardrails, telemetry opt-out, retrieval tuning, output language, language rules, large PR thresholds, feedback suppression, prioritization weights, conversation limits, timeout settings)
 - Includes CLI reporting tool for operators to query usage metrics
 - Is production-deployed with observability, cost warnings, and operational runbooks
@@ -267,4 +270,4 @@ v0.9 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-16 after v0.11 milestone start*
+*Last updated: 2026-02-16 after v0.11 milestone completion*
