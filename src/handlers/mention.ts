@@ -700,7 +700,7 @@ export function createMentionHandler(deps: {
             ].join("\n"),
             "kodiai response",
           );
-          await postMentionReply(replyBody);
+          await postMentionReply(replyBody, { sanitizeMentions: false });
           return;
         }
 
@@ -721,20 +721,27 @@ export function createMentionHandler(deps: {
             "Write intent detected but write-mode disabled; refusing to apply changes",
           );
 
+          const retryCommand =
+            writeIntent.request.trim().length > 0
+              ? `@${appSlug} ${writeKeyword}: ${writeIntent.request}`
+              : `@${appSlug} ${writeKeyword}: <same request>`;
+
           const replyBody = wrapInDetails(
             [
               "Write mode is disabled for this repo.",
               "",
-              "To enable:",
+              "Update `.kodiai.yml`:",
               "```yml",
               "write:",
               "  enabled: true",
               "```",
+              "",
+              `Then re-run the same \`${retryCommand}\` command.`,
             ].join("\n"),
             "kodiai response",
           );
 
-          await postMentionReply(replyBody);
+          await postMentionReply(replyBody, { sanitizeMentions: false });
           return;
         }
 
