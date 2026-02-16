@@ -9,24 +9,24 @@ Requirements for v0.11 Issue Workflows. Each maps to roadmap phases.
 
 ### Issue Q&A
 
-- [ ] **ISSUE-01**: When mentioned in an issue comment, Kodiai replies in-thread with a concrete, actionable answer (includes file-path pointers when relevant)
-- [ ] **ISSUE-02**: Issue Q&A responses are clearly read-only unless explicitly triggered into write-mode via `apply:` / `change:`
+- [x] **ISSUE-01**: When mentioned in an issue comment, Kodiai replies in-thread with a concrete, actionable answer (includes file-path pointers when relevant)
+- [x] **ISSUE-02**: Issue Q&A responses are clearly read-only unless explicitly triggered into write-mode via `apply:` / `change:`
 
 ### Issue Write-Mode
 
-- [ ] **IWR-01**: In an issue comment, `@kodiai apply: <request>` (or `change:`) can create a PR against the repo default branch when `write.enabled: true`
-- [ ] **IWR-02**: Replays of the same trigger are idempotent (deterministic branch name; existing PR is reused)
-- [ ] **IWR-03**: Issue write-mode enforces existing write policy guardrails (allowPaths/denyPaths + secret scanning) and posts a clear refusal message on violation
+- [x] **IWR-01**: In an issue comment, `@kodiai apply: <request>` (or `change:`) can create a PR against the repo default branch when `write.enabled: true`
+- [x] **IWR-02**: Replays of the same trigger are idempotent (deterministic branch name; existing PR is reused)
+- [x] **IWR-03**: Issue write-mode enforces existing write policy guardrails (allowPaths/denyPaths + secret scanning) and posts a clear refusal message on violation
 
 ### Permissions and Failure UX
 
-- [ ] **PERM-01**: When PR creation/push is blocked by missing GitHub App permissions, Kodiai replies with the minimum required permissions (no token leakage)
-- [ ] **PERM-02**: When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` config to enable it
+- [x] **PERM-01**: When PR creation/push is blocked by missing GitHub App permissions, Kodiai replies with the minimum required permissions (no token leakage)
+- [x] **PERM-02**: When write-mode is disabled for a repo, Kodiai replies with the minimal `.kodiai.yml` config to enable it
 
 ### Operational Safety
 
-- [ ] **SAFE-01**: Issue write-mode is never triggered without an explicit `apply:` / `change:` prefix
-- [ ] **SAFE-02**: Rate limiting and in-flight de-dupe apply to issue write-mode, preventing duplicate PR creation
+- [x] **SAFE-01**: Issue write-mode is never triggered without an explicit `apply:` / `change:` prefix
+- [x] **SAFE-02**: Rate limiting and in-flight de-dupe apply to issue write-mode, preventing duplicate PR creation
 
 ## Future Requirements
 
@@ -48,15 +48,15 @@ Deferred to a future milestone.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ISSUE-01 | Phase 60 | Pending |
-| ISSUE-02 | Phase 61 | Pending |
-| IWR-01 | Phase 62 | Pending |
-| IWR-02 | Phase 63 | Pending |
-| IWR-03 | Phase 64 | Pending |
-| PERM-01 | Phase 65 | Pending |
-| PERM-02 | Phase 65 | Pending |
-| SAFE-01 | Phase 61 | Pending |
-| SAFE-02 | Phase 63 | Pending |
+| ISSUE-01 | Phase 60 | Satisfied |
+| ISSUE-02 | Phase 61 | Satisfied |
+| IWR-01 | Phase 62 | Satisfied |
+| IWR-02 | Phase 63 | Satisfied |
+| IWR-03 | Phase 64 | Satisfied |
+| PERM-01 | Phase 65 | Satisfied |
+| PERM-02 | Phase 65 | Satisfied |
+| SAFE-01 | Phase 61 | Satisfied |
+| SAFE-02 | Phase 63 | Satisfied |
 
 **Coverage:**
 - v0.11 requirements: 9 total
@@ -65,4 +65,4 @@ Deferred to a future milestone.
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-16 -- v0.11 roadmap created (phases assigned)*
+*Last updated: 2026-02-16 -- v0.11 Issue Workflows requirements verified and satisfied*

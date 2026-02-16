@@ -12,7 +12,7 @@
 - ✅ **v0.8 Conversational Intelligence** — Phases 42-50 (shipped 2026-02-14)
 - ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-15)
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
-- [ ] **v0.11 Issue Workflows** — Phases 60-65 (planned)
+- ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
 
 ## Phases
 
@@ -95,12 +95,12 @@ See `.planning/milestones/v0.9-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Let Kodiai work issues end-to-end: answer questions in issue threads and (only when explicitly instructed) open a PR to apply a fix.
 
-- [ ] **Phase 60: Issue Q&A** - In-thread answers with concrete, actionable guidance
+- [x] **Phase 60: Issue Q&A** - In-thread answers with concrete, actionable guidance
 - [x] **Phase 61: Read-Only + Intent Gating** - Default read-only behavior and explicit write trigger safety
-- [ ] **Phase 62: Issue Write-Mode PR Creation** - `apply:` / `change:` creates a PR when enabled
-- [ ] **Phase 63: Idempotency + De-Dupe** - Replays reuse the same PR; rate limiting prevents duplicates
-- [ ] **Phase 64: Policy Guardrails** - allow/deny paths + secret scanning enforced with clear refusal UX
-- [ ] **Phase 65: Permission + Disabled UX** - Missing perms and disabled write-mode get actionable guidance
+- [x] **Phase 62: Issue Write-Mode PR Creation** - `apply:` / `change:` creates a PR when enabled
+- [x] **Phase 63: Idempotency + De-Dupe** - Replays reuse the same PR; rate limiting prevents duplicates
+- [x] **Phase 64: Policy Guardrails** - allow/deny paths + secret scanning enforced with clear refusal UX
+- [x] **Phase 65: Permission + Disabled UX** - Missing perms and disabled write-mode get actionable guidance
 
 ## Phase Details
 
@@ -261,7 +261,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 10 milestones, 61 phases, 165 plans
+**Total shipped:** 11 milestones, 65 phases, 173 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -280,11 +280,11 @@ Plans:
 | 59 | v0.10 | 3/3 | Complete | 2026-02-16 |
 | 60 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 61 | v0.11 | 3/3 | Complete | 2026-02-16 |
-| 62 | v0.11 | 0/2 | Not started | - |
-| 63 | v0.11 | 0/2 | Not started | - |
-| 64 | v0.11 | 0/TBD | Not started | - |
-| 65 | v0.11 | 0/TBD | Not started | - |
+| 62 | v0.11 | 2/2 | Complete | 2026-02-16 |
+| 63 | v0.11 | 2/2 | Complete | 2026-02-16 |
+| 64 | v0.11 | 2/2 | Complete | 2026-02-16 |
+| 65 | v0.11 | 2/2 | Complete | 2026-02-16 |
 
 ---
 
-*Roadmap updated: 2026-02-16 -- milestone audit gaps mapped to phase 63-65 closure goals*
+*Roadmap updated: 2026-02-16 -- v0.11 Issue Workflows shipped (phase 60-65 complete and verified)*
