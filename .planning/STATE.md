@@ -5,18 +5,18 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.11 Issue Workflows -- phase 60 complete; ready to plan Phase 61
+**Current focus:** Milestone v0.11 Issue Workflows -- phase 61 plan 01 complete; plan 02 ready
 
 ## Current Position
 
 **Milestone:** v0.11 Issue Workflows
 **Phase:** Phase 61 (Read-Only + Intent Gating)
-**Current Plan:** —
-**Total Plans in Phase:** —
-**Status:** Ready to plan
-**Last Activity:** 2026-02-16 — completed phase 60 execution and live verification
+**Current Plan:** 02
+**Total Plans in Phase:** 2
+**Status:** In progress
+**Last Activity:** 2026-02-16 — completed phase 61 plan 01 execution
 
-**Progress:** [██░░░░░░░░] 17%
+**Progress:** [██░░░░░░░░] 18%
 
 ## Performance Metrics
 
@@ -36,6 +36,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 60 P01 | 1 min | 2 tasks | 2 files |
 | Phase 60-issue-q-a P02 | 3 min | 2 tasks | 2 files |
 | Phase 60-issue-q-a P03 | 3 min | 2 tasks | 2 files |
+| Phase 61 P01 | 0 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -54,6 +55,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 60-issue-q-a]: Enforce fail-open behavior for weak-signal or adapter-error scenarios by returning empty code context instead of blocking issue replies.
 - [Phase 60-issue-q-a]: Apply buildIssueCodeContext only for mention.surface === issue_comment before prompt construction.
 - [Phase 60-issue-q-a]: Use issue-specific fallback questions that ask for desired outcome, target files/areas, and constraints when published output is absent.
+- [Phase 61]: Read-only guidance is explicit and default on issue_comment unless a message starts with apply: or change:.
+- [Phase 61]: Change-request replies without write prefixes must include both exact opt-in commands: @kodiai apply: <same request> and @kodiai change: <same request>.
 
 ### Key Constraints (Carry-Forward)
 
@@ -84,7 +87,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T06:20:10.000Z
-**Stopped At:** Completed phase 60 verification from live issue tests
+**Last session:** 2026-02-16T06:33:18.680Z
+**Stopped At:** Completed 61-01-PLAN.md
 **Resume File:** None
-**Next action:** /gsd-plan-phase 61
+**Next action:** /gsd-execute-phase 61
