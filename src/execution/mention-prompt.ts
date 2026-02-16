@@ -109,6 +109,12 @@ export function buildMentionPrompt(params: {
       "- Clarification quality: when the request is underspecified, ask 1-3 targeted questions that unblock implementation-level guidance; do not ask generic questions like 'can you clarify?'.",
     );
     lines.push(
+      "- Read-only by default: unless the user message starts with `apply:` or `change:`, keep the reply guidance-only and do not imply files were edited, a branch was pushed, or a PR was opened.",
+    );
+    lines.push(
+      "- Write-mode opt-in wording: if the user asks for implementation without an `apply:`/`change:` prefix, include both exact commands: `@kodiai apply: <same request>` and `@kodiai change: <same request>`.",
+    );
+    lines.push(
       "- Single-response rule: post one final in-thread response only; do not add extra acknowledgement comments.",
     );
   }
