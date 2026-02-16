@@ -223,7 +223,11 @@ Plans:
   2. Replaying the same `apply:` / `change:` trigger results in deterministic branch reuse and existing-PR reuse (no duplicate PR)
   3. Concurrent/in-flight duplicate issue write requests are de-duped with a clear single response instead of duplicate work
   4. When rate limits are hit, Kodiai does not thrash or spam; it responds with a single clear retry-later message
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 63-01-PLAN.md — Restore explicit opt-in safety for non-prefixed issue implementation asks (TDD)
+- [ ] 63-02-PLAN.md — Lock issue-surface idempotency, in-flight de-dupe, and rate limiting with regression tests (TDD)
 
 ### Phase 64: Policy Guardrails
 **Goal**: Complete and verify issue write-mode policy guardrails so allow/deny path and secret-scan refusals are deterministic and user-actionable
@@ -269,7 +273,7 @@ Plans:
 | 60 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 61 | v0.11 | 3/3 | Complete | 2026-02-16 |
 | 62 | v0.11 | 0/2 | Not started | - |
-| 63 | v0.11 | 0/TBD | Not started | - |
+| 63 | v0.11 | 0/2 | Not started | - |
 | 64 | v0.11 | 0/TBD | Not started | - |
 | 65 | v0.11 | 0/TBD | Not started | - |
 
