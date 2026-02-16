@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, unlinkSync, rmSync } from "node:fs";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
+import type { ResilienceEventRecord } from "./types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -32,6 +33,16 @@ function makeRetrievalQualityRecord(
     repo: "owner/repo",
     eventType: "pull_request.opened",
     resultCount: 0,
+    ...overrides,
+  };
+}
+
+function makeResilienceEventRecord(overrides: Partial<ResilienceEventRecord> = {}): ResilienceEventRecord {
+  return {
+    deliveryId: "delivery-xyz",
+    repo: "owner/repo",
+    eventType: "pull_request.review_requested",
+    kind: "timeout",
     ...overrides,
   };
 }
@@ -317,5 +328,67 @@ describe("TelemetryStore", () => {
     const indexNames = indexes.map((i) => i.name);
     expect(indexNames).toContain("idx_executions_created_at");
     expect(indexNames).toContain("idx_executions_repo");
+  });
+
+  test("recordResilienceEvent() inserts a row and is idempotent by delivery_id", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    expect(typeof fileStore.recordResilienceEvent).toBe("function");
+
+    fileStore.recordResilienceEvent?.(
+      makeResilienceEventRecord({
+        deliveryId: "res-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        prAuthor: "octocat",
+        kind: "timeout",
+        eventType: "pull_request.opened",
+        reviewOutputKey: "rok-1",
+        executionConclusion: "timeout",
+        checkpointFilesReviewed: 3,
+        checkpointFindingCount: 2,
+        checkpointTotalFiles: 10,
+        partialCommentId: 123,
+        retryEnqueued: true,
+        retryFilesCount: 4,
+        retryScopeRatio: 0.6,
+        retryTimeoutSeconds: 120,
+        retryRiskLevel: "medium",
+        retryCheckpointEnabled: true,
+      }),
+    );
+
+    // Re-write same delivery id with different fields.
+    fileStore.recordResilienceEvent?.(
+      makeResilienceEventRecord({
+        deliveryId: "res-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        prAuthor: "octocat",
+        kind: "timeout",
+        eventType: "pull_request.opened",
+        executionConclusion: "timeout_partial",
+        checkpointFilesReviewed: 4,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM resilience_events WHERE delivery_id = 'res-001'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM resilience_events WHERE delivery_id = 'res-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(1);
+    expect(row.repo).toBe("octocat/hello-world");
+    expect(row.pr_number).toBe(7);
+    expect(row.pr_author).toBe("octocat");
+    expect(row.kind).toBe("timeout");
+    expect(row.execution_conclusion).toBe("timeout_partial");
+    expect(row.checkpoint_files_reviewed).toBe(4);
+    expect(row.created_at).toBeTruthy();
   });
 });

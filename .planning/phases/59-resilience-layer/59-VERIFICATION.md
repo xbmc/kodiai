@@ -1,19 +1,8 @@
 ---
 phase: 59-resilience-layer
-verified: 2026-02-16T00:40:36.000Z
-status: gaps_found
-score: 4/5 must-haves verified
-gaps:
-  - truth: "Checkpoint data and retry metadata are visible in telemetry for operational monitoring"
-    status: partial
-    reason: "Telemetry captures pr_author, event_type (including retry), and conclusion (timeout vs timeout_partial), but does not capture checkpoint/retry metadata (e.g., filesReviewed, findingCount, retry scopeRatio/selectedFilesCount, retryTimeoutSeconds)."
-    artifacts:
-      - path: "src/telemetry/types.ts"
-        issue: "TelemetryRecord has no fields for checkpoint/retry metadata."
-      - path: "src/handlers/review.ts"
-        issue: "Retry metadata is logged, but not recorded in telemetry store records."
-    missing:
-      - "Add structured telemetry fields (or a side-table) for checkpoint/retry metadata, and populate them for both initial run and retry."
+verified: 2026-02-16T00:47:40Z
+status: passed
+score: 5/5 must-haves verified
 human_verification:
   - test: "Timeout with checkpoint -> partial comment published"
     expected: "On forced timeout, a top-level partial review comment is created with the disclaimer header and the checkpoint summaryDraft body."
@@ -29,8 +18,8 @@ human_verification:
 # Phase 59: Resilience Layer Verification Report
 
 **Phase Goal (ROADMAP.md):** Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope.
-**Verified:** 2026-02-16T00:40:36.000Z
-**Status:** gaps_found
+**Verified:** 2026-02-16T00:47:40Z
+**Status:** passed
 
 ## What I Verified
 
@@ -42,9 +31,9 @@ human_verification:
 | 2 | When a review times out with no published output, Kodiai retries once with top 50% by risk and half timeout | ✓ VERIFIED | Timeout path publishes a partial placeholder comment and enqueues reduced-scope retry when `result.published` is false (`src/handlers/review.ts`); scope uses `computeRetryScope()` (`src/lib/retry-scope-reducer.ts`) |
 | 3 | Retry is capped at exactly 1 attempt | ✓ VERIFIED | Only `-retry-1` keys/branches appear; no `retry-2` (`src/handlers/review.ts:2803`, `src/handlers/review.ts:2858`) |
 | 4 | Repos with 3+ recent timeouts skip retry | ✓ VERIFIED | Chronic check via telemetry count (`src/handlers/review.ts:2756`), gate `isChronicTimeout >= 3` (`src/handlers/review.ts:2760`), no enqueue when chronic (`src/handlers/review.ts:2802`) |
-| 5 | Checkpoint + retry metadata visible in telemetry | ⚠️ PARTIAL | Telemetry records `prAuthor` + eventType + conclusion (`src/handlers/review.ts:2441`, `src/telemetry/store.ts:155`), but no structured checkpoint/retry metadata fields |
+| 5 | Checkpoint + retry metadata visible in telemetry | ✓ VERIFIED | Structured resilience metadata is recorded via `telemetryStore.recordResilienceEvent()` into `resilience_events` (`src/telemetry/store.ts`), populated for timeout + retry flows (`src/handlers/review.ts`). |
 
-**Score:** 4/5 truths verified
+**Score:** 5/5 truths verified
 
 ## Required Artifacts (Existence + Substantive + Wired)
 
@@ -88,8 +77,7 @@ human_verification:
 
 ## Integration Risks / Missing Pieces
 
-- **Operational telemetry gap:** telemetry store does not capture checkpoint/retry scope metadata; monitoring retry effectiveness will rely on logs.
-- **Retry comment update robustness:** retry now prefers the stored `partialCommentId` from the checkpoint record, but end-to-end validation is still needed if retry execution becomes out-of-process.
+- **End-to-end validation still needed:** timeout + retry flows depend on real GitHub execution; unit tests cover logic but cannot simulate a real timeout and comment update roundtrip.
 
 ---
 

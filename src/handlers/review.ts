@@ -2760,6 +2760,10 @@ export function createReviewHandler(deps: {
             ) ?? 0;
             const isChronicTimeout = recentTimeouts >= 3;
 
+            const executionConclusion = result.isTimeout && result.published
+              ? "timeout_partial"
+              : "timeout";
+
             // Step 3: Publish partial review with disclaimer.
             // IMPORTANT: also publish a placeholder partial review when we have
             // a full timeout (no checkpoint + no inline output) so we can
@@ -2823,6 +2827,32 @@ export function createReviewHandler(deps: {
               "Published partial review on timeout",
             );
 
+            // Structured resilience telemetry (best-effort)
+            if (config.telemetry.enabled) {
+              try {
+                telemetryStore.recordResilienceEvent?.({
+                  deliveryId: event.id,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  prAuthor: pr.user.login,
+                  eventType: `pull_request.${payload.action}`,
+                  kind: "timeout",
+                  reviewOutputKey,
+                  executionConclusion,
+                  hadInlineOutput: hasPublishedInlines,
+                  checkpointFilesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                  checkpointFindingCount: checkpoint?.findingCount ?? 0,
+                  checkpointTotalFiles: changedFiles.length,
+                  partialCommentId,
+                  recentTimeouts,
+                  chronicTimeout: isChronicTimeout,
+                  retryEnqueued: false,
+                });
+              } catch (err) {
+                logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+              }
+            }
+
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
             // Retry is only useful when no GitHub-visible output was published.
             // If inline comments were already posted, avoid a retry that could
@@ -2855,6 +2885,37 @@ export function createReviewHandler(deps: {
                 const retryCheckpointEnabled =
                   retryTimeoutEstimate.riskLevel === "medium" ||
                   retryTimeoutEstimate.riskLevel === "high";
+
+                // Update resilience telemetry with retry plan
+                if (config.telemetry.enabled) {
+                  try {
+                    telemetryStore.recordResilienceEvent?.({
+                      deliveryId: event.id,
+                      repo: `${apiOwner}/${apiRepo}`,
+                      prNumber: pr.number,
+                      prAuthor: pr.user.login,
+                      eventType: `pull_request.${payload.action}`,
+                      kind: "timeout",
+                      reviewOutputKey,
+                      executionConclusion,
+                      hadInlineOutput: hasPublishedInlines,
+                      checkpointFilesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                      checkpointFindingCount: checkpoint?.findingCount ?? 0,
+                      checkpointTotalFiles: changedFiles.length,
+                      partialCommentId,
+                      recentTimeouts,
+                      chronicTimeout: isChronicTimeout,
+                      retryEnqueued: true,
+                      retryFilesCount: retryFiles.length,
+                      retryScopeRatio: retryScope.scopeRatio,
+                      retryTimeoutSeconds: retryTimeout,
+                      retryRiskLevel: retryTimeoutEstimate.riskLevel,
+                      retryCheckpointEnabled,
+                    });
+                  } catch (err) {
+                    logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                  }
+                }
 
                 logger.info(
                   {
@@ -2973,10 +3034,43 @@ export function createReviewHandler(deps: {
                       enableCommentTools: false,
                     });
 
-                    const retryCheckpoint = knowledgeStore?.getCheckpoint?.(retryReviewOutputKey) ?? null;
-                    const retryHasResults =
-                      (retryCheckpoint?.findingCount ?? 0) >= 1 ||
-                      (retryResult.published ?? false);
+                      const retryCheckpoint = knowledgeStore?.getCheckpoint?.(retryReviewOutputKey) ?? null;
+                      const retryHasResults =
+                        (retryCheckpoint?.findingCount ?? 0) >= 1 ||
+                        (retryResult.published ?? false);
+
+                      if (config.telemetry.enabled) {
+                        try {
+                          telemetryStore.recordResilienceEvent?.({
+                            deliveryId: `${event.id}-retry-1`,
+                            parentDeliveryId: event.id,
+                            repo: `${apiOwner}/${apiRepo}`,
+                            prNumber: pr.number,
+                            prAuthor: pr.user.login,
+                            eventType: "pull_request.review-retry",
+                            kind: "retry",
+                            reviewOutputKey: retryReviewOutputKey,
+                            executionConclusion: retryResult.isTimeout && retryResult.published
+                              ? "timeout_partial"
+                              : retryResult.isTimeout
+                                ? "timeout"
+                                : retryResult.conclusion,
+                            hadInlineOutput: retryResult.published ?? false,
+                            checkpointFilesReviewed: retryCheckpoint?.filesReviewed?.length,
+                            checkpointFindingCount: retryCheckpoint?.findingCount,
+                            checkpointTotalFiles: changedFiles.length,
+                            partialCommentId,
+                            retryHasResults,
+                            retryFilesCount: retryFiles.length,
+                            retryScopeRatio: retryScope.scopeRatio,
+                            retryTimeoutSeconds: retryTimeout,
+                            retryRiskLevel: retryTimeoutEstimate.riskLevel,
+                            retryCheckpointEnabled,
+                          });
+                        } catch (err) {
+                          logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                        }
+                      }
 
                     if (
                       retryResult.conclusion === "success" ||

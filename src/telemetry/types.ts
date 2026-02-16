@@ -25,6 +25,45 @@ export type TelemetryRecord = {
 };
 
 /**
+ * Resilience/timeout metadata for a review execution.
+ *
+ * Stored separately from `executions` so we can add structured fields for
+ * checkpoint/retry behavior without affecting existing timeout counting.
+ */
+export type ResilienceEventRecord = {
+  /** Correlates with `executions.delivery_id` (required for join/reporting). */
+  deliveryId: string;
+  repo: string;
+  prNumber?: number;
+  prAuthor?: string;
+  eventType: string;
+  /** Classifies the record: initial timeout handling vs retry attempt. */
+  kind: "timeout" | "retry";
+  /** For retry records, the parent delivery id (original attempt). */
+  parentDeliveryId?: string;
+  reviewOutputKey?: string;
+
+  executionConclusion?: string;
+  hadInlineOutput?: boolean;
+
+  checkpointFilesReviewed?: number;
+  checkpointFindingCount?: number;
+  checkpointTotalFiles?: number;
+  partialCommentId?: number;
+
+  recentTimeouts?: number;
+  chronicTimeout?: boolean;
+
+  retryEnqueued?: boolean;
+  retryFilesCount?: number;
+  retryScopeRatio?: number;
+  retryTimeoutSeconds?: number;
+  retryRiskLevel?: string;
+  retryCheckpointEnabled?: boolean;
+  retryHasResults?: boolean;
+};
+
+/**
  * Retrieval quality telemetry for a retrieval attempt.
  *
  * Maps to the `retrieval_quality` table in the telemetry SQLite database.
@@ -58,6 +97,8 @@ export type TelemetryStore = {
   countRecentTimeouts?(repo: string, author: string): number;
   /** Insert a retrieval quality record into the retrieval_quality table. */
   recordRetrievalQuality(entry: RetrievalQualityRecord): void;
+  /** Insert structured checkpoint/retry metadata for resilience monitoring. */
+  recordResilienceEvent?(entry: ResilienceEventRecord): void;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */
   purgeOlderThan(days: number): number;
   /** Run a WAL checkpoint (PASSIVE mode). */
