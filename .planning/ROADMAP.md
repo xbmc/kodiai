@@ -177,7 +177,12 @@ Plans:
   1. When a user comments `@kodiai <question>` in an issue, Kodiai posts a single in-thread reply that directly answers the question (not a generic restatement)
   2. When the answer depends on code in the repo, the reply includes specific file-path pointers (and optionally line anchors) so the user can quickly verify and act
   3. When required context is missing or the question is underspecified, Kodiai asks targeted clarifying questions rather than guessing
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 60-01-PLAN.md — Enforce issue Q&A answer contract in mention prompt and tests
+- [ ] 60-02-PLAN.md — Build bounded issue code-context helper for file-path pointers
+- [ ] 60-03-PLAN.md — Wire issue context into mention handler with clarifying fallback tests
 
 ### Phase 61: Read-Only + Intent Gating
 **Goal**: Issue Q&A stays read-only by default, and write-mode is only entered with explicit user intent
