@@ -109,6 +109,7 @@ function buildIssueCommentMentionEvent(params: {
   commentBody: string;
   commentAuthor?: string;
   commentId?: number;
+  defaultBranch?: string;
 }): WebhookEvent {
   return {
     id: "delivery-issue-mention-123",
@@ -119,7 +120,7 @@ function buildIssueCommentMentionEvent(params: {
       repository: {
         name: "repo",
         owner: { login: "acme" },
-        default_branch: "main",
+        default_branch: params.defaultBranch ?? "main",
       },
       issue: {
         number: params.issueNumber,
@@ -1382,7 +1383,9 @@ describe("createMentionHandler write intent gating", () => {
     );
 
     let executorCalled = false;
+    let capturedWriteMode: boolean | undefined;
     let pullCreateCalls = 0;
+    let createdPrHead: string | undefined;
     let createdPrBase: string | undefined;
     let createdPrTitle: string | undefined;
     let createdPrBody: string | undefined;
@@ -1425,8 +1428,9 @@ describe("createMentionHandler write intent gating", () => {
         pulls: {
           list: async () => ({ data: [] }),
           get: async () => ({ data: {} }),
-          create: async (params: { base: string; title: string; body: string }) => {
+          create: async (params: { head: string; base: string; title: string; body: string }) => {
             pullCreateCalls++;
+            createdPrHead = params.head;
             createdPrBase = params.base;
             createdPrTitle = params.title;
             createdPrBody = params.body;
@@ -1446,8 +1450,9 @@ describe("createMentionHandler write intent gating", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async (ctx: { workspace: { dir: string } }) => {
+        execute: async (ctx: { writeMode?: boolean; workspace: { dir: string } }) => {
           executorCalled = true;
+          capturedWriteMode = ctx.writeMode;
           await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nupdated from issue\n");
           return {
             conclusion: "success",
@@ -1469,13 +1474,23 @@ describe("createMentionHandler write intent gating", () => {
     await handler!(
       buildIssueCommentMentionEvent({
         issueNumber: 77,
+        defaultBranch: "feature",
         commentBody: "@kodiai apply: update the README",
       }),
     );
 
     expect(executorCalled).toBe(true);
+    expect(capturedWriteMode).toBe(true);
     expect(pullCreateCalls).toBe(1);
-    expect(createdPrBase).toBe("main");
+    expect(createdPrHead).toBeDefined();
+    expect(createdPrHead!).toContain("kodiai/apply/issue-77-comment-777-");
+    const pushedHeadSha = (
+      await $`git --git-dir ${workspaceFixture.remoteDir} rev-parse refs/heads/${createdPrHead!}`.quiet()
+    )
+      .text()
+      .trim();
+    expect(pushedHeadSha.length).toBeGreaterThan(0);
+    expect(createdPrBase).toBe("feature");
     expect(createdPrTitle).toContain("issue #77");
     expect(createdPrBody).toContain("Source issue: #77");
     expect(createdPrBody).toContain("Request: update the README");
