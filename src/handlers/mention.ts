@@ -165,21 +165,56 @@ export function createMentionHandler(deps: {
   }
 
   function isImplementationRequestWithoutPrefix(userQuestion: string): boolean {
-    const normalized = userQuestion.trim().toLowerCase().replace(/\s+/g, " ");
+    let normalized = userQuestion.trim().toLowerCase().replace(/\s+/g, " ");
+    if (normalized.length === 0) return false;
+
+    for (let i = 0; i < 4; i++) {
+      const before = normalized;
+      normalized = normalized
+        .replace(/^(?:>+\s*)+/, "")
+        .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
+        .replace(/^[`'"([{]+/, "")
+        .replace(/^[,.;:!?\-\s]+/, "")
+        .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/, "")
+        .trim();
+      if (normalized === before || normalized.length === 0) break;
+    }
+
     if (normalized.length === 0) return false;
 
     const implementationVerb =
       "(?:fix|update|change|refactor|add|remove|implement|create|rename|rewrite|patch)";
+    const rewriteVerb = "(?:improve|tweak|clean\\s*up|cleanup|clarify)";
+    const codeTarget =
+      "(?:code|logic|behavior|copy|text|wording|message|handler|prompt|response|implementation|flow|gating|function|test(?:s)?|readme|docs?|config|types?)";
+    const styleOutcome = "(?:clear(?:er)?|better|safer|faster|consistent|more\\s+readable)";
+
     const directCommand = new RegExp(`^${implementationVerb}\\b`);
     const politeCommand = new RegExp(`^(?:please\\s+)?${implementationVerb}\\b`);
     const explicitAsk = new RegExp(
       `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?${implementationVerb}\\b`,
     );
+    const rewriteCommand = new RegExp(
+      `^(?:please\\s+)?${rewriteVerb}\\b(?:.{0,80})\\b${codeTarget}\\b`,
+    );
+    const rewriteAsk = new RegExp(
+      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?${rewriteVerb}\\b(?:.{0,80})\\b${codeTarget}\\b`,
+    );
+    const makeStyleCommand = new RegExp(
+      `^(?:please\\s+)?make\\b(?:.{0,120})\\b${styleOutcome}\\b(?:.{0,120})\\b${codeTarget}\\b`,
+    );
+    const makeStyleAsk = new RegExp(
+      `^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?(?:help\\s+me\\s+)?make\\b(?:.{0,120})\\b${styleOutcome}\\b(?:.{0,120})\\b${codeTarget}\\b`,
+    );
 
     return (
       directCommand.test(normalized) ||
       politeCommand.test(normalized) ||
-      explicitAsk.test(normalized)
+      explicitAsk.test(normalized) ||
+      rewriteCommand.test(normalized) ||
+      rewriteAsk.test(normalized) ||
+      makeStyleCommand.test(normalized) ||
+      makeStyleAsk.test(normalized)
     );
   }
 
