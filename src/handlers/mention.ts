@@ -69,7 +69,8 @@ export function createMentionHandler(deps: {
     installationId: number;
     owner: string;
     repo: string;
-    prNumber: number;
+    sourceType: "pr" | "issue";
+    sourceNumber: number;
     commentId: number;
     keyword: string;
   }): string {
@@ -82,19 +83,20 @@ export function createMentionHandler(deps: {
       "v1",
       `inst-${input.installationId}`,
       `${normalizedOwner}/${normalizedRepo}`,
-      `pr-${input.prNumber}`,
+      `${input.sourceType}-${input.sourceNumber}`,
       `comment-${input.commentId}`,
       `keyword-${normalizedKeyword}`,
     ].join(":");
   }
 
   function buildWriteBranchName(params: {
-    prNumber: number;
+    sourceType: "pr" | "issue";
+    sourceNumber: number;
     commentId: number;
     writeOutputKey: string;
   }): string {
     const hash = createHash("sha256").update(params.writeOutputKey).digest("hex").slice(0, 12);
-    return `kodiai/apply/pr-${params.prNumber}-comment-${params.commentId}-${hash}`;
+    return `kodiai/apply/${params.sourceType}-${params.sourceNumber}-comment-${params.commentId}-${hash}`;
   }
 
   function pruneRateLimiter(now: number): void {
@@ -546,24 +548,30 @@ export function createMentionHandler(deps: {
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";
         const writeEnabled = isWriteRequest && !isPlanOnly && config.write.enabled;
+        const writeSource =
+          mention.prNumber !== undefined
+            ? { type: "pr" as const, number: mention.prNumber }
+            : { type: "issue" as const, number: mention.issueNumber };
 
         const writeKeyword = writeIntent.keyword ?? "apply";
         const writeOutputKey =
-          writeEnabled && mention.prNumber !== undefined
+          writeEnabled
             ? buildWriteOutputKey({
                 installationId: event.installationId,
                 owner: mention.owner,
                 repo: mention.repo,
-                prNumber: mention.prNumber,
+                sourceType: writeSource.type,
+                sourceNumber: writeSource.number,
                 commentId: mention.commentId,
                 keyword: writeKeyword,
               })
             : undefined;
 
         const writeBranchName =
-          writeOutputKey && mention.prNumber !== undefined
+          writeOutputKey
             ? buildWriteBranchName({
-                prNumber: mention.prNumber,
+                sourceType: writeSource.type,
+                sourceNumber: writeSource.number,
                 commentId: mention.commentId,
                 writeOutputKey,
               })
