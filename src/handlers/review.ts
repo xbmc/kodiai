@@ -39,6 +39,8 @@ import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
+import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
+import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { buildRetrievalQuery } from "../learning/retrieval-query.ts";
 import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
 import { applyRecencyWeighting } from "../learning/retrieval-recency.ts";
@@ -1901,6 +1903,10 @@ export function createReviewHandler(deps: {
           "Timeout risk estimated",
         );
 
+        const checkpointEnabled =
+          timeoutEstimate.riskLevel === "medium" ||
+          timeoutEstimate.riskLevel === "high";
+
         // TMO-02: Scope reduction for high-risk auto-profile PRs
         const originalProfileSelection = { ...profileSelection };
         if (
@@ -1996,6 +2002,7 @@ export function createReviewHandler(deps: {
           headBranch: pr.head.ref,
           changedFiles: promptFiles,
           customInstructions: config.review.prompt,
+          checkpointEnabled,
           // Review mode & severity control
           mode: config.review.mode,
           severityMinLevel: resolvedSeverityMinLevel,
@@ -2060,6 +2067,9 @@ export function createReviewHandler(deps: {
           prompt: reviewPrompt,
           reviewOutputKey,
           deliveryId: event.id,
+          knowledgeStore,
+          totalFiles: changedFiles.length,
+          enableCheckpointTool: checkpointEnabled,
           // TMO-04: Dynamic timeout from risk estimation
           dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
             ? timeoutEstimate.dynamicTimeoutSeconds
@@ -2432,6 +2442,7 @@ export function createReviewHandler(deps: {
               deliveryId: event.id,
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
+              prAuthor: pr.user.login,
               eventType: `pull_request.${payload.action}`,
               model: result.model ?? "unknown",
               inputTokens: result.inputTokens,
@@ -2732,34 +2743,352 @@ export function createReviewHandler(deps: {
           const timeoutDuration = timeoutEstimate?.dynamicTimeoutSeconds ?? config.timeoutSeconds;
           const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
 
-          let errorBody: string;
-          if (category === "timeout_partial") {
-            // TMO-03: Partial review -- inline comments were published before timeout
-            errorBody = formatErrorComment(
-              category,
-              `Timed out after ${timeoutDuration}s. ` +
-              `PR complexity: ${complexityInfo}`,
-            );
-          } else if (category === "timeout") {
-            // TMO-03: Full timeout -- nothing was published
-            errorBody = formatErrorComment(
-              category,
-              `Timed out after ${timeoutDuration}s with no review output. ` +
-              `PR complexity: ${complexityInfo}`,
-            );
-          } else {
-            errorBody = formatErrorComment(
-              category,
-              result.errorMessage ?? "An unexpected error occurred during review.",
-            );
+          let publishedPartialReview = false;
+
+          if (result.isTimeout) {
+            // Step 1: Read checkpoint data
+            const checkpoint = knowledgeStore?.getCheckpoint?.(reviewOutputKey) ?? null;
+            const hasPublishedInlines = result.published ?? false;
+            const hasPartialResults = (checkpoint?.findingCount ?? 0) >= 1 || hasPublishedInlines;
+
+            if (hasPartialResults) {
+              // Step 2: Check chronic timeout threshold before publishing
+              const recentTimeouts = telemetryStore.countRecentTimeouts?.(
+                `${apiOwner}/${apiRepo}`,
+                pr.user.login,
+              ) ?? 0;
+              const isChronicTimeout = recentTimeouts >= 3;
+
+              // Step 3: Publish partial review with disclaimer
+              const partialBody = formatPartialReviewComment({
+                summaryDraft: checkpoint?.summaryDraft ?? "Review timed out with findings posted inline above.",
+                filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                totalFiles: changedFiles.length,
+                timedOutAfterSeconds: timeoutDuration,
+                isRetrySkipped: isChronicTimeout,
+                retrySkipReason: isChronicTimeout
+                  ? "Retry skipped -- this repo has timed out frequently for this author."
+                  : undefined,
+              });
+
+              const octokit = await githubApp.getInstallationOctokit(event.installationId);
+              const partialComment = await octokit.rest.issues.createComment({
+                owner: apiOwner,
+                repo: apiRepo,
+                issue_number: pr.number,
+                body: sanitizeOutgoingMentions(partialBody, [githubApp.getAppSlug(), "claude"]),
+              });
+              const partialCommentId = partialComment.data.id;
+
+              // Store partial comment ID in checkpoint for retry to find
+              knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
+
+              publishedPartialReview = true;
+
+              logger.info(
+                {
+                  deliveryId: event.id,
+                  prNumber: pr.number,
+                  partialCommentId,
+                  filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                  findingCount: checkpoint?.findingCount ?? 0,
+                  isChronicTimeout,
+                  recentTimeouts,
+                },
+                "Published partial review on timeout",
+              );
+
+              // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
+              if (!isChronicTimeout) {
+                const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
+                const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
+
+                const filesAlreadyReviewed = checkpoint?.filesReviewed ?? [];
+                const retryScope = computeRetryScope({
+                  allFiles: riskScores,
+                  filesAlreadyReviewed,
+                  totalFiles: changedFiles.length,
+                });
+
+                if (retryScope.filesToReview.length > 0) {
+                  const retryFiles = retryScope.filesToReview.map((f) => f.filePath);
+                  const retryLinesChanged = retryFiles.reduce((sum, filePath) => {
+                    const stats = perFileStats.get(filePath);
+                    if (!stats) return sum;
+                    return sum + stats.added + stats.removed;
+                  }, 0);
+                  const retryTimeoutEstimate = estimateTimeoutRisk({
+                    fileCount: retryFiles.length,
+                    linesChanged: retryLinesChanged,
+                    languageComplexity,
+                    isLargePR: false,
+                    baseTimeoutSeconds: retryTimeout,
+                  });
+                  const retryCheckpointEnabled =
+                    retryTimeoutEstimate.riskLevel === "medium" ||
+                    retryTimeoutEstimate.riskLevel === "high";
+
+                  logger.info(
+                    {
+                      deliveryId: event.id,
+                      prNumber: pr.number,
+                      retryFiles: retryFiles.length,
+                      scopeRatio: retryScope.scopeRatio,
+                      retryTimeout,
+                      retryRiskLevel: retryTimeoutEstimate.riskLevel,
+                    },
+                    "Enqueueing retry with reduced scope",
+                  );
+
+                  // Fire-and-forget enqueue -- do not await the retry result
+                  void jobQueue.enqueue(event.installationId, async () => {
+                    let retryWorkspace: Workspace | undefined;
+                    try {
+                      retryWorkspace = await workspaceManager.create(event.installationId, {
+                        owner: cloneOwner,
+                        repo: cloneRepo,
+                        ref: cloneRef,
+                        depth: 50,
+                      });
+
+                      if (usesPrRef) {
+                        await fetchAndCheckoutPullRequestHeadRef({
+                          dir: retryWorkspace.dir,
+                          prNumber: pr.number,
+                          localBranch: "pr-review-retry-1",
+                        });
+                      }
+
+                      await $`git -C ${retryWorkspace.dir} fetch origin ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
+
+                      const retryInstruction = [
+                        "This is a retry of a timed-out review with reduced scope.",
+                        "Focus ONLY on the changed files listed above.",
+                        "Do NOT post a top-level summary comment; only publish inline comments.",
+                        retryCheckpointEnabled
+                          ? "At the end, call save_review_checkpoint with a summaryDraft that summarizes findings so far and a findingCount total."
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join("\n");
+                      const retryCustomInstructions =
+                        config.review.prompt && config.review.prompt.trim().length > 0
+                          ? `${config.review.prompt.trim()}\n\n${retryInstruction}`
+                          : retryInstruction;
+
+                      const retryPrompt = buildReviewPrompt({
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        prNumber: pr.number,
+                        prTitle: pr.title,
+                        prBody: pr.body ?? "",
+                        prAuthor: pr.user.login,
+                        baseBranch: pr.base.ref,
+                        headBranch: pr.head.ref,
+                        changedFiles: retryFiles,
+                        customInstructions: retryCustomInstructions,
+                        checkpointEnabled: retryCheckpointEnabled,
+                        mode: config.review.mode,
+                        severityMinLevel: resolvedSeverityMinLevel,
+                        focusAreas: resolvedFocusAreas,
+                        ignoredAreas: resolvedIgnoredAreas,
+                        maxComments: resolvedMaxComments,
+                        suppressions: config.review.suppressions,
+                        minConfidence: config.review.minConfidence,
+                        diffAnalysis,
+                        matchedPathInstructions,
+                        incrementalContext: incrementalResult?.mode === "incremental" ? {
+                          lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
+                          changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+                          unresolvedPriorFindings: priorFindingCtx?.unresolvedOnUnchangedCode ?? [],
+                        } : null,
+                        retrievalContext: retrievalCtx,
+                        filesByLanguage: diffAnalysis?.filesByLanguage,
+                        outputLanguage: config.review.outputLanguage,
+                        prLabels,
+                        focusHints: parsedIntent.unrecognized,
+                        conventionalType: parsedIntent.conventionalType,
+                        deltaContext: incrementalResult?.mode === "incremental" && priorFindings.length > 0
+                          ? {
+                              lastReviewedHeadSha: incrementalResult.lastReviewedHeadSha!,
+                              changedFilesSinceLastReview: incrementalResult.changedFilesSinceLastReview,
+                              priorFindings: priorFindings.map((f) => ({
+                                filePath: f.filePath,
+                                title: f.title,
+                                severity: f.severity,
+                                category: f.category,
+                              })),
+                            }
+                          : null,
+                        largePRContext: null,
+                        authorTier: authorClassification.tier,
+                        depBumpContext,
+                      });
+
+                      const retryResult = await executor.execute({
+                        workspace: retryWorkspace,
+                        installationId: event.installationId,
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        prNumber: pr.number,
+                        commentId: undefined,
+                        botHandles: [githubApp.getAppSlug(), "claude"],
+                        eventType: "pull_request.review-retry",
+                        triggerBody: "",
+                        prompt: retryPrompt,
+                        reviewOutputKey: retryReviewOutputKey,
+                        deliveryId: `${event.id}-retry-1`,
+                        dynamicTimeoutSeconds: retryTimeout,
+                        knowledgeStore,
+                        totalFiles: changedFiles.length,
+                        enableCheckpointTool: retryCheckpointEnabled,
+                        enableCommentTools: false,
+                      });
+
+                      const retryCheckpoint = knowledgeStore?.getCheckpoint?.(retryReviewOutputKey) ?? null;
+                      const retryHasResults =
+                        (retryCheckpoint?.findingCount ?? 0) >= 1 ||
+                        (retryResult.published ?? false);
+
+                      if (
+                        retryResult.conclusion === "success" ||
+                        (retryResult.isTimeout && retryHasResults)
+                      ) {
+                        const retryFilesReviewed = retryCheckpoint?.filesReviewed?.length ?? retryFiles.length;
+                        const mergedBody = formatPartialReviewComment({
+                          summaryDraft:
+                            retryCheckpoint?.summaryDraft ??
+                            checkpoint?.summaryDraft ??
+                            "Review completed with reduced scope.",
+                          filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                          totalFiles: changedFiles.length,
+                          timedOutAfterSeconds: timeoutDuration,
+                          isRetryResult: true,
+                          retryFilesReviewed,
+                        });
+
+                        const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                        await retryOctokit.rest.issues.updateComment({
+                          owner: apiOwner,
+                          repo: apiRepo,
+                          comment_id: partialCommentId,
+                          body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
+                        });
+
+                        logger.info(
+                          {
+                            deliveryId: `${event.id}-retry-1`,
+                            prNumber: pr.number,
+                            retryConclusion: retryResult.conclusion,
+                            retryFilesReviewed,
+                            partialCommentId,
+                          },
+                          "Retry complete -- updated partial review comment with merged results",
+                        );
+
+                        // Cleanup checkpoint data after successful merge
+                        knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                        knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                      } else {
+                        logger.info(
+                          {
+                            deliveryId: `${event.id}-retry-1`,
+                            prNumber: pr.number,
+                            retryConclusion: retryResult.conclusion,
+                          },
+                          "Retry produced no additional results -- keeping original partial review",
+                        );
+                      }
+
+                      if (config.telemetry.enabled) {
+                        try {
+                          telemetryStore.record({
+                            deliveryId: `${event.id}-retry-1`,
+                            repo: `${apiOwner}/${apiRepo}`,
+                            prNumber: pr.number,
+                            prAuthor: pr.user.login,
+                            eventType: "pull_request.review-retry",
+                            model: retryResult.model ?? "unknown",
+                            inputTokens: retryResult.inputTokens,
+                            outputTokens: retryResult.outputTokens,
+                            cacheReadTokens: retryResult.cacheReadTokens,
+                            cacheCreationTokens: retryResult.cacheCreationTokens,
+                            durationMs: retryResult.durationMs,
+                            costUsd: retryResult.costUsd,
+                            conclusion: retryResult.isTimeout && retryResult.published
+                              ? "timeout_partial"
+                              : retryResult.isTimeout
+                                ? "timeout"
+                                : retryResult.conclusion,
+                            sessionId: retryResult.sessionId,
+                            numTurns: retryResult.numTurns,
+                            stopReason: retryResult.stopReason,
+                          });
+                        } catch (err) {
+                          logger.warn({ err }, "Retry telemetry write failed (non-blocking)");
+                        }
+                      }
+                    } catch (retryErr) {
+                      logger.error(
+                        {
+                          err: retryErr,
+                          deliveryId: `${event.id}-retry-1`,
+                          prNumber: pr.number,
+                        },
+                        "Retry failed with error",
+                      );
+                    } finally {
+                      if (retryWorkspace) {
+                        await retryWorkspace.cleanup();
+                      }
+                    }
+                  }, {
+                    deliveryId: `${event.id}-retry-1`,
+                    eventName: event.name,
+                    action: `review-retry`,
+                    jobType: "pull-request-review-retry",
+                    prNumber: pr.number,
+                  }).catch((err) => {
+                    logger.error(
+                      { err, deliveryId: event.id, prNumber: pr.number },
+                      "Failed to enqueue retry job",
+                    );
+                  });
+                }
+              }
+            }
           }
 
-          const octokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(octokit, {
-            owner: apiOwner,
-            repo: apiRepo,
-            issueNumber: pr.number,
-          }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+          let errorBody: string;
+          if (!publishedPartialReview) {
+            if (category === "timeout_partial") {
+              // TMO-03: Partial review -- inline comments were published before timeout
+              errorBody = formatErrorComment(
+                category,
+                `Timed out after ${timeoutDuration}s. ` +
+                `PR complexity: ${complexityInfo}`,
+              );
+            } else if (category === "timeout") {
+              // TMO-03: Full timeout -- nothing was published
+              errorBody = formatErrorComment(
+                category,
+                `Timed out after ${timeoutDuration}s with no review output. ` +
+                `PR complexity: ${complexityInfo}`,
+              );
+            } else {
+              errorBody = formatErrorComment(
+                category,
+                result.errorMessage ?? "An unexpected error occurred during review.",
+              );
+            }
+
+            const octokit = await githubApp.getInstallationOctokit(event.installationId);
+            await postOrUpdateErrorComment(octokit, {
+              owner: apiOwner,
+              repo: apiRepo,
+              issueNumber: pr.number,
+            }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+          }
         }
 
         // Auto-approval: only when autoApprove is enabled AND execution succeeded AND
