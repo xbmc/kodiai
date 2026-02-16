@@ -164,9 +164,8 @@ export function createMentionHandler(deps: {
     return { writeIntent: false, keyword: undefined, request: userQuestion.trim() };
   }
 
-  function isImplementationRequestWithoutPrefix(userQuestion: string): boolean {
-    let normalized = userQuestion.trim().toLowerCase().replace(/\s+/g, " ");
-    if (normalized.length === 0) return false;
+  function stripIssueIntentWrappers(userQuestion: string): string {
+    let normalized = userQuestion.trim().replace(/\s+/g, " ");
 
     for (let i = 0; i < 4; i++) {
       const before = normalized;
@@ -175,11 +174,16 @@ export function createMentionHandler(deps: {
         .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
         .replace(/^[`'"([{]+/, "")
         .replace(/^[,.;:!?\-\s]+/, "")
-        .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/, "")
+        .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/i, "")
         .trim();
       if (normalized === before || normalized.length === 0) break;
     }
 
+    return normalized;
+  }
+
+  function isImplementationRequestWithoutPrefix(userQuestion: string): boolean {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
     if (normalized.length === 0) return false;
 
     const implementationVerb =
@@ -514,7 +518,10 @@ export function createMentionHandler(deps: {
           !writeIntent.writeIntent &&
           isImplementationRequestWithoutPrefix(writeIntent.request)
         ) {
-          const request = writeIntent.request.replace(/\s+/g, " ").trim();
+          const strippedRequest = stripIssueIntentWrappers(writeIntent.request);
+          const request = (strippedRequest.length > 0 ? strippedRequest : writeIntent.request)
+            .replace(/\s+/g, " ")
+            .trim();
           const replyBody = wrapInDetails(
             [
               "Issue comments are read-only by default.",

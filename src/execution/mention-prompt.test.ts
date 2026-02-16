@@ -128,6 +128,8 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("do not ask generic questions like 'can you clarify?'");
     expect(prompt).toContain("Read-only by default");
     expect(prompt).toContain("unless the user message starts with `apply:` or `change:`");
+    expect(prompt).toContain("Anti-completion wording");
+    expect(prompt).toContain("forbidden phrasing includes 'updated', 'implemented', 'fixed', 'completed'");
     expect(prompt).toContain("`@kodiai apply: <same request>`");
     expect(prompt).toContain("`@kodiai change: <same request>`");
     expect(prompt).toContain("one final in-thread response only");

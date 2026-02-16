@@ -1090,7 +1090,7 @@ describe("createMentionHandler conversational review wiring", () => {
 });
 
 describe("createMentionHandler write intent gating", () => {
-  test("issue change ask without apply/change returns deterministic opt-in commands", async () => {
+  test("issue trigger A wording without apply/change returns deterministic opt-in commands", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -1170,15 +1170,117 @@ describe("createMentionHandler write intent gating", () => {
     await handler!(
       buildIssueCommentMentionEvent({
         issueNumber: 77,
-        commentBody: "@kodiai can you fix the auth issue?",
+        commentBody: "@kodiai can you fix the issue intent gating copy so it is clearer for users?",
       }),
     );
 
     expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
-    expect(issueReplies[0]).toContain("@kodiai apply: can you fix the auth issue?");
-    expect(issueReplies[0]).toContain("@kodiai change: can you fix the auth issue?");
+    expect(issueReplies[0]).toContain(
+      "@kodiai apply: can you fix the issue intent gating copy so it is clearer for users?",
+    );
+    expect(issueReplies[0]).toContain(
+      "@kodiai change: can you fix the issue intent gating copy so it is clearer for users?",
+    );
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("quoted and prefixed issue rewrite ask is normalized and gated", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    let executorCalled = false;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executorCalled = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody:
+          "@kodiai > quick question: can you improve the issue intent gating copy so it is clearer for users?",
+      }),
+    );
+
+    expect(executorCalled).toBe(false);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Issue comments are read-only by default.");
+    expect(issueReplies[0]).toContain(
+      "@kodiai apply: can you improve the issue intent gating copy so it is clearer for users?",
+    );
+    expect(issueReplies[0]).toContain(
+      "@kodiai change: can you improve the issue intent gating copy so it is clearer for users?",
+    );
 
     await workspaceFixture.cleanup();
   });

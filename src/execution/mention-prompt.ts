@@ -112,6 +112,9 @@ export function buildMentionPrompt(params: {
       "- Read-only by default: unless the user message starts with `apply:` or `change:`, keep the reply guidance-only and do not imply files were edited, a branch was pushed, or a PR was opened.",
     );
     lines.push(
+      "- Anti-completion wording: for non-prefixed issue comments, never claim work is already done (forbidden phrasing includes 'updated', 'implemented', 'fixed', 'completed', or statements that imply repository edits already happened).",
+    );
+    lines.push(
       "- Write-mode opt-in wording: if the user asks for implementation without an `apply:`/`change:` prefix, include both exact commands: `@kodiai apply: <same request>` and `@kodiai change: <same request>`.",
     );
     lines.push(
