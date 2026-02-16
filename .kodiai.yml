@@ -16,3 +16,6 @@ review:
     - path: "docs/**"
       instructions: |
         Keep review lightweight for docs-only changes unless instructions are clearly unsafe or incorrect.
+
+write:
+  enabled: true
