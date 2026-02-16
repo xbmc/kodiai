@@ -2034,6 +2034,225 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("issue apply: PR creation permission failure posts actionable app-permission guidance", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let pullCreateCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            const err = new Error(
+              "Resource not accessible by integration (token=ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD)",
+            ) as Error & { status?: number };
+            err.status = 403;
+            throw err;
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\npermission guidance needed\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(pullCreateCalls).toBe(1);
+    expect(issueReplies).toHaveLength(1);
+    const reply = issueReplies[0]!;
+    expect(reply).toContain("missing GitHub App permissions");
+    expect(reply).toContain("Contents: Read and write");
+    expect(reply).toContain("Pull requests: Read and write");
+    expect(reply).toContain("Issues: Read and write");
+    expect(reply).toContain("After updating permissions");
+    expect(reply).toContain("@kodiai apply: update the README");
+    expect(reply).not.toContain("Opened PR:");
+    expect(reply).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCD");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue apply: push permission failure reuses permission-remediation reply shape", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+    const hookPath = join(workspaceFixture.remoteDir, "hooks", "pre-receive");
+    await Bun.write(
+      hookPath,
+      "#!/bin/sh\necho 'remote: permission to acme/repo.git denied to github-actions[bot].' >&2\nexit 1\n",
+    );
+    await $`chmod +x ${hookPath}`.quiet();
+
+    const issueReplies: string[] = [];
+    let pullCreateCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/never-created" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nremote denied\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(pullCreateCalls).toBe(0);
+    expect(issueReplies).toHaveLength(1);
+    const reply = issueReplies[0]!;
+    expect(reply).toContain("missing GitHub App permissions");
+    expect(reply).toContain("Contents: Read and write");
+    expect(reply).toContain("Pull requests: Read and write");
+    expect(reply).toContain("Issues: Read and write");
+    expect(reply).toContain("After updating permissions");
+    expect(reply).toContain("@kodiai apply: update the README");
+    expect(reply).not.toContain("Opened PR:");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("issue apply: replay reuses existing PR and replies with Existing PR link", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
