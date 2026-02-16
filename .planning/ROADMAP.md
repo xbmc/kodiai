@@ -192,7 +192,11 @@ Plans:
   1. For issue Q&A replies that do not include an explicit `apply:` / `change:` prefix, Kodiai clearly frames output as read-only guidance (no implied edits or PR creation)
   2. Kodiai never opens a PR or performs repository writes from an issue thread unless the triggering comment starts with `apply:` or `change:`
   3. If a user asks for changes without using `apply:` / `change:`, Kodiai responds with the exact prefix-based command they can use to opt into write-mode
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 61-01-PLAN.md — Enforce issue prompt read-only framing and exact apply/change opt-in command guidance
+- [ ] 61-02-PLAN.md — Add runtime issue intent gating and deterministic non-prefixed change-request command replies
 
 ### Phase 62: Issue Write-Mode PR Creation
 **Goal**: Users can request a change from an issue comment and receive a PR against the default branch when write-mode is enabled
