@@ -66,6 +66,11 @@ import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
 import { computeMergeConfidence, type MergeConfidence } from "../lib/merge-confidence.ts";
+import {
+  buildSearchCacheKey,
+  createSearchCache,
+  type SearchCache,
+} from "../lib/search-cache.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -414,9 +419,10 @@ async function resolveAuthorTier(params: {
   repoSlug: string;
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   knowledgeStore: KnowledgeStore;
+  searchCache?: SearchCache<number>;
   logger: Logger;
 }): Promise<{ tier: AuthorTier; prCount: number | null; fromCache: boolean }> {
-  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, logger } = params;
+  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, logger } = params;
 
   try {
     const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
@@ -436,14 +442,45 @@ async function resolveAuthorTier(params: {
   let prCount: number | null = null;
 
   if (ambiguousAssociations.has(normalizedAssociation)) {
-    try {
+    const query = `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`;
+
+    const loadPrCount = async (): Promise<number> => {
       const { data } = await octokit.rest.search.issuesAndPullRequests({
-        q: `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`,
+        q: query,
         per_page: 1,
       });
-      prCount = data.total_count;
+      return data.total_count;
+    };
+
+    try {
+      if (searchCache) {
+        const cacheKey = buildSearchCacheKey({
+          repo: repoSlug,
+          searchType: "issuesAndPullRequests",
+          query,
+          extra: { per_page: 1 },
+        });
+
+        prCount = await searchCache.getOrLoad(
+          cacheKey,
+          () => loadPrCount(),
+          AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
+        );
+      } else {
+        prCount = await loadPrCount();
+      }
     } catch (err) {
-      logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+      if (searchCache) {
+        logger.warn({ err, authorLogin }, "Author PR-count cache failed (fail-open, falling back to direct lookup)");
+
+        try {
+          prCount = await loadPrCount();
+        } catch (fallbackErr) {
+          logger.warn({ err: fallbackErr, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+        }
+      } else {
+        logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+      }
     }
   }
 
@@ -708,6 +745,7 @@ type DiffCollectionResult = {
 };
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
+const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function splitGitLines(output: string): string[] {
   return output.trim().split("\n").filter(Boolean);
@@ -875,6 +913,10 @@ export function createReviewHandler(deps: {
   retrievalRecency?: { applyRecencyWeighting: typeof applyRecencyWeighting };
   /** Optional injection for deterministic tests. */
   adaptiveThreshold?: { computeAdaptiveThreshold: typeof computeAdaptiveThreshold };
+  /** Optional injection for deterministic tests. */
+  searchCache?: SearchCache<number>;
+  /** Optional injection for deterministic tests. */
+  searchCacheFactory?: () => SearchCache<number>;
   logger: Logger;
 }): void {
   const {
@@ -893,8 +935,27 @@ export function createReviewHandler(deps: {
     retrievalReranker,
     retrievalRecency,
     adaptiveThreshold,
+    searchCache: injectedSearchCache,
+    searchCacheFactory,
     logger,
   } = deps;
+
+  let authorPrCountSearchCache: SearchCache<number> | undefined;
+  if (injectedSearchCache) {
+    authorPrCountSearchCache = injectedSearchCache;
+  } else {
+    try {
+      authorPrCountSearchCache = searchCacheFactory
+        ? searchCacheFactory()
+        : createSearchCache<number>();
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Search cache initialization failed (fail-open, continuing without search cache)",
+      );
+      authorPrCountSearchCache = undefined;
+    }
+  }
 
   const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
@@ -1363,6 +1424,7 @@ export function createReviewHandler(deps: {
               repoSlug: `${apiOwner}/${apiRepo}`,
               octokit: idempotencyOctokit,
               knowledgeStore,
+              searchCache: authorPrCountSearchCache,
               logger,
             });
             logger.info(
