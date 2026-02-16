@@ -1322,6 +1322,114 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("explicit issue apply/change requests are refused with actionable write-enable guidance when disabled", async () => {
+    const runCase = async (keyword: "apply" | "change") => {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+      let executorCalled = false;
+      let pullCreateCalls = 0;
+      const issueReplies: string[] = [];
+
+      const eventRouter: EventRouter = {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      };
+
+      const jobQueue: JobQueue = {
+        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+      };
+
+      const workspaceManager: WorkspaceManager = {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      };
+
+      const octokit = {
+        rest: {
+          reactions: {
+            createForPullRequestReviewComment: async () => ({ data: {} }),
+            createForIssueComment: async () => ({ data: {} }),
+          },
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async (params: { body: string }) => {
+              issueReplies.push(params.body);
+              return { data: {} };
+            },
+          },
+          pulls: {
+            list: async () => ({ data: [] }),
+            get: async () => ({ data: {} }),
+            create: async () => {
+              pullCreateCalls++;
+              return { data: { html_url: "https://example.com/pr/123" } };
+            },
+            createReplyForReviewComment: async () => ({ data: {} }),
+          },
+        },
+      };
+
+      createMentionHandler({
+        eventRouter,
+        jobQueue,
+        workspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => octokit as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async () => {
+            executorCalled = true;
+            return {
+              conclusion: "success",
+              published: true,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-mention",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        logger: createNoopLogger(),
+      });
+
+      const handler = handlers.get("issue_comment.created");
+      expect(handler).toBeDefined();
+
+      const command = `@kodiai ${keyword}: fix the login bug`;
+      await handler!(
+        buildIssueCommentMentionEvent({
+          issueNumber: 77,
+          commentBody: command,
+        }),
+      );
+
+      expect(executorCalled).toBe(false);
+      expect(pullCreateCalls).toBe(0);
+      expect(issueReplies).toHaveLength(1);
+      expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
+      expect(issueReplies[0]).toContain("Update `.kodiai.yml`:");
+      expect(issueReplies[0]).toContain("```yml");
+      expect(issueReplies[0]).toContain("write:");
+      expect(issueReplies[0]).toContain("enabled: true");
+      expect(issueReplies[0]).toContain(`re-run the same \`${command}\``);
+
+      await workspaceFixture.cleanup();
+    };
+
+    await runCase("apply");
+    await runCase("change");
+  });
+
   test("issue trigger A wording without apply/change is treated as implicit write intent", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
