@@ -119,14 +119,14 @@ export function createSearchCache<T>(options: SearchCacheOptions<T> = {}): Searc
     }
   };
 
-  const getOrLoad = async (
+  const getOrLoad = (
     key: string,
     loader: () => Promise<T>,
     entryTtlMs?: number,
   ): Promise<T> => {
     const cachedValue = get(key);
     if (cachedValue !== undefined) {
-      return cachedValue;
+      return Promise.resolve(cachedValue);
     }
 
     try {
