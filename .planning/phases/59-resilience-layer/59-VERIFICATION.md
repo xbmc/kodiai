@@ -1,20 +1,9 @@
 ---
 phase: 59-resilience-layer
-verified: 2026-02-16T00:15:24.057Z
+verified: 2026-02-16T00:40:36.000Z
 status: gaps_found
-score: 3/5 must-haves verified
+score: 4/5 must-haves verified
 gaps:
-  - truth: "When a review times out with no published output, Kodiai retries once with the top 50% of files by risk score and a halved timeout budget"
-    status: failed
-    reason: "Retry enqueue is gated on having partial results (checkpoint findingCount>=1 or inline output). If a review fully times out before any output/checkpoint, the handler posts an error comment and does not enqueue a retry. Also, retry can be enqueued even when inline output was already published."
-    artifacts:
-      - path: "src/handlers/review.ts"
-        issue: "Retry path only runs inside `if (hasPartialResults)`; `hasPartialResults` is false when `result.published` is false and checkpoint has 0 findings."
-      - path: "src/lib/retry-scope-reducer.ts"
-        issue: "Scope computation exists, but is not reached for the full-timeout/no-output case."
-    missing:
-      - "Enqueue retry (once) on `timeout` when `result.published` is false (even if no checkpoint exists), using riskScores to select top 50% and halved timeout."
-      - "Align retry eligibility with stated goal (no published output) to avoid unnecessary retries after inline output exists."
   - truth: "Checkpoint data and retry metadata are visible in telemetry for operational monitoring"
     status: partial
     reason: "Telemetry captures pr_author, event_type (including retry), and conclusion (timeout vs timeout_partial), but does not capture checkpoint/retry metadata (e.g., filesReviewed, findingCount, retry scopeRatio/selectedFilesCount, retryTimeoutSeconds)."
@@ -30,8 +19,8 @@ human_verification:
     expected: "On forced timeout, a top-level partial review comment is created with the disclaimer header and the checkpoint summaryDraft body."
     why_human: "Requires real GitHub execution and an induced timeout; cannot be proven from static analysis/tests."
   - test: "Timeout with no checkpoint/no output -> retry behavior"
-    expected: "A retry is enqueued exactly once (or at minimum meets roadmap requirement), using top 50% by risk and half timeout budget."
-    why_human: "Depends on runtime timeout behavior and checkpoint frequency; code currently appears not to retry in this case."
+    expected: "A retry is enqueued exactly once, using top 50% by risk and half timeout budget."
+    why_human: "Depends on runtime timeout behavior and queue execution; code-level wiring exists but needs an end-to-end run to confirm behavior."
   - test: "Retry replaces partial comment"
     expected: "Retry completion edits (updates) the original partial review comment body (merged view), not a new comment."
     why_human: "Requires end-to-end GitHub comment creation + updateComment call in a live run."
@@ -40,7 +29,7 @@ human_verification:
 # Phase 59: Resilience Layer Verification Report
 
 **Phase Goal (ROADMAP.md):** Kodiai recovers value from timed-out reviews by publishing accumulated partial results and optionally retrying with a reduced file scope.
-**Verified:** 2026-02-16T00:15:24.057Z
+**Verified:** 2026-02-16T00:40:36.000Z
 **Status:** gaps_found
 
 ## What I Verified
@@ -50,12 +39,12 @@ human_verification:
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
 | 1 | During review execution, Kodiai can accumulate partial review state and publish a partial review comment on timeout | ✓ VERIFIED | Checkpoint tool persists to knowledge store (`src/execution/mcp/checkpoint-server.ts:19`); timeout path reads checkpoint and posts partial review comment (`src/handlers/review.ts:2748`, `src/handlers/review.ts:2774`) |
-| 2 | When a review times out with no published output, Kodiai retries once with top 50% by risk and half timeout | ✗ FAILED | Retry enqueue occurs only if `hasPartialResults` is true (`src/handlers/review.ts:2752`, `src/handlers/review.ts:2801`); no retry path exists for `timeout` with no output/checkpoint |
+| 2 | When a review times out with no published output, Kodiai retries once with top 50% by risk and half timeout | ✓ VERIFIED | Timeout path publishes a partial placeholder comment and enqueues reduced-scope retry when `result.published` is false (`src/handlers/review.ts`); scope uses `computeRetryScope()` (`src/lib/retry-scope-reducer.ts`) |
 | 3 | Retry is capped at exactly 1 attempt | ✓ VERIFIED | Only `-retry-1` keys/branches appear; no `retry-2` (`src/handlers/review.ts:2803`, `src/handlers/review.ts:2858`) |
 | 4 | Repos with 3+ recent timeouts skip retry | ✓ VERIFIED | Chronic check via telemetry count (`src/handlers/review.ts:2756`), gate `isChronicTimeout >= 3` (`src/handlers/review.ts:2760`), no enqueue when chronic (`src/handlers/review.ts:2802`) |
 | 5 | Checkpoint + retry metadata visible in telemetry | ⚠️ PARTIAL | Telemetry records `prAuthor` + eventType + conclusion (`src/handlers/review.ts:2441`, `src/telemetry/store.ts:155`), but no structured checkpoint/retry metadata fields |
 
-**Score:** 3/5 truths verified
+**Score:** 4/5 truths verified
 
 ## Required Artifacts (Existence + Substantive + Wired)
 
@@ -99,11 +88,10 @@ human_verification:
 
 ## Integration Risks / Missing Pieces
 
-- **Retry trigger mismatch (goal vs implementation):** current code retries only when partial results exist, and may retry even when inline output already exists; this diverges from roadmap success criteria.
 - **Operational telemetry gap:** telemetry store does not capture checkpoint/retry scope metadata; monitoring retry effectiveness will rely on logs.
-- **Retry comment update robustness:** partial comment id is written to the knowledge store, but the retry flow uses the in-memory `partialCommentId` variable; if retries ever run out-of-process, comment replacement may fail.
+- **Retry comment update robustness:** retry now prefers the stored `partialCommentId` from the checkpoint record, but end-to-end validation is still needed if retry execution becomes out-of-process.
 
 ---
 
-_Verified: 2026-02-16T00:15:24.057Z_
+_Verified: 2026-02-16T00:40:36.000Z_
 _Verifier: Claude (gsd-verifier)_

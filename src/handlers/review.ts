@@ -2766,7 +2766,9 @@ export function createReviewHandler(deps: {
             // (a) inform the user and (b) attach a retry result.
             const summaryDraft = checkpoint?.summaryDraft ?? (hasPartialResults
               ? "Review timed out with findings posted inline above."
-              : "Review timed out before producing output. Scheduling a reduced-scope retry.");
+              : (isChronicTimeout
+                ? "Review timed out before producing output. Retry skipped due to frequent timeouts for this repo/author."
+                : "Review timed out before producing output. Scheduling a reduced-scope retry."));
             const partialBody = formatPartialReviewComment({
               summaryDraft,
               filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
@@ -2788,7 +2790,22 @@ export function createReviewHandler(deps: {
             const partialCommentId = partialComment.data.id;
 
             // Store partial comment ID in checkpoint for retry to find (best-effort).
-            knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
+            // Use saveCheckpoint() to ensure a record exists even when the run
+            // timed out before the checkpoint tool was ever called.
+            if (knowledgeStore?.saveCheckpoint) {
+              knowledgeStore.saveCheckpoint({
+                reviewOutputKey,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                filesReviewed: checkpoint?.filesReviewed ?? [],
+                findingCount: checkpoint?.findingCount ?? 0,
+                summaryDraft,
+                totalFiles: changedFiles.length,
+                partialCommentId,
+              });
+            } else {
+              knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
+            }
 
             publishedPartialReview = true;
 
@@ -2807,7 +2824,10 @@ export function createReviewHandler(deps: {
             );
 
             // Step 4: Enqueue retry if eligible (not chronic, exactly 1 retry)
-            if (!isChronicTimeout) {
+            // Retry is only useful when no GitHub-visible output was published.
+            // If inline comments were already posted, avoid a retry that could
+            // create additional noise or duplicates.
+            if (!isChronicTimeout && !hasPublishedInlines) {
               const retryReviewOutputKey = `${reviewOutputKey}-retry-1`;
               const retryTimeout = Math.max(30, Math.floor(timeoutDuration / 2));
 
@@ -2976,10 +2996,20 @@ export function createReviewHandler(deps: {
                       });
 
                       const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                      const storedCheckpoint = knowledgeStore?.getCheckpoint?.(reviewOutputKey) ?? null;
+                      const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
+
+                      if (!commentIdToUpdate) {
+                        logger.warn(
+                          { deliveryId: `${event.id}-retry-1`, prNumber: pr.number },
+                          "No partial comment ID available for retry update",
+                        );
+                        return;
+                      }
                       await retryOctokit.rest.issues.updateComment({
                         owner: apiOwner,
                         repo: apiRepo,
-                        comment_id: partialCommentId,
+                        comment_id: commentIdToUpdate,
                         body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
                       });
 
@@ -3049,6 +3079,12 @@ export function createReviewHandler(deps: {
                     if (retryWorkspace) {
                       await retryWorkspace.cleanup();
                     }
+
+                    // Best-effort checkpoint cleanup even on retry failure.
+                    // Retry attempts are capped at 1, so leaving checkpoint rows
+                    // behind provides little value and can accumulate stale state.
+                    knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                    knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
                   }
                 }, {
                   deliveryId: `${event.id}-retry-1`,
