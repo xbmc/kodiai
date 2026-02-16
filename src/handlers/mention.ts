@@ -202,6 +202,83 @@ export function createMentionHandler(deps: {
     return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
   }
 
+  function toErrorSignalText(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value instanceof Uint8Array) {
+      return new TextDecoder().decode(value);
+    }
+    if (value instanceof Error) {
+      return value.message;
+    }
+    if (value && typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value ?? "");
+  }
+
+  function isLikelyWritePermissionFailure(err: unknown): boolean {
+    if (!err) {
+      return false;
+    }
+
+    const status =
+      typeof err === "object" && err !== null && "status" in err && typeof err.status === "number"
+        ? err.status
+        : undefined;
+
+    if (status === 401 || status === 403) {
+      return true;
+    }
+
+    const parts: string[] = [];
+    if (err instanceof Error) {
+      parts.push(err.message);
+      const errorWithExtras = err as Error & {
+        stderr?: unknown;
+        stdout?: unknown;
+        cause?: unknown;
+      };
+      parts.push(toErrorSignalText(errorWithExtras.stderr));
+      parts.push(toErrorSignalText(errorWithExtras.stdout));
+      parts.push(toErrorSignalText(errorWithExtras.cause));
+    }
+
+    if (typeof err === "object" && err !== null) {
+      const obj = err as {
+        message?: unknown;
+        stderr?: unknown;
+        stdout?: unknown;
+        response?: unknown;
+      };
+      parts.push(toErrorSignalText(obj.message));
+      parts.push(toErrorSignalText(obj.stderr));
+      parts.push(toErrorSignalText(obj.stdout));
+      parts.push(toErrorSignalText(obj.response));
+    }
+
+    const signal = parts.join("\n").toLowerCase();
+    if (signal.length === 0) {
+      return false;
+    }
+
+    return (
+      signal.includes("resource not accessible by integration") ||
+      signal.includes("permission to") ||
+      signal.includes("write access to repository not granted") ||
+      signal.includes("permission denied") ||
+      signal.includes("insufficient permission") ||
+      signal.includes("forbidden") ||
+      signal.includes("not permitted") ||
+      signal.includes("requires write")
+    );
+  }
+
   function stripIssueIntentWrappers(userQuestion: string): string {
     let normalized = userQuestion.trim().replace(/\s+/g, " ");
 
@@ -579,6 +656,35 @@ export function createMentionHandler(deps: {
             : { type: "issue" as const, number: mention.issueNumber };
 
         const writeKeyword = writeIntent.keyword ?? "apply";
+        const retryCommand =
+          writeIntent.request.trim().length > 0
+            ? `@${appSlug} ${writeKeyword}: ${writeIntent.request}`
+            : `@${appSlug} ${writeKeyword}: <same request>`;
+
+        const buildWritePermissionFailureReply = (): string =>
+          wrapInDetails(
+            [
+              "I couldn't complete this write request because of missing GitHub App permissions.",
+              "",
+              "Minimum required permissions for write-mode PR creation:",
+              "- `Contents: Read and write`",
+              "- `Pull requests: Read and write`",
+              "- `Issues: Read and write`",
+              "",
+              "After updating permissions on the app installation, re-run the same command:",
+              `- \`${retryCommand}\``,
+            ].join("\n"),
+            "kodiai response",
+          );
+
+        const maybeReplyWritePermissionFailure = async (err: unknown): Promise<boolean> => {
+          if (!isLikelyWritePermissionFailure(err)) {
+            return false;
+          }
+          await postMentionReply(buildWritePermissionFailureReply(), { sanitizeMentions: false });
+          return true;
+        };
+
         const writeOutputKey =
           writeEnabled
             ? buildWriteOutputKey({
@@ -1142,6 +1248,10 @@ export function createMentionHandler(deps: {
                 return;
               }
 
+              if (await maybeReplyWritePermissionFailure(err)) {
+                return;
+              }
+
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
               try {
                 await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
@@ -1194,6 +1304,9 @@ export function createMentionHandler(deps: {
                   remoteRef: writeBranchName,
                 });
               } catch (pushErr) {
+                if (await maybeReplyWritePermissionFailure(pushErr)) {
+                  return;
+                }
                 logger.error(
                   { err: pushErr, prNumber: mention.prNumber, branchName: writeBranchName },
                   "Fallback push to bot branch failed",
@@ -1233,6 +1346,10 @@ export function createMentionHandler(deps: {
               const refusal = buildWritePolicyRefusalMessage(err, config.write.allowPaths);
               const replyBody = wrapInDetails(refusal, "kodiai response");
               await postMentionReply(replyBody);
+              return;
+            }
+
+            if (await maybeReplyWritePermissionFailure(err)) {
               return;
             }
 
@@ -1301,14 +1418,23 @@ export function createMentionHandler(deps: {
 
           const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
 
-          const { data: createdPr } = await octokit.rest.pulls.create({
-            owner: mention.owner,
-            repo: mention.repo,
-            title: prTitle,
-            head: pushed.branchName,
-            base: prBaseRef,
-            body: prBody,
-          });
+          let createdPr: { html_url: string };
+          try {
+            const response = await octokit.rest.pulls.create({
+              owner: mention.owner,
+              repo: mention.repo,
+              title: prTitle,
+              head: pushed.branchName,
+              base: prBaseRef,
+              body: prBody,
+            });
+            createdPr = response.data;
+          } catch (err) {
+            if (await maybeReplyWritePermissionFailure(err)) {
+              return;
+            }
+            throw err;
+          }
 
           const replyBody = wrapInDetails(
             [`Opened PR: ${createdPr.html_url}`].join("\n"),
