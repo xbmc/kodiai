@@ -19,3 +19,8 @@ review:
 
 write:
   enabled: true
+  allowPaths:
+    - "src/**"
+    - "tests/**"
+    - "docs/**"
+    - "README.md"
