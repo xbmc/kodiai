@@ -9,6 +9,7 @@ import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempote
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
+import { createSearchCache } from "../lib/search-cache.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -5828,5 +5829,237 @@ describe("createReviewHandler timeout resilience", () => {
     expect(enqueuedContexts.some((c) => c.action === "review-retry")).toBe(true);
 
     await workspaceFixture.cleanup();
+  });
+});
+
+describe("createReviewHandler author-tier search cache integration", () => {
+  async function runAuthorTierScenario(params: {
+    eventIds: [string, string];
+    triggerConcurrently?: boolean;
+    searchCache: {
+      get: (key: string) => number | undefined;
+      set: (key: string, value: number, ttlMs?: number) => void;
+      getOrLoad: (key: string, loader: () => Promise<number>, ttlMs?: number) => Promise<number>;
+      purgeExpired: () => number;
+    };
+    issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
+  }): Promise<number> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixtureA = await createWorkspaceFixture();
+    const workspaceFixtureB = await createWorkspaceFixture();
+    const workspacePool = [workspaceFixtureA, workspaceFixtureB];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => {
+        const fixture = workspacePool.shift();
+        if (!fixture) {
+          throw new Error("No workspace fixture available");
+        }
+        return {
+          dir: fixture.dir,
+          cleanup: async () => undefined,
+        };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: params.issuesAndPullRequests,
+        },
+      },
+    };
+
+    const knowledgeStore = createKnowledgeStoreStub() as never;
+    let executeCount = 0;
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-author-tier-cache",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore,
+      searchCache: params.searchCache as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    const eventA = buildReviewRequestedEvent(
+      {
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Author tier cache scenario",
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          author_association: "NONE",
+        },
+      },
+      { id: params.eventIds[0] },
+    );
+
+    const eventB = buildReviewRequestedEvent(
+      {
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Author tier cache scenario",
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          author_association: "NONE",
+        },
+      },
+      { id: params.eventIds[1] },
+    );
+
+    if (params.triggerConcurrently) {
+      await Promise.all([handler!(eventA), handler!(eventB)]);
+    } else {
+      await handler!(eventA);
+      await handler!(eventB);
+    }
+
+    await workspaceFixtureA.cleanup();
+    await workspaceFixtureB.cleanup();
+
+    expect(executeCount).toBe(2);
+    return executeCount;
+  }
+
+  test("reuses cached author-tier lookup for equivalent review events", async () => {
+    let searchCallCount = 0;
+    const searchCache = createSearchCache<number>({ ttlMs: 60_000 });
+
+    await runAuthorTierScenario({
+      eventIds: ["delivery-cache-hit-1", "delivery-cache-hit-2"],
+      searchCache,
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        return { data: { total_count: 7 } };
+      },
+    });
+
+    expect(searchCallCount).toBe(1);
+  });
+
+  test("coalesces concurrent equivalent author-tier lookups into one search call", async () => {
+    let searchCallCount = 0;
+    let releaseSearch!: () => void;
+    const searchCache = createSearchCache<number>({ ttlMs: 60_000 });
+    const searchGate = new Promise<void>((resolve) => {
+      releaseSearch = resolve;
+    });
+
+    const scenarioPromise = runAuthorTierScenario({
+      eventIds: ["delivery-cache-concurrent-1", "delivery-cache-concurrent-2"],
+      triggerConcurrently: true,
+      searchCache,
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        await searchGate;
+        return { data: { total_count: 9 } };
+      },
+    });
+
+    await Bun.sleep(50);
+    releaseSearch();
+    await scenarioPromise;
+
+    expect(searchCallCount).toBe(1);
+  });
+
+  test("falls back to direct lookup when search cache throws", async () => {
+    let searchCallCount = 0;
+    const brokenCache = {
+      get: () => undefined,
+      set: () => undefined,
+      getOrLoad: async () => {
+        throw new Error("cache unavailable");
+      },
+      purgeExpired: () => 0,
+    };
+
+    await runAuthorTierScenario({
+      eventIds: ["delivery-cache-fault-1", "delivery-cache-fault-2"],
+      searchCache: brokenCache,
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        return { data: { total_count: 11 } };
+      },
+    });
+
+    expect(searchCallCount).toBe(2);
   });
 });
