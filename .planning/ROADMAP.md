@@ -107,7 +107,7 @@ See `.planning/milestones/v0.12-ROADMAP.md` for milestone snapshot.
 
 - [x] **Phase 66: Search Cache Foundation** - Repository-scoped cache keys, de-duplication, and bounded TTL strategy for Search API usage
 - [x] **Phase 67: Rate-Limit Resilience + Telemetry** - Graceful degradation, single bounded retry strategy, and production-facing rate-limit metrics
-- [ ] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
+- [x] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
 - [ ] **Phase 69: Snippet Anchors + Prompt Budgeting** - Code-snippet extraction with path anchors and strict prompt-budget controls
 - [ ] **Phase 70: Cross-Surface Conversational UX** - Consistent response contracts and clarifying-question fallback across issue/PR/review threads
 
@@ -217,8 +217,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 68-01-PLAN.md — Build multi-query generation + deterministic merge module (TDD)
-- [ ] 68-02-PLAN.md — Integrate multi-query retrieval into review and mention pipelines
+- [x] 68-01-PLAN.md — Build multi-query generation + deterministic merge module (TDD)
+- [x] 68-02-PLAN.md — Integrate multi-query retrieval into review and mention pipelines
 
 ### Phase 69: Snippet Anchors + Prompt Budgeting
 **Goal**: Retrieved context is more actionable by including concise snippet evidence and precise path anchors while preserving prompt size limits
@@ -250,7 +250,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 11 milestones, 66 phases, 175 plans
+**Total shipped:** 11 milestones, 67 phases, 177 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -275,10 +275,10 @@ Plans:
 | 65 | v0.11 | 2/2 | Complete | 2026-02-16 |
 | 66 | v0.12 | 2/2 | Complete | 2026-02-16 |
 | 67 | v0.12 | 2/2 | Complete | 2026-02-17 |
-| 68 | v0.12 | 0/2 | Planned | - |
+| 68 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 69 | v0.12 | 0/2 | Planned | - |
 | 70 | v0.12 | 0/2 | Planned | - |
 
 ---
 
-*Roadmap updated: 2026-02-17 -- phase 67 completed (Rate-Limit Resilience + Telemetry); phases 68-70 planned*
+*Roadmap updated: 2026-02-17 -- phase 68 completed (Multi-Query Retrieval Core); phases 69-70 planned*
