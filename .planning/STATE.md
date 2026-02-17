@@ -64,6 +64,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 73-degraded-retrieval-contract P01 | 3 min | 2 tasks | 4 files |
 | Phase 73-degraded-retrieval-contract P02 | 5 min | 2 tasks | 6 files |
 | Phase 74 P01 | 3 min | 2 tasks | 2 files |
+| Phase 74 P02 | 4 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 74]: Issue write publish failures now return machine-checkable status pr_creation_failed with failed-step diagnostics.
 - [Phase 74]: Issue write-mode PR creation retries exactly once before terminal failure response.
 - [Phase 74]: Issue write-mode success requires branch push, PR URL creation, and issue linkback comment posting.
+- [Phase 74]: Use machine-checkable CAP-74/REL-74/RET-74 check IDs so gate output is actionable and release-blocking without ambiguous wording.
+- [Phase 74]: Validate Azure runtime prerequisites with deterministic non-destructive permission probes and fail closed when write/push prerequisites are missing.
 
 ### Key Constraints (Carry-Forward)
 
@@ -177,7 +180,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T10:51:31.928Z
-**Stopped At:** Completed 74-01-PLAN.md
+**Last session:** 2026-02-17T10:57:24.839Z
+**Stopped At:** Completed 74-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 74`
