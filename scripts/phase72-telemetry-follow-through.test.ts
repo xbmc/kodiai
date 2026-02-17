@@ -178,4 +178,16 @@ describe("phase72 summary language guardrails", () => {
     expect(errors.length).toBeGreaterThan(0);
     expect(errors.join(" ")).toContain("must not include demurral");
   });
+
+  test("fails guardrail if verdict uses certainty language without DB citations", () => {
+    const badSummary = [
+      "Analysis: Evidence indicates stable behavior for this run.",
+      "Risk note: residual risk remains.",
+      "Final verdict: PASS - behavior is guaranteed stable.",
+    ].join("\n");
+
+    const errors = validateSummaryLanguage(badSummary);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.join(" ")).toContain("certainty language requires explicit evidence citations");
+  });
 });

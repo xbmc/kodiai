@@ -322,8 +322,16 @@ export function validateSummaryLanguage(summary: string): string[] {
     errors.push("PASS verdict must cite evidence check IDs.");
   }
 
-  if (/(guaranteed|certain|definitive|proven)/i.test(verdictLine) && !/\[DB-C\d+/.test(verdictLine)) {
-    errors.push("Certainty wording requires explicit evidence citations.");
+  const certaintyWords = /(guaranteed|certain|definitive|proven|proof-positive)/i;
+  if (certaintyWords.test(verdictLine) && !/\[DB-C\d+/.test(verdictLine)) {
+    errors.push("Final verdict certainty language requires explicit evidence citations.");
+  }
+
+  const analysisLine = summary
+    .split("\n")
+    .find((line) => line.startsWith("Analysis:"));
+  if (!analysisLine || !/evidence/i.test(analysisLine)) {
+    errors.push("Analysis section must anchor claims in evidence.");
   }
 
   return errors;
