@@ -13,7 +13,7 @@
 - ✅ **v0.9 Smart Dependencies & Resilience** — Phases 51-55 (shipped 2026-02-15)
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
-- 🎯 **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-70 (planned)
+- 🎯 **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (planned)
 
 ## Phases
 
@@ -110,6 +110,7 @@ See `.planning/milestones/v0.12-ROADMAP.md` for milestone snapshot.
 - [x] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
 - [x] **Phase 69: Snippet Anchors + Prompt Budgeting** - Code-snippet extraction with path anchors and strict prompt-budget controls
 - [x] **Phase 70: Cross-Surface Conversational UX** - Consistent response contracts and clarifying-question fallback across issue/PR/review threads
+- [ ] **Phase 71: Search Cache Telemetry Wiring Fix** - Correct cache-hit telemetry wiring so OPS-03 reflects real Search cache behavior in production metrics
 
 ## Phase Details
 
@@ -247,6 +248,20 @@ Plans:
 Plans:
 - [x] 70-01-PLAN.md — Unify conversational response contract and surface adapters
 - [x] 70-02-PLAN.md — Add cross-surface clarification + safety regression suite
+
+### Phase 71: Search Cache Telemetry Wiring Fix
+**Goal**: OPS-03 telemetry reports actual Search API cache-hit behavior so operators can tune rate-limit mitigation using accurate cache metrics
+**Depends on**: Phase 66, Phase 67
+**Requirements**: OPS-03
+**Gap Closure:** Closes blocker gaps from `v0.12-MILESTONE-AUDIT.md` (OPS-03 requirement + Phase 66 -> 67 integration signal propagation)
+**Success Criteria** (what must be TRUE):
+  1. `cacheHitRate` is derived from Search cache hit/miss outcomes in enrichment flows, not author-tier classification cache flags
+  2. Search cache-hit signal from phase 66 is propagated into phase 67 telemetry writes with deterministic semantics
+  3. Regression tests fail if telemetry wiring is accidentally switched back to non-Search cache signals
+**Plans**: 1 plan
+
+Plans:
+- [ ] 71-01-PLAN.md — Rewire Search cache-hit telemetry source and lock with regression coverage
 
 ## Progress
 
