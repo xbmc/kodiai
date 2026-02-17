@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** 70 (verified complete)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** Phase complete — verification and roadmap updates finished
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-17
 
 **Progress:** [██████████] 100%
@@ -58,6 +58,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 69 P02 | 13m | 2 tasks | 8 files |
 | Phase 70 P01 | 2 min | 2 tasks | 4 files |
 | Phase 70 P02 | 2 min | 2 tasks | 2 files |
+| Phase 71 P01 | 1 min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 70]: Standardized runtime non-published fallback to one targeted clarifying question while keeping existing write-intent and fail-open safety gates unchanged.
 - [Phase 70]: Prompt contract checks assert durable markers and sequence order instead of brittle full-paragraph snapshots.
 - [Phase 70]: PR top-level mention fixtures include issue.number plus pull_request shape to validate PR-surface behavior without issue-only intent leakage.
+- [Phase 71]: Author classification cache reads remain independent from Search cache-hit telemetry so cacheHitRate reflects Search API cache behavior only.
+- [Phase 71]: Search cache-hit signal uses getOrLoad loader execution semantics; fail-open direct lookups and degraded paths report deterministic misses.
 
 ### Key Constraints (Carry-Forward)
 
@@ -152,7 +155,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T03:02:30Z
-**Stopped At:** Completed phase 70 execution and live cross-surface verification
+**Last session:** 2026-02-17T03:47:54.556Z
+**Stopped At:** Completed 71-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-complete-milestone
