@@ -4169,6 +4169,311 @@ describe("createMentionHandler write intent gating", () => {
   });
 });
 
+describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
+  test("invokes three retrieval variants and injects merged retrieval context into mention prompt", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    const embeddingQueries: string[] = [];
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          capturedPrompt = ctx.prompt ?? "";
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-ret07",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: {
+        model: "test",
+        dimensions: 1,
+        generate: async (query: string) => {
+          embeddingQueries.push(query);
+          const variantId = query.includes("files:") ? 2 : query.includes("risk:") ? 3 : 1;
+          return {
+            embedding: new Float32Array([variantId]),
+            model: "test",
+            dimensions: 1,
+          };
+        },
+      } as never,
+      isolationLayer: {
+        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+          const variantId = params.queryEmbedding[0] ?? 0;
+          const mk = (memoryId: number, findingText: string, distance: number) => ({
+            memoryId,
+            distance,
+            sourceRepo: "acme/repo",
+            record: {
+              id: memoryId,
+              repo: "repo",
+              owner: "acme",
+              findingId: memoryId,
+              reviewId: 100 + memoryId,
+              sourceRepo: "acme/repo",
+              findingText,
+              severity: "major",
+              category: "correctness",
+              filePath: `src/f-${memoryId}.ts`,
+              outcome: "accepted",
+              embeddingModel: "test",
+              embeddingDim: 1,
+              stale: false,
+            },
+          });
+
+          if (variantId === 1) {
+            return {
+              results: [mk(1, "shared mention finding", 0.3)],
+              provenance: {
+                repoSources: ["acme/repo"],
+                sharedPoolUsed: false,
+                totalCandidates: 1,
+                query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+              },
+            };
+          }
+
+          if (variantId === 2) {
+            return {
+              results: [mk(1, "shared mention finding", 0.25)],
+              provenance: {
+                repoSources: ["acme/repo"],
+                sharedPoolUsed: false,
+                totalCandidates: 1,
+                query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+              },
+            };
+          }
+
+          return {
+            results: [mk(2, "shape mention finding", 0.2)],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+            },
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai where should I start fixing this bug?",
+      }),
+    );
+
+    expect(embeddingQueries).toHaveLength(3);
+    expect(embeddingQueries.some((query) => query.includes("files:"))).toBe(true);
+    expect(capturedPrompt).toContain("## Retrieval");
+    expect(capturedPrompt).toContain("shared mention finding");
+    expect(capturedPrompt).toContain("shape mention finding");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("partial retrieval variant failures stay fail-open and still execute mention reply", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    let executorCalls = 0;
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          executorCalls++;
+          capturedPrompt = ctx.prompt ?? "";
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-ret07-fail-open",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: {
+        model: "test",
+        dimensions: 1,
+        generate: async (query: string) => {
+          if (query.includes("files:")) {
+            throw new Error("file-path retrieval failed");
+          }
+          return {
+            embedding: new Float32Array([query.includes("risk:") ? 2 : 1]),
+            model: "test",
+            dimensions: 1,
+          };
+        },
+      } as never,
+      isolationLayer: {
+        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+          const variantId = params.queryEmbedding[0] ?? 0;
+          const findingText = variantId === 1 ? "intent-only mention finding" : "shape-only mention finding";
+          return {
+            results: [
+              {
+                memoryId: 40 + variantId,
+                distance: 0.2,
+                sourceRepo: "acme/repo",
+                record: {
+                  id: 40 + variantId,
+                  repo: "repo",
+                  owner: "acme",
+                  findingId: 40 + variantId,
+                  reviewId: 200 + variantId,
+                  sourceRepo: "acme/repo",
+                  findingText,
+                  severity: "major",
+                  category: "correctness",
+                  filePath: `src/ret-${variantId}.ts`,
+                  outcome: "accepted",
+                  embeddingModel: "test",
+                  embeddingDim: 1,
+                  stale: false,
+                },
+              },
+            ],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+            },
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai what should we fix first?",
+      }),
+    );
+
+    expect(executorCalls).toBe(1);
+    expect(capturedPrompt).toContain("intent-only mention finding");
+    expect(capturedPrompt).toContain("shape-only mention finding");
+
+    await workspaceFixture.cleanup();
+  });
+});
+
 describe("createMentionHandler review command", () => {
   test("@kodiai review triggers executor instead of delegating to aireview team", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();

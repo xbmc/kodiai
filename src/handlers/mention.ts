@@ -12,6 +12,8 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { EmbeddingProvider } from "../learning/types.ts";
+import type { IsolationLayer } from "../learning/isolation.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -32,6 +34,12 @@ import {
 import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
+import {
+  buildRetrievalVariants,
+  executeRetrievalVariants,
+  mergeVariantResults,
+} from "../learning/multi-query-retrieval.ts";
+import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
@@ -90,6 +98,18 @@ export function buildWritePolicyRefusalMessage(
   return lines.join("\n");
 }
 
+type MentionRetrievalContext = {
+  findings: Array<{
+    findingText: string;
+    severity: string;
+    category: string;
+    filePath: string;
+    outcome: string;
+    distance: number;
+    sourceRepo: string;
+  }>;
+};
+
 
 /**
  * Create the mention handler and register it with the event router.
@@ -107,9 +127,21 @@ export function createMentionHandler(deps: {
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
+  embeddingProvider?: EmbeddingProvider;
+  isolationLayer?: IsolationLayer;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
+  const {
+    eventRouter,
+    jobQueue,
+    workspaceManager,
+    githubApp,
+    executor,
+    telemetryStore,
+    embeddingProvider,
+    isolationLayer,
+    logger,
+  } = deps;
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -331,6 +363,13 @@ export function createMentionHandler(deps: {
       signal.includes("not permitted") ||
       signal.includes("requires write")
     );
+  }
+
+  function splitGitLines(output: string): string[] {
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 
   function stripIssueIntentWrappers(userQuestion: string): string {
@@ -1025,6 +1064,121 @@ export function createMentionHandler(deps: {
           }
         }
 
+        let retrievalContext: MentionRetrievalContext | undefined;
+        if (embeddingProvider && isolationLayer && config.knowledge.retrieval.enabled) {
+          try {
+            let filePaths: string[] = [];
+            if (mention.prNumber !== undefined && mention.baseRef) {
+              const diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
+                .quiet()
+                .nothrow();
+              if (diffResult.exitCode === 0) {
+                filePaths = splitGitLines(diffResult.text());
+              } else {
+                logger.warn(
+                  {
+                    surface: mention.surface,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    prNumber: mention.prNumber,
+                    baseRef: mention.baseRef,
+                    exitCode: diffResult.exitCode,
+                  },
+                  "Failed to collect mention retrieval file paths (fail-open)",
+                );
+              }
+            }
+
+            const prLanguages = Array.from(
+              new Set(
+                filePaths
+                  .map((filePath) => classifyFileLanguage(filePath))
+                  .filter((language) => language !== "Unknown"),
+              ),
+            );
+            const retrievalTopK = Math.max(1, Math.min(config.knowledge.retrieval.topK, 3));
+            const variants = buildRetrievalVariants({
+              title: writeIntent.request,
+              body: mentionContext,
+              conventionalType: null,
+              prLanguages,
+              riskSignals: [mention.surface, mention.inReplyToId !== undefined ? "reply-thread" : "single-mention"],
+              filePaths,
+            });
+            const variantTopK = Math.max(1, Math.ceil(retrievalTopK / Math.max(1, variants.length)));
+            const variantResults = await executeRetrievalVariants({
+              variants,
+              maxConcurrency: 2,
+              execute: async (variant) => {
+                const embeddingResult = await embeddingProvider.generate(variant.query, "query");
+                if (!embeddingResult) {
+                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
+                }
+
+                const retrieval = isolationLayer.retrieveWithIsolation({
+                  queryEmbedding: embeddingResult.embedding,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  owner: mention.owner,
+                  sharingEnabled: config.knowledge.sharing.enabled,
+                  topK: variantTopK,
+                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                  adaptive: config.knowledge.retrieval.adaptive,
+                  logger,
+                });
+
+                return retrieval.results;
+              },
+            });
+
+            const variantFailures = variantResults.filter((variant) => variant.error);
+            for (const failedVariant of variantFailures) {
+              logger.warn(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  issueNumber: mention.issueNumber,
+                  prNumber: mention.prNumber,
+                  variant: failedVariant.variant.type,
+                  err: failedVariant.error,
+                },
+                "Mention retrieval variant failed (fail-open)",
+              );
+            }
+
+            const merged = mergeVariantResults({
+              resultsByVariant: variantResults,
+              topK: retrievalTopK,
+            });
+
+            if (merged.length > 0) {
+              retrievalContext = {
+                findings: merged.map((result) => ({
+                  findingText: result.record.findingText,
+                  severity: result.record.severity,
+                  category: result.record.category,
+                  filePath: result.record.filePath,
+                  outcome: result.record.outcome,
+                  distance: result.distance,
+                  sourceRepo: result.sourceRepo,
+                })),
+              };
+            }
+          } catch (err) {
+            logger.warn(
+              {
+                err,
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                issueNumber: mention.issueNumber,
+                prNumber: mention.prNumber,
+              },
+              "Mention retrieval context generation failed (fail-open)",
+            );
+          }
+        }
+
         const planOnlyInstructions = isPlanOnly
           ? [
               "Plan-only request detected (plan:).",
@@ -1064,6 +1218,7 @@ export function createMentionHandler(deps: {
         const mentionPrompt = buildMentionPrompt({
           mention,
           mentionContext,
+          retrievalContext,
           userQuestion: writeIntent.request,
           findingContext,
           customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]

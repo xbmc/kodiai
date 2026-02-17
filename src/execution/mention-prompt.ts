@@ -10,6 +10,17 @@ import { sanitizeContent } from "../lib/sanitizer.ts";
 export function buildMentionPrompt(params: {
   mention: MentionEvent;
   mentionContext: string;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      filePath: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+  };
   userQuestion: string;
   findingContext?: {
     severity: string;
@@ -24,6 +35,7 @@ export function buildMentionPrompt(params: {
   const {
     mention,
     mentionContext,
+    retrievalContext,
     userQuestion,
     findingContext,
     customInstructions,
@@ -66,6 +78,21 @@ export function buildMentionPrompt(params: {
   // Context (optional)
   if (mentionContext.trim().length > 0) {
     lines.push(mentionContext);
+    lines.push("");
+  }
+
+  if (retrievalContext && retrievalContext.findings.length > 0) {
+    lines.push("## Retrieval");
+    lines.push("");
+    lines.push(
+      "Use these similar prior findings as supporting context only when they match the current request.",
+    );
+    lines.push("");
+    for (const finding of retrievalContext.findings) {
+      lines.push(
+        `- [${finding.severity}/${finding.category}] ${finding.findingText} (file: ${finding.filePath}, distance: ${finding.distance.toFixed(3)}, source: ${finding.sourceRepo})`,
+      );
+    }
     lines.push("");
   }
 

@@ -144,4 +144,30 @@ describe("buildMentionPrompt", () => {
     expect(prompt).not.toContain("Intent-based execution");
     expect(prompt).not.toContain("Plan requests");
   });
+
+  test("renders retrieval context when provided", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Validate null payload before use",
+            severity: "major",
+            category: "correctness",
+            filePath: "src/api/handler.ts",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("## Retrieval");
+    expect(prompt).toContain("Validate null payload before use");
+    expect(prompt).toContain("distance: 0.123");
+    expect(prompt).toContain("source: acme/repo");
+  });
 });
