@@ -49,6 +49,21 @@ the run is invalid for OPS75 closure and must be re-captured.
 - These runs must be executed with `TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES` enabled.
 - Example: `failopen-review-1:pull_request.review_requested`
 
+### Pre-verification checklist (blocking)
+
+Before invoking `bun run verify:phase75`, run the OPS75 capture gate query in
+`docs/runbooks/review-requested-debug.md` and confirm:
+
+- review lane identities each have one `rate_limit_events` row with
+  `pull_request.review_requested`
+- mention lane identities each have one `rate_limit_events` row with
+  `issue_comment.created`
+- degraded identities each have exactly one row where
+  `LOWER(COALESCE(degradation_path, 'none')) <> 'none'`
+
+If any precheck row is missing, reject that identity set and recapture before
+running the verifier.
+
 ## Deterministic Run Sequence
 
 For each surface (`review_requested`, explicit mention), execute this fixed order:

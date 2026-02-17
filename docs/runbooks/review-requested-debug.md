@@ -178,6 +178,40 @@ If conclusions are present but telemetry rows are missing, treat it as a telemet
 
 Use these snippets when running `docs/smoke/phase75-live-ops-verification-closure.md`.
 
+### OPS75 capture gate: validate identity rows before verifier run
+
+Run this first against the exact candidate identities you plan to pass to
+`bun run verify:phase75`:
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  cache_hit_rate,
+  LOWER(COALESCE(degradation_path, 'none')) AS degradation_path,
+  created_at
+FROM rate_limit_events
+WHERE delivery_id IN (
+  '<review-prime>',
+  '<review-hit>',
+  '<review-changed>',
+  '<mention-prime>',
+  '<mention-hit>',
+  '<mention-changed>',
+  '<degraded-id-1>'
+)
+ORDER BY created_at ASC;
+```
+
+Identity selection rule (blocking):
+- Keep only identity sets where all six cache-lane identities have one row each.
+- Mention lane identities must be present as `issue_comment.created` rows.
+- Every degraded identity must have one row with
+  `LOWER(COALESCE(degradation_path, 'none')) <> 'none'`.
+
+If these prerequisites are not met, recapture identities before running the
+verifier.
+
 ### OPS75-PREFLIGHT-01: Accepted review_requested gate evidence
 
 From application logs for each review lane identity, confirm:
