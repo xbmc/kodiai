@@ -5,12 +5,12 @@
 See: `.planning/PROJECT.md` (updated 2026-02-17)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Execute v0.13 Reliability Follow-Through roadmap starting at Phase 72
+**Current focus:** Prepare Phase 74 reliability regression gating after Phase 73 completion
 
 ## Current Position
 
-**Milestone:** v0.13 Reliability Follow-Through (in planning)
-**Phase:** 72 - Telemetry Follow-Through (in progress)
+**Milestone:** v0.13 Reliability Follow-Through (in progress)
+**Phase:** 73 - Degraded Retrieval Contract (complete)
 **Current Plan:** 2
 **Total Plans in Phase:** 2
 **Status:** Phase complete — ready for verification
@@ -63,6 +63,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 72-telemetry-follow-through P02 | 5 min | 3 tasks | 5 files |
 | Phase 73-degraded-retrieval-contract P01 | 3 min | 2 tasks | 4 files |
 | Phase 73-degraded-retrieval-contract P02 | 5 min | 2 tasks | 6 files |
+| Phase 74 P01 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,6 +73,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [v0.13-roadmap]: Milestone phase numbering continues from v0.12 at Phase 72 with no renumbering of shipped history.
 - [v0.13-roadmap]: Requirements are grouped into three execution phases: observability follow-through (72), degraded retrieval contract (73), and regression gate (74).
 - [v0.13-roadmap]: Each v0.13 requirement maps to exactly one phase for strict traceability (6/6 covered, 0 orphaned).
+- [Phase 73]: Runtime disclosure contract is enforced with the exact sentence `Analysis is partial due to API limits.` on degraded review outputs, with non-degraded guardrails.
+- [Phase 73]: Retrieval evidence rendering is budget-bounded and markdown-safe across review and mention surfaces, with deterministic path-only fallback.
+- [Phase 73]: Live run-state idempotency prevents repeated review_requested events from reprocessing unchanged head/base pairs.
 - [Phase 56]: Store dep bump merge history in knowledge DB keyed by (repo, pr_number) using INSERT OR IGNORE to handle redeliveries
 - [Phase 56]: Use INSERT OR IGNORE with a partial unique index on retrieval_quality(delivery_id) to dedupe webhook redeliveries
 - [Phase 56]: Compute retrieval avg_distance and language_match_ratio from reranked adjustedDistance/languageMatch (not raw distances)
@@ -140,6 +144,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 73-degraded-retrieval-contract]: Share a single exported disclosure sentence constant across prompt and runtime publish layers to prevent wording divergence.
 - [Phase 73-degraded-retrieval-contract]: Enforce retrieval maxChars against fully rendered section text (header plus bullets) so prompt budgets cannot overflow.
 - [Phase 73-degraded-retrieval-contract]: Normalize backticks in path-only fallback evidence to apostrophes to preserve markdown validity when snippet anchors are missing.
+- [Phase 74]: Issue write publish failures now return machine-checkable status pr_creation_failed with failed-step diagnostics.
+- [Phase 74]: Issue write-mode PR creation retries exactly once before terminal failure response.
+- [Phase 74]: Issue write-mode success requires branch push, PR URL creation, and issue linkback comment posting.
 
 ### Key Constraints (Carry-Forward)
 
@@ -170,7 +177,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T08:09:54.189Z
-**Stopped At:** Completed 73-degraded-retrieval-contract-02-PLAN.md
+**Last session:** 2026-02-17T10:51:31.928Z
+**Stopped At:** Completed 74-01-PLAN.md
 **Resume File:** None
-**Next action:** Run `/gsd-plan-phase 72`
+**Next action:** Run `/gsd-plan-phase 74`
