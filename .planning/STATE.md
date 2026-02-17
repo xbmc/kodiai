@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.12 phase 68 verified complete; prepare planning for phase 69
+**Current focus:** Milestone v0.12 phase 69 plan 01 complete; ready to execute plan 02
 
 ## Current Position
 
 **Milestone:** v0.12 Operator Reliability & Retrieval Quality (planned)
-**Phase:** 68 (verified complete)
+**Phase:** 69 (in progress)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** Phase complete — verification and roadmap updates finished
+**Status:** In progress — ready for plan 69-02
 **Last Activity:** 2026-02-17
 
 **Progress:** [██████████] 100%
@@ -54,6 +54,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 67 P02 | 3m14s | 2 tasks | 5 files |
 | Phase 68 P01 | 2m21s | 1 tasks | 2 files |
 | Phase 68 P02 | 7m32s | 2 tasks | 8 files |
+| Phase 69 P01 | 2m | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 68]: Run retrieval variants with bounded concurrency=2 and shared topK partitioning to preserve latency guardrails.
 - [Phase 68]: Keep retrieval fail-open at variant granularity for review and mention; only drop retrieval context when all variants fail.
 - [Phase 68]: Cap mention retrieval prompt context at three merged findings to keep mention replies concise and grounded.
+- [Phase 69]: Snippet extraction fails open per finding by degrading to path-only anchors instead of throwing.
+- [Phase 69]: Budget trimming keeps lowest-distance anchors first and removes overflow deterministically by path and line tie-breakers.
 
 ### Key Constraints (Carry-Forward)
 
@@ -140,7 +143,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T00:56:56Z
-**Stopped At:** Completed phase 68 execution and verification
+**Last session:** 2026-02-17T01:23:22.785Z
+**Stopped At:** Completed 69-01-PLAN.md
 **Resume File:** None
-**Next action:** /gsd-plan-phase 69
+**Next action:** /gsd-execute-phase 69
