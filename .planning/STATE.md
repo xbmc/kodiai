@@ -62,6 +62,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 72 P01 | 7 min | 3 tasks | 5 files |
 | Phase 72-telemetry-follow-through P02 | 5 min | 3 tasks | 5 files |
 | Phase 73-degraded-retrieval-contract P01 | 3 min | 2 tasks | 4 files |
+| Phase 73-degraded-retrieval-contract P02 | 5 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 72-telemetry-follow-through]: Final operator verdicts must cite DB check IDs, while risk/demurral language remains in analysis text only.
 - [Phase 73-degraded-retrieval-contract]: Use post-execution summary enforcement keyed off searchRateLimitDegradation.degraded to guarantee RET-06 disclosure even when model wording drifts.
 - [Phase 73-degraded-retrieval-contract]: Share a single exported disclosure sentence constant across prompt and runtime publish layers to prevent wording divergence.
+- [Phase 73-degraded-retrieval-contract]: Enforce retrieval maxChars against fully rendered section text (header plus bullets) so prompt budgets cannot overflow.
+- [Phase 73-degraded-retrieval-contract]: Normalize backticks in path-only fallback evidence to apostrophes to preserve markdown validity when snippet anchors are missing.
 
 ### Key Constraints (Carry-Forward)
 
@@ -167,7 +170,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T07:47:40.240Z
-**Stopped At:** Completed 73-01-PLAN.md
+**Last session:** 2026-02-17T08:09:54.189Z
+**Stopped At:** Completed 73-degraded-retrieval-contract-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 72`
