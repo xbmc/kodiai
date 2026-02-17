@@ -1630,6 +1630,26 @@ export function createReviewHandler(deps: {
           }
         }
 
+        if (config.telemetry.enabled) {
+          try {
+            telemetryStore.recordRateLimitEvent({
+              deliveryId: event.id,
+              repo: `${apiOwner}/${apiRepo}`,
+              prNumber: pr.number,
+              eventType: `pull_request.${payload.action}`,
+              cacheHitRate: authorClassification.fromCache ? 1 : 0,
+              skippedQueries: authorClassification.searchEnrichment.skippedQueries,
+              retryAttempts: authorClassification.searchEnrichment.retryAttempts,
+              degradationPath: authorClassification.searchEnrichment.degradationPath,
+            });
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, err },
+              "Rate-limit telemetry write failed (non-blocking)",
+            );
+          }
+        }
+
         // Incremental diff computation (REV-01)
         // Determine if this is an incremental re-review based on prior completed reviews.
         // Works for both synchronize and review_requested events (state-driven, not event-driven).

@@ -27,6 +27,7 @@ function createNoopLogger(): Logger {
 const noopTelemetryStore = {
   record: () => {},
   recordRetrievalQuality: () => {},
+  recordRateLimitEvent: () => {},
   purgeOlderThan: () => 0,
   checkpoint: () => {},
   close: () => {},
@@ -6006,6 +6007,9 @@ describe("createReviewHandler author-tier search cache integration", () => {
       purgeExpired: () => number;
     };
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
+    telemetryStore?: {
+      recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+    };
   }): Promise<{ executeCount: number; prompt: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -6032,6 +6036,11 @@ describe("createReviewHandler author-tier search cache integration", () => {
       }),
       cleanupStale: async () => 0,
     };
+
+    await Bun.write(
+      join(workspaceFixture.dir, ".kodiai.yml"),
+      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n",
+    );
 
     const octokit = {
       rest: {
@@ -6074,7 +6083,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: (params.telemetryStore ?? noopTelemetryStore) as never,
       knowledgeStore: createKnowledgeStoreStub() as never,
       searchCache: params.searchCache as never,
       logger: createNoopLogger(),
@@ -6181,6 +6190,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
   test("retries Search API once when author-tier lookup is rate-limited", async () => {
     let searchCallCount = 0;
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
 
     const { executeCount } = await runSingleAuthorTierEvent({
       issuesAndPullRequests: async () => {
@@ -6201,14 +6211,25 @@ describe("createReviewHandler author-tier search cache integration", () => {
         }
         return { data: { total_count: 5 } };
       },
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+      },
     });
 
     expect(searchCallCount).toBe(2);
     expect(executeCount).toBe(1);
+    expect(rateLimitEvents).toHaveLength(1);
+    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+    expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
+    expect(rateLimitEvents[0]?.skippedQueries).toBe(0);
+    expect(rateLimitEvents[0]?.degradationPath).toBe("none");
   });
 
   test("degrades author-tier enrichment after second rate limit and adds partial disclaimer to prompt", async () => {
     let searchCallCount = 0;
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
 
     const { executeCount, prompt } = await runSingleAuthorTierEvent({
       issuesAndPullRequests: async () => {
@@ -6226,10 +6247,33 @@ describe("createReviewHandler author-tier search cache integration", () => {
           },
         };
       },
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+      },
     });
 
     expect(searchCallCount).toBe(2);
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
+    expect(rateLimitEvents).toHaveLength(1);
+    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+    expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
+    expect(rateLimitEvents[0]?.skippedQueries).toBe(1);
+    expect(rateLimitEvents[0]?.degradationPath).toBe("search-api-rate-limit");
+  });
+
+  test("continues review execution when rate-limit telemetry write fails", async () => {
+    const { executeCount } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => ({ data: { total_count: 5 } }),
+      telemetryStore: {
+        recordRateLimitEvent: () => {
+          throw new Error("telemetry unavailable");
+        },
+      },
+    });
+
+    expect(executeCount).toBe(1);
   });
 });
