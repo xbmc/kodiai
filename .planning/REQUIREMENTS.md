@@ -20,8 +20,8 @@ Requirements for v0.12 Operator Reliability and Retrieval Quality. Each maps to 
 
 ### Conversational UX
 
-- [ ] **CONV-01**: Conversational follow-up behavior is consistent across issue, PR, and review-comment surfaces with surface-appropriate tone and structure.
-- [ ] **CONV-02**: When context is insufficient, Kodiai asks one targeted clarifying question instead of producing speculative guidance.
+- [x] **CONV-01**: Conversational follow-up behavior is consistent across issue, PR, and review-comment surfaces with surface-appropriate tone and structure.
+- [x] **CONV-02**: When context is insufficient, Kodiai asks one targeted clarifying question instead of producing speculative guidance.
 
 ## Future Requirements
 
@@ -47,8 +47,8 @@ Deferred to a future milestone.
 | OPS-03 | Phase 67 | Satisfied |
 | RET-07 | Phase 68 | Satisfied |
 | RET-08 | Phase 69 | Pending |
-| CONV-01 | Phase 70 | Pending |
-| CONV-02 | Phase 70 | Pending |
+| CONV-01 | Phase 70 | Satisfied |
+| CONV-02 | Phase 70 | Satisfied |
 
 **Coverage:**
 - v0.12 requirements: 7 total
@@ -57,4 +57,4 @@ Deferred to a future milestone.
 
 ---
 *Requirements defined: 2026-02-16*
-*Last updated: 2026-02-17 -- marked OPS-02/OPS-03/RET-07 satisfied after phases 67-68 verification*
+*Last updated: 2026-02-17 -- marked CONV-01/CONV-02 satisfied after phase 70 verification and live cross-surface checks*
