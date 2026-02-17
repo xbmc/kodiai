@@ -34,6 +34,13 @@ function issueMention(): MentionEvent {
   };
 }
 
+function reviewThreadMention(): MentionEvent {
+  return {
+    ...baseMention(),
+    surface: "pr_review_comment",
+  };
+}
+
 describe("buildMentionPrompt", () => {
   test("includes conciseness and decision format guidance", () => {
     const prompt = buildMentionPrompt({
@@ -113,19 +120,31 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("- Title: Handle null check");
   });
 
-  test("includes issue-specific direct answer and path evidence contract", () => {
+  test("includes unified conversational response contract for issue mentions", () => {
     const prompt = buildMentionPrompt({
       mention: issueMention(),
       mentionContext: "",
       userQuestion: "@kodiai where should I change this logic?",
     });
 
-    expect(prompt).toContain("## Issue Q&A Requirements");
-    expect(prompt).toContain("Direct answer first");
-    expect(prompt).toContain("1-5 concrete paths");
-    expect(prompt).toContain("src/file.ts:42");
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).toContain("do not ask multiple questions");
+    expect(prompt).toContain("do not use generic wording like 'can you clarify?'");
     expect(prompt).toContain("path context is missing");
-    expect(prompt).toContain("do not ask generic questions like 'can you clarify?'");
+  });
+
+  test("preserves issue-only write intent policy language", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "@kodiai where should I change this logic?",
+    });
+
+    expect(prompt).toContain("## Issue Q&A Policy");
     expect(prompt).toContain("Intent-based execution");
     expect(prompt).toContain("no exact `apply:`/`change:` prefix required");
     expect(prompt).toContain("Plan requests");
@@ -133,14 +152,37 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("one final in-thread response only");
   });
 
-  test("does not include issue-specific contract on non-issue surfaces", () => {
+  test("includes unified contract on PR top-level mention", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
       userQuestion: "@kodiai can you look at this PR?",
     });
 
-    expect(prompt).not.toContain("## Issue Q&A Requirements");
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).not.toContain("## Issue Q&A Policy");
+    expect(prompt).not.toContain("Intent-based execution");
+    expect(prompt).not.toContain("Plan requests");
+  });
+
+  test("includes unified contract on inline review-thread mention", () => {
+    const prompt = buildMentionPrompt({
+      mention: reviewThreadMention(),
+      mentionContext: "",
+      userQuestion: "@kodiai can you look at this line?",
+    });
+
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).toContain("replying in the same inline thread");
+    expect(prompt).not.toContain("## Issue Q&A Policy");
     expect(prompt).not.toContain("Intent-based execution");
     expect(prompt).not.toContain("Plan requests");
   });
