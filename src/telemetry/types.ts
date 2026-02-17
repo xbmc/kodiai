@@ -90,6 +90,12 @@ export type RetrievalQualityRecord = {
  * Maps to the `rate_limit_events` table in the telemetry SQLite database.
  */
 export type RateLimitEventRecord = {
+  /**
+   * Optional webhook delivery id.
+   *
+   * Exactly-once identity for rate-limit telemetry is the composite
+   * `(deliveryId, eventType)` pair when `deliveryId` is present.
+   */
   deliveryId?: string;
   repo: string;
   prNumber?: number;

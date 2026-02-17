@@ -209,9 +209,15 @@ export function createTelemetryStore(opts: {
     ON resilience_events(repo, created_at)
   `);
 
+  // Replace legacy delivery-only idempotency index with composite identity.
+  // Exactly-once semantics for rate-limit telemetry are keyed by
+  // (delivery_id, event_type) when delivery_id is present.
   db.run(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_limit_events_delivery
-    ON rate_limit_events(delivery_id)
+    DROP INDEX IF EXISTS idx_rate_limit_events_delivery
+  `);
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_limit_events_delivery_event
+    ON rate_limit_events(delivery_id, event_type)
     WHERE delivery_id IS NOT NULL
   `);
   db.run(`
@@ -265,7 +271,7 @@ export function createTelemetryStore(opts: {
   `);
 
   const insertRateLimitEventStmt = db.query(`
-    INSERT OR REPLACE INTO rate_limit_events (
+    INSERT OR IGNORE INTO rate_limit_events (
       delivery_id, repo, pr_number, event_type,
       cache_hit_rate, skipped_queries, retry_attempts, degradation_path
     ) VALUES (
@@ -343,16 +349,20 @@ export function createTelemetryStore(opts: {
     },
 
     recordRateLimitEvent(entry: RateLimitEventRecord): void {
-      insertRateLimitEventStmt.run({
-        $deliveryId: entry.deliveryId ?? null,
-        $repo: entry.repo,
-        $prNumber: entry.prNumber ?? null,
-        $eventType: entry.eventType,
-        $cacheHitRate: entry.cacheHitRate,
-        $skippedQueries: entry.skippedQueries,
-        $retryAttempts: entry.retryAttempts,
-        $degradationPath: entry.degradationPath,
-      });
+      try {
+        insertRateLimitEventStmt.run({
+          $deliveryId: entry.deliveryId ?? null,
+          $repo: entry.repo,
+          $prNumber: entry.prNumber ?? null,
+          $eventType: entry.eventType,
+          $cacheHitRate: entry.cacheHitRate,
+          $skippedQueries: entry.skippedQueries,
+          $retryAttempts: entry.retryAttempts,
+          $degradationPath: entry.degradationPath,
+        });
+      } catch (err) {
+        logger.warn({ err, deliveryId: entry.deliveryId, eventType: entry.eventType }, "Rate-limit telemetry write failed (non-blocking)");
+      }
 
       bumpWriteCount();
     },

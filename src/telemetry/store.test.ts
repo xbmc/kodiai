@@ -405,7 +405,7 @@ describe("TelemetryStore", () => {
     expect(row.created_at).toBeTruthy();
   });
 
-  test("recordRateLimitEvent() inserts a row and is idempotent by delivery_id", () => {
+  test("recordRateLimitEvent() is idempotent by delivery_id + event_type", () => {
     const { store: fileStore, path } = createFileStore();
 
     fileStore.recordRateLimitEvent(
@@ -427,6 +427,20 @@ describe("TelemetryStore", () => {
         repo: "octocat/hello-world",
         prNumber: 7,
         eventType: "pull_request.review_requested",
+        cacheHitRate: 1,
+        skippedQueries: 0,
+        retryAttempts: 0,
+        degradationPath: "none",
+      }),
+    );
+
+    // Same delivery id + different event type should persist as a distinct row.
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.opened",
         cacheHitRate: 0,
         skippedQueries: 1,
         retryAttempts: 1,
@@ -435,8 +449,11 @@ describe("TelemetryStore", () => {
     );
 
     const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb
-      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001'")
+    const reviewRequestedRow = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.review_requested'")
+      .get() as Record<string, unknown>;
+    const openedRow = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.opened'")
       .get() as Record<string, unknown>;
     const count = verifyDb
       .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'")
@@ -444,15 +461,20 @@ describe("TelemetryStore", () => {
     verifyDb.close();
     fileStore.close();
 
-    expect(count.cnt).toBe(1);
-    expect(row.repo).toBe("octocat/hello-world");
-    expect(row.pr_number).toBe(7);
-    expect(row.event_type).toBe("pull_request.review_requested");
-    expect(row.cache_hit_rate).toBe(0);
-    expect(row.skipped_queries).toBe(1);
-    expect(row.retry_attempts).toBe(1);
-    expect(row.degradation_path).toBe("search-api-rate-limit");
-    expect(row.created_at).toBeTruthy();
+    expect(count.cnt).toBe(2);
+    expect(reviewRequestedRow.repo).toBe("octocat/hello-world");
+    expect(reviewRequestedRow.pr_number).toBe(7);
+    expect(reviewRequestedRow.event_type).toBe("pull_request.review_requested");
+    expect(reviewRequestedRow.cache_hit_rate).toBe(0.75);
+    expect(reviewRequestedRow.skipped_queries).toBe(0);
+    expect(reviewRequestedRow.retry_attempts).toBe(1);
+    expect(reviewRequestedRow.degradation_path).toBe("none");
+    expect(reviewRequestedRow.created_at).toBeTruthy();
+    expect(openedRow.event_type).toBe("pull_request.opened");
+    expect(openedRow.cache_hit_rate).toBe(0);
+    expect(openedRow.skipped_queries).toBe(1);
+    expect(openedRow.retry_attempts).toBe(1);
+    expect(openedRow.degradation_path).toBe("search-api-rate-limit");
   });
 
   test("initializing against an existing DB additively creates rate_limit_events", () => {
@@ -483,11 +505,16 @@ describe("TelemetryStore", () => {
     const row = verifyDb
       .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-legacy-001'")
       .get() as Record<string, unknown>;
+    const indexes = verifyDb
+      .query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='rate_limit_events'")
+      .all() as Array<{ name: string }>;
     verifyDb.close();
     fileStore.close();
 
     expect(table?.name).toBe("rate_limit_events");
     expect(row.repo).toBe("owner/repo");
     expect(row.cache_hit_rate).toBe(1);
+    expect(indexes.map((index) => index.name)).toContain("idx_rate_limit_events_delivery_event");
+    expect(indexes.map((index) => index.name)).not.toContain("idx_rate_limit_events_delivery");
   });
 });
