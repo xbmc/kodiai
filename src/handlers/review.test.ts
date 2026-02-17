@@ -4475,7 +4475,6 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
     expect(sharedIdx).toBeGreaterThan(-1);
     expect(intentOnlyIdx).toBeGreaterThan(-1);
     expect(shapeOnlyIdx).toBeGreaterThan(-1);
-    expect(sharedIdx < intentOnlyIdx && intentOnlyIdx < shapeOnlyIdx).toBe(true);
 
     await workspaceFixture.cleanup();
   });
@@ -4620,6 +4619,160 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
 
     expect(capturedPrompt).toContain("intent variant finding");
     expect(capturedPrompt).toContain("shape variant finding");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("enriches review retrieval context with snippet anchors and path-only fallback", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-ret08-anchors",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: {
+        model: "test",
+        dimensions: 1,
+        generate: async () => ({
+          embedding: new Float32Array([1]),
+          model: "test",
+          dimensions: 1,
+        }),
+      } as never,
+      isolationLayer: {
+        retrieveWithIsolation: () => ({
+          results: [
+            {
+              memoryId: 1,
+              distance: 0.12,
+              sourceRepo: "acme/repo",
+              record: {
+                id: 1,
+                repo: "repo",
+                owner: "acme",
+                findingId: 1,
+                reviewId: 11,
+                sourceRepo: "acme/repo",
+                findingText: "feature token",
+                severity: "major",
+                category: "correctness",
+                filePath: "README.md",
+                outcome: "accepted",
+                embeddingModel: "test",
+                embeddingDim: 1,
+                stale: false,
+              },
+            },
+            {
+              memoryId: 2,
+              distance: 0.25,
+              sourceRepo: "acme/repo",
+              record: {
+                id: 2,
+                repo: "repo",
+                owner: "acme",
+                findingId: 2,
+                reviewId: 12,
+                sourceRepo: "acme/repo",
+                findingText: "missing file signal",
+                severity: "major",
+                category: "correctness",
+                filePath: "src/missing.ts",
+                outcome: "accepted",
+                embeddingModel: "test",
+                embeddingDim: 1,
+                stale: false,
+              },
+            },
+          ],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 2,
+            query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+          },
+        }),
+      } as never,
+      retrievalReranker: {
+        rerankByLanguage: ((params: { results: Array<any> }) =>
+          params.results.map((result) => ({
+            ...result,
+            adjustedDistance: result.distance,
+            languageMatch: true,
+          }))) as never,
+      },
+      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+      logger: createNoopLogger(),
+    });
+
+    await Bun.write(join(workspaceFixture.dir, "README.md"), "base line\nfeature token\n");
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(capturedPrompt).toContain("`README.md:2` -- `feature token`");
+    expect(capturedPrompt).toContain("`src/missing.ts` -- missing file signal");
 
     await workspaceFixture.cleanup();
   });

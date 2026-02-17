@@ -49,6 +49,7 @@ import {
   executeRetrievalVariants,
   mergeVariantResults,
 } from "../learning/multi-query-retrieval.ts";
+import { buildSnippetAnchors } from "../learning/retrieval-snippets.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -104,11 +105,14 @@ type RetrievalContextForPrompt = {
     findingText: string;
     severity: string;
     category: string;
-    filePath: string;
+    path: string;
+    line?: number;
+    snippet?: string;
     outcome: string;
     distance: number;
     sourceRepo: string;
   }>;
+  maxChars: number;
 };
 
 type AuthorTierSearchEnrichment = {
@@ -2120,16 +2124,35 @@ export function createReviewHandler(deps: {
             }
 
             if (finalReranked.length > 0) {
+              let snippetAnchors = await buildSnippetAnchors({
+                workspaceDir: workspace.dir,
+                findings: finalReranked,
+              });
+
+              if (snippetAnchors.length !== finalReranked.length) {
+                snippetAnchors = finalReranked.map((result) => ({
+                  path: result.record.filePath,
+                  anchor: result.record.filePath,
+                  distance: result.adjustedDistance,
+                }));
+              }
+
               retrievalCtx = {
-                findings: finalReranked.map(r => ({
-                  findingText: r.record.findingText,
-                  severity: r.record.severity,
-                  category: r.record.category,
-                  filePath: r.record.filePath,
-                  outcome: r.record.outcome,
-                  distance: r.adjustedDistance,
-                  sourceRepo: r.sourceRepo,
-                })),
+                maxChars: config.knowledge.retrieval.maxContextChars,
+                findings: finalReranked.map((result, index) => {
+                  const anchor = snippetAnchors[index];
+                  return {
+                    findingText: result.record.findingText,
+                    severity: result.record.severity,
+                    category: result.record.category,
+                    path: anchor?.path ?? result.record.filePath,
+                    line: anchor?.line,
+                    snippet: anchor?.snippet,
+                    outcome: result.record.outcome,
+                    distance: result.adjustedDistance,
+                    sourceRepo: result.sourceRepo,
+                  };
+                }),
               };
             }
           } catch (err) {

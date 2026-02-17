@@ -39,6 +39,10 @@ import {
   executeRetrievalVariants,
   mergeVariantResults,
 } from "../learning/multi-query-retrieval.ts";
+import {
+  buildSnippetAnchors,
+  trimSnippetAnchorsToBudget,
+} from "../learning/retrieval-snippets.ts";
 import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
@@ -99,16 +103,22 @@ export function buildWritePolicyRefusalMessage(
 }
 
 type MentionRetrievalContext = {
+  maxChars?: number;
+  maxItems?: number;
   findings: Array<{
     findingText: string;
     severity: string;
     category: string;
-    filePath: string;
+    path: string;
+    line?: number;
+    snippet?: string;
     outcome: string;
     distance: number;
     sourceRepo: string;
   }>;
 };
+
+const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
 
 /**
@@ -1152,17 +1162,82 @@ export function createMentionHandler(deps: {
             });
 
             if (merged.length > 0) {
-              retrievalContext = {
-                findings: merged.map((result) => ({
-                  findingText: result.record.findingText,
-                  severity: result.record.severity,
-                  category: result.record.category,
-                  filePath: result.record.filePath,
-                  outcome: result.record.outcome,
-                  distance: result.distance,
-                  sourceRepo: result.sourceRepo,
-                })),
+              const anchors = await buildSnippetAnchors({
+                workspaceDir: workspace.dir,
+                findings: merged,
+              });
+              const fallbackAnchors = merged.map((result) => ({
+                path: result.record.filePath,
+                anchor: result.record.filePath,
+                line: undefined,
+                snippet: undefined,
+                distance: result.distance,
+              }));
+              const stableAnchors = anchors.length === merged.length ? anchors : fallbackAnchors;
+
+              const trimmedAnchors = trimSnippetAnchorsToBudget({
+                anchors: stableAnchors,
+                maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
+                maxItems: retrievalTopK,
+              });
+              const remainingAnchors = [...trimmedAnchors];
+
+              const compareByRelevance = (
+                a: { distance: number; path: string; line?: number },
+                b: { distance: number; path: string; line?: number },
+              ) => {
+                if (a.distance !== b.distance) {
+                  return a.distance - b.distance;
+                }
+                if (a.path !== b.path) {
+                  return a.path.localeCompare(b.path);
+                }
+                return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
               };
+
+              const trimmedFindings = merged
+                .map((result, index) => ({
+                  result,
+                  anchor: stableAnchors[index] ?? {
+                    path: result.record.filePath,
+                    anchor: result.record.filePath,
+                    line: undefined,
+                    snippet: undefined,
+                    distance: result.distance,
+                  },
+                }))
+                .sort((a, b) => compareByRelevance(a.anchor, b.anchor))
+                .filter((entry) => {
+                  const matchIndex = remainingAnchors.findIndex((anchor) =>
+                    anchor.path === entry.anchor.path
+                    && anchor.line === entry.anchor.line
+                    && anchor.snippet === entry.anchor.snippet
+                    && anchor.distance === entry.anchor.distance
+                  );
+                  if (matchIndex === -1) {
+                    return false;
+                  }
+                  remainingAnchors.splice(matchIndex, 1);
+                  return true;
+                });
+
+              if (trimmedFindings.length > 0) {
+                retrievalContext = {
+                  maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
+                  maxItems: retrievalTopK,
+                  findings: trimmedFindings.map(({ result, anchor }) => ({
+                    findingText: result.record.findingText,
+                    severity: result.record.severity,
+                    category: result.record.category,
+                    path: anchor.path,
+                    line: anchor.line,
+                    snippet: anchor.snippet,
+                    outcome: result.record.outcome,
+                    distance: result.distance,
+                    sourceRepo: result.sourceRepo,
+                  })),
+                };
+              }
             }
           } catch (err) {
             logger.warn(
