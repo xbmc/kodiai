@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** 69 (verified complete)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** Phase complete — verification and roadmap updates finished
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-17
 
 **Progress:** [██████████] 100%
@@ -56,6 +56,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 68 P02 | 7m32s | 2 tasks | 8 files |
 | Phase 69 P01 | 2m | 1 tasks | 2 files |
 | Phase 69 P02 | 13m | 2 tasks | 8 files |
+| Phase 70 P01 | 2 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -116,6 +117,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 69]: Budget trimming keeps lowest-distance anchors first and removes overflow deterministically by path and line tie-breakers.
 - [Phase 69]: Review retrieval budgets are enforced at prompt-render time using knowledge.retrieval.maxContextChars so retrieval sections are deterministically omitted when nothing fits.
 - [Phase 69]: Mention retrieval context keeps topK <= 3 and applies a fixed 1200-char cap to maintain concise, bounded conversational prompts.
+- [Phase 70]: Moved direct-answer/evidence/next-step instructions into a shared Conversational Response Contract section for all mention surfaces.
+- [Phase 70]: Standardized runtime non-published fallback to one targeted clarifying question while keeping existing write-intent and fail-open safety gates unchanged.
 
 ### Key Constraints (Carry-Forward)
 
@@ -146,7 +149,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T02:06:12Z
-**Stopped At:** Completed phase 69 execution and verification
+**Last session:** 2026-02-17T02:20:08.977Z
+**Stopped At:** Completed 70-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 70
