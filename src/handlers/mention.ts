@@ -118,6 +118,8 @@ type MentionRetrievalContext = {
   }>;
 };
 
+type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
+
 const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
 
@@ -316,6 +318,62 @@ export function createMentionHandler(deps: {
       }
     }
     return String(value ?? "");
+  }
+
+  function summarizeErrorForDiagnostics(err: unknown): string {
+    const parts: string[] = [];
+
+    if (err instanceof Error) {
+      if (typeof err.message === "string") {
+        parts.push(err.message);
+      }
+      const withExtras = err as Error & {
+        stderr?: unknown;
+        stdout?: unknown;
+        cause?: unknown;
+      };
+      parts.push(toErrorSignalText(withExtras.stderr));
+      parts.push(toErrorSignalText(withExtras.stdout));
+      parts.push(toErrorSignalText(withExtras.cause));
+    }
+
+    if (typeof err === "object" && err !== null) {
+      const maybeObj = err as {
+        message?: unknown;
+        stderr?: unknown;
+        stdout?: unknown;
+        response?: unknown;
+      };
+      parts.push(toErrorSignalText(maybeObj.message));
+      parts.push(toErrorSignalText(maybeObj.stderr));
+      parts.push(toErrorSignalText(maybeObj.stdout));
+      parts.push(toErrorSignalText(maybeObj.response));
+    }
+
+    const firstLine = parts
+      .map((part) => part.replace(/\s+/g, " ").trim())
+      .find((part) => part.length > 0);
+
+    return firstLine ?? "Unknown publish failure";
+  }
+
+  function buildIssueWriteFailureReply(params: {
+    failedStep: IssueWriteFailureStep;
+    diagnostics: string;
+    retryCommand: string;
+  }): string {
+    const lines = [
+      "Write request failed before PR publication completed.",
+      "",
+      "status: pr_creation_failed",
+      `failed_step: ${params.failedStep}`,
+      `diagnostics: ${params.diagnostics}`,
+      "",
+      "Next step: Fix the failed step and retry the exact same command.",
+      `Retry command: ${params.retryCommand}`,
+    ];
+
+    return wrapInDetails(lines.join("\n"), "kodiai response");
   }
 
   function isLikelyWritePermissionFailure(err: unknown): boolean {
@@ -1396,6 +1454,45 @@ export function createMentionHandler(deps: {
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && writeOutputKey && writeBranchName) {
+          const isIssueWritePublishFlow = isIssueThreadComment;
+          const publishFailureStatus = "pr_creation_failed" as const;
+
+          const postIssueWriteFailure = async (
+            failedStep: IssueWriteFailureStep,
+            err: unknown,
+          ): Promise<void> => {
+            if (!isIssueWritePublishFlow) {
+              throw err instanceof Error ? err : new Error(String(err));
+            }
+
+            const replyBody = buildIssueWriteFailureReply({
+              failedStep,
+              diagnostics: summarizeErrorForDiagnostics(err),
+              retryCommand,
+            });
+
+            await postMentionReply(replyBody, { sanitizeMentions: false });
+
+            logger.warn(
+              {
+                evidenceType: "write-mode",
+                outcome: publishFailureStatus,
+                deliveryId: event.id,
+                installationId: event.installationId,
+                owner: mention.owner,
+                repoName: mention.repo,
+                repo: `${mention.owner}/${mention.repo}`,
+                sourcePrNumber: mention.prNumber,
+                triggerCommentId: mention.commentId,
+                triggerCommentUrl,
+                writeOutputKey,
+                failedStep,
+                diagnostics: summarizeErrorForDiagnostics(err),
+              },
+              "Issue write-mode publish failed",
+            );
+          };
+
           const status = await getGitStatusPorcelain(workspace.dir);
           if (status.trim().length === 0) {
             const replyBody = wrapInDetails(
@@ -1671,7 +1768,9 @@ export function createMentionHandler(deps: {
                 }
               }
             }
-            throw err;
+
+            await postIssueWriteFailure("branch-push", err);
+            return;
           }
 
           const requestSummary = summarizeWriteRequest(writeIntent.request);
@@ -1702,29 +1801,65 @@ export function createMentionHandler(deps: {
 
           const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
 
-          let createdPr: { html_url: string };
-          try {
-            const response = await octokit.rest.pulls.create({
-              owner: mention.owner,
-              repo: mention.repo,
-              title: prTitle,
-              head: pushed.branchName,
-              base: prBaseRef,
-              body: prBody,
-            });
-            createdPr = response.data;
-          } catch (err) {
-            if (await maybeReplyWritePermissionFailure(err)) {
+          let createdPr: { html_url: string } | undefined;
+          const maxPrCreateAttempts = isIssueWritePublishFlow ? 2 : 1;
+          for (let attempt = 1; attempt <= maxPrCreateAttempts; attempt++) {
+            try {
+              const response = await octokit.rest.pulls.create({
+                owner: mention.owner,
+                repo: mention.repo,
+                title: prTitle,
+                head: pushed.branchName,
+                base: prBaseRef,
+                body: prBody,
+              });
+              createdPr = response.data;
+              break;
+            } catch (err) {
+              if (await maybeReplyWritePermissionFailure(err)) {
+                return;
+              }
+
+              if (attempt < maxPrCreateAttempts) {
+                logger.warn(
+                  {
+                    err,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    issueNumber: mention.issueNumber,
+                    attempt,
+                    maxAttempts: maxPrCreateAttempts,
+                    branchName: pushed.branchName,
+                    writeOutputKey,
+                  },
+                  "Issue write-mode PR creation failed, retrying once",
+                );
+                continue;
+              }
+
+              await postIssueWriteFailure("create-pr", err);
               return;
             }
-            throw err;
+          }
+
+          if (!createdPr?.html_url) {
+            await postIssueWriteFailure(
+              "create-pr",
+              new Error("GitHub pulls.create response did not include html_url"),
+            );
+            return;
           }
 
           const replyBody = wrapInDetails(
             [`Opened PR: ${createdPr.html_url}`].join("\n"),
             "kodiai response",
           );
-          await postMentionReply(replyBody);
+          try {
+            await postMentionReply(replyBody);
+          } catch (err) {
+            await postIssueWriteFailure("issue-linkback", err);
+            return;
+          }
 
           logger.info(
             {
