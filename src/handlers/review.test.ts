@@ -6329,6 +6329,9 @@ describe("createReviewHandler author-tier search cache integration", () => {
       purgeExpired: () => number;
     };
     issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
+    telemetryStore?: {
+      recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
+    };
   }): Promise<number> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixtureA = await createWorkspaceFixture();
@@ -6405,7 +6408,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
           };
         },
       } as never,
-      telemetryStore: noopTelemetryStore,
+      telemetryStore: (params.telemetryStore ?? noopTelemetryStore) as never,
       knowledgeStore,
       searchCache: params.searchCache as never,
       logger: createNoopLogger(),
@@ -6495,6 +6498,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     telemetryStore?: {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
     };
+    knowledgeStoreOverrides?: Record<string, unknown>;
   }): Promise<{ executeCount: number; prompt: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -6569,7 +6573,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
         },
       } as never,
       telemetryStore: (params.telemetryStore ?? noopTelemetryStore) as never,
-      knowledgeStore: createKnowledgeStoreStub() as never,
+      knowledgeStore: createKnowledgeStoreStub(params.knowledgeStoreOverrides) as never,
       searchCache: params.searchCache as never,
       logger: createNoopLogger(),
     });
@@ -6760,5 +6764,81 @@ describe("createReviewHandler author-tier search cache integration", () => {
     });
 
     expect(executeCount).toBe(1);
+  });
+
+  test("uses Search cache signal for telemetry when author classification cache is hit", async () => {
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
+
+    const { executeCount } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        throw new Error("search should not execute when author classification cache is hit");
+      },
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+      },
+      knowledgeStoreOverrides: {
+        getAuthorCache: () => ({
+          tier: "regular",
+          prCount: 4,
+        }),
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(rateLimitEvents).toHaveLength(1);
+    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+  });
+
+  test("records telemetry miss then hit across equivalent Search cache reuse", async () => {
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
+    const searchCache = createSearchCache<number>({ ttlMs: 60_000 });
+
+    await runAuthorTierScenario({
+      eventIds: ["delivery-telemetry-search-cache-1", "delivery-telemetry-search-cache-2"],
+      searchCache,
+      issuesAndPullRequests: async () => ({ data: { total_count: 13 } }),
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+      },
+    });
+
+    expect(rateLimitEvents).toHaveLength(2);
+    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+    expect(rateLimitEvents[1]?.cacheHitRate).toBe(1);
+  });
+
+  test("keeps telemetry miss on Search cache fail-open direct lookup", async () => {
+    const rateLimitEvents: Array<Record<string, unknown>> = [];
+    let searchCallCount = 0;
+    const brokenCache = {
+      get: () => undefined,
+      set: () => undefined,
+      getOrLoad: async () => {
+        throw new Error("cache unavailable");
+      },
+      purgeExpired: () => 0,
+    };
+
+    const { executeCount } = await runSingleAuthorTierEvent({
+      searchCache: brokenCache,
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        return { data: { total_count: 6 } };
+      },
+      telemetryStore: {
+        recordRateLimitEvent: (entry) => {
+          rateLimitEvents.push(entry);
+        },
+      },
+    });
+
+    expect(searchCallCount).toBe(1);
+    expect(executeCount).toBe(1);
+    expect(rateLimitEvents).toHaveLength(1);
+    expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
   });
 });
