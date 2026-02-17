@@ -334,6 +334,30 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("`src/api/handler.ts` -- Validate null payload before use");
   });
 
+  test("sanitizes backticks in path-only fallback to keep retrieval markdown valid", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Guard `payload` before dereference",
+            severity: "major",
+            category: "correctness",
+            path: "src/api/handler.ts",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("`src/api/handler.ts` -- Guard 'payload' before dereference");
+    expect(prompt).not.toContain("-- Guard `payload` before dereference");
+  });
+
   test("drops lowest-value retrieval entries first when section exceeds budget", () => {
     const prompt = buildMentionPrompt({
       mention: issueMention(),
@@ -396,5 +420,48 @@ describe("buildMentionPrompt", () => {
     });
 
     expect(prompt).not.toContain("## Retrieval");
+  });
+
+  test("keeps retrieval section under configured char budget including header lines", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "Most relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "Lower value finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 200,
+            snippet: "const dropped = veryLongExpression.repeat(60);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("## Retrieval");
+    expect(prompt).toContain("`src/a.ts:10`");
+    expect(prompt).not.toContain("`src/z.ts:200`");
+
+    const retrievalMatch = prompt.match(/## Retrieval[\s\S]*?(?=\n## |$)/);
+    expect(retrievalMatch).toBeDefined();
+    expect(retrievalMatch![0].length).toBeLessThanOrEqual(240);
   });
 });

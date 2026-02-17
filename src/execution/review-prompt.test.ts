@@ -716,6 +716,88 @@ test("buildRetrievalContextSection omits section when all findings are trimmed b
   expect(section).toBe("");
 });
 
+test("buildReviewPrompt keeps degraded retrieval context well-formed and within configured budget", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+      retrievalContext: {
+        maxChars: 420,
+        findings: [
+          {
+            findingText: "fallback `text` should stay safe",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "lower value finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 99,
+            snippet: "const dropped = veryLongExpression.repeat(50);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).toContain("## Similar Prior Findings (Learning Context)");
+  expect(prompt).toContain("`src/a.ts:10` -- `const kept = true;`");
+
+  const retrievalMatch = prompt.match(
+    /## Similar Prior Findings \(Learning Context\)[\s\S]*?(?=\n## |$)/,
+  );
+  expect(retrievalMatch).toBeDefined();
+  expect(retrievalMatch![0].length).toBeLessThanOrEqual(420);
+});
+
+test("buildReviewPrompt omits degraded retrieval section cleanly when budget removes all findings", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+      retrievalContext: {
+        maxChars: 40,
+        findings: [
+          {
+            findingText: "very long finding text ".repeat(20),
+            severity: "major",
+            category: "correctness",
+            path: "src/overflow.ts",
+            line: 1,
+            snippet: "const longLine = 'x'.repeat(300);",
+            outcome: "accepted",
+            distance: 0.2,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).not.toContain("## Similar Prior Findings (Learning Context)");
+});
+
 // ---------------------------------------------------------------------------
 // buildReviewedCategoriesLine tests
 // ---------------------------------------------------------------------------

@@ -6499,6 +6499,24 @@ describe("createReviewHandler author-tier search cache integration", () => {
       recordRateLimitEvent?: (entry: Record<string, unknown>) => void;
     };
     knowledgeStoreOverrides?: Record<string, unknown>;
+    configYaml?: string;
+    embeddingProvider?: {
+      model: string;
+      dimensions: number;
+      generate: (query: string) => Promise<{ embedding: Float32Array; model: string; dimensions: number }>;
+    };
+    isolationLayer?: {
+      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        results: Array<any>;
+        provenance: Record<string, unknown>;
+      };
+    };
+    retrievalReranker?: {
+      rerankByLanguage: (params: { results: Array<any> }) => Array<any>;
+    };
+    retrievalRecency?: {
+      applyRecencyWeighting: (params: { results: Array<any> }) => Array<any>;
+    };
   }): Promise<{ executeCount: number; prompt: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -6528,7 +6546,8 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     await Bun.write(
       join(workspaceFixture.dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n",
+      params.configYaml
+        ?? "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n",
     );
 
     const octokit = {
@@ -6575,6 +6594,10 @@ describe("createReviewHandler author-tier search cache integration", () => {
       telemetryStore: (params.telemetryStore ?? noopTelemetryStore) as never,
       knowledgeStore: createKnowledgeStoreStub(params.knowledgeStoreOverrides) as never,
       searchCache: params.searchCache as never,
+      embeddingProvider: params.embeddingProvider as never,
+      isolationLayer: params.isolationLayer as never,
+      retrievalReranker: params.retrievalReranker as never,
+      retrievalRecency: params.retrievalRecency as never,
       logger: createNoopLogger(),
     });
 
@@ -6960,6 +6983,146 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
+  });
+
+  test("degraded review path passes bounded retrieval context without malformed retrieval sections", async () => {
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        throw {
+          status: 429,
+          message: "secondary rate limit",
+          response: {
+            headers: {
+              "retry-after": "0",
+            },
+            data: {
+              message: "You have exceeded a secondary rate limit",
+            },
+          },
+        };
+      },
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "knowledge:",
+        "  retrieval:",
+        "    enabled: true",
+        "    topK: 2",
+        "    maxContextChars: 240",
+        "telemetry:",
+        "  enabled: true",
+        "",
+      ].join("\n"),
+      embeddingProvider: {
+        model: "test",
+        dimensions: 1,
+        generate: async (query: string) => ({
+          embedding: new Float32Array([query.includes("files:") ? 2 : 1]),
+          model: "test",
+          dimensions: 1,
+        }),
+      },
+      isolationLayer: {
+        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+          const variantId = params.queryEmbedding[0] ?? 0;
+          if (variantId === 1) {
+            return {
+              results: [
+                {
+                  memoryId: 1,
+                  distance: 0.12,
+                  sourceRepo: "acme/repo",
+                  record: {
+                    id: 1,
+                    repo: "repo",
+                    owner: "acme",
+                    findingId: 1,
+                    reviewId: 11,
+                    sourceRepo: "acme/repo",
+                    findingText: "feature `token`",
+                    severity: "major",
+                    category: "correctness",
+                    filePath: "src/kept.ts",
+                    outcome: "accepted",
+                    embeddingModel: "test",
+                    embeddingDim: 1,
+                    stale: false,
+                  },
+                },
+              ],
+              provenance: {
+                repoSources: ["acme/repo"],
+                sharedPoolUsed: false,
+                totalCandidates: 1,
+                query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+              },
+            };
+          }
+
+          return {
+            results: [
+              {
+                memoryId: 2,
+                distance: 0.95,
+                sourceRepo: "acme/repo",
+                record: {
+                  id: 2,
+                  repo: "repo",
+                  owner: "acme",
+                  findingId: 2,
+                  reviewId: 12,
+                  sourceRepo: "acme/repo",
+                  findingText: "overflow finding ".repeat(40),
+                  severity: "major",
+                  category: "correctness",
+                  filePath: "src/missing.ts",
+                  outcome: "accepted",
+                  embeddingModel: "test",
+                  embeddingDim: 1,
+                  stale: false,
+                },
+              },
+            ],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+            },
+          };
+        },
+      },
+      retrievalReranker: {
+        rerankByLanguage: ((params: { results: Array<any> }) =>
+          params.results.map((result) => ({
+            ...result,
+            adjustedDistance: result.distance,
+            languageMatch: true,
+          }))) as never,
+      },
+      retrievalRecency: {
+        applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never,
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("## Search API Degradation Context");
+    expect(prompt).toContain("Analysis is partial due to API limits.");
+    if (prompt.includes("## Similar Prior Findings (Learning Context)")) {
+      expect(prompt).toContain("`src/kept.ts` -- feature 'token'");
+      expect(prompt).not.toContain("`src/missing.ts`");
+      expect(prompt).not.toContain("## Similar Prior Findings (Learning Context)\n\n##");
+    } else {
+      expect(prompt).not.toContain("## Similar Prior Findings (Learning Context)\n\n##");
+    }
   });
 
   test("continues review execution when rate-limit telemetry write fails", async () => {

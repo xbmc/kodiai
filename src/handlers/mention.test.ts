@@ -4815,7 +4815,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
           }
 
           return {
-            results: [mk(2, "shape mention finding", 0.2)],
+            results: [mk(2, "shape mention `finding`", 0.2)],
             provenance: {
               repoSources: ["acme/repo"],
               sharedPoolUsed: false,
@@ -4844,8 +4844,8 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
       expect(embeddingQueries.length).toBeGreaterThan(0);
       expect(capturedPrompt).toContain("## Retrieval");
       expect(capturedPrompt).toContain("`README.md:1` -- `base feature`");
-      expect(capturedPrompt).toContain("shape mention finding");
-      expect(capturedPrompt).toContain("`src/f-2.ts` -- shape mention finding");
+      expect(capturedPrompt).toContain("shape mention 'finding'");
+      expect(capturedPrompt).toContain("`src/f-2.ts` -- shape mention 'finding'");
     }
 
     await workspaceFixture.cleanup();
