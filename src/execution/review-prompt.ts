@@ -816,16 +816,17 @@ export function buildRetrievalContextSection(params: {
 
   const renderFinding = (finding: (typeof sorted)[number]): string => {
     const safeSnippet = finding.snippet?.replace(/`/g, "'").trim();
+    const safeFindingText = finding.findingText.replace(/`/g, "'").trim();
     if (finding.line !== undefined && safeSnippet) {
       const anchor = `${finding.path}:${finding.line}`;
       return `- [${finding.severity}/${finding.category}] \`${anchor}\` -- \`${safeSnippet}\` (outcome: ${finding.outcome})`;
     }
 
-    return `- [${finding.severity}/${finding.category}] \`${finding.path}\` -- ${finding.findingText} (outcome: ${finding.outcome})`;
+    return `- [${finding.severity}/${finding.category}] \`${finding.path}\` -- ${safeFindingText} (outcome: ${finding.outcome})`;
   };
 
   const candidateItems = sorted.map(renderFinding);
-  const lines: string[] = [
+  const headerLines: string[] = [
     "## Similar Prior Findings (Learning Context)",
     "",
     "Use these prior findings as supporting context only when they match the current change.",
@@ -835,22 +836,16 @@ export function buildRetrievalContextSection(params: {
     "",
   ];
 
-  let currentLength = lines.join("\n").length;
-
   const keptItems = [...candidateItems];
-  currentLength += keptItems.reduce((sum, item) => sum + item.length + 1, 0);
-
-  while (keptItems.length > 0 && currentLength > maxChars) {
-    const removed = keptItems.pop();
-    if (!removed) break;
-    currentLength -= removed.length + 1;
+  while (keptItems.length > 0) {
+    const section = [...headerLines, ...keptItems].join("\n");
+    if (section.length <= maxChars) {
+      return section;
+    }
+    keptItems.pop();
   }
 
-  if (keptItems.length === 0) return "";
-
-  lines.push(...keptItems);
-
-  return lines.join("\n");
+  return "";
 }
 
 // ---------------------------------------------------------------------------

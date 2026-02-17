@@ -103,9 +103,10 @@ export function buildMentionPrompt(params: {
 
     const rendered = sorted.map((finding) => {
       const snippet = finding.snippet?.replace(/`/g, "'").trim();
+      const safeFindingText = finding.findingText.replace(/`/g, "'").trim();
       const evidence = finding.line !== undefined && snippet
         ? `\`${finding.path}:${finding.line}\` -- \`${snippet}\``
-        : `\`${finding.path}\` -- ${finding.findingText}`;
+        : `\`${finding.path}\` -- ${safeFindingText}`;
       return `- [${finding.severity}/${finding.category}] ${evidence} (source: ${finding.sourceRepo})`;
     });
 
@@ -115,13 +116,13 @@ export function buildMentionPrompt(params: {
       "Use these similar prior findings as supporting context only when they match the current request.",
       "",
     ];
-    let sectionLength = sectionHeader.join("\n").length
-      + rendered.reduce((sum, item) => sum + item.length + 1, 0);
 
-    while (rendered.length > 0 && sectionLength > maxChars) {
-      const removed = rendered.pop();
-      if (!removed) break;
-      sectionLength -= removed.length + 1;
+    while (rendered.length > 0) {
+      const section = [...sectionHeader, ...rendered].join("\n");
+      if (section.length <= maxChars) {
+        break;
+      }
+      rendered.pop();
     }
 
     if (rendered.length > 0) {
