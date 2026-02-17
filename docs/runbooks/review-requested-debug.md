@@ -112,3 +112,64 @@ Expected:
 3. Confirm exactly one `pull_request.review_requested` delivery in GitHub.
 4. Confirm one contiguous `deliveryId` log chain ending in one `Job execution completed`.
 5. Confirm exactly one review output/comment set was produced for the PR.
+
+## Phase 72 Telemetry Evidence Queries
+
+Use these snippets while running `docs/smoke/phase72-telemetry-follow-through.md`.
+
+### 1) Duplicate emission check (`delivery_id + event_type`)
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  COUNT(*) AS cnt
+FROM rate_limit_events
+WHERE delivery_id IN ('<review-prime>', '<review-hit>', '<review-changed>')
+GROUP BY delivery_id, event_type
+HAVING COUNT(*) > 1;
+```
+
+Expected: zero rows.
+
+### 2) Cache-hit sequence check (prime -> hit -> changed-query miss)
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  cache_hit_rate,
+  skipped_queries,
+  retry_attempts,
+  degradation_path,
+  created_at
+FROM rate_limit_events
+WHERE delivery_id IN ('<review-prime>', '<review-hit>', '<review-changed>')
+ORDER BY created_at ASC;
+```
+
+Expected cache sequence for locked review run: `0`, `1`, `0`.
+
+### 3) Non-blocking completion check when telemetry is degraded/failing
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  conclusion,
+  created_at
+FROM executions
+WHERE delivery_id IN (
+  '<review-prime>',
+  '<review-hit>',
+  '<review-changed>',
+  '<mention-prime>',
+  '<mention-hit>',
+  '<mention-changed>'
+)
+ORDER BY created_at ASC;
+```
+
+Expected: rows exist for all six deliveries with non-failing conclusions.
+
+If conclusions are present but telemetry rows are missing, treat it as a telemetry persistence path issue and confirm the user-facing review/mention still completed before remediation.
