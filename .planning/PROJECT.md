@@ -8,10 +8,31 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews and
 
 When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, or contextual answers to questions — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.11 Issue Workflows
+## Latest Release: v0.12 Operator Reliability & Retrieval Quality
 
-**Shipped:** 2026-02-16
-**Phases:** 60-65 (6 phases, 15 plans)
+**Shipped:** 2026-02-17
+**Phases:** 66-71 (6 phases, 11 plans)
+
+**Delivered:**
+- Repository-scoped Search API cache with deterministic keys, TTL reuse, and concurrent request de-duplication
+- Bounded rate-limit retry/degrade behavior with explicit partial-analysis messaging
+- OPS-03 telemetry wiring corrected to reflect true Search cache outcomes (`cacheHitRate`) in production metrics
+- Multi-query retrieval with deterministic merge/rerank integrated across review and mention flows
+- Snippet anchors + strict prompt-budget trimming with path-only fail-open fallback
+- Cross-surface conversational contract with one targeted clarifying-question fallback
+
+## Current State
+
+v0.12 is shipped and archived. The product now has resilient Search-enrichment behavior under rate limits, stronger retrieval evidence quality, and consistent conversational behavior across issue/PR/review surfaces while preserving fail-open safety.
+
+## Next Milestone Goals
+
+- Define the next requirement set in a fresh `.planning/REQUIREMENTS.md`
+- Address non-blocking tech debt from v0.12 audit (live telemetry validation + combined degraded/retrieval regression)
+- Continue phase planning from current baseline without resetting numbering
+
+<details>
+<summary>Previous Release: v0.11 Issue Workflows (2026-02-16)</summary>
 
 **Delivered:**
 - In-thread issue Q&A with direct, actionable answers and code-path pointers when repository context is relevant
@@ -20,16 +41,6 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 - Issue write policy guardrails enforce allow/deny path + secret-scan refusals with clear, actionable remediation
 - Missing-permission and disabled-write failures now return deterministic guidance for minimum scopes/config and same-command retry
 - 959 tests passing (100% pass rate)
-
-<details>
-<summary>Previous Release: v0.9 Smart Dependencies & Resilience (2026-02-15)</summary>
-
-**Delivered:**
-- Dynamic timeout scaling and auto scope reduction for large PRs, with informative partial review messages instead of generic errors
-- Multi-signal retrieval query builder incorporating PR intent, languages, diff patterns, and author tier with language-aware re-ranking
-- Three-stage dependency bump detection pipeline (detect, extract, classify) identifying Dependabot/Renovate PRs with semver analysis
-- Security advisory lookup via GitHub Advisory Database and changelog fetching with three-tier fallback and breaking change detection
-- Composite merge confidence scoring synthesizing semver, advisory status, and breaking change signals into actionable guidance
 
 </details>
 
@@ -115,16 +126,14 @@ When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, a
 
 ### Active
 
-#### Current Milestone: v0.12 Operator Reliability & Retrieval Quality
+#### Current Milestone: Next milestone (planning)
 
-**Goal:** Improve reliability under Search API pressure, increase retrieval quality, and standardize conversational UX across issue/PR/review surfaces.
+**Goal:** Define the next shipped scope from fresh requirements.
 
 **Target features:**
-- [ ] Search API cache + request de-dupe to stay within 30/min budget
-- [ ] Graceful rate-limit degradation with operator telemetry for production tuning
-- [ ] Multi-query retrieval with deterministic merge/rerank
-- [ ] Snippet evidence with path anchors and strict prompt-budget controls
-- [ ] Cross-surface conversational contract with targeted clarifying-question fallback
+- [ ] Draft and approve new milestone requirements (`/gsd-new-milestone`)
+- [ ] Convert approved requirements into roadmap phases and plans
+- [ ] Execute next milestone with verification-first closure
 
 ### Out of Scope
 
@@ -272,4 +281,4 @@ v0.11 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-16 after v0.12 milestone initialization*
+*Last updated: 2026-02-17 after v0.12 milestone completion and archival*

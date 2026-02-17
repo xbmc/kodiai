@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-16)
+See: `.planning/PROJECT.md` (updated 2026-02-17)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.12 phase 71 telemetry wiring fix verified complete
+**Current focus:** Plan the next milestone from fresh requirements
 
 ## Current Position
 
-**Milestone:** v0.12 Operator Reliability & Retrieval Quality (planned)
-**Phase:** 71 (verified complete)
-**Current Plan:** 01
-**Total Plans in Phase:** 1
-**Status:** Phase complete — verification accepted
-**Last Activity:** 2026-02-17
+**Milestone:** v0.12 Operator Reliability & Retrieval Quality (shipped)
+**Phase:** N/A
+**Current Plan:** N/A
+**Total Plans in Phase:** N/A
+**Status:** v0.12 milestone complete
+**Last Activity:** 2026-02-17 (milestone archived)
 
 **Progress:** [██████████] 100%
 
@@ -158,4 +158,4 @@ None.
 **Last session:** 2026-02-17T03:49:49Z
 **Stopped At:** Completed phase 71 verification (human-needed item accepted)
 **Resume File:** None
-**Next action:** /gsd-complete-milestone
+**Next action:** /gsd-new-milestone
