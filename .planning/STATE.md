@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** 67 (verified complete)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** Phase complete — ready for next phase planning
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-17
 
 **Progress:** [██████████] 100%
@@ -52,6 +52,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 66 P02 | 3m23s | 2 tasks | 2 files |
 | Phase 67 P01 | 3m29s | 2 tasks | 5 files |
 | Phase 67 P02 | 3m14s | 2 tasks | 5 files |
+| Phase 68 P01 | 2m21s | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 67]: Force degraded reviews to include the exact sentence 'Analysis is partial due to API limits.' in prompt instructions for deterministic UAT and telemetry assertions.
 - [Phase 67]: Store OPS-03 telemetry in a dedicated rate_limit_events table keyed by delivery_id for idempotent writes.
 - [Phase 67]: Emit rate-limit telemetry once per review run using author-tier enrichment outcomes and keep write failures non-blocking.
+- [Phase 68]: Normalize retrieval signals to lowercase collapsed-whitespace text to guarantee equivalent variant outputs across casing/spacing differences.
+- [Phase 68]: Rank merged hits by aggregated weighted score with deterministic tie-breakers (distance, variant priority, stable key) so ordering is input-order independent.
 
 ### Key Constraints (Carry-Forward)
 
@@ -133,7 +136,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T00:14:19.537Z
-**Stopped At:** Completed phase 67 execution + verification
+**Last session:** 2026-02-17T00:45:28.429Z
+**Stopped At:** Completed 68-01-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 68
