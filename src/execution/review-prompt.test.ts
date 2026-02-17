@@ -1,6 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
+  SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
   buildAuthorExperienceSection,
   buildConfidenceInstructions,
   buildDeltaReviewContext,
@@ -591,8 +592,10 @@ test("buildReviewPrompt includes partial-analysis disclaimer instructions when s
   );
 
   expect(prompt).toContain("## Search API Degradation Context");
-  expect(prompt).toContain("Analysis is partial due to API limits.");
-  expect(prompt).toContain('"Analysis is partial due to API limits."');
+  expect(prompt).toContain(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE);
+  expect(prompt).toContain(`"${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}"`);
+  const disclosureOccurrences = prompt.split(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE).length - 1;
+  expect(disclosureOccurrences).toBe(2);
 });
 
 test("buildReviewPrompt omits degradation instructions when search degradation is inactive", () => {
@@ -608,7 +611,7 @@ test("buildReviewPrompt omits degradation instructions when search degradation i
   );
 
   expect(prompt).not.toContain("## Search API Degradation Context");
-  expect(prompt).not.toContain("Analysis is partial due to API limits.");
+  expect(prompt).not.toContain(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE);
 });
 
 // ---------------------------------------------------------------------------

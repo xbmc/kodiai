@@ -6612,6 +6612,147 @@ describe("createReviewHandler author-tier search cache integration", () => {
     return { executeCount, prompt: capturedPrompt };
   }
 
+  async function runPublishedSummaryDisclosureScenario(params: {
+    issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
+  }): Promise<{ executeCount: number; updatedSummaryBody: string | undefined }> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    let executeCount = 0;
+    let executeStarted = false;
+    let updatedSummaryBody: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const summaryBody = [
+      "<details>",
+      "<summary>Kodiai Review Summary</summary>",
+      "",
+      "## What Changed",
+      "- Reviewed core logic changes.",
+      "",
+      "</details>",
+      "",
+      marker,
+    ].join("\n");
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: executeStarted
+              ? [{ id: 9001, body: summaryBody }]
+              : [],
+          }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async (params: { body: string }) => {
+            updatedSummaryBody = params.body;
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: params.issuesAndPullRequests,
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount += 1;
+          executeStarted = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-author-tier-summary-disclosure",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub() as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Author tier summary disclosure scenario",
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          author_association: "NONE",
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    return { executeCount, updatedSummaryBody };
+  }
+
   test("reuses cached author-tier lookup for equivalent review events", async () => {
     let searchCallCount = 0;
     const searchCache = createSearchCache<number>({ ttlMs: 60_000 });
@@ -6757,6 +6898,41 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
     expect(rateLimitEvents[0]?.skippedQueries).toBe(1);
     expect(rateLimitEvents[0]?.degradationPath).toBe("search-api-rate-limit");
+  });
+
+  test("injects exactly one degraded disclosure sentence into published summary output", async () => {
+    const { executeCount, updatedSummaryBody } = await runPublishedSummaryDisclosureScenario({
+      issuesAndPullRequests: async () => {
+        throw {
+          status: 429,
+          message: "secondary rate limit",
+          response: {
+            headers: {
+              "retry-after": "0",
+            },
+            data: {
+              message: "You have exceeded a secondary rate limit",
+            },
+          },
+        };
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(updatedSummaryBody).toBeDefined();
+    expect(updatedSummaryBody).toContain("Analysis is partial due to API limits.");
+    const disclosureCount = (updatedSummaryBody?.match(/Analysis is partial due to API limits\./g) ?? []).length;
+    expect(disclosureCount).toBe(1);
+  });
+
+  test("does not inject degraded disclosure sentence into non-degraded published summary output", async () => {
+    const { executeCount, updatedSummaryBody } = await runPublishedSummaryDisclosureScenario({
+      issuesAndPullRequests: async () => ({ data: { total_count: 5 } }),
+    });
+
+    expect(executeCount).toBe(1);
+    expect(updatedSummaryBody).toBeDefined();
+    expect(updatedSummaryBody).not.toContain("Analysis is partial due to API limits.");
   });
 
   test("continues degraded review execution when telemetry persistence throws", async () => {
