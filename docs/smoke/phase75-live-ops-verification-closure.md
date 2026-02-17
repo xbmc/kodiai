@@ -128,7 +128,44 @@ Capture and attach all of the following:
 Any failure in `OPS75-CACHE-*`, `OPS75-ONCE-*`, or `OPS75-FAILOPEN-*` blocks
 acceptance of OPS-04/OPS-05 closure evidence until remediated and rerun.
 
-## Latest Blocked Live Attempt (2026-02-17, Option A rerun)
+## Latest Live Capture (2026-02-17, blocked)
+
+Preflight was executed first using the hard OPS75 gate queries in
+`docs/runbooks/review-requested-debug.md`. The selected identities are explicit
+values (no placeholders) and are recorded below for deterministic reruns.
+
+### Identity Matrix
+
+| Lane | Surface | Delivery ID | Event type | rate_limit_events rows | Gate result |
+| --- | --- | --- | --- | --- | --- |
+| review-prime | review_requested | `a6ef2180-0be2-11f1-968d-2d2e1a4ddd54` | `pull_request.review_requested` | 1 | PASS |
+| review-hit | review_requested | `a5266f70-0be2-11f1-9510-567558d58f7f` | `pull_request.review_requested` | 1 | PASS |
+| review-changed | review_requested | `a32dd3c0-0be2-11f1-8ca9-f1471c47e808` | `pull_request.review_requested` | 1 | PASS |
+| mention-prime | explicit `@kodiai` mention | `fbb40df0-0c34-11f1-8cc1-c92772e4a6fe` | `issue_comment.created` | 0 | BLOCKED (`OPS75-CACHE-02`) |
+| mention-hit | explicit `@kodiai` mention | `0d18cab0-0c33-11f1-8869-5d1ad91f404e` | `issue_comment.created` | 0 | BLOCKED (`OPS75-CACHE-02`) |
+| mention-changed | explicit `@kodiai` mention | `00744000-0c33-11f1-8fea-d9e84f7596ea` | `issue_comment.created` | 0 | BLOCKED (`OPS75-CACHE-02`) |
+| degraded-1 | degraded telemetry candidate | `4e20bdb0-0c33-11f1-8685-a46f5471acb3` | `pull_request.ready_for_review` | 0 rows with `degradation_path != none` | BLOCKED (`OPS75-ONCE-01`) |
+
+Accepted review identities (`--review-accepted`):
+
+- `a6ef2180-0be2-11f1-968d-2d2e1a4ddd54`
+- `a5266f70-0be2-11f1-9510-567558d58f7f`
+- `a32dd3c0-0be2-11f1-8ca9-f1471c47e808`
+
+Fail-open identity (`--failopen`):
+
+- `f4112b20-0c32-11f1-8ad6-7c1444ea5884:issue_comment.created`
+
+Preflight outcome:
+
+- `OPS75-CACHE-01`: pass for selected review lane row presence.
+- `OPS75-CACHE-02`: blocked before closure claim (all selected mention lanes have
+  zero `rate_limit_events` rows).
+- `OPS75-ONCE-01`: blocked before closure claim (selected degraded identity has
+  zero non-`none` degraded rows).
+
+Per carry-forward rule, this identity set remains release-blocking and cannot be
+used to claim closure.
 
 Verifier rerun command:
 
@@ -159,6 +196,9 @@ Result:
 - `OPS75-FAILOPEN-02`: PASS
 
 Final verdict from the run: `FAIL [OPS75-CACHE-01, OPS75-CACHE-02, OPS75-ONCE-01]`.
+
+Blocked check IDs to carry forward: `OPS75-CACHE-01`, `OPS75-CACHE-02`,
+`OPS75-ONCE-01`.
 
 For triage SQL and troubleshooting mapped to each check family, use
 `docs/runbooks/review-requested-debug.md`.
