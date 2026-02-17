@@ -195,7 +195,7 @@ Plans:
   1. Operator can run a live-triggered scenario that deterministically exercises both Search cache hit and cache miss paths and can directly verify hit-rate telemetry reflects both outcomes
   2. Operator can observe exactly one rate-limit telemetry event for each degraded execution, with no duplicate emission for the same run
   3. When telemetry persistence fails during a degraded execution, the user still receives a completed review response and operator can verify telemetry failure did not block completion
-**Plans**: 2 plans
+**Plans**: 3 plans
 
 Plans:
 - [x] 72-01-PLAN.md — Enforce composite exactly-once telemetry identity and fail-open degraded emission semantics
@@ -209,7 +209,7 @@ Plans:
   1. When Search enrichment degrades under API limits, user-visible output includes deterministic partial-analysis disclosure text on every degraded path
   2. In degraded paths, retrieval evidence remains bounded to configured context limits and never overflows prompt budgets
   3. Degraded outputs always render well-formed retrieval context sections (or deterministic path-only fallback) without malformed formatting
-**Plans**: 2 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 73-01-PLAN.md — Enforce deterministic exact-sentence degraded-analysis disclosure in published review output
@@ -243,6 +243,8 @@ Plans:
 Plans:
 - [ ] 75-01-PLAN.md — Add deterministic telemetry write-failure injection controls and regression proofs for degraded fail-open behavior
 - [ ] 75-02-PLAN.md — Ship live OPS closure verification CLI, check-ID evidence matrix, and operator run procedure
+- [ ] 75-03-PLAN.md — Close live verification blockers by fixing author-cache persistence noise and enforcing OPS75 preflight evidence contract
+- [ ] 75-04-PLAN.md — Capture passing mention-lane + degraded-row live evidence bundle for OPS75 closure
 
 ### Phase 76: Success-Path Status Contract Parity
 **Goal**: Restore producer/consumer contract parity by making issue write success output machine-checkable and enforcing that contract in regression gates
