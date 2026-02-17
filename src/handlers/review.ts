@@ -1662,7 +1662,7 @@ export function createReviewHandler(deps: {
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
               eventType: `pull_request.${payload.action}`,
-              cacheHitRate: authorClassification.fromCache ? 1 : 0,
+              cacheHitRate: authorClassification.searchCacheHit ? 1 : 0,
               skippedQueries: authorClassification.searchEnrichment.skippedQueries,
               retryAttempts: authorClassification.searchEnrichment.retryAttempts,
               degradationPath: authorClassification.searchEnrichment.degradationPath,
