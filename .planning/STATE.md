@@ -53,6 +53,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 67 P01 | 3m29s | 2 tasks | 5 files |
 | Phase 67 P02 | 3m14s | 2 tasks | 5 files |
 | Phase 68 P01 | 2m21s | 1 tasks | 2 files |
+| Phase 68 P02 | 7m32s | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 67]: Emit rate-limit telemetry once per review run using author-tier enrichment outcomes and keep write failures non-blocking.
 - [Phase 68]: Normalize retrieval signals to lowercase collapsed-whitespace text to guarantee equivalent variant outputs across casing/spacing differences.
 - [Phase 68]: Rank merged hits by aggregated weighted score with deterministic tie-breakers (distance, variant priority, stable key) so ordering is input-order independent.
+- [Phase 68]: Run retrieval variants with bounded concurrency=2 and shared topK partitioning to preserve latency guardrails.
+- [Phase 68]: Keep retrieval fail-open at variant granularity for review and mention; only drop retrieval context when all variants fail.
+- [Phase 68]: Cap mention retrieval prompt context at three merged findings to keep mention replies concise and grounded.
 
 ### Key Constraints (Carry-Forward)
 
@@ -136,7 +140,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T00:45:28.429Z
-**Stopped At:** Completed 68-01-PLAN.md
+**Last session:** 2026-02-17T00:54:13.099Z
+**Stopped At:** Completed 68-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 68
