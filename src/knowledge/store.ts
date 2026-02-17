@@ -562,8 +562,8 @@ export function createKnowledgeStore(opts: {
   const getAuthorCacheStmt = db.query(`
     SELECT tier, author_association, pr_count, cached_at
     FROM author_cache
-    WHERE repo = ?1
-      AND author_login = ?2
+    WHERE repo = $repo
+      AND author_login = $authorLogin
       AND cached_at >= datetime('now', '-24 hours')
   `);
 
@@ -576,11 +576,11 @@ export function createKnowledgeStore(opts: {
       pr_count,
       cached_at
     ) VALUES (
-      ?1,
-      ?2,
-      ?3,
-      ?4,
-      ?5,
+      $repo,
+      $authorLogin,
+      $tier,
+      $authorAssociation,
+      $prCount,
       datetime('now')
     )
     ON CONFLICT(repo, author_login)
@@ -591,7 +591,9 @@ export function createKnowledgeStore(opts: {
       cached_at = datetime('now')
   `);
 
-  const purgeStaleAuthorCacheStmt = db.query("DELETE FROM author_cache WHERE cached_at < datetime('now', ?1)");
+  const purgeStaleAuthorCacheStmt = db.query(
+    "DELETE FROM author_cache WHERE cached_at < datetime('now', $retentionModifier)",
+  );
 
   const getLastReviewedHeadShaStmt = db.query(`
     SELECT head_sha
@@ -1014,8 +1016,8 @@ export function createKnowledgeStore(opts: {
 
     getAuthorCache(params: { repo: string; authorLogin: string }): AuthorCacheEntry | null {
       const row = getAuthorCacheStmt.get({
-        1: params.repo,
-        2: params.authorLogin,
+        $repo: params.repo,
+        $authorLogin: params.authorLogin,
       }) as AuthorCacheRow | null;
 
       if (!row) return null;
@@ -1052,18 +1054,31 @@ export function createKnowledgeStore(opts: {
       authorAssociation: string;
       prCount: number | null;
     }): void {
+      const repo = params.repo.trim();
+      const authorLogin = params.authorLogin.trim();
+      if (!repo || !authorLogin) {
+        logger.warn(
+          {
+            repo: params.repo,
+            authorLogin: params.authorLogin,
+          },
+          "Skipping author cache upsert due to missing identity fields",
+        );
+        return;
+      }
+
       upsertAuthorCacheStmt.run({
-        1: params.repo,
-        2: params.authorLogin,
-        3: params.tier,
-        4: params.authorAssociation,
-        5: params.prCount,
+        $repo: repo,
+        $authorLogin: authorLogin,
+        $tier: params.tier,
+        $authorAssociation: params.authorAssociation,
+        $prCount: params.prCount,
       });
     },
 
     purgeStaleAuthorCache(retentionDays = 7): number {
       const result = purgeStaleAuthorCacheStmt.run({
-        1: `-${retentionDays} days`,
+        $retentionModifier: `-${retentionDays} days`,
       });
       return result.changes;
     },
