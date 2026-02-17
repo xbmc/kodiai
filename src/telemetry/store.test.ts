@@ -4,6 +4,7 @@ import { existsSync, unlinkSync, rmSync } from "node:fs";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
 import type { ResilienceEventRecord } from "./types.ts";
+import type { RateLimitEventRecord } from "./types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -43,6 +44,18 @@ function makeResilienceEventRecord(overrides: Partial<ResilienceEventRecord> = {
     repo: "owner/repo",
     eventType: "pull_request.review_requested",
     kind: "timeout",
+    ...overrides,
+  };
+}
+
+function makeRateLimitEventRecord(overrides: Partial<RateLimitEventRecord> = {}): RateLimitEventRecord {
+  return {
+    repo: "owner/repo",
+    eventType: "pull_request.review_requested",
+    cacheHitRate: 0,
+    skippedQueries: 0,
+    retryAttempts: 0,
+    degradationPath: "none",
     ...overrides,
   };
 }
@@ -390,5 +403,91 @@ describe("TelemetryStore", () => {
     expect(row.execution_conclusion).toBe("timeout_partial");
     expect(row.checkpoint_files_reviewed).toBe(4);
     expect(row.created_at).toBeTruthy();
+  });
+
+  test("recordRateLimitEvent() inserts a row and is idempotent by delivery_id", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 0.75,
+        skippedQueries: 0,
+        retryAttempts: 1,
+        degradationPath: "none",
+      }),
+    );
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 0,
+        skippedQueries: 1,
+        retryAttempts: 1,
+        degradationPath: "search-api-rate-limit",
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(1);
+    expect(row.repo).toBe("octocat/hello-world");
+    expect(row.pr_number).toBe(7);
+    expect(row.event_type).toBe("pull_request.review_requested");
+    expect(row.cache_hit_rate).toBe(0);
+    expect(row.skipped_queries).toBe(1);
+    expect(row.retry_attempts).toBe(1);
+    expect(row.degradation_path).toBe("search-api-rate-limit");
+    expect(row.created_at).toBeTruthy();
+  });
+
+  test("initializing against an existing DB additively creates rate_limit_events", () => {
+    const path = `/tmp/kodiai-test-existing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+    tmpFiles.push(path);
+
+    const legacyDb = new Database(path);
+    legacyDb.run(
+      "CREATE TABLE executions (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'anthropic', model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, conclusion TEXT NOT NULL, session_id TEXT, num_turns INTEGER, stop_reason TEXT)",
+    );
+    legacyDb.run(
+      "CREATE TABLE retrieval_quality (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, top_k INTEGER, distance_threshold REAL, result_count INTEGER NOT NULL, avg_distance REAL, language_match_ratio REAL)",
+    );
+    legacyDb.close();
+
+    const fileStore = createTelemetryStore({ dbPath: path, logger: mockLogger });
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-legacy-001",
+        cacheHitRate: 1,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const table = verifyDb
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='rate_limit_events'")
+      .get() as { name?: string } | null;
+    const row = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-legacy-001'")
+      .get() as Record<string, unknown>;
+    verifyDb.close();
+    fileStore.close();
+
+    expect(table?.name).toBe("rate_limit_events");
+    expect(row.repo).toBe("owner/repo");
+    expect(row.cache_hit_rate).toBe(1);
   });
 });
