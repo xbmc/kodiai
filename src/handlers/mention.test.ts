@@ -2767,6 +2767,219 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("issue write-intent PR creation retries once then returns pr_creation_failed diagnostics", async () => {
+    const runCase = async (commentBody: string) => {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture(
+        "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+      );
+
+      let pullCreateCalls = 0;
+      const issueReplies: string[] = [];
+
+      const eventRouter: EventRouter = {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      };
+
+      const jobQueue: JobQueue = {
+        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+      };
+
+      const workspaceManager: WorkspaceManager = {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      };
+
+      const octokit = {
+        rest: {
+          reactions: {
+            createForPullRequestReviewComment: async () => ({ data: {} }),
+            createForIssueComment: async () => ({ data: {} }),
+          },
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async (params: { body: string }) => {
+              issueReplies.push(params.body);
+              return { data: {} };
+            },
+          },
+          pulls: {
+            list: async () => ({ data: [] }),
+            get: async () => ({ data: {} }),
+            create: async () => {
+              pullCreateCalls++;
+              throw new Error("upstream create-pr failure");
+            },
+            createReplyForReviewComment: async () => ({ data: {} }),
+          },
+        },
+      };
+
+      createMentionHandler({
+        eventRouter,
+        jobQueue,
+        workspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => octokit as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async (ctx: { workspace: { dir: string } }) => {
+            await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nretry create pr\n");
+            return {
+              conclusion: "success",
+              published: false,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-mention",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        logger: createNoopLogger(),
+      });
+
+      const handler = handlers.get("issue_comment.created");
+      expect(handler).toBeDefined();
+
+      await handler!(
+        buildIssueCommentMentionEvent({
+          issueNumber: 77,
+          commentBody,
+        }),
+      );
+
+      expect(pullCreateCalls).toBe(2);
+      expect(issueReplies).toHaveLength(1);
+      expect(issueReplies[0]).toContain("status: pr_creation_failed");
+      expect(issueReplies[0]).toContain("failed_step: create-pr");
+      expect(issueReplies[0]).toContain("diagnostics: upstream create-pr failure");
+      expect(issueReplies[0]).toContain("Next step: Fix the failed step and retry the exact same command.");
+      expect(issueReplies[0]).toContain("Retry command: @kodiai");
+      expect(issueReplies[0]).not.toContain("Opened PR:");
+
+      await workspaceFixture.cleanup();
+    };
+
+    await runCase("@kodiai apply: update the README");
+    await runCase("@kodiai can you update the README wording for clarity?");
+  });
+
+  test("issue write-mode reports issue-linkback failure without success wording", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let pullCreateCalls = 0;
+    let createCommentCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            createCommentCalls++;
+            if (createCommentCalls === 1) {
+              throw new Error("issue comment endpoint timeout");
+            }
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nlinkback failure\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai apply: update the README",
+      }),
+    );
+
+    expect(pullCreateCalls).toBe(1);
+    expect(createCommentCalls).toBe(2);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: pr_creation_failed");
+    expect(issueReplies[0]).toContain("failed_step: issue-linkback");
+    expect(issueReplies[0]).toContain("diagnostics: issue comment endpoint timeout");
+    expect(issueReplies[0]).not.toContain("Opened PR:");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("issue apply: replay reuses existing PR and replies with Existing PR link", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
@@ -4987,6 +5200,162 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
     expect(executorCalls).toBe(1);
     expect(capturedPrompt).toContain("intent-only mention finding");
     expect(capturedPrompt).toContain("shape-only mention finding");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("combined degraded retrieval + issue write flow keeps retrieval-safe prompt and enforces pr_creation_failed", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    let capturedPrompt = "";
+    let pullCreateCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            pullCreateCalls++;
+            throw new Error("create-pr transient failure");
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string; workspace: { dir: string } }) => {
+          capturedPrompt = ctx.prompt ?? "";
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\ncombined degraded + write\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-combined",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: {
+        model: "test",
+        dimensions: 1,
+        generate: async (query: string) => {
+          if (query.includes("files:")) {
+            throw new Error("file-path retrieval failed");
+          }
+          return {
+            embedding: new Float32Array([query.includes("risk:") ? 2 : 1]),
+            model: "test",
+            dimensions: 1,
+          };
+        },
+      } as never,
+      isolationLayer: {
+        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+          const variantId = params.queryEmbedding[0] ?? 0;
+          const findingText = variantId === 1 ? "intent-only mention finding" : "shape mention `finding`";
+          return {
+            results: [
+              {
+                memoryId: 120 + variantId,
+                distance: 0.2,
+                sourceRepo: "acme/repo",
+                record: {
+                  id: 120 + variantId,
+                  repo: "repo",
+                  owner: "acme",
+                  findingId: 120 + variantId,
+                  reviewId: 220 + variantId,
+                  sourceRepo: "acme/repo",
+                  findingText,
+                  severity: "major",
+                  category: "correctness",
+                  filePath: `src/ret-combined-${variantId}.ts`,
+                  outcome: "accepted",
+                  embeddingModel: "test",
+                  embeddingDim: 1,
+                  stale: false,
+                },
+              },
+            ],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+            },
+          };
+        },
+      } as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai can you update the README wording for clarity?",
+      }),
+    );
+
+    expect(capturedPrompt).toContain("## Retrieval");
+    expect(capturedPrompt).toContain("intent-only mention finding");
+    expect(capturedPrompt).toContain("shape mention 'finding'");
+    expect(capturedPrompt).not.toContain("shape mention `finding`");
+    expect(pullCreateCalls).toBe(2);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: pr_creation_failed");
+    expect(issueReplies[0]).toContain("failed_step: create-pr");
+    expect(issueReplies[0]).not.toContain("Opened PR:");
 
     await workspaceFixture.cleanup();
   });
