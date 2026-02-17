@@ -41,6 +41,15 @@ function reviewThreadMention(): MentionEvent {
   };
 }
 
+function expectInOrder(haystack: string, markers: string[]): void {
+  let cursor = 0;
+  for (const marker of markers) {
+    const next = haystack.indexOf(marker, cursor);
+    expect(next).toBeGreaterThanOrEqual(0);
+    cursor = next + marker.length;
+  }
+}
+
 describe("buildMentionPrompt", () => {
   test("includes conciseness and decision format guidance", () => {
     const prompt = buildMentionPrompt({
@@ -185,6 +194,94 @@ describe("buildMentionPrompt", () => {
     expect(prompt).not.toContain("## Issue Q&A Policy");
     expect(prompt).not.toContain("Intent-based execution");
     expect(prompt).not.toContain("Plan requests");
+  });
+
+  test("enforces cross-surface conversational contract markers with one-question fallback", () => {
+    const cases: Array<{
+      name: string;
+      mention: MentionEvent;
+      mustInclude: string[];
+      mustExclude: string[];
+    }> = [
+      {
+        name: "issue comment",
+        mention: issueMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "Write your response by creating a new top-level comment",
+        ],
+        mustExclude: [
+          "replying in the same inline thread",
+        ],
+      },
+      {
+        name: "pr top-level comment",
+        mention: baseMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "Write your response by creating a new top-level comment",
+        ],
+        mustExclude: [
+          "## Issue Q&A Policy",
+          "Intent-based execution",
+          "replying in the same inline thread",
+        ],
+      },
+      {
+        name: "pr review thread",
+        mention: reviewThreadMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "replying in the same inline thread",
+          "If the thread reply tool fails for any reason, fall back",
+        ],
+        mustExclude: [
+          "## Issue Q&A Policy",
+          "Intent-based execution",
+          "Plan requests",
+        ],
+      },
+    ];
+
+    for (const testCase of cases) {
+      const prompt = buildMentionPrompt({
+        mention: testCase.mention,
+        mentionContext: "",
+        userQuestion: "@kodiai can you help me with this?",
+      });
+
+      expectInOrder(prompt, [
+        "(1) Direct answer first",
+        "(2) Evidence pointers",
+        "(3) Next-step framing",
+      ]);
+
+      for (const expected of testCase.mustInclude) {
+        expect(prompt, `${testCase.name}: expected marker \"${expected}\"`).toContain(expected);
+      }
+
+      for (const excluded of testCase.mustExclude) {
+        expect(prompt, `${testCase.name}: unexpected marker \"${excluded}\"`).not.toContain(excluded);
+      }
+    }
   });
 
   test("renders retrieval context when provided", () => {
