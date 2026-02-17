@@ -178,47 +178,129 @@ If conclusions are present but telemetry rows are missing, treat it as a telemet
 
 Use these snippets when running `docs/smoke/phase75-live-ops-verification-closure.md`.
 
-### OPS75 capture gate: validate identity rows before verifier run
+### OPS75 capture gate: hard same-run identity preflight before verifier run
 
-Run this first against the exact candidate identities you plan to pass to
-`bun run verify:phase75`:
+Run this gate first with the exact identities you plan to pass to
+`bun run verify:phase75`. This is a hard release gate.
+
+Required identity sets:
+- Review lane (`--review`): `<review-prime>`, `<review-hit>`, `<review-changed>`
+- Accepted review lane (`--review-accepted`): same identities as review lane, from
+  accepted `review_requested` logs
+- Mention lane (`--mention`): `<mention-prime>`, `<mention-hit>`, `<mention-changed>`
+- Degraded (`--degraded`): one or more `<delivery-id>:<event-type>` identities
+
+#### Gate query A: lane row presence + same-run window
+
+```sql
+WITH lane_inputs(lane, expected_event_type, delivery_id) AS (
+  VALUES
+    ('review_prime', 'pull_request.review_requested', '<review-prime>'),
+    ('review_hit', 'pull_request.review_requested', '<review-hit>'),
+    ('review_changed', 'pull_request.review_requested', '<review-changed>'),
+    ('mention_prime', 'issue_comment.created', '<mention-prime>'),
+    ('mention_hit', 'issue_comment.created', '<mention-hit>'),
+    ('mention_changed', 'issue_comment.created', '<mention-changed>')
+)
+SELECT
+  li.lane,
+  li.delivery_id,
+  li.expected_event_type,
+  COUNT(rle.delivery_id) AS row_count,
+  MIN(rle.created_at) AS first_seen_at,
+  MAX(rle.created_at) AS last_seen_at,
+  CASE
+    WHEN COUNT(rle.delivery_id) = 0 THEN 'BLOCKED: missing telemetry row'
+    WHEN COUNT(rle.delivery_id) > 1 THEN 'BLOCKED: duplicate telemetry rows'
+    WHEN MIN(rle.event_type) <> li.expected_event_type THEN 'BLOCKED: wrong event_type'
+    ELSE 'PASS'
+  END AS gate_result
+FROM lane_inputs li
+LEFT JOIN rate_limit_events rle ON rle.delivery_id = li.delivery_id
+GROUP BY li.lane, li.delivery_id, li.expected_event_type
+ORDER BY li.lane;
+```
+
+Pass condition:
+- Every lane row returns `row_count = 1` and `gate_result = PASS`.
+
+Block conditions:
+- Any lane with `row_count = 0` blocks `OPS75-CACHE-01` (review lanes) or
+  `OPS75-CACHE-02` (mention lanes).
+- Any lane with `row_count > 1` blocks `OPS75-ONCE-02` (duplicate identity risk).
+
+#### Gate query B: degraded exactly-once candidate check
 
 ```sql
 SELECT
   delivery_id,
   event_type,
-  cache_hit_rate,
-  LOWER(COALESCE(degradation_path, 'none')) AS degradation_path,
-  created_at
+  COUNT(*) AS degraded_rows,
+  MIN(created_at) AS first_seen_at,
+  MAX(created_at) AS last_seen_at,
+  CASE
+    WHEN COUNT(*) = 1 THEN 'PASS'
+    WHEN COUNT(*) = 0 THEN 'BLOCKED: missing degraded telemetry row'
+    ELSE 'BLOCKED: duplicate degraded telemetry rows'
+  END AS gate_result
 FROM rate_limit_events
-WHERE delivery_id IN (
-  '<review-prime>',
-  '<review-hit>',
-  '<review-changed>',
-  '<mention-prime>',
-  '<mention-hit>',
-  '<mention-changed>',
-  '<degraded-id-1>'
-)
-ORDER BY created_at ASC;
+WHERE delivery_id IN ('<degraded-id-1>', '<degraded-id-2>', '<degraded-id-3>')
+  AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
+GROUP BY delivery_id, event_type
+ORDER BY delivery_id, event_type;
 ```
 
-Identity selection rule (blocking):
-- Keep only identity sets where all six cache-lane identities have one row each.
-- Mention lane identities must be present as `issue_comment.created` rows.
-- Every degraded identity must have one row with
+Pass condition:
+- Every degraded identity chosen for `--degraded` has exactly one row where
   `LOWER(COALESCE(degradation_path, 'none')) <> 'none'`.
 
-If these prerequisites are not met, recapture identities before running the
-verifier.
+Block conditions:
+- Missing row blocks `OPS75-ONCE-01`.
+- Duplicate rows block `OPS75-ONCE-02`.
+
+#### Gate query C: explicit blocker summary by check ID
+
+```sql
+WITH lane_inputs(check_id, lane, expected_event_type, delivery_id) AS (
+  VALUES
+    ('OPS75-CACHE-01', 'review_prime', 'pull_request.review_requested', '<review-prime>'),
+    ('OPS75-CACHE-01', 'review_hit', 'pull_request.review_requested', '<review-hit>'),
+    ('OPS75-CACHE-01', 'review_changed', 'pull_request.review_requested', '<review-changed>'),
+    ('OPS75-CACHE-02', 'mention_prime', 'issue_comment.created', '<mention-prime>'),
+    ('OPS75-CACHE-02', 'mention_hit', 'issue_comment.created', '<mention-hit>'),
+    ('OPS75-CACHE-02', 'mention_changed', 'issue_comment.created', '<mention-changed>')
+)
+SELECT
+  li.check_id,
+  li.lane,
+  li.delivery_id,
+  CASE
+    WHEN COUNT(rle.delivery_id) = 1 AND MIN(rle.event_type) = li.expected_event_type THEN 'PASS'
+    WHEN COUNT(rle.delivery_id) = 0 THEN 'BLOCKED: no telemetry row'
+    WHEN COUNT(rle.delivery_id) > 1 THEN 'BLOCKED: duplicate telemetry rows'
+    ELSE 'BLOCKED: event_type mismatch'
+  END AS status
+FROM lane_inputs li
+LEFT JOIN rate_limit_events rle ON rle.delivery_id = li.delivery_id
+GROUP BY li.check_id, li.lane, li.delivery_id, li.expected_event_type
+ORDER BY li.check_id, li.lane;
+```
+
+Release rule (carry-forward):
+- Any non-`PASS` result above is a release blocker.
+- Do not run or claim closure from `verify:phase75` with blocked identities.
+- If a rerun was executed and any OPS75 check failed, document the exact failing
+  check IDs and keep status blocked.
 
 ### OPS75-PREFLIGHT-01: Accepted review_requested gate evidence
 
-From application logs for each review lane identity, confirm:
+From application logs for the same matrix capture window, confirm:
 
 - `gate=review_requested_reviewer`
 - `gateResult=accepted`
 - `requestedReviewer` is `kodiai` / `kodiai[bot]` OR accepted rereview team
+- Mention lane identities are explicit `@kodiai` executions (`event_type=issue_comment.created`)
+  and are captured from that same run window as the review lane identities.
 
 Any `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request` means
 that identity is invalid for closure evidence.
