@@ -193,7 +193,11 @@ Plans:
   1. Operator can run a live-triggered scenario that deterministically exercises both Search cache hit and cache miss paths and can directly verify hit-rate telemetry reflects both outcomes
   2. Operator can observe exactly one rate-limit telemetry event for each degraded execution, with no duplicate emission for the same run
   3. When telemetry persistence fails during a degraded execution, the user still receives a completed review response and operator can verify telemetry failure did not block completion
-**Plans**: 0 plans
+**Plans**: 2 plans
+
+Plans:
+- [ ] 72-01-PLAN.md — Enforce composite exactly-once telemetry identity and fail-open degraded emission semantics
+- [ ] 72-02-PLAN.md — Ship deterministic live verification harness with DB assertions and operator summary artifacts
 
 ### Phase 73: Degraded Retrieval Contract
 **Goal**: Users receive deterministic degraded-analysis disclosure and bounded retrieval evidence even when Search enrichment is rate-limited
