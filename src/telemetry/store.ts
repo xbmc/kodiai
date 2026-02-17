@@ -27,8 +27,14 @@ function hasTableColumn(db: Database, tableName: string, columnName: string): bo
 export function createTelemetryStore(opts: {
   dbPath: string;
   logger: Logger;
+  rateLimitFailureInjectionIdentities?: string[];
 }): TelemetryStore {
   const { dbPath, logger } = opts;
+  const rateLimitFailureInjectionIdentities = new Set(
+    (opts.rateLimitFailureInjectionIdentities ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
 
   // Ensure parent directory exists (SQLite creates file, not directory)
   if (dbPath !== ":memory:") {
@@ -349,6 +355,25 @@ export function createTelemetryStore(opts: {
     },
 
     recordRateLimitEvent(entry: RateLimitEventRecord): void {
+      const executionIdentity = entry.executionIdentity
+        ?? entry.deliveryId
+        ?? `${entry.repo}#${entry.eventType}#${entry.prNumber ?? "none"}`;
+
+      if (rateLimitFailureInjectionIdentities.has(executionIdentity)) {
+        logger.warn(
+          {
+            executionIdentity,
+            deliveryId: entry.deliveryId,
+            eventType: entry.eventType,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            verificationMode: "rate-limit-failure-injection",
+          },
+          "Rate-limit telemetry write forced to fail",
+        );
+        throw new Error(`Forced rate-limit telemetry write failure for identity '${executionIdentity}'`);
+      }
+
       try {
         insertRateLimitEventStmt.run({
           $deliveryId: entry.deliveryId ?? null,
@@ -361,7 +386,18 @@ export function createTelemetryStore(opts: {
           $degradationPath: entry.degradationPath,
         });
       } catch (err) {
-        logger.warn({ err, deliveryId: entry.deliveryId, eventType: entry.eventType }, "Rate-limit telemetry write failed (non-blocking)");
+        logger.warn(
+          {
+            err,
+            executionIdentity,
+            deliveryId: entry.deliveryId,
+            eventType: entry.eventType,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+          },
+          "Rate-limit telemetry write failed",
+        );
+        throw err;
       }
 
       bumpWriteCount();

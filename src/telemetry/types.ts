@@ -104,6 +104,12 @@ export type RateLimitEventRecord = {
   skippedQueries: number;
   retryAttempts: number;
   degradationPath: string;
+  /**
+   * Optional deterministic execution identity for verification-only tooling.
+   *
+   * When absent, the store derives a deterministic fallback identity.
+   */
+  executionIdentity?: string;
 };
 
 /**

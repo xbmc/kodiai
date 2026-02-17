@@ -45,7 +45,25 @@ if (staleCount > 0) {
 
 // Telemetry storage (SQLite with WAL mode)
 const telemetryDbPath = process.env.TELEMETRY_DB_PATH ?? "./data/kodiai-telemetry.db";
-const telemetryStore = createTelemetryStore({ dbPath: telemetryDbPath, logger });
+const rateLimitFailureInjectionIdentities = (process.env.TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+const telemetryStore = createTelemetryStore({
+  dbPath: telemetryDbPath,
+  logger,
+  rateLimitFailureInjectionIdentities,
+});
+if (rateLimitFailureInjectionIdentities.length > 0) {
+  logger.warn(
+    {
+      count: rateLimitFailureInjectionIdentities.length,
+      identities: rateLimitFailureInjectionIdentities,
+      envVar: "TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES",
+    },
+    "Rate-limit telemetry failure injection enabled",
+  );
+}
 
 // Startup maintenance: purge old rows (TELEM-07) and checkpoint WAL (TELEM-08)
 const purgedCount = telemetryStore.purgeOlderThan(90);

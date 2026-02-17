@@ -1684,6 +1684,7 @@ export function createReviewHandler(deps: {
         // author-tier Search enrichment outcomes are finalized for this run.
         const rateLimitTelemetryEvent = {
           deliveryId: event.id,
+          executionIdentity: event.id,
           repo: `${apiOwner}/${apiRepo}`,
           prNumber: pr.number,
           eventType: `pull_request.${payload.action}`,
@@ -1698,7 +1699,12 @@ export function createReviewHandler(deps: {
             telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
           } catch (err) {
             logger.warn(
-              { ...baseLog, err },
+              {
+                ...baseLog,
+                err,
+                executionIdentity: rateLimitTelemetryEvent.executionIdentity,
+                telemetryEventType: rateLimitTelemetryEvent.eventType,
+              },
               "Rate-limit telemetry write failed (non-blocking)",
             );
           }
