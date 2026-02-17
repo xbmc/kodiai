@@ -51,6 +51,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 66 P01 | 1m43s | 2 tasks | 2 files |
 | Phase 66 P02 | 3m23s | 2 tasks | 2 files |
 | Phase 67 P01 | 3m29s | 2 tasks | 5 files |
+| Phase 67 P02 | 3m14s | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 66]: Author-tier cache integration fails open by logging cache faults and falling back to direct Search API lookup without blocking review completion.
 - [Phase 67]: Treat GitHub Search 403/429 responses with explicit rate-limit markers as retryable exactly once, then degrade without failing review execution.
 - [Phase 67]: Force degraded reviews to include the exact sentence 'Analysis is partial due to API limits.' in prompt instructions for deterministic UAT and telemetry assertions.
+- [Phase 67]: Store OPS-03 telemetry in a dedicated rate_limit_events table keyed by delivery_id for idempotent writes.
+- [Phase 67]: Emit rate-limit telemetry once per review run using author-tier enrichment outcomes and keep write failures non-blocking.
 
 ### Key Constraints (Carry-Forward)
 
@@ -130,7 +133,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T00:07:32.015Z
-**Stopped At:** Completed 67-01-PLAN.md
+**Last session:** 2026-02-17T00:11:52.827Z
+**Stopped At:** Completed 67-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-plan-phase 67
