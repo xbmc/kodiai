@@ -173,3 +173,81 @@ ORDER BY created_at ASC;
 Expected: rows exist for all six deliveries with non-failing conclusions.
 
 If conclusions are present but telemetry rows are missing, treat it as a telemetry persistence path issue and confirm the user-facing review/mention still completed before remediation.
+
+## Phase 75 OPS Closure SQL Checks
+
+Use these snippets when running `docs/smoke/phase75-live-ops-verification-closure.md`.
+
+### OPS75-CACHE-01 / OPS75-CACHE-02: Cache matrix sequence per surface
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  cache_hit_rate,
+  degradation_path,
+  created_at
+FROM rate_limit_events
+WHERE delivery_id IN (
+  '<review-prime>',
+  '<review-hit>',
+  '<review-changed>',
+  '<mention-prime>',
+  '<mention-hit>',
+  '<mention-changed>'
+)
+ORDER BY created_at ASC;
+```
+
+Expected:
+- Review lane (`pull_request.review_requested`): cache sequence `0 -> 1 -> 0`
+- Mention lane (`issue_comment.created`): cache sequence `0 -> 1 -> 0`
+
+### OPS75-ONCE-01 / OPS75-ONCE-02: Exactly-once degraded telemetry identity
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  COUNT(*) AS cnt
+FROM rate_limit_events
+WHERE delivery_id IN ('<degraded-id-1>', '<degraded-id-2>', '<degraded-id-3>')
+  AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
+GROUP BY delivery_id, event_type
+ORDER BY delivery_id, event_type;
+```
+
+Expected:
+- Every degraded identity appears exactly once (`cnt = 1`)
+- No duplicate rows where `cnt > 1`
+
+### OPS75-FAILOPEN-01: Forced telemetry failure identities wrote zero telemetry rows
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  COUNT(*) AS cnt
+FROM rate_limit_events
+WHERE delivery_id IN ('<failopen-id-1>', '<failopen-id-2>')
+GROUP BY delivery_id, event_type;
+```
+
+Expected: zero rows for forced-failure identities.
+
+### OPS75-FAILOPEN-02: Forced telemetry failure identities still completed
+
+```sql
+SELECT
+  delivery_id,
+  event_type,
+  conclusion,
+  created_at
+FROM executions
+WHERE delivery_id IN ('<failopen-id-1>', '<failopen-id-2>')
+ORDER BY created_at ASC;
+```
+
+Expected:
+- Rows exist for all forced-failure identities
+- Conclusions are non-failing (`success`, `completed`, etc.)
