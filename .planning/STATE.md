@@ -66,6 +66,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 74 P01 | 3 min | 2 tasks | 2 files |
 | Phase 74 P02 | 4 min | 2 tasks | 5 files |
 | Phase 75-live-ops-verification-closure P01 | 1 min | 2 tasks | 6 files |
+| Phase 75-live-ops-verification-closure P02 | 13 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 74]: Validate Azure runtime prerequisites with deterministic non-destructive permission probes and fail closed when write/push prerequisites are missing.
 - [Phase 75-live-ops-verification-closure]: Use TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES as an opt-in runtime allow-list so normal production telemetry behavior remains unchanged unless explicitly enabled.
 - [Phase 75-live-ops-verification-closure]: Force rate-limit telemetry failures at the telemetry store persistence boundary while preserving handler-level fail-open completion semantics.
+- [Phase 75-live-ops-verification-closure]: Use explicit '<delivery_id>:<event_type>' identity arguments for degraded and fail-open checks so evidence mapping stays deterministic and auditable.
+- [Phase 75-live-ops-verification-closure]: Split OPS75 verification into cache, exactly-once, and fail-open check families with a machine-checkable final verdict line that cites check IDs only.
 
 ### Key Constraints (Carry-Forward)
 
@@ -183,7 +186,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T18:30:56.845Z
-**Stopped At:** Completed 75-01-PLAN.md
+**Last session:** 2026-02-17T18:36:37.043Z
+**Stopped At:** Completed 75-live-ops-verification-closure-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-complete-milestone`
