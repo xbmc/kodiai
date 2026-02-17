@@ -6959,6 +6959,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
   });
 
   test("continues degraded review execution when telemetry persistence throws", async () => {
+    const emittedIdentities: string[] = [];
     const { executeCount, prompt } = await runSingleAuthorTierEvent({
       issuesAndPullRequests: async () => {
         throw {
@@ -6975,7 +6976,8 @@ describe("createReviewHandler author-tier search cache integration", () => {
         };
       },
       telemetryStore: {
-        recordRateLimitEvent: () => {
+        recordRateLimitEvent: (entry) => {
+          emittedIdentities.push(`${entry.executionIdentity ?? entry.deliveryId}:${entry.eventType}`);
           throw new Error("telemetry unavailable");
         },
       },
@@ -6983,6 +6985,8 @@ describe("createReviewHandler author-tier search cache integration", () => {
 
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
+    expect(emittedIdentities).toHaveLength(1);
+    expect(emittedIdentities[0]).toBe("delivery-123:pull_request.review_requested");
   });
 
   test("degraded review path passes bounded retrieval context without malformed retrieval sections", async () => {

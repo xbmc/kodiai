@@ -17,6 +17,24 @@ const mockLogger = {
   level: "silent",
 } as unknown as import("pino").Logger;
 
+function createWarnCaptureLogger() {
+  const warnings: Array<{ data: unknown; message: string }> = [];
+  const logger = {
+    info: () => {},
+    warn: (data: unknown, message: string) => {
+      warnings.push({ data, message });
+    },
+    error: () => {},
+    debug: () => {},
+    trace: () => {},
+    fatal: () => {},
+    child: () => logger,
+    level: "silent",
+  } as unknown as import("pino").Logger;
+
+  return { logger, warnings };
+}
+
 function makeRecord(overrides: Partial<Parameters<TelemetryStore["record"]>[0]> = {}) {
   return {
     repo: "owner/repo",
@@ -561,5 +579,68 @@ describe("TelemetryStore", () => {
     expect(row.cache_hit_rate).toBe(1);
     expect(indexes.map((index) => index.name)).toContain("idx_rate_limit_events_delivery_event");
     expect(indexes.map((index) => index.name)).not.toContain("idx_rate_limit_events_delivery");
+  });
+
+  test("recordRateLimitEvent() forces configured identity failures without writing duplicate rows", () => {
+    const { logger, warnings } = createWarnCaptureLogger();
+    const { store: fileStore, path } = createFileStore();
+    fileStore.close();
+
+    const injectedStore = createTelemetryStore({
+      dbPath: path,
+      logger,
+      rateLimitFailureInjectionIdentities: ["delivery-injected-001"],
+    });
+
+    expect(() =>
+      injectedStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: "delivery-injected-001",
+          eventType: "pull_request.review_requested",
+        }),
+      )).toThrow("Forced rate-limit telemetry write failure");
+
+    const verifyDb = new Database(path, { readonly: true });
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'delivery-injected-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    injectedStore.close();
+
+    expect(count.cnt).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe("Rate-limit telemetry write forced to fail");
+    expect((warnings[0]?.data as { executionIdentity?: string }).executionIdentity).toBe("delivery-injected-001");
+  });
+
+  test("recordRateLimitEvent() supports deterministic fallback identity injection without delivery id", () => {
+    const fallbackIdentity = "owner/repo#pull_request.review_requested#77";
+    const { store: fileStore, path } = createFileStore();
+    fileStore.close();
+
+    const injectedStore = createTelemetryStore({
+      dbPath: path,
+      logger: mockLogger,
+      rateLimitFailureInjectionIdentities: [fallbackIdentity],
+    });
+
+    expect(() =>
+      injectedStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: undefined,
+          repo: "owner/repo",
+          prNumber: 77,
+          eventType: "pull_request.review_requested",
+        }),
+      )).toThrow("Forced rate-limit telemetry write failure");
+
+    const verifyDb = new Database(path, { readonly: true });
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE repo = 'owner/repo' AND pr_number = 77")
+      .get() as { cnt: number };
+    verifyDb.close();
+    injectedStore.close();
+
+    expect(count.cnt).toBe(0);
   });
 });
