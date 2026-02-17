@@ -34,6 +34,14 @@ function buildFixtureMatrix() {
   });
 }
 
+function buildAcceptedReviewIdentities(): Identity[] {
+  return [
+    { deliveryId: "review-prime", eventType: "pull_request.review_requested" },
+    { deliveryId: "review-hit", eventType: "pull_request.review_requested" },
+    { deliveryId: "review-changed", eventType: "pull_request.review_requested" },
+  ];
+}
+
 function insertMatrixTelemetry(db: Database): void {
   db.query("INSERT INTO rate_limit_events (delivery_id, event_type, cache_hit_rate, degradation_path) VALUES (?, ?, ?, ?)").run(
     "review-prime",
@@ -123,7 +131,13 @@ describe("phase75 closure verification", () => {
       "success",
     );
 
-    const report = evaluateClosureVerification(db, matrix, degradedIdentities, failOpenIdentities);
+    const report = evaluateClosureVerification(
+      db,
+      matrix,
+      buildAcceptedReviewIdentities(),
+      degradedIdentities,
+      failOpenIdentities,
+    );
     db.close();
 
     expect(report.overallPassed).toBe(true);
@@ -155,7 +169,13 @@ describe("phase75 closure verification", () => {
       "success",
     );
 
-    const report = evaluateClosureVerification(db, matrix, degradedIdentities, failOpenIdentities);
+    const report = evaluateClosureVerification(
+      db,
+      matrix,
+      buildAcceptedReviewIdentities(),
+      degradedIdentities,
+      failOpenIdentities,
+    );
     db.close();
 
     expect(report.overallPassed).toBe(false);
@@ -180,11 +200,54 @@ describe("phase75 closure verification", () => {
       "failed",
     );
 
-    const report = evaluateClosureVerification(db, matrix, degradedIdentities, failOpenIdentities);
+    const report = evaluateClosureVerification(
+      db,
+      matrix,
+      buildAcceptedReviewIdentities(),
+      degradedIdentities,
+      failOpenIdentities,
+    );
     db.close();
 
     expect(report.overallPassed).toBe(false);
     expect(report.checks.find((check) => check.id === "OPS75-FAILOPEN-02")?.passed).toBe(false);
+  });
+
+  test("fails preflight check when accepted review identities do not match review matrix", () => {
+    const db = createFixtureDb();
+    const matrix = buildFixtureMatrix();
+    insertMatrixTelemetry(db);
+
+    const acceptedReviewMismatch: Identity[] = [
+      { deliveryId: "review-hit", eventType: "pull_request.review_requested" },
+      { deliveryId: "review-prime", eventType: "pull_request.review_requested" },
+      { deliveryId: "review-changed", eventType: "pull_request.review_requested" },
+    ];
+
+    for (const step of matrix) {
+      db.query("INSERT INTO executions (delivery_id, event_type, conclusion) VALUES (?, ?, ?)").run(
+        step.deliveryId,
+        step.eventType,
+        "success",
+      );
+    }
+    db.query("INSERT INTO executions (delivery_id, event_type, conclusion) VALUES (?, ?, ?)").run(
+      "failopen-review-1",
+      "pull_request.review_requested",
+      "success",
+    );
+
+    const report = evaluateClosureVerification(
+      db,
+      matrix,
+      acceptedReviewMismatch,
+      degradedIdentities,
+      failOpenIdentities,
+    );
+    db.close();
+
+    expect(report.overallPassed).toBe(false);
+    expect(report.checks.find((check) => check.id === "OPS75-PREFLIGHT-01")?.passed).toBe(false);
   });
 });
 
@@ -193,6 +256,7 @@ describe("phase75 final verdict rendering", () => {
     const output = renderFinalVerdict({
       overallPassed: true,
       matrix: buildFixtureMatrix(),
+      acceptedReviewIdentities: buildAcceptedReviewIdentities(),
       degradedIdentities: [{ deliveryId: "d1", eventType: "pull_request.review_requested" }],
       failOpenIdentities: [{ deliveryId: "d2", eventType: "pull_request.review_requested" }],
       checks: [

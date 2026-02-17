@@ -178,6 +178,17 @@ If conclusions are present but telemetry rows are missing, treat it as a telemet
 
 Use these snippets when running `docs/smoke/phase75-live-ops-verification-closure.md`.
 
+### OPS75-PREFLIGHT-01: Accepted review_requested gate evidence
+
+From application logs for each review lane identity, confirm:
+
+- `gate=review_requested_reviewer`
+- `gateResult=accepted`
+- `requestedReviewer` is `kodiai` / `kodiai[bot]` OR accepted rereview team
+
+Any `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request` means
+that identity is invalid for closure evidence.
+
 ### OPS75-CACHE-01 / OPS75-CACHE-02: Cache matrix sequence per surface
 
 ```sql

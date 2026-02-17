@@ -38,6 +38,7 @@ export type ClosureReport = {
   overallPassed: boolean;
   checks: VerificationCheck[];
   matrix: MatrixStep[];
+  acceptedReviewIdentities: Identity[];
   degradedIdentities: Identity[];
   failOpenIdentities: Identity[];
 };
@@ -187,16 +188,38 @@ function hasNonBlockingConclusion(rows: ExecutionRow[]): boolean {
 export function evaluateClosureVerification(
   db: Database,
   matrix: MatrixStep[],
+  acceptedReviewIdentities: Identity[],
   degradedIdentities: Identity[],
   failOpenIdentities: Identity[],
 ): ClosureReport {
   validateDeterministicMatrix(matrix);
 
+  const reviewLane = matrix.filter((step) => step.surface === "review_requested");
+  const preflightAlignmentFailures: string[] = [];
+  for (let index = 0; index < LOCKED_CACHE_SEQUENCE.length; index += 1) {
+    const outcome = LOCKED_CACHE_SEQUENCE[index];
+    const expected = reviewLane[index];
+    const provided = acceptedReviewIdentities[index];
+    if (!expected || !provided) {
+      preflightAlignmentFailures.push(`missing accepted review identity for ${outcome}`);
+      continue;
+    }
+
+    if (expected.deliveryId !== provided.deliveryId || expected.eventType !== provided.eventType) {
+      preflightAlignmentFailures.push(
+        `${outcome} expected=${expected.deliveryId}:${expected.eventType} observed=${provided.deliveryId}:${provided.eventType}`,
+      );
+    }
+  }
+
   const matrixDeliveryIds = matrix.map((step) => step.deliveryId);
+  const acceptedReviewDeliveryIds = acceptedReviewIdentities.map((identity) => identity.deliveryId);
   const degradedDeliveryIds = degradedIdentities.map((identity) => identity.deliveryId);
   const failOpenDeliveryIds = failOpenIdentities.map((identity) => identity.deliveryId);
 
-  const allDeliveryIds = Array.from(new Set([...matrixDeliveryIds, ...degradedDeliveryIds, ...failOpenDeliveryIds]));
+  const allDeliveryIds = Array.from(
+    new Set([...matrixDeliveryIds, ...acceptedReviewDeliveryIds, ...degradedDeliveryIds, ...failOpenDeliveryIds]),
+  );
   const inClause = makeInClauseFromValues(allDeliveryIds);
 
   const executionRows = db
@@ -217,6 +240,20 @@ export function evaluateClosureVerification(
 
   const executionByIdentity = mapExecutionRows(executionRows);
   const rateByIdentity = mapRateRows(rateRows);
+
+  const preflightExecutionFailures: string[] = [];
+  for (const identity of acceptedReviewIdentities) {
+    const key = makeIdentityKey(identity.deliveryId, identity.eventType);
+    const rows = executionByIdentity.get(key) ?? [];
+    if (rows.length === 0) {
+      preflightExecutionFailures.push(`${key} missing execution row`);
+      continue;
+    }
+
+    if (!hasNonBlockingConclusion(rows)) {
+      preflightExecutionFailures.push(`${key} non-passing conclusions=${rows.map((row) => row.conclusion).join(",")}`);
+    }
+  }
 
   const cacheFailures: string[] = [];
   const checkIdsBySurface = new Map<Surface, string>([
@@ -306,6 +343,15 @@ export function evaluateClosureVerification(
   }
 
   const checks: VerificationCheck[] = [
+    {
+      id: "OPS75-PREFLIGHT-01",
+      title: "Accepted review_requested identities align with review matrix and have execution evidence",
+      passed: preflightAlignmentFailures.length === 0 && preflightExecutionFailures.length === 0,
+      details:
+        preflightAlignmentFailures.length === 0 && preflightExecutionFailures.length === 0
+          ? "Accepted review_requested identities match the review lane and have non-failing execution conclusions."
+          : [...preflightAlignmentFailures, ...preflightExecutionFailures].join("; "),
+    },
     ...cacheChecks,
     {
       id: "OPS75-ONCE-01",
@@ -351,6 +397,7 @@ export function evaluateClosureVerification(
     overallPassed: checks.every((check) => check.passed),
     checks,
     matrix,
+    acceptedReviewIdentities,
     degradedIdentities,
     failOpenIdentities,
   };
@@ -367,6 +414,9 @@ export function renderFinalVerdict(report: ClosureReport): string {
   const matrixLines = report.matrix.map(
     (step) => `- ${step.surface}:${step.outcome} => ${step.deliveryId}:${step.eventType}`,
   );
+  const acceptedReviewLines = report.acceptedReviewIdentities.map(
+    (identity) => `- ${identity.deliveryId}:${identity.eventType}`,
+  );
 
   const verdict = report.overallPassed
     ? `Final verdict: PASS [${passedIds.join(", ")}]`
@@ -377,6 +427,9 @@ export function renderFinalVerdict(report: ClosureReport): string {
     "",
     "Deterministic matrix identities:",
     ...matrixLines,
+    "",
+    "Accepted review_requested identities:",
+    ...acceptedReviewLines,
     "",
     "Checks:",
     ...evidenceLines,
@@ -393,12 +446,15 @@ Runs deterministic OPS-04/OPS-05 closure checks with machine-checkable check IDs
 Usage:
   bun scripts/phase75-live-ops-verification-closure.ts \\
     --review <prime> <hit> <changed> \\
+    --review-accepted <prime> <hit> <changed> \\
     --mention <prime> <hit> <changed> \\
     --degraded <delivery:event-type> [...more] \\
     --failopen <delivery:event-type> [...more] [options]
 
 Required:
   --review <prime> <hit> <changed>      review_requested identities in locked order
+  --review-accepted <prime> <hit> <changed>
+                                        accepted review_requested identities for gate evidence
   --mention <prime> <hit> <changed>     explicit @kodiai mention identities in locked order
   --degraded <delivery:event-type>      degraded telemetry identities (repeatable)
   --failopen <delivery:event-type>      forced telemetry failure identities (repeatable)
@@ -411,6 +467,7 @@ Options:
   -h, --help                            show this help
 
 Check IDs:
+  OPS75-PREFLIGHT-* accepted review_requested evidence + identity alignment checks
   OPS75-CACHE-*    deterministic cache prime->hit->miss checks per surface
   OPS75-ONCE-*     exactly-once degraded telemetry identity checks
   OPS75-FAILOPEN-* fail-open completion checks under forced telemetry persistence failure`);
@@ -421,6 +478,7 @@ function main(): void {
     args: process.argv.slice(2),
     options: {
       review: { type: "string", multiple: true },
+      "review-accepted": { type: "string", multiple: true },
       mention: { type: "string", multiple: true },
       degraded: { type: "string", multiple: true },
       failopen: { type: "string", multiple: true },
@@ -440,6 +498,7 @@ function main(): void {
   }
 
   const review = asOutcomeRecord(parsed.values.review ?? [], "--review");
+  const acceptedReview = asOutcomeRecord(parsed.values["review-accepted"] ?? [], "--review-accepted");
   const mention = asOutcomeRecord(parsed.values.mention ?? [], "--mention");
 
   const degradedValues = parsed.values.degraded ?? [];
@@ -465,10 +524,20 @@ function main(): void {
     reviewEventType: parsed.values["review-event-type"],
     mentionEventType: parsed.values["mention-event-type"],
   });
+  const acceptedReviewIdentities = LOCKED_CACHE_SEQUENCE.map((outcome) => ({
+    deliveryId: acceptedReview[outcome],
+    eventType: parsed.values["review-event-type"],
+  }));
 
   const db = new Database(dbPath, { readonly: true });
   db.run("PRAGMA busy_timeout = 5000");
-  const report = evaluateClosureVerification(db, matrix, degradedIdentities, failOpenIdentities);
+  const report = evaluateClosureVerification(
+    db,
+    matrix,
+    acceptedReviewIdentities,
+    degradedIdentities,
+    failOpenIdentities,
+  );
   db.close();
 
   if (parsed.values.json) {

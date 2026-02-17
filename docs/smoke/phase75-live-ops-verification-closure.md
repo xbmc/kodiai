@@ -20,13 +20,30 @@ machine-checkable evidence.
 
 Collect live identities before running the command.
 
+### Preflight (blocking)
+
+Before collecting matrix identities, confirm each review lane run is accepted by
+the review_requested gate:
+
+- `requestedReviewer` is `kodiai` or `kodiai[bot]`, or
+- requested team is approved rereview team (`ai-review` / `aireview`).
+
+If logs show `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request`,
+the run is invalid for OPS75 closure and must be re-captured.
+
 1) Cache matrix identities (6 total):
 - Review lane: `<review-prime> <review-hit> <review-changed>`
 - Mention lane: `<mention-prime> <mention-hit> <mention-changed>`
 
+1b) Accepted review lane identities (3 total, same order as review lane):
+- `<accepted-review-prime> <accepted-review-hit> <accepted-review-changed>`
+- These must be the review identities from accepted gate logs above.
+
 2) Degraded identity list (`delivery_id:event_type`, one or more):
 - Example: `degraded-review-1:pull_request.review_requested`
 - Example: `degraded-mention-1:issue_comment.created`
+- Each identity must have exactly one `rate_limit_events` row where
+  `LOWER(degradation_path) <> 'none'`.
 
 3) Forced telemetry failure identity list (`delivery_id:event_type`, one or more):
 - These runs must be executed with `TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES` enabled.
@@ -47,6 +64,7 @@ Do not reorder lanes and do not substitute ad-hoc identities.
 ```sh
 bun run verify:phase75 \
   --review <review-prime> <review-hit> <review-changed> \
+  --review-accepted <accepted-review-prime> <accepted-review-hit> <accepted-review-changed> \
   --mention <mention-prime> <mention-hit> <mention-changed> \
   --degraded <degraded-delivery:event-type> \
   --degraded <degraded-delivery:event-type> \
@@ -58,6 +76,7 @@ Optional machine-readable evidence output:
 ```sh
 bun run verify:phase75 \
   --review <review-prime> <review-hit> <review-changed> \
+  --review-accepted <accepted-review-prime> <accepted-review-hit> <accepted-review-changed> \
   --mention <mention-prime> <mention-hit> <mention-changed> \
   --degraded <degraded-delivery:event-type> \
   --failopen <failopen-delivery:event-type> \
@@ -71,6 +90,7 @@ Capture and attach all of the following:
 - Full command output (text or JSON)
 - Final verdict line (`Final verdict: PASS [...]` or `Final verdict: FAIL [...]`)
 - Matrix identity table printed by the command
+- Accepted review_requested identity list printed by the command
 - Explicit list of degraded identities and forced-failure identities used in the run
 
 ## Release-Blocking Interpretation
