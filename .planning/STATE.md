@@ -13,10 +13,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 **Phase:** 72 - Telemetry Follow-Through (in progress)
 **Current Plan:** 2
 **Total Plans in Phase:** 2
-**Status:** Executing phase plans
-**Last Activity:** 2026-02-17 (completed 72-01 execution)
+**Status:** Phase complete — ready for verification
+**Last Activity:** 2026-02-17
 
-**Progress:** [█████░░░░░] 50%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 70 P02 | 2 min | 2 tasks | 2 files |
 | Phase 71 P01 | 1 min | 3 tasks | 2 files |
 | Phase 72 P01 | 7 min | 3 tasks | 5 files |
+| Phase 72-telemetry-follow-through P02 | 5 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 71]: Search cache-hit signal uses getOrLoad loader execution semantics; fail-open direct lookups and degraded paths report deterministic misses.
 - [Phase 72]: Exactly-once rate-limit telemetry identity is enforced as (delivery_id,event_type), replacing delivery-only uniqueness.
 - [Phase 72]: Replay writes for identical delivery/event pairs use INSERT OR IGNORE to preserve first-write telemetry truth while allowing distinct event types.
+- [Phase 72-telemetry-follow-through]: Phase 72 verification is encoded as fixed six-run identities (review+mention x prime/hit/changed-miss) to remove operator improvisation.
+- [Phase 72-telemetry-follow-through]: Final operator verdicts must cite DB check IDs, while risk/demurral language remains in analysis text only.
 
 ### Key Constraints (Carry-Forward)
 
@@ -161,7 +164,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T05:49:04.863Z
-**Stopped At:** Completed 72-01-PLAN.md
+**Last session:** 2026-02-17T05:56:05.938Z
+**Stopped At:** Completed 72-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 72`
