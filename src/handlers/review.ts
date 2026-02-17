@@ -22,6 +22,7 @@ import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRi
 import {
   buildReviewPrompt,
   matchPathInstructions,
+  SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
 } from "../execution/review-prompt.ts";
 import {
   buildKeywordParsingSection,
@@ -129,6 +130,24 @@ const SEARCH_RATE_LIMIT_ERROR_MARKERS = [
   "too many requests",
 ];
 const SEARCH_RATE_LIMIT_BACKOFF_MAX_MS = 1_500;
+const SEARCH_RATE_LIMIT_DISCLOSURE_LINE = `> ${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}`;
+
+function ensureSearchRateLimitDisclosureInSummary(summaryBody: string): string {
+  if (summaryBody.includes(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE)) {
+    return summaryBody;
+  }
+
+  const closingTag = "</details>";
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
+
+  if (lastCloseIdx === -1) {
+    return `${summaryBody}\n\n${SEARCH_RATE_LIMIT_DISCLOSURE_LINE}`;
+  }
+
+  const before = summaryBody.slice(0, lastCloseIdx).trimEnd();
+  const after = summaryBody.slice(lastCloseIdx);
+  return `${before}\n\n${SEARCH_RATE_LIMIT_DISCLOSURE_LINE}\n\n${after}`;
+}
 
 function extractSearchErrorStatus(err: unknown): number | undefined {
   if (typeof err !== "object" || err === null) return undefined;
@@ -479,6 +498,7 @@ async function appendReviewDetailsToSummary(params: {
   reviewOutputKey: string;
   reviewDetailsBlock: string;
   botHandles: string[];
+  requireDegradationDisclosure: boolean;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
@@ -501,8 +521,13 @@ async function appendReviewDetailsToSummary(params: {
     throw new Error("Summary comment not found for review output marker");
   }
 
+  let summaryBody = summaryComment.body!;
+  if (params.requireDegradationDisclosure) {
+    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
+  }
+
   // Merge severity counts from summary body observations into the findings line
-  const bodyCounts = parseSeverityCountsFromBody(summaryComment.body!);
+  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
   const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
   if (bodyTotal > 0) {
     updatedReviewDetails = updatedReviewDetails.replace(
@@ -524,14 +549,14 @@ async function appendReviewDetailsToSummary(params: {
   // output marker (<!-- kodiai:review-output-key:... -->) that follows the
   // summary's </details> stays outside both blocks.
   const closingTag = '</details>';
-  const lastCloseIdx = summaryComment.body!.lastIndexOf(closingTag);
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
   let updatedBody: string;
   if (lastCloseIdx === -1) {
     // Fallback: append as before if structure is unexpected
-    updatedBody = `${summaryComment.body}\n\n${updatedReviewDetails}`;
+    updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
   } else {
-    const before = summaryComment.body!.slice(0, lastCloseIdx);
-    const after = summaryComment.body!.slice(lastCloseIdx);
+    const before = summaryBody.slice(0, lastCloseIdx);
+    const after = summaryBody.slice(lastCloseIdx);
     updatedBody = `${before}\n\n${updatedReviewDetails}\n${after}`;
   }
 
@@ -2755,6 +2780,7 @@ export function createReviewHandler(deps: {
                   reviewOutputKey,
                   reviewDetailsBlock: reviewDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
+                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                 });
               } catch (appendErr) {
                 // Fallback: post standalone if append fails (e.g., summary comment not found yet)

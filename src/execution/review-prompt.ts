@@ -12,6 +12,7 @@ const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
 const MAX_LANGUAGE_GUIDANCE_ENTRIES = 5;
+export const SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE = "Analysis is partial due to API limits.";
 
 // ---------------------------------------------------------------------------
 // Language-specific review guidance (supplements base review rules)
@@ -917,13 +918,13 @@ function buildSearchRateLimitDegradationSection(params: {
     "## Search API Degradation Context",
     "",
     "Search enrichment was rate-limited while collecting author-tier context.",
-    "Analysis is partial due to API limits.",
+    SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
     `Retry attempts used: ${params.retryAttempts}.`,
     `Skipped queries: ${params.skippedQueries}.`,
     `Degradation path: ${params.degradationPath}.`,
     "",
     "In the summary comment, include one short note in ## What Changed using this exact sentence:",
-    '"Analysis is partial due to API limits."',
+    `"${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}"`,
   ].join("\n");
 }
 
