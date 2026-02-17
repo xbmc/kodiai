@@ -24,6 +24,47 @@ export type VariantRetrievalResult = {
   error?: unknown;
 };
 
+export async function executeRetrievalVariants(params: {
+  variants: MultiQueryVariant[];
+  maxConcurrency: number;
+  execute: (variant: MultiQueryVariant) => Promise<RetrievalResult[]>;
+}): Promise<VariantRetrievalResult[]> {
+  if (params.variants.length === 0) {
+    return [];
+  }
+
+  const results: VariantRetrievalResult[] = new Array(params.variants.length);
+  const maxConcurrency = Math.max(1, Math.min(params.maxConcurrency, params.variants.length));
+  let nextIndex = 0;
+
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const current = nextIndex;
+      nextIndex += 1;
+      if (current >= params.variants.length) {
+        return;
+      }
+
+      const variant = params.variants[current]!;
+      try {
+        const variantResults = await params.execute(variant);
+        results[current] = {
+          variant,
+          results: variantResults,
+        };
+      } catch (error) {
+        results[current] = {
+          variant,
+          error,
+        };
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: maxConcurrency }, () => worker()));
+  return results;
+}
+
 export type MergedRetrievalResult = RetrievalResult & {
   score: number;
   matchedVariants: MultiQueryVariantType[];

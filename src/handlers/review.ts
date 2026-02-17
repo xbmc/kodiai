@@ -41,10 +41,14 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
-import { buildRetrievalQuery } from "../learning/retrieval-query.ts";
 import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
 import { applyRecencyWeighting } from "../learning/retrieval-recency.ts";
 import { computeAdaptiveThreshold, type AdaptiveThresholdResult } from "../learning/adaptive-threshold.ts";
+import {
+  buildRetrievalVariants,
+  executeRetrievalVariants,
+  mergeVariantResults,
+} from "../learning/multi-query-retrieval.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -1954,132 +1958,179 @@ export function createReviewHandler(deps: {
         let retrievalCtx: RetrievalContextForPrompt | null = null;
         if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
           try {
-            const queryText = buildRetrievalQuery({
-              prTitle: pr.title,
-              prBody: pr.body ?? undefined,
+            const variants = buildRetrievalVariants({
+              title: pr.title,
+              body: pr.body ?? undefined,
               conventionalType: parsedIntent.conventionalType?.type ?? null,
-              detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+              prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
               riskSignals: diffAnalysis.riskSignals ?? [],
+              filePaths: reviewFiles,
               authorTier: authorClassification.tier,
-              topFilePaths: reviewFiles.slice(0, 15),
             });
-            logger.debug({ ...baseLog, queryLength: queryText.length }, "Retrieval query constructed");
-            const embedResult = await embeddingProvider.generate(queryText, "query");
-            if (embedResult) {
-              const retrieval = isolationLayer.retrieveWithIsolation({
-                queryEmbedding: embedResult.embedding,
-                repo: `${apiOwner}/${apiRepo}`,
-                owner: apiOwner,
-                sharingEnabled: config.knowledge.sharing.enabled,
-                topK: config.knowledge.retrieval.topK,
-                distanceThreshold: config.knowledge.retrieval.distanceThreshold,
-                adaptive: config.knowledge.retrieval.adaptive,
-                logger,
+
+            const maxVariantConcurrency = 2;
+            const variantTopK = Math.max(
+              1,
+              Math.ceil(config.knowledge.retrieval.topK / Math.max(variants.length, 1)),
+            );
+            const resultsByVariant = await executeRetrievalVariants({
+              variants,
+              maxConcurrency: maxVariantConcurrency,
+              execute: async (variant) => {
+                logger.debug(
+                  {
+                    ...baseLog,
+                    gate: "retrieval-variant",
+                    variant: variant.type,
+                    queryLength: variant.query.length,
+                    variantTopK,
+                  },
+                  "Retrieval variant query constructed",
+                );
+
+                const embedResult = await embeddingProvider.generate(variant.query, "query");
+                if (!embedResult) {
+                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
+                }
+
+                const retrieval = isolationLayer.retrieveWithIsolation({
+                  queryEmbedding: embedResult.embedding,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  owner: apiOwner,
+                  sharingEnabled: config.knowledge.sharing.enabled,
+                  topK: variantTopK,
+                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                  adaptive: config.knowledge.retrieval.adaptive,
+                  logger,
+                });
+
+                return retrieval.results;
+              },
+            });
+
+            const variantFailures = resultsByVariant.filter((variant) => variant.error);
+            for (const failedVariant of variantFailures) {
+              logger.warn(
+                {
+                  ...baseLog,
+                  gate: "retrieval-variant",
+                  variant: failedVariant.variant.type,
+                  err: failedVariant.error,
+                },
+                "Retrieval variant failed (fail-open)",
+              );
+            }
+
+            const mergedResults = mergeVariantResults({
+              resultsByVariant,
+              topK: config.knowledge.retrieval.topK,
+            });
+
+            const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
+            const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
+            const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
+            const computeThreshold = adaptiveThreshold?.computeAdaptiveThreshold ?? computeAdaptiveThreshold;
+
+            const languageReranked = mergedResults.length > 0
+              ? reranker({ results: mergedResults, prLanguages })
+              : [];
+            const reranked = languageReranked.length > 0
+              ? recencyWeighter({ results: languageReranked })
+              : [];
+
+            const configuredThreshold = config.knowledge.retrieval.distanceThreshold;
+            let adaptiveResult: AdaptiveThresholdResult = {
+              threshold: configuredThreshold,
+              method: "configured",
+              candidateCount: reranked.length,
+            };
+            let finalReranked = reranked.slice(0, config.knowledge.retrieval.topK);
+
+            if (config.knowledge.retrieval.adaptive) {
+              // Adaptive distance threshold (RET-03): compute on post-rerank distances
+              const distances = reranked.map((r) => r.adjustedDistance);
+              adaptiveResult = computeThreshold({
+                distances,
+                configuredThreshold,
               });
-
-               const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
-               const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
-               const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
-               const computeThreshold = adaptiveThreshold?.computeAdaptiveThreshold ?? computeAdaptiveThreshold;
-
-               const languageReranked = retrieval.results.length > 0
-                 ? reranker({ results: retrieval.results, prLanguages })
-                 : [];
-               const reranked = languageReranked.length > 0
-                 ? recencyWeighter({ results: languageReranked })
-                 : [];
-
-               const configuredThreshold = config.knowledge.retrieval.distanceThreshold;
-               let adaptiveResult: AdaptiveThresholdResult = {
-                 threshold: configuredThreshold,
-                 method: "configured",
-                 candidateCount: reranked.length,
-               };
-               let finalReranked = reranked.slice(0, config.knowledge.retrieval.topK);
-
-               if (config.knowledge.retrieval.adaptive) {
-                 // Adaptive distance threshold (RET-03): compute on post-rerank distances
-                 const distances = reranked.map((r) => r.adjustedDistance);
-                 adaptiveResult = computeThreshold({
-                   distances,
-                   configuredThreshold,
-                 });
-                 const thresholdFiltered = reranked.filter(
-                   (r) => r.adjustedDistance <= adaptiveResult.threshold,
-                 );
-                 finalReranked = thresholdFiltered.slice(0, config.knowledge.retrieval.topK);
-
-                 logger.debug(
-                   {
-                     ...baseLog,
-                     gate: "adaptive-threshold",
-                     method: adaptiveResult.method,
-                     threshold: adaptiveResult.threshold,
-                     candidateCount: adaptiveResult.candidateCount,
-                     gapSize: adaptiveResult.gapSize,
-                     preFilterCount: reranked.length,
-                     postFilterCount: finalReranked.length,
-                   },
-                   "Adaptive threshold applied to retrieval results",
-                 );
-               }
+              const thresholdFiltered = reranked.filter(
+                (r) => r.adjustedDistance <= adaptiveResult.threshold,
+              );
+              finalReranked = thresholdFiltered.slice(0, config.knowledge.retrieval.topK);
 
               logger.debug(
                 {
                   ...baseLog,
-                  gate: "retrieval-rerank",
-                  recencyApplied: languageReranked.length > 0,
-                  languageResultCount: languageReranked.length,
-                  finalResultCount: reranked.length,
+                  gate: "adaptive-threshold",
+                  method: adaptiveResult.method,
+                  threshold: adaptiveResult.threshold,
+                  candidateCount: adaptiveResult.candidateCount,
+                  gapSize: adaptiveResult.gapSize,
+                  preFilterCount: reranked.length,
+                  postFilterCount: finalReranked.length,
                 },
-                "Retrieval reranking complete",
+                "Adaptive threshold applied to retrieval results",
               );
+            }
 
-               // Retrieval quality telemetry (RET-05): derived from reranked distances.
-               // Guarded by telemetry.enabled and must be fail-open.
-               if (config.telemetry.enabled) {
-                 try {
-                   const resultCount = finalReranked.length;
-                   const avgDistance = resultCount > 0
-                     ? finalReranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
-                     : null;
-                   const languageMatchRatio = resultCount > 0
-                     ? finalReranked.filter((r) => r.languageMatch).length / resultCount
-                     : null;
+            logger.debug(
+              {
+                ...baseLog,
+                gate: "retrieval-rerank",
+                variantCount: variants.length,
+                failedVariantCount: variantFailures.length,
+                mergedResultCount: mergedResults.length,
+                recencyApplied: languageReranked.length > 0,
+                languageResultCount: languageReranked.length,
+                finalResultCount: reranked.length,
+              },
+              "Retrieval reranking complete",
+            );
 
-                   telemetryStore.recordRetrievalQuality({
-                     deliveryId: event.id,
-                     repo: `${apiOwner}/${apiRepo}`,
-                     prNumber: pr.number,
-                     eventType: event.name,
-                     topK: config.knowledge.retrieval.topK,
-                     distanceThreshold: adaptiveResult.threshold,
-                     thresholdMethod: adaptiveResult.method,
-                     resultCount,
-                     avgDistance,
-                     languageMatchRatio,
-                   });
-                 } catch (err) {
-                  logger.warn(
-                    { ...baseLog, err },
-                    "Retrieval quality telemetry write failed (non-blocking)",
-                  );
-                }
+            // Retrieval quality telemetry (RET-05): derived from reranked distances.
+            // Guarded by telemetry.enabled and must be fail-open.
+            if (config.telemetry.enabled) {
+              try {
+                const resultCount = finalReranked.length;
+                const avgDistance = resultCount > 0
+                  ? finalReranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
+                  : null;
+                const languageMatchRatio = resultCount > 0
+                  ? finalReranked.filter((r) => r.languageMatch).length / resultCount
+                  : null;
+
+                telemetryStore.recordRetrievalQuality({
+                  deliveryId: event.id,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  eventType: event.name,
+                  topK: config.knowledge.retrieval.topK,
+                  distanceThreshold: adaptiveResult.threshold,
+                  thresholdMethod: adaptiveResult.method,
+                  resultCount,
+                  avgDistance,
+                  languageMatchRatio,
+                });
+              } catch (err) {
+                logger.warn(
+                  { ...baseLog, err },
+                  "Retrieval quality telemetry write failed (non-blocking)",
+                );
               }
+            }
 
-               if (finalReranked.length > 0) {
-                 retrievalCtx = {
-                   findings: finalReranked.map(r => ({
-                     findingText: r.record.findingText,
-                     severity: r.record.severity,
-                     category: r.record.category,
-                     filePath: r.record.filePath,
-                     outcome: r.record.outcome,
-                     distance: r.adjustedDistance,
-                     sourceRepo: r.sourceRepo,
-                   })),
-                 };
-               }
+            if (finalReranked.length > 0) {
+              retrievalCtx = {
+                findings: finalReranked.map(r => ({
+                  findingText: r.record.findingText,
+                  severity: r.record.severity,
+                  category: r.record.category,
+                  filePath: r.record.filePath,
+                  outcome: r.record.outcome,
+                  distance: r.adjustedDistance,
+                  sourceRepo: r.sourceRepo,
+                })),
+              };
             }
           } catch (err) {
             logger.warn({ ...baseLog, err }, "Retrieval context generation failed (fail-open, proceeding without retrieval)");

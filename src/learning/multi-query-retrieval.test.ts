@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { RetrievalResult } from "./types.ts";
 import {
   buildRetrievalVariants,
+  executeRetrievalVariants,
   mergeVariantResults,
   type BuildRetrievalVariantsInput,
   type MultiQueryVariant,
@@ -165,5 +166,32 @@ describe("mergeVariantResults", () => {
 
     expect(merged).toHaveLength(1);
     expect(merged[0]?.memoryId).toBe(21);
+  });
+});
+
+describe("executeRetrievalVariants", () => {
+  test("captures per-variant failures while preserving order", async () => {
+    const variants = buildRetrievalVariants(makeInput());
+    const seen: string[] = [];
+
+    const results = await executeRetrievalVariants({
+      variants,
+      maxConcurrency: 3,
+      execute: async (variant) => {
+        seen.push(variant.type);
+        if (variant.type === "file-path") {
+          throw new Error("variant timeout");
+        }
+        return [makeResult(variant.priority + 1, 0.2 + variant.priority * 0.1, `${variant.type}.ts`)];
+      },
+    });
+
+    expect(seen.sort()).toEqual(["code-shape", "file-path", "intent"]);
+    expect(results).toHaveLength(3);
+    expect(results[0]?.variant.type).toBe("intent");
+    expect(results[0]?.results).toHaveLength(1);
+    expect(results[1]?.variant.type).toBe("file-path");
+    expect(results[1]?.error).toBeTruthy();
+    expect(results[2]?.variant.type).toBe("code-shape");
   });
 });

@@ -4293,6 +4293,338 @@ describe("createReviewHandler enforcement integration", () => {
   });
 });
 
+describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () => {
+  test("runs exactly three retrieval variants with bounded concurrency and deterministic merged context", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const embedCalls: string[] = [];
+    const retrieveCalls: number[] = [];
+    let inFlightEmbeds = 0;
+    let maxInFlightEmbeds = 0;
+    let capturedPrompt = "";
+
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 1,
+      generate: async (query: string) => {
+        embedCalls.push(query);
+        const variantId = query.includes("files:") ? 2 : query.includes("author:") ? 1 : 3;
+        inFlightEmbeds += 1;
+        maxInFlightEmbeds = Math.max(maxInFlightEmbeds, inFlightEmbeds);
+        await Bun.sleep(variantId === 1 ? 20 : variantId === 2 ? 5 : 10);
+        inFlightEmbeds -= 1;
+        return {
+          embedding: new Float32Array([variantId]),
+          model: "test",
+          dimensions: 1,
+        };
+      },
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        const variantId = params.queryEmbedding[0] ?? 0;
+        retrieveCalls.push(variantId);
+
+        const mk = (memoryId: number, findingText: string, distance: number) => ({
+          memoryId,
+          distance,
+          sourceRepo: "acme/repo",
+          record: {
+            id: memoryId,
+            repo: "repo",
+            owner: "acme",
+            findingId: memoryId,
+            reviewId: 10 + memoryId,
+            sourceRepo: "acme/repo",
+            findingText,
+            severity: "major",
+            category: "correctness",
+            filePath: `src/file-${memoryId}.ts`,
+            outcome: "accepted",
+            embeddingModel: "test",
+            embeddingDim: 1,
+            stale: false,
+          },
+        });
+
+        if (variantId === 1) {
+          return {
+            results: [mk(1, "shared bug", 0.4), mk(2, "intent-only bug", 0.2)],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 2,
+              query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+            },
+          };
+        }
+
+        if (variantId === 2) {
+          return {
+            results: [mk(1, "shared bug", 0.3)],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+            },
+          };
+        }
+
+        return {
+          results: [mk(3, "shape-only bug", 0.25)],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 1,
+            query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+          },
+        };
+      },
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-ret07",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      retrievalReranker: {
+        rerankByLanguage: ((params: { results: Array<any> }) =>
+          params.results.map((result) => ({
+            ...result,
+            adjustedDistance: result.distance,
+            languageMatch: true,
+          }))) as never,
+      },
+      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(embedCalls).toHaveLength(3);
+    expect(embedCalls.some((query) => query.includes("files:"))).toBe(true);
+    expect(retrieveCalls).toHaveLength(3);
+    expect(maxInFlightEmbeds).toBeLessThanOrEqual(2);
+
+    const sharedIdx = capturedPrompt.indexOf("shared bug");
+    const intentOnlyIdx = capturedPrompt.indexOf("intent-only bug");
+    const shapeOnlyIdx = capturedPrompt.indexOf("shape-only bug");
+    expect(sharedIdx).toBeGreaterThan(-1);
+    expect(intentOnlyIdx).toBeGreaterThan(-1);
+    expect(shapeOnlyIdx).toBeGreaterThan(-1);
+    expect(sharedIdx < intentOnlyIdx && intentOnlyIdx < shapeOnlyIdx).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("keeps review execution fail-open when one retrieval variant errors", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let capturedPrompt = "";
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 1,
+      generate: async (query: string) => {
+        if (query.includes("files:")) {
+          throw new Error("file-path variant failed");
+        }
+        return {
+            embedding: new Float32Array([query.includes("author:") ? 1 : 2]),
+          model: "test",
+          dimensions: 1,
+        };
+      },
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        const variantId = params.queryEmbedding[0] ?? 0;
+        const findingText = variantId === 1 ? "intent variant finding" : "shape variant finding";
+        const memoryId = variantId === 1 ? 11 : 12;
+        return {
+          results: [
+            {
+              memoryId,
+              distance: 0.2,
+              sourceRepo: "acme/repo",
+              record: {
+                id: memoryId,
+                repo: "repo",
+                owner: "acme",
+                findingId: memoryId,
+                reviewId: 20 + memoryId,
+                sourceRepo: "acme/repo",
+                findingText,
+                severity: "major",
+                category: "correctness",
+                filePath: `src/f-${memoryId}.ts`,
+                outcome: "accepted",
+                embeddingModel: "test",
+                embeddingDim: 1,
+                stale: false,
+              },
+            },
+          ],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 1,
+            query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+          },
+        };
+      },
+    };
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-ret07-fail-open",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      retrievalReranker: {
+        rerankByLanguage: ((params: { results: Array<any> }) =>
+          params.results.map((result) => ({
+            ...result,
+            adjustedDistance: result.distance,
+            languageMatch: true,
+          }))) as never,
+      },
+      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+      logger: createNoopLogger(),
+    });
+
+    await handlers.get("pull_request.review_requested")!(
+      buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
+    );
+
+    expect(capturedPrompt).toContain("intent variant finding");
+    expect(capturedPrompt).toContain("shape variant finding");
+
+    await workspaceFixture.cleanup();
+  });
+});
+
 describe("createReviewHandler feedback-driven suppression", () => {
   // Helper: compute the same FNV-1a fingerprint used by review.ts
   function fingerprintTitle(title: string): string {
