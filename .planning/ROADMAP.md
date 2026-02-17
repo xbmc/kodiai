@@ -14,7 +14,7 @@
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
 - ✅ **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (shipped 2026-02-17)
-- 🗺️ **v0.13 Reliability Follow-Through** — Phases 72-74 (planned)
+- ✅ **v0.13 Reliability Follow-Through** — Phases 72-74 (shipped 2026-02-17)
 
 ## Phases
 
@@ -108,7 +108,7 @@ See `.planning/milestones/v0.12-ROADMAP.md` for full phase details.
 </details>
 
 <details>
-<summary>v0.13 Reliability Follow-Through (Phases 72-74) -- PLANNED</summary>
+<summary>v0.13 Reliability Follow-Through (Phases 72-74) -- SHIPPED 2026-02-17</summary>
 
 **Milestone Goal:** Convert v0.12 reliability follow-through into verifiable operator outcomes: live telemetry confidence, deterministic degraded retrieval disclosure, and release-gating regression checks.
 
@@ -196,8 +196,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 72-01-PLAN.md — Enforce composite exactly-once telemetry identity and fail-open degraded emission semantics
-- [ ] 72-02-PLAN.md — Ship deterministic live verification harness with DB assertions and operator summary artifacts
+- [x] 72-01-PLAN.md — Enforce composite exactly-once telemetry identity and fail-open degraded emission semantics
+- [x] 72-02-PLAN.md — Ship deterministic live verification harness with DB assertions and operator summary artifacts
 
 ### Phase 73: Degraded Retrieval Contract
 **Goal**: Users receive deterministic degraded-analysis disclosure and bounded retrieval evidence even when Search enrichment is rate-limited
@@ -207,7 +207,11 @@ Plans:
   1. When Search enrichment degrades under API limits, user-visible output includes deterministic partial-analysis disclosure text on every degraded path
   2. In degraded paths, retrieval evidence remains bounded to configured context limits and never overflows prompt budgets
   3. Degraded outputs always render well-formed retrieval context sections (or deterministic path-only fallback) without malformed formatting
-**Plans**: 0 plans
+**Plans**: 2 plans
+
+Plans:
+- [x] 73-01-PLAN.md — Enforce deterministic exact-sentence degraded-analysis disclosure in published review output
+- [x] 73-02-PLAN.md — Lock bounded, well-formed retrieval evidence rendering across degraded review and mention paths
 
 ### Phase 74: Reliability Regression Gate
 **Goal**: Maintainers can run deterministic reliability verification that blocks releases when degraded + retrieval behavior regresses
@@ -217,12 +221,15 @@ Plans:
   1. Maintainer can run one automated regression scenario that validates combined degraded execution plus retrieval behavior end-to-end
   2. Maintainer can run a deterministic pre-release verification path that proves all new reliability checks pass before shipping
   3. If degraded-disclosure or bounded-retrieval behavior regresses, the reliability verification path fails with a clear actionable signal before release
-**Plans**: 0 plans
+**Plans**: 2 plans
 
+Plans:
+- [x] 74-01-PLAN.md — Enforce retry-once failure semantics and actionable diagnostics for issue write-mode PR publish flows
+- [x] 74-02-PLAN.md — Ship deterministic Phase 74 release gate CLI with Azure capability preflight and pre-release runbook
 
 ## Progress
 
-**Total shipped:** 12 milestones, 71 phases, 179 plans
+**Total shipped:** 13 milestones, 72 phases, 181 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -251,10 +258,10 @@ Plans:
 | 69 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 70 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 71 | v0.12 | 1/1 | Complete | 2026-02-17 |
-| 72 | v0.13 | 0/0 | Planned | — |
-| 73 | v0.13 | 0/0 | Planned | — |
-| 74 | v0.13 | 0/0 | Planned | — |
+| 72 | v0.13 | 2/2 | Complete | 2026-02-17 |
+| 73 | v0.13 | 2/2 | Complete | 2026-02-17 |
+| 74 | v0.13 | 2/2 | Complete | 2026-02-17 |
 
 ---
 
-*Roadmap updated: 2026-02-17 -- v0.13 milestone roadmap initialized (phases 72-74)*
+*Roadmap updated: 2026-02-17 -- phase 74 complete; v0.13 milestone shipped*
