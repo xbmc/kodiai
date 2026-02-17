@@ -14,7 +14,7 @@
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
 - ✅ **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (shipped 2026-02-17)
-- ✅ **v0.13 Reliability Follow-Through** — Phases 72-74 (shipped 2026-02-17)
+- 🟡 **v0.13 Reliability Follow-Through** — Phases 72-76 (gap closure in progress)
 
 ## Phases
 
@@ -108,13 +108,15 @@ See `.planning/milestones/v0.12-ROADMAP.md` for full phase details.
 </details>
 
 <details>
-<summary>v0.13 Reliability Follow-Through (Phases 72-74) -- SHIPPED 2026-02-17</summary>
+<summary>v0.13 Reliability Follow-Through (Phases 72-76) -- GAP CLOSURE IN PROGRESS</summary>
 
 **Milestone Goal:** Convert v0.12 reliability follow-through into verifiable operator outcomes: live telemetry confidence, deterministic degraded retrieval disclosure, and release-gating regression checks.
 
 - [ ] **Phase 72: Telemetry Follow-Through** - Validate live Search cache/rate-limit telemetry behavior and non-blocking degraded execution semantics.
 - [ ] **Phase 73: Degraded Retrieval Contract** - Guarantee deterministic partial-analysis disclosure and bounded degraded retrieval evidence.
 - [ ] **Phase 74: Reliability Regression Gate** - Add deterministic regression verification that proves degraded + retrieval reliability before release.
+- [ ] **Phase 75: Live OPS Verification Closure** - Close OPS-04/OPS-05 with evidence-backed live verification artifacts and deterministic operator verdicts.
+- [ ] **Phase 76: Success-Path Status Contract Parity** - Enforce machine-checkable success status semantics across issue write producer and Phase 74 gate consumer.
 
 </details>
 
@@ -227,6 +229,34 @@ Plans:
 - [x] 74-01-PLAN.md — Enforce retry-once failure semantics and actionable diagnostics for issue write-mode PR publish flows
 - [x] 74-02-PLAN.md — Ship deterministic Phase 74 release gate CLI with Azure capability preflight and pre-release runbook
 
+### Phase 75: Live OPS Verification Closure
+**Goal**: Close OPS-04 and OPS-05 with reproducible live-run evidence proving Search cache hit/miss telemetry correctness, exactly-once degraded telemetry emission, and fail-open completion behavior under telemetry write failures
+**Depends on**: Phase 74 (regression gate baseline complete)
+**Requirements**: OPS-04, OPS-05
+**Gap Closure**: Closes milestone audit requirement gaps for unresolved Phase 72 live operator verification evidence
+**Success Criteria** (what must be TRUE):
+  1. Operators can execute a deterministic live verification matrix that exercises cache prime-hit-miss sequences and captures evidence for each run identity
+  2. Verification artifacts show exactly one degraded telemetry event per degraded execution identity with no duplicate writes for the same run
+  3. Verification artifacts prove degraded executions complete review output even when telemetry persistence fails
+**Plans**: 0 plans
+
+Plans:
+- [ ] 75-01-PLAN.md — [To be planned]
+
+### Phase 76: Success-Path Status Contract Parity
+**Goal**: Restore producer/consumer contract parity by making issue write success output machine-checkable and enforcing that contract in regression gates
+**Depends on**: Phase 75 (OPS closure evidence complete)
+**Requirements**: REG-01, REG-02
+**Gap Closure**: Closes milestone audit integration and flow gaps for success-path status contract mismatch
+**Success Criteria** (what must be TRUE):
+  1. Issue write success responses emit deterministic machine-checkable success status markers alongside PR URL details
+  2. Regression gate and runbook checks validate both failure and success status-path envelopes using the same contract shape
+  3. Automated tests fail if success-path status semantics regress or become non-machine-checkable
+**Plans**: 0 plans
+
+Plans:
+- [ ] 76-01-PLAN.md — [To be planned]
+
 ## Progress
 
 **Total shipped:** 13 milestones, 72 phases, 181 plans
@@ -264,4 +294,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-17 -- phase 74 complete; v0.13 milestone shipped*
+*Roadmap updated: 2026-02-17 -- added gap-closure phases 75-76 for v0.13 audit findings*
