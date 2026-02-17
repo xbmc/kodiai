@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 **Phase:** 69 (in progress)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** In progress — ready for plan 69-02
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-17
 
 **Progress:** [██████████] 100%
@@ -55,6 +55,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 68 P01 | 2m21s | 1 tasks | 2 files |
 | Phase 68 P02 | 7m32s | 2 tasks | 8 files |
 | Phase 69 P01 | 2m | 1 tasks | 2 files |
+| Phase 69 P02 | 13m | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -113,6 +114,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 68]: Cap mention retrieval prompt context at three merged findings to keep mention replies concise and grounded.
 - [Phase 69]: Snippet extraction fails open per finding by degrading to path-only anchors instead of throwing.
 - [Phase 69]: Budget trimming keeps lowest-distance anchors first and removes overflow deterministically by path and line tie-breakers.
+- [Phase 69]: Review retrieval budgets are enforced at prompt-render time using knowledge.retrieval.maxContextChars so retrieval sections are deterministically omitted when nothing fits.
+- [Phase 69]: Mention retrieval context keeps topK <= 3 and applies a fixed 1200-char cap to maintain concise, bounded conversational prompts.
 
 ### Key Constraints (Carry-Forward)
 
@@ -143,7 +146,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T01:23:22.785Z
-**Stopped At:** Completed 69-01-PLAN.md
+**Last session:** 2026-02-17T01:38:39.469Z
+**Stopped At:** Completed 69-02-PLAN.md
 **Resume File:** None
 **Next action:** /gsd-execute-phase 69
