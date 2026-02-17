@@ -1758,22 +1758,11 @@ export function createMentionHandler(deps: {
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
         if (!writeEnabled && result.conclusion === "success" && !result.published) {
-          const fallbackLines =
-            isIssueThreadComment
-              ? [
-                  "I can answer this, but I need a bit more context first.",
-                  "",
-                  "(1) What exact outcome do you want from this change (bug fix, refactor, behavior change, or explanation)?",
-                  "(2) Which files, directories, or modules should I focus on first?",
-                  "(3) Are there constraints I should respect (API contract, tests to preserve, or timeline)?",
-                ]
-              : [
-                  "I saw your mention, but I didn't publish a reply automatically.",
-                  "",
-                  "Can you clarify what you want me to do?",
-                  "- (1) What outcome are you aiming for?",
-                  "- (2) Which file(s) / line(s) should I focus on?",
-                ];
+          const fallbackLines = [
+            "I can answer this, but I need one detail first.",
+            "",
+            "Could you share the exact outcome you want and the primary file/path I should focus on first?",
+          ];
 
           const fallbackBody = wrapInDetails(
             fallbackLines.join("\n"),

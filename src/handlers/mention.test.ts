@@ -451,10 +451,126 @@ describe("createMentionHandler conversational review wiring", () => {
     );
 
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("What exact outcome do you want from this change");
-    expect(issueReplies[0]).toContain("Which files, directories, or modules should I focus on first?");
-    expect(issueReplies[0]).toContain("Are there constraints I should respect");
+    expect(issueReplies[0]).toContain("I can answer this, but I need one detail first.");
+    expect(issueReplies[0]).toContain(
+      "Could you share the exact outcome you want and the primary file/path I should focus on first?",
+    );
     expect(issueReplies[0]).not.toContain("Can you clarify what you want me to do?");
+    expect(issueReplies[0]).not.toContain("(1)");
+    expect(issueReplies[0]).not.toContain("(2)");
+    expect(issueReplies[0]).not.toContain("(3)");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("review-thread mentions use the same one-question clarifying fallback", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const threadReplies: string[] = [];
+    let pullCreateCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async (params: { body: string }) => {
+            threadReplies.push(params.body);
+            return { data: {} };
+          },
+          create: async () => {
+            pullCreateCalls++;
+            return { data: { html_url: "https://example.com/pr/123" } };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { writeMode?: boolean }) => ({
+          conclusion: "success",
+          published: false,
+          writeMode: ctx.writeMode,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request_review_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "forker",
+        headRepoName: "repo",
+        commentBody: "@kodiai can you clarify this edge case?",
+      }),
+    );
+
+    expect(threadReplies).toHaveLength(1);
+    expect(threadReplies[0]).toContain("Could you share the exact outcome you want");
+    expect(threadReplies[0]).not.toContain("Can you clarify what you want me to do?");
+    expect(threadReplies[0]).not.toContain("(1)");
+    expect(pullCreateCalls).toBe(0);
 
     await workspaceFixture.cleanup();
   });
