@@ -445,17 +445,16 @@ Runs deterministic OPS-04/OPS-05 closure checks with machine-checkable check IDs
 
 Usage:
   bun scripts/phase75-live-ops-verification-closure.ts \\
-    --review <prime> <hit> <changed> \\
-    --review-accepted <prime> <hit> <changed> \\
-    --mention <prime> <hit> <changed> \\
+    --review <prime> --review <hit> --review <changed> \\
+    --review-accepted <prime> --review-accepted <hit> --review-accepted <changed> \\
+    --mention <prime> --mention <hit> --mention <changed> \\
     --degraded <delivery:event-type> [...more] \\
     --failopen <delivery:event-type> [...more] [options]
 
 Required:
-  --review <prime> <hit> <changed>      review_requested identities in locked order
-  --review-accepted <prime> <hit> <changed>
-                                        accepted review_requested identities for gate evidence
-  --mention <prime> <hit> <changed>     explicit @kodiai mention identities in locked order
+  --review <identity>                   repeat exactly 3x in locked order (prime, hit, changed)
+  --review-accepted <identity>          repeat exactly 3x for accepted review lane evidence
+  --mention <identity>                  repeat exactly 3x in locked order (prime, hit, changed)
   --degraded <delivery:event-type>      degraded telemetry identities (repeatable)
   --failopen <delivery:event-type>      forced telemetry failure identities (repeatable)
 

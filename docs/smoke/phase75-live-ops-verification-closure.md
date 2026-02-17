@@ -63,9 +63,15 @@ Do not reorder lanes and do not substitute ad-hoc identities.
 
 ```sh
 bun run verify:phase75 \
-  --review <review-prime> <review-hit> <review-changed> \
-  --review-accepted <accepted-review-prime> <accepted-review-hit> <accepted-review-changed> \
-  --mention <mention-prime> <mention-hit> <mention-changed> \
+  --review <review-prime> \
+  --review <review-hit> \
+  --review <review-changed> \
+  --review-accepted <accepted-review-prime> \
+  --review-accepted <accepted-review-hit> \
+  --review-accepted <accepted-review-changed> \
+  --mention <mention-prime> \
+  --mention <mention-hit> \
+  --mention <mention-changed> \
   --degraded <degraded-delivery:event-type> \
   --degraded <degraded-delivery:event-type> \
   --failopen <failopen-delivery:event-type>
@@ -75,9 +81,15 @@ Optional machine-readable evidence output:
 
 ```sh
 bun run verify:phase75 \
-  --review <review-prime> <review-hit> <review-changed> \
-  --review-accepted <accepted-review-prime> <accepted-review-hit> <accepted-review-changed> \
-  --mention <mention-prime> <mention-hit> <mention-changed> \
+  --review <review-prime> \
+  --review <review-hit> \
+  --review <review-changed> \
+  --review-accepted <accepted-review-prime> \
+  --review-accepted <accepted-review-hit> \
+  --review-accepted <accepted-review-changed> \
+  --mention <mention-prime> \
+  --mention <mention-hit> \
+  --mention <mention-changed> \
   --degraded <degraded-delivery:event-type> \
   --failopen <failopen-delivery:event-type> \
   --json
@@ -100,6 +112,21 @@ Capture and attach all of the following:
 
 Any failure in `OPS75-CACHE-*`, `OPS75-ONCE-*`, or `OPS75-FAILOPEN-*` blocks
 acceptance of OPS-04/OPS-05 closure evidence until remediated and rerun.
+
+## Latest Blocked Live Attempt (2026-02-17)
+
+Verifier run against `data/kodiai-telemetry.azure.db` with fresh sampled
+identities returned:
+
+- `OPS75-PREFLIGHT-01`: PASS
+- `OPS75-CACHE-01`: FAIL (`review_requested` hit lane remained `cache_hit_rate=0`)
+- `OPS75-CACHE-02`: FAIL (mention identities had zero telemetry rows)
+- `OPS75-ONCE-01`: FAIL (no degraded `degradation_path != none` row for sampled degraded identity)
+- `OPS75-ONCE-02`: PASS
+- `OPS75-FAILOPEN-01`: PASS
+- `OPS75-FAILOPEN-02`: PASS
+
+Final verdict from the run: `FAIL [OPS75-CACHE-01, OPS75-CACHE-02, OPS75-ONCE-01]`.
 
 For triage SQL and troubleshooting mapped to each check family, use
 `docs/runbooks/review-requested-debug.md`.
