@@ -557,6 +557,7 @@ async function resolveAuthorTier(params: {
   tier: AuthorTier;
   prCount: number | null;
   fromCache: boolean;
+  searchCacheHit: boolean;
   searchEnrichment: AuthorTierSearchEnrichment;
 }> {
   const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, logger } = params;
@@ -566,6 +567,7 @@ async function resolveAuthorTier(params: {
     skippedQueries: 0,
     degradationPath: "none",
   };
+  let searchCacheHit = false;
 
   try {
     const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
@@ -574,6 +576,7 @@ async function resolveAuthorTier(params: {
         tier: cached.tier as AuthorTier,
         prCount: cached.prCount,
         fromCache: true,
+        searchCacheHit,
         searchEnrichment,
       };
     }
@@ -606,12 +609,19 @@ async function resolveAuthorTier(params: {
         });
 
         const searchOutcome = await executeSearchWithRateLimitRetry({
-          operation: () =>
-            searchCache.getOrLoad(
+          operation: async () => {
+            let loaderExecuted = false;
+            const value = await searchCache.getOrLoad(
               cacheKey,
-              () => loadPrCount(),
+              async () => {
+                loaderExecuted = true;
+                return loadPrCount();
+              },
               AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
-            ),
+            );
+            searchCacheHit = !loaderExecuted;
+            return value;
+          },
           logger,
           authorLogin,
         });
@@ -619,6 +629,10 @@ async function resolveAuthorTier(params: {
         searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
         searchEnrichment.degraded = searchOutcome.degraded;
         prCount = searchOutcome.value;
+
+        if (searchOutcome.degraded) {
+          searchCacheHit = false;
+        }
       } else {
         const searchOutcome = await executeSearchWithRateLimitRetry({
           operation: () => loadPrCount(),
@@ -680,7 +694,7 @@ async function resolveAuthorTier(params: {
     logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
   }
 
-  return { tier, prCount, fromCache: false, searchEnrichment };
+  return { tier, prCount, fromCache: false, searchCacheHit, searchEnrichment };
 }
 
 function normalizeSeverity(value: string | undefined): FindingSeverity | null {
@@ -1591,11 +1605,13 @@ export function createReviewHandler(deps: {
           tier: AuthorTier;
           prCount: number | null;
           fromCache: boolean;
+          searchCacheHit: boolean;
           searchEnrichment: AuthorTierSearchEnrichment;
         } = {
           tier: "regular",
           prCount: null,
           fromCache: false,
+          searchCacheHit: false,
           searchEnrichment: {
             degraded: false,
             retryAttempts: 0,
@@ -1623,6 +1639,7 @@ export function createReviewHandler(deps: {
                 authorTier: authorClassification.tier,
                 authorPrCount: authorClassification.prCount,
                 fromCache: authorClassification.fromCache,
+                searchCacheHit: authorClassification.searchCacheHit,
                 searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
                 searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
                 searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
