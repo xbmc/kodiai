@@ -6747,10 +6747,39 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
     expect(rateLimitEvents).toHaveLength(1);
+    expect(rateLimitEvents[0]?.deliveryId).toBe("delivery-123");
+    expect(rateLimitEvents[0]?.eventType).toBe("pull_request.review_requested");
     expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
     expect(rateLimitEvents[0]?.retryAttempts).toBe(1);
     expect(rateLimitEvents[0]?.skippedQueries).toBe(1);
     expect(rateLimitEvents[0]?.degradationPath).toBe("search-api-rate-limit");
+  });
+
+  test("continues degraded review execution when telemetry persistence throws", async () => {
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        throw {
+          status: 429,
+          message: "secondary rate limit",
+          response: {
+            headers: {
+              "retry-after": "0",
+            },
+            data: {
+              message: "You have exceeded a secondary rate limit",
+            },
+          },
+        };
+      },
+      telemetryStore: {
+        recordRateLimitEvent: () => {
+          throw new Error("telemetry unavailable");
+        },
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("Analysis is partial due to API limits.");
   });
 
   test("continues review execution when rate-limit telemetry write fails", async () => {

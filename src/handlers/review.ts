@@ -1655,18 +1655,22 @@ export function createReviewHandler(deps: {
           }
         }
 
+        // Emit rate-limit telemetry from a single deterministic point after
+        // author-tier Search enrichment outcomes are finalized for this run.
+        const rateLimitTelemetryEvent = {
+          deliveryId: event.id,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          eventType: `pull_request.${payload.action}`,
+          cacheHitRate: authorClassification.searchCacheHit ? 1 : 0,
+          skippedQueries: authorClassification.searchEnrichment.skippedQueries,
+          retryAttempts: authorClassification.searchEnrichment.retryAttempts,
+          degradationPath: authorClassification.searchEnrichment.degradationPath,
+        };
+
         if (config.telemetry.enabled) {
           try {
-            telemetryStore.recordRateLimitEvent({
-              deliveryId: event.id,
-              repo: `${apiOwner}/${apiRepo}`,
-              prNumber: pr.number,
-              eventType: `pull_request.${payload.action}`,
-              cacheHitRate: authorClassification.searchCacheHit ? 1 : 0,
-              skippedQueries: authorClassification.searchEnrichment.skippedQueries,
-              retryAttempts: authorClassification.searchEnrichment.retryAttempts,
-              degradationPath: authorClassification.searchEnrichment.degradationPath,
-            });
+            telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
           } catch (err) {
             logger.warn(
               { ...baseLog, err },
