@@ -14,6 +14,7 @@
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
 - ✅ **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (shipped 2026-02-17)
+- 🗺️ **v0.13 Reliability Follow-Through** — Phases 72-74 (planned)
 
 ## Phases
 
@@ -106,6 +107,17 @@ See `.planning/milestones/v0.12-ROADMAP.md` for full phase details.
 
 </details>
 
+<details>
+<summary>v0.13 Reliability Follow-Through (Phases 72-74) -- PLANNED</summary>
+
+**Milestone Goal:** Convert v0.12 reliability follow-through into verifiable operator outcomes: live telemetry confidence, deterministic degraded retrieval disclosure, and release-gating regression checks.
+
+- [ ] **Phase 72: Telemetry Follow-Through** - Validate live Search cache/rate-limit telemetry behavior and non-blocking degraded execution semantics.
+- [ ] **Phase 73: Degraded Retrieval Contract** - Guarantee deterministic partial-analysis disclosure and bounded degraded retrieval evidence.
+- [ ] **Phase 74: Reliability Regression Gate** - Add deterministic regression verification that proves degraded + retrieval reliability before release.
+
+</details>
+
 ## Phase Details
 
 ### Phase 56: Foundation Layer
@@ -173,6 +185,36 @@ Plans:
 - [x] 59-02-PLAN.md — Partial review formatter, retry scope reducer, and chronic timeout detection
 - [x] 59-03-PLAN.md — Wire timeout resilience into review handler (partial publish, retry, merge)
 
+### Phase 72: Telemetry Follow-Through
+**Goal**: Operators can verify live Search cache and rate-limit telemetry behavior from real degraded executions without risking review completion
+**Depends on**: Phase 71 (v0.12 reliability baseline complete)
+**Requirements**: OPS-04, OPS-05
+**Success Criteria** (what must be TRUE):
+  1. Operator can run a live-triggered scenario that deterministically exercises both Search cache hit and cache miss paths and can directly verify hit-rate telemetry reflects both outcomes
+  2. Operator can observe exactly one rate-limit telemetry event for each degraded execution, with no duplicate emission for the same run
+  3. When telemetry persistence fails during a degraded execution, the user still receives a completed review response and operator can verify telemetry failure did not block completion
+**Plans**: 0 plans
+
+### Phase 73: Degraded Retrieval Contract
+**Goal**: Users receive deterministic degraded-analysis disclosure and bounded retrieval evidence even when Search enrichment is rate-limited
+**Depends on**: Phase 72 (live telemetry verification path available)
+**Requirements**: RET-06, RET-07
+**Success Criteria** (what must be TRUE):
+  1. When Search enrichment degrades under API limits, user-visible output includes deterministic partial-analysis disclosure text on every degraded path
+  2. In degraded paths, retrieval evidence remains bounded to configured context limits and never overflows prompt budgets
+  3. Degraded outputs always render well-formed retrieval context sections (or deterministic path-only fallback) without malformed formatting
+**Plans**: 0 plans
+
+### Phase 74: Reliability Regression Gate
+**Goal**: Maintainers can run deterministic reliability verification that blocks releases when degraded + retrieval behavior regresses
+**Depends on**: Phase 73 (degraded retrieval contract stabilized)
+**Requirements**: REG-01, REG-02
+**Success Criteria** (what must be TRUE):
+  1. Maintainer can run one automated regression scenario that validates combined degraded execution plus retrieval behavior end-to-end
+  2. Maintainer can run a deterministic pre-release verification path that proves all new reliability checks pass before shipping
+  3. If degraded-disclosure or bounded-retrieval behavior regresses, the reliability verification path fails with a clear actionable signal before release
+**Plans**: 0 plans
+
 
 ## Progress
 
@@ -205,7 +247,10 @@ Plans:
 | 69 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 70 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 71 | v0.12 | 1/1 | Complete | 2026-02-17 |
+| 72 | v0.13 | 0/0 | Planned | — |
+| 73 | v0.13 | 0/0 | Planned | — |
+| 74 | v0.13 | 0/0 | Planned | — |
 
 ---
 
-*Roadmap updated: 2026-02-17 -- v0.12 milestone archived and marked shipped*
+*Roadmap updated: 2026-02-17 -- v0.13 milestone roadmap initialized (phases 72-74)*

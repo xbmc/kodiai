@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-17)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Define requirements and roadmap for v0.13 Reliability Follow-Through
+**Current focus:** Execute v0.13 Reliability Follow-Through roadmap starting at Phase 72
 
 ## Current Position
 
 **Milestone:** v0.13 Reliability Follow-Through (in planning)
-**Phase:** Not started (defining requirements)
+**Phase:** 72 - Telemetry Follow-Through (next)
 **Current Plan:** —
 **Total Plans in Phase:** —
-**Status:** Defining requirements
-**Last Activity:** 2026-02-17 (milestone started)
+**Status:** Roadmap created; ready for phase planning
+**Last Activity:** 2026-02-17 (roadmap + traceability mapped)
 
 **Progress:** [░░░░░░░░░░] 0%
 
@@ -65,6 +65,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 ### Decisions
 
 All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
+- [v0.13-roadmap]: Milestone phase numbering continues from v0.12 at Phase 72 with no renumbering of shipped history.
+- [v0.13-roadmap]: Requirements are grouped into three execution phases: observability follow-through (72), degraded retrieval contract (73), and regression gate (74).
+- [v0.13-roadmap]: Each v0.13 requirement maps to exactly one phase for strict traceability (6/6 covered, 0 orphaned).
 - [Phase 56]: Store dep bump merge history in knowledge DB keyed by (repo, pr_number) using INSERT OR IGNORE to handle redeliveries
 - [Phase 56]: Use INSERT OR IGNORE with a partial unique index on retrieval_quality(delivery_id) to dedupe webhook redeliveries
 - [Phase 56]: Compute retrieval avg_distance and language_match_ratio from reranked adjustedDistance/languageMatch (not raw distances)
@@ -156,6 +159,6 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-17T03:49:49Z
-**Stopped At:** Completed phase 71 verification (human-needed item accepted)
+**Stopped At:** Created v0.13 roadmap phases 72-74 and updated requirement traceability
 **Resume File:** None
-**Next action:** Define milestone requirements, then create roadmap
+**Next action:** Run `/gsd-plan-phase 72`

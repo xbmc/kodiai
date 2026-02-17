@@ -47,18 +47,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OPS-04 | TBD | Pending |
-| OPS-05 | TBD | Pending |
-| RET-06 | TBD | Pending |
-| RET-07 | TBD | Pending |
-| REG-01 | TBD | Pending |
-| REG-02 | TBD | Pending |
+| OPS-04 | Phase 72 | Pending |
+| OPS-05 | Phase 72 | Pending |
+| RET-06 | Phase 73 | Pending |
+| RET-07 | Phase 73 | Pending |
+| REG-01 | Phase 74 | Pending |
+| REG-02 | Phase 74 | Pending |
 
 **Coverage:**
 - v0.13 requirements: 6 total
-- Mapped to phases: 0
-- Unmapped: 6 ⚠️
+- Mapped to phases: 6
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-02-17*
-*Last updated: 2026-02-17 after milestone initialization*
+*Last updated: 2026-02-17 after v0.13 roadmap creation*
