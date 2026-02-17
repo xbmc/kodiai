@@ -157,3 +157,49 @@ When reporting an incident, capture:
 - Any suspicious log snippet (especially skip reasons)
 
 If you have the delivery ID, debugging can usually be finished quickly.
+
+## Phase 74 Reliability Regression Gate
+
+Pre-release command:
+
+`bun run verify:phase74 --owner xbmc --repo xbmc --scenario <scenario-json>`
+
+Treat this gate as release-blocking when any check fails.
+
+### Capability preflight failures (`CAP-74-*`)
+
+- `CAP-74-01` failed: runtime cannot satisfy branch creation prerequisites.
+  - Check GitHub App/token permission level for `xbmc/xbmc` (must be write-capable).
+  - Confirm repository is not archived and default branch resolves.
+- `CAP-74-02` failed: bot branch push prerequisites are missing.
+  - Check `permissions.push` visibility for runtime identity.
+  - Confirm bot branch strategy is allowed for app installation.
+- `CAP-74-03` failed: PR creation prerequisites are not available.
+  - Resolve write/push permission gaps first, then rerun gate.
+
+### Issue write-mode reliability failures (`REL-74-*`)
+
+- `REL-74-01` failed: issue reply output is missing machine-checkable status line.
+  - Ensure write failure/success replies include explicit `status:` marker.
+- `REL-74-02` failed: failure was not pinned to expected step (`branch-push`, `create-pr`, `issue-linkback`).
+  - Inspect publish logs for missing/incorrect `failed_step` mapping.
+- `REL-74-03` failed: diagnostics were empty or non-actionable.
+  - Ensure diagnostics include concrete cause or fallback `Unknown publish failure`.
+- `REL-74-04` failed: status reported success without artifact triad.
+  - Confirm branch push succeeded, PR URL exists, and issue linkback comment was posted.
+
+### Combined degraded retrieval failures (`RET-74-*`)
+
+- `RET-74-01` failed: rendered retrieval section exceeded max char budget.
+  - Inspect retrieval rendering budget logic and bounded trimming behavior.
+- `RET-74-02` failed: fallback output is not markdown-safe.
+  - Inspect retrieval fallback sanitization for malformed backticks/formatting.
+
+### Required evidence for escalation
+
+When reporting a Phase 74 gate failure, include:
+
+- Scenario JSON used for the run
+- Full gate output with failed check IDs
+- Delivery ID and issue/PR URLs tied to the scenario
+- `status:` and `failed_step:` lines captured from issue write reply
