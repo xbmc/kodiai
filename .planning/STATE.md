@@ -10,13 +10,13 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 ## Current Position
 
 **Milestone:** v0.13 Reliability Follow-Through (in planning)
-**Phase:** 72 - Telemetry Follow-Through (next)
-**Current Plan:** —
-**Total Plans in Phase:** —
-**Status:** Roadmap created; ready for phase planning
-**Last Activity:** 2026-02-17 (roadmap + traceability mapped)
+**Phase:** 72 - Telemetry Follow-Through (in progress)
+**Current Plan:** 2
+**Total Plans in Phase:** 2
+**Status:** Executing phase plans
+**Last Activity:** 2026-02-17 (completed 72-01 execution)
 
-**Progress:** [░░░░░░░░░░] 0%
+**Progress:** [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 70 P01 | 2 min | 2 tasks | 4 files |
 | Phase 70 P02 | 2 min | 2 tasks | 2 files |
 | Phase 71 P01 | 1 min | 3 tasks | 2 files |
+| Phase 72 P01 | 7 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 70]: PR top-level mention fixtures include issue.number plus pull_request shape to validate PR-surface behavior without issue-only intent leakage.
 - [Phase 71]: Author classification cache reads remain independent from Search cache-hit telemetry so cacheHitRate reflects Search API cache behavior only.
 - [Phase 71]: Search cache-hit signal uses getOrLoad loader execution semantics; fail-open direct lookups and degraded paths report deterministic misses.
+- [Phase 72]: Exactly-once rate-limit telemetry identity is enforced as (delivery_id,event_type), replacing delivery-only uniqueness.
+- [Phase 72]: Replay writes for identical delivery/event pairs use INSERT OR IGNORE to preserve first-write telemetry truth while allowing distinct event types.
 
 ### Key Constraints (Carry-Forward)
 
@@ -158,7 +161,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T03:49:49Z
-**Stopped At:** Created v0.13 roadmap phases 72-74 and updated requirement traceability
+**Last session:** 2026-02-17T05:49:04.863Z
+**Stopped At:** Completed 72-01-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 72`
