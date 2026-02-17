@@ -156,7 +156,9 @@ describe("buildMentionPrompt", () => {
             findingText: "Validate null payload before use",
             severity: "major",
             category: "correctness",
-            filePath: "src/api/handler.ts",
+            path: "src/api/handler.ts",
+            line: 24,
+            snippet: "if (!payload) return;",
             outcome: "accepted",
             distance: 0.1234,
             sourceRepo: "acme/repo",
@@ -166,8 +168,94 @@ describe("buildMentionPrompt", () => {
     });
 
     expect(prompt).toContain("## Retrieval");
-    expect(prompt).toContain("Validate null payload before use");
-    expect(prompt).toContain("distance: 0.123");
+    expect(prompt).toContain("`src/api/handler.ts:24` -- `if (!payload) return;`");
     expect(prompt).toContain("source: acme/repo");
+  });
+
+  test("uses path-only fallback when retrieval snippet evidence is unavailable", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Validate null payload before use",
+            severity: "major",
+            category: "correctness",
+            path: "src/api/handler.ts",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("`src/api/handler.ts` -- Validate null payload before use");
+  });
+
+  test("drops lowest-value retrieval entries first when section exceeds budget", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Most relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "Least relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 200,
+            snippet: "const dropped = veryLongExpression.repeat(30);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+        maxChars: 260,
+      },
+    });
+
+    expect(prompt).toContain("`src/a.ts:10`");
+    expect(prompt).not.toContain("`src/z.ts:200`");
+  });
+
+  test("omits retrieval section when no entries fit the configured budget", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "very long finding text ".repeat(20),
+            severity: "major",
+            category: "correctness",
+            path: "src/overflow.ts",
+            line: 1,
+            snippet: "const longLine = 'x'.repeat(200);",
+            outcome: "accepted",
+            distance: 0.2,
+            sourceRepo: "acme/repo",
+          },
+        ],
+        maxChars: 40,
+      },
+    });
+
+    expect(prompt).not.toContain("## Retrieval");
   });
 });

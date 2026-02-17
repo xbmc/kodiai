@@ -622,7 +622,9 @@ test("buildRetrievalContextSection includes provenance citation instruction when
         findingText: "SQL injection risk in query builder",
         severity: "major",
         category: "security",
-        filePath: "src/db.ts",
+        path: "src/db.ts",
+        line: 42,
+        snippet: "const query = `SELECT * FROM users WHERE id = ${userId}`",
         outcome: "accepted",
         distance: 0.12,
         sourceRepo: "owner/other-repo",
@@ -630,12 +632,84 @@ test("buildRetrievalContextSection includes provenance citation instruction when
     ],
   });
   expect(section).toContain("Prior pattern:");
-  expect(section).toContain("append a brief provenance note");
-  expect(section).toContain("When a finding in your review directly relates to one of these prior patterns");
+  expect(section).toContain("When a finding directly matches prior context, append");
+  expect(section).toContain("`src/db.ts:42` --");
 });
 
 test("buildRetrievalContextSection returns empty string when no findings", () => {
   const section = buildRetrievalContextSection({ findings: [] });
+  expect(section).toBe("");
+});
+
+test("buildRetrievalContextSection uses path-only fallback formatting when snippet evidence missing", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "Missing null guard before dereference",
+        severity: "major",
+        category: "correctness",
+        path: "src/handler.ts",
+        outcome: "accepted",
+        distance: 0.15,
+        sourceRepo: "owner/repo",
+      },
+    ],
+  });
+
+  expect(section).toContain("`src/handler.ts` -- Missing null guard before dereference");
+});
+
+test("buildRetrievalContextSection trims overflow by dropping highest-distance findings first", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "high value",
+        severity: "major",
+        category: "correctness",
+        path: "src/a.ts",
+        line: 10,
+        snippet: "const stable = true;",
+        outcome: "accepted",
+        distance: 0.1,
+        sourceRepo: "owner/repo",
+      },
+      {
+        findingText: "low value",
+        severity: "major",
+        category: "correctness",
+        path: "src/z.ts",
+        line: 90,
+        snippet: "const noisy = veryLongValue.repeat(20);",
+        outcome: "accepted",
+        distance: 0.9,
+        sourceRepo: "owner/repo",
+      },
+    ],
+    maxChars: 380,
+  });
+
+  expect(section).toContain("`src/a.ts:10`");
+  expect(section).not.toContain("`src/z.ts:90`");
+});
+
+test("buildRetrievalContextSection omits section when all findings are trimmed by budget", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "very long finding text ".repeat(20),
+        severity: "major",
+        category: "correctness",
+        path: "src/overflow.ts",
+        line: 1,
+        snippet: "const longLine = 'x'.repeat(400);",
+        outcome: "accepted",
+        distance: 0.2,
+        sourceRepo: "owner/repo",
+      },
+    ],
+    maxChars: 40,
+  });
+
   expect(section).toBe("");
 });
 

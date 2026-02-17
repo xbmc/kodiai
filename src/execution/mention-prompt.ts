@@ -15,11 +15,15 @@ export function buildMentionPrompt(params: {
       findingText: string;
       severity: string;
       category: string;
-      filePath: string;
+      path: string;
+      line?: number;
+      snippet?: string;
       outcome: string;
       distance: number;
       sourceRepo: string;
     }>;
+    maxChars?: number;
+    maxItems?: number;
   };
   userQuestion: string;
   findingContext?: {
@@ -82,18 +86,49 @@ export function buildMentionPrompt(params: {
   }
 
   if (retrievalContext && retrievalContext.findings.length > 0) {
-    lines.push("## Retrieval");
-    lines.push("");
-    lines.push(
+    const maxChars = retrievalContext.maxChars ?? 1200;
+    const maxItems = retrievalContext.maxItems ?? 3;
+
+    const sorted = [...retrievalContext.findings]
+      .sort((a, b) => {
+        if (a.distance !== b.distance) {
+          return a.distance - b.distance;
+        }
+        if (a.path !== b.path) {
+          return a.path.localeCompare(b.path);
+        }
+        return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+      })
+      .slice(0, maxItems);
+
+    const rendered = sorted.map((finding) => {
+      const snippet = finding.snippet?.replace(/`/g, "'").trim();
+      const evidence = finding.line !== undefined && snippet
+        ? `\`${finding.path}:${finding.line}\` -- \`${snippet}\``
+        : `\`${finding.path}\` -- ${finding.findingText}`;
+      return `- [${finding.severity}/${finding.category}] ${evidence} (source: ${finding.sourceRepo})`;
+    });
+
+    const sectionHeader = [
+      "## Retrieval",
+      "",
       "Use these similar prior findings as supporting context only when they match the current request.",
-    );
-    lines.push("");
-    for (const finding of retrievalContext.findings) {
-      lines.push(
-        `- [${finding.severity}/${finding.category}] ${finding.findingText} (file: ${finding.filePath}, distance: ${finding.distance.toFixed(3)}, source: ${finding.sourceRepo})`,
-      );
+      "",
+    ];
+    let sectionLength = sectionHeader.join("\n").length
+      + rendered.reduce((sum, item) => sum + item.length + 1, 0);
+
+    while (rendered.length > 0 && sectionLength > maxChars) {
+      const removed = rendered.pop();
+      if (!removed) break;
+      sectionLength -= removed.length + 1;
     }
-    lines.push("");
+
+    if (rendered.length > 0) {
+      lines.push(...sectionHeader);
+      lines.push(...rendered);
+      lines.push("");
+    }
   }
 
   // User's question

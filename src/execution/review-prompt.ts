@@ -785,37 +785,69 @@ export function buildRetrievalContextSection(params: {
     findingText: string;
     severity: string;
     category: string;
-    filePath: string;
+    path: string;
+    line?: number;
+    snippet?: string;
     outcome: string;
     distance: number;
     sourceRepo: string;
   }>;
   maxChars?: number;
+  maxItems?: number;
 }): string {
   if (params.findings.length === 0) return "";
 
   const maxChars = params.maxChars ?? 2000;
+  const maxItems = params.maxItems ?? params.findings.length;
+  if (maxChars <= 0 || maxItems <= 0) return "";
+
+  const sorted = [...params.findings]
+    .sort((a, b) => {
+      if (a.distance !== b.distance) {
+        return a.distance - b.distance;
+      }
+      if (a.path !== b.path) {
+        return a.path.localeCompare(b.path);
+      }
+      return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+    })
+    .slice(0, maxItems);
+
+  const renderFinding = (finding: (typeof sorted)[number]): string => {
+    const safeSnippet = finding.snippet?.replace(/`/g, "'").trim();
+    if (finding.line !== undefined && safeSnippet) {
+      const anchor = `${finding.path}:${finding.line}`;
+      return `- [${finding.severity}/${finding.category}] \`${anchor}\` -- \`${safeSnippet}\` (outcome: ${finding.outcome})`;
+    }
+
+    return `- [${finding.severity}/${finding.category}] \`${finding.path}\` -- ${finding.findingText} (outcome: ${finding.outcome})`;
+  };
+
+  const candidateItems = sorted.map(renderFinding);
   const lines: string[] = [
     "## Similar Prior Findings (Learning Context)",
     "",
-    "The following are similar findings from prior reviews. Use them as context to inform your analysis, but evaluate each issue independently on current code. Do NOT copy prior findings -- only reference them if the same pattern exists in current changes.",
+    "Use these prior findings as supporting context only when they match the current change.",
     "",
-    "When a finding in your review directly relates to one of these prior patterns,",
-    "append a brief provenance note at the end of your comment:",
-    "`(Prior pattern: [brief description of the similar prior finding])`",
+    "When a finding directly matches prior context, append:",
+    "`(Prior pattern: [brief description])`",
     "",
   ];
 
   let currentLength = lines.join("\n").length;
 
-  for (const finding of params.findings) {
-    const entry = `- [${finding.severity}/${finding.category}] ${finding.findingText} (file: ${finding.filePath}, outcome: ${finding.outcome})`;
-    if (currentLength + entry.length + 1 > maxChars) {
-      break;
-    }
-    lines.push(entry);
-    currentLength += entry.length + 1;
+  const keptItems = [...candidateItems];
+  currentLength += keptItems.reduce((sum, item) => sum + item.length + 1, 0);
+
+  while (keptItems.length > 0 && currentLength > maxChars) {
+    const removed = keptItems.pop();
+    if (!removed) break;
+    currentLength -= removed.length + 1;
   }
+
+  if (keptItems.length === 0) return "";
+
+  lines.push(...keptItems);
 
   return lines.join("\n");
 }
@@ -1166,11 +1198,14 @@ export function buildReviewPrompt(context: {
       findingText: string;
       severity: string;
       category: string;
-      filePath: string;
+      path: string;
+      line?: number;
+      snippet?: string;
       outcome: string;
       distance: number;
       sourceRepo: string;
     }>;
+    maxChars?: number;
   } | null;
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
@@ -1270,7 +1305,10 @@ export function buildReviewPrompt(context: {
 
   // --- Retrieval context (learning memory) ---
   if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
-    const retrievalSection = buildRetrievalContextSection(context.retrievalContext);
+    const retrievalSection = buildRetrievalContextSection({
+      findings: context.retrievalContext.findings,
+      maxChars: context.retrievalContext.maxChars,
+    });
     if (retrievalSection) {
       lines.push("", retrievalSection);
     }
