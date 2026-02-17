@@ -5998,6 +5998,122 @@ describe("createReviewHandler author-tier search cache integration", () => {
     return executeCount;
   }
 
+  async function runSingleAuthorTierEvent(params: {
+    searchCache?: {
+      get: (key: string) => number | undefined;
+      set: (key: string, value: number, ttlMs?: number) => void;
+      getOrLoad: (key: string, loader: () => Promise<number>, ttlMs?: number) => Promise<number>;
+      purgeExpired: () => number;
+    };
+    issuesAndPullRequests: (params: { q: string; per_page: number }) => Promise<{ data: { total_count: number } }>;
+  }): Promise<{ executeCount: number; prompt: string }> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    let capturedPrompt = "";
+    let executeCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: params.issuesAndPullRequests,
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          executeCount += 1;
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-author-tier-rate-limit",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub() as never,
+      searchCache: params.searchCache as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Author tier rate-limit scenario",
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          commits: 0,
+          additions: 1,
+          deletions: 0,
+          author_association: "NONE",
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    return { executeCount, prompt: capturedPrompt };
+  }
+
   test("reuses cached author-tier lookup for equivalent review events", async () => {
     let searchCallCount = 0;
     const searchCache = createSearchCache<number>({ ttlMs: 60_000 });
@@ -6061,5 +6177,59 @@ describe("createReviewHandler author-tier search cache integration", () => {
     });
 
     expect(searchCallCount).toBe(2);
+  });
+
+  test("retries Search API once when author-tier lookup is rate-limited", async () => {
+    let searchCallCount = 0;
+
+    const { executeCount } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        if (searchCallCount === 1) {
+          throw {
+            status: 403,
+            message: "API rate limit exceeded",
+            response: {
+              headers: {
+                "retry-after": "0",
+              },
+              data: {
+                message: "API rate limit exceeded for this endpoint",
+              },
+            },
+          };
+        }
+        return { data: { total_count: 5 } };
+      },
+    });
+
+    expect(searchCallCount).toBe(2);
+    expect(executeCount).toBe(1);
+  });
+
+  test("degrades author-tier enrichment after second rate limit and adds partial disclaimer to prompt", async () => {
+    let searchCallCount = 0;
+
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        throw {
+          status: 429,
+          message: "secondary rate limit",
+          response: {
+            headers: {
+              "retry-after": "0",
+            },
+            data: {
+              message: "You have exceeded a secondary rate limit",
+            },
+          },
+        };
+      },
+    });
+
+    expect(searchCallCount).toBe(2);
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("Analysis is partial due to API limits.");
   });
 });

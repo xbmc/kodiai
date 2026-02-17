@@ -107,6 +107,130 @@ type RetrievalContextForPrompt = {
   }>;
 };
 
+type AuthorTierSearchEnrichment = {
+  degraded: boolean;
+  retryAttempts: number;
+  skippedQueries: number;
+  degradationPath: "none" | "search-api-rate-limit";
+};
+
+const SEARCH_RATE_LIMIT_ERROR_MARKERS = [
+  "rate limit",
+  "secondary rate limit",
+  "abuse detection",
+  "too many requests",
+];
+const SEARCH_RATE_LIMIT_BACKOFF_MAX_MS = 1_500;
+
+function extractSearchErrorStatus(err: unknown): number | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function extractSearchErrorText(err: unknown): string {
+  if (typeof err !== "object" || err === null) return "";
+
+  const message = (err as { message?: unknown }).message;
+  const responseData = (err as { response?: { data?: { message?: unknown } } }).response?.data;
+  const responseMessage = responseData && typeof responseData === "object"
+    ? (responseData as { message?: unknown }).message
+    : undefined;
+
+  const parts = [message, responseMessage]
+    .filter((part): part is string => typeof part === "string")
+    .map((part) => part.toLowerCase());
+
+  return parts.join(" ");
+}
+
+function isSearchRateLimitError(err: unknown): boolean {
+  const status = extractSearchErrorStatus(err);
+  const text = extractSearchErrorText(err);
+  return (status === 403 || status === 429)
+    && SEARCH_RATE_LIMIT_ERROR_MARKERS.some((marker) => text.includes(marker));
+}
+
+function resolveRateLimitBackoffMs(err: unknown): number {
+  if (typeof err !== "object" || err === null) return 0;
+
+  const headers = (err as { response?: { headers?: Record<string, unknown> } }).response?.headers;
+  if (!headers) return 0;
+
+  const retryAfterRaw = headers["retry-after"];
+  if (typeof retryAfterRaw === "string") {
+    const retryAfterSeconds = Number.parseInt(retryAfterRaw, 10);
+    if (!Number.isNaN(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return Math.min(retryAfterSeconds * 1000, SEARCH_RATE_LIMIT_BACKOFF_MAX_MS);
+    }
+  }
+
+  const resetRaw = headers["x-ratelimit-reset"];
+  if (typeof resetRaw === "string") {
+    const resetSeconds = Number.parseInt(resetRaw, 10);
+    if (!Number.isNaN(resetSeconds)) {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const deltaMs = Math.max(0, (resetSeconds - nowSeconds) * 1000);
+      return Math.min(deltaMs, SEARCH_RATE_LIMIT_BACKOFF_MAX_MS);
+    }
+  }
+
+  return 250;
+}
+
+async function executeSearchWithRateLimitRetry(params: {
+  operation: () => Promise<number>;
+  logger: Logger;
+  authorLogin: string;
+}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
+  const { operation, logger, authorLogin } = params;
+
+  try {
+    return {
+      value: await operation(),
+      retryAttempts: 0,
+      degraded: false,
+    };
+  } catch (err) {
+    if (!isSearchRateLimitError(err)) {
+      throw err;
+    }
+
+    const backoffMs = resolveRateLimitBackoffMs(err);
+    logger.warn(
+      { err, authorLogin, backoffMs, retryAttempts: 1 },
+      "Search API rate limit detected; retrying author-tier enrichment once",
+    );
+
+    if (backoffMs > 0) {
+      await Bun.sleep(backoffMs);
+    }
+
+    try {
+      return {
+        value: await operation(),
+        retryAttempts: 1,
+        degraded: false,
+      };
+    } catch (retryErr) {
+      if (!isSearchRateLimitError(retryErr)) {
+        throw retryErr;
+      }
+
+      logger.warn(
+        { err: retryErr, authorLogin, retryAttempts: 1 },
+        "Search API remained rate-limited after one retry; degrading enrichment",
+      );
+
+      return {
+        value: null,
+        retryAttempts: 1,
+        degraded: true,
+      };
+    }
+  }
+}
+
 async function fetchCommitMessages(
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
   owner: string,
@@ -421,8 +545,19 @@ async function resolveAuthorTier(params: {
   knowledgeStore: KnowledgeStore;
   searchCache?: SearchCache<number>;
   logger: Logger;
-}): Promise<{ tier: AuthorTier; prCount: number | null; fromCache: boolean }> {
+}): Promise<{
+  tier: AuthorTier;
+  prCount: number | null;
+  fromCache: boolean;
+  searchEnrichment: AuthorTierSearchEnrichment;
+}> {
   const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, logger } = params;
+  const searchEnrichment: AuthorTierSearchEnrichment = {
+    degraded: false,
+    retryAttempts: 0,
+    skippedQueries: 0,
+    degradationPath: "none",
+  };
 
   try {
     const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
@@ -431,6 +566,7 @@ async function resolveAuthorTier(params: {
         tier: cached.tier as AuthorTier,
         prCount: cached.prCount,
         fromCache: true,
+        searchEnrichment,
       };
     }
   } catch (err) {
@@ -461,20 +597,55 @@ async function resolveAuthorTier(params: {
           extra: { per_page: 1 },
         });
 
-        prCount = await searchCache.getOrLoad(
-          cacheKey,
-          () => loadPrCount(),
-          AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
-        );
+        const searchOutcome = await executeSearchWithRateLimitRetry({
+          operation: () =>
+            searchCache.getOrLoad(
+              cacheKey,
+              () => loadPrCount(),
+              AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
+            ),
+          logger,
+          authorLogin,
+        });
+
+        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+        searchEnrichment.degraded = searchOutcome.degraded;
+        prCount = searchOutcome.value;
       } else {
-        prCount = await loadPrCount();
+        const searchOutcome = await executeSearchWithRateLimitRetry({
+          operation: () => loadPrCount(),
+          logger,
+          authorLogin,
+        });
+
+        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+        searchEnrichment.degraded = searchOutcome.degraded;
+        prCount = searchOutcome.value;
+      }
+
+      if (searchEnrichment.degraded) {
+        searchEnrichment.skippedQueries = 1;
+        searchEnrichment.degradationPath = "search-api-rate-limit";
       }
     } catch (err) {
       if (searchCache) {
         logger.warn({ err, authorLogin }, "Author PR-count cache failed (fail-open, falling back to direct lookup)");
 
         try {
-          prCount = await loadPrCount();
+          const searchOutcome = await executeSearchWithRateLimitRetry({
+            operation: () => loadPrCount(),
+            logger,
+            authorLogin,
+          });
+
+          searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+          searchEnrichment.degraded = searchOutcome.degraded;
+          prCount = searchOutcome.value;
+
+          if (searchEnrichment.degraded) {
+            searchEnrichment.skippedQueries = 1;
+            searchEnrichment.degradationPath = "search-api-rate-limit";
+          }
         } catch (fallbackErr) {
           logger.warn({ err: fallbackErr, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
         }
@@ -501,7 +672,7 @@ async function resolveAuthorTier(params: {
     logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
   }
 
-  return { tier, prCount, fromCache: false };
+  return { tier, prCount, fromCache: false, searchEnrichment };
 }
 
 function normalizeSeverity(value: string | undefined): FindingSeverity | null {
@@ -1408,10 +1579,21 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        let authorClassification: { tier: AuthorTier; prCount: number | null; fromCache: boolean } = {
+        let authorClassification: {
+          tier: AuthorTier;
+          prCount: number | null;
+          fromCache: boolean;
+          searchEnrichment: AuthorTierSearchEnrichment;
+        } = {
           tier: "regular",
           prCount: null,
           fromCache: false,
+          searchEnrichment: {
+            degraded: false,
+            retryAttempts: 0,
+            skippedQueries: 0,
+            degradationPath: "none",
+          },
         };
 
         if (knowledgeStore) {
@@ -1433,6 +1615,10 @@ export function createReviewHandler(deps: {
                 authorTier: authorClassification.tier,
                 authorPrCount: authorClassification.prCount,
                 fromCache: authorClassification.fromCache,
+                searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
+                searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
+                searchEnrichmentPath: authorClassification.searchEnrichment.degradationPath,
               },
               "Author experience classification resolved",
             );
@@ -2113,6 +2299,7 @@ export function createReviewHandler(deps: {
           } : null,
           authorTier: authorClassification.tier,
           depBumpContext,
+          searchRateLimitDegradation: authorClassification.searchEnrichment,
         });
 
         // Execute review via Claude
@@ -3074,6 +3261,7 @@ export function createReviewHandler(deps: {
                       largePRContext: null,
                       authorTier: authorClassification.tier,
                       depBumpContext,
+                      searchRateLimitDegradation: authorClassification.searchEnrichment,
                     });
 
                     const retryResult = await executor.execute({
