@@ -578,6 +578,39 @@ test("buildReviewPrompt omits both language sections when not provided (backward
   expect(prompt).not.toContain("## Output Language");
 });
 
+test("buildReviewPrompt includes partial-analysis disclaimer instructions when search degradation is active", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).toContain("Analysis is partial due to API limits.");
+  expect(prompt).toContain('"Analysis is partial due to API limits."');
+});
+
+test("buildReviewPrompt omits degradation instructions when search degradation is inactive", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: false,
+        retryAttempts: 0,
+        skippedQueries: 0,
+        degradationPath: "none",
+      },
+    }),
+  );
+
+  expect(prompt).not.toContain("## Search API Degradation Context");
+  expect(prompt).not.toContain("Analysis is partial due to API limits.");
+});
+
 // ---------------------------------------------------------------------------
 // buildRetrievalContextSection tests
 // ---------------------------------------------------------------------------

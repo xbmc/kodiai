@@ -876,6 +876,25 @@ export function buildOutputLanguageSection(outputLanguage: string): string {
   ].join("\n");
 }
 
+function buildSearchRateLimitDegradationSection(params: {
+  retryAttempts: number;
+  skippedQueries: number;
+  degradationPath: string;
+}): string {
+  return [
+    "## Search API Degradation Context",
+    "",
+    "Search enrichment was rate-limited while collecting author-tier context.",
+    "Analysis is partial due to API limits.",
+    `Retry attempts used: ${params.retryAttempts}.`,
+    `Skipped queries: ${params.skippedQueries}.`,
+    `Degradation path: ${params.degradationPath}.`,
+    "",
+    "In the summary comment, include one short note in ## What Changed using this exact sentence:",
+    '"Analysis is partial due to API limits."',
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Helper: Character budget utilities for enrichment sections
 // ---------------------------------------------------------------------------
@@ -1167,6 +1186,12 @@ export function buildReviewPrompt(context: {
   } | null;
   authorTier?: AuthorTier;
   depBumpContext?: DepBumpContext | null;
+  searchRateLimitDegradation?: {
+    degraded: boolean;
+    retryAttempts: number;
+    skippedQueries: number;
+    degradationPath: string;
+  } | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1406,6 +1431,17 @@ export function buildReviewPrompt(context: {
   // --- Dependency bump context (DEP-01/02/03) ---
   if (context.depBumpContext) {
     lines.push("", buildDepBumpSection(context.depBumpContext));
+  }
+
+  if (context.searchRateLimitDegradation?.degraded) {
+    lines.push(
+      "",
+      buildSearchRateLimitDegradationSection({
+        retryAttempts: context.searchRateLimitDegradation.retryAttempts,
+        skippedQueries: context.searchRateLimitDegradation.skippedQueries,
+        degradationPath: context.searchRateLimitDegradation.degradationPath,
+      }),
+    );
   }
 
   // --- Path instructions ---
