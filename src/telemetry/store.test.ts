@@ -477,6 +477,51 @@ describe("TelemetryStore", () => {
     expect(openedRow.degradation_path).toBe("search-api-rate-limit");
   });
 
+  test("recordRateLimitEvent() ignores replayed writes for same delivery/event identity", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-replay-001",
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 0,
+        skippedQueries: 1,
+        retryAttempts: 1,
+        degradationPath: "search-api-rate-limit",
+      }),
+    );
+
+    // Simulate replay/retry attempts trying to emit duplicate telemetry.
+    for (let i = 0; i < 3; i++) {
+      fileStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: "rate-replay-001",
+          eventType: "pull_request.review_requested",
+          cacheHitRate: 1,
+          skippedQueries: 0,
+          retryAttempts: 0,
+          degradationPath: "none",
+        }),
+      );
+    }
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(1);
+    expect(row.cache_hit_rate).toBe(0);
+    expect(row.skipped_queries).toBe(1);
+    expect(row.retry_attempts).toBe(1);
+    expect(row.degradation_path).toBe("search-api-rate-limit");
+  });
+
   test("initializing against an existing DB additively creates rate_limit_events", () => {
     const path = `/tmp/kodiai-test-existing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
     tmpFiles.push(path);

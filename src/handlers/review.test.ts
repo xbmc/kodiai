@@ -6746,7 +6746,11 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(searchCallCount).toBe(2);
     expect(executeCount).toBe(1);
     expect(prompt).toContain("Analysis is partial due to API limits.");
+    const emittedIdentities = new Set(
+      rateLimitEvents.map((event) => `${event.deliveryId}:${event.eventType}`),
+    );
     expect(rateLimitEvents).toHaveLength(1);
+    expect(emittedIdentities.size).toBe(1);
     expect(rateLimitEvents[0]?.deliveryId).toBe("delivery-123");
     expect(rateLimitEvents[0]?.eventType).toBe("pull_request.review_requested");
     expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
