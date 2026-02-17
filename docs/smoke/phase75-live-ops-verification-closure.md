@@ -128,15 +128,32 @@ Capture and attach all of the following:
 Any failure in `OPS75-CACHE-*`, `OPS75-ONCE-*`, or `OPS75-FAILOPEN-*` blocks
 acceptance of OPS-04/OPS-05 closure evidence until remediated and rerun.
 
-## Latest Blocked Live Attempt (2026-02-17)
+## Latest Blocked Live Attempt (2026-02-17, Option A rerun)
 
-Verifier run against `data/kodiai-telemetry.azure.db` with fresh sampled
-identities returned:
+Verifier rerun command:
+
+```sh
+bun run verify:phase75 \
+  --db data/kodiai-telemetry.xbmc-live.db \
+  --review a6ef2180-0be2-11f1-968d-2d2e1a4ddd54 \
+  --review a5266f70-0be2-11f1-9510-567558d58f7f \
+  --review a32dd3c0-0be2-11f1-8ca9-f1471c47e808 \
+  --review-accepted a6ef2180-0be2-11f1-968d-2d2e1a4ddd54 \
+  --review-accepted a5266f70-0be2-11f1-9510-567558d58f7f \
+  --review-accepted a32dd3c0-0be2-11f1-8ca9-f1471c47e808 \
+  --mention fbb40df0-0c34-11f1-8cc1-c92772e4a6fe \
+  --mention 0d18cab0-0c33-11f1-8869-5d1ad91f404e \
+  --mention 00744000-0c33-11f1-8fea-d9e84f7596ea \
+  --degraded 4e20bdb0-0c33-11f1-8685-a46f5471acb3:pull_request.ready_for_review \
+  --failopen f4112b20-0c32-11f1-8ad6-7c1444ea5884:issue_comment.created
+```
+
+Result:
 
 - `OPS75-PREFLIGHT-01`: PASS
-- `OPS75-CACHE-01`: FAIL (`review_requested` hit lane remained `cache_hit_rate=0`)
-- `OPS75-CACHE-02`: FAIL (mention identities had zero telemetry rows)
-- `OPS75-ONCE-01`: FAIL (no degraded `degradation_path != none` row for sampled degraded identity)
+- `OPS75-CACHE-01`: FAIL (`review_requested` hit lane observed `cache_hit_rate=0`)
+- `OPS75-CACHE-02`: FAIL (mention identities still had zero telemetry rows)
+- `OPS75-ONCE-01`: FAIL (degraded identity had zero `degradation_path != none` rows)
 - `OPS75-ONCE-02`: PASS
 - `OPS75-FAILOPEN-01`: PASS
 - `OPS75-FAILOPEN-02`: PASS
