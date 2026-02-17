@@ -5,14 +5,14 @@
 See: `.planning/PROJECT.md` (updated 2026-02-16)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.12 phase 70 execution and live verification complete
+**Current focus:** Milestone v0.12 phase 71 telemetry wiring fix execution complete
 
 ## Current Position
 
 **Milestone:** v0.12 Operator Reliability & Retrieval Quality (planned)
-**Phase:** 70 (verified complete)
-**Current Plan:** 02
-**Total Plans in Phase:** 2
+**Phase:** 71 (execution complete)
+**Current Plan:** 01
+**Total Plans in Phase:** 1
 **Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-17
 
@@ -158,4 +158,4 @@ None.
 **Last session:** 2026-02-17T03:47:54.556Z
 **Stopped At:** Completed 71-01-PLAN.md
 **Resume File:** None
-**Next action:** /gsd-complete-milestone
+**Next action:** /gsd-verify-work 71
