@@ -69,6 +69,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-17)
 | Phase 75-live-ops-verification-closure P02 | 13 min | 2 tasks | 5 files |
 | Phase 75-live-ops-verification-closure P03 | 6 min | 3 tasks | 6 files |
 | Phase 75 P04 | 1 min | 2 tasks | 2 files |
+| Phase 75-live-ops-verification-closure P05 | 2 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 75-live-ops-verification-closure]: Treat non-passing live OPS75 reruns as release blockers and record exact failing check IDs instead of claiming closure.
 - [Phase 75-live-ops-verification-closure]: Treat OPS75 identity capture as a hard pre-verification gate before reruns.
 - [Phase 75-live-ops-verification-closure]: Publish failing OPS75 check IDs verbatim when Option A reruns do not meet closure prerequisites.
+- [Phase 75-live-ops-verification-closure]: Preflight now hard-fails by check ID when any lane identity is missing, duplicated, or mismatched before verifier execution.
+- [Phase 75-live-ops-verification-closure]: Smoke evidence publishes explicit identity values and carries forward failing OPS75 check IDs instead of closure language when prerequisites are unmet.
 
 ### Key Constraints (Carry-Forward)
 
@@ -193,7 +196,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-17T23:28:57.399Z
-**Stopped At:** Completed 75-04-PLAN.md
+**Last session:** 2026-02-17T23:59:43.708Z
+**Stopped At:** Completed 75-live-ops-verification-closure-05-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-complete-milestone`
