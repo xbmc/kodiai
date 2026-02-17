@@ -27,9 +27,9 @@ v0.12 is shipped and archived. The product now has resilient Search-enrichment b
 
 ## Next Milestone Goals
 
-- Define the next requirement set in a fresh `.planning/REQUIREMENTS.md`
-- Address non-blocking tech debt from v0.12 audit (live telemetry validation + combined degraded/retrieval regression)
-- Continue phase planning from current baseline without resetting numbering
+- Ship operator-facing reliability follow-through from v0.12 by validating telemetry behavior in live execution paths
+- Add regression coverage for combined degraded + retrieval behaviors so partial-analysis safety remains stable across refactors
+- Re-establish milestone planning artifacts (`REQUIREMENTS.md`, roadmap phases, state) with continued phase numbering from 71
 
 <details>
 <summary>Previous Release: v0.11 Issue Workflows (2026-02-16)</summary>
@@ -126,14 +126,14 @@ v0.12 is shipped and archived. The product now has resilient Search-enrichment b
 
 ### Active
 
-#### Current Milestone: Next milestone (planning)
+#### Current Milestone: v0.13 Reliability Follow-Through
 
-**Goal:** Define the next shipped scope from fresh requirements.
+**Goal:** Convert post-v0.12 follow-through work into an executable milestone that hardens live observability confidence and regression safety.
 
 **Target features:**
-- [ ] Draft and approve new milestone requirements (`/gsd-new-milestone`)
-- [ ] Convert approved requirements into roadmap phases and plans
-- [ ] Execute next milestone with verification-first closure
+- [ ] Validate OPS-03 telemetry behavior in real production-like runs and capture evidence-backed acceptance criteria
+- [ ] Add combined degraded+retrieval regression coverage to prevent drift in fail-open and partial-analysis behavior
+- [ ] Close v0.12 non-blocking audit items through mapped, verifiable phases (continuing at Phase 72)
 
 ### Out of Scope
 
@@ -281,4 +281,4 @@ v0.11 ships an installable GitHub App that:
 | Confidence badge before package details | Prominent placement for quick scanning of merge safety | ✓ Good — v0.9 |
 
 ---
-*Last updated: 2026-02-17 after v0.12 milestone completion and archival*
+*Last updated: 2026-02-17 after v0.13 milestone initialization*

@@ -5,18 +5,18 @@
 See: `.planning/PROJECT.md` (updated 2026-02-17)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Plan the next milestone from fresh requirements
+**Current focus:** Define requirements and roadmap for v0.13 Reliability Follow-Through
 
 ## Current Position
 
-**Milestone:** v0.12 Operator Reliability & Retrieval Quality (shipped)
-**Phase:** N/A
-**Current Plan:** N/A
-**Total Plans in Phase:** N/A
-**Status:** v0.12 milestone complete
-**Last Activity:** 2026-02-17 (milestone archived)
+**Milestone:** v0.13 Reliability Follow-Through (in planning)
+**Phase:** Not started (defining requirements)
+**Current Plan:** —
+**Total Plans in Phase:** —
+**Status:** Defining requirements
+**Last Activity:** 2026-02-17 (milestone started)
 
-**Progress:** [██████████] 100%
+**Progress:** [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -158,4 +158,4 @@ None.
 **Last session:** 2026-02-17T03:49:49Z
 **Stopped At:** Completed phase 71 verification (human-needed item accepted)
 **Resume File:** None
-**Next action:** /gsd-new-milestone
+**Next action:** Define milestone requirements, then create roadmap
