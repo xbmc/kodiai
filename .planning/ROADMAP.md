@@ -110,7 +110,7 @@ See `.planning/milestones/v0.12-ROADMAP.md` for milestone snapshot.
 - [x] **Phase 68: Multi-Query Retrieval Core** - Deterministic multi-query expansion and merged ranking pipeline
 - [x] **Phase 69: Snippet Anchors + Prompt Budgeting** - Code-snippet extraction with path anchors and strict prompt-budget controls
 - [x] **Phase 70: Cross-Surface Conversational UX** - Consistent response contracts and clarifying-question fallback across issue/PR/review threads
-- [ ] **Phase 71: Search Cache Telemetry Wiring Fix** - Correct cache-hit telemetry wiring so OPS-03 reflects real Search cache behavior in production metrics
+- [x] **Phase 71: Search Cache Telemetry Wiring Fix** - Correct cache-hit telemetry wiring so OPS-03 reflects real Search cache behavior in production metrics
 
 ## Phase Details
 
@@ -261,7 +261,7 @@ Plans:
 **Plans**: 1 plan
 
 Plans:
-- [ ] 71-01-PLAN.md — Rewire Search cache-hit telemetry source and lock with regression coverage
+- [x] 71-01-PLAN.md — Rewire Search cache-hit telemetry source and lock with regression coverage
 
 ## Progress
 
@@ -293,7 +293,8 @@ Plans:
 | 68 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 69 | v0.12 | 2/2 | Complete | 2026-02-17 |
 | 70 | v0.12 | 2/2 | Complete | 2026-02-17 |
+| 71 | v0.12 | 1/1 | Complete | 2026-02-17 |
 
 ---
 
-*Roadmap updated: 2026-02-17 -- phase 70 completed (Cross-Surface Conversational UX)*
+*Roadmap updated: 2026-02-17 -- phase 71 completed (Search Cache Telemetry Wiring Fix)*
