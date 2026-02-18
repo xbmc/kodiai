@@ -319,10 +319,12 @@ Plans:
   1. Operators can run a smoke scenario proving channel gating, thread-only replies, mention bootstrap, and follow-up behavior
   2. Regression tests fail when Slack v1 safety rails drift
   3. Runbook documents deployment, env vars, and incident debugging for Slack integration
-**Plans**: 0 plans
+**Plans**: 3 plans
 
 Plans:
-- [ ] 80-01-PLAN.md — [To be planned]
+- [ ] 80-01-PLAN.md — Add deterministic Slack v1 smoke verifier and operator smoke procedure
+- [ ] 80-02-PLAN.md — Add Slack v1 contract regression suite and deterministic regression gate
+- [ ] 80-03-PLAN.md — Publish Slack integration runbook and wire smoke/regression command aliases
 
 ## Progress
 
