@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 **Phase:** 77 - Slack Ingress & Safety Rails (in progress)
 **Current Plan:** 02
 **Total Plans in Phase:** 2
-**Status:** Plan 77-01 complete; ready for 77-02 execution
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -71,6 +71,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 75 P04 | 1 min | 2 tasks | 2 files |
 | Phase 75-live-ops-verification-closure P05 | 2 min | 2 tasks | 2 files |
 | Phase 77 P01 | 2 min | 3 tasks | 6 files |
+| Phase 77 P02 | 2 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 75-live-ops-verification-closure]: Smoke evidence publishes explicit identity values and carries forward failing OPS75 check IDs instead of closure language when prerequisites are unmet.
 - [Phase 77]: Slack ingress verifies raw request body and timestamp before JSON parsing to preserve signature integrity and fail closed.
 - [Phase 77]: Verified Slack event callbacks return immediate HTTP 200 acknowledgment while downstream processing remains asynchronous.
+- [Phase 77]: Slack v1 allows only top-level mention bootstrap in #kodiai and ignores in-thread follow-up messages until Phase 78 session semantics.
+- [Phase 77]: Allowed Slack route path forwards only normalized bootstrap payloads with replyTarget fixed to thread-only to prevent top-level post drift.
 
 ### Key Constraints (Carry-Forward)
 
@@ -199,7 +202,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T04:56:08.651Z
-**Stopped At:** Completed 77-01-PLAN.md
+**Last session:** 2026-02-18T05:01:31.261Z
+**Stopped At:** Completed 77-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 77`
