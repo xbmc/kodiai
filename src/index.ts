@@ -23,6 +23,8 @@ import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning
 import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
 import { Database } from "bun:sqlite";
+import { createSlackClient } from "./slack/client.ts";
+import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -139,6 +141,69 @@ const eventRouter = createEventRouter(botFilter, logger);
 // Execution engine
 const executor = createExecutor({ githubApp, logger });
 
+const slackClient = createSlackClient({ botToken: config.slackBotToken });
+const slackInstallationCache = new Map<string, { installationId: number; defaultBranch: string }>();
+
+async function resolveSlackInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string }> {
+  const key = `${owner}/${repo}`;
+  const cached = slackInstallationCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const context = await githubApp.getRepoInstallationContext(owner, repo);
+  if (!context) {
+    throw new Error(`Repository ${owner}/${repo} is not installed for this GitHub App`);
+  }
+
+  slackInstallationCache.set(key, context);
+  return context;
+}
+
+const slackAssistantHandler = createSlackAssistantHandler({
+  createWorkspace: async ({ owner, repo }) => {
+    const installationContext = await resolveSlackInstallationContext(owner, repo);
+    return workspaceManager.create(installationContext.installationId, {
+      owner,
+      repo,
+      ref: installationContext.defaultBranch,
+      depth: 50,
+    });
+  },
+  execute: async (input) => {
+    const installationContext = await resolveSlackInstallationContext(input.owner, input.repo);
+    const result = await executor.execute({
+      workspace: input.workspace,
+      installationId: installationContext.installationId,
+      owner: input.owner,
+      repo: input.repo,
+      prNumber: undefined,
+      commentId: undefined,
+      eventType: input.eventType,
+      triggerBody: input.triggerBody,
+      prompt: input.prompt,
+      writeMode: input.writeMode,
+      enableInlineTools: input.enableInlineTools,
+      enableCommentTools: input.enableCommentTools,
+      botHandles: ["kodiai"],
+    });
+
+    if (result.conclusion !== "success") {
+      throw new Error(result.errorMessage ?? `Slack assistant execution failed with conclusion=${result.conclusion}`);
+    }
+
+    const answerText = result.resultText?.trim();
+    if (!answerText) {
+      throw new Error("Slack assistant execution did not return answer text");
+    }
+
+    return { answerText };
+  },
+  publishInThread: async ({ channel, threadTs, text }) => {
+    await slackClient.postThreadMessage({ channel, threadTs, text });
+  },
+});
+
 // Register event handlers
 createReviewHandler({
   eventRouter,
@@ -182,7 +247,13 @@ const app = new Hono();
 
 // Mount routes
 app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter }));
-app.route("/webhooks/slack", createSlackEventRoutes({ config, logger }));
+app.route("/webhooks/slack", createSlackEventRoutes({
+  config,
+  logger,
+  onAllowedBootstrap: async (payload) => {
+    await slackAssistantHandler.handle(payload);
+  },
+}));
 app.route("/", createHealthRoutes({ githubApp, logger }));
 
 // Global error handler

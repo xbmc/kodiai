@@ -248,6 +248,34 @@ describe("createSlackEventRoutes", () => {
     ]);
   });
 
+  test("keeps immediate acknowledgement when async callback rejects", async () => {
+    const app = createApp(async () => {
+      throw new Error("slack callback failed");
+    });
+    const payload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.000900",
+        user: "U777USER",
+        text: "<@U123BOT> run this",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(payload, timestamp, signSlackRequest(timestamp, payload)),
+      body: payload,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    await Promise.resolve();
+  });
+
   test("ignores in-thread non-starter follow-up messages", async () => {
     const processed: SlackV1BootstrapPayload[] = [];
     const app = createApp((payload) => processed.push(payload));

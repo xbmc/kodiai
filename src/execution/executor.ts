@@ -215,6 +215,7 @@ export function createExecutor(deps: {
           cacheReadTokens: totalCacheRead,
           cacheCreationTokens: totalCacheCreation,
           stopReason: resultMessage.stop_reason ?? undefined,
+          resultText: resultMessage.subtype === "success" ? resultMessage.result : undefined,
         };
       } catch (err) {
         if (timeoutId !== undefined) clearTimeout(timeoutId);

@@ -71,7 +71,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         return c.json({ ok: true });
       }
 
-      Promise.resolve().then(() => {
+      Promise.resolve().then(async () => {
         const addressed = decision.bootstrap;
         if (decision.reason === "mention_only_bootstrap") {
           threadSessionStore.markThreadStarted({
@@ -79,7 +79,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
             threadTs: addressed.threadTs,
           });
         }
-        onAllowedBootstrap?.(addressed);
+        await onAllowedBootstrap?.(addressed);
         logger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
       }).catch((error) => {
         logger.error({ error }, "Slack addressed event async processing failed");

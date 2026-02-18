@@ -75,4 +75,6 @@ export type ExecutionResult = {
   cacheCreationTokens: number | undefined;
   /** SDK stop reason (e.g., "end_turn", "max_tokens") */
   stopReason: string | undefined;
+  /** Final assistant text for successful runs (when provided by SDK). */
+  resultText?: string;
 };
