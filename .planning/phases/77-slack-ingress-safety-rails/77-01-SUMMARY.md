@@ -80,7 +80,20 @@ Each task was committed atomically:
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] `state advance-plan` could not parse existing `STATE.md` counters**
+- **Found during:** Post-task state update step
+- **Issue:** `Current Plan` and `Total Plans in Phase` were `N/A`/`0`, causing tooling parse failure.
+- **Fix:** Kept automated state metric/session/decision updates and manually corrected current-position fields to reflect Phase 77 Plan 01 completion.
+- **Files modified:** `.planning/STATE.md`
+- **Verification:** Re-read `STATE.md` and confirmed phase/plan position reflects next plan (`Current Plan: 02`, `Total Plans in Phase: 2`).
+- **Committed in:** `d21a4ecdf8`
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking)
+**Impact on plan:** No scope creep; remediation was limited to execution-state metadata consistency.
 
 ## Issues Encountered
 - `state advance-plan` could not parse existing `STATE.md` (`Current Plan: N/A`, `Total Plans in Phase: 0`), so current-position fields were updated directly after running other state update commands.
