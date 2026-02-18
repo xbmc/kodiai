@@ -8,6 +8,7 @@ Related runbooks:
 
 - Mentions: `docs/runbooks/mentions.md`
 - review_requested: `docs/runbooks/review-requested-debug.md`
+- Slack integration: `docs/runbooks/slack-integration.md`
 - Cutover checklist: `docs/runbooks/xbmc-cutover.md`
 
 ## What Triggers Exist

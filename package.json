@@ -10,7 +10,9 @@
     "verify:phase72": "bun scripts/phase72-telemetry-follow-through.ts",
     "trigger:phase73:degraded": "bun scripts/phase73-trigger-degraded-review.ts",
     "verify:phase74": "bun scripts/phase74-reliability-regression-gate.ts",
-    "verify:phase75": "bun scripts/phase75-live-ops-verification-closure.ts"
+    "verify:phase75": "bun scripts/phase75-live-ops-verification-closure.ts",
+    "verify:phase80:smoke": "bun scripts/phase80-slack-smoke.ts",
+    "verify:phase80:regression": "bun scripts/phase80-slack-regression-gate.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",
