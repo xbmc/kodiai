@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-18)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Start v0.14 Slack Integration milestone (feature-first)
+**Current focus:** Plan and execute Phase 80 Slack operator hardening
 
 ## Current Position
 
 **Milestone:** v0.14 Slack Integration (in progress)
-**Phase:** 79 - Slack Read-Only Assistant Routing (in progress)
-**Current Plan:** 2
+**Phase:** 79 - Slack Read-Only Assistant Routing (complete)
+**Current Plan:** N/A
 **Total Plans in Phase:** 2
-**Status:** Phase complete — ready for verification
+**Status:** Phase complete and verified; Slack reaction-based working signal validated
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -184,6 +184,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 79]: Resolved Slack repo runtime context with app-level owner/repo installation lookup plus default-branch cloning for deterministic workspace setup.
 - [Phase 79]: Kept Slack ingress fail-open by always returning immediate 200 ack while catching and logging asynchronous assistant callback failures.
 - [Phase 79]: Exposed successful executor final result text to let Slack routing publish deterministic assistant answers without enabling write/publish MCP tools.
+- [Phase 79]: Slack "working" UX uses `reactions.add`/`reactions.remove` (`hourglass_flowing_sand`) on the triggering message instead of unsupported typing indicators.
+- [Phase 79]: Startup preflight validates Slack bot token scopes (`chat:write`, `reactions:write`) via `auth.test` and logs actionable reinstall guidance when missing.
 
 ### Key Constraints (Carry-Forward)
 
@@ -195,7 +197,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Pending Todos
 
-- 2026-02-18 — Validate Slack reaction scopes at startup (`.planning/todos/pending/2026-02-18-validate-slack-reaction-scopes-at-startup.md`)
+None.
 
 ### Explicit User Policies
 
@@ -214,7 +216,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T06:18:46.816Z
-**Stopped At:** Completed 79-02-PLAN.md
+**Last session:** 2026-02-18T17:36:30.000Z
+**Stopped At:** Completed 79 verification and reaction-scope startup preflight
 **Resume File:** None
-**Next action:** Run `/gsd-plan-phase 79`
+**Next action:** Run `/gsd-plan-phase 80`

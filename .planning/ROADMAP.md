@@ -122,7 +122,7 @@ See `.planning/milestones/v0.13-ROADMAP.md` for full phase details, accepted gap
 
 - [x] **Phase 77: Slack Ingress & Safety Rails** - Add Slack events endpoint, request verification, and channel/thread gating. (completed 2026-02-18)
 - [x] **Phase 78: Slack Thread Session Semantics** - Implement mention bootstrap + in-thread follow-up behavior with deterministic session rules. (completed 2026-02-18)
-- [ ] **Phase 79: Slack Read-Only Assistant Routing** - Route Slack prompts through read-only assistant flow with default `xbmc/xbmc` context and ambiguity handling.
+- [x] **Phase 79: Slack Read-Only Assistant Routing** - Route Slack prompts through read-only assistant flow with default `xbmc/xbmc` context and ambiguity handling. (completed 2026-02-18)
 - [ ] **Phase 80: Slack Operator Hardening** - Add runbooks, smoke tests, and regression checks for Slack v1 behavior.
 
 </details>
@@ -305,10 +305,11 @@ Plans:
   1. Slack assistant responses use read-only behavior (no write-mode, no PR creation, no code modifications)
   2. Default repo context is `xbmc/xbmc`, with explicit override acknowledgement when user specifies another repo
   3. If context is ambiguous, Kodiai asks exactly one clarifying question in-thread
-**Plans**: 0 plans
+**Plans**: 2 plans
 
 Plans:
-- [ ] 79-01-PLAN.md — [To be planned]
+- [x] 79-01-PLAN.md — Build deterministic repo-context resolver and read-only Slack assistant handler core
+- [x] 79-02-PLAN.md — Wire Slack ingress/runtime dependencies into assistant flow and lock routing regressions
 
 ### Phase 80: Slack Operator Hardening
 **Goal**: Provide deterministic operator verification and regression safety for Slack v1 behavior
@@ -325,7 +326,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 13 milestones, 74 phases, 184 plans
+**Total shipped:** 13 milestones, 75 phases, 186 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -359,7 +360,8 @@ Plans:
 | 74 | v0.13 | 2/2 | Complete | 2026-02-17 |
 | 77 | v0.14 | 2/2 | Complete | 2026-02-18 |
 | 78 | v0.14 | 1/1 | Complete | 2026-02-18 |
+| 79 | v0.14 | 2/2 | Complete | 2026-02-18 |
 
 ---
 
-*Roadmap updated: 2026-02-18 -- Phase 78 executed and verified; ready for Phase 79 planning*
+*Roadmap updated: 2026-02-18 -- Phase 79 executed and verified; ready for Phase 80 planning*
