@@ -106,6 +106,44 @@ describe("evaluateSlackV1Rails", () => {
     expect(decision).toEqual({ decision: "ignore", reason: "thread_follow_up_out_of_scope" });
   });
 
+  test("allows in-thread follow-up when thread session is started", () => {
+    const decision = evaluateSlackV1Rails({
+      payload: messageEventCallback({
+        thread_ts: "1700000000.000001",
+        text: "follow-up without mention",
+      }),
+      slackBotUserId: SLACK_BOT_USER_ID,
+      slackKodiaiChannelId: SLACK_KODIAI_CHANNEL_ID,
+      isThreadSessionStarted: () => true,
+    });
+
+    expect(decision).toEqual({
+      decision: "allow",
+      reason: "thread_session_follow_up",
+      bootstrap: {
+        channel: SLACK_KODIAI_CHANNEL_ID,
+        threadTs: "1700000000.000001",
+        user: "U123USER",
+        text: "follow-up without mention",
+        replyTarget: "thread-only",
+      },
+    });
+  });
+
+  test("ignores in-thread follow-up when thread session is not started", () => {
+    const decision = evaluateSlackV1Rails({
+      payload: messageEventCallback({
+        thread_ts: "1700000000.000001",
+        text: "follow-up without mention",
+      }),
+      slackBotUserId: SLACK_BOT_USER_ID,
+      slackKodiaiChannelId: SLACK_KODIAI_CHANNEL_ID,
+      isThreadSessionStarted: () => false,
+    });
+
+    expect(decision).toEqual({ decision: "ignore", reason: "thread_follow_up_out_of_scope" });
+  });
+
   test("ignores top-level messages without @kodiai mention", () => {
     const decision = evaluateSlackV1Rails({
       payload: messageEventCallback({ text: "hello team" }),

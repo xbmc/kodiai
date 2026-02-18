@@ -1,4 +1,5 @@
 import type { SlackEventCallback, SlackMessageEvent } from "./types.ts";
+import type { SlackThreadSessionKeyInput } from "./thread-session-store.ts";
 
 export type SlackV1IgnoreReason =
   | "unsupported_event_type"
@@ -23,7 +24,7 @@ export interface SlackV1BootstrapPayload {
 export type SlackV1RailDecision =
   | {
       decision: "allow";
-      reason: "mention_only_bootstrap";
+      reason: "mention_only_bootstrap" | "thread_session_follow_up";
       bootstrap: SlackV1BootstrapPayload;
     }
   | {
@@ -35,6 +36,7 @@ interface EvaluateSlackV1RailsInput {
   payload: SlackEventCallback;
   slackBotUserId: string;
   slackKodiaiChannelId: string;
+  isThreadSessionStarted?: (input: SlackThreadSessionKeyInput) => boolean;
 }
 
 function isSlackMessageEvent(event: SlackEventCallback["event"]): event is SlackMessageEvent {
@@ -50,7 +52,7 @@ function buildMentionToken(slackBotUserId: string): string {
 }
 
 export function evaluateSlackV1Rails(input: EvaluateSlackV1RailsInput): SlackV1RailDecision {
-  const { payload, slackBotUserId, slackKodiaiChannelId } = input;
+  const { payload, slackBotUserId, slackKodiaiChannelId, isThreadSessionStarted } = input;
   const event = payload.event;
 
   if (!isSlackMessageEvent(event)) {
@@ -73,16 +75,35 @@ export function evaluateSlackV1Rails(input: EvaluateSlackV1RailsInput): SlackV1R
     return { decision: "ignore", reason: "bot_or_system_message" };
   }
 
-  if (event.thread_ts) {
-    return { decision: "ignore", reason: "thread_follow_up_out_of_scope" };
-  }
-
   if (!event.user) {
     return { decision: "ignore", reason: "missing_user" };
   }
 
   if (!event.text) {
     return { decision: "ignore", reason: "missing_text" };
+  }
+
+  if (event.thread_ts) {
+    if (
+      isThreadSessionStarted?.({
+        channel: event.channel,
+        threadTs: event.thread_ts,
+      })
+    ) {
+      return {
+        decision: "allow",
+        reason: "thread_session_follow_up",
+        bootstrap: {
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          user: event.user,
+          text: event.text,
+          replyTarget: "thread-only",
+        },
+      };
+    }
+
+    return { decision: "ignore", reason: "thread_follow_up_out_of_scope" };
   }
 
   const mentionToken = buildMentionToken(slackBotUserId);
