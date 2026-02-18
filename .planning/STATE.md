@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 **Phase:** 80 - Slack Operator Hardening (in progress)
 **Current Plan:** 3
 **Total Plans in Phase:** 3
-**Status:** Ready to execute
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -77,6 +77,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 79 P02 | 4 min | 2 tasks | 10 files |
 | Phase 80 P01 | 2m4s | 2 tasks | 3 files |
 | Phase 80 P02 | 1m55s | 2 tasks | 3 files |
+| Phase 80 P03 | 1m31s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 80]: Allowed scenarios explicitly assert replyTarget=thread-only to prevent top-level response drift.
 - [Phase 80]: Pin the regression gate to three local suites (v1 contract, safety rails, route tests) to keep drift signals deterministic and offline.
 - [Phase 80]: Use SLK80-REG-* check IDs in both suite names and gate output so failures are directly actionable in CI/operator logs.
+- [Phase 80]: Slack deployment and incident response now use a dedicated runbook with mandatory smoke and regression reruns after deploys and fixes.
+- [Phase 80]: Phase 80 Slack verifiers are exposed as package aliases so operators run stable commands without direct script path knowledge.
 
 ### Key Constraints (Carry-Forward)
 
@@ -222,7 +225,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T18:23:03.315Z
-**Stopped At:** Completed 80-02-PLAN.md
+**Last session:** 2026-02-18T18:45:07.270Z
+**Stopped At:** Completed 80-03-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 80`
