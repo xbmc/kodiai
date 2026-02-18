@@ -13,7 +13,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 **Phase:** 79 - Slack Read-Only Assistant Routing (in progress)
 **Current Plan:** 2
 **Total Plans in Phase:** 2
-**Status:** Ready to execute
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -74,6 +74,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 77 P02 | 2 min | 2 tasks | 5 files |
 | Phase 78-slack-thread-session-semantics P01 | 2 min | 3 tasks | 6 files |
 | Phase 79 P01 | 2 min | 2 tasks | 4 files |
+| Phase 79 P02 | 4 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -180,6 +181,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 79]: Repo context defaults to xbmc/xbmc unless exactly one explicit owner/repo override is present.
 - [Phase 79]: Ambiguous or malformed repo references publish exactly one deterministic clarifying question and skip execution.
 - [Phase 79]: Slack assistant execution is enforced read-only via writeMode=false with inline/comment publish tools disabled and explicit no-edit/no-branch/no-build prompt constraints.
+- [Phase 79]: Resolved Slack repo runtime context with app-level owner/repo installation lookup plus default-branch cloning for deterministic workspace setup.
+- [Phase 79]: Kept Slack ingress fail-open by always returning immediate 200 ack while catching and logging asynchronous assistant callback failures.
+- [Phase 79]: Exposed successful executor final result text to let Slack routing publish deterministic assistant answers without enabling write/publish MCP tools.
 
 ### Key Constraints (Carry-Forward)
 
@@ -210,7 +214,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T06:02:57.739Z
-**Stopped At:** Completed 79-01-PLAN.md
+**Last session:** 2026-02-18T06:18:46.816Z
+**Stopped At:** Completed 79-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 79`
