@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 
 **Milestone:** v0.14 Slack Integration (in progress)
 **Phase:** 80 - Slack Operator Hardening (in progress)
-**Current Plan:** 2
+**Current Plan:** 3
 **Total Plans in Phase:** 3
 **Status:** Ready to execute
 **Last Activity:** 2026-02-18
@@ -76,6 +76,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 79 P01 | 2 min | 2 tasks | 4 files |
 | Phase 79 P02 | 4 min | 2 tasks | 10 files |
 | Phase 80 P01 | 2m4s | 2 tasks | 3 files |
+| Phase 80 P02 | 1m55s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -189,6 +190,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 79]: Startup preflight validates Slack bot token scopes (`chat:write`, `reactions:write`) via `auth.test` and logs actionable reinstall guidance when missing.
 - [Phase 80]: Smoke checks execute against fixed in-memory Slack fixtures and never call live Slack APIs.
 - [Phase 80]: Allowed scenarios explicitly assert replyTarget=thread-only to prevent top-level response drift.
+- [Phase 80]: Pin the regression gate to three local suites (v1 contract, safety rails, route tests) to keep drift signals deterministic and offline.
+- [Phase 80]: Use SLK80-REG-* check IDs in both suite names and gate output so failures are directly actionable in CI/operator logs.
 
 ### Key Constraints (Carry-Forward)
 
@@ -219,7 +222,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T18:02:51.889Z
-**Stopped At:** Completed 80-01-PLAN.md
+**Last session:** 2026-02-18T18:23:03.315Z
+**Stopped At:** Completed 80-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 80`
