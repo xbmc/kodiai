@@ -195,7 +195,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Pending Todos
 
-None.
+- 2026-02-18 — Validate Slack reaction scopes at startup (`.planning/todos/pending/2026-02-18-validate-slack-reaction-scopes-at-startup.md`)
 
 ### Explicit User Policies
 
