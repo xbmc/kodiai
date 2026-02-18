@@ -10,10 +10,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 ## Current Position
 
 **Milestone:** v0.14 Slack Integration (in progress)
-**Phase:** 79 - Slack Read-Only Assistant Routing (complete)
-**Current Plan:** N/A
-**Total Plans in Phase:** 2
-**Status:** Phase complete and verified; Slack reaction-based working signal validated
+**Phase:** 80 - Slack Operator Hardening (in progress)
+**Current Plan:** 2
+**Total Plans in Phase:** 3
+**Status:** Ready to execute
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -75,6 +75,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 78-slack-thread-session-semantics P01 | 2 min | 3 tasks | 6 files |
 | Phase 79 P01 | 2 min | 2 tasks | 4 files |
 | Phase 79 P02 | 4 min | 2 tasks | 10 files |
+| Phase 80 P01 | 2m4s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 79]: Exposed successful executor final result text to let Slack routing publish deterministic assistant answers without enabling write/publish MCP tools.
 - [Phase 79]: Slack "working" UX uses `reactions.add`/`reactions.remove` (`hourglass_flowing_sand`) on the triggering message instead of unsupported typing indicators.
 - [Phase 79]: Startup preflight validates Slack bot token scopes (`chat:write`, `reactions:write`) via `auth.test` and logs actionable reinstall guidance when missing.
+- [Phase 80]: Smoke checks execute against fixed in-memory Slack fixtures and never call live Slack APIs.
+- [Phase 80]: Allowed scenarios explicitly assert replyTarget=thread-only to prevent top-level response drift.
 
 ### Key Constraints (Carry-Forward)
 
@@ -216,7 +219,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T17:36:30.000Z
-**Stopped At:** Completed 79 verification and reaction-scope startup preflight
+**Last session:** 2026-02-18T18:02:51.889Z
+**Stopped At:** Completed 80-01-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-plan-phase 80`
