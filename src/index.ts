@@ -6,6 +6,7 @@ import { createGitHubApp } from "./auth/github-app.ts";
 import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
+import { createSlackEventRoutes } from "./routes/slack-events.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createWorkspaceManager } from "./jobs/workspace.ts";
@@ -181,6 +182,7 @@ const app = new Hono();
 
 // Mount routes
 app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter }));
+app.route("/webhooks/slack", createSlackEventRoutes({ config, logger }));
 app.route("/", createHealthRoutes({ githubApp, logger }));
 
 // Global error handler
