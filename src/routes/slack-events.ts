@@ -2,6 +2,10 @@ import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
 import { evaluateSlackV1Rails, type SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
+import {
+  createSlackThreadSessionStore,
+  type SlackThreadSessionStore,
+} from "../slack/thread-session-store.ts";
 import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 
@@ -9,10 +13,12 @@ interface SlackEventsRouteDeps {
   config: AppConfig;
   logger: Logger;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
+  threadSessionStore?: SlackThreadSessionStore;
 }
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const { config, logger, onAllowedBootstrap } = deps;
+  const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const app = new Hono();
 
   app.post("/events", async (c) => {
@@ -51,6 +57,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         payload: eventCallback,
         slackBotUserId: config.slackBotUserId,
         slackKodiaiChannelId: config.slackKodiaiChannelId,
+        isThreadSessionStarted: ({ channel, threadTs }) => threadSessionStore.isThreadStarted({ channel, threadTs }),
       });
 
       if (decision.decision === "ignore") {
@@ -65,11 +72,17 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       }
 
       Promise.resolve().then(() => {
-        const bootstrap = decision.bootstrap;
-        onAllowedBootstrap?.(bootstrap);
-        logger.info({ ...bootstrap, reason: decision.reason }, "Slack bootstrap accepted for async processing");
+        const addressed = decision.bootstrap;
+        if (decision.reason === "mention_only_bootstrap") {
+          threadSessionStore.markThreadStarted({
+            channel: addressed.channel,
+            threadTs: addressed.threadTs,
+          });
+        }
+        onAllowedBootstrap?.(addressed);
+        logger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
       }).catch((error) => {
-        logger.error({ error }, "Slack bootstrap async processing failed");
+        logger.error({ error }, "Slack addressed event async processing failed");
       });
 
       return c.json({ ok: true });

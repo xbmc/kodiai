@@ -184,7 +184,70 @@ describe("createSlackEventRoutes", () => {
     ]);
   });
 
-  test("ignores in-thread follow-up messages in v1 bootstrap-only mode", async () => {
+  test("forwards in-thread follow-up after bootstrap starts thread session", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const bootstrapPayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.000777",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+      },
+    });
+    const followUpPayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        thread_ts: "1700000000.000777",
+        ts: "1700000000.000778",
+        user: "U777USER",
+        text: "follow-up without mention",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const bootstrapResponse = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(bootstrapPayload, timestamp, signSlackRequest(timestamp, bootstrapPayload)),
+      body: bootstrapPayload,
+    });
+
+    const followUpResponse = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(followUpPayload, timestamp, signSlackRequest(timestamp, followUpPayload)),
+      body: followUpPayload,
+    });
+
+    expect(bootstrapResponse.status).toBe(200);
+    expect(await bootstrapResponse.json()).toEqual({ ok: true });
+    expect(followUpResponse.status).toBe(200);
+    expect(await followUpResponse.json()).toEqual({ ok: true });
+    await Promise.resolve();
+    expect(processed).toEqual([
+      {
+        channel: "C123KODIAI",
+        threadTs: "1700000000.000777",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+        replyTarget: "thread-only",
+      },
+      {
+        channel: "C123KODIAI",
+        threadTs: "1700000000.000777",
+        user: "U777USER",
+        text: "follow-up without mention",
+        replyTarget: "thread-only",
+      },
+    ]);
+  });
+
+  test("ignores in-thread non-starter follow-up messages", async () => {
     const processed: SlackV1BootstrapPayload[] = [];
     const app = createApp((payload) => processed.push(payload));
     const payload = JSON.stringify({
@@ -196,7 +259,7 @@ describe("createSlackEventRoutes", () => {
         thread_ts: "1700000000.000777",
         ts: "1700000000.000778",
         user: "U777USER",
-        text: "<@U123BOT> follow-up",
+        text: "follow-up without mention",
       },
     });
     const timestamp = String(Math.floor(Date.now() / 1000));
