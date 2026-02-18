@@ -14,7 +14,8 @@
 - ✅ **v0.10 Advanced Signals** — Phases 56-59 (shipped 2026-02-16)
 - ✅ **v0.11 Issue Workflows** — Phases 60-65 (shipped 2026-02-16)
 - ✅ **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (shipped 2026-02-17)
-- 🟡 **v0.13 Reliability Follow-Through** — Phases 72-76 (gap closure in progress)
+- ✅ **v0.13 Reliability Follow-Through** — Phases 72-76 (force-closed 2026-02-18; accepted debt)
+- 🚧 **v0.14 Slack Integration** — Phases 77-80 (in progress)
 
 ## Phases
 
@@ -108,15 +109,21 @@ See `.planning/milestones/v0.12-ROADMAP.md` for full phase details.
 </details>
 
 <details>
-<summary>v0.13 Reliability Follow-Through (Phases 72-76) -- GAP CLOSURE IN PROGRESS</summary>
+<summary>v0.13 Reliability Follow-Through (Phases 72-76) -- FORCE-CLOSED 2026-02-18</summary>
 
-**Milestone Goal:** Convert v0.12 reliability follow-through into verifiable operator outcomes: live telemetry confidence, deterministic degraded retrieval disclosure, and release-gating regression checks.
+See `.planning/milestones/v0.13-ROADMAP.md` for full phase details, accepted gaps, and deferred follow-up scope.
 
-- [ ] **Phase 72: Telemetry Follow-Through** - Validate live Search cache/rate-limit telemetry behavior and non-blocking degraded execution semantics.
-- [ ] **Phase 73: Degraded Retrieval Contract** - Guarantee deterministic partial-analysis disclosure and bounded degraded retrieval evidence.
-- [ ] **Phase 74: Reliability Regression Gate** - Add deterministic regression verification that proves degraded + retrieval reliability before release.
-- [ ] **Phase 75: Live OPS Verification Closure** - Close OPS-04/OPS-05 with evidence-backed live verification artifacts and deterministic operator verdicts.
-- [ ] **Phase 76: Success-Path Status Contract Parity** - Enforce machine-checkable success status semantics across issue write producer and Phase 74 gate consumer.
+</details>
+
+<details>
+<summary>v0.14 Slack Integration (Phases 77-80) -- IN PROGRESS</summary>
+
+**Milestone Goal:** Launch Slack v1 as a low-noise, thread-only `@kodiai` assistant in `#kodiai` with secure ingress, deterministic thread behavior, default repo context, and read-only response guarantees.
+
+- [x] **Phase 77: Slack Ingress & Safety Rails** - Add Slack events endpoint, request verification, and channel/thread gating. (completed 2026-02-18)
+- [x] **Phase 78: Slack Thread Session Semantics** - Implement mention bootstrap + in-thread follow-up behavior with deterministic session rules. (completed 2026-02-18)
+- [ ] **Phase 79: Slack Read-Only Assistant Routing** - Route Slack prompts through read-only assistant flow with default `xbmc/xbmc` context and ambiguity handling.
+- [ ] **Phase 80: Slack Operator Hardening** - Add runbooks, smoke tests, and regression checks for Slack v1 behavior.
 
 </details>
 
@@ -223,7 +230,7 @@ Plans:
   1. Maintainer can run one automated regression scenario that validates combined degraded execution plus retrieval behavior end-to-end
   2. Maintainer can run a deterministic pre-release verification path that proves all new reliability checks pass before shipping
   3. If degraded-disclosure or bounded-retrieval behavior regresses, the reliability verification path fails with a clear actionable signal before release
-**Plans**: 2 plans
+**Plans**: 6 plans
 
 Plans:
 - [x] 74-01-PLAN.md — Enforce retry-once failure semantics and actionable diagnostics for issue write-mode PR publish flows
@@ -238,13 +245,15 @@ Plans:
   1. Operators can execute a deterministic live verification matrix that exercises cache prime-hit-miss sequences and captures evidence for each run identity
   2. Verification artifacts show exactly one degraded telemetry event per degraded execution identity with no duplicate writes for the same run
   3. Verification artifacts prove degraded executions complete review output even when telemetry persistence fails
-**Plans**: 2 plans
+**Plans**: 6 plans
 
 Plans:
 - [ ] 75-01-PLAN.md — Add deterministic telemetry write-failure injection controls and regression proofs for degraded fail-open behavior
 - [ ] 75-02-PLAN.md — Ship live OPS closure verification CLI, check-ID evidence matrix, and operator run procedure
 - [ ] 75-03-PLAN.md — Close live verification blockers by fixing author-cache persistence noise and enforcing OPS75 preflight evidence contract
 - [ ] 75-04-PLAN.md — Capture passing mention-lane + degraded-row live evidence bundle for OPS75 closure
+- [ ] 75-05-PLAN.md — Enforce hard same-run identity capture gates for review/mention cache lanes and degraded-row readiness
+- [ ] 75-06-PLAN.md — Publish single-run OPS75 PASS evidence and update Phase 75 verification status to closed
 
 ### Phase 76: Success-Path Status Contract Parity
 **Goal**: Restore producer/consumer contract parity by making issue write success output machine-checkable and enforcing that contract in regression gates
@@ -255,14 +264,68 @@ Plans:
   1. Issue write success responses emit deterministic machine-checkable success status markers alongside PR URL details
   2. Regression gate and runbook checks validate both failure and success status-path envelopes using the same contract shape
   3. Automated tests fail if success-path status semantics regress or become non-machine-checkable
+**Plans**: 2 plans
+
+Plans:
+- [ ] 76-01-PLAN.md — Make issue write success output machine-checkable with deterministic status-envelope markers
+- [ ] 76-02-PLAN.md — Enforce dual-path status-envelope parity in Phase 74 gate checks, tests, and runbooks
+
+### Phase 77: Slack Ingress & Safety Rails
+**Goal**: Accept and verify Slack events securely, then enforce strict v1 safety rails (single channel, thread-only, mention-only bootstrap)
+**Depends on**: Stable webhook runtime from v0.13
+**Requirements**: SLK-01, SLK-02
+**Success Criteria** (what must be TRUE):
+  1. Slack events are accepted only when signatures and timestamps validate against Slack signing secret
+  2. Kodiai processes only `#kodiai` channel traffic for v1, ignoring DMs and other channels
+  3. New Slack assistant replies are posted only in threads and only when the parent message explicitly mentions `@kodiai`
+**Plans**: 2 plans
+
+Plans:
+- [x] 77-01-PLAN.md — Add verified Slack ingress endpoint with fail-closed signature/timestamp checks
+- [x] 77-02-PLAN.md — Enforce v1 Slack safety rails for #kodiai-only, thread-only, mention bootstrap
+
+### Phase 78: Slack Thread Session Semantics
+**Goal**: Preserve low-noise thread behavior by allowing follow-ups inside started threads without requiring repeated mentions
+**Depends on**: Phase 77 (validated ingress and gating)
+**Requirements**: SLK-03
+**Success Criteria** (what must be TRUE):
+  1. Once a thread is started via `@kodiai`, follow-up thread messages are treated as addressed to Kodiai without mention prefix
+  2. Kodiai does not post top-level channel messages for follow-up handling
+  3. Session behavior is deterministic and test-covered for thread starter vs non-starter messages
+**Plans**: 1 plan
+
+Plans:
+- [x] 78-01-PLAN.md — Add deterministic started-thread session semantics for mention bootstrap and in-thread follow-ups
+
+### Phase 79: Slack Read-Only Assistant Routing
+**Goal**: Route Slack requests through a read-only assistant path with default repo context and explicit ambiguity handling
+**Depends on**: Phase 78 (thread session semantics)
+**Requirements**: SLK-04, SLK-05
+**Success Criteria** (what must be TRUE):
+  1. Slack assistant responses use read-only behavior (no write-mode, no PR creation, no code modifications)
+  2. Default repo context is `xbmc/xbmc`, with explicit override acknowledgement when user specifies another repo
+  3. If context is ambiguous, Kodiai asks exactly one clarifying question in-thread
 **Plans**: 0 plans
 
 Plans:
-- [ ] 76-01-PLAN.md — [To be planned]
+- [ ] 79-01-PLAN.md — [To be planned]
+
+### Phase 80: Slack Operator Hardening
+**Goal**: Provide deterministic operator verification and regression safety for Slack v1 behavior
+**Depends on**: Phase 79 (Slack routing behavior complete)
+**Requirements**: SLK-06
+**Success Criteria** (what must be TRUE):
+  1. Operators can run a smoke scenario proving channel gating, thread-only replies, mention bootstrap, and follow-up behavior
+  2. Regression tests fail when Slack v1 safety rails drift
+  3. Runbook documents deployment, env vars, and incident debugging for Slack integration
+**Plans**: 0 plans
+
+Plans:
+- [ ] 80-01-PLAN.md — [To be planned]
 
 ## Progress
 
-**Total shipped:** 13 milestones, 72 phases, 181 plans
+**Total shipped:** 13 milestones, 74 phases, 184 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -294,7 +357,9 @@ Plans:
 | 72 | v0.13 | 2/2 | Complete | 2026-02-17 |
 | 73 | v0.13 | 2/2 | Complete | 2026-02-17 |
 | 74 | v0.13 | 2/2 | Complete | 2026-02-17 |
+| 77 | v0.14 | 2/2 | Complete | 2026-02-18 |
+| 78 | v0.14 | 1/1 | Complete | 2026-02-18 |
 
 ---
 
-*Roadmap updated: 2026-02-17 -- added gap-closure phases 75-76 for v0.13 audit findings*
+*Roadmap updated: 2026-02-18 -- Phase 78 executed and verified; ready for Phase 79 planning*
