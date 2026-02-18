@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import type { SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
 import { createSlackEventRoutes } from "./slack-events.ts";
 
 const SLACK_SIGNING_SECRET = "test-signing-secret";
@@ -49,11 +50,15 @@ function createHeaders(body: string, timestamp: string, signature?: string): Hea
   return headers;
 }
 
-function createApp() {
+function createApp(onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => void) {
   const app = new Hono();
   app.route(
     "/webhooks/slack",
-    createSlackEventRoutes({ config: createTestConfig(), logger: createTestLogger() }),
+    createSlackEventRoutes({
+      config: createTestConfig(),
+      logger: createTestLogger(),
+      onAllowedBootstrap,
+    }),
   );
   return app;
 }
@@ -116,15 +121,18 @@ describe("createSlackEventRoutes", () => {
     expect(response.status).toBe(401);
   });
 
-  test("acknowledges verified event_callback payloads", async () => {
-    const app = createApp();
+  test("acknowledges blocked event_callback payloads with no downstream side effects", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
     const payload = JSON.stringify({
       type: "event_callback",
       event: {
-        type: "app_mention",
-        channel: "C123KODIAI",
+        type: "message",
+        channel: "C999OTHER",
+        channel_type: "channel",
         ts: "1700000000.000001",
-        thread_ts: "1700000000.000001",
+        user: "U123USER",
+        text: "<@U123BOT> hi",
       },
     });
     const timestamp = String(Math.floor(Date.now() / 1000));
@@ -137,5 +145,71 @@ describe("createSlackEventRoutes", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
+    expect(processed).toHaveLength(0);
+  });
+
+  test("acknowledges verified mention bootstrap and forwards normalized thread payload", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const payload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.000777",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(payload, timestamp, signSlackRequest(timestamp, payload)),
+      body: payload,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    await Promise.resolve();
+    expect(processed).toEqual([
+      {
+        channel: "C123KODIAI",
+        threadTs: "1700000000.000777",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+        replyTarget: "thread-only",
+      },
+    ]);
+  });
+
+  test("ignores in-thread follow-up messages in v1 bootstrap-only mode", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const payload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        thread_ts: "1700000000.000777",
+        ts: "1700000000.000778",
+        user: "U777USER",
+        text: "<@U123BOT> follow-up",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(payload, timestamp, signSlackRequest(timestamp, payload)),
+      body: payload,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    await Promise.resolve();
+    expect(processed).toHaveLength(0);
   });
 });

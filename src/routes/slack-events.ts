@@ -1,29 +1,18 @@
 import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import { evaluateSlackV1Rails, type SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
+import { toSlackEventCallback, toSlackUrlVerification } from "../slack/types.ts";
 import { verifySlackRequest } from "../slack/verify.ts";
 
 interface SlackEventsRouteDeps {
   config: AppConfig;
   logger: Logger;
+  onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
 }
 
-type SlackPayload = {
-  type?: string;
-  challenge?: string;
-  event?: {
-    type?: string;
-    channel?: string;
-    thread_ts?: string;
-    ts?: string;
-    user?: string;
-    bot_id?: string;
-    text?: string;
-  };
-};
-
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
-  const { config, logger } = deps;
+  const { config, logger, onAllowedBootstrap } = deps;
   const app = new Hono();
 
   app.post("/events", async (c) => {
@@ -43,35 +32,54 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       return c.text("", 401);
     }
 
-    let payload: SlackPayload;
+    let payload: unknown;
     try {
-      payload = JSON.parse(body) as SlackPayload;
+      payload = JSON.parse(body) as unknown;
     } catch {
       logger.warn("Rejected Slack event: invalid JSON payload");
       return c.json({ error: "invalid_payload" }, 400);
     }
 
-    if (payload.type === "url_verification" && typeof payload.challenge === "string") {
-      return c.text(payload.challenge, 200);
+    const urlVerification = toSlackUrlVerification(payload);
+    if (urlVerification) {
+      return c.text(urlVerification.challenge, 200);
     }
 
-    if (payload.type === "event_callback") {
-      Promise.resolve().then(() => {
+    const eventCallback = toSlackEventCallback(payload);
+    if (eventCallback) {
+      const decision = evaluateSlackV1Rails({
+        payload: eventCallback,
+        slackBotUserId: config.slackBotUserId,
+        slackKodiaiChannelId: config.slackKodiaiChannelId,
+      });
+
+      if (decision.decision === "ignore") {
         logger.info(
           {
-            eventType: payload.event?.type,
-            channel: payload.event?.channel,
-            threadTs: payload.event?.thread_ts,
-            ts: payload.event?.ts,
-            user: payload.event?.user,
+            reason: decision.reason,
+            eventType: eventCallback.event.type,
           },
-          "Slack event accepted for async processing",
+          "Slack event ignored by v1 safety rails",
         );
+        return c.json({ ok: true });
+      }
+
+      Promise.resolve().then(() => {
+        const bootstrap = decision.bootstrap;
+        onAllowedBootstrap?.(bootstrap);
+        logger.info({ ...bootstrap, reason: decision.reason }, "Slack bootstrap accepted for async processing");
+      }).catch((error) => {
+        logger.error({ error }, "Slack bootstrap async processing failed");
       });
+
       return c.json({ ok: true });
     }
 
-    logger.info({ payloadType: payload.type ?? "unknown" }, "Slack event ignored: unsupported payload type");
+    const payloadType =
+      typeof payload === "object" && payload !== null && "type" in payload && typeof payload.type === "string"
+        ? payload.type
+        : "unknown";
+    logger.info({ payloadType }, "Slack event ignored: unsupported payload type");
     return c.json({ ok: true });
   });
 
