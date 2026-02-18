@@ -83,7 +83,7 @@ Each task was committed atomically:
 None - plan executed exactly as written.
 
 ## Issues Encountered
-None.
+- `state advance-plan` could not parse existing `STATE.md` (`Current Plan: N/A`, `Total Plans in Phase: 0`), so current-position fields were updated directly after running other state update commands.
 
 ## User Setup Required
 
