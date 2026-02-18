@@ -10,10 +10,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 ## Current Position
 
 **Milestone:** v0.14 Slack Integration (in progress)
-**Phase:** 77 - Slack Ingress & Safety Rails (in progress)
-**Current Plan:** 02
-**Total Plans in Phase:** 2
-**Status:** Phase complete — ready for verification
+**Phase:** 78 - Slack Thread Session Semantics (complete)
+**Current Plan:** N/A
+**Total Plans in Phase:** 1
+**Status:** Phase complete; started Slack threads now allow deterministic in-thread follow-ups with thread-only targeting
 **Last Activity:** 2026-02-18
 
 **Progress:** [██████████] 100%
@@ -72,6 +72,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 75-live-ops-verification-closure P05 | 2 min | 2 tasks | 2 files |
 | Phase 77 P01 | 2 min | 3 tasks | 6 files |
 | Phase 77 P02 | 2 min | 2 tasks | 5 files |
+| Phase 78-slack-thread-session-semantics P01 | 2 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 77]: Verified Slack event callbacks return immediate HTTP 200 acknowledgment while downstream processing remains asynchronous.
 - [Phase 77]: Slack v1 allows only top-level mention bootstrap in #kodiai and ignores in-thread follow-up messages until Phase 78 session semantics.
 - [Phase 77]: Allowed Slack route path forwards only normalized bootstrap payloads with replyTarget fixed to thread-only to prevent top-level post drift.
+- [Phase 78-slack-thread-session-semantics]: Thread session state stays in-process and deterministic for v1; no persistence layer is introduced in this phase.
+- [Phase 78-slack-thread-session-semantics]: Rails allow in-thread follow-up only when channel+thread session is active, preserving deterministic ignore behavior for non-starters.
+- [Phase 78-slack-thread-session-semantics]: All allowed addressed Slack payloads retain replyTarget=thread-only to prevent top-level channel response drift.
 
 ### Key Constraints (Carry-Forward)
 
@@ -202,7 +206,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T05:01:31.261Z
-**Stopped At:** Completed 77-02-PLAN.md
+**Last session:** 2026-02-18T05:44:39.324Z
+**Stopped At:** Completed 78-slack-thread-session-semantics-01-PLAN.md
 **Resume File:** None
-**Next action:** Run `/gsd-plan-phase 77`
+**Next action:** Run `/gsd-plan-phase 79`
