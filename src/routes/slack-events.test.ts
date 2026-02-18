@@ -26,6 +26,7 @@ function createTestConfig(): AppConfig {
     githubPrivateKey: "-----BEGIN PRIVATE KEY-----\nTEST\n-----END PRIVATE KEY-----",
     webhookSecret: "webhook-secret",
     slackSigningSecret: SLACK_SIGNING_SECRET,
+    slackBotToken: "xoxb-test-token",
     slackBotUserId: "U123BOT",
     slackKodiaiChannelId: "C123KODIAI",
     port: 3000,

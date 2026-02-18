@@ -14,6 +14,12 @@ export interface GitHubApp {
   checkConnectivity(): Promise<boolean>;
   /** Get a raw installation access token for git URL auth. */
   getInstallationToken(installationId: number): Promise<string>;
+  /** Resolve installation and default branch for an arbitrary owner/repo. */
+  getRepoInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string } | null>;
+}
+
+function hasStatusCode(error: unknown, statusCode: number): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === statusCode;
 }
 
 export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
@@ -103,6 +109,33 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       logger.debug({ installationId }, "Obtained installation token");
 
       return result.token;
+    },
+
+    async getRepoInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string } | null> {
+      try {
+        const installationResponse = await appOctokit.request("GET /repos/{owner}/{repo}/installation", {
+          owner,
+          repo,
+        });
+
+        const installationId = installationResponse.data.id;
+        const installationOctokit = await this.getInstallationOctokit(installationId);
+        const repositoryResponse = await installationOctokit.rest.repos.get({ owner, repo });
+
+        const defaultBranch = repositoryResponse.data.default_branch;
+        logger.debug({ owner, repo, installationId, defaultBranch }, "Resolved repository installation context");
+        return {
+          installationId,
+          defaultBranch,
+        };
+      } catch (error) {
+        if (hasStatusCode(error, 404)) {
+          logger.warn({ owner, repo }, "Repository not installed for this GitHub App");
+          return null;
+        }
+
+        throw error;
+      }
     },
   };
 }
