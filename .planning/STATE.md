@@ -81,6 +81,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 81 P01 | 4 min | 2 tasks | 6 files |
 | Phase 81 P02 | 7 min | 2 tasks | 9 files |
 | Phase 81 P03 | 5 min | 2 tasks | 4 files |
+| Phase 81 P04 | 1 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -207,6 +208,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 81]: Slack success replies default to primary PR link, adding mirrored comment links only when comment publish events exist
 - [Phase 81]: High-impact Slack writes persist as pending per channel/thread and resume only from an exact confirm command.
 - [Phase 81]: Slack write final responses are normalized to concise Changed/Where bullets with primary PR link by default.
+- [Phase 81]: Phase 81 smoke checks validate explicit write routing, ambiguous read-only fallback, high-impact confirmation gating, and success/refusal output contracts with SLK81-SMOKE-* IDs.
+- [Phase 81]: Phase 81 regression gate is pinned to write-intent, assistant-handler, and confirmation-store suites so contract drift fails non-zero with SLK81-REG-* IDs.
 
 ### Key Constraints (Carry-Forward)
 
@@ -237,7 +240,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T01:13:59.598Z
-**Stopped At:** Completed 81-03-PLAN.md
+**Last session:** 2026-02-19T02:22:40.896Z
+**Stopped At:** Completed 81-04-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-discuss-phase 81`
