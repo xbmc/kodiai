@@ -10,10 +10,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 ## Current Position
 
 **Milestone:** v0.15 Slack Write Workflows (planned)
-**Phase:** 81 - Slack Write Mode Enablement (planned)
-**Current Plan:** Not started
-**Total Plans in Phase:** 0
-**Status:** Ready to plan
+**Phase:** 76 - Success Path Status Contract Parity (complete)
+**Current Plan:** 2/2
+**Total Plans in Phase:** 2
+**Status:** Phase complete
 **Last Activity:** 2026-02-19
 
 **Progress:** [██████████] 104%
@@ -86,6 +86,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 75 P07 | 4min | 2 tasks | 3 files |
 | Phase 75 P08 | 1min | 1 tasks | 1 files |
 | Phase 76 P01 | 3min | 2 tasks | 2 files |
+| Phase 76 P02 | 3min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -219,6 +220,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 75]: Verifier matrix simplified to review_requested surface only with 3 steps instead of 6
 - [Phase 75]: Replace stale historical run sections with a runbook pointer instead of updating mention-lane data in place
 - [Phase 76]: Success envelope mirrors failure envelope structure with status: success plus pr_url and issue_linkback_url fields
+- [Phase 76]: Gate parser extracts pr_url and issue_linkback_url markers from success replies alongside existing failure markers
+- [Phase 76]: REL-74-05 enforces machine-checkable URL markers are present in success status replies
 
 ### Key Constraints (Carry-Forward)
 
@@ -249,7 +252,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T19:07:46.705Z
-**Stopped At:** Completed 76-01-PLAN.md
+**Last session:** 2026-02-19T19:11:19Z
+**Stopped At:** Completed 76-02-PLAN.md
 **Resume File:** None
-**Next action:** Run `/gsd-discuss-phase 81`
+**Next action:** Phase 76 complete
