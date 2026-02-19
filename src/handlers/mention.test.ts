@@ -1734,6 +1734,9 @@ describe("createMentionHandler write intent gating", () => {
     expect(executorCalled).toBe(true);
     expect(capturedWriteMode).toBe(true);
     expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/123");
+    expect(issueReplies[0]).toContain("issue_linkback_url:");
     expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
     expect(pullCreateCalls).toBe(1);
 
@@ -2433,6 +2436,9 @@ describe("createMentionHandler write intent gating", () => {
     expect(createdPrBody).toContain("Request: update the README");
     expect(createdPrBody).toContain("Delivery: delivery-issue-mention-123");
     expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/123");
+    expect(issueReplies[0]).toContain("issue_linkback_url:");
     expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
 
     await workspaceFixture.cleanup();
@@ -2634,6 +2640,9 @@ describe("createMentionHandler write intent gating", () => {
     expect(pullCreateCalls).toBe(1);
     expect(createdPrBase).toBe("feature");
     expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/live-shape");
+    expect(issueReplies[0]).toContain("issue_linkback_url:");
     expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/live-shape");
     expect(issueReplies[0]).not.toContain("I can only apply changes in a PR context.");
 
@@ -3072,6 +3081,18 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("success reply without machine-checkable markers is invalid (negative regression)", () => {
+    // This test proves that a success reply lacking deterministic status markers
+    // would fail contract assertions. If the envelope builder ever regresses to
+    // free-form-only output, this test documents the expected failure shape.
+    const freeFormOnly = "<details>\n<summary>kodiai response</summary>\n\nOpened PR: https://example.com/pr/123\n\n</details>";
+    // A valid success reply MUST contain these markers:
+    expect(freeFormOnly).not.toContain("status: success");
+    expect(freeFormOnly).not.toContain("pr_url:");
+    expect(freeFormOnly).not.toContain("issue_linkback_url:");
+    // This proves free-form-only replies are distinguishable from contract-compliant ones.
+  });
+
   test("issue apply: replay reuses existing PR and replies with Existing PR link", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
@@ -3278,6 +3299,7 @@ describe("createMentionHandler write intent gating", () => {
     expect(pullCreateCalls).toBe(1);
     expect(issueReplies).toHaveLength(2);
     expect(issueReplies.some((body) => body.includes("already in progress"))).toBe(true);
+    expect(issueReplies.filter((body) => body.includes("status: success")).length).toBe(1);
     expect(issueReplies.filter((body) => body.includes("Opened PR:")).length).toBe(1);
 
     await workspaceFixture.cleanup();
@@ -3386,6 +3408,8 @@ describe("createMentionHandler write intent gating", () => {
     expect(executorCalls).toBe(1);
     expect(pullCreateCalls).toBe(1);
     expect(issueReplies).toHaveLength(2);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/123");
     expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/123");
     expect(issueReplies[1]).toContain("rate-limited");
     expect(issueReplies[1]).toContain("Try again in");
@@ -3487,6 +3511,9 @@ describe("createMentionHandler write intent gating", () => {
     expect(executorCalled).toBe(true);
     expect(pullCreateCalls).toBe(1);
     expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/live-shape");
+    expect(issueReplies[0]).toContain("issue_linkback_url:");
     expect(issueReplies[0]).toContain("Opened PR: https://example.com/pr/live-shape");
 
     await workspaceFixture.cleanup();
@@ -4861,6 +4888,8 @@ describe("createMentionHandler write intent gating", () => {
 
     expect(prCreates).toBe(1);
     expect(replyBody).toBeDefined();
+    expect(replyBody!).toContain("status: success");
+    expect(replyBody!).toContain("pr_url: https://example.com/pr/123");
     expect(replyBody!).toContain("Opened PR: https://example.com/pr/123");
     expect(replyBody!).not.toContain("write-policy-secret-detected");
 
