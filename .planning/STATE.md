@@ -11,9 +11,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 
 **Milestone:** v0.15 Slack Write Workflows (planned)
 **Phase:** 76 - Success Path Status Contract Parity (complete)
-**Current Plan:** 2/2
+**Current Plan:** Not started
 **Total Plans in Phase:** 2
-**Status:** Phase complete
+**Status:** Ready to plan
 **Last Activity:** 2026-02-19
 
 **Progress:** [██████████] 104%
