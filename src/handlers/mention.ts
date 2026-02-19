@@ -179,6 +179,17 @@ export function createMentionHandler(deps: {
       return "plan";
     }
 
+    const prDirect =
+      /^(?:please\s+)?(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prThisAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?pr\b(?:.{0,80})\b(?:this|it)\b/;
+
+    if (prDirect.test(normalized) || prAsk.test(normalized) || prThisAsk.test(normalized)) {
+      return "apply";
+    }
+
     if (isImplementationRequestWithoutPrefix(normalized)) {
       return "apply";
     }
