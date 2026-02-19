@@ -83,6 +83,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 81 P03 | 5 min | 2 tasks | 4 files |
 | Phase 81 P04 | 1 min | 2 tasks | 6 files |
 | Phase 75 P06 | 2 min | 2 tasks | 2 files |
+| Phase 75 P07 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -212,6 +213,8 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 81]: Phase 81 smoke checks validate explicit write routing, ambiguous read-only fallback, high-impact confirmation gating, and success/refusal output contracts with SLK81-SMOKE-* IDs.
 - [Phase 81]: Phase 81 regression gate is pinned to write-intent, assistant-handler, and confirmation-store suites so contract drift fails non-zero with SLK81-REG-* IDs.
 - [Phase 75]: Treat OPS75 closure gap as production telemetry capture issue, not code defect, after verifier infrastructure proven correct across multiple reruns.
+- [Phase 75]: OPS75-CACHE-02 removed because mention handler has no Search API cache codepath and never emits rate_limit_events rows
+- [Phase 75]: Verifier matrix simplified to review_requested surface only with 3 steps instead of 6
 
 ### Key Constraints (Carry-Forward)
 
@@ -242,7 +245,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T06:07:18.724Z
-**Stopped At:** Completed 75-06-PLAN.md
+**Last session:** 2026-02-19T07:48:16.948Z
+**Stopped At:** Completed 75-07-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-discuss-phase 81`
