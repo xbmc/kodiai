@@ -185,8 +185,20 @@ export function createMentionHandler(deps: {
       /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
     const prThisAsk =
       /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?pr\b(?:.{0,80})\b(?:this|it)\b/;
+    const prGenericAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:.{0,160})\b(?:pr|pull\s+request)\b/;
+    const prOutcomeGoal =
+      /\b(?:so|to)\s+you\s+can\b(?:.{0,80})\b(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prPleaseThis = /^(?:please\s+)?pr\b(?:.{0,80})\b(?:this|it)\b/;
 
-    if (prDirect.test(normalized) || prAsk.test(normalized) || prThisAsk.test(normalized)) {
+    if (
+      prDirect.test(normalized) ||
+      prAsk.test(normalized) ||
+      prThisAsk.test(normalized) ||
+      prGenericAsk.test(normalized) ||
+      prOutcomeGoal.test(normalized) ||
+      prPleaseThis.test(normalized)
+    ) {
       return "apply";
     }
 
