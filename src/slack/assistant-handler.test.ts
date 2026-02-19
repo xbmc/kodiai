@@ -253,12 +253,7 @@ describe("createSlackAssistantHandler", () => {
           prUrl: "https://github.com/xbmc/xbmc/pull/123",
           responseText: "Opened PR: https://github.com/xbmc/xbmc/pull/123",
           retryCommand: "apply: update src/slack/assistant-handler.ts",
-          mirrors: [
-            {
-              url: "https://github.com/xbmc/xbmc/issues/1#issuecomment-9",
-              excerpt: "Updated issue with implementation notes",
-            },
-          ],
+          mirrors: [],
         };
       },
       publishInThread: async ({ text }) => {
@@ -296,8 +291,7 @@ describe("createSlackAssistantHandler", () => {
       runWrite: async () => ({
         outcome: "success",
         prUrl: "https://github.com/xbmc/xbmc/pull/124",
-        responseText:
-          "Opened PR: https://github.com/xbmc/xbmc/pull/124\n\n- https://github.com/xbmc/xbmc/issues/1#issuecomment-10\n  Updated issue comment excerpt",
+        responseText: "ignored by formatter",
         retryCommand: "apply: update issue note",
         mirrors: [
           {

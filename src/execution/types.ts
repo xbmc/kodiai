@@ -2,6 +2,12 @@ export type { RepoConfig } from "./config.ts";
 
 import type { KnowledgeStore } from "../knowledge/types.ts";
 
+export type ExecutionPublishEvent = {
+  type: "comment";
+  url: string;
+  excerpt: string;
+};
+
 /** Everything needed to invoke Claude against a workspace */
 export type ExecutionContext = {
   /** The ephemeral workspace with the cloned repo */
@@ -26,6 +32,12 @@ export type ExecutionContext = {
 
   /** Optional dynamic timeout override (seconds). When set, overrides config.timeoutSeconds. */
   dynamicTimeoutSeconds?: number;
+
+  /** Optional max turns override. When set, overrides config.maxTurns. */
+  maxTurnsOverride?: number;
+
+  /** Optional model override. When set, overrides config.model. */
+  modelOverride?: string;
 
   /** Bot mention handles for outgoing sanitization (e.g. ['kodiai', 'claude']). */
   botHandles?: string[];
@@ -77,4 +89,6 @@ export type ExecutionResult = {
   stopReason: string | undefined;
   /** Final assistant text for successful runs (when provided by SDK). */
   resultText?: string;
+  /** Structured GitHub publish metadata emitted by MCP tools during execution. */
+  publishEvents?: ExecutionPublishEvent[];
 };

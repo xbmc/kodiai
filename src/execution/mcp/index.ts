@@ -7,6 +7,7 @@ import { createCIStatusServer } from "./ci-status-server.ts";
 import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 import { createCheckpointServer } from "./checkpoint-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
+import type { ExecutionPublishEvent } from "../types.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
@@ -25,6 +26,7 @@ export function buildMcpServers(deps: {
   deliveryId?: string;
   logger?: Logger;
   onPublish?: () => void;
+  onPublishEvent?: (event: ExecutionPublishEvent) => void;
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
   knowledgeStore?: KnowledgeStore;
@@ -43,6 +45,7 @@ export function buildMcpServers(deps: {
       deps.reviewOutputKey,
       deps.onPublish,
       deps.prNumber,
+      deps.onPublishEvent,
     );
   }
 

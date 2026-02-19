@@ -137,6 +137,28 @@ function buildInstantReply(messageText: string): string | undefined {
   return undefined;
 }
 
+function formatSlackWriteReply(writeResult: SlackWriteRunnerResult): string {
+  if (writeResult.outcome !== "success") {
+    return writeResult.responseText;
+  }
+
+  if (writeResult.mirrors.length === 0) {
+    return `Opened PR: ${writeResult.prUrl}`;
+  }
+
+  const mirrorLines = writeResult.mirrors.flatMap((mirror) => [
+    `- ${mirror.url}`,
+    `  ${mirror.excerpt}`,
+  ]);
+
+  return [
+    `Opened PR: ${writeResult.prUrl}`,
+    "",
+    "Mirrored GitHub comments:",
+    ...mirrorLines,
+  ].join("\n");
+}
+
 export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
   const {
     createWorkspace,
@@ -243,8 +265,8 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
           const replyText =
             resolution.outcome === "override"
-              ? `${resolution.acknowledgementText}\n\n${writeResult.responseText}`
-              : writeResult.responseText;
+              ? `${resolution.acknowledgementText}\n\n${formatSlackWriteReply(writeResult)}`
+              : formatSlackWriteReply(writeResult);
 
           await publishInThread({
             channel: payload.channel,

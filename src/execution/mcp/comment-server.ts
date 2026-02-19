@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
+import type { ExecutionPublishEvent } from "../types.ts";
 
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
@@ -12,6 +13,7 @@ export function createCommentServer(
   reviewOutputKey?: string,
   onPublish?: () => void,
   prNumber?: number,
+  onPublishEvent?: (event: ExecutionPublishEvent) => void,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
@@ -459,6 +461,14 @@ export function createCommentServer(
     return `${body}\n\n${marker}`;
   }
 
+  function buildExcerpt(body: string): string {
+    const collapsed = body.replace(/\s+/g, " ").trim();
+    if (collapsed.length <= 180) {
+      return collapsed;
+    }
+    return `${collapsed.slice(0, 177).trimEnd()}...`;
+  }
+
   return createSdkMcpServer({
     name: "github_comment",
     version: "0.1.0",
@@ -473,19 +483,25 @@ export function createCommentServer(
         async ({ commentId, body }) => {
           try {
             const octokit = await getOctokit();
+            const sanitized = sanitizeOutgoingMentions(
+              maybeStampMarker(
+                sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
+              ),
+              botHandles,
+            );
             await octokit.rest.issues.updateComment({
               owner,
               repo,
               comment_id: commentId,
               // Defense-in-depth: sanitize outgoing mentions on all publish paths (Phase 50, CONV-05)
-              body: sanitizeOutgoingMentions(
-                maybeStampMarker(
-                  sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
-                ),
-                botHandles,
-              ),
+              body: sanitized,
             });
             onPublish?.();
+            onPublishEvent?.({
+              type: "comment",
+              url: `https://github.com/${owner}/${repo}/issues/${commentId}#issuecomment-${commentId}`,
+              excerpt: buildExcerpt(sanitized),
+            });
             return {
               content: [
                 {
@@ -553,6 +569,11 @@ export function createCommentServer(
               body: sanitized,
             });
             onPublish?.();
+            onPublishEvent?.({
+              type: "comment",
+              url: data.html_url,
+              excerpt: buildExcerpt(sanitized),
+            });
             return {
               content: [
                 {
