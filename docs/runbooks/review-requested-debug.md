@@ -162,17 +162,80 @@ FROM executions
 WHERE delivery_id IN (
   '<review-prime>',
   '<review-hit>',
-  '<review-changed>',
-  '<mention-prime>',
-  '<mention-hit>',
-  '<mention-changed>'
+  '<review-changed>'
 )
 ORDER BY created_at ASC;
 ```
 
-Expected: rows exist for all six deliveries with non-failing conclusions.
+Expected: rows exist for all three review deliveries with non-failing conclusions.
 
-If conclusions are present but telemetry rows are missing, treat it as a telemetry persistence path issue and confirm the user-facing review/mention still completed before remediation.
+If conclusions are present but telemetry rows are missing, treat it as a telemetry persistence path issue and confirm the user-facing review still completed before remediation.
+
+## Phase 75 OPS Closure: Operator Trigger Procedures
+
+Use these procedures to produce the production evidence needed for OPS75 closure.
+Cache checks are scoped to the review handler only -- the mention handler does not
+use Search API cache and never emits `rate_limit_events` rows.
+
+### Cache-Hit Trigger Procedure
+
+To produce the three review-lane cache identities (prime, hit, changed-query-miss):
+
+1. **Prime run (cache_hit_rate=0):** Request a kodiai review on a test PR. Record the
+   `X-GitHub-Delivery` header from the webhook delivery. This is `<review-prime>`.
+
+2. **Cache-hit run (cache_hit_rate=1):** Re-request kodiai review on the **same PR**
+   for the **same author** within the Search cache TTL window (default 5 minutes).
+   The second delivery produces `searchCacheHit=true`. Record the delivery ID as
+   `<review-hit>`.
+
+3. **Changed-query-miss run (cache_hit_rate=0):** Request kodiai review on a
+   **different PR** by a **different author** so the Search query differs and misses
+   the cache. Record the delivery ID as `<review-changed>`.
+
+4. Verify all three identities have `rate_limit_events` rows before proceeding:
+
+```sql
+SELECT delivery_id, event_type, cache_hit_rate
+FROM rate_limit_events
+WHERE delivery_id IN ('<review-prime>', '<review-hit>', '<review-changed>')
+ORDER BY created_at ASC;
+```
+
+Expected sequence: `0 -> 1 -> 0`.
+
+### Degraded Run Trigger Procedure
+
+1. Use the degraded-review trigger script to exhaust the 30/min Search API rate limit:
+
+```sh
+bun run scripts/phase73-trigger-degraded-review.ts
+```
+
+2. While rate-limited, request a kodiai review. The review runs under degradation
+   (`degradation_path != "none"`). Record the `X-GitHub-Delivery` as the degraded
+   identity.
+
+3. Verify the row exists before feeding it to the verifier:
+
+```sql
+SELECT delivery_id, event_type, degradation_path
+FROM rate_limit_events
+WHERE delivery_id = '<degraded-delivery>'
+  AND LOWER(COALESCE(degradation_path, 'none')) <> 'none';
+```
+
+Expected: exactly one row with a non-`none` degradation path.
+
+### Updated Verifier Command (no --mention flags)
+
+```sh
+bun run scripts/phase75-live-ops-verification-closure.ts \
+  --review <review-prime> --review <review-hit> --review <review-changed> \
+  --review-accepted <review-prime> --review-accepted <review-hit> --review-accepted <review-changed> \
+  --degraded <delivery-id>:<event-type> \
+  --failopen <delivery-id>:<event-type>
+```
 
 ## Phase 75 OPS Closure SQL Checks
 
@@ -187,7 +250,6 @@ Required identity sets:
 - Review lane (`--review`): `<review-prime>`, `<review-hit>`, `<review-changed>`
 - Accepted review lane (`--review-accepted`): same identities as review lane, from
   accepted `review_requested` logs
-- Mention lane (`--mention`): `<mention-prime>`, `<mention-hit>`, `<mention-changed>`
 - Degraded (`--degraded`): one or more `<delivery-id>:<event-type>` identities
 
 #### Gate query A: lane row presence + same-run window
@@ -197,10 +259,7 @@ WITH lane_inputs(lane, expected_event_type, delivery_id) AS (
   VALUES
     ('review_prime', 'pull_request.review_requested', '<review-prime>'),
     ('review_hit', 'pull_request.review_requested', '<review-hit>'),
-    ('review_changed', 'pull_request.review_requested', '<review-changed>'),
-    ('mention_prime', 'issue_comment.created', '<mention-prime>'),
-    ('mention_hit', 'issue_comment.created', '<mention-hit>'),
-    ('mention_changed', 'issue_comment.created', '<mention-changed>')
+    ('review_changed', 'pull_request.review_requested', '<review-changed>')
 )
 SELECT
   li.lane,
@@ -225,8 +284,7 @@ Pass condition:
 - Every lane row returns `row_count = 1` and `gate_result = PASS`.
 
 Block conditions:
-- Any lane with `row_count = 0` blocks `OPS75-CACHE-01` (review lanes) or
-  `OPS75-CACHE-02` (mention lanes).
+- Any lane with `row_count = 0` blocks `OPS75-CACHE-01`.
 - Any lane with `row_count > 1` blocks `OPS75-ONCE-02` (duplicate identity risk).
 
 #### Gate query B: degraded exactly-once candidate check
@@ -244,7 +302,7 @@ SELECT
     ELSE 'BLOCKED: duplicate degraded telemetry rows'
   END AS gate_result
 FROM rate_limit_events
-WHERE delivery_id IN ('<degraded-id-1>', '<degraded-id-2>', '<degraded-id-3>')
+WHERE delivery_id IN ('<degraded-id-1>')
   AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
 GROUP BY delivery_id, event_type
 ORDER BY delivery_id, event_type;
@@ -265,10 +323,7 @@ WITH lane_inputs(check_id, lane, expected_event_type, delivery_id) AS (
   VALUES
     ('OPS75-CACHE-01', 'review_prime', 'pull_request.review_requested', '<review-prime>'),
     ('OPS75-CACHE-01', 'review_hit', 'pull_request.review_requested', '<review-hit>'),
-    ('OPS75-CACHE-01', 'review_changed', 'pull_request.review_requested', '<review-changed>'),
-    ('OPS75-CACHE-02', 'mention_prime', 'issue_comment.created', '<mention-prime>'),
-    ('OPS75-CACHE-02', 'mention_hit', 'issue_comment.created', '<mention-hit>'),
-    ('OPS75-CACHE-02', 'mention_changed', 'issue_comment.created', '<mention-changed>')
+    ('OPS75-CACHE-01', 'review_changed', 'pull_request.review_requested', '<review-changed>')
 )
 SELECT
   li.check_id,
@@ -299,13 +354,11 @@ From application logs for the same matrix capture window, confirm:
 - `gate=review_requested_reviewer`
 - `gateResult=accepted`
 - `requestedReviewer` is `kodiai` / `kodiai[bot]` OR accepted rereview team
-- Mention lane identities are explicit `@kodiai` executions (`event_type=issue_comment.created`)
-  and are captured from that same run window as the review lane identities.
 
 Any `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request` means
 that identity is invalid for closure evidence.
 
-### OPS75-CACHE-01 / OPS75-CACHE-02: Cache matrix sequence per surface
+### OPS75-CACHE-01: Cache matrix sequence (review_requested only)
 
 ```sql
 SELECT
@@ -318,17 +371,13 @@ FROM rate_limit_events
 WHERE delivery_id IN (
   '<review-prime>',
   '<review-hit>',
-  '<review-changed>',
-  '<mention-prime>',
-  '<mention-hit>',
-  '<mention-changed>'
+  '<review-changed>'
 )
 ORDER BY created_at ASC;
 ```
 
 Expected:
 - Review lane (`pull_request.review_requested`): cache sequence `0 -> 1 -> 0`
-- Mention lane (`issue_comment.created`): cache sequence `0 -> 1 -> 0`
 
 ### OPS75-ONCE-01 / OPS75-ONCE-02: Exactly-once degraded telemetry identity
 
@@ -338,7 +387,7 @@ SELECT
   event_type,
   COUNT(*) AS cnt
 FROM rate_limit_events
-WHERE delivery_id IN ('<degraded-id-1>', '<degraded-id-2>', '<degraded-id-3>')
+WHERE delivery_id IN ('<degraded-id-1>')
   AND LOWER(COALESCE(degradation_path, 'none')) <> 'none'
 GROUP BY delivery_id, event_type
 ORDER BY delivery_id, event_type;
