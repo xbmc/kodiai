@@ -85,6 +85,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 75 P06 | 2 min | 2 tasks | 2 files |
 | Phase 75 P07 | 4min | 2 tasks | 3 files |
 | Phase 75 P08 | 1min | 1 tasks | 1 files |
+| Phase 76 P01 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -217,6 +218,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 75]: OPS75-CACHE-02 removed because mention handler has no Search API cache codepath and never emits rate_limit_events rows
 - [Phase 75]: Verifier matrix simplified to review_requested surface only with 3 steps instead of 6
 - [Phase 75]: Replace stale historical run sections with a runbook pointer instead of updating mention-lane data in place
+- [Phase 76]: Success envelope mirrors failure envelope structure with status: success plus pr_url and issue_linkback_url fields
 
 ### Key Constraints (Carry-Forward)
 
@@ -247,7 +249,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T08:06:59.950Z
-**Stopped At:** Completed 75-08-PLAN.md
+**Last session:** 2026-02-19T19:07:46.705Z
+**Stopped At:** Completed 76-01-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-discuss-phase 81`
