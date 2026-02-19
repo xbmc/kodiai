@@ -16,6 +16,7 @@
 - ✅ **v0.12 Operator Reliability & Retrieval Quality** — Phases 66-71 (shipped 2026-02-17)
 - ✅ **v0.13 Reliability Follow-Through** — Phases 72-76 (force-closed 2026-02-18; accepted debt)
 - 🚧 **v0.14 Slack Integration** — Phases 77-80 (in progress)
+- 🧭 **v0.15 Slack Write Workflows** — Phase 81 (planned)
 
 ## Phases
 
@@ -123,7 +124,16 @@ See `.planning/milestones/v0.13-ROADMAP.md` for full phase details, accepted gap
 - [x] **Phase 77: Slack Ingress & Safety Rails** - Add Slack events endpoint, request verification, and channel/thread gating. (completed 2026-02-18)
 - [x] **Phase 78: Slack Thread Session Semantics** - Implement mention bootstrap + in-thread follow-up behavior with deterministic session rules. (completed 2026-02-18)
 - [x] **Phase 79: Slack Read-Only Assistant Routing** - Route Slack prompts through read-only assistant flow with default `xbmc/xbmc` context and ambiguity handling. (completed 2026-02-18)
-- [ ] **Phase 80: Slack Operator Hardening** - Add runbooks, smoke tests, and regression checks for Slack v1 behavior.
+- [x] **Phase 80: Slack Operator Hardening** - Add runbooks, smoke tests, and regression checks for Slack v1 behavior. (completed 2026-02-18)
+
+</details>
+
+<details>
+<summary>v0.15 Slack Write Workflows (Phase 81) -- PLANNED</summary>
+
+**Milestone Goal:** Enable Slack-triggered repository write workflows (issue/PR comments and PR creation) with explicit intent handling and existing write-policy guardrails.
+
+- [ ] **Phase 81: Slack Write Mode Enablement** - Add Slack write-intent routing and safe PR-producing execution path with policy/permission gates.
 
 </details>
 
@@ -322,9 +332,24 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 80-01-PLAN.md — Add deterministic Slack v1 smoke verifier and operator smoke procedure
-- [ ] 80-02-PLAN.md — Add Slack v1 contract regression suite and deterministic regression gate
-- [ ] 80-03-PLAN.md — Publish Slack integration runbook and wire smoke/regression command aliases
+- [x] 80-01-PLAN.md — Add deterministic Slack v1 smoke verifier and operator smoke procedure
+- [x] 80-02-PLAN.md — Add Slack v1 contract regression suite and deterministic regression gate
+- [x] 80-03-PLAN.md — Publish Slack integration runbook and wire smoke/regression command aliases
+
+### Phase 81: Slack Write Mode Enablement
+**Goal**: Allow Slack-triggered write workflows to publish issue/PR comments and create PRs while preserving deterministic safety and policy enforcement
+**Depends on**: Phase 80 (Slack routing + operator hardening complete)
+**Requirements**: [To be defined during discuss/plan]
+**Success Criteria** (what must be TRUE):
+  1. Slack messages with explicit write intent trigger write-capable execution instead of read-only-only routing
+  2. Slack write flows enforce existing write-policy, allowPaths, permission checks, and actionable refusal guidance
+  3. Successful Slack write runs can create and report PR output deterministically in-thread with clear status
+**Plans**: 3 plans
+
+Plans:
+- [ ] 81-01-PLAN.md — Add deterministic Slack write-intent routing with medium-confidence conversational detection and ambiguous quick-action fallback
+- [ ] 81-02-PLAN.md — Implement Slack write execution + PR/comment publish path with policy/permission enforcement
+- [ ] 81-03-PLAN.md — Add high-impact confirmation flow, write response contract UX, and Phase 81 operator verification gates
 
 ## Progress
 
@@ -366,4 +391,4 @@ Plans:
 
 ---
 
-*Roadmap updated: 2026-02-18 -- Phase 79 executed and verified; ready for Phase 80 planning*
+*Roadmap updated: 2026-02-18 -- Phase 80 executed; added planned Phase 81 for Slack write workflows*
