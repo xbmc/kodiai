@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-18)
 
 **Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Plan and execute Phase 80 Slack operator hardening
+**Current focus:** Discuss and plan Phase 81 Slack write mode enablement
 
 ## Current Position
 
-**Milestone:** v0.14 Slack Integration (in progress)
-**Phase:** 80 - Slack Operator Hardening (in progress)
-**Current Plan:** 3
-**Total Plans in Phase:** 3
+**Milestone:** v0.15 Slack Write Workflows (planned)
+**Phase:** 81 - Slack Write Mode Enablement (planned)
+**Current Plan:** 0
+**Total Plans in Phase:** 0
 **Status:** Phase complete — ready for verification
-**Last Activity:** 2026-02-18
+**Last Activity:** 2026-02-19
 
 **Progress:** [██████████] 100%
 
@@ -78,6 +78,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 80 P01 | 2m4s | 2 tasks | 3 files |
 | Phase 80 P02 | 1m55s | 2 tasks | 3 files |
 | Phase 80 P03 | 1m31s | 2 tasks | 3 files |
+| Phase 81 P01 | 4 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,10 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 80]: Use SLK80-REG-* check IDs in both suite names and gate output so failures are directly actionable in CI/operator logs.
 - [Phase 80]: Slack deployment and incident response now use a dedicated runbook with mandatory smoke and regression reruns after deploys and fixes.
 - [Phase 80]: Phase 80 Slack verifiers are exposed as package aliases so operators run stable commands without direct script path knowledge.
+- [Phase 81]: Slack is allowed to run write workflows (issue/PR comments and PR creation) when intent is clear and policy/permission gates pass.
+- [Phase 81]: Use explicit prefixes plus deterministic score>=3 heuristics to route medium-confidence conversational Slack write intent.
+- [Phase 81]: Flag destructive, migration, security, and broad blast-radius requests as high-impact requiring confirmation_required with 15-minute timeout.
+- [Phase 81]: Treat owner/repo matches followed by '/' as path-like tokens to avoid repo override misclassification.
 
 ### Key Constraints (Carry-Forward)
 
@@ -225,7 +230,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-18T18:45:07.270Z
-**Stopped At:** Completed 80-03-PLAN.md
+**Last session:** 2026-02-19T00:33:11.831Z
+**Stopped At:** Completed 81-01-PLAN.md
 **Resume File:** None
-**Next action:** Run `/gsd-plan-phase 80`
+**Next action:** Run `/gsd-discuss-phase 81`
