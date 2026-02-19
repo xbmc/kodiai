@@ -17,6 +17,7 @@
 - ✅ **v0.13 Reliability Follow-Through** — Phases 72-76 (force-closed 2026-02-18; accepted debt)
 - ✅ **v0.14 Slack Integration** — Phases 77-80 (shipped 2026-02-19)
 - ✅ **v0.15 Slack Write Workflows** — Phase 81 (shipped 2026-02-19)
+- [ ] **v0.16 Review Coverage & Slack UX** — Phases 82-83 (in progress)
 
 ## Phases
 
@@ -125,6 +126,36 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 
 </details>
 
+### v0.16 Review Coverage & Slack UX
+
+**Milestone Goal:** Expand review coverage to draft PRs and make Slack responses concise and conversational.
+
+- [ ] **Phase 82: Draft PR Review Coverage** - Kodiai reviews draft PRs with draft-aware visual indicators
+- [ ] **Phase 83: Slack Response Conciseness** - Slack responses are direct, concise, and conversational
+
+## Phase Details
+
+### Phase 82: Draft PR Review Coverage
+**Goal**: Draft PRs receive the same review treatment as non-draft PRs, with clear visual acknowledgment of draft status
+**Depends on**: Phase 81
+**Requirements**: REV-01, REV-02
+**Success Criteria** (what must be TRUE):
+  1. When a draft PR is opened, Kodiai posts a review (no skip/ignore behavior)
+  2. The review output for a draft PR contains a visible indicator that the PR is in draft state
+  3. Non-draft PR review behavior is unchanged (no regressions)
+**Plans**: TBD
+
+### Phase 83: Slack Response Conciseness
+**Goal**: Slack responses read like chat messages from a knowledgeable colleague, not like documentation pages
+**Depends on**: Phase 81
+**Requirements**: SLK-07, SLK-08, SLK-09, SLK-10
+**Success Criteria** (what must be TRUE):
+  1. Slack responses begin with the answer directly -- no leading phrases like "Here's what I found" or "Based on the codebase"
+  2. Slack responses never include a Sources or References section at the end
+  3. Simple factual questions receive 1-3 sentence answers without headers or bullet lists
+  4. Complex questions receive proportionally longer answers but still use minimal formatting (no unnecessary headers/structure)
+**Plans**: TBD
+
 ## Progress
 
 **Total shipped:** 15 milestones, 81 phases, 198 plans
@@ -146,7 +177,8 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 | 72-76 | v0.13 | 6/6 | Complete | 2026-02-18 |
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
-
+| 82 | v0.16 | 0/TBD | Not started | - |
+| 83 | v0.16 | 0/TBD | Not started | - |
 ---
 
-*Roadmap updated: 2026-02-19 -- v0.14 and v0.15 milestones shipped*
+*Roadmap updated: 2026-02-19 -- v0.16 roadmap created*

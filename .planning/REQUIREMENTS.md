@@ -35,18 +35,18 @@ None deferred.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REV-01 | TBD | Pending |
-| REV-02 | TBD | Pending |
-| SLK-07 | TBD | Pending |
-| SLK-08 | TBD | Pending |
-| SLK-09 | TBD | Pending |
-| SLK-10 | TBD | Pending |
+| REV-01 | Phase 82 | Pending |
+| REV-02 | Phase 82 | Pending |
+| SLK-07 | Phase 83 | Pending |
+| SLK-08 | Phase 83 | Pending |
+| SLK-09 | Phase 83 | Pending |
+| SLK-10 | Phase 83 | Pending |
 
 **Coverage:**
 - v0.16 requirements: 6 total
-- Mapped to phases: 0
-- Unmapped: 6 (pending roadmap)
+- Mapped to phases: 6
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-19*
-*Last updated: 2026-02-19 after initial definition*
+*Last updated: 2026-02-19 after roadmap creation*
