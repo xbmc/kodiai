@@ -210,6 +210,8 @@ export function createMentionHandler(deps: {
       normalized = normalized
         .replace(/^(?:>+\s*)+/, "")
         .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
+        .replace(/^\/[a-z0-9._:-]+(?:\s+|$)/i, "")
+        .replace(/^https?:\/\/\S+(?:\s+|$)/i, "")
         .replace(/^[`'"([{]+/, "")
         .replace(/^[,.;:!?\-\s]+/, "")
         .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/i, "")
