@@ -34,11 +34,20 @@ Before deployment, confirm:
 These checks are release gates after deploy and after any Slack incident fix:
 
 ```sh
-bun run verify:phase80:smoke
-bun run verify:phase80:regression
+bun run verify:phase81:smoke
+bun run verify:phase81:regression
 ```
 
-Expected result: all `SLK80-SMOKE-*` and `SLK80-REG-*` checks pass with final verdict `PASS`.
+Expected result: all `SLK81-SMOKE-*` and `SLK81-REG-*` checks pass with final verdict `PASS`.
+
+### Phase 81 Verification Matrix
+
+Map operator commands to machine-checkable IDs and immediate triage actions:
+
+| Command | Check IDs | What it verifies | First troubleshooting step |
+| --- | --- | --- | --- |
+| `bun run verify:phase81:smoke` | `SLK81-SMOKE-01`..`SLK81-SMOKE-04` | Write-intent routing, ambiguous fallback quick actions, high-impact confirmation gating, and success/refusal output shape | Re-run failing scenario in `src/slack/assistant-handler.test.ts` and compare message contract text |
+| `bun run verify:phase81:regression` | `SLK81-REG-INTENT-01`, `SLK81-REG-HANDLER-01`, `SLK81-REG-CONFIRM-01` | Pinned local suites for write-intent scoring, write-mode handler contracts, and confirmation store semantics | Run the failing suite directly from the gate output and inspect first failing assertion |
 
 ### Rollback Notes
 
@@ -157,14 +166,33 @@ Code pointers:
 - `src/slack/repo-context.ts` (repo parsing and ambiguity detection)
 - `src/slack/assistant-handler.ts` (clarification-required publish path)
 
+### 6) Phase 81 write verification gate failures
+
+Symptom:
+
+- `verify:phase81:smoke` or `verify:phase81:regression` exits non-zero.
+
+Checks:
+
+- Capture the exact failing check IDs from CLI output (`SLK81-SMOKE-*` / `SLK81-REG-*`).
+- Run the pinned suite or deterministic scenario named by the failing ID.
+- Confirm no recent changes altered confirmation wording, quick-action commands, or final write output shape.
+
+Code pointers:
+
+- `scripts/phase81-slack-write-smoke.ts` (deterministic scenario checks)
+- `scripts/phase81-slack-write-regression-gate.ts` (pinned suite mapping)
+- `src/slack/assistant-handler.ts` (write routing and publish contracts)
+- `src/slack/write-intent.ts` (intent scoring and confirmation-required signals)
+
 ## Operator Command Quick Reference
 
 ```sh
-# Slack v1 contract smoke
-bun run verify:phase80:smoke
+# Slack write-mode smoke
+bun run verify:phase81:smoke
 
-# Slack regression gate (release blocking)
-bun run verify:phase80:regression
+# Slack write-mode regression gate (release blocking)
+bun run verify:phase81:regression
 ```
 
 Always capture full CLI output and failing check IDs when escalating incidents.
