@@ -71,7 +71,14 @@ v0.15 ships a fully operational GitHub App + Slack assistant that:
 
 ## Next Milestone Goals
 
-No next milestone planned. Use `/gsd:new-milestone` to define.
+**v0.16 Review Coverage & Slack UX**
+
+**Goal:** Expand review coverage to draft PRs and make Slack responses concise and conversational.
+
+**Target features:**
+- Review all PRs including drafts (remove draft skip logic)
+- Slack responses: direct, concise, chat-native tone — no preamble, no unnecessary structure, no sources in chat
+- Configurable draft review behavior (opt-in/opt-out via `.kodiai.yml`)
 
 ## Requirements
 

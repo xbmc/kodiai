@@ -5,16 +5,16 @@
 See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.16 Review Coverage & Slack UX
 
 ## Current Position
 
-**Milestone:** v0.15 Slack Write Workflows (shipped 2026-02-19)
-**Phase:** All phases through 81 complete
-**Status:** Milestone complete — ready for `/gsd:new-milestone`
+**Milestone:** v0.16 Review Coverage & Slack UX
+**Phase:** Not started (defining requirements)
+**Status:** Defining requirements
 **Last Activity:** 2026-02-19
 
-**Progress:** [##########] 100%
+**Progress:** [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
