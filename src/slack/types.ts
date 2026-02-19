@@ -12,8 +12,8 @@ function getString(record: SlackRecord, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export interface SlackMessageEvent {
-  type: "message";
+export interface SlackAddressableEvent {
+  type: "message" | "app_mention";
   subtype?: string;
   channel?: string;
   channel_type?: string;
@@ -30,7 +30,7 @@ export interface SlackGenericEvent {
 
 export interface SlackEventCallback {
   type: "event_callback";
-  event: SlackMessageEvent | SlackGenericEvent;
+  event: SlackAddressableEvent | SlackGenericEvent;
 }
 
 export interface SlackUrlVerificationPayload {
@@ -38,9 +38,9 @@ export interface SlackUrlVerificationPayload {
   challenge: string;
 }
 
-function parseMessageEvent(event: SlackRecord): SlackMessageEvent {
+function parseAddressableEvent(event: SlackRecord, type: "message" | "app_mention"): SlackAddressableEvent {
   return {
-    type: "message",
+    type,
     subtype: getString(event, "subtype"),
     channel: getString(event, "channel"),
     channel_type: getString(event, "channel_type"),
@@ -81,10 +81,10 @@ export function toSlackEventCallback(payload: unknown): SlackEventCallback | nul
   }
 
   const eventType = getString(eventRecord, "type");
-  if (eventType === "message") {
+  if (eventType === "message" || eventType === "app_mention") {
     return {
       type: "event_callback",
-      event: parseMessageEvent(eventRecord),
+      event: parseAddressableEvent(eventRecord, eventType),
     };
   }
 

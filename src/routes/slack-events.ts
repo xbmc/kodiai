@@ -19,7 +19,25 @@ interface SlackEventsRouteDeps {
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const { config, logger, onAllowedBootstrap } = deps;
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
+  const recentAddressed = new Map<string, number>();
+  const DUPLICATE_WINDOW_MS = 5000;
   const app = new Hono();
+
+  function isDuplicateAddressedEvent(addressed: SlackV1BootstrapPayload): boolean {
+    const now = Date.now();
+    const key = `${addressed.channel}:${addressed.threadTs}:${addressed.user}:${addressed.text.trim().toLowerCase()}`;
+    const previous = recentAddressed.get(key);
+
+    recentAddressed.set(key, now);
+
+    for (const [entryKey, ts] of recentAddressed) {
+      if (now - ts > DUPLICATE_WINDOW_MS) {
+        recentAddressed.delete(entryKey);
+      }
+    }
+
+    return typeof previous === "number" && now - previous <= DUPLICATE_WINDOW_MS;
+  }
 
   app.post("/events", async (c) => {
     const timestampHeader = c.req.header("x-slack-request-timestamp");
@@ -74,15 +92,32 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       Promise.resolve().then(async () => {
         const addressed = decision.bootstrap;
         if (decision.reason === "mention_only_bootstrap") {
-          threadSessionStore.markThreadStarted({
+          const started = threadSessionStore.markThreadStarted({
             channel: addressed.channel,
             threadTs: addressed.threadTs,
           });
+
+          if (!started) {
+            logger.info(
+              { ...addressed, reason: "duplicate_bootstrap" },
+              "Slack bootstrap ignored as duplicate thread starter",
+            );
+            return;
+          }
         }
+
+        if (isDuplicateAddressedEvent(addressed)) {
+          logger.info(
+            { ...addressed, reason: "duplicate_addressed_event" },
+            "Slack addressed event ignored as duplicate",
+          );
+          return;
+        }
+
         await onAllowedBootstrap?.(addressed);
         logger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
       }).catch((error) => {
-        logger.error({ error }, "Slack addressed event async processing failed");
+        logger.error({ err: error }, "Slack addressed event async processing failed");
       });
 
       return c.json({ ok: true });

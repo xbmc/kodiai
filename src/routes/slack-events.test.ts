@@ -29,6 +29,7 @@ function createTestConfig(): AppConfig {
     slackBotToken: "xoxb-test-token",
     slackBotUserId: "U123BOT",
     slackKodiaiChannelId: "C123KODIAI",
+    slackAssistantModel: "claude-3-5-haiku-latest",
     port: 3000,
     logLevel: "info",
     botAllowList: [],
@@ -178,11 +179,156 @@ describe("createSlackEventRoutes", () => {
       {
         channel: "C123KODIAI",
         threadTs: "1700000000.000777",
+        messageTs: "1700000000.000777",
         user: "U777USER",
         text: "<@U123BOT> summarize this thread",
         replyTarget: "thread-only",
       },
     ]);
+  });
+
+  test("acknowledges verified app_mention bootstrap and forwards normalized thread payload", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const payload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "app_mention",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.000778",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const response = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(payload, timestamp, signSlackRequest(timestamp, payload)),
+      body: payload,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    await Promise.resolve();
+    expect(processed).toEqual([
+      {
+        channel: "C123KODIAI",
+        threadTs: "1700000000.000778",
+        messageTs: "1700000000.000778",
+        user: "U777USER",
+        text: "<@U123BOT> summarize this thread",
+        replyTarget: "thread-only",
+      },
+    ]);
+  });
+
+  test("does not forward duplicate bootstrap events for same thread starter", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const appMentionPayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "app_mention",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.001000",
+        user: "U777USER",
+        text: "<@U123BOT> ping",
+      },
+    });
+    const messagePayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.001000",
+        user: "U777USER",
+        text: "<@U123BOT> ping",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const first = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(appMentionPayload, timestamp, signSlackRequest(timestamp, appMentionPayload)),
+      body: appMentionPayload,
+    });
+
+    const second = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(messagePayload, timestamp, signSlackRequest(timestamp, messagePayload)),
+      body: messagePayload,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await Promise.resolve();
+    expect(processed).toHaveLength(1);
+    expect(processed[0]).toEqual({
+      channel: "C123KODIAI",
+      threadTs: "1700000000.001000",
+      messageTs: "1700000000.001000",
+      user: "U777USER",
+      text: "<@U123BOT> ping",
+      replyTarget: "thread-only",
+    });
+  });
+
+  test("does not forward duplicate addressed events when follow-up mirrors bootstrap text", async () => {
+    const processed: SlackV1BootstrapPayload[] = [];
+    const app = createApp((payload) => processed.push(payload));
+    const bootstrapPayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "app_mention",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        ts: "1700000000.001100",
+        user: "U777USER",
+        text: "<@U123BOT> hello",
+      },
+    });
+    const duplicateFollowUpPayload = JSON.stringify({
+      type: "event_callback",
+      event: {
+        type: "message",
+        channel: "C123KODIAI",
+        channel_type: "channel",
+        thread_ts: "1700000000.001100",
+        ts: "1700000000.001101",
+        user: "U777USER",
+        text: "<@U123BOT> hello",
+      },
+    });
+    const timestamp = String(Math.floor(Date.now() / 1000));
+
+    const first = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(bootstrapPayload, timestamp, signSlackRequest(timestamp, bootstrapPayload)),
+      body: bootstrapPayload,
+    });
+
+    const second = await app.request("http://localhost/webhooks/slack/events", {
+      method: "POST",
+      headers: createHeaders(duplicateFollowUpPayload, timestamp, signSlackRequest(timestamp, duplicateFollowUpPayload)),
+      body: duplicateFollowUpPayload,
+    });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    await Promise.resolve();
+    expect(processed).toHaveLength(1);
+    expect(processed[0]).toEqual({
+      channel: "C123KODIAI",
+      threadTs: "1700000000.001100",
+      messageTs: "1700000000.001100",
+      user: "U777USER",
+      text: "<@U123BOT> hello",
+      replyTarget: "thread-only",
+    });
   });
 
   test("forwards in-thread follow-up after bootstrap starts thread session", async () => {
@@ -234,6 +380,7 @@ describe("createSlackEventRoutes", () => {
       {
         channel: "C123KODIAI",
         threadTs: "1700000000.000777",
+        messageTs: "1700000000.000777",
         user: "U777USER",
         text: "<@U123BOT> summarize this thread",
         replyTarget: "thread-only",
@@ -241,6 +388,7 @@ describe("createSlackEventRoutes", () => {
       {
         channel: "C123KODIAI",
         threadTs: "1700000000.000777",
+        messageTs: "1700000000.000778",
         user: "U777USER",
         text: "follow-up without mention",
         replyTarget: "thread-only",

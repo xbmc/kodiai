@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { evaluateSlackV1Rails } from "./safety-rails.ts";
-import type { SlackEventCallback, SlackMessageEvent } from "./types.ts";
+import type { SlackAddressableEvent, SlackEventCallback } from "./types.ts";
 
 const SLACK_BOT_USER_ID = "U123BOT";
 const SLACK_KODIAI_CHANNEL_ID = "C123KODIAI";
 
-function messageEventCallback(overrides: Partial<SlackMessageEvent> = {}): SlackEventCallback {
+function messageEventCallback(overrides: Partial<SlackAddressableEvent> = {}): SlackEventCallback {
   return {
     type: "event_callback",
     event: {
@@ -13,6 +13,21 @@ function messageEventCallback(overrides: Partial<SlackMessageEvent> = {}): Slack
       channel: SLACK_KODIAI_CHANNEL_ID,
       channel_type: "channel",
       ts: "1700000000.000001",
+      user: "U123USER",
+      text: "<@U123BOT> help me with this",
+      ...overrides,
+    },
+  };
+}
+
+function appMentionEventCallback(overrides: Partial<SlackAddressableEvent> = {}): SlackEventCallback {
+  return {
+    type: "event_callback",
+    event: {
+      type: "app_mention",
+      channel: SLACK_KODIAI_CHANNEL_ID,
+      channel_type: "channel",
+      ts: "1700000000.000002",
       user: "U123USER",
       text: "<@U123BOT> help me with this",
       ...overrides,
@@ -34,6 +49,28 @@ describe("evaluateSlackV1Rails", () => {
       bootstrap: {
         channel: SLACK_KODIAI_CHANNEL_ID,
         threadTs: "1700000000.000001",
+        messageTs: "1700000000.000001",
+        user: "U123USER",
+        text: "<@U123BOT> help me with this",
+        replyTarget: "thread-only",
+      },
+    });
+  });
+
+  test("allows app_mention bootstrap in #kodiai and returns thread-only target", () => {
+    const decision = evaluateSlackV1Rails({
+      payload: appMentionEventCallback(),
+      slackBotUserId: SLACK_BOT_USER_ID,
+      slackKodiaiChannelId: SLACK_KODIAI_CHANNEL_ID,
+    });
+
+    expect(decision).toEqual({
+      decision: "allow",
+      reason: "mention_only_bootstrap",
+      bootstrap: {
+        channel: SLACK_KODIAI_CHANNEL_ID,
+        threadTs: "1700000000.000002",
+        messageTs: "1700000000.000002",
         user: "U123USER",
         text: "<@U123BOT> help me with this",
         replyTarget: "thread-only",
@@ -123,6 +160,7 @@ describe("evaluateSlackV1Rails", () => {
       bootstrap: {
         channel: SLACK_KODIAI_CHANNEL_ID,
         threadTs: "1700000000.000001",
+        messageTs: "1700000000.000001",
         user: "U123USER",
         text: "follow-up without mention",
         replyTarget: "thread-only",

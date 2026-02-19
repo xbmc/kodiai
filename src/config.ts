@@ -8,6 +8,7 @@ const configSchema = z.object({
   slackBotToken: z.string().min(1, "SLACK_BOT_TOKEN is required"),
   slackBotUserId: z.string().min(1, "SLACK_BOT_USER_ID is required"),
   slackKodiaiChannelId: z.string().min(1, "SLACK_KODIAI_CHANNEL_ID is required"),
+  slackAssistantModel: z.string().default("claude-3-5-haiku-latest"),
   port: z.coerce.number().default(3000),
   logLevel: z.string().default("info"),
   botAllowList: z
@@ -74,6 +75,7 @@ export async function loadConfig(): Promise<AppConfig> {
     slackBotToken: process.env.SLACK_BOT_TOKEN,
     slackBotUserId: process.env.SLACK_BOT_USER_ID,
     slackKodiaiChannelId: process.env.SLACK_KODIAI_CHANNEL_ID,
+    slackAssistantModel: process.env.SLACK_ASSISTANT_MODEL,
     port: process.env.PORT,
     logLevel: process.env.LOG_LEVEL,
     botAllowList: process.env.BOT_ALLOW_LIST,
