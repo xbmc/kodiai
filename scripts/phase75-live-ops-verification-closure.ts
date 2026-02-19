@@ -5,17 +5,15 @@ import { parseArgs } from "node:util";
 
 const DEFAULT_DB_PATH = "./data/kodiai-telemetry.db";
 const REVIEW_EVENT_TYPE_DEFAULT = "pull_request.review_requested";
-const MENTION_EVENT_TYPE_DEFAULT = "issue_comment.created";
 
 const FAILING_CONCLUSIONS = new Set(["error", "failed", "failure", "timeout"]);
 
 export const LOCKED_CACHE_SEQUENCE = ["prime", "hit", "changed-query-miss"] as const;
 
 type CacheOutcome = (typeof LOCKED_CACHE_SEQUENCE)[number];
-type Surface = "review_requested" | "kodiai_mention";
 
 export type MatrixStep = {
-  surface: Surface;
+  surface: "review_requested";
   outcome: CacheOutcome;
   deliveryId: string;
   eventType: string;
@@ -45,9 +43,7 @@ export type ClosureReport = {
 
 type BuildMatrixInput = {
   review: Record<CacheOutcome, string>;
-  mention: Record<CacheOutcome, string>;
   reviewEventType?: string;
-  mentionEventType?: string;
 };
 
 type ExecutionRow = {
@@ -136,47 +132,33 @@ function mapRateRows(rows: RateLimitRow[]): Map<string, RateLimitRow[]> {
 
 export function buildDeterministicMatrix(input: BuildMatrixInput): MatrixStep[] {
   const reviewEventType = input.reviewEventType ?? REVIEW_EVENT_TYPE_DEFAULT;
-  const mentionEventType = input.mentionEventType ?? MENTION_EVENT_TYPE_DEFAULT;
 
-  const review = LOCKED_CACHE_SEQUENCE.map((outcome) => ({
+  return LOCKED_CACHE_SEQUENCE.map((outcome) => ({
     surface: "review_requested" as const,
     outcome,
     deliveryId: input.review[outcome],
     eventType: reviewEventType,
     expectedCacheHitRate: outcome === "hit" ? 1 : 0,
   }));
-
-  const mention = LOCKED_CACHE_SEQUENCE.map((outcome) => ({
-    surface: "kodiai_mention" as const,
-    outcome,
-    deliveryId: input.mention[outcome],
-    eventType: mentionEventType,
-    expectedCacheHitRate: outcome === "hit" ? 1 : 0,
-  }));
-
-  return [...review, ...mention];
 }
 
 export function validateDeterministicMatrix(matrix: MatrixStep[]): void {
-  const expectedPerSurface = [...LOCKED_CACHE_SEQUENCE];
-  const surfaces: Surface[] = ["review_requested", "kodiai_mention"];
+  const expectedSequence = [...LOCKED_CACHE_SEQUENCE];
+  const reviewLane = matrix.filter((step) => step.surface === "review_requested");
+  const observed = reviewLane.map((step) => step.outcome);
 
-  for (const surface of surfaces) {
-    const lane = matrix.filter((step) => step.surface === surface);
-    const observed = lane.map((step) => step.outcome);
-    if (
-      lane.length !== expectedPerSurface.length
-      || observed.some((value, index) => value !== expectedPerSurface[index])
-    ) {
-      throw new Error(
-        `Locked matrix ordering violated for ${surface}. Expected ${expectedPerSurface.join(" -> ")}, got ${observed.join(" -> ")}`,
-      );
-    }
+  if (
+    reviewLane.length !== expectedSequence.length
+    || observed.some((value, index) => value !== expectedSequence[index])
+  ) {
+    throw new Error(
+      `Locked matrix ordering violated for review_requested. Expected ${expectedSequence.join(" -> ")}, got ${observed.join(" -> ")}`,
+    );
+  }
 
-    for (const step of lane) {
-      if (!step.deliveryId.trim()) {
-        throw new Error(`Matrix lane ${surface}:${step.outcome} is missing identity input`);
-      }
+  for (const step of reviewLane) {
+    if (!step.deliveryId.trim()) {
+      throw new Error(`Matrix lane review_requested:${step.outcome} is missing identity input`);
     }
   }
 }
@@ -255,49 +237,35 @@ export function evaluateClosureVerification(
     }
   }
 
-  const cacheFailures: string[] = [];
-  const checkIdsBySurface = new Map<Surface, string>([
-    ["review_requested", "OPS75-CACHE-01"],
-    ["kodiai_mention", "OPS75-CACHE-02"],
-  ]);
-
-  const cacheChecks: VerificationCheck[] = [];
-  for (const surface of ["review_requested", "kodiai_mention"] as const) {
-    const lane = matrix.filter((step) => step.surface === surface);
-    const observedSequence: number[] = [];
-    const laneFailures: string[] = [];
-    for (const step of lane) {
-      const key = makeIdentityKey(step.deliveryId, step.eventType);
-      const rows = rateByIdentity.get(key) ?? [];
-      if (rows.length !== 1) {
-        laneFailures.push(`${key} expected=1-row observed=${rows.length}`);
-        continue;
-      }
-      const row = rows[0];
-      if (!row) {
-        laneFailures.push(`${key} expected=row observed=missing`);
-        continue;
-      }
-      observedSequence.push(row.cache_hit_rate);
-      if (row.cache_hit_rate !== step.expectedCacheHitRate) {
-        laneFailures.push(`${key} expected=${step.expectedCacheHitRate} observed=${row.cache_hit_rate}`);
-      }
+  const cacheObservedSequence: number[] = [];
+  const cacheLaneFailures: string[] = [];
+  for (const step of reviewLane) {
+    const key = makeIdentityKey(step.deliveryId, step.eventType);
+    const rows = rateByIdentity.get(key) ?? [];
+    if (rows.length !== 1) {
+      cacheLaneFailures.push(`${key} expected=1-row observed=${rows.length}`);
+      continue;
     }
-
-    if (laneFailures.length > 0) {
-      cacheFailures.push(...laneFailures);
+    const row = rows[0];
+    if (!row) {
+      cacheLaneFailures.push(`${key} expected=row observed=missing`);
+      continue;
     }
-
-    cacheChecks.push({
-      id: checkIdsBySurface.get(surface) ?? "OPS75-CACHE-XX",
-      title: `${surface} cache telemetry follows prime -> hit -> changed-query miss`,
-      passed: laneFailures.length === 0,
-      details:
-        laneFailures.length === 0
-          ? `Observed cache_hit_rate sequence ${observedSequence.join(" -> ")} for ${surface} deterministic identities.`
-          : laneFailures.join("; "),
-    });
+    cacheObservedSequence.push(row.cache_hit_rate);
+    if (row.cache_hit_rate !== step.expectedCacheHitRate) {
+      cacheLaneFailures.push(`${key} expected=${step.expectedCacheHitRate} observed=${row.cache_hit_rate}`);
+    }
   }
+
+  const cacheCheck: VerificationCheck = {
+    id: "OPS75-CACHE-01",
+    title: "review_requested cache telemetry follows prime -> hit -> changed-query miss",
+    passed: cacheLaneFailures.length === 0,
+    details:
+      cacheLaneFailures.length === 0
+        ? `Observed cache_hit_rate sequence ${cacheObservedSequence.join(" -> ")} for review_requested deterministic identities.`
+        : cacheLaneFailures.join("; "),
+  };
 
   const degradedMissingOrWrong: string[] = [];
   for (const identity of degradedIdentities) {
@@ -352,7 +320,7 @@ export function evaluateClosureVerification(
           ? "Accepted review_requested identities match the review lane and have non-failing execution conclusions."
           : [...preflightAlignmentFailures, ...preflightExecutionFailures].join("; "),
     },
-    ...cacheChecks,
+    cacheCheck,
     {
       id: "OPS75-ONCE-01",
       title: "Each degraded execution identity persists exactly one degraded telemetry event",
@@ -442,34 +410,35 @@ function printUsage(): void {
   console.log(`Phase 75 live OPS verification closure
 
 Runs deterministic OPS-04/OPS-05 closure checks with machine-checkable check IDs.
+Cache checks are scoped to the review handler which is where Search API cache
+telemetry is emitted. The mention handler does not use Search API cache.
 
 Usage:
   bun scripts/phase75-live-ops-verification-closure.ts \\
     --review <prime> --review <hit> --review <changed> \\
     --review-accepted <prime> --review-accepted <hit> --review-accepted <changed> \\
-    --mention <prime> --mention <hit> --mention <changed> \\
     --degraded <delivery:event-type> [...more] \\
     --failopen <delivery:event-type> [...more] [options]
 
 Required:
   --review <identity>                   repeat exactly 3x in locked order (prime, hit, changed)
   --review-accepted <identity>          repeat exactly 3x for accepted review lane evidence
-  --mention <identity>                  repeat exactly 3x in locked order (prime, hit, changed)
   --degraded <delivery:event-type>      degraded telemetry identities (repeatable)
   --failopen <delivery:event-type>      forced telemetry failure identities (repeatable)
 
 Options:
   --db <path>                           telemetry DB path (default: ./data/kodiai-telemetry.db)
   --review-event-type <value>           default: pull_request.review_requested
-  --mention-event-type <value>          default: issue_comment.created
   --json                                print machine-readable report JSON
   -h, --help                            show this help
 
 Check IDs:
-  OPS75-PREFLIGHT-* accepted review_requested evidence + identity alignment checks
-  OPS75-CACHE-*    deterministic cache prime->hit->miss checks per surface
-  OPS75-ONCE-*     exactly-once degraded telemetry identity checks
-  OPS75-FAILOPEN-* fail-open completion checks under forced telemetry persistence failure`);
+  OPS75-PREFLIGHT-01  accepted review_requested evidence + identity alignment
+  OPS75-CACHE-01      review_requested cache prime->hit->miss sequence
+  OPS75-ONCE-01       exactly-once degraded telemetry per identity
+  OPS75-ONCE-02       no duplicate degraded telemetry rows
+  OPS75-FAILOPEN-01   forced failure identities persist zero telemetry rows
+  OPS75-FAILOPEN-02   forced failure identities complete with non-failing conclusions`);
 }
 
 function main(): void {
@@ -478,12 +447,10 @@ function main(): void {
     options: {
       review: { type: "string", multiple: true },
       "review-accepted": { type: "string", multiple: true },
-      mention: { type: "string", multiple: true },
       degraded: { type: "string", multiple: true },
       failopen: { type: "string", multiple: true },
       db: { type: "string", default: DEFAULT_DB_PATH },
       "review-event-type": { type: "string", default: REVIEW_EVENT_TYPE_DEFAULT },
-      "mention-event-type": { type: "string", default: MENTION_EVENT_TYPE_DEFAULT },
       json: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -498,7 +465,6 @@ function main(): void {
 
   const review = asOutcomeRecord(parsed.values.review ?? [], "--review");
   const acceptedReview = asOutcomeRecord(parsed.values["review-accepted"] ?? [], "--review-accepted");
-  const mention = asOutcomeRecord(parsed.values.mention ?? [], "--mention");
 
   const degradedValues = parsed.values.degraded ?? [];
   const failOpenValues = parsed.values.failopen ?? [];
@@ -519,9 +485,7 @@ function main(): void {
 
   const matrix = buildDeterministicMatrix({
     review,
-    mention,
     reviewEventType: parsed.values["review-event-type"],
-    mentionEventType: parsed.values["mention-event-type"],
   });
   const acceptedReviewIdentities = LOCKED_CACHE_SEQUENCE.map((outcome) => ({
     deliveryId: acceptedReview[outcome],

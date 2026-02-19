@@ -26,11 +26,6 @@ function buildFixtureMatrix() {
       hit: "review-hit",
       "changed-query-miss": "review-changed",
     },
-    mention: {
-      prime: "mention-prime",
-      hit: "mention-hit",
-      "changed-query-miss": "mention-changed",
-    },
   });
 }
 
@@ -61,28 +56,10 @@ function insertMatrixTelemetry(db: Database): void {
     0,
     "degraded",
   );
-  db.query("INSERT INTO rate_limit_events (delivery_id, event_type, cache_hit_rate, degradation_path) VALUES (?, ?, ?, ?)").run(
-    "mention-prime",
-    "issue_comment.created",
-    0,
-    "none",
-  );
-  db.query("INSERT INTO rate_limit_events (delivery_id, event_type, cache_hit_rate, degradation_path) VALUES (?, ?, ?, ?)").run(
-    "mention-hit",
-    "issue_comment.created",
-    1,
-    "none",
-  );
-  db.query("INSERT INTO rate_limit_events (delivery_id, event_type, cache_hit_rate, degradation_path) VALUES (?, ?, ?, ?)").run(
-    "mention-changed",
-    "issue_comment.created",
-    0,
-    "degraded",
-  );
 }
 
 describe("phase75 matrix helpers", () => {
-  test("builds fixed review + mention prime->hit->changed ordering", () => {
+  test("builds fixed review-only prime->hit->changed ordering", () => {
     const matrix = buildFixtureMatrix();
     expect(LOCKED_CACHE_SEQUENCE).toEqual(["prime", "hit", "changed-query-miss"]);
     expect(() => validateDeterministicMatrix(matrix)).not.toThrow();
@@ -90,9 +67,6 @@ describe("phase75 matrix helpers", () => {
       "review_requested:prime",
       "review_requested:hit",
       "review_requested:changed-query-miss",
-      "kodiai_mention:prime",
-      "kodiai_mention:hit",
-      "kodiai_mention:changed-query-miss",
     ]);
   });
 
@@ -108,7 +82,6 @@ describe("phase75 matrix helpers", () => {
 describe("phase75 closure verification", () => {
   const degradedIdentities: Identity[] = [
     { deliveryId: "review-changed", eventType: "pull_request.review_requested" },
-    { deliveryId: "mention-changed", eventType: "issue_comment.created" },
   ];
   const failOpenIdentities: Identity[] = [{ deliveryId: "failopen-review-1", eventType: "pull_request.review_requested" }];
 
@@ -261,10 +234,9 @@ describe("phase75 final verdict rendering", () => {
       failOpenIdentities: [{ deliveryId: "d2", eventType: "pull_request.review_requested" }],
       checks: [
         { id: "OPS75-CACHE-01", title: "cache review", passed: true, details: "ok" },
-        { id: "OPS75-CACHE-02", title: "cache mention", passed: true, details: "ok" },
       ],
     });
 
-    expect(output).toContain("Final verdict: PASS [OPS75-CACHE-01, OPS75-CACHE-02]");
+    expect(output).toContain("Final verdict: PASS [OPS75-CACHE-01]");
   });
 });
