@@ -6,6 +6,10 @@ import {
   type SlackWriteKeyword,
 } from "./write-intent.ts";
 import type { SlackWriteRunnerResult } from "./write-runner.ts";
+import {
+  createInMemoryWriteConfirmationStore,
+  type SlackWriteConfirmationStore,
+} from "./write-confirmation-store.ts";
 
 export interface SlackAssistantAddressedPayload {
   channel: string;
@@ -53,6 +57,7 @@ interface SlackAssistantHandlerDeps {
   publishInThread: (input: { channel: string; threadTs: string; text: string }) => Promise<void> | void;
   addWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   removeWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
+  confirmationStore?: SlackWriteConfirmationStore;
 }
 
 export type SlackAssistantHandleResult =
@@ -124,6 +129,16 @@ function buildConfirmationRequiredReply(keyword: SlackWriteKeyword, request: str
   ].join("\n");
 }
 
+function extractConfirmCommand(text: string): string | undefined {
+  const normalized = text.replace(/<@[^>]+>/g, " ").trim();
+  if (!/^confirm\s*:/i.test(normalized)) {
+    return undefined;
+  }
+
+  const command = normalized.replace(/^confirm\s*:/i, "").trim();
+  return command.length > 0 ? command : undefined;
+}
+
 function buildInstantReply(messageText: string): string | undefined {
   const normalized = messageText
     .toLowerCase()
@@ -167,6 +182,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
     publishInThread,
     addWorkingReaction,
     removeWorkingReaction,
+    confirmationStore = createInMemoryWriteConfirmationStore(),
   } = deps;
 
   return {
@@ -208,6 +224,115 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           };
         }
 
+        const { owner, repo } = splitRepo(resolution.repo);
+
+        const pendingConfirmation = confirmationStore.getPending(payload.channel, payload.threadTs);
+        if (pendingConfirmation) {
+          const confirmCommand = extractConfirmCommand(payload.text);
+
+          if (!confirmCommand) {
+            const reminderText = [
+              "This write request is still pending confirmation.",
+              "Reply with this exact command to continue:",
+              `- confirm: ${pendingConfirmation.command}`,
+            ].join("\n");
+
+            await publishInThread({
+              channel: payload.channel,
+              threadTs: payload.threadTs,
+              text: reminderText,
+            });
+
+            return {
+              outcome: "confirmation_required",
+              question: reminderText,
+              confirmationTimeoutMs: SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
+            };
+          }
+
+          const confirmationResult = confirmationStore.confirm(payload.channel, payload.threadTs, confirmCommand);
+          if (confirmationResult.outcome === "mismatch") {
+            const mismatchText = [
+              "Confirmation command did not match the pending request.",
+              "Reply with this exact command to continue:",
+              `- confirm: ${confirmationResult.pending.command}`,
+            ].join("\n");
+
+            await publishInThread({
+              channel: payload.channel,
+              threadTs: payload.threadTs,
+              text: mismatchText,
+            });
+
+            return {
+              outcome: "confirmation_required",
+              question: mismatchText,
+              confirmationTimeoutMs: SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
+            };
+          }
+
+          if (confirmationResult.outcome === "confirmed") {
+            const pending = confirmationResult.pending;
+
+            if (runWrite && (pending.keyword === "apply" || pending.keyword === "change")) {
+              const writeResult = await runWrite({
+                owner: pending.owner,
+                repo: pending.repo,
+                channel: payload.channel,
+                threadTs: payload.threadTs,
+                messageTs: payload.messageTs,
+                request: pending.request,
+                keyword: pending.keyword,
+                prompt: pending.prompt,
+              });
+
+              const replyText = formatSlackWriteReply(writeResult);
+              await publishInThread({
+                channel: payload.channel,
+                threadTs: payload.threadTs,
+                text: replyText,
+              });
+
+              return {
+                outcome: "answered",
+                route: "write",
+                repo: `${pending.owner}/${pending.repo}`,
+                publishedText: replyText,
+              };
+            }
+
+            const workspace = await createWorkspace({ owner: pending.owner, repo: pending.repo });
+            try {
+              const executionResult = await execute({
+                workspace,
+                owner: pending.owner,
+                repo: pending.repo,
+                writeMode: true,
+                enableInlineTools: true,
+                enableCommentTools: true,
+                eventType: "slack.message",
+                triggerBody: pending.request,
+                prompt: pending.prompt,
+              });
+
+              await publishInThread({
+                channel: payload.channel,
+                threadTs: payload.threadTs,
+                text: executionResult.answerText,
+              });
+
+              return {
+                outcome: "answered",
+                route: "write",
+                repo: `${pending.owner}/${pending.repo}`,
+                publishedText: executionResult.answerText,
+              };
+            } finally {
+              await workspace.cleanup();
+            }
+          }
+        }
+
         const writeIntent = resolveSlackWriteIntent(payload.text);
         if (writeIntent.outcome === "clarification_required") {
           await publishInThread({
@@ -223,6 +348,22 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
         }
 
         if (writeIntent.outcome === "write" && writeIntent.confirmationRequired) {
+          const prompt = buildSlackAssistantPrompt({
+            repoContext: resolution.repo,
+            messageText: writeIntent.request,
+            writeMode: true,
+          });
+          confirmationStore.openPending({
+            channel: payload.channel,
+            threadTs: payload.threadTs,
+            owner,
+            repo,
+            keyword: writeIntent.keyword,
+            request: writeIntent.request,
+            prompt,
+            timeoutMs: writeIntent.confirmationTimeoutMs,
+          });
+
           const confirmationText = buildConfirmationRequiredReply(writeIntent.keyword, writeIntent.request);
           await publishInThread({
             channel: payload.channel,
@@ -236,8 +377,6 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
             confirmationTimeoutMs: writeIntent.confirmationTimeoutMs,
           };
         }
-
-        const { owner, repo } = splitRepo(resolution.repo);
 
         const writeMode = writeIntent.outcome === "write";
         const messageText = writeIntent.outcome === "read_only" ? payload.text : writeIntent.request;

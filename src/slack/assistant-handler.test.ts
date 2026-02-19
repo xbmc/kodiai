@@ -434,6 +434,102 @@ describe("createSlackAssistantHandler", () => {
     ]);
   });
 
+  test("keeps high-impact request pending until exact in-thread confirmation", async () => {
+    const published: string[] = [];
+    let runWriteCalls = 0;
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async () => {
+        runWriteCalls += 1;
+        return {
+          outcome: "success",
+          prUrl: "https://github.com/xbmc/xbmc/pull/400",
+          responseText: "Opened PR: https://github.com/xbmc/xbmc/pull/400",
+          retryCommand: "apply: update src/slack/assistant-handler.ts",
+          mirrors: [],
+        };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    await handler.handle(
+      createAddressedPayload("Please delete old auth files across the entire repo and migrate secrets"),
+    );
+
+    const result = await handler.handle(createAddressedPayload("status?"));
+
+    expect(result).toEqual({
+      outcome: "confirmation_required",
+      question:
+        "This write request is still pending confirmation.\n" +
+        "Reply with this exact command to continue:\n" +
+        "- confirm: apply: Please delete old auth files across the entire repo and migrate secrets",
+      confirmationTimeoutMs: SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
+    });
+    expect(runWriteCalls).toBe(0);
+    expect(published[published.length - 1]).toBe(
+      "This write request is still pending confirmation.\n"
+        + "Reply with this exact command to continue:\n"
+        + "- confirm: apply: Please delete old auth files across the entire repo and migrate secrets",
+    );
+  });
+
+  test("resumes deterministic high-impact run after exact confirmation command", async () => {
+    const published: string[] = [];
+    const runWriteCalls: Array<Record<string, unknown>> = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async (input) => {
+        runWriteCalls.push(input as unknown as Record<string, unknown>);
+        return {
+          outcome: "success",
+          prUrl: "https://github.com/xbmc/xbmc/pull/401",
+          responseText: "Opened PR: https://github.com/xbmc/xbmc/pull/401",
+          retryCommand: "apply: Please delete old auth files across the entire repo and migrate secrets",
+          mirrors: [],
+        };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    await handler.handle(
+      createAddressedPayload("Please delete old auth files across the entire repo and migrate secrets"),
+    );
+
+    const result = await handler.handle(
+      createAddressedPayload("confirm: apply: Please delete old auth files across the entire repo and migrate secrets"),
+    );
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText: "Opened PR: https://github.com/xbmc/xbmc/pull/401",
+    });
+    expect(runWriteCalls).toHaveLength(1);
+    expect(runWriteCalls[0]).toMatchObject({
+      owner: "xbmc",
+      repo: "xbmc",
+      request: "Please delete old auth files across the entire repo and migrate secrets",
+      keyword: "apply",
+    });
+    expect(published[published.length - 1]).toBe("Opened PR: https://github.com/xbmc/xbmc/pull/401");
+  });
+
   test("publishes exactly one clarifying question for ambiguous context and skips execution", async () => {
     const published: string[] = [];
     let workspaceCalls = 0;
