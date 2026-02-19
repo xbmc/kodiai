@@ -79,6 +79,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-18)
 | Phase 80 P02 | 1m55s | 2 tasks | 3 files |
 | Phase 80 P03 | 1m31s | 2 tasks | 3 files |
 | Phase 81 P01 | 4 min | 2 tasks | 6 files |
+| Phase 81 P02 | 7 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,9 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 81]: Use explicit prefixes plus deterministic score>=3 heuristics to route medium-confidence conversational Slack write intent.
 - [Phase 81]: Flag destructive, migration, security, and broad blast-radius requests as high-impact requiring confirmation_required with 15-minute timeout.
 - [Phase 81]: Treat owner/repo matches followed by '/' as path-like tokens to avoid repo override misclassification.
+- [Phase 81]: Slack write publish remains PR-only in trusted code: executor edits workspace, runner performs branch commit/push and pulls.create
+- [Phase 81]: Write-mode can keep comment MCP tools enabled when explicitly requested so Slack can mirror created comment links/excerpts
+- [Phase 81]: Slack success replies default to primary PR link, adding mirrored comment links only when comment publish events exist
 
 ### Key Constraints (Carry-Forward)
 
@@ -230,7 +234,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T00:33:11.831Z
-**Stopped At:** Completed 81-01-PLAN.md
+**Last session:** 2026-02-19T01:03:20.667Z
+**Stopped At:** Completed 81-02-PLAN.md
 **Resume File:** None
 **Next action:** Run `/gsd-discuss-phase 81`
