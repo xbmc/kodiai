@@ -152,13 +152,52 @@ function buildInstantReply(messageText: string): string | undefined {
   return undefined;
 }
 
-function formatSlackWriteReply(writeResult: SlackWriteRunnerResult): string {
-  if (writeResult.outcome !== "success") {
-    return writeResult.responseText;
+function summarizeWriteRequest(request: string): string {
+  const normalized = request.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 72) {
+    return normalized.length > 0 ? normalized : "requested update";
+  }
+  return `${normalized.slice(0, 69).trimEnd()}...`;
+}
+
+function formatSlackWriteReply(input: {
+  writeResult: SlackWriteRunnerResult;
+  request: string;
+  repo: string;
+}): string {
+  const { writeResult, request, repo } = input;
+
+  if (writeResult.outcome === "refusal") {
+    const reasonMatch = writeResult.responseText.match(/Reason:\s*(.+)/i);
+    const reason = reasonMatch?.[1]?.trim() || writeResult.reason;
+
+    return [
+      "Write request refused.",
+      `Reason: ${reason}`,
+      `Retry command: ${writeResult.retryCommand}`,
+    ].join("\n");
   }
 
+  if (writeResult.outcome === "failure") {
+    const reasonMatch = writeResult.responseText.match(/Reason:\s*(.+)/i);
+    const reason = reasonMatch?.[1]?.trim() || "write-execution-failure";
+
+    return [
+      "Write request failed.",
+      `Reason: ${reason}`,
+      `Retry command: ${writeResult.retryCommand}`,
+    ].join("\n");
+  }
+
+  const summary = summarizeWriteRequest(request);
+
   if (writeResult.mirrors.length === 0) {
-    return `Opened PR: ${writeResult.prUrl}`;
+    return [
+      "Write run complete.",
+      `- Changed: ${summary}`,
+      `- Where: ${repo}`,
+      `PR: ${writeResult.prUrl}`,
+    ].join("\n");
   }
 
   const mirrorLines = writeResult.mirrors.flatMap((mirror) => [
@@ -167,7 +206,10 @@ function formatSlackWriteReply(writeResult: SlackWriteRunnerResult): string {
   ]);
 
   return [
-    `Opened PR: ${writeResult.prUrl}`,
+    "Write run complete.",
+    `- Changed: ${summary}`,
+    `- Where: ${repo}`,
+    `PR: ${writeResult.prUrl}`,
     "",
     "Mirrored GitHub comments:",
     ...mirrorLines,
@@ -184,6 +226,76 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
     removeWorkingReaction,
     confirmationStore = createInMemoryWriteConfirmationStore(),
   } = deps;
+
+  async function runAndPublishWrite(input: {
+    owner: string;
+    repo: string;
+    channel: string;
+    threadTs: string;
+    messageTs: string;
+    request: string;
+    keyword: "apply" | "change";
+    prompt: string;
+    acknowledgementText?: string;
+  }): Promise<SlackAssistantHandleResult> {
+    if (!runWrite) {
+      throw new Error("Slack write runner is not configured");
+    }
+
+    await publishInThread({
+      channel: input.channel,
+      threadTs: input.threadTs,
+      text: `Write run started for ${input.owner}/${input.repo}.`,
+    });
+    await publishInThread({
+      channel: input.channel,
+      threadTs: input.threadTs,
+      text: "Milestone: running write execution and preparing PR output.",
+    });
+
+    let replyText: string;
+    try {
+      const writeResult = await runWrite({
+        owner: input.owner,
+        repo: input.repo,
+        channel: input.channel,
+        threadTs: input.threadTs,
+        messageTs: input.messageTs,
+        request: input.request,
+        keyword: input.keyword,
+        prompt: input.prompt,
+      });
+
+      const finalText = formatSlackWriteReply({
+        writeResult,
+        request: input.request,
+        repo: `${input.owner}/${input.repo}`,
+      });
+      replyText = input.acknowledgementText ? `${input.acknowledgementText}\n\n${finalText}` : finalText;
+    } catch (error) {
+      const retryCommand = `${input.keyword}: ${input.request.length > 0 ? input.request : "<same request>"}`;
+      const reason = error instanceof Error ? error.message : String(error);
+      const finalText = [
+        "Write request failed.",
+        `Reason: ${reason}`,
+        `Retry command: ${retryCommand}`,
+      ].join("\n");
+      replyText = input.acknowledgementText ? `${input.acknowledgementText}\n\n${finalText}` : finalText;
+    }
+
+    await publishInThread({
+      channel: input.channel,
+      threadTs: input.threadTs,
+      text: replyText,
+    });
+
+    return {
+      outcome: "answered",
+      route: "write",
+      repo: `${input.owner}/${input.repo}`,
+      publishedText: replyText,
+    };
+  }
 
   return {
     async handle(payload: SlackAssistantAddressedPayload): Promise<SlackAssistantHandleResult> {
@@ -275,7 +387,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
             const pending = confirmationResult.pending;
 
             if (runWrite && (pending.keyword === "apply" || pending.keyword === "change")) {
-              const writeResult = await runWrite({
+              return runAndPublishWrite({
                 owner: pending.owner,
                 repo: pending.repo,
                 channel: payload.channel,
@@ -285,20 +397,6 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                 keyword: pending.keyword,
                 prompt: pending.prompt,
               });
-
-              const replyText = formatSlackWriteReply(writeResult);
-              await publishInThread({
-                channel: payload.channel,
-                threadTs: payload.threadTs,
-                text: replyText,
-              });
-
-              return {
-                outcome: "answered",
-                route: "write",
-                repo: `${pending.owner}/${pending.repo}`,
-                publishedText: replyText,
-              };
             }
 
             const workspace = await createWorkspace({ owner: pending.owner, repo: pending.repo });
@@ -391,7 +489,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           && runWrite
           && (writeIntent.keyword === "apply" || writeIntent.keyword === "change")
         ) {
-          const writeResult = await runWrite({
+          return runAndPublishWrite({
             owner,
             repo,
             channel: payload.channel,
@@ -400,25 +498,8 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
             request: writeIntent.request,
             keyword: writeIntent.keyword,
             prompt,
+            acknowledgementText: resolution.outcome === "override" ? resolution.acknowledgementText : undefined,
           });
-
-          const replyText =
-            resolution.outcome === "override"
-              ? `${resolution.acknowledgementText}\n\n${formatSlackWriteReply(writeResult)}`
-              : formatSlackWriteReply(writeResult);
-
-          await publishInThread({
-            channel: payload.channel,
-            threadTs: payload.threadTs,
-            text: replyText,
-          });
-
-          return {
-            outcome: "answered",
-            route: "write",
-            repo: resolution.repo,
-            publishedText: replyText,
-          };
         }
 
         const workspace = await createWorkspace({ owner, repo });

@@ -267,7 +267,11 @@ describe("createSlackAssistantHandler", () => {
       outcome: "answered",
       route: "write",
       repo: "xbmc/xbmc",
-      publishedText: "Opened PR: https://github.com/xbmc/xbmc/pull/123",
+      publishedText:
+        "Write run complete.\n"
+        + "- Changed: update src/slack/assistant-handler.ts\n"
+        + "- Where: xbmc/xbmc\n"
+        + "PR: https://github.com/xbmc/xbmc/pull/123",
     });
     expect(runWriteCalls).toHaveLength(1);
     expect(runWriteCalls[0]).toMatchObject({
@@ -276,7 +280,14 @@ describe("createSlackAssistantHandler", () => {
       request: "update src/slack/assistant-handler.ts",
       keyword: "apply",
     });
-    expect(published).toEqual(["Opened PR: https://github.com/xbmc/xbmc/pull/123"]);
+    expect(published).toEqual([
+      "Write run started for xbmc/xbmc.",
+      "Milestone: running write execution and preparing PR output.",
+      "Write run complete.\n"
+        + "- Changed: update src/slack/assistant-handler.ts\n"
+        + "- Where: xbmc/xbmc\n"
+        + "PR: https://github.com/xbmc/xbmc/pull/123",
+    ]);
   });
 
   test("mirrors comment link and excerpt when write runner reports comment publish", async () => {
@@ -311,10 +322,10 @@ describe("createSlackAssistantHandler", () => {
     if (result.outcome !== "answered") {
       throw new Error("expected answered result");
     }
-    expect(result.publishedText).toContain("Opened PR: https://github.com/xbmc/xbmc/pull/124");
+    expect(result.publishedText).toContain("PR: https://github.com/xbmc/xbmc/pull/124");
     expect(result.publishedText).toContain("https://github.com/xbmc/xbmc/issues/1#issuecomment-10");
     expect(result.publishedText).toContain("Updated issue comment excerpt");
-    expect(published).toHaveLength(1);
+    expect(published).toHaveLength(3);
   });
 
   test("publishes deterministic refusal with retry command from write runner", async () => {
@@ -348,6 +359,8 @@ describe("createSlackAssistantHandler", () => {
         "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
     });
     expect(published).toEqual([
+      "Write run started for xbmc/xbmc.",
+      "Milestone: running write execution and preparing PR output.",
       "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
     ]);
   });
@@ -518,7 +531,11 @@ describe("createSlackAssistantHandler", () => {
       outcome: "answered",
       route: "write",
       repo: "xbmc/xbmc",
-      publishedText: "Opened PR: https://github.com/xbmc/xbmc/pull/401",
+      publishedText:
+        "Write run complete.\n"
+        + "- Changed: Please delete old auth files across the entire repo and migrate secrets\n"
+        + "- Where: xbmc/xbmc\n"
+        + "PR: https://github.com/xbmc/xbmc/pull/401",
     });
     expect(runWriteCalls).toHaveLength(1);
     expect(runWriteCalls[0]).toMatchObject({
@@ -527,7 +544,12 @@ describe("createSlackAssistantHandler", () => {
       request: "Please delete old auth files across the entire repo and migrate secrets",
       keyword: "apply",
     });
-    expect(published[published.length - 1]).toBe("Opened PR: https://github.com/xbmc/xbmc/pull/401");
+    expect(published[published.length - 1]).toBe(
+      "Write run complete.\n"
+        + "- Changed: Please delete old auth files across the entire repo and migrate secrets\n"
+        + "- Where: xbmc/xbmc\n"
+        + "PR: https://github.com/xbmc/xbmc/pull/401",
+    );
   });
 
   test("publishes exactly one clarifying question for ambiguous context and skips execution", async () => {
