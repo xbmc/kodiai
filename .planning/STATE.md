@@ -62,7 +62,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19
-**Stopped At:** v0.16 roadmap created
-**Resume File:** None
+**Last session:** 2026-02-19T21:33:50.219Z
+**Stopped At:** Phase 82 context gathered
+**Resume File:** .planning/phases/82-draft-pr-review-coverage/82-CONTEXT.md
 **Next action:** `/gsd:plan-phase 82`
