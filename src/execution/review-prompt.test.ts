@@ -1,6 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import {
+  SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
   buildAuthorExperienceSection,
   buildConfidenceInstructions,
   buildDeltaReviewContext,
@@ -578,6 +579,41 @@ test("buildReviewPrompt omits both language sections when not provided (backward
   expect(prompt).not.toContain("## Output Language");
 });
 
+test("buildReviewPrompt includes partial-analysis disclaimer instructions when search degradation is active", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).toContain(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE);
+  expect(prompt).toContain(`"${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}"`);
+  const disclosureOccurrences = prompt.split(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE).length - 1;
+  expect(disclosureOccurrences).toBe(2);
+});
+
+test("buildReviewPrompt omits degradation instructions when search degradation is inactive", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: false,
+        retryAttempts: 0,
+        skippedQueries: 0,
+        degradationPath: "none",
+      },
+    }),
+  );
+
+  expect(prompt).not.toContain("## Search API Degradation Context");
+  expect(prompt).not.toContain(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE);
+});
+
 // ---------------------------------------------------------------------------
 // buildRetrievalContextSection tests
 // ---------------------------------------------------------------------------
@@ -589,7 +625,9 @@ test("buildRetrievalContextSection includes provenance citation instruction when
         findingText: "SQL injection risk in query builder",
         severity: "major",
         category: "security",
-        filePath: "src/db.ts",
+        path: "src/db.ts",
+        line: 42,
+        snippet: "const query = `SELECT * FROM users WHERE id = ${userId}`",
         outcome: "accepted",
         distance: 0.12,
         sourceRepo: "owner/other-repo",
@@ -597,13 +635,167 @@ test("buildRetrievalContextSection includes provenance citation instruction when
     ],
   });
   expect(section).toContain("Prior pattern:");
-  expect(section).toContain("append a brief provenance note");
-  expect(section).toContain("When a finding in your review directly relates to one of these prior patterns");
+  expect(section).toContain("When a finding directly matches prior context, append");
+  expect(section).toContain("`src/db.ts:42` --");
 });
 
 test("buildRetrievalContextSection returns empty string when no findings", () => {
   const section = buildRetrievalContextSection({ findings: [] });
   expect(section).toBe("");
+});
+
+test("buildRetrievalContextSection uses path-only fallback formatting when snippet evidence missing", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "Missing null guard before dereference",
+        severity: "major",
+        category: "correctness",
+        path: "src/handler.ts",
+        outcome: "accepted",
+        distance: 0.15,
+        sourceRepo: "owner/repo",
+      },
+    ],
+  });
+
+  expect(section).toContain("`src/handler.ts` -- Missing null guard before dereference");
+});
+
+test("buildRetrievalContextSection trims overflow by dropping highest-distance findings first", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "high value",
+        severity: "major",
+        category: "correctness",
+        path: "src/a.ts",
+        line: 10,
+        snippet: "const stable = true;",
+        outcome: "accepted",
+        distance: 0.1,
+        sourceRepo: "owner/repo",
+      },
+      {
+        findingText: "low value",
+        severity: "major",
+        category: "correctness",
+        path: "src/z.ts",
+        line: 90,
+        snippet: "const noisy = veryLongValue.repeat(20);",
+        outcome: "accepted",
+        distance: 0.9,
+        sourceRepo: "owner/repo",
+      },
+    ],
+    maxChars: 380,
+  });
+
+  expect(section).toContain("`src/a.ts:10`");
+  expect(section).not.toContain("`src/z.ts:90`");
+});
+
+test("buildRetrievalContextSection omits section when all findings are trimmed by budget", () => {
+  const section = buildRetrievalContextSection({
+    findings: [
+      {
+        findingText: "very long finding text ".repeat(20),
+        severity: "major",
+        category: "correctness",
+        path: "src/overflow.ts",
+        line: 1,
+        snippet: "const longLine = 'x'.repeat(400);",
+        outcome: "accepted",
+        distance: 0.2,
+        sourceRepo: "owner/repo",
+      },
+    ],
+    maxChars: 40,
+  });
+
+  expect(section).toBe("");
+});
+
+test("buildReviewPrompt keeps degraded retrieval context well-formed and within configured budget", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+      retrievalContext: {
+        maxChars: 420,
+        findings: [
+          {
+            findingText: "fallback `text` should stay safe",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "lower value finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 99,
+            snippet: "const dropped = veryLongExpression.repeat(50);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).toContain("## Similar Prior Findings (Learning Context)");
+  expect(prompt).toContain("`src/a.ts:10` -- `const kept = true;`");
+
+  const retrievalMatch = prompt.match(
+    /## Similar Prior Findings \(Learning Context\)[\s\S]*?(?=\n## |$)/,
+  );
+  expect(retrievalMatch).toBeDefined();
+  expect(retrievalMatch![0].length).toBeLessThanOrEqual(420);
+});
+
+test("buildReviewPrompt omits degraded retrieval section cleanly when budget removes all findings", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      searchRateLimitDegradation: {
+        degraded: true,
+        retryAttempts: 1,
+        skippedQueries: 1,
+        degradationPath: "search-api-rate-limit",
+      },
+      retrievalContext: {
+        maxChars: 40,
+        findings: [
+          {
+            findingText: "very long finding text ".repeat(20),
+            severity: "major",
+            category: "correctness",
+            path: "src/overflow.ts",
+            line: 1,
+            snippet: "const longLine = 'x'.repeat(300);",
+            outcome: "accepted",
+            distance: 0.2,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(prompt).toContain("## Search API Degradation Context");
+  expect(prompt).not.toContain("## Similar Prior Findings (Learning Context)");
 });
 
 // ---------------------------------------------------------------------------

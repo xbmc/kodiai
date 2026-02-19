@@ -8,6 +8,7 @@ Related runbooks:
 
 - Mentions: `docs/runbooks/mentions.md`
 - review_requested: `docs/runbooks/review-requested-debug.md`
+- Slack integration: `docs/runbooks/slack-integration.md`
 - Cutover checklist: `docs/runbooks/xbmc-cutover.md`
 
 ## What Triggers Exist
@@ -157,3 +158,61 @@ When reporting an incident, capture:
 - Any suspicious log snippet (especially skip reasons)
 
 If you have the delivery ID, debugging can usually be finished quickly.
+
+## Phase 74 Reliability Regression Gate
+
+Pre-release command:
+
+`bun run verify:phase74 --owner xbmc --repo xbmc --scenario <scenario-json>`
+
+Treat this gate as release-blocking when any check fails.
+
+### Capability preflight failures (`CAP-74-*`)
+
+- `CAP-74-01` failed: runtime cannot satisfy branch creation prerequisites.
+  - Check GitHub App/token permission level for `xbmc/xbmc` (must be write-capable).
+  - Confirm repository is not archived and default branch resolves.
+- `CAP-74-02` failed: bot branch push prerequisites are missing.
+  - Check `permissions.push` visibility for runtime identity.
+  - Confirm bot branch strategy is allowed for app installation.
+- `CAP-74-03` failed: PR creation prerequisites are not available.
+  - Resolve write/push permission gaps first, then rerun gate.
+
+### Issue write-mode reliability failures (`REL-74-*`)
+
+Both success and failure paths use the same machine-checkable status-envelope contract.
+The gate enforces that each path includes its required fields:
+
+- **Failure path:** `status: pr_creation_failed`, `failed_step:`, `diagnostics:`
+- **Success path:** `status: success`, `pr_url:`, `issue_linkback_url:`
+
+Individual check troubleshooting:
+
+- `REL-74-01` failed: issue reply output is missing machine-checkable status line.
+  - Ensure write failure/success replies include explicit `status:` marker (`status: success` or `status: pr_creation_failed`).
+- `REL-74-02` failed: failure was not pinned to expected step (`branch-push`, `create-pr`, `issue-linkback`).
+  - Inspect publish logs for missing/incorrect `failed_step` mapping.
+- `REL-74-03` failed: diagnostics were empty or non-actionable.
+  - Ensure diagnostics include concrete cause or fallback `Unknown publish failure`.
+- `REL-74-04` failed: status reported success without artifact triad.
+  - Confirm branch push succeeded, PR URL exists, and issue linkback comment was posted.
+- `REL-74-05` failed: success reply is missing machine-checkable URL markers.
+  - Ensure success replies include `pr_url:` and `issue_linkback_url:` markers in reply text.
+  - Check that `buildIssueWriteSuccessReply` in `src/handlers/mention.ts` emits both fields.
+
+### Combined degraded retrieval failures (`RET-74-*`)
+
+- `RET-74-01` failed: rendered retrieval section exceeded max char budget.
+  - Inspect retrieval rendering budget logic and bounded trimming behavior.
+- `RET-74-02` failed: fallback output is not markdown-safe.
+  - Inspect retrieval fallback sanitization for malformed backticks/formatting.
+
+### Required evidence for escalation
+
+When reporting a Phase 74 gate failure, include:
+
+- Scenario JSON used for the run
+- Full gate output with failed check IDs
+- Delivery ID and issue/PR URLs tied to the scenario
+- For failure path: `status:`, `failed_step:`, and `diagnostics:` lines from issue write reply
+- For success path: `status:`, `pr_url:`, and `issue_linkback_url:` lines from issue write reply

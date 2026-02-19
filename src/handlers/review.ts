@@ -22,6 +22,7 @@ import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRi
 import {
   buildReviewPrompt,
   matchPathInstructions,
+  SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
 } from "../execution/review-prompt.ts";
 import {
   buildKeywordParsingSection,
@@ -41,10 +42,15 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
-import { buildRetrievalQuery } from "../learning/retrieval-query.ts";
 import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
 import { applyRecencyWeighting } from "../learning/retrieval-recency.ts";
 import { computeAdaptiveThreshold, type AdaptiveThresholdResult } from "../learning/adaptive-threshold.ts";
+import {
+  buildRetrievalVariants,
+  executeRetrievalVariants,
+  mergeVariantResults,
+} from "../learning/multi-query-retrieval.ts";
+import { buildSnippetAnchors } from "../learning/retrieval-snippets.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -66,6 +72,11 @@ import { analyzePackageUsage } from "../lib/usage-analyzer.ts";
 import { detectScopeCoordination } from "../lib/scope-coordinator.ts";
 import { fetchSecurityAdvisories, fetchChangelog } from "../lib/dep-bump-enrichment.ts";
 import { computeMergeConfidence, type MergeConfidence } from "../lib/merge-confidence.ts";
+import {
+  buildSearchCacheKey,
+  createSearchCache,
+  type SearchCache,
+} from "../lib/search-cache.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -95,12 +106,157 @@ type RetrievalContextForPrompt = {
     findingText: string;
     severity: string;
     category: string;
-    filePath: string;
+    path: string;
+    line?: number;
+    snippet?: string;
     outcome: string;
     distance: number;
     sourceRepo: string;
   }>;
+  maxChars: number;
 };
+
+type AuthorTierSearchEnrichment = {
+  degraded: boolean;
+  retryAttempts: number;
+  skippedQueries: number;
+  degradationPath: "none" | "search-api-rate-limit";
+};
+
+const SEARCH_RATE_LIMIT_ERROR_MARKERS = [
+  "rate limit",
+  "secondary rate limit",
+  "abuse detection",
+  "too many requests",
+];
+const SEARCH_RATE_LIMIT_BACKOFF_MAX_MS = 1_500;
+const SEARCH_RATE_LIMIT_DISCLOSURE_LINE = `> ${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}`;
+
+function ensureSearchRateLimitDisclosureInSummary(summaryBody: string): string {
+  if (summaryBody.includes(SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE)) {
+    return summaryBody;
+  }
+
+  const closingTag = "</details>";
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
+
+  if (lastCloseIdx === -1) {
+    return `${summaryBody}\n\n${SEARCH_RATE_LIMIT_DISCLOSURE_LINE}`;
+  }
+
+  const before = summaryBody.slice(0, lastCloseIdx).trimEnd();
+  const after = summaryBody.slice(lastCloseIdx);
+  return `${before}\n\n${SEARCH_RATE_LIMIT_DISCLOSURE_LINE}\n\n${after}`;
+}
+
+function extractSearchErrorStatus(err: unknown): number | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const status = (err as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
+function extractSearchErrorText(err: unknown): string {
+  if (typeof err !== "object" || err === null) return "";
+
+  const message = (err as { message?: unknown }).message;
+  const responseData = (err as { response?: { data?: { message?: unknown } } }).response?.data;
+  const responseMessage = responseData && typeof responseData === "object"
+    ? (responseData as { message?: unknown }).message
+    : undefined;
+
+  const parts = [message, responseMessage]
+    .filter((part): part is string => typeof part === "string")
+    .map((part) => part.toLowerCase());
+
+  return parts.join(" ");
+}
+
+function isSearchRateLimitError(err: unknown): boolean {
+  const status = extractSearchErrorStatus(err);
+  const text = extractSearchErrorText(err);
+  return (status === 403 || status === 429)
+    && SEARCH_RATE_LIMIT_ERROR_MARKERS.some((marker) => text.includes(marker));
+}
+
+function resolveRateLimitBackoffMs(err: unknown): number {
+  if (typeof err !== "object" || err === null) return 0;
+
+  const headers = (err as { response?: { headers?: Record<string, unknown> } }).response?.headers;
+  if (!headers) return 0;
+
+  const retryAfterRaw = headers["retry-after"];
+  if (typeof retryAfterRaw === "string") {
+    const retryAfterSeconds = Number.parseInt(retryAfterRaw, 10);
+    if (!Number.isNaN(retryAfterSeconds) && retryAfterSeconds >= 0) {
+      return Math.min(retryAfterSeconds * 1000, SEARCH_RATE_LIMIT_BACKOFF_MAX_MS);
+    }
+  }
+
+  const resetRaw = headers["x-ratelimit-reset"];
+  if (typeof resetRaw === "string") {
+    const resetSeconds = Number.parseInt(resetRaw, 10);
+    if (!Number.isNaN(resetSeconds)) {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const deltaMs = Math.max(0, (resetSeconds - nowSeconds) * 1000);
+      return Math.min(deltaMs, SEARCH_RATE_LIMIT_BACKOFF_MAX_MS);
+    }
+  }
+
+  return 250;
+}
+
+async function executeSearchWithRateLimitRetry(params: {
+  operation: () => Promise<number>;
+  logger: Logger;
+  authorLogin: string;
+}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
+  const { operation, logger, authorLogin } = params;
+
+  try {
+    return {
+      value: await operation(),
+      retryAttempts: 0,
+      degraded: false,
+    };
+  } catch (err) {
+    if (!isSearchRateLimitError(err)) {
+      throw err;
+    }
+
+    const backoffMs = resolveRateLimitBackoffMs(err);
+    logger.warn(
+      { err, authorLogin, backoffMs, retryAttempts: 1 },
+      "Search API rate limit detected; retrying author-tier enrichment once",
+    );
+
+    if (backoffMs > 0) {
+      await Bun.sleep(backoffMs);
+    }
+
+    try {
+      return {
+        value: await operation(),
+        retryAttempts: 1,
+        degraded: false,
+      };
+    } catch (retryErr) {
+      if (!isSearchRateLimitError(retryErr)) {
+        throw retryErr;
+      }
+
+      logger.warn(
+        { err: retryErr, authorLogin, retryAttempts: 1 },
+        "Search API remained rate-limited after one retry; degrading enrichment",
+      );
+
+      return {
+        value: null,
+        retryAttempts: 1,
+        degraded: true,
+      };
+    }
+  }
+}
 
 async function fetchCommitMessages(
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>,
@@ -342,6 +498,7 @@ async function appendReviewDetailsToSummary(params: {
   reviewOutputKey: string;
   reviewDetailsBlock: string;
   botHandles: string[];
+  requireDegradationDisclosure: boolean;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
@@ -364,8 +521,13 @@ async function appendReviewDetailsToSummary(params: {
     throw new Error("Summary comment not found for review output marker");
   }
 
+  let summaryBody = summaryComment.body!;
+  if (params.requireDegradationDisclosure) {
+    summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
+  }
+
   // Merge severity counts from summary body observations into the findings line
-  const bodyCounts = parseSeverityCountsFromBody(summaryComment.body!);
+  const bodyCounts = parseSeverityCountsFromBody(summaryBody);
   const bodyTotal = bodyCounts.critical + bodyCounts.major + bodyCounts.medium + bodyCounts.minor;
   if (bodyTotal > 0) {
     updatedReviewDetails = updatedReviewDetails.replace(
@@ -387,14 +549,14 @@ async function appendReviewDetailsToSummary(params: {
   // output marker (<!-- kodiai:review-output-key:... -->) that follows the
   // summary's </details> stays outside both blocks.
   const closingTag = '</details>';
-  const lastCloseIdx = summaryComment.body!.lastIndexOf(closingTag);
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
   let updatedBody: string;
   if (lastCloseIdx === -1) {
     // Fallback: append as before if structure is unexpected
-    updatedBody = `${summaryComment.body}\n\n${updatedReviewDetails}`;
+    updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
   } else {
-    const before = summaryComment.body!.slice(0, lastCloseIdx);
-    const after = summaryComment.body!.slice(lastCloseIdx);
+    const before = summaryBody.slice(0, lastCloseIdx);
+    const after = summaryBody.slice(lastCloseIdx);
     updatedBody = `${before}\n\n${updatedReviewDetails}\n${after}`;
   }
 
@@ -414,9 +576,23 @@ async function resolveAuthorTier(params: {
   repoSlug: string;
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   knowledgeStore: KnowledgeStore;
+  searchCache?: SearchCache<number>;
   logger: Logger;
-}): Promise<{ tier: AuthorTier; prCount: number | null; fromCache: boolean }> {
-  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, logger } = params;
+}): Promise<{
+  tier: AuthorTier;
+  prCount: number | null;
+  fromCache: boolean;
+  searchCacheHit: boolean;
+  searchEnrichment: AuthorTierSearchEnrichment;
+}> {
+  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, logger } = params;
+  const searchEnrichment: AuthorTierSearchEnrichment = {
+    degraded: false,
+    retryAttempts: 0,
+    skippedQueries: 0,
+    degradationPath: "none",
+  };
+  let searchCacheHit = false;
 
   try {
     const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
@@ -425,6 +601,8 @@ async function resolveAuthorTier(params: {
         tier: cached.tier as AuthorTier,
         prCount: cached.prCount,
         fromCache: true,
+        searchCacheHit,
+        searchEnrichment,
       };
     }
   } catch (err) {
@@ -436,14 +614,91 @@ async function resolveAuthorTier(params: {
   let prCount: number | null = null;
 
   if (ambiguousAssociations.has(normalizedAssociation)) {
-    try {
+    const query = `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`;
+
+    const loadPrCount = async (): Promise<number> => {
       const { data } = await octokit.rest.search.issuesAndPullRequests({
-        q: `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`,
+        q: query,
         per_page: 1,
       });
-      prCount = data.total_count;
+      return data.total_count;
+    };
+
+    try {
+      if (searchCache) {
+        const cacheKey = buildSearchCacheKey({
+          repo: repoSlug,
+          searchType: "issuesAndPullRequests",
+          query,
+          extra: { per_page: 1 },
+        });
+
+        const searchOutcome = await executeSearchWithRateLimitRetry({
+          operation: async () => {
+            let loaderExecuted = false;
+            const value = await searchCache.getOrLoad(
+              cacheKey,
+              async () => {
+                loaderExecuted = true;
+                return loadPrCount();
+              },
+              AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
+            );
+            searchCacheHit = !loaderExecuted;
+            return value;
+          },
+          logger,
+          authorLogin,
+        });
+
+        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+        searchEnrichment.degraded = searchOutcome.degraded;
+        prCount = searchOutcome.value;
+
+        if (searchOutcome.degraded) {
+          searchCacheHit = false;
+        }
+      } else {
+        const searchOutcome = await executeSearchWithRateLimitRetry({
+          operation: () => loadPrCount(),
+          logger,
+          authorLogin,
+        });
+
+        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+        searchEnrichment.degraded = searchOutcome.degraded;
+        prCount = searchOutcome.value;
+      }
+
+      if (searchEnrichment.degraded) {
+        searchEnrichment.skippedQueries = 1;
+        searchEnrichment.degradationPath = "search-api-rate-limit";
+      }
     } catch (err) {
-      logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+      if (searchCache) {
+        logger.warn({ err, authorLogin }, "Author PR-count cache failed (fail-open, falling back to direct lookup)");
+
+        try {
+          const searchOutcome = await executeSearchWithRateLimitRetry({
+            operation: () => loadPrCount(),
+            logger,
+            authorLogin,
+          });
+
+          searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
+          searchEnrichment.degraded = searchOutcome.degraded;
+          prCount = searchOutcome.value;
+
+          if (searchEnrichment.degraded) {
+            searchEnrichment.skippedQueries = 1;
+            searchEnrichment.degradationPath = "search-api-rate-limit";
+          }
+        } catch (fallbackErr) {
+          logger.warn({ err: fallbackErr, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+        }
+      } else {
+        logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
+      }
     }
   }
 
@@ -464,7 +719,7 @@ async function resolveAuthorTier(params: {
     logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
   }
 
-  return { tier, prCount, fromCache: false };
+  return { tier, prCount, fromCache: false, searchCacheHit, searchEnrichment };
 }
 
 function normalizeSeverity(value: string | undefined): FindingSeverity | null {
@@ -708,6 +963,7 @@ type DiffCollectionResult = {
 };
 
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
+const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function splitGitLines(output: string): string[] {
   return output.trim().split("\n").filter(Boolean);
@@ -875,6 +1131,10 @@ export function createReviewHandler(deps: {
   retrievalRecency?: { applyRecencyWeighting: typeof applyRecencyWeighting };
   /** Optional injection for deterministic tests. */
   adaptiveThreshold?: { computeAdaptiveThreshold: typeof computeAdaptiveThreshold };
+  /** Optional injection for deterministic tests. */
+  searchCache?: SearchCache<number>;
+  /** Optional injection for deterministic tests. */
+  searchCacheFactory?: () => SearchCache<number>;
   logger: Logger;
 }): void {
   const {
@@ -893,8 +1153,27 @@ export function createReviewHandler(deps: {
     retrievalReranker,
     retrievalRecency,
     adaptiveThreshold,
+    searchCache: injectedSearchCache,
+    searchCacheFactory,
     logger,
   } = deps;
+
+  let authorPrCountSearchCache: SearchCache<number> | undefined;
+  if (injectedSearchCache) {
+    authorPrCountSearchCache = injectedSearchCache;
+  } else {
+    try {
+      authorPrCountSearchCache = searchCacheFactory
+        ? searchCacheFactory()
+        : createSearchCache<number>();
+    } catch (err) {
+      logger.warn(
+        { err },
+        "Search cache initialization failed (fail-open, continuing without search cache)",
+      );
+      authorPrCountSearchCache = undefined;
+    }
+  }
 
   const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
@@ -1347,10 +1626,23 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        let authorClassification: { tier: AuthorTier; prCount: number | null; fromCache: boolean } = {
+        let authorClassification: {
+          tier: AuthorTier;
+          prCount: number | null;
+          fromCache: boolean;
+          searchCacheHit: boolean;
+          searchEnrichment: AuthorTierSearchEnrichment;
+        } = {
           tier: "regular",
           prCount: null,
           fromCache: false,
+          searchCacheHit: false,
+          searchEnrichment: {
+            degraded: false,
+            retryAttempts: 0,
+            skippedQueries: 0,
+            degradationPath: "none",
+          },
         };
 
         if (knowledgeStore) {
@@ -1363,6 +1655,7 @@ export function createReviewHandler(deps: {
               repoSlug: `${apiOwner}/${apiRepo}`,
               octokit: idempotencyOctokit,
               knowledgeStore,
+              searchCache: authorPrCountSearchCache,
               logger,
             });
             logger.info(
@@ -1371,6 +1664,11 @@ export function createReviewHandler(deps: {
                 authorTier: authorClassification.tier,
                 authorPrCount: authorClassification.prCount,
                 fromCache: authorClassification.fromCache,
+                searchCacheHit: authorClassification.searchCacheHit,
+                searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+                searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
+                searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
+                searchEnrichmentPath: authorClassification.searchEnrichment.degradationPath,
               },
               "Author experience classification resolved",
             );
@@ -1378,6 +1676,36 @@ export function createReviewHandler(deps: {
             logger.warn(
               { ...baseLog, err },
               "Author classification failed (fail-open, using regular tier)",
+            );
+          }
+        }
+
+        // Emit rate-limit telemetry from a single deterministic point after
+        // author-tier Search enrichment outcomes are finalized for this run.
+        const rateLimitTelemetryEvent = {
+          deliveryId: event.id,
+          executionIdentity: event.id,
+          repo: `${apiOwner}/${apiRepo}`,
+          prNumber: pr.number,
+          eventType: `pull_request.${payload.action}`,
+          cacheHitRate: authorClassification.searchCacheHit ? 1 : 0,
+          skippedQueries: authorClassification.searchEnrichment.skippedQueries,
+          retryAttempts: authorClassification.searchEnrichment.retryAttempts,
+          degradationPath: authorClassification.searchEnrichment.degradationPath,
+        };
+
+        if (config.telemetry.enabled) {
+          try {
+            telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
+          } catch (err) {
+            logger.warn(
+              {
+                ...baseLog,
+                err,
+                executionIdentity: rateLimitTelemetryEvent.executionIdentity,
+                telemetryEventType: rateLimitTelemetryEvent.eventType,
+              },
+              "Rate-limit telemetry write failed (non-blocking)",
             );
           }
         }
@@ -1686,132 +2014,198 @@ export function createReviewHandler(deps: {
         let retrievalCtx: RetrievalContextForPrompt | null = null;
         if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
           try {
-            const queryText = buildRetrievalQuery({
-              prTitle: pr.title,
-              prBody: pr.body ?? undefined,
+            const variants = buildRetrievalVariants({
+              title: pr.title,
+              body: pr.body ?? undefined,
               conventionalType: parsedIntent.conventionalType?.type ?? null,
-              detectedLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+              prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
               riskSignals: diffAnalysis.riskSignals ?? [],
+              filePaths: reviewFiles,
               authorTier: authorClassification.tier,
-              topFilePaths: reviewFiles.slice(0, 15),
             });
-            logger.debug({ ...baseLog, queryLength: queryText.length }, "Retrieval query constructed");
-            const embedResult = await embeddingProvider.generate(queryText, "query");
-            if (embedResult) {
-              const retrieval = isolationLayer.retrieveWithIsolation({
-                queryEmbedding: embedResult.embedding,
-                repo: `${apiOwner}/${apiRepo}`,
-                owner: apiOwner,
-                sharingEnabled: config.knowledge.sharing.enabled,
-                topK: config.knowledge.retrieval.topK,
-                distanceThreshold: config.knowledge.retrieval.distanceThreshold,
-                adaptive: config.knowledge.retrieval.adaptive,
-                logger,
+
+            const maxVariantConcurrency = 2;
+            const variantTopK = Math.max(
+              1,
+              Math.ceil(config.knowledge.retrieval.topK / Math.max(variants.length, 1)),
+            );
+            const resultsByVariant = await executeRetrievalVariants({
+              variants,
+              maxConcurrency: maxVariantConcurrency,
+              execute: async (variant) => {
+                logger.debug(
+                  {
+                    ...baseLog,
+                    gate: "retrieval-variant",
+                    variant: variant.type,
+                    queryLength: variant.query.length,
+                    variantTopK,
+                  },
+                  "Retrieval variant query constructed",
+                );
+
+                const embedResult = await embeddingProvider.generate(variant.query, "query");
+                if (!embedResult) {
+                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
+                }
+
+                const retrieval = isolationLayer.retrieveWithIsolation({
+                  queryEmbedding: embedResult.embedding,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  owner: apiOwner,
+                  sharingEnabled: config.knowledge.sharing.enabled,
+                  topK: variantTopK,
+                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                  adaptive: config.knowledge.retrieval.adaptive,
+                  logger,
+                });
+
+                return retrieval.results;
+              },
+            });
+
+            const variantFailures = resultsByVariant.filter((variant) => variant.error);
+            for (const failedVariant of variantFailures) {
+              logger.warn(
+                {
+                  ...baseLog,
+                  gate: "retrieval-variant",
+                  variant: failedVariant.variant.type,
+                  err: failedVariant.error,
+                },
+                "Retrieval variant failed (fail-open)",
+              );
+            }
+
+            const mergedResults = mergeVariantResults({
+              resultsByVariant,
+              topK: config.knowledge.retrieval.topK,
+            });
+
+            const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
+            const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
+            const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
+            const computeThreshold = adaptiveThreshold?.computeAdaptiveThreshold ?? computeAdaptiveThreshold;
+
+            const languageReranked = mergedResults.length > 0
+              ? reranker({ results: mergedResults, prLanguages })
+              : [];
+            const reranked = languageReranked.length > 0
+              ? recencyWeighter({ results: languageReranked })
+              : [];
+
+            const configuredThreshold = config.knowledge.retrieval.distanceThreshold;
+            let adaptiveResult: AdaptiveThresholdResult = {
+              threshold: configuredThreshold,
+              method: "configured",
+              candidateCount: reranked.length,
+            };
+            let finalReranked = reranked.slice(0, config.knowledge.retrieval.topK);
+
+            if (config.knowledge.retrieval.adaptive) {
+              // Adaptive distance threshold (RET-03): compute on post-rerank distances
+              const distances = reranked.map((r) => r.adjustedDistance);
+              adaptiveResult = computeThreshold({
+                distances,
+                configuredThreshold,
               });
-
-               const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
-               const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
-               const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
-               const computeThreshold = adaptiveThreshold?.computeAdaptiveThreshold ?? computeAdaptiveThreshold;
-
-               const languageReranked = retrieval.results.length > 0
-                 ? reranker({ results: retrieval.results, prLanguages })
-                 : [];
-               const reranked = languageReranked.length > 0
-                 ? recencyWeighter({ results: languageReranked })
-                 : [];
-
-               const configuredThreshold = config.knowledge.retrieval.distanceThreshold;
-               let adaptiveResult: AdaptiveThresholdResult = {
-                 threshold: configuredThreshold,
-                 method: "configured",
-                 candidateCount: reranked.length,
-               };
-               let finalReranked = reranked.slice(0, config.knowledge.retrieval.topK);
-
-               if (config.knowledge.retrieval.adaptive) {
-                 // Adaptive distance threshold (RET-03): compute on post-rerank distances
-                 const distances = reranked.map((r) => r.adjustedDistance);
-                 adaptiveResult = computeThreshold({
-                   distances,
-                   configuredThreshold,
-                 });
-                 const thresholdFiltered = reranked.filter(
-                   (r) => r.adjustedDistance <= adaptiveResult.threshold,
-                 );
-                 finalReranked = thresholdFiltered.slice(0, config.knowledge.retrieval.topK);
-
-                 logger.debug(
-                   {
-                     ...baseLog,
-                     gate: "adaptive-threshold",
-                     method: adaptiveResult.method,
-                     threshold: adaptiveResult.threshold,
-                     candidateCount: adaptiveResult.candidateCount,
-                     gapSize: adaptiveResult.gapSize,
-                     preFilterCount: reranked.length,
-                     postFilterCount: finalReranked.length,
-                   },
-                   "Adaptive threshold applied to retrieval results",
-                 );
-               }
+              const thresholdFiltered = reranked.filter(
+                (r) => r.adjustedDistance <= adaptiveResult.threshold,
+              );
+              finalReranked = thresholdFiltered.slice(0, config.knowledge.retrieval.topK);
 
               logger.debug(
                 {
                   ...baseLog,
-                  gate: "retrieval-rerank",
-                  recencyApplied: languageReranked.length > 0,
-                  languageResultCount: languageReranked.length,
-                  finalResultCount: reranked.length,
+                  gate: "adaptive-threshold",
+                  method: adaptiveResult.method,
+                  threshold: adaptiveResult.threshold,
+                  candidateCount: adaptiveResult.candidateCount,
+                  gapSize: adaptiveResult.gapSize,
+                  preFilterCount: reranked.length,
+                  postFilterCount: finalReranked.length,
                 },
-                "Retrieval reranking complete",
+                "Adaptive threshold applied to retrieval results",
               );
+            }
 
-               // Retrieval quality telemetry (RET-05): derived from reranked distances.
-               // Guarded by telemetry.enabled and must be fail-open.
-               if (config.telemetry.enabled) {
-                 try {
-                   const resultCount = finalReranked.length;
-                   const avgDistance = resultCount > 0
-                     ? finalReranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
-                     : null;
-                   const languageMatchRatio = resultCount > 0
-                     ? finalReranked.filter((r) => r.languageMatch).length / resultCount
-                     : null;
+            logger.debug(
+              {
+                ...baseLog,
+                gate: "retrieval-rerank",
+                variantCount: variants.length,
+                failedVariantCount: variantFailures.length,
+                mergedResultCount: mergedResults.length,
+                recencyApplied: languageReranked.length > 0,
+                languageResultCount: languageReranked.length,
+                finalResultCount: reranked.length,
+              },
+              "Retrieval reranking complete",
+            );
 
-                   telemetryStore.recordRetrievalQuality({
-                     deliveryId: event.id,
-                     repo: `${apiOwner}/${apiRepo}`,
-                     prNumber: pr.number,
-                     eventType: event.name,
-                     topK: config.knowledge.retrieval.topK,
-                     distanceThreshold: adaptiveResult.threshold,
-                     thresholdMethod: adaptiveResult.method,
-                     resultCount,
-                     avgDistance,
-                     languageMatchRatio,
-                   });
-                 } catch (err) {
-                  logger.warn(
-                    { ...baseLog, err },
-                    "Retrieval quality telemetry write failed (non-blocking)",
-                  );
-                }
+            // Retrieval quality telemetry (RET-05): derived from reranked distances.
+            // Guarded by telemetry.enabled and must be fail-open.
+            if (config.telemetry.enabled) {
+              try {
+                const resultCount = finalReranked.length;
+                const avgDistance = resultCount > 0
+                  ? finalReranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
+                  : null;
+                const languageMatchRatio = resultCount > 0
+                  ? finalReranked.filter((r) => r.languageMatch).length / resultCount
+                  : null;
+
+                telemetryStore.recordRetrievalQuality({
+                  deliveryId: event.id,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  prNumber: pr.number,
+                  eventType: event.name,
+                  topK: config.knowledge.retrieval.topK,
+                  distanceThreshold: adaptiveResult.threshold,
+                  thresholdMethod: adaptiveResult.method,
+                  resultCount,
+                  avgDistance,
+                  languageMatchRatio,
+                });
+              } catch (err) {
+                logger.warn(
+                  { ...baseLog, err },
+                  "Retrieval quality telemetry write failed (non-blocking)",
+                );
+              }
+            }
+
+            if (finalReranked.length > 0) {
+              let snippetAnchors = await buildSnippetAnchors({
+                workspaceDir: workspace.dir,
+                findings: finalReranked,
+              });
+
+              if (snippetAnchors.length !== finalReranked.length) {
+                snippetAnchors = finalReranked.map((result) => ({
+                  path: result.record.filePath,
+                  anchor: result.record.filePath,
+                  distance: result.adjustedDistance,
+                }));
               }
 
-               if (finalReranked.length > 0) {
-                 retrievalCtx = {
-                   findings: finalReranked.map(r => ({
-                     findingText: r.record.findingText,
-                     severity: r.record.severity,
-                     category: r.record.category,
-                     filePath: r.record.filePath,
-                     outcome: r.record.outcome,
-                     distance: r.adjustedDistance,
-                     sourceRepo: r.sourceRepo,
-                   })),
-                 };
-               }
+              retrievalCtx = {
+                maxChars: config.knowledge.retrieval.maxContextChars,
+                findings: finalReranked.map((result, index) => {
+                  const anchor = snippetAnchors[index];
+                  return {
+                    findingText: result.record.findingText,
+                    severity: result.record.severity,
+                    category: result.record.category,
+                    path: anchor?.path ?? result.record.filePath,
+                    line: anchor?.line,
+                    snippet: anchor?.snippet,
+                    outcome: result.record.outcome,
+                    distance: result.adjustedDistance,
+                    sourceRepo: result.sourceRepo,
+                  };
+                }),
+              };
             }
           } catch (err) {
             logger.warn({ ...baseLog, err }, "Retrieval context generation failed (fail-open, proceeding without retrieval)");
@@ -2051,6 +2445,7 @@ export function createReviewHandler(deps: {
           } : null,
           authorTier: authorClassification.tier,
           depBumpContext,
+          searchRateLimitDegradation: authorClassification.searchEnrichment,
         });
 
         // Execute review via Claude
@@ -2391,6 +2786,7 @@ export function createReviewHandler(deps: {
                   reviewOutputKey,
                   reviewDetailsBlock: reviewDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
+                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                 });
               } catch (appendErr) {
                 // Fallback: post standalone if append fails (e.g., summary comment not found yet)
@@ -3012,6 +3408,7 @@ export function createReviewHandler(deps: {
                       largePRContext: null,
                       authorTier: authorClassification.tier,
                       depBumpContext,
+                      searchRateLimitDegradation: authorClassification.searchEnrichment,
                     });
 
                     const retryResult = await executor.execute({

@@ -4,6 +4,7 @@ import { existsSync, unlinkSync, rmSync } from "node:fs";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
 import type { ResilienceEventRecord } from "./types.ts";
+import type { RateLimitEventRecord } from "./types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -15,6 +16,24 @@ const mockLogger = {
   child: () => mockLogger,
   level: "silent",
 } as unknown as import("pino").Logger;
+
+function createWarnCaptureLogger() {
+  const warnings: Array<{ data: unknown; message: string }> = [];
+  const logger = {
+    info: () => {},
+    warn: (data: unknown, message: string) => {
+      warnings.push({ data, message });
+    },
+    error: () => {},
+    debug: () => {},
+    trace: () => {},
+    fatal: () => {},
+    child: () => logger,
+    level: "silent",
+  } as unknown as import("pino").Logger;
+
+  return { logger, warnings };
+}
 
 function makeRecord(overrides: Partial<Parameters<TelemetryStore["record"]>[0]> = {}) {
   return {
@@ -43,6 +62,18 @@ function makeResilienceEventRecord(overrides: Partial<ResilienceEventRecord> = {
     repo: "owner/repo",
     eventType: "pull_request.review_requested",
     kind: "timeout",
+    ...overrides,
+  };
+}
+
+function makeRateLimitEventRecord(overrides: Partial<RateLimitEventRecord> = {}): RateLimitEventRecord {
+  return {
+    repo: "owner/repo",
+    eventType: "pull_request.review_requested",
+    cacheHitRate: 0,
+    skippedQueries: 0,
+    retryAttempts: 0,
+    degradationPath: "none",
     ...overrides,
   };
 }
@@ -390,5 +421,226 @@ describe("TelemetryStore", () => {
     expect(row.execution_conclusion).toBe("timeout_partial");
     expect(row.checkpoint_files_reviewed).toBe(4);
     expect(row.created_at).toBeTruthy();
+  });
+
+  test("recordRateLimitEvent() is idempotent by delivery_id + event_type", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 0.75,
+        skippedQueries: 0,
+        retryAttempts: 1,
+        degradationPath: "none",
+      }),
+    );
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 1,
+        skippedQueries: 0,
+        retryAttempts: 0,
+        degradationPath: "none",
+      }),
+    );
+
+    // Same delivery id + different event type should persist as a distinct row.
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-001",
+        repo: "octocat/hello-world",
+        prNumber: 7,
+        eventType: "pull_request.opened",
+        cacheHitRate: 0,
+        skippedQueries: 1,
+        retryAttempts: 1,
+        degradationPath: "search-api-rate-limit",
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const reviewRequestedRow = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.review_requested'")
+      .get() as Record<string, unknown>;
+    const openedRow = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.opened'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(2);
+    expect(reviewRequestedRow.repo).toBe("octocat/hello-world");
+    expect(reviewRequestedRow.pr_number).toBe(7);
+    expect(reviewRequestedRow.event_type).toBe("pull_request.review_requested");
+    expect(reviewRequestedRow.cache_hit_rate).toBe(0.75);
+    expect(reviewRequestedRow.skipped_queries).toBe(0);
+    expect(reviewRequestedRow.retry_attempts).toBe(1);
+    expect(reviewRequestedRow.degradation_path).toBe("none");
+    expect(reviewRequestedRow.created_at).toBeTruthy();
+    expect(openedRow.event_type).toBe("pull_request.opened");
+    expect(openedRow.cache_hit_rate).toBe(0);
+    expect(openedRow.skipped_queries).toBe(1);
+    expect(openedRow.retry_attempts).toBe(1);
+    expect(openedRow.degradation_path).toBe("search-api-rate-limit");
+  });
+
+  test("recordRateLimitEvent() ignores replayed writes for same delivery/event identity", () => {
+    const { store: fileStore, path } = createFileStore();
+
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-replay-001",
+        eventType: "pull_request.review_requested",
+        cacheHitRate: 0,
+        skippedQueries: 1,
+        retryAttempts: 1,
+        degradationPath: "search-api-rate-limit",
+      }),
+    );
+
+    // Simulate replay/retry attempts trying to emit duplicate telemetry.
+    for (let i = 0; i < 3; i++) {
+      fileStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: "rate-replay-001",
+          eventType: "pull_request.review_requested",
+          cacheHitRate: 1,
+          skippedQueries: 0,
+          retryAttempts: 0,
+          degradationPath: "none",
+        }),
+      );
+    }
+
+    const verifyDb = new Database(path, { readonly: true });
+    const row = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
+      .get() as Record<string, unknown>;
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    fileStore.close();
+
+    expect(count.cnt).toBe(1);
+    expect(row.cache_hit_rate).toBe(0);
+    expect(row.skipped_queries).toBe(1);
+    expect(row.retry_attempts).toBe(1);
+    expect(row.degradation_path).toBe("search-api-rate-limit");
+  });
+
+  test("initializing against an existing DB additively creates rate_limit_events", () => {
+    const path = `/tmp/kodiai-test-existing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
+    tmpFiles.push(path);
+
+    const legacyDb = new Database(path);
+    legacyDb.run(
+      "CREATE TABLE executions (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'anthropic', model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, conclusion TEXT NOT NULL, session_id TEXT, num_turns INTEGER, stop_reason TEXT)",
+    );
+    legacyDb.run(
+      "CREATE TABLE retrieval_quality (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, top_k INTEGER, distance_threshold REAL, result_count INTEGER NOT NULL, avg_distance REAL, language_match_ratio REAL)",
+    );
+    legacyDb.close();
+
+    const fileStore = createTelemetryStore({ dbPath: path, logger: mockLogger });
+    fileStore.recordRateLimitEvent(
+      makeRateLimitEventRecord({
+        deliveryId: "rate-legacy-001",
+        cacheHitRate: 1,
+      }),
+    );
+
+    const verifyDb = new Database(path, { readonly: true });
+    const table = verifyDb
+      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='rate_limit_events'")
+      .get() as { name?: string } | null;
+    const row = verifyDb
+      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-legacy-001'")
+      .get() as Record<string, unknown>;
+    const indexes = verifyDb
+      .query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='rate_limit_events'")
+      .all() as Array<{ name: string }>;
+    verifyDb.close();
+    fileStore.close();
+
+    expect(table?.name).toBe("rate_limit_events");
+    expect(row.repo).toBe("owner/repo");
+    expect(row.cache_hit_rate).toBe(1);
+    expect(indexes.map((index) => index.name)).toContain("idx_rate_limit_events_delivery_event");
+    expect(indexes.map((index) => index.name)).not.toContain("idx_rate_limit_events_delivery");
+  });
+
+  test("recordRateLimitEvent() forces configured identity failures without writing duplicate rows", () => {
+    const { logger, warnings } = createWarnCaptureLogger();
+    const { store: fileStore, path } = createFileStore();
+    fileStore.close();
+
+    const injectedStore = createTelemetryStore({
+      dbPath: path,
+      logger,
+      rateLimitFailureInjectionIdentities: ["delivery-injected-001"],
+    });
+
+    expect(() =>
+      injectedStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: "delivery-injected-001",
+          eventType: "pull_request.review_requested",
+        }),
+      )).toThrow("Forced rate-limit telemetry write failure");
+
+    const verifyDb = new Database(path, { readonly: true });
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'delivery-injected-001'")
+      .get() as { cnt: number };
+    verifyDb.close();
+    injectedStore.close();
+
+    expect(count.cnt).toBe(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe("Rate-limit telemetry write forced to fail");
+    expect((warnings[0]?.data as { executionIdentity?: string }).executionIdentity).toBe("delivery-injected-001");
+  });
+
+  test("recordRateLimitEvent() supports deterministic fallback identity injection without delivery id", () => {
+    const fallbackIdentity = "owner/repo#pull_request.review_requested#77";
+    const { store: fileStore, path } = createFileStore();
+    fileStore.close();
+
+    const injectedStore = createTelemetryStore({
+      dbPath: path,
+      logger: mockLogger,
+      rateLimitFailureInjectionIdentities: [fallbackIdentity],
+    });
+
+    expect(() =>
+      injectedStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: undefined,
+          repo: "owner/repo",
+          prNumber: 77,
+          eventType: "pull_request.review_requested",
+        }),
+      )).toThrow("Forced rate-limit telemetry write failure");
+
+    const verifyDb = new Database(path, { readonly: true });
+    const count = verifyDb
+      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE repo = 'owner/repo' AND pr_number = 77")
+      .get() as { cnt: number };
+    verifyDb.close();
+    injectedStore.close();
+
+    expect(count.cnt).toBe(0);
   });
 });

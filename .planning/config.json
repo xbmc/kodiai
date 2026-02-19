@@ -8,5 +8,6 @@
     "research": false,
     "plan_check": true,
     "verifier": true
-  }
+  },
+  "brave_search": true
 }

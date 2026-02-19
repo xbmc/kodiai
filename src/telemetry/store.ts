@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Logger } from "pino";
 import type {
+  RateLimitEventRecord,
   RetrievalQualityRecord,
   ResilienceEventRecord,
   TelemetryRecord,
@@ -26,8 +27,14 @@ function hasTableColumn(db: Database, tableName: string, columnName: string): bo
 export function createTelemetryStore(opts: {
   dbPath: string;
   logger: Logger;
+  rateLimitFailureInjectionIdentities?: string[];
 }): TelemetryStore {
   const { dbPath, logger } = opts;
+  const rateLimitFailureInjectionIdentities = new Set(
+    (opts.rateLimitFailureInjectionIdentities ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0),
+  );
 
   // Ensure parent directory exists (SQLite creates file, not directory)
   if (dbPath !== ":memory:") {
@@ -134,6 +141,22 @@ export function createTelemetryStore(opts: {
     )
   `);
 
+  // Create rate_limit_events table for Search rate-limit observability
+  db.run(`
+    CREATE TABLE IF NOT EXISTS rate_limit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      delivery_id TEXT,
+      repo TEXT NOT NULL,
+      pr_number INTEGER,
+      event_type TEXT NOT NULL,
+      cache_hit_rate REAL NOT NULL,
+      skipped_queries INTEGER NOT NULL,
+      retry_attempts INTEGER NOT NULL,
+      degradation_path TEXT NOT NULL
+    )
+  `);
+
   // Ensure additive columns exist for older DBs
   const resilienceColumns: Array<{ name: string; definition: string }> = [
     { name: "pr_author", definition: "pr_author TEXT" },
@@ -192,6 +215,22 @@ export function createTelemetryStore(opts: {
     ON resilience_events(repo, created_at)
   `);
 
+  // Replace legacy delivery-only idempotency index with composite identity.
+  // Exactly-once semantics for rate-limit telemetry are keyed by
+  // (delivery_id, event_type) when delivery_id is present.
+  db.run(`
+    DROP INDEX IF EXISTS idx_rate_limit_events_delivery
+  `);
+  db.run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_limit_events_delivery_event
+    ON rate_limit_events(delivery_id, event_type)
+    WHERE delivery_id IS NOT NULL
+  `);
+  db.run(`
+    CREATE INDEX IF NOT EXISTS idx_rate_limit_events_repo_created
+    ON rate_limit_events(repo, created_at)
+  `);
+
   // Prepared insert statement (cached for performance)
   const insertStmt = db.query(`
     INSERT INTO executions (
@@ -234,6 +273,16 @@ export function createTelemetryStore(opts: {
       $recentTimeouts, $chronicTimeout,
       $retryEnqueued, $retryFilesCount, $retryScopeRatio, $retryTimeoutSeconds,
       $retryRiskLevel, $retryCheckpointEnabled, $retryHasResults
+    )
+  `);
+
+  const insertRateLimitEventStmt = db.query(`
+    INSERT OR IGNORE INTO rate_limit_events (
+      delivery_id, repo, pr_number, event_type,
+      cache_hit_rate, skipped_queries, retry_attempts, degradation_path
+    ) VALUES (
+      $deliveryId, $repo, $prNumber, $eventType,
+      $cacheHitRate, $skippedQueries, $retryAttempts, $degradationPath
     )
   `);
 
@@ -305,6 +354,55 @@ export function createTelemetryStore(opts: {
       bumpWriteCount();
     },
 
+    recordRateLimitEvent(entry: RateLimitEventRecord): void {
+      const executionIdentity = entry.executionIdentity
+        ?? entry.deliveryId
+        ?? `${entry.repo}#${entry.eventType}#${entry.prNumber ?? "none"}`;
+
+      if (rateLimitFailureInjectionIdentities.has(executionIdentity)) {
+        logger.warn(
+          {
+            executionIdentity,
+            deliveryId: entry.deliveryId,
+            eventType: entry.eventType,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+            verificationMode: "rate-limit-failure-injection",
+          },
+          "Rate-limit telemetry write forced to fail",
+        );
+        throw new Error(`Forced rate-limit telemetry write failure for identity '${executionIdentity}'`);
+      }
+
+      try {
+        insertRateLimitEventStmt.run({
+          $deliveryId: entry.deliveryId ?? null,
+          $repo: entry.repo,
+          $prNumber: entry.prNumber ?? null,
+          $eventType: entry.eventType,
+          $cacheHitRate: entry.cacheHitRate,
+          $skippedQueries: entry.skippedQueries,
+          $retryAttempts: entry.retryAttempts,
+          $degradationPath: entry.degradationPath,
+        });
+      } catch (err) {
+        logger.warn(
+          {
+            err,
+            executionIdentity,
+            deliveryId: entry.deliveryId,
+            eventType: entry.eventType,
+            repo: entry.repo,
+            prNumber: entry.prNumber,
+          },
+          "Rate-limit telemetry write failed",
+        );
+        throw err;
+      }
+
+      bumpWriteCount();
+    },
+
     recordResilienceEvent(entry: ResilienceEventRecord): void {
       insertResilienceEventStmt.run({
         $deliveryId: entry.deliveryId,
@@ -348,7 +446,12 @@ export function createTelemetryStore(opts: {
       );
       const deletedResilience = purgeResilienceStmt.all({ $modifier: modifier });
 
-      return deletedExecutions.length + deletedResilience.length;
+      const purgeRateLimitStmt = db.query(
+        "DELETE FROM rate_limit_events WHERE created_at < datetime('now', $modifier) RETURNING id",
+      );
+      const deletedRateLimit = purgeRateLimitStmt.all({ $modifier: modifier });
+
+      return deletedExecutions.length + deletedResilience.length + deletedRateLimit.length;
     },
 
     checkpoint(): void {

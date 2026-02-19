@@ -12,6 +12,8 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
+import type { EmbeddingProvider } from "../learning/types.ts";
+import type { IsolationLayer } from "../learning/isolation.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -32,9 +34,93 @@ import {
 import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
+import {
+  buildRetrievalVariants,
+  executeRetrievalVariants,
+  mergeVariantResults,
+} from "../learning/multi-query-retrieval.ts";
+import {
+  buildSnippetAnchors,
+  trimSnippetAnchorsToBudget,
+} from "../learning/retrieval-snippets.ts";
+import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+
+export function buildWritePolicyRefusalMessage(
+  err: WritePolicyError,
+  allowPaths: string[],
+): string {
+  const yamlSingleQuote = (s: string): string => s.replaceAll("'", "''");
+
+  const lines: string[] = [];
+  lines.push("Write request refused.");
+  lines.push("");
+  lines.push(`Reason: ${err.code}`);
+  if (err.rule) lines.push(`Rule: ${err.rule}`);
+  if (err.path) lines.push(`File: ${err.path}`);
+  if (err.pattern) lines.push(`Matched pattern: ${err.pattern}`);
+  if (err.detector) lines.push(`Detector: ${err.detector}`);
+  lines.push("");
+  lines.push(err.message);
+
+  if (err.code === "write-policy-not-allowed" && err.path) {
+    const escapedPath = yamlSingleQuote(err.path);
+    lines.push("");
+    lines.push("Smallest config change (if intended):");
+    lines.push("Update `.kodiai.yml`:");
+    lines.push("```yml");
+    lines.push("write:");
+    lines.push("  allowPaths:");
+    lines.push(`    - '${escapedPath}'`);
+    lines.push("```");
+
+    if (allowPaths.length > 0) {
+      lines.push("");
+      lines.push(
+        `Current allowPaths: ${allowPaths
+          .map((p) => `'${yamlSingleQuote(p)}'`)
+          .join(", ")}`,
+      );
+    }
+  } else if (err.code === "write-policy-denied-path") {
+    lines.push("");
+    lines.push("Config change required to allow this path is potentially risky.");
+    lines.push("If you explicitly want to allow it, narrow or remove the matching denyPaths entry.");
+  } else if (err.code === "write-policy-secret-detected") {
+    lines.push("");
+    lines.push("No safe config bypass suggested.");
+    lines.push("Remove/redact the secret-like content and retry.");
+    lines.push("(If this is a false positive, you can disable secretScan, but that reduces safety.)");
+  } else if (err.code === "write-policy-no-changes") {
+    lines.push("");
+    lines.push("No file changes were produced.");
+    lines.push("Restate the change request with a concrete file + edit.");
+  }
+
+  return lines.join("\n");
+}
+
+type MentionRetrievalContext = {
+  maxChars?: number;
+  maxItems?: number;
+  findings: Array<{
+    findingText: string;
+    severity: string;
+    category: string;
+    path: string;
+    line?: number;
+    snippet?: string;
+    outcome: string;
+    distance: number;
+    sourceRepo: string;
+  }>;
+};
+
+type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
+
+const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
 
 /**
@@ -53,9 +139,21 @@ export function createMentionHandler(deps: {
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
+  embeddingProvider?: EmbeddingProvider;
+  isolationLayer?: IsolationLayer;
   logger: Logger;
 }): void {
-  const { eventRouter, jobQueue, workspaceManager, githubApp, executor, telemetryStore, logger } = deps;
+  const {
+    eventRouter,
+    jobQueue,
+    workspaceManager,
+    githubApp,
+    executor,
+    telemetryStore,
+    embeddingProvider,
+    isolationLayer,
+    logger,
+  } = deps;
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -234,6 +332,161 @@ export function createMentionHandler(deps: {
     return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
   }
 
+  function toErrorSignalText(value: unknown): string {
+    if (typeof value === "string") {
+      return value;
+    }
+    if (value instanceof Uint8Array) {
+      return new TextDecoder().decode(value);
+    }
+    if (value instanceof Error) {
+      return value.message;
+    }
+    if (value && typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value ?? "");
+  }
+
+  function summarizeErrorForDiagnostics(err: unknown): string {
+    const parts: string[] = [];
+
+    if (err instanceof Error) {
+      if (typeof err.message === "string") {
+        parts.push(err.message);
+      }
+      const withExtras = err as Error & {
+        stderr?: unknown;
+        stdout?: unknown;
+        cause?: unknown;
+      };
+      parts.push(toErrorSignalText(withExtras.stderr));
+      parts.push(toErrorSignalText(withExtras.stdout));
+      parts.push(toErrorSignalText(withExtras.cause));
+    }
+
+    if (typeof err === "object" && err !== null) {
+      const maybeObj = err as {
+        message?: unknown;
+        stderr?: unknown;
+        stdout?: unknown;
+        response?: unknown;
+      };
+      parts.push(toErrorSignalText(maybeObj.message));
+      parts.push(toErrorSignalText(maybeObj.stderr));
+      parts.push(toErrorSignalText(maybeObj.stdout));
+      parts.push(toErrorSignalText(maybeObj.response));
+    }
+
+    const firstLine = parts
+      .map((part) => part.replace(/\s+/g, " ").trim())
+      .find((part) => part.length > 0);
+
+    return firstLine ?? "Unknown publish failure";
+  }
+
+  function buildIssueWriteSuccessReply(params: {
+    prUrl: string;
+    issueLinkbackUrl: string;
+  }): string {
+    const lines = [
+      "status: success",
+      `pr_url: ${params.prUrl}`,
+      `issue_linkback_url: ${params.issueLinkbackUrl}`,
+      "",
+      `Opened PR: ${params.prUrl}`,
+    ];
+
+    return wrapInDetails(lines.join("\n"), "kodiai response");
+  }
+
+  function buildIssueWriteFailureReply(params: {
+    failedStep: IssueWriteFailureStep;
+    diagnostics: string;
+    retryCommand: string;
+  }): string {
+    const lines = [
+      "Write request failed before PR publication completed.",
+      "",
+      "status: pr_creation_failed",
+      `failed_step: ${params.failedStep}`,
+      `diagnostics: ${params.diagnostics}`,
+      "",
+      "Next step: Fix the failed step and retry the exact same command.",
+      `Retry command: ${params.retryCommand}`,
+    ];
+
+    return wrapInDetails(lines.join("\n"), "kodiai response");
+  }
+
+  function isLikelyWritePermissionFailure(err: unknown): boolean {
+    if (!err) {
+      return false;
+    }
+
+    const status =
+      typeof err === "object" && err !== null && "status" in err && typeof err.status === "number"
+        ? err.status
+        : undefined;
+
+    if (status === 401 || status === 403) {
+      return true;
+    }
+
+    const parts: string[] = [];
+    if (err instanceof Error) {
+      parts.push(err.message);
+      const errorWithExtras = err as Error & {
+        stderr?: unknown;
+        stdout?: unknown;
+        cause?: unknown;
+      };
+      parts.push(toErrorSignalText(errorWithExtras.stderr));
+      parts.push(toErrorSignalText(errorWithExtras.stdout));
+      parts.push(toErrorSignalText(errorWithExtras.cause));
+    }
+
+    if (typeof err === "object" && err !== null) {
+      const obj = err as {
+        message?: unknown;
+        stderr?: unknown;
+        stdout?: unknown;
+        response?: unknown;
+      };
+      parts.push(toErrorSignalText(obj.message));
+      parts.push(toErrorSignalText(obj.stderr));
+      parts.push(toErrorSignalText(obj.stdout));
+      parts.push(toErrorSignalText(obj.response));
+    }
+
+    const signal = parts.join("\n").toLowerCase();
+    if (signal.length === 0) {
+      return false;
+    }
+
+    return (
+      signal.includes("resource not accessible by integration") ||
+      signal.includes("permission to") ||
+      signal.includes("write access to repository not granted") ||
+      signal.includes("permission denied") ||
+      signal.includes("insufficient permission") ||
+      signal.includes("forbidden") ||
+      signal.includes("not permitted") ||
+      signal.includes("requires write")
+    );
+  }
+
+  function splitGitLines(output: string): string[] {
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
   function stripIssueIntentWrappers(userQuestion: string): string {
     let normalized = userQuestion.trim().replace(/\s+/g, " ");
 
@@ -242,6 +495,8 @@ export function createMentionHandler(deps: {
       normalized = normalized
         .replace(/^(?:>+\s*)+/, "")
         .replace(/^(?:[-*+]\s+|\d+[.)]\s+)/, "")
+        .replace(/^\/[a-z0-9._:-]+(?:\s+|$)/i, "")
+        .replace(/^https?:\/\/\S+(?:\s+|$)/i, "")
         .replace(/^[`'"([{]+/, "")
         .replace(/^[,.;:!?\-\s]+/, "")
         .replace(/^(?:hey|hi|hello|quick question|question|fyi|context)[,\-:]\s+/i, "")
@@ -353,8 +608,14 @@ export function createMentionHandler(deps: {
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
-        async function postMentionReply(replyBody: string): Promise<void> {
-          const sanitizedBody = sanitizeOutgoingMentions(replyBody, possibleHandles);
+        async function postMentionReply(
+          replyBody: string,
+          options?: { sanitizeMentions?: boolean },
+        ): Promise<void> {
+          const sanitizedBody =
+            options?.sanitizeMentions === false
+              ? replyBody
+              : sanitizeOutgoingMentions(replyBody, possibleHandles);
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {
@@ -588,7 +849,7 @@ export function createMentionHandler(deps: {
             ? detectImplicitIssueIntent(parsedWriteIntent.request)
             : undefined;
         const writeIntent =
-          implicitIntent !== undefined
+          isIssueThreadComment && implicitIntent !== undefined && !parsedWriteIntent.writeIntent
             ? {
                 writeIntent: true,
                 keyword: implicitIntent,
@@ -606,6 +867,35 @@ export function createMentionHandler(deps: {
             : { type: "issue" as const, number: mention.issueNumber };
 
         const writeKeyword = writeIntent.keyword ?? "apply";
+        const retryCommand =
+          writeIntent.request.trim().length > 0
+            ? `@${appSlug} ${writeKeyword}: ${writeIntent.request}`
+            : `@${appSlug} ${writeKeyword}: <same request>`;
+
+        const buildWritePermissionFailureReply = (): string =>
+          wrapInDetails(
+            [
+              "I couldn't complete this write request because of missing GitHub App permissions.",
+              "",
+              "Minimum required permissions for write-mode PR creation:",
+              "- `Contents: Read and write`",
+              "- `Pull requests: Read and write`",
+              "- `Issues: Read and write`",
+              "",
+              "After updating permissions on the app installation, re-run the same command:",
+              `- \`${retryCommand}\``,
+            ].join("\n"),
+            "kodiai response",
+          );
+
+        const maybeReplyWritePermissionFailure = async (err: unknown): Promise<boolean> => {
+          if (!isLikelyWritePermissionFailure(err)) {
+            return false;
+          }
+          await postMentionReply(buildWritePermissionFailureReply(), { sanitizeMentions: false });
+          return true;
+        };
+
         const writeOutputKey =
           writeEnabled
             ? buildWriteOutputKey({
@@ -727,7 +1017,7 @@ export function createMentionHandler(deps: {
             ].join("\n"),
             "kodiai response",
           );
-          await postMentionReply(replyBody);
+          await postMentionReply(replyBody, { sanitizeMentions: false });
           return;
         }
 
@@ -748,20 +1038,27 @@ export function createMentionHandler(deps: {
             "Write intent detected but write-mode disabled; refusing to apply changes",
           );
 
+          const retryCommand =
+            writeIntent.request.trim().length > 0
+              ? `@${appSlug} ${writeKeyword}: ${writeIntent.request}`
+              : `@${appSlug} ${writeKeyword}: <same request>`;
+
           const replyBody = wrapInDetails(
             [
               "Write mode is disabled for this repo.",
               "",
-              "To enable:",
+              "Update `.kodiai.yml`:",
               "```yml",
               "write:",
               "  enabled: true",
               "```",
+              "",
+              `Then re-run the same \`${retryCommand}\` command.`,
             ].join("\n"),
             "kodiai response",
           );
 
-          await postMentionReply(replyBody);
+          await postMentionReply(replyBody, { sanitizeMentions: false });
           return;
         }
 
@@ -885,6 +1182,186 @@ export function createMentionHandler(deps: {
           }
         }
 
+        let retrievalContext: MentionRetrievalContext | undefined;
+        if (embeddingProvider && isolationLayer && config.knowledge.retrieval.enabled) {
+          try {
+            let filePaths: string[] = [];
+            if (mention.prNumber !== undefined && mention.baseRef) {
+              const diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
+                .quiet()
+                .nothrow();
+              if (diffResult.exitCode === 0) {
+                filePaths = splitGitLines(diffResult.text());
+              } else {
+                logger.warn(
+                  {
+                    surface: mention.surface,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    prNumber: mention.prNumber,
+                    baseRef: mention.baseRef,
+                    exitCode: diffResult.exitCode,
+                  },
+                  "Failed to collect mention retrieval file paths (fail-open)",
+                );
+              }
+            }
+
+            const prLanguages = Array.from(
+              new Set(
+                filePaths
+                  .map((filePath) => classifyFileLanguage(filePath))
+                  .filter((language) => language !== "Unknown"),
+              ),
+            );
+            const retrievalTopK = Math.max(1, Math.min(config.knowledge.retrieval.topK, 3));
+            const variants = buildRetrievalVariants({
+              title: writeIntent.request,
+              body: mentionContext,
+              conventionalType: null,
+              prLanguages,
+              riskSignals: [mention.surface, mention.inReplyToId !== undefined ? "reply-thread" : "single-mention"],
+              filePaths,
+            });
+            const variantTopK = Math.max(1, Math.ceil(retrievalTopK / Math.max(1, variants.length)));
+            const variantResults = await executeRetrievalVariants({
+              variants,
+              maxConcurrency: 2,
+              execute: async (variant) => {
+                const embeddingResult = await embeddingProvider.generate(variant.query, "query");
+                if (!embeddingResult) {
+                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
+                }
+
+                const retrieval = isolationLayer.retrieveWithIsolation({
+                  queryEmbedding: embeddingResult.embedding,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  owner: mention.owner,
+                  sharingEnabled: config.knowledge.sharing.enabled,
+                  topK: variantTopK,
+                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+                  adaptive: config.knowledge.retrieval.adaptive,
+                  logger,
+                });
+
+                return retrieval.results;
+              },
+            });
+
+            const variantFailures = variantResults.filter((variant) => variant.error);
+            for (const failedVariant of variantFailures) {
+              logger.warn(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  issueNumber: mention.issueNumber,
+                  prNumber: mention.prNumber,
+                  variant: failedVariant.variant.type,
+                  err: failedVariant.error,
+                },
+                "Mention retrieval variant failed (fail-open)",
+              );
+            }
+
+            const merged = mergeVariantResults({
+              resultsByVariant: variantResults,
+              topK: retrievalTopK,
+            });
+
+            if (merged.length > 0) {
+              const anchors = await buildSnippetAnchors({
+                workspaceDir: workspace.dir,
+                findings: merged,
+              });
+              const fallbackAnchors = merged.map((result) => ({
+                path: result.record.filePath,
+                anchor: result.record.filePath,
+                line: undefined,
+                snippet: undefined,
+                distance: result.distance,
+              }));
+              const stableAnchors = anchors.length === merged.length ? anchors : fallbackAnchors;
+
+              const trimmedAnchors = trimSnippetAnchorsToBudget({
+                anchors: stableAnchors,
+                maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
+                maxItems: retrievalTopK,
+              });
+              const remainingAnchors = [...trimmedAnchors];
+
+              const compareByRelevance = (
+                a: { distance: number; path: string; line?: number },
+                b: { distance: number; path: string; line?: number },
+              ) => {
+                if (a.distance !== b.distance) {
+                  return a.distance - b.distance;
+                }
+                if (a.path !== b.path) {
+                  return a.path.localeCompare(b.path);
+                }
+                return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+              };
+
+              const trimmedFindings = merged
+                .map((result, index) => ({
+                  result,
+                  anchor: stableAnchors[index] ?? {
+                    path: result.record.filePath,
+                    anchor: result.record.filePath,
+                    line: undefined,
+                    snippet: undefined,
+                    distance: result.distance,
+                  },
+                }))
+                .sort((a, b) => compareByRelevance(a.anchor, b.anchor))
+                .filter((entry) => {
+                  const matchIndex = remainingAnchors.findIndex((anchor) =>
+                    anchor.path === entry.anchor.path
+                    && anchor.line === entry.anchor.line
+                    && anchor.snippet === entry.anchor.snippet
+                    && anchor.distance === entry.anchor.distance
+                  );
+                  if (matchIndex === -1) {
+                    return false;
+                  }
+                  remainingAnchors.splice(matchIndex, 1);
+                  return true;
+                });
+
+              if (trimmedFindings.length > 0) {
+                retrievalContext = {
+                  maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
+                  maxItems: retrievalTopK,
+                  findings: trimmedFindings.map(({ result, anchor }) => ({
+                    findingText: result.record.findingText,
+                    severity: result.record.severity,
+                    category: result.record.category,
+                    path: anchor.path,
+                    line: anchor.line,
+                    snippet: anchor.snippet,
+                    outcome: result.record.outcome,
+                    distance: result.distance,
+                    sourceRepo: result.sourceRepo,
+                  })),
+                };
+              }
+            }
+          } catch (err) {
+            logger.warn(
+              {
+                err,
+                surface: mention.surface,
+                owner: mention.owner,
+                repo: mention.repo,
+                issueNumber: mention.issueNumber,
+                prNumber: mention.prNumber,
+              },
+              "Mention retrieval context generation failed (fail-open)",
+            );
+          }
+        }
+
         const planOnlyInstructions = isPlanOnly
           ? [
               "Plan-only request detected (plan:).",
@@ -924,6 +1401,7 @@ export function createMentionHandler(deps: {
         const mentionPrompt = buildMentionPrompt({
           mention,
           mentionContext,
+          retrievalContext,
           userQuestion: writeIntent.request,
           findingContext,
           customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
@@ -1026,6 +1504,45 @@ export function createMentionHandler(deps: {
 
         // Write-mode: trusted code publishes the branch + PR and replies with a link.
         if (writeEnabled && writeOutputKey && writeBranchName) {
+          const isIssueWritePublishFlow = isIssueThreadComment;
+          const publishFailureStatus = "pr_creation_failed" as const;
+
+          const postIssueWriteFailure = async (
+            failedStep: IssueWriteFailureStep,
+            err: unknown,
+          ): Promise<void> => {
+            if (!isIssueWritePublishFlow) {
+              throw err instanceof Error ? err : new Error(String(err));
+            }
+
+            const replyBody = buildIssueWriteFailureReply({
+              failedStep,
+              diagnostics: summarizeErrorForDiagnostics(err),
+              retryCommand,
+            });
+
+            await postMentionReply(replyBody, { sanitizeMentions: false });
+
+            logger.warn(
+              {
+                evidenceType: "write-mode",
+                outcome: publishFailureStatus,
+                deliveryId: event.id,
+                installationId: event.installationId,
+                owner: mention.owner,
+                repoName: mention.repo,
+                repo: `${mention.owner}/${mention.repo}`,
+                sourcePrNumber: mention.prNumber,
+                triggerCommentId: mention.commentId,
+                triggerCommentUrl,
+                writeOutputKey,
+                failedStep,
+                diagnostics: summarizeErrorForDiagnostics(err),
+              },
+              "Issue write-mode publish failed",
+            );
+          };
+
           const status = await getGitStatusPorcelain(workspace.dir);
           if (status.trim().length === 0) {
             const replyBody = wrapInDetails(
@@ -1162,6 +1679,10 @@ export function createMentionHandler(deps: {
                 return;
               }
 
+              if (await maybeReplyWritePermissionFailure(err)) {
+                return;
+              }
+
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
               try {
                 await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
@@ -1214,6 +1735,9 @@ export function createMentionHandler(deps: {
                   remoteRef: writeBranchName,
                 });
               } catch (pushErr) {
+                if (await maybeReplyWritePermissionFailure(pushErr)) {
+                  return;
+                }
                 logger.error(
                   { err: pushErr, prNumber: mention.prNumber, branchName: writeBranchName },
                   "Fallback push to bot branch failed",
@@ -1256,6 +1780,10 @@ export function createMentionHandler(deps: {
               return;
             }
 
+            if (await maybeReplyWritePermissionFailure(err)) {
+              return;
+            }
+
             // If the branch already exists (e.g. replay), try to find the existing PR.
             if (err instanceof Error) {
               const msg = err.message.toLowerCase();
@@ -1290,7 +1818,9 @@ export function createMentionHandler(deps: {
                 }
               }
             }
-            throw err;
+
+            await postIssueWriteFailure("branch-push", err);
+            return;
           }
 
           const requestSummary = summarizeWriteRequest(writeIntent.request);
@@ -1321,20 +1851,70 @@ export function createMentionHandler(deps: {
 
           const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
 
-          const { data: createdPr } = await octokit.rest.pulls.create({
-            owner: mention.owner,
-            repo: mention.repo,
-            title: prTitle,
-            head: pushed.branchName,
-            base: prBaseRef,
-            body: prBody,
-          });
+          let createdPr: { html_url: string } | undefined;
+          const maxPrCreateAttempts = isIssueWritePublishFlow ? 2 : 1;
+          for (let attempt = 1; attempt <= maxPrCreateAttempts; attempt++) {
+            try {
+              const response = await octokit.rest.pulls.create({
+                owner: mention.owner,
+                repo: mention.repo,
+                title: prTitle,
+                head: pushed.branchName,
+                base: prBaseRef,
+                body: prBody,
+              });
+              createdPr = response.data;
+              break;
+            } catch (err) {
+              if (await maybeReplyWritePermissionFailure(err)) {
+                return;
+              }
 
-          const replyBody = wrapInDetails(
-            [`Opened PR: ${createdPr.html_url}`].join("\n"),
-            "kodiai response",
-          );
-          await postMentionReply(replyBody);
+              if (attempt < maxPrCreateAttempts) {
+                logger.warn(
+                  {
+                    err,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    issueNumber: mention.issueNumber,
+                    attempt,
+                    maxAttempts: maxPrCreateAttempts,
+                    branchName: pushed.branchName,
+                    writeOutputKey,
+                  },
+                  "Issue write-mode PR creation failed, retrying once",
+                );
+                continue;
+              }
+
+              await postIssueWriteFailure("create-pr", err);
+              return;
+            }
+          }
+
+          if (!createdPr?.html_url) {
+            await postIssueWriteFailure(
+              "create-pr",
+              new Error("GitHub pulls.create response did not include html_url"),
+            );
+            return;
+          }
+
+          const issueLinkbackUrl =
+            mention.prNumber !== undefined
+              ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+              : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
+
+          const replyBody = buildIssueWriteSuccessReply({
+            prUrl: createdPr.html_url,
+            issueLinkbackUrl,
+          });
+          try {
+            await postMentionReply(replyBody);
+          } catch (err) {
+            await postIssueWriteFailure("issue-linkback", err);
+            return;
+          }
 
           logger.info(
             {
@@ -1368,22 +1948,11 @@ export function createMentionHandler(deps: {
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
         if (!writeEnabled && result.conclusion === "success" && !result.published) {
-          const fallbackLines =
-            isIssueThreadComment
-              ? [
-                  "I can answer this, but I need a bit more context first.",
-                  "",
-                  "(1) What exact outcome do you want from this change (bug fix, refactor, behavior change, or explanation)?",
-                  "(2) Which files, directories, or modules should I focus on first?",
-                  "(3) Are there constraints I should respect (API contract, tests to preserve, or timeline)?",
-                ]
-              : [
-                  "I saw your mention, but I didn't publish a reply automatically.",
-                  "",
-                  "Can you clarify what you want me to do?",
-                  "- (1) What outcome are you aiming for?",
-                  "- (2) Which file(s) / line(s) should I focus on?",
-                ];
+          const fallbackLines = [
+            "I can answer this, but I need one detail first.",
+            "",
+            "Could you share the exact outcome you want and the primary file/path I should focus on first?",
+          ];
 
           const fallbackBody = wrapInDetails(
             fallbackLines.join("\n"),
@@ -1477,61 +2046,6 @@ export function createMentionHandler(deps: {
       jobType: "mention",
       prNumber: mention.prNumber,
     });
-  }
-
-  function buildWritePolicyRefusalMessage(
-    err: WritePolicyError,
-    allowPaths: string[],
-  ): string {
-    const yamlSingleQuote = (s: string): string => s.replaceAll("'", "''");
-
-    const lines: string[] = [];
-    lines.push("Write request refused.");
-    lines.push("");
-    lines.push(`Reason: ${err.code}`);
-    if (err.rule) lines.push(`Rule: ${err.rule}`);
-    if (err.path) lines.push(`File: ${err.path}`);
-    if (err.pattern) lines.push(`Matched pattern: ${err.pattern}`);
-    if (err.detector) lines.push(`Detector: ${err.detector}`);
-    lines.push("");
-    lines.push(err.message);
-
-    // Suggest the smallest config change when it's reasonably safe.
-    // For secret detection, do not suggest bypassing policy by default.
-    if (err.code === "write-policy-not-allowed" && err.path) {
-      const escapedPath = yamlSingleQuote(err.path);
-      lines.push("");
-      lines.push("Smallest config change (if intended):");
-      lines.push("```yml");
-      lines.push("write:");
-      lines.push("  allowPaths:");
-      lines.push(`    - '${escapedPath}'`);
-      lines.push("```");
-
-      if (allowPaths.length > 0) {
-        lines.push("");
-        lines.push(
-          `Current allowPaths: ${allowPaths
-            .map((p) => `'${yamlSingleQuote(p)}'`)
-            .join(", ")}`,
-        );
-      }
-    } else if (err.code === "write-policy-denied-path") {
-      lines.push("");
-      lines.push("Config change required to allow this path is potentially risky.");
-      lines.push("If you explicitly want to allow it, narrow or remove the matching denyPaths entry.");
-    } else if (err.code === "write-policy-secret-detected") {
-      lines.push("");
-      lines.push("No safe config bypass suggested.");
-      lines.push("Remove/redact the secret-like content and retry.");
-      lines.push("(If this is a false positive, you can disable secretScan, but that reduces safety.)");
-    } else if (err.code === "write-policy-no-changes") {
-      lines.push("");
-      lines.push("No file changes were produced.");
-      lines.push("Restate the change request with a concrete file + edit.");
-    }
-
-    return lines.join("\n");
   }
 
   // Register for all three mention-triggering events

@@ -12,6 +12,7 @@ const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
 const DEFAULT_MAX_CHANGED_FILES = 200;
 const MAX_LANGUAGE_GUIDANCE_ENTRIES = 5;
+export const SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE = "Analysis is partial due to API limits.";
 
 // ---------------------------------------------------------------------------
 // Language-specific review guidance (supplements base review rules)
@@ -785,39 +786,66 @@ export function buildRetrievalContextSection(params: {
     findingText: string;
     severity: string;
     category: string;
-    filePath: string;
+    path: string;
+    line?: number;
+    snippet?: string;
     outcome: string;
     distance: number;
     sourceRepo: string;
   }>;
   maxChars?: number;
+  maxItems?: number;
 }): string {
   if (params.findings.length === 0) return "";
 
   const maxChars = params.maxChars ?? 2000;
-  const lines: string[] = [
+  const maxItems = params.maxItems ?? params.findings.length;
+  if (maxChars <= 0 || maxItems <= 0) return "";
+
+  const sorted = [...params.findings]
+    .sort((a, b) => {
+      if (a.distance !== b.distance) {
+        return a.distance - b.distance;
+      }
+      if (a.path !== b.path) {
+        return a.path.localeCompare(b.path);
+      }
+      return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+    })
+    .slice(0, maxItems);
+
+  const renderFinding = (finding: (typeof sorted)[number]): string => {
+    const safeSnippet = finding.snippet?.replace(/`/g, "'").trim();
+    const safeFindingText = finding.findingText.replace(/`/g, "'").trim();
+    if (finding.line !== undefined && safeSnippet) {
+      const anchor = `${finding.path}:${finding.line}`;
+      return `- [${finding.severity}/${finding.category}] \`${anchor}\` -- \`${safeSnippet}\` (outcome: ${finding.outcome})`;
+    }
+
+    return `- [${finding.severity}/${finding.category}] \`${finding.path}\` -- ${safeFindingText} (outcome: ${finding.outcome})`;
+  };
+
+  const candidateItems = sorted.map(renderFinding);
+  const headerLines: string[] = [
     "## Similar Prior Findings (Learning Context)",
     "",
-    "The following are similar findings from prior reviews. Use them as context to inform your analysis, but evaluate each issue independently on current code. Do NOT copy prior findings -- only reference them if the same pattern exists in current changes.",
+    "Use these prior findings as supporting context only when they match the current change.",
     "",
-    "When a finding in your review directly relates to one of these prior patterns,",
-    "append a brief provenance note at the end of your comment:",
-    "`(Prior pattern: [brief description of the similar prior finding])`",
+    "When a finding directly matches prior context, append:",
+    "`(Prior pattern: [brief description])`",
     "",
   ];
 
-  let currentLength = lines.join("\n").length;
-
-  for (const finding of params.findings) {
-    const entry = `- [${finding.severity}/${finding.category}] ${finding.findingText} (file: ${finding.filePath}, outcome: ${finding.outcome})`;
-    if (currentLength + entry.length + 1 > maxChars) {
-      break;
+  const keptItems = [...candidateItems];
+  while (keptItems.length > 0) {
+    const section = [...headerLines, ...keptItems].join("\n");
+    if (section.length <= maxChars) {
+      return section;
     }
-    lines.push(entry);
-    currentLength += entry.length + 1;
+    keptItems.pop();
   }
 
-  return lines.join("\n");
+  return "";
 }
 
 // ---------------------------------------------------------------------------
@@ -873,6 +901,25 @@ export function buildOutputLanguageSection(outputLanguage: string): string {
     "- YAML metadata blocks (in enhanced mode)",
     "",
     "Only the human-readable explanation text should be localized.",
+  ].join("\n");
+}
+
+function buildSearchRateLimitDegradationSection(params: {
+  retryAttempts: number;
+  skippedQueries: number;
+  degradationPath: string;
+}): string {
+  return [
+    "## Search API Degradation Context",
+    "",
+    "Search enrichment was rate-limited while collecting author-tier context.",
+    SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
+    `Retry attempts used: ${params.retryAttempts}.`,
+    `Skipped queries: ${params.skippedQueries}.`,
+    `Degradation path: ${params.degradationPath}.`,
+    "",
+    "In the summary comment, include one short note in ## What Changed using this exact sentence:",
+    `"${SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE}"`,
   ].join("\n");
 }
 
@@ -1147,11 +1194,14 @@ export function buildReviewPrompt(context: {
       findingText: string;
       severity: string;
       category: string;
-      filePath: string;
+      path: string;
+      line?: number;
+      snippet?: string;
       outcome: string;
       distance: number;
       sourceRepo: string;
     }>;
+    maxChars?: number;
   } | null;
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
@@ -1167,6 +1217,12 @@ export function buildReviewPrompt(context: {
   } | null;
   authorTier?: AuthorTier;
   depBumpContext?: DepBumpContext | null;
+  searchRateLimitDegradation?: {
+    degraded: boolean;
+    retryAttempts: number;
+    skippedQueries: number;
+    degradationPath: string;
+  } | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1245,7 +1301,10 @@ export function buildReviewPrompt(context: {
 
   // --- Retrieval context (learning memory) ---
   if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
-    const retrievalSection = buildRetrievalContextSection(context.retrievalContext);
+    const retrievalSection = buildRetrievalContextSection({
+      findings: context.retrievalContext.findings,
+      maxChars: context.retrievalContext.maxChars,
+    });
     if (retrievalSection) {
       lines.push("", retrievalSection);
     }
@@ -1406,6 +1465,17 @@ export function buildReviewPrompt(context: {
   // --- Dependency bump context (DEP-01/02/03) ---
   if (context.depBumpContext) {
     lines.push("", buildDepBumpSection(context.depBumpContext));
+  }
+
+  if (context.searchRateLimitDegradation?.degraded) {
+    lines.push(
+      "",
+      buildSearchRateLimitDegradationSection({
+        retryAttempts: context.searchRateLimitDegradation.retryAttempts,
+        skippedQueries: context.searchRateLimitDegradation.skippedQueries,
+        degradationPath: context.searchRateLimitDegradation.degradationPath,
+      }),
+    );
   }
 
   // --- Path instructions ---

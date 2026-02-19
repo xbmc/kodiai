@@ -10,6 +10,21 @@ import { sanitizeContent } from "../lib/sanitizer.ts";
 export function buildMentionPrompt(params: {
   mention: MentionEvent;
   mentionContext: string;
+  retrievalContext?: {
+    findings: Array<{
+      findingText: string;
+      severity: string;
+      category: string;
+      path: string;
+      line?: number;
+      snippet?: string;
+      outcome: string;
+      distance: number;
+      sourceRepo: string;
+    }>;
+    maxChars?: number;
+    maxItems?: number;
+  };
   userQuestion: string;
   findingContext?: {
     severity: string;
@@ -24,6 +39,7 @@ export function buildMentionPrompt(params: {
   const {
     mention,
     mentionContext,
+    retrievalContext,
     userQuestion,
     findingContext,
     customInstructions,
@@ -69,6 +85,53 @@ export function buildMentionPrompt(params: {
     lines.push("");
   }
 
+  if (retrievalContext && retrievalContext.findings.length > 0) {
+    const maxChars = retrievalContext.maxChars ?? 1200;
+    const maxItems = retrievalContext.maxItems ?? 3;
+
+    const sorted = [...retrievalContext.findings]
+      .sort((a, b) => {
+        if (a.distance !== b.distance) {
+          return a.distance - b.distance;
+        }
+        if (a.path !== b.path) {
+          return a.path.localeCompare(b.path);
+        }
+        return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+      })
+      .slice(0, maxItems);
+
+    const rendered = sorted.map((finding) => {
+      const snippet = finding.snippet?.replace(/`/g, "'").trim();
+      const safeFindingText = finding.findingText.replace(/`/g, "'").trim();
+      const evidence = finding.line !== undefined && snippet
+        ? `\`${finding.path}:${finding.line}\` -- \`${snippet}\``
+        : `\`${finding.path}\` -- ${safeFindingText}`;
+      return `- [${finding.severity}/${finding.category}] ${evidence} (source: ${finding.sourceRepo})`;
+    });
+
+    const sectionHeader = [
+      "## Retrieval",
+      "",
+      "Use these similar prior findings as supporting context only when they match the current request.",
+      "",
+    ];
+
+    while (rendered.length > 0) {
+      const section = [...sectionHeader, ...rendered].join("\n");
+      if (section.length <= maxChars) {
+        break;
+      }
+      rendered.pop();
+    }
+
+    if (rendered.length > 0) {
+      lines.push(...sectionHeader);
+      lines.push(...rendered);
+      lines.push("");
+    }
+  }
+
   // User's question
   lines.push("## User's Question");
   lines.push("");
@@ -89,25 +152,28 @@ export function buildMentionPrompt(params: {
     "Do NOT update comments (avoid using update_comment); post a single final response instead.",
   );
   lines.push(
-    "You MUST post a reply when you are mentioned. If you do not have enough information to fully answer, ask 1-3 targeted clarifying questions instead of staying silent.",
+    "You MUST post a reply when you are mentioned.",
+  );
+  lines.push("");
+  lines.push("## Conversational Response Contract");
+  lines.push("");
+  lines.push(
+    "(1) Direct answer first: open with a direct answer to the user's request before recap or meta commentary.",
+  );
+  lines.push(
+    "(2) Evidence pointers: when claims reference repository code, cite concrete file paths (optionally with :line) tied to each claim; if path context is missing, say so explicitly instead of inventing paths.",
+  );
+  lines.push(
+    "(3) Next-step framing: close with a brief next step or decision prompt that helps the user move forward.",
+  );
+  lines.push(
+    "If context is insufficient, ask exactly one targeted clarifying question that requests the minimum missing detail; do not ask multiple questions and do not use generic wording like 'can you clarify?'.",
   );
 
   if (mention.surface === "issue_comment") {
     lines.push("");
-    lines.push("## Issue Q&A Requirements");
+    lines.push("## Issue Q&A Policy");
     lines.push("");
-    lines.push(
-      "- Direct answer first: the first sentence must directly answer the user's question; do not start with a recap.",
-    );
-    lines.push(
-      "- File-path evidence: when making claims about repository code, include 1-5 concrete paths (optionally with :line like src/file.ts:42) and tie each path to the specific claim it supports.",
-    );
-    lines.push(
-      "- No fabricated pointers: if reliable path evidence is missing, explicitly say path context is missing and ask targeted follow-up questions instead of inventing file names.",
-    );
-    lines.push(
-      "- Clarification quality: when the request is underspecified, ask 1-3 targeted questions that unblock implementation-level guidance; do not ask generic questions like 'can you clarify?'.",
-    );
     lines.push(
       "- Intent-based execution: if the user asks you to implement/fix/change something in the issue, treat it as a write request (no exact `apply:`/`change:` prefix required).",
     );

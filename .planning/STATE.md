@@ -2,21 +2,19 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-16)
+See: `.planning/PROJECT.md` (updated 2026-02-19)
 
-**Core value:** When a PR is opened or `@kodiai` is mentioned, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Milestone v0.11 Issue Workflows -- phase 61 complete and verified; ready to plan phase 62
+**Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-**Milestone:** v0.11 Issue Workflows
-**Phase:** Phase 61 (Read-Only + Intent Gating)
-**Current Plan:** 03
-**Total Plans in Phase:** 3
-**Status:** Phase complete — ready for verification
-**Last Activity:** 2026-02-16
+**Milestone:** v0.15 Slack Write Workflows (shipped 2026-02-19)
+**Phase:** All phases through 81 complete
+**Status:** Milestone complete — ready for `/gsd:new-milestone`
+**Last Activity:** 2026-02-19
 
-**Progress:** [██████████] 100%
+**Progress:** [##########] 100%
 
 ## Performance Metrics
 
@@ -42,36 +40,57 @@ See: `.planning/PROJECT.md` (updated 2026-02-16)
 | Phase 62 P01 | 2 min | 2 tasks | 2 files |
 | Phase 62 P02 | 1 min | 2 tasks | 1 files |
 | Phase 62 P03 | 0 min | 3 tasks | 2 files |
+| Phase 63 P01 | 1 min | 2 tasks | 2 files |
+| Phase 63 P02 | 3 min | 2 tasks | 1 files |
+| Phase 64 P01 | 2 min | 2 tasks | 2 files |
+| Phase 65 P01 | 2m14s | 2 tasks | 2 files |
+| Phase 65 P02 | 3m18s | 2 tasks | 2 files |
+| Phase 64 P02 | 9m | 2 tasks | 4 files |
+| Phase 66 P01 | 1m43s | 2 tasks | 2 files |
+| Phase 66 P02 | 3m23s | 2 tasks | 2 files |
+| Phase 67 P01 | 3m29s | 2 tasks | 5 files |
+| Phase 67 P02 | 3m14s | 2 tasks | 5 files |
+| Phase 68 P01 | 2m21s | 1 tasks | 2 files |
+| Phase 68 P02 | 7m32s | 2 tasks | 8 files |
+| Phase 69 P01 | 2m | 1 tasks | 2 files |
+| Phase 69 P02 | 13m | 2 tasks | 8 files |
+| Phase 70 P01 | 2 min | 2 tasks | 4 files |
+| Phase 70 P02 | 2 min | 2 tasks | 2 files |
+| Phase 71 P01 | 1 min | 3 tasks | 2 files |
+| Phase 72 P01 | 7 min | 3 tasks | 5 files |
+| Phase 72-telemetry-follow-through P02 | 5 min | 3 tasks | 5 files |
+| Phase 73-degraded-retrieval-contract P01 | 3 min | 2 tasks | 4 files |
+| Phase 73-degraded-retrieval-contract P02 | 5 min | 2 tasks | 6 files |
+| Phase 74 P01 | 3 min | 2 tasks | 2 files |
+| Phase 74 P02 | 4 min | 2 tasks | 5 files |
+| Phase 75-live-ops-verification-closure P01 | 1 min | 2 tasks | 6 files |
+| Phase 75-live-ops-verification-closure P02 | 13 min | 2 tasks | 5 files |
+| Phase 75-live-ops-verification-closure P03 | 6 min | 3 tasks | 6 files |
+| Phase 75 P04 | 1 min | 2 tasks | 2 files |
+| Phase 75-live-ops-verification-closure P05 | 2 min | 2 tasks | 2 files |
+| Phase 77 P01 | 2 min | 3 tasks | 6 files |
+| Phase 77 P02 | 2 min | 2 tasks | 5 files |
+| Phase 78-slack-thread-session-semantics P01 | 2 min | 3 tasks | 6 files |
+| Phase 79 P01 | 2 min | 2 tasks | 4 files |
+| Phase 79 P02 | 4 min | 2 tasks | 10 files |
+| Phase 80 P01 | 2m4s | 2 tasks | 3 files |
+| Phase 80 P02 | 1m55s | 2 tasks | 3 files |
+| Phase 80 P03 | 1m31s | 2 tasks | 3 files |
+| Phase 81 P01 | 4 min | 2 tasks | 6 files |
+| Phase 81 P02 | 7 min | 2 tasks | 9 files |
+| Phase 81 P03 | 5 min | 2 tasks | 4 files |
+| Phase 81 P04 | 1 min | 2 tasks | 6 files |
+| Phase 75 P06 | 2 min | 2 tasks | 2 files |
+| Phase 75 P07 | 4min | 2 tasks | 3 files |
+| Phase 75 P08 | 1min | 1 tasks | 1 files |
+| Phase 76 P01 | 3min | 2 tasks | 2 files |
+| Phase 76 P02 | 3min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
-- [Phase 56]: Store dep bump merge history in knowledge DB keyed by (repo, pr_number) using INSERT OR IGNORE to handle redeliveries
-- [Phase 56]: Use INSERT OR IGNORE with a partial unique index on retrieval_quality(delivery_id) to dedupe webhook redeliveries
-- [Phase 56]: Compute retrieval avg_distance and language_match_ratio from reranked adjustedDistance/languageMatch (not raw distances)
-- [Phase 57-analysis-layer]: Expose a test-only grep runner hook to make timeout behavior deterministic in unit tests
-- [Phase 57-analysis-layer]: Added optional dependency injection hooks in createReviewHandler for deterministic unit tests (no behavior change in production).
-- [Phase 58]: Made adaptive thresholds default-on via retrieval.adaptive (opt-out) to preserve legacy behavior while meeting RET-03 requirements.
-- [Phase 60]: Issue Q&A guarantees are gated to mention.surface === issue_comment to avoid changing PR mention behavior.
-- [Phase 60]: Issue prompt guidance now requires concrete path/path:line evidence or targeted clarifying questions when path context is missing.
-- [Phase 60-issue-q-a]: Use adapter injection (globFiles, grepInFiles, readFile) to keep issue code-context extraction deterministic and testable without external services.
-- [Phase 60-issue-q-a]: Enforce fail-open behavior for weak-signal or adapter-error scenarios by returning empty code context instead of blocking issue replies.
-- [Phase 60-issue-q-a]: Apply buildIssueCodeContext only for mention.surface === issue_comment before prompt construction.
-- [Phase 60-issue-q-a]: Use issue-specific fallback questions that ask for desired outcome, target files/areas, and constraints when published output is absent.
-- [Phase 61]: Read-only guidance is explicit and default on issue_comment unless a message starts with apply: or change:.
-- [Phase 61]: Change-request replies without write prefixes must include both exact opt-in commands: @kodiai apply: <same request> and @kodiai change: <same request>.
-- [Phase 61]: Gate issue implementation asks before executor invocation by matching conservative implementation verbs when no apply:/change:/plan: prefix is present.
-- [Phase 61]: Post issue opt-in guidance through direct issue comment creation so exact @kodiai apply/change commands are preserved in output.
-- [Phase 61]: Normalize issue requests before intent matching and before generating apply/change command suggestions so wrapped phrasing stays deterministic.
-- [Phase 61]: Add explicit anti-completion wording to issue prompt requirements to prevent non-prefixed read-only replies from implying repository edits were already made.
-- [Phase 62]: Write-output identities now encode source type and source number so issue and PR write flows share deterministic branch derivation.
-- [Phase 62]: Issue apply/change requests publish via deterministic bot branches and open PRs against the cloned default branch instead of requiring PR-only context.
-- [Phase 62]: Success-path issue write-mode tests assert writeMode=true, deterministic branch push, and PR base derived from issue payload default branch.
-- [Phase 62]: Issue write-mode refusal outcomes must always respond in issue comments with explicit no-change or policy-denied messaging instead of silent success.
-- [Phase 62]: Use a fresh live @kodiai apply trigger on issue #52 and capture direct comment URLs as evidence.
-- [Phase 62]: Treat write-mode-disabled bot reply as validation failure evidence and do not claim PR creation success.
+All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -80,6 +99,7 @@ All v0.9 decisions archived to `.planning/PROJECT.md` Key Decisions table.
 - Recency weighting needs severity-aware decay floor (0.3 minimum)
 - Checkpoint publishing must use buffer-and-flush on abort, not streaming
 - Schema migrations must be additive-only (new tables, nullable columns)
+- Slack v1: single workspace, single channel (#kodiai), in-process session state
 
 ### Pending Todos
 
@@ -102,7 +122,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-16T18:31:45.759Z
-**Stopped At:** Completed 62-03-PLAN.md
+**Last session:** 2026-02-19
+**Stopped At:** v0.14 + v0.15 milestone completion
 **Resume File:** None
-**Next action:** /gsd-plan-phase 62
+**Next action:** `/gsd:new-milestone`

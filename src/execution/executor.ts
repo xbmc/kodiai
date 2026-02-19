@@ -2,7 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { ExecutionContext, ExecutionResult } from "./types.ts";
+import type { ExecutionContext, ExecutionResult, ExecutionPublishEvent } from "./types.ts";
 import { loadRepoConfig } from "./config.ts";
 import { buildMcpServers, buildAllowedMcpTools } from "./mcp/index.ts";
 import { buildPrompt } from "./prompt.ts";
@@ -22,6 +22,7 @@ export function createExecutor(deps: {
       let controller: AbortController | undefined;
       let timeoutSeconds = 600; // default, updated from config
       let published = false;
+      const publishEvents: ExecutionPublishEvent[] = [];
 
       try {
         // Load repo config (.kodiai.yml) with defaults
@@ -32,8 +33,15 @@ export function createExecutor(deps: {
             "Config section invalid, using defaults",
           );
         }
+        const model = context.modelOverride ?? config.model;
+        const maxTurns = context.maxTurnsOverride ?? config.maxTurns;
         logger.info(
-          { model: config.model, maxTurns: config.maxTurns },
+          {
+            model,
+            modelSource: context.modelOverride ? "override" : "config",
+            maxTurns,
+            maxTurnsSource: context.maxTurnsOverride ? "override" : "config",
+          },
           "Loaded repo config",
         );
 
@@ -66,9 +74,7 @@ export function createExecutor(deps: {
           isMentionEvent || isWriteMode
             ? false
             : (context.enableInlineTools ?? true);
-        const enableCommentTools = isWriteMode
-          ? false
-          : (context.enableCommentTools ?? true);
+        const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
         const mcpServers = buildMcpServers({
           getOctokit,
@@ -82,6 +88,9 @@ export function createExecutor(deps: {
           logger,
           onPublish: () => {
             published = true;
+          },
+          onPublishEvent: (event) => {
+            publishEvents.push(event);
           },
           // Mentions should not create new inline review comments; they should reply in-thread
           // (when available) or post a top-level PR/issue comment.
@@ -117,8 +126,8 @@ export function createExecutor(deps: {
           options: {
             abortController: controller,
             cwd: context.workspace.dir,
-            model: config.model,
-            maxTurns: config.maxTurns,
+            model,
+            maxTurns,
             systemPrompt: {
               type: "preset",
               preset: "claude_code",
@@ -215,6 +224,8 @@ export function createExecutor(deps: {
           cacheReadTokens: totalCacheRead,
           cacheCreationTokens: totalCacheCreation,
           stopReason: resultMessage.stop_reason ?? undefined,
+          resultText: resultMessage.subtype === "success" ? resultMessage.result : undefined,
+          publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
         };
       } catch (err) {
         if (timeoutId !== undefined) clearTimeout(timeoutId);
@@ -241,6 +252,7 @@ export function createExecutor(deps: {
             cacheReadTokens: undefined,
             cacheCreationTokens: undefined,
             stopReason: undefined,
+            publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
           };
         }
 
@@ -262,6 +274,7 @@ export function createExecutor(deps: {
           cacheReadTokens: undefined,
           cacheCreationTokens: undefined,
           stopReason: undefined,
+          publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
         };
       }
     },

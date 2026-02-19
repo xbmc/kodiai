@@ -119,3 +119,80 @@
 
 ---
 
+
+## v0.11 Issue Workflows (Shipped: 2026-02-16)
+
+**Scope:** 6 phases (60-65), 15 plans
+
+**Key accomplishments:**
+- In-thread issue Q&A now returns concrete answers with code-aware file-path pointers and targeted clarifying questions when context is missing.
+- Issue `@kodiai apply:` / `change:` requests can open PRs against the default branch with deterministic write-output identities and branch naming.
+- Issue write-mode now enforces idempotent replay behavior, in-flight de-dupe, and rate-limit safety to prevent duplicate PR churn.
+- Issue write policy guardrails enforce allow/deny path rules and secret-scan refusals with actionable, non-sensitive remediation guidance.
+- Permission and disabled-write failures now return deterministic minimum-scope permission remediation and `.kodiai.yml` enablement guidance with same-command retry.
+
+---
+
+## v0.12 Operator Reliability & Retrieval Quality (Shipped: 2026-02-17)
+
+**Scope:** 6 phases (66-71), 11 plans, 21 tasks
+
+**Key accomplishments:**
+- Repository-scoped Search API caching now uses deterministic keys, TTL reuse, and in-flight de-duplication to reduce redundant search calls.
+- Rate-limit handling now retries once, degrades safely when needed, and consistently discloses partial analysis in output.
+- OPS-03 telemetry now reports true Search cache behavior by wiring `cacheHitRate` to Search cache hit/miss semantics.
+- Multi-query retrieval is live across review and mention paths with deterministic merge/rerank and variant-level fail-open behavior.
+- Retrieval evidence now includes snippet anchors with strict prompt-budget trimming and deterministic path-only fallback.
+- Conversational UX is unified across issue/PR/review surfaces with one targeted clarifying-question fallback when context is insufficient.
+
+---
+
+## v0.13 Reliability Follow-Through (Shipped: 2026-02-18)
+
+**Scope:** 5 phases (72-76), 12 planned plans (11 summarized)
+
+**Closure mode:** Forced close with accepted debt
+
+**Key accomplishments:**
+- Deterministic live telemetry verification tooling and OPS75 preflight evidence gates were shipped for cache/degraded/fail-open check families.
+- Degraded retrieval contract hardening shipped with exact-sentence disclosure enforcement and bounded markdown-safe evidence rendering.
+- Reliability regression gate CLI shipped with deterministic check-ID diagnostics and release-blocking semantics.
+- Live OPS evidence capture runbook and smoke matrix were formalized to make closure runs reproducible.
+- Phase 75 blockers were documented with explicit failing check IDs (`OPS75-CACHE-01`, `OPS75-CACHE-02`, `OPS75-ONCE-01`) rather than hidden by soft-pass language.
+
+**Accepted gaps at closure:**
+- Phase 75 final PASS evidence run (`75-06`) remains incomplete.
+- Phase 76 success-path status contract parity remains unplanned/unimplemented.
+
+---
+
+## v0.14 Slack Integration (Shipped: 2026-02-19)
+
+**Scope:** 4 phases (77-80), 8 plans, 18 tasks
+**Timeline:** 2026-02-17 → 2026-02-18
+**Git range:** feat(77-01) → feat(80-03)
+
+**Key accomplishments:**
+- Slack ingress with fail-closed v0 signature/timestamp verification and secure `/webhooks/slack/events` endpoint.
+- V1 safety rails enforcing `#kodiai`-only, thread-only replies, and mention-only thread bootstrap with DM/system blocking.
+- Deterministic thread session semantics: `@kodiai` bootstrap starts threads, follow-ups auto-route without repeated mentions.
+- Read-only assistant routing with default `xbmc/xbmc` repo context, explicit override, and one-question ambiguity handling.
+- Operator hardening with deterministic smoke verifier (SLK80-SMOKE), regression gate (SLK80-REG), and deployment runbook.
+
+---
+
+
+## v0.15 Slack Write Workflows (Shipped: 2026-02-19)
+
+**Scope:** 1 phase (81), 4 plans, 8 tasks
+**Timeline:** 2026-02-18
+**Git range:** feat(81-01) → feat(81-04)
+
+**Key accomplishments:**
+- Deterministic Slack write-intent routing with explicit prefix detection, medium-confidence conversational heuristics, and ambiguous read-only fallback.
+- Guarded PR-only write execution with Slack-to-GitHub publish flow mirroring comment links/excerpts back into threads.
+- High-impact confirmation gating for destructive/migration/security requests with 15-minute pending timeout and exact confirm commands.
+- Phase 81 smoke and regression verification gates (SLK81-SMOKE, SLK81-REG) with stable package aliases and runbook triage guidance.
+
+---
+

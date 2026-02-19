@@ -85,6 +85,34 @@ export type RetrievalQualityRecord = {
 };
 
 /**
+ * Rate-limit telemetry for Search enrichment behavior.
+ *
+ * Maps to the `rate_limit_events` table in the telemetry SQLite database.
+ */
+export type RateLimitEventRecord = {
+  /**
+   * Optional webhook delivery id.
+   *
+   * Exactly-once identity for rate-limit telemetry is the composite
+   * `(deliveryId, eventType)` pair when `deliveryId` is present.
+   */
+  deliveryId?: string;
+  repo: string;
+  prNumber?: number;
+  eventType: string;
+  cacheHitRate: number;
+  skippedQueries: number;
+  retryAttempts: number;
+  degradationPath: string;
+  /**
+   * Optional deterministic execution identity for verification-only tooling.
+   *
+   * When absent, the store derives a deterministic fallback identity.
+   */
+  executionIdentity?: string;
+};
+
+/**
  * TelemetryStore interface for SQLite-backed execution telemetry.
  *
  * Created via `createTelemetryStore({ dbPath, logger })` factory function.
@@ -97,6 +125,8 @@ export type TelemetryStore = {
   countRecentTimeouts?(repo: string, author: string): number;
   /** Insert a retrieval quality record into the retrieval_quality table. */
   recordRetrievalQuality(entry: RetrievalQualityRecord): void;
+  /** Insert Search rate-limit telemetry for observability. */
+  recordRateLimitEvent(entry: RateLimitEventRecord): void;
   /** Insert structured checkpoint/retry metadata for resilience monitoring. */
   recordResilienceEvent?(entry: ResilienceEventRecord): void;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */

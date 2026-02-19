@@ -34,6 +34,22 @@ function issueMention(): MentionEvent {
   };
 }
 
+function reviewThreadMention(): MentionEvent {
+  return {
+    ...baseMention(),
+    surface: "pr_review_comment",
+  };
+}
+
+function expectInOrder(haystack: string, markers: string[]): void {
+  let cursor = 0;
+  for (const marker of markers) {
+    const next = haystack.indexOf(marker, cursor);
+    expect(next).toBeGreaterThanOrEqual(0);
+    cursor = next + marker.length;
+  }
+}
+
 describe("buildMentionPrompt", () => {
   test("includes conciseness and decision format guidance", () => {
     const prompt = buildMentionPrompt({
@@ -113,19 +129,31 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("- Title: Handle null check");
   });
 
-  test("includes issue-specific direct answer and path evidence contract", () => {
+  test("includes unified conversational response contract for issue mentions", () => {
     const prompt = buildMentionPrompt({
       mention: issueMention(),
       mentionContext: "",
       userQuestion: "@kodiai where should I change this logic?",
     });
 
-    expect(prompt).toContain("## Issue Q&A Requirements");
-    expect(prompt).toContain("Direct answer first");
-    expect(prompt).toContain("1-5 concrete paths");
-    expect(prompt).toContain("src/file.ts:42");
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).toContain("do not ask multiple questions");
+    expect(prompt).toContain("do not use generic wording like 'can you clarify?'");
     expect(prompt).toContain("path context is missing");
-    expect(prompt).toContain("do not ask generic questions like 'can you clarify?'");
+  });
+
+  test("preserves issue-only write intent policy language", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "@kodiai where should I change this logic?",
+    });
+
+    expect(prompt).toContain("## Issue Q&A Policy");
     expect(prompt).toContain("Intent-based execution");
     expect(prompt).toContain("no exact `apply:`/`change:` prefix required");
     expect(prompt).toContain("Plan requests");
@@ -133,15 +161,307 @@ describe("buildMentionPrompt", () => {
     expect(prompt).toContain("one final in-thread response only");
   });
 
-  test("does not include issue-specific contract on non-issue surfaces", () => {
+  test("includes unified contract on PR top-level mention", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
       userQuestion: "@kodiai can you look at this PR?",
     });
 
-    expect(prompt).not.toContain("## Issue Q&A Requirements");
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).not.toContain("## Issue Q&A Policy");
     expect(prompt).not.toContain("Intent-based execution");
     expect(prompt).not.toContain("Plan requests");
+  });
+
+  test("includes unified contract on inline review-thread mention", () => {
+    const prompt = buildMentionPrompt({
+      mention: reviewThreadMention(),
+      mentionContext: "",
+      userQuestion: "@kodiai can you look at this line?",
+    });
+
+    expect(prompt).toContain("## Conversational Response Contract");
+    expect(prompt).toContain("(1) Direct answer first");
+    expect(prompt).toContain("(2) Evidence pointers");
+    expect(prompt).toContain("(3) Next-step framing");
+    expect(prompt).toContain("ask exactly one targeted clarifying question");
+    expect(prompt).toContain("replying in the same inline thread");
+    expect(prompt).not.toContain("## Issue Q&A Policy");
+    expect(prompt).not.toContain("Intent-based execution");
+    expect(prompt).not.toContain("Plan requests");
+  });
+
+  test("enforces cross-surface conversational contract markers with one-question fallback", () => {
+    const cases: Array<{
+      name: string;
+      mention: MentionEvent;
+      mustInclude: string[];
+      mustExclude: string[];
+    }> = [
+      {
+        name: "issue comment",
+        mention: issueMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "Write your response by creating a new top-level comment",
+        ],
+        mustExclude: [
+          "replying in the same inline thread",
+        ],
+      },
+      {
+        name: "pr top-level comment",
+        mention: baseMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "Write your response by creating a new top-level comment",
+        ],
+        mustExclude: [
+          "## Issue Q&A Policy",
+          "Intent-based execution",
+          "replying in the same inline thread",
+        ],
+      },
+      {
+        name: "pr review thread",
+        mention: reviewThreadMention(),
+        mustInclude: [
+          "## Conversational Response Contract",
+          "(1) Direct answer first",
+          "(2) Evidence pointers",
+          "(3) Next-step framing",
+          "ask exactly one targeted clarifying question",
+          "do not ask multiple questions",
+          "do not use generic wording like 'can you clarify?'",
+          "replying in the same inline thread",
+          "If the thread reply tool fails for any reason, fall back",
+        ],
+        mustExclude: [
+          "## Issue Q&A Policy",
+          "Intent-based execution",
+          "Plan requests",
+        ],
+      },
+    ];
+
+    for (const testCase of cases) {
+      const prompt = buildMentionPrompt({
+        mention: testCase.mention,
+        mentionContext: "",
+        userQuestion: "@kodiai can you help me with this?",
+      });
+
+      expectInOrder(prompt, [
+        "(1) Direct answer first",
+        "(2) Evidence pointers",
+        "(3) Next-step framing",
+      ]);
+
+      for (const expected of testCase.mustInclude) {
+        expect(prompt, `${testCase.name}: expected marker \"${expected}\"`).toContain(expected);
+      }
+
+      for (const excluded of testCase.mustExclude) {
+        expect(prompt, `${testCase.name}: unexpected marker \"${excluded}\"`).not.toContain(excluded);
+      }
+    }
+  });
+
+  test("renders retrieval context when provided", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Validate null payload before use",
+            severity: "major",
+            category: "correctness",
+            path: "src/api/handler.ts",
+            line: 24,
+            snippet: "if (!payload) return;",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("## Retrieval");
+    expect(prompt).toContain("`src/api/handler.ts:24` -- `if (!payload) return;`");
+    expect(prompt).toContain("source: acme/repo");
+  });
+
+  test("uses path-only fallback when retrieval snippet evidence is unavailable", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Validate null payload before use",
+            severity: "major",
+            category: "correctness",
+            path: "src/api/handler.ts",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("`src/api/handler.ts` -- Validate null payload before use");
+  });
+
+  test("sanitizes backticks in path-only fallback to keep retrieval markdown valid", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Guard `payload` before dereference",
+            severity: "major",
+            category: "correctness",
+            path: "src/api/handler.ts",
+            outcome: "accepted",
+            distance: 0.1234,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("`src/api/handler.ts` -- Guard 'payload' before dereference");
+    expect(prompt).not.toContain("-- Guard `payload` before dereference");
+  });
+
+  test("drops lowest-value retrieval entries first when section exceeds budget", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "Most relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "Least relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 200,
+            snippet: "const dropped = veryLongExpression.repeat(30);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+        maxChars: 260,
+      },
+    });
+
+    expect(prompt).toContain("`src/a.ts:10`");
+    expect(prompt).not.toContain("`src/z.ts:200`");
+  });
+
+  test("omits retrieval section when no entries fit the configured budget", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        findings: [
+          {
+            findingText: "very long finding text ".repeat(20),
+            severity: "major",
+            category: "correctness",
+            path: "src/overflow.ts",
+            line: 1,
+            snippet: "const longLine = 'x'.repeat(200);",
+            outcome: "accepted",
+            distance: 0.2,
+            sourceRepo: "acme/repo",
+          },
+        ],
+        maxChars: 40,
+      },
+    });
+
+    expect(prompt).not.toContain("## Retrieval");
+  });
+
+  test("keeps retrieval section under configured char budget including header lines", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Where should I start?",
+      retrievalContext: {
+        maxChars: 240,
+        findings: [
+          {
+            findingText: "Most relevant finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/a.ts",
+            line: 10,
+            snippet: "const kept = true;",
+            outcome: "accepted",
+            distance: 0.1,
+            sourceRepo: "acme/repo",
+          },
+          {
+            findingText: "Lower value finding",
+            severity: "major",
+            category: "correctness",
+            path: "src/z.ts",
+            line: 200,
+            snippet: "const dropped = veryLongExpression.repeat(60);",
+            outcome: "accepted",
+            distance: 0.9,
+            sourceRepo: "acme/repo",
+          },
+        ],
+      },
+    });
+
+    expect(prompt).toContain("## Retrieval");
+    expect(prompt).toContain("`src/a.ts:10`");
+    expect(prompt).not.toContain("`src/z.ts:200`");
+
+    const retrievalMatch = prompt.match(/## Retrieval[\s\S]*?(?=\n## |$)/);
+    expect(retrievalMatch).toBeDefined();
+    expect(retrievalMatch![0].length).toBeLessThanOrEqual(240);
   });
 });

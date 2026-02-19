@@ -360,6 +360,46 @@ describe("KnowledgeStore", () => {
     expect(missing).toBeNull();
   });
 
+  test("upsertAuthorCache persists and retrieves author cache rows", () => {
+    fixture.store.upsertAuthorCache?.({
+      repo: "owner/repo",
+      authorLogin: "alice",
+      tier: "regular",
+      authorAssociation: "CONTRIBUTOR",
+      prCount: 3,
+    });
+
+    const cached = fixture.store.getAuthorCache?.({
+      repo: "owner/repo",
+      authorLogin: "alice",
+    });
+
+    expect(cached).toEqual({
+      tier: "regular",
+      authorAssociation: "CONTRIBUTOR",
+      prCount: 3,
+      cachedAt: expect.any(String),
+    });
+  });
+
+  test("upsertAuthorCache skips write when repo identity is missing", () => {
+    fixture.store.upsertAuthorCache?.({
+      repo: "",
+      authorLogin: "alice",
+      tier: "regular",
+      authorAssociation: "CONTRIBUTOR",
+      prCount: 1,
+    });
+
+    const db = new Database(fixture.dbPath, { readonly: true });
+    const countRow = db
+      .query("SELECT COUNT(*) AS count FROM author_cache")
+      .get() as { count: number };
+    db.close();
+
+    expect(countRow.count).toBe(0);
+  });
+
   test("recordSuppressionLog stores suppression entries", () => {
     const reviewId = fixture.store.recordReview({
       repo: "owner/repo",

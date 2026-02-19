@@ -6,6 +6,7 @@ import { createGitHubApp } from "./auth/github-app.ts";
 import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
+import { createSlackEventRoutes } from "./routes/slack-events.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createWorkspaceManager } from "./jobs/workspace.ts";
@@ -22,6 +23,9 @@ import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning
 import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
 import { Database } from "bun:sqlite";
+import { createSlackClient } from "./slack/client.ts";
+import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
+import { createSlackWriteRunner } from "./slack/write-runner.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -45,7 +49,25 @@ if (staleCount > 0) {
 
 // Telemetry storage (SQLite with WAL mode)
 const telemetryDbPath = process.env.TELEMETRY_DB_PATH ?? "./data/kodiai-telemetry.db";
-const telemetryStore = createTelemetryStore({ dbPath: telemetryDbPath, logger });
+const rateLimitFailureInjectionIdentities = (process.env.TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+const telemetryStore = createTelemetryStore({
+  dbPath: telemetryDbPath,
+  logger,
+  rateLimitFailureInjectionIdentities,
+});
+if (rateLimitFailureInjectionIdentities.length > 0) {
+  logger.warn(
+    {
+      count: rateLimitFailureInjectionIdentities.length,
+      identities: rateLimitFailureInjectionIdentities,
+      envVar: "TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES",
+    },
+    "Rate-limit telemetry failure injection enabled",
+  );
+}
 
 // Startup maintenance: purge old rows (TELEM-07) and checkpoint WAL (TELEM-08)
 const purgedCount = telemetryStore.purgeOlderThan(90);
@@ -120,6 +142,150 @@ const eventRouter = createEventRouter(botFilter, logger);
 // Execution engine
 const executor = createExecutor({ githubApp, logger });
 
+const slackClient = createSlackClient({ botToken: config.slackBotToken });
+const slackInstallationCache = new Map<string, { installationId: number; defaultBranch: string }>();
+
+void Promise.resolve()
+  .then(async () => {
+    const scopes = await slackClient.getTokenScopes();
+    const requiredScopes = ["chat:write", "reactions:write"];
+    const missingScopes = requiredScopes.filter((scope) => !scopes.includes(scope));
+
+    if (missingScopes.length > 0) {
+      logger.warn(
+        {
+          requiredScopes,
+          missingScopes,
+          tokenScopes: scopes,
+        },
+        "Slack bot token missing required scopes; reinstall app after updating scopes",
+      );
+      return;
+    }
+
+    logger.info({ tokenScopes: scopes }, "Slack bot token scope preflight passed");
+  })
+  .catch((err) => {
+    logger.warn({ err }, "Slack bot token scope preflight failed (non-fatal)");
+  });
+
+async function resolveSlackInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string }> {
+  const key = `${owner}/${repo}`;
+  const cached = slackInstallationCache.get(key);
+  if (cached) {
+    return cached;
+  }
+
+  const context = await githubApp.getRepoInstallationContext(owner, repo);
+  if (!context) {
+    throw new Error(`Repository ${owner}/${repo} is not installed for this GitHub App`);
+  }
+
+  slackInstallationCache.set(key, context);
+  return context;
+}
+
+const slackWriteRunner = createSlackWriteRunner({
+  resolveRepoInstallationContext: resolveSlackInstallationContext,
+  createWorkspace: async ({ installationId, owner, repo, ref, depth }) =>
+    workspaceManager.create(installationId, { owner, repo, ref, depth }),
+  execute: async ({ workspace, installationId, owner, repo, prompt, triggerBody }) =>
+    executor.execute({
+      workspace,
+      installationId,
+      owner,
+      repo,
+      prNumber: undefined,
+      commentId: undefined,
+      eventType: "slack.message",
+      triggerBody,
+      prompt,
+      modelOverride: config.slackAssistantModel,
+      dynamicTimeoutSeconds: 180,
+      maxTurnsOverride: 8,
+      writeMode: true,
+      enableInlineTools: false,
+      enableCommentTools: true,
+      botHandles: ["kodiai"],
+    }),
+  createPullRequest: async ({ installationId, owner, repo, title, head, base, body }) => {
+    const octokit = await githubApp.getInstallationOctokit(installationId);
+    const response = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title,
+      head,
+      base,
+      body,
+    });
+    return { htmlUrl: response.data.html_url };
+  },
+});
+
+const slackAssistantHandler = createSlackAssistantHandler({
+  createWorkspace: async ({ owner, repo }) => {
+    const installationContext = await resolveSlackInstallationContext(owner, repo);
+    return workspaceManager.create(installationContext.installationId, {
+      owner,
+      repo,
+      ref: installationContext.defaultBranch,
+      depth: 1,
+    });
+  },
+  execute: async (input) => {
+    const installationContext = await resolveSlackInstallationContext(input.owner, input.repo);
+    const result = await executor.execute({
+      workspace: input.workspace,
+      installationId: installationContext.installationId,
+      owner: input.owner,
+      repo: input.repo,
+      prNumber: undefined,
+      commentId: undefined,
+      eventType: input.eventType,
+      triggerBody: input.triggerBody,
+      prompt: input.prompt,
+      modelOverride: config.slackAssistantModel,
+      dynamicTimeoutSeconds: 180,
+      maxTurnsOverride: 8,
+      writeMode: input.writeMode,
+      enableInlineTools: input.enableInlineTools,
+      enableCommentTools: input.enableCommentTools,
+      botHandles: ["kodiai"],
+    });
+
+    if (result.conclusion !== "success") {
+      throw new Error(result.errorMessage ?? `Slack assistant execution failed with conclusion=${result.conclusion}`);
+    }
+
+    const answerText = result.resultText?.trim();
+    if (!answerText) {
+      throw new Error("Slack assistant execution did not return answer text");
+    }
+
+    return { answerText };
+  },
+  runWrite: async (input) => {
+    return slackWriteRunner.run(input);
+  },
+  publishInThread: async ({ channel, threadTs, text }) => {
+    await slackClient.postThreadMessage({ channel, threadTs, text });
+  },
+  addWorkingReaction: async ({ channel, messageTs }) => {
+    try {
+      await slackClient.addReaction({ channel, timestamp: messageTs, name: "hourglass_flowing_sand" });
+    } catch (error) {
+      logger.warn({ err: error, channel, messageTs }, "Slack working reaction add failed");
+    }
+  },
+  removeWorkingReaction: async ({ channel, messageTs }) => {
+    try {
+      await slackClient.removeReaction({ channel, timestamp: messageTs, name: "hourglass_flowing_sand" });
+    } catch (error) {
+      logger.warn({ err: error, channel, messageTs }, "Slack working reaction remove failed");
+    }
+  },
+});
+
 // Register event handlers
 createReviewHandler({
   eventRouter,
@@ -163,6 +329,13 @@ const app = new Hono();
 
 // Mount routes
 app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter }));
+app.route("/webhooks/slack", createSlackEventRoutes({
+  config,
+  logger,
+  onAllowedBootstrap: async (payload) => {
+    await slackAssistantHandler.handle(payload);
+  },
+}));
 app.route("/", createHealthRoutes({ githubApp, logger }));
 
 // Global error handler
