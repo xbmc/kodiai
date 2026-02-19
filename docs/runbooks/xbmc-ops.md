@@ -180,14 +180,25 @@ Treat this gate as release-blocking when any check fails.
 
 ### Issue write-mode reliability failures (`REL-74-*`)
 
+Both success and failure paths use the same machine-checkable status-envelope contract.
+The gate enforces that each path includes its required fields:
+
+- **Failure path:** `status: pr_creation_failed`, `failed_step:`, `diagnostics:`
+- **Success path:** `status: success`, `pr_url:`, `issue_linkback_url:`
+
+Individual check troubleshooting:
+
 - `REL-74-01` failed: issue reply output is missing machine-checkable status line.
-  - Ensure write failure/success replies include explicit `status:` marker.
+  - Ensure write failure/success replies include explicit `status:` marker (`status: success` or `status: pr_creation_failed`).
 - `REL-74-02` failed: failure was not pinned to expected step (`branch-push`, `create-pr`, `issue-linkback`).
   - Inspect publish logs for missing/incorrect `failed_step` mapping.
 - `REL-74-03` failed: diagnostics were empty or non-actionable.
   - Ensure diagnostics include concrete cause or fallback `Unknown publish failure`.
 - `REL-74-04` failed: status reported success without artifact triad.
   - Confirm branch push succeeded, PR URL exists, and issue linkback comment was posted.
+- `REL-74-05` failed: success reply is missing machine-checkable URL markers.
+  - Ensure success replies include `pr_url:` and `issue_linkback_url:` markers in reply text.
+  - Check that `buildIssueWriteSuccessReply` in `src/handlers/mention.ts` emits both fields.
 
 ### Combined degraded retrieval failures (`RET-74-*`)
 
@@ -203,4 +214,5 @@ When reporting a Phase 74 gate failure, include:
 - Scenario JSON used for the run
 - Full gate output with failed check IDs
 - Delivery ID and issue/PR URLs tied to the scenario
-- `status:` and `failed_step:` lines captured from issue write reply
+- For failure path: `status:`, `failed_step:`, and `diagnostics:` lines from issue write reply
+- For success path: `status:`, `pr_url:`, and `issue_linkback_url:` lines from issue write reply
