@@ -165,7 +165,7 @@ Plans:
   3. Retrieval results from the last 30 days score higher than equivalent results from 6+ months ago, with a severity-aware decay floor of 0.3 that prevents CRITICAL/MAJOR findings from being forgotten
   4. Usage analysis completes within a 3-second time budget and fails open (missing usage data never blocks the review)
   5. Recency weighting chains after existing language-aware re-ranking without disrupting existing retrieval quality
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 57-01-PLAN.md — Usage analyzer and scope coordinator pure-function modules
@@ -263,7 +263,7 @@ Plans:
 - [ ] 75-03-PLAN.md — Close live verification blockers by fixing author-cache persistence noise and enforcing OPS75 preflight evidence contract
 - [ ] 75-04-PLAN.md — Capture passing mention-lane + degraded-row live evidence bundle for OPS75 closure
 - [ ] 75-05-PLAN.md — Enforce hard same-run identity capture gates for review/mention cache lanes and degraded-row readiness
-- [ ] 75-06-PLAN.md — Publish single-run OPS75 PASS evidence and update Phase 75 verification status to closed
+- [x] 75-06-PLAN.md — Publish single-run OPS75 PASS evidence and update Phase 75 verification status to closed (completed 2026-02-19)
 
 ### Phase 76: Success-Path Status Contract Parity
 **Goal**: Restore producer/consumer contract parity by making issue write success output machine-checkable and enforcing that contract in regression gates
@@ -344,7 +344,7 @@ Plans:
   1. Slack messages with explicit write intent trigger write-capable execution instead of read-only-only routing
   2. Slack write flows enforce existing write-policy, allowPaths, permission checks, and actionable refusal guidance
   3. Successful Slack write runs can create and report PR output deterministically in-thread with clear status
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [ ] 81-01-PLAN.md — Add deterministic Slack write-intent routing with medium-confidence conversational detection and ambiguous quick-action fallback
