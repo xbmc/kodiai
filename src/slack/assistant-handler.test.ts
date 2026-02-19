@@ -4,11 +4,13 @@ import {
   type SlackAssistantAddressedPayload,
   type SlackAssistantExecutorInput,
 } from "./assistant-handler.ts";
+import { SLACK_WRITE_CONFIRMATION_TIMEOUT_MS } from "./write-intent.ts";
 
 function createAddressedPayload(text: string): SlackAssistantAddressedPayload {
   return {
     channel: "C123KODIAI",
     threadTs: "1700000000.000777",
+    messageTs: "1700000000.000777",
     user: "U123USER",
     text,
     replyTarget: "thread-only",
@@ -16,9 +18,58 @@ function createAddressedPayload(text: string): SlackAssistantAddressedPayload {
 }
 
 describe("createSlackAssistantHandler", () => {
+  test("responds instantly to ping-like messages without workspace or executor", async () => {
+    const published: string[] = [];
+    let workspaceCalls = 0;
+    let executionCalls = 0;
+    const reactions: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => {
+        workspaceCalls += 1;
+        return {
+          dir: "/tmp/workspace",
+          cleanup: async () => undefined,
+        };
+      },
+      execute: async () => {
+        executionCalls += 1;
+        return { answerText: "should never run" };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+      addWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`add:${channel}:${messageTs}`);
+      },
+      removeWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`remove:${channel}:${messageTs}`);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("<@U123BOT> ping"));
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "read_only",
+      repo: "xbmc/xbmc",
+      publishedText: "Pong! I am here. Ask me anything about xbmc/xbmc and I will answer in read-only mode.",
+    });
+    expect(workspaceCalls).toBe(0);
+    expect(executionCalls).toBe(0);
+    expect(reactions).toEqual([
+      "add:C123KODIAI:1700000000.000777",
+      "remove:C123KODIAI:1700000000.000777",
+    ]);
+    expect(published).toEqual([
+      "Pong! I am here. Ask me anything about xbmc/xbmc and I will answer in read-only mode.",
+    ]);
+  });
+
   test("routes to default xbmc/xbmc and enforces read-only executor contract", async () => {
     const executionInputs: SlackAssistantExecutorInput[] = [];
     const published: string[] = [];
+    const reactions: string[] = [];
 
     const handler = createSlackAssistantHandler({
       createWorkspace: async () => ({
@@ -32,12 +83,19 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      addWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`add:${channel}:${messageTs}`);
+      },
+      removeWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`remove:${channel}:${messageTs}`);
+      },
     });
 
     const result = await handler.handle(createAddressedPayload("Explain the retry behavior."));
 
     expect(result).toEqual({
       outcome: "answered",
+      route: "read_only",
       repo: "xbmc/xbmc",
       publishedText: "Here is the read-only answer.",
     });
@@ -53,14 +111,21 @@ describe("createSlackAssistantHandler", () => {
       triggerBody: "Explain the retry behavior.",
     });
     expect(executionInputs[0]?.prompt).toContain("Repository context: xbmc/xbmc");
+    expect(executionInputs[0]?.prompt).toContain("Slack response style:");
+    expect(executionInputs[0]?.prompt).toContain("Lead with the direct answer in the first sentence.");
     expect(executionInputs[0]?.prompt).toContain("Do not create branches, commits, pull requests");
     expect(executionInputs[0]?.prompt).toContain("Do not run CI/build commands");
+    expect(reactions).toEqual([
+      "add:C123KODIAI:1700000000.000777",
+      "remove:C123KODIAI:1700000000.000777",
+    ]);
     expect(published).toEqual(["Here is the read-only answer."]);
   });
 
   test("prepends explicit override acknowledgement before assistant answer", async () => {
     const published: string[] = [];
     const executionInputs: SlackAssistantExecutorInput[] = [];
+    const reactions: string[] = [];
 
     const handler = createSlackAssistantHandler({
       createWorkspace: async () => ({
@@ -74,6 +139,12 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      addWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`add:${channel}:${messageTs}`);
+      },
+      removeWorkingReaction: async ({ channel, messageTs }) => {
+        reactions.push(`remove:${channel}:${messageTs}`);
+      },
     });
 
     const result = await handler.handle(
@@ -82,13 +153,168 @@ describe("createSlackAssistantHandler", () => {
 
     expect(result).toEqual({
       outcome: "answered",
+      route: "read_only",
       repo: "kodiai/xbmc-test",
       publishedText: "Using repo context kodiai/xbmc-test.\n\nI checked that repository context.",
     });
     expect(executionInputs).toHaveLength(1);
     expect(executionInputs[0]).toMatchObject({ owner: "kodiai", repo: "xbmc-test" });
+    expect(reactions).toEqual([
+      "add:C123KODIAI:1700000000.000777",
+      "remove:C123KODIAI:1700000000.000777",
+    ]);
+    expect(published).toEqual(["Using repo context kodiai/xbmc-test.\n\nI checked that repository context."]);
+  });
+
+  test("routes explicit apply: prefix to write-capable executor path", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+    const published: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Applied the requested update." };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText: "Applied the requested update.",
+    });
+    expect(executionInputs).toHaveLength(1);
+    expect(executionInputs[0]).toMatchObject({
+      writeMode: true,
+      enableInlineTools: true,
+      enableCommentTools: true,
+      triggerBody: "update src/slack/assistant-handler.ts",
+    });
+    expect(executionInputs[0]?.prompt).toContain("Write-capable execution requirements:");
+    expect(executionInputs[0]?.prompt).not.toContain("Read-only execution requirements:");
+    expect(published).toEqual(["Applied the requested update."]);
+  });
+
+  test("routes medium-confidence conversational write ask to write-capable execution", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Done." };
+      },
+      publishInThread: async () => undefined,
+    });
+
+    const result = await handler.handle(
+      createAddressedPayload("Can you update src/slack/assistant-handler.ts and open a PR?"),
+    );
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText: "Done.",
+    });
+    expect(executionInputs).toHaveLength(1);
+    expect(executionInputs[0]).toMatchObject({
+      writeMode: true,
+      triggerBody: "Can you update src/slack/assistant-handler.ts and open a PR?",
+    });
+  });
+
+  test("ambiguous conversational write intent stays read-only and publishes exact rerun command", async () => {
+    let workspaceCalls = 0;
+    let executionCalls = 0;
+    const published: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => {
+        workspaceCalls += 1;
+        return {
+          dir: "/tmp/workspace",
+          cleanup: async () => undefined,
+        };
+      },
+      execute: async () => {
+        executionCalls += 1;
+        return { answerText: "should never run" };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("Could you maybe change this when you can?"));
+
+    expect(result).toEqual({
+      outcome: "clarification_required",
+      question:
+        "I kept this run read-only because your request may involve repository changes, but write intent is ambiguous.\n" +
+        "If you want write mode, rerun with exactly one of:\n" +
+        "- apply: Could you maybe change this when you can?\n" +
+        "- change: Could you maybe change this when you can?",
+    });
+    expect(workspaceCalls).toBe(0);
+    expect(executionCalls).toBe(0);
     expect(published).toEqual([
-      "Using repo context kodiai/xbmc-test.\n\nI checked that repository context.",
+      "I kept this run read-only because your request may involve repository changes, but write intent is ambiguous.\n" +
+        "If you want write mode, rerun with exactly one of:\n" +
+        "- apply: Could you maybe change this when you can?\n" +
+        "- change: Could you maybe change this when you can?",
+    ]);
+  });
+
+  test("high-impact write asks are flagged as confirmation_required before execution", async () => {
+    let executionCalls = 0;
+    const published: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => {
+        executionCalls += 1;
+        return { answerText: "should never run" };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(
+      createAddressedPayload("Please delete old auth files across the entire repo and migrate secrets"),
+    );
+
+    expect(result).toEqual({
+      outcome: "confirmation_required",
+      question:
+        "This looks like a high-impact write request, so I did not execute it yet.\n" +
+        "Reply in this thread with the command below prefixed by `confirm:` to proceed:\n" +
+        "- apply: Please delete old auth files across the entire repo and migrate secrets\n\n" +
+        "Confirmation timeout: 15 minutes (request stays pending if not confirmed).",
+      confirmationTimeoutMs: SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
+    });
+    expect(executionCalls).toBe(0);
+    expect(published).toEqual([
+      "This looks like a high-impact write request, so I did not execute it yet.\n" +
+        "Reply in this thread with the command below prefixed by `confirm:` to proceed:\n" +
+        "- apply: Please delete old auth files across the entire repo and migrate secrets\n\n" +
+        "Confirmation timeout: 15 minutes (request stays pending if not confirmed).",
     ]);
   });
 

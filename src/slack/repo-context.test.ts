@@ -56,4 +56,15 @@ describe("resolveSlackRepoContext", () => {
         "I could not determine a single repo context. Which repo should I use? Please reply with owner/repo.",
     });
   });
+
+  test("does not treat file paths as owner/repo overrides", () => {
+    const result = resolveSlackRepoContext("Can you update src/slack/assistant-handler.ts and summarize the change?");
+
+    expect(result).toEqual({
+      outcome: "default",
+      repo: "xbmc/xbmc",
+      acknowledgementText: undefined,
+      clarifyingQuestion: undefined,
+    });
+  });
 });

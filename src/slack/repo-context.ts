@@ -39,6 +39,19 @@ function extractDistinctRepoTokens(text: string): string[] {
     if (!owner || !repo) {
       continue;
     }
+
+    if (match.index !== undefined) {
+      const rawMatch = match[0] ?? "";
+      const token = `${match[1] ?? ""}/${match[2] ?? ""}`;
+      const relativeTokenOffset = rawMatch.toLowerCase().lastIndexOf(token.toLowerCase());
+      if (relativeTokenOffset >= 0) {
+        const tokenEndIndex = match.index + relativeTokenOffset + token.length;
+        if (text[tokenEndIndex] === "/") {
+          continue;
+        }
+      }
+    }
+
     found.push(`${owner}/${repo}`);
   }
 
