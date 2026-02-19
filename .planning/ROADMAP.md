@@ -148,7 +148,7 @@ See `.planning/milestones/v0.13-ROADMAP.md` for full phase details, accepted gap
   2. After every review that uses retrieval, Kodiai logs retrieval quality metrics (result count, average distance, threshold used, language match ratio) to the telemetry database
   3. When a PR title contains unrecognized bracket tags like `[Auth]` or `[iOS]`, Kodiai includes those tags as component/platform focus hints in the review prompt rather than silently ignoring them
   4. Schema migrations are additive-only (new tables and nullable columns) with no modifications to existing tables
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 56-01-PLAN.md — Record dependency bump merge history in knowledge store
@@ -349,7 +349,8 @@ Plans:
 Plans:
 - [ ] 81-01-PLAN.md — Add deterministic Slack write-intent routing with medium-confidence conversational detection and ambiguous quick-action fallback
 - [ ] 81-02-PLAN.md — Implement Slack write execution + PR/comment publish path with policy/permission enforcement
-- [ ] 81-03-PLAN.md — Add high-impact confirmation flow, write response contract UX, and Phase 81 operator verification gates
+- [ ] 81-03-PLAN.md — Add high-impact confirmation flow and deterministic Slack write response contract UX
+- [ ] 81-04-PLAN.md — Add Phase 81 smoke/regression verification gates and update Slack operator runbook
 
 ## Progress
 
