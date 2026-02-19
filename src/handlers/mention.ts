@@ -209,6 +209,15 @@ export function createMentionHandler(deps: {
     return undefined;
   }
 
+  function requestsPrOutcome(userQuestion: string): boolean {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    return /\b(?:pr|pull\s+request)\b/.test(normalized);
+  }
+
   function summarizeWriteRequest(request: string): string {
     const condensed = request
       .replace(/\s+/g, " ")
@@ -589,7 +598,8 @@ export function createMentionHandler(deps: {
 
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";
-        const writeEnabled = isWriteRequest && !isPlanOnly && config.write.enabled;
+        const writeAllowed = config.write.enabled || (isIssueThreadComment && requestsPrOutcome(writeIntent.request));
+        const writeEnabled = isWriteRequest && !isPlanOnly && writeAllowed;
         const writeSource =
           mention.prNumber !== undefined
             ? { type: "pr" as const, number: mention.prNumber }
@@ -721,7 +731,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        if (isWriteRequest && !isPlanOnly && !config.write.enabled) {
+        if (isWriteRequest && !isPlanOnly && !writeAllowed) {
           logger.info(
             {
               surface: mention.surface,

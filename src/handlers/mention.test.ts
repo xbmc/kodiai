@@ -1216,7 +1216,7 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("issue 'can you PR this' wording is treated as implicit write intent", async () => {
+  test("issue 'can you PR this' wording bypasses write.enabled gate and enters write flow", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -1301,16 +1301,14 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
+    expect(executorCalled).toBe(true);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
-    expect(issueReplies[0]).toContain("write:");
-    expect(issueReplies[0]).toContain("enabled: true");
+    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
 
     await workspaceFixture.cleanup();
   });
 
-  test("issue 'fix this so you can open up a PR' wording is treated as implicit write intent", async () => {
+  test("issue 'fix this so you can open up a PR' wording bypasses write.enabled gate", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -1394,11 +1392,9 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(false);
+    expect(executorCalled).toBe(true);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
-    expect(issueReplies[0]).toContain("write:");
-    expect(issueReplies[0]).toContain("enabled: true");
+    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
 
     await workspaceFixture.cleanup();
   });
