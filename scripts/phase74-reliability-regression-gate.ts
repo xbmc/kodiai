@@ -32,6 +32,8 @@ export type ParsedIssueWriteStatus = {
   diagnostics: string;
   retryCommand: string | null;
   openedPrUrl: string | null;
+  prUrl: string | null;
+  issueLinkbackUrl: string | null;
 };
 
 type ScenarioInput = {
@@ -219,6 +221,8 @@ export function parseIssueWriteStatus(reply: string): ParsedIssueWriteStatus {
   const diagnosticsMatch = reply.match(/^diagnostics:\s*([^\n\r]+)/im);
   const retryMatch = reply.match(/^Retry command:\s*([^\n\r]+)/im);
   const openedPrMatch = reply.match(/Opened PR:\s*(https?:\/\/\S+)/i);
+  const prUrlMatch = reply.match(/^pr_url:\s*(https?:\/\/\S+)/im);
+  const linkbackMatch = reply.match(/^issue_linkback_url:\s*(https?:\/\/\S+)/im);
 
   return {
     status: statusMatch?.[1]?.trim() ?? null,
@@ -226,6 +230,8 @@ export function parseIssueWriteStatus(reply: string): ParsedIssueWriteStatus {
     diagnostics: diagnosticsMatch?.[1]?.trim() || "Unknown publish failure",
     retryCommand: retryMatch?.[1]?.trim() ?? null,
     openedPrUrl: openedPrMatch?.[1]?.trim() ?? null,
+    prUrl: prUrlMatch?.[1]?.trim() ?? null,
+    issueLinkbackUrl: linkbackMatch?.[1]?.trim() ?? null,
   };
 }
 
@@ -279,6 +285,21 @@ export function evaluateScenarioChecks(
         ? `Artifacts present: branchPush=${scenario.artifacts.branchPush}, prUrl=${scenario.artifacts.prUrl}, issueLinkbackUrl=${scenario.artifacts.issueLinkbackUrl}.`
         : "Failure scenario; success artifact triad requirement not applicable."
       : "status=success requires branchPush=true plus non-empty prUrl and issueLinkbackUrl.",
+  });
+
+  const successMarkersPresent =
+    Boolean(parsedStatus.prUrl) && Boolean(parsedStatus.issueLinkbackUrl);
+  const successMarkersValid = parsedStatus.status !== "success" || successMarkersPresent;
+
+  checks.push({
+    id: `${RELIABILITY_PREFIX}-05`,
+    title: "Success reply includes machine-checkable pr_url and issue_linkback_url markers",
+    passed: successMarkersValid,
+    details: successMarkersValid
+      ? parsedStatus.status === "success"
+        ? `Markers present: pr_url=${parsedStatus.prUrl}, issue_linkback_url=${parsedStatus.issueLinkbackUrl}.`
+        : "Failure scenario; success marker requirement not applicable."
+      : "status=success reply must include pr_url: and issue_linkback_url: markers in reply text.",
   });
 
   const renderedWithinBudget = scenario.retrieval.renderedChars <= scenario.retrieval.maxChars;
