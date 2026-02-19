@@ -236,6 +236,128 @@ describe("createSlackAssistantHandler", () => {
     });
   });
 
+  test("uses write runner output and publishes primary PR link on success", async () => {
+    const published: string[] = [];
+    const runWriteCalls: Array<Record<string, unknown>> = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async (input) => {
+        runWriteCalls.push(input as unknown as Record<string, unknown>);
+        return {
+          outcome: "success",
+          prUrl: "https://github.com/xbmc/xbmc/pull/123",
+          responseText: "Opened PR: https://github.com/xbmc/xbmc/pull/123",
+          retryCommand: "apply: update src/slack/assistant-handler.ts",
+          mirrors: [
+            {
+              url: "https://github.com/xbmc/xbmc/issues/1#issuecomment-9",
+              excerpt: "Updated issue with implementation notes",
+            },
+          ],
+        };
+      },
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText: "Opened PR: https://github.com/xbmc/xbmc/pull/123",
+    });
+    expect(runWriteCalls).toHaveLength(1);
+    expect(runWriteCalls[0]).toMatchObject({
+      owner: "xbmc",
+      repo: "xbmc",
+      request: "update src/slack/assistant-handler.ts",
+      keyword: "apply",
+    });
+    expect(published).toEqual(["Opened PR: https://github.com/xbmc/xbmc/pull/123"]);
+  });
+
+  test("mirrors comment link and excerpt when write runner reports comment publish", async () => {
+    const published: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async () => ({
+        outcome: "success",
+        prUrl: "https://github.com/xbmc/xbmc/pull/124",
+        responseText:
+          "Opened PR: https://github.com/xbmc/xbmc/pull/124\n\n- https://github.com/xbmc/xbmc/issues/1#issuecomment-10\n  Updated issue comment excerpt",
+        retryCommand: "apply: update issue note",
+        mirrors: [
+          {
+            url: "https://github.com/xbmc/xbmc/issues/1#issuecomment-10",
+            excerpt: "Updated issue comment excerpt",
+          },
+        ],
+      }),
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("apply: update issue note"));
+
+    expect(result.outcome).toBe("answered");
+    if (result.outcome !== "answered") {
+      throw new Error("expected answered result");
+    }
+    expect(result.publishedText).toContain("Opened PR: https://github.com/xbmc/xbmc/pull/124");
+    expect(result.publishedText).toContain("https://github.com/xbmc/xbmc/issues/1#issuecomment-10");
+    expect(result.publishedText).toContain("Updated issue comment excerpt");
+    expect(published).toHaveLength(1);
+  });
+
+  test("publishes deterministic refusal with retry command from write runner", async () => {
+    const published: string[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async () => ({
+        outcome: "refusal",
+        reason: "policy",
+        responseText:
+          "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
+        retryCommand: "apply: update src/slack/assistant-handler.ts",
+      }),
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+    });
+
+    const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText:
+        "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
+    });
+    expect(published).toEqual([
+      "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
+    ]);
+  });
+
   test("ambiguous conversational write intent stays read-only and publishes exact rerun command", async () => {
     let workspaceCalls = 0;
     let executionCalls = 0;

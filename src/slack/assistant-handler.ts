@@ -5,6 +5,7 @@ import {
   SLACK_WRITE_CONFIRMATION_TIMEOUT_MS,
   type SlackWriteKeyword,
 } from "./write-intent.ts";
+import type { SlackWriteRunnerResult } from "./write-runner.ts";
 
 export interface SlackAssistantAddressedPayload {
   channel: string;
@@ -39,6 +40,16 @@ export interface SlackAssistantExecutionResult {
 interface SlackAssistantHandlerDeps {
   createWorkspace: (input: SlackAssistantWorkspaceInput) => Promise<Workspace>;
   execute: (input: SlackAssistantExecutorInput) => Promise<SlackAssistantExecutionResult>;
+  runWrite?: (input: {
+    owner: string;
+    repo: string;
+    channel: string;
+    threadTs: string;
+    messageTs: string;
+    request: string;
+    keyword: "apply" | "change";
+    prompt: string;
+  }) => Promise<SlackWriteRunnerResult>;
   publishInThread: (input: { channel: string; threadTs: string; text: string }) => Promise<void> | void;
   addWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   removeWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
@@ -127,7 +138,14 @@ function buildInstantReply(messageText: string): string | undefined {
 }
 
 export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
-  const { createWorkspace, execute, publishInThread, addWorkingReaction, removeWorkingReaction } = deps;
+  const {
+    createWorkspace,
+    execute,
+    runWrite,
+    publishInThread,
+    addWorkingReaction,
+    removeWorkingReaction,
+  } = deps;
 
   return {
     async handle(payload: SlackAssistantAddressedPayload): Promise<SlackAssistantHandleResult> {
@@ -198,17 +216,53 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
         }
 
         const { owner, repo } = splitRepo(resolution.repo);
+
+        const writeMode = writeIntent.outcome === "write";
+        const messageText = writeIntent.outcome === "read_only" ? payload.text : writeIntent.request;
+        const prompt = buildSlackAssistantPrompt({
+          repoContext: resolution.repo,
+          messageText,
+          writeMode,
+        });
+
+        if (
+          writeMode
+          && runWrite
+          && (writeIntent.keyword === "apply" || writeIntent.keyword === "change")
+        ) {
+          const writeResult = await runWrite({
+            owner,
+            repo,
+            channel: payload.channel,
+            threadTs: payload.threadTs,
+            messageTs: payload.messageTs,
+            request: writeIntent.request,
+            keyword: writeIntent.keyword,
+            prompt,
+          });
+
+          const replyText =
+            resolution.outcome === "override"
+              ? `${resolution.acknowledgementText}\n\n${writeResult.responseText}`
+              : writeResult.responseText;
+
+          await publishInThread({
+            channel: payload.channel,
+            threadTs: payload.threadTs,
+            text: replyText,
+          });
+
+          return {
+            outcome: "answered",
+            route: "write",
+            repo: resolution.repo,
+            publishedText: replyText,
+          };
+        }
+
         const workspace = await createWorkspace({ owner, repo });
 
         try {
-          const writeMode = writeIntent.outcome === "write";
-          const messageText = writeIntent.outcome === "read_only" ? payload.text : writeIntent.request;
-          const prompt = buildSlackAssistantPrompt({
-            repoContext: resolution.repo,
-            messageText,
-            writeMode,
-          });
-
           const executionResult = await execute({
             workspace,
             owner,

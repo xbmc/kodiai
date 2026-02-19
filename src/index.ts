@@ -25,6 +25,7 @@ import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.
 import { Database } from "bun:sqlite";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
+import { createSlackWriteRunner } from "./slack/write-runner.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -144,6 +145,30 @@ const executor = createExecutor({ githubApp, logger });
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
 const slackInstallationCache = new Map<string, { installationId: number; defaultBranch: string }>();
 
+void Promise.resolve()
+  .then(async () => {
+    const scopes = await slackClient.getTokenScopes();
+    const requiredScopes = ["chat:write", "reactions:write"];
+    const missingScopes = requiredScopes.filter((scope) => !scopes.includes(scope));
+
+    if (missingScopes.length > 0) {
+      logger.warn(
+        {
+          requiredScopes,
+          missingScopes,
+          tokenScopes: scopes,
+        },
+        "Slack bot token missing required scopes; reinstall app after updating scopes",
+      );
+      return;
+    }
+
+    logger.info({ tokenScopes: scopes }, "Slack bot token scope preflight passed");
+  })
+  .catch((err) => {
+    logger.warn({ err }, "Slack bot token scope preflight failed (non-fatal)");
+  });
+
 async function resolveSlackInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string }> {
   const key = `${owner}/${repo}`;
   const cached = slackInstallationCache.get(key);
@@ -160,6 +185,43 @@ async function resolveSlackInstallationContext(owner: string, repo: string): Pro
   return context;
 }
 
+const slackWriteRunner = createSlackWriteRunner({
+  resolveRepoInstallationContext: resolveSlackInstallationContext,
+  createWorkspace: async ({ installationId, owner, repo, ref, depth }) =>
+    workspaceManager.create(installationId, { owner, repo, ref, depth }),
+  execute: async ({ workspace, installationId, owner, repo, prompt, triggerBody }) =>
+    executor.execute({
+      workspace,
+      installationId,
+      owner,
+      repo,
+      prNumber: undefined,
+      commentId: undefined,
+      eventType: "slack.message",
+      triggerBody,
+      prompt,
+      modelOverride: config.slackAssistantModel,
+      dynamicTimeoutSeconds: 180,
+      maxTurnsOverride: 8,
+      writeMode: true,
+      enableInlineTools: false,
+      enableCommentTools: true,
+      botHandles: ["kodiai"],
+    }),
+  createPullRequest: async ({ installationId, owner, repo, title, head, base, body }) => {
+    const octokit = await githubApp.getInstallationOctokit(installationId);
+    const response = await octokit.rest.pulls.create({
+      owner,
+      repo,
+      title,
+      head,
+      base,
+      body,
+    });
+    return { htmlUrl: response.data.html_url };
+  },
+});
+
 const slackAssistantHandler = createSlackAssistantHandler({
   createWorkspace: async ({ owner, repo }) => {
     const installationContext = await resolveSlackInstallationContext(owner, repo);
@@ -167,7 +229,7 @@ const slackAssistantHandler = createSlackAssistantHandler({
       owner,
       repo,
       ref: installationContext.defaultBranch,
-      depth: 50,
+      depth: 1,
     });
   },
   execute: async (input) => {
@@ -182,6 +244,9 @@ const slackAssistantHandler = createSlackAssistantHandler({
       eventType: input.eventType,
       triggerBody: input.triggerBody,
       prompt: input.prompt,
+      modelOverride: config.slackAssistantModel,
+      dynamicTimeoutSeconds: 180,
+      maxTurnsOverride: 8,
       writeMode: input.writeMode,
       enableInlineTools: input.enableInlineTools,
       enableCommentTools: input.enableCommentTools,
@@ -199,8 +264,25 @@ const slackAssistantHandler = createSlackAssistantHandler({
 
     return { answerText };
   },
+  runWrite: async (input) => {
+    return slackWriteRunner.run(input);
+  },
   publishInThread: async ({ channel, threadTs, text }) => {
     await slackClient.postThreadMessage({ channel, threadTs, text });
+  },
+  addWorkingReaction: async ({ channel, messageTs }) => {
+    try {
+      await slackClient.addReaction({ channel, timestamp: messageTs, name: "hourglass_flowing_sand" });
+    } catch (error) {
+      logger.warn({ err: error, channel, messageTs }, "Slack working reaction add failed");
+    }
+  },
+  removeWorkingReaction: async ({ channel, messageTs }) => {
+    try {
+      await slackClient.removeReaction({ channel, timestamp: messageTs, name: "hourglass_flowing_sand" });
+    } catch (error) {
+      logger.warn({ err: error, channel, messageTs }, "Slack working reaction remove failed");
+    }
   },
 });
 
