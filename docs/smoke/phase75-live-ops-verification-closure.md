@@ -202,3 +202,94 @@ Blocked check IDs to carry forward: `OPS75-CACHE-01`, `OPS75-CACHE-02`,
 
 For triage SQL and troubleshooting mapped to each check family, use
 `docs/runbooks/review-requested-debug.md`.
+
+## Plan 75-06 Closure Rerun (2026-02-19, blocked)
+
+Rerun executed with the same identity matrix from plan 75-05 to confirm whether
+live telemetry state has changed since the last capture.
+
+### Rerun Command
+
+```sh
+bun run verify:phase75 \
+  --db data/kodiai-telemetry.xbmc-live.db \
+  --review a6ef2180-0be2-11f1-968d-2d2e1a4ddd54 \
+  --review a5266f70-0be2-11f1-9510-567558d58f7f \
+  --review a32dd3c0-0be2-11f1-8ca9-f1471c47e808 \
+  --review-accepted a6ef2180-0be2-11f1-968d-2d2e1a4ddd54 \
+  --review-accepted a5266f70-0be2-11f1-9510-567558d58f7f \
+  --review-accepted a32dd3c0-0be2-11f1-8ca9-f1471c47e808 \
+  --mention fbb40df0-0c34-11f1-8cc1-c92772e4a6fe \
+  --mention 0d18cab0-0c33-11f1-8869-5d1ad91f404e \
+  --mention 00744000-0c33-11f1-8fea-d9e84f7596ea \
+  --degraded 4e20bdb0-0c33-11f1-8685-a46f5471acb3:pull_request.ready_for_review \
+  --failopen f4112b20-0c32-11f1-8ad6-7c1444ea5884:issue_comment.created
+```
+
+### Verifier Output
+
+```
+Phase 75 live OPS closure verification
+
+Deterministic matrix identities:
+- review_requested:prime => a6ef2180-0be2-11f1-968d-2d2e1a4ddd54:pull_request.review_requested
+- review_requested:hit => a5266f70-0be2-11f1-9510-567558d58f7f:pull_request.review_requested
+- review_requested:changed-query-miss => a32dd3c0-0be2-11f1-8ca9-f1471c47e808:pull_request.review_requested
+- kodiai_mention:prime => fbb40df0-0c34-11f1-8cc1-c92772e4a6fe:issue_comment.created
+- kodiai_mention:hit => 0d18cab0-0c33-11f1-8869-5d1ad91f404e:issue_comment.created
+- kodiai_mention:changed-query-miss => 00744000-0c33-11f1-8fea-d9e84f7596ea:issue_comment.created
+
+Accepted review_requested identities:
+- a6ef2180-0be2-11f1-968d-2d2e1a4ddd54:pull_request.review_requested
+- a5266f70-0be2-11f1-9510-567558d58f7f:pull_request.review_requested
+- a32dd3c0-0be2-11f1-8ca9-f1471c47e808:pull_request.review_requested
+
+Checks:
+- OPS75-PREFLIGHT-01 PASS: Accepted review_requested identities align with review matrix and have execution evidence.
+- OPS75-CACHE-01 FAIL: review_requested cache telemetry follows prime -> hit -> changed-query miss. a5266f70-0be2-11f1-9510-567558d58f7f:pull_request.review_requested expected=1 observed=0
+- OPS75-CACHE-02 FAIL: kodiai_mention cache telemetry follows prime -> hit -> changed-query miss. fbb40df0-0c34-11f1-8cc1-c92772e4a6fe:issue_comment.created expected=1-row observed=0; 0d18cab0-0c33-11f1-8869-5d1ad91f404e:issue_comment.created expected=1-row observed=0; 00744000-0c33-11f1-8fea-d9e84f7596ea:issue_comment.created expected=1-row observed=0
+- OPS75-ONCE-01 FAIL: Each degraded execution identity persists exactly one degraded telemetry event. 4e20bdb0-0c33-11f1-8685-a46f5471acb3:pull_request.ready_for_review expected=1 degraded row observed=0
+- OPS75-ONCE-02 PASS: Duplicate detection query returns no degraded telemetry duplicates.
+- OPS75-FAILOPEN-01 PASS: Forced telemetry failure identities persist zero telemetry rows.
+- OPS75-FAILOPEN-02 PASS: Forced telemetry failure identities still complete with non-failing execution conclusions.
+
+Final verdict: FAIL [OPS75-CACHE-01, OPS75-CACHE-02, OPS75-ONCE-01]
+```
+
+### Blocker Analysis
+
+The same three check families remain blocked with identical failure details:
+
+| Check ID | Status | Root Cause |
+| --- | --- | --- |
+| `OPS75-CACHE-01` | FAIL | Review hit lane (`a5266f70`) has `cache_hit_rate=0` instead of expected `1`; live review runs did not produce cache-hit telemetry |
+| `OPS75-CACHE-02` | FAIL | All three mention-lane identities have zero `rate_limit_events` rows; live mention runs did not emit rate-limit telemetry |
+| `OPS75-ONCE-01` | FAIL | Degraded identity (`4e20bdb0`) has zero rows with `degradation_path != none`; live run did not trigger actual rate-limit degradation |
+
+### Root Cause Summary
+
+The live telemetry database (`data/kodiai-telemetry.xbmc-live.db`) does not contain
+the telemetry patterns required for OPS75 closure because:
+
+1. **Cache-hit telemetry gap:** The Search API cache was not populated between the
+   prime and hit review runs, so the hit lane recorded `cache_hit_rate=0`.
+2. **Mention-lane telemetry gap:** Mention (`issue_comment.created`) runs completed
+   successfully in `executions` but never wrote `rate_limit_events` rows, indicating
+   the rate-limit telemetry codepath was not exercised during those mention runs.
+3. **Degraded telemetry gap:** The selected degraded identity ran with
+   `degradation_path=none`, meaning no actual Search API rate-limit degradation
+   occurred during that execution.
+
+These gaps require new live production runs that exercise the actual rate-limit and
+cache-hit codepaths. The verifier infrastructure is proven correct; the missing
+evidence is a production telemetry capture gap, not a code defect.
+
+### Carry-Forward Blockers
+
+Blocked check IDs: `OPS75-CACHE-01`, `OPS75-CACHE-02`, `OPS75-ONCE-01`.
+
+Per release-blocking discipline, this identity set cannot be used to claim OPS75
+closure. A future live run must produce:
+- A review cache-hit lane with `cache_hit_rate=1`
+- Mention-lane `rate_limit_events` rows for all three mention identities
+- At least one degraded identity with `degradation_path != none`
