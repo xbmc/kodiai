@@ -357,6 +357,21 @@ export function createMentionHandler(deps: {
     return firstLine ?? "Unknown publish failure";
   }
 
+  function buildIssueWriteSuccessReply(params: {
+    prUrl: string;
+    issueLinkbackUrl: string;
+  }): string {
+    const lines = [
+      "status: success",
+      `pr_url: ${params.prUrl}`,
+      `issue_linkback_url: ${params.issueLinkbackUrl}`,
+      "",
+      `Opened PR: ${params.prUrl}`,
+    ];
+
+    return wrapInDetails(lines.join("\n"), "kodiai response");
+  }
+
   function buildIssueWriteFailureReply(params: {
     failedStep: IssueWriteFailureStep;
     diagnostics: string;
@@ -1852,10 +1867,15 @@ export function createMentionHandler(deps: {
             return;
           }
 
-          const replyBody = wrapInDetails(
-            [`Opened PR: ${createdPr.html_url}`].join("\n"),
-            "kodiai response",
-          );
+          const issueLinkbackUrl =
+            mention.prNumber !== undefined
+              ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+              : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
+
+          const replyBody = buildIssueWriteSuccessReply({
+            prUrl: createdPr.html_url,
+            issueLinkbackUrl,
+          });
           try {
             await postMentionReply(replyBody);
           } catch (err) {
