@@ -255,7 +255,7 @@ Plans:
   1. Operators can execute a deterministic live verification matrix that exercises cache prime-hit-miss sequences and captures evidence for each run identity
   2. Verification artifacts show exactly one degraded telemetry event per degraded execution identity with no duplicate writes for the same run
   3. Verification artifacts prove degraded executions complete review output even when telemetry persistence fails
-**Plans**: 7 plans
+**Plans**: 8 plans
 
 Plans:
 - [ ] 75-01-PLAN.md — Add deterministic telemetry write-failure injection controls and regression proofs for degraded fail-open behavior
@@ -265,6 +265,7 @@ Plans:
 - [ ] 75-05-PLAN.md — Enforce hard same-run identity capture gates for review/mention cache lanes and degraded-row readiness
 - [x] 75-06-PLAN.md — Publish single-run OPS75 PASS evidence and update Phase 75 verification status to closed (completed 2026-02-19)
 - [ ] 75-07-PLAN.md — Remove invalid mention-lane cache check and add operator trigger procedure for cache-hit/degraded runs
+- [ ] 75-08-PLAN.md — Update stale smoke procedure to remove mention-lane references and match review-only verifier CLI
 
 ### Phase 76: Success-Path Status Contract Parity
 **Goal**: Restore producer/consumer contract parity by making issue write success output machine-checkable and enforcing that contract in regression gates
