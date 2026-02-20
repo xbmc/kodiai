@@ -113,7 +113,9 @@ export function evaluateSlackV1Rails(input: EvaluateSlackV1RailsInput): SlackV1R
   }
 
   const mentionToken = buildMentionToken(slackBotUserId);
-  if (!event.text.includes(mentionToken)) {
+  const hasFormattedMention = event.text.includes(mentionToken);
+  const hasPlainMention = /\b@kodiai\b/i.test(event.text);
+  if (!hasFormattedMention && !hasPlainMention) {
     return { decision: "ignore", reason: "missing_bootstrap_mention" };
   }
 
