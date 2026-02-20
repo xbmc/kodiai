@@ -76,6 +76,41 @@ const MAX_RELEASE_BODY_CHARS = 500;
 const MAX_CHANGELOG_CHARS = 1500;
 const MAX_SNIPPET_CHARS = 200;
 
+// ─── GitHub Advisory Response Type ────────────────────────────────────────────
+
+type GitHubAdvisoryResponse = {
+  type: string;
+  ghsa_id: string;
+  cve_id: string | null;
+  severity: string;
+  summary: string;
+  html_url: string;
+  vulnerabilities?: Array<{
+    package?: { name: string; ecosystem: string };
+    vulnerable_version_range?: string;
+    first_patched_version?: { identifier: string } | null;
+  }>;
+};
+
+type GitHubReleaseResponse = {
+  draft: boolean;
+  tag_name: string;
+  body: string | null;
+};
+
+type GitHubContentResponse = {
+  type: string;
+  content?: string;
+  encoding?: string;
+};
+
+/** Narrow type for registry API JSON responses used in extractGitHubCoords */
+type RegistryData = {
+  repository?: { url?: string };
+  info?: { project_urls?: Record<string, string>; home_page?: string };
+  source_code_uri?: string;
+};
+
 // ─── Security Advisory Lookup ─────────────────────────────────────────────────
 
 /**
@@ -158,17 +193,28 @@ async function queryAdvisories(
   ecosystem: string,
   version: string,
 ): Promise<AdvisoryInfo[]> {
-  const { data } = await (octokit.rest.securityAdvisories as any).listGlobalAdvisories({
-    ecosystem: ecosystem as any,
+  // securityAdvisories.listGlobalAdvisories is not fully typed in @octokit/rest
+  const { data } = await (
+    octokit.rest as unknown as {
+      securityAdvisories: {
+        listGlobalAdvisories: (params: {
+          ecosystem: string;
+          affects: string;
+          per_page: number;
+        }) => Promise<{ data: GitHubAdvisoryResponse[] }>;
+      };
+    }
+  ).securityAdvisories.listGlobalAdvisories({
+    ecosystem,
     affects: `${packageName}@${version}`,
     per_page: 10,
   });
 
-  return (data as any[])
-    .filter((adv: any) => adv.type === "reviewed")
-    .map((adv: any) => {
+  return data
+    .filter((adv) => adv.type === "reviewed")
+    .map((adv) => {
       const vuln = adv.vulnerabilities?.find(
-        (v: any) => v.package?.name === packageName && v.package?.ecosystem === ecosystem,
+        (v) => v.package?.name === packageName && v.package?.ecosystem === ecosystem,
       );
       return {
         ghsaId: adv.ghsa_id,
@@ -209,14 +255,14 @@ export async function resolveGitHubRepo(params: {
     });
     if (!resp.ok) return null;
 
-    const data = await resp.json();
+    const data = (await resp.json()) as RegistryData;
     return extractGitHubCoords(data, ecosystem);
   } catch {
     return null;
   }
 }
 
-function extractGitHubCoords(data: any, ecosystem: string): RepoCoords | null {
+function extractGitHubCoords(data: RegistryData, ecosystem: string): RepoCoords | null {
   let url: string | null = null;
 
   if (ecosystem === "npm") {
@@ -373,7 +419,7 @@ async function fetchReleasesBetween(
   const releases: Array<{ tag: string; body: string }> = [];
 
   for (let page = 1; page <= 2; page++) {
-    const { data } = await (octokit.rest.repos as any).listReleases({
+    const { data } = await octokit.rest.repos.listReleases({
       owner: repo.owner,
       repo: repo.repo,
       per_page: 30,
@@ -382,7 +428,7 @@ async function fetchReleasesBetween(
 
     if (!data || data.length === 0) break;
 
-    for (const release of data as any[]) {
+    for (const release of data) {
       if (release.draft || !release.tag_name) continue;
 
       const tagVersion = release.tag_name.replace(/^v/i, "");
@@ -412,12 +458,14 @@ async function fetchChangelogFile(
   newVersion: string,
 ): Promise<Array<{ tag: string; body: string }> | null> {
   try {
-    const { data } = await (octokit.rest.repos as any).getContent({
+    const response = await octokit.rest.repos.getContent({
       owner: repo.owner,
       repo: repo.repo,
       path: "CHANGELOG.md",
     });
 
+    // getContent returns union type; narrow to file content
+    const data = response.data as GitHubContentResponse;
     if (!data || data.type !== "file" || !data.content) return null;
 
     const content =

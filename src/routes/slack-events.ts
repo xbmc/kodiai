@@ -21,6 +21,38 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
+
+  // Per-channel sliding window rate limiter
+  const RATE_LIMIT_MAX_EVENTS = 30;
+  const RATE_LIMIT_WINDOW_MS = 60_000;
+  const channelEventTimestamps = new Map<string, number[]>();
+
+  function isChannelRateLimited(channel: string): boolean {
+    const now = Date.now();
+    const cutoff = now - RATE_LIMIT_WINDOW_MS;
+
+    let timestamps = channelEventTimestamps.get(channel);
+    if (!timestamps) {
+      timestamps = [];
+      channelEventTimestamps.set(channel, timestamps);
+    }
+
+    // Lazily clean old timestamps
+    const validStart = timestamps.findIndex((ts) => ts > cutoff);
+    if (validStart > 0) {
+      timestamps.splice(0, validStart);
+    } else if (validStart === -1) {
+      timestamps.length = 0;
+    }
+
+    if (timestamps.length >= RATE_LIMIT_MAX_EVENTS) {
+      return true;
+    }
+
+    timestamps.push(now);
+    return false;
+  }
+
   const app = new Hono();
 
   function isDuplicateAddressedEvent(addressed: SlackV1BootstrapPayload): boolean {
@@ -85,6 +117,16 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
             eventType: eventCallback.event.type,
           },
           "Slack event ignored by v1 safety rails",
+        );
+        return c.json({ ok: true });
+      }
+
+      // Per-channel rate limiting
+      const channel = decision.bootstrap.channel;
+      if (isChannelRateLimited(channel)) {
+        logger.warn(
+          { channel, limit: RATE_LIMIT_MAX_EVENTS, windowMs: RATE_LIMIT_WINDOW_MS },
+          "Slack event rate-limited for channel",
         );
         return c.json({ ok: true });
       }

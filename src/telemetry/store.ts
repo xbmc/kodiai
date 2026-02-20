@@ -436,22 +436,25 @@ export function createTelemetryStore(opts: {
     purgeOlderThan(days: number): number {
       const modifier = `-${days} days`;
 
-      const purgeExecutionsStmt = db.query(
-        "DELETE FROM executions WHERE created_at < datetime('now', $modifier) RETURNING id",
+      db.run(
+        "DELETE FROM executions WHERE created_at < datetime('now', ?)",
+        [modifier],
       );
-      const deletedExecutions = purgeExecutionsStmt.all({ $modifier: modifier });
+      const deletedExecutions = (db.query("SELECT changes() as cnt").get() as { cnt: number }).cnt;
 
-      const purgeResilienceStmt = db.query(
-        "DELETE FROM resilience_events WHERE created_at < datetime('now', $modifier) RETURNING id",
+      db.run(
+        "DELETE FROM resilience_events WHERE created_at < datetime('now', ?)",
+        [modifier],
       );
-      const deletedResilience = purgeResilienceStmt.all({ $modifier: modifier });
+      const deletedResilience = (db.query("SELECT changes() as cnt").get() as { cnt: number }).cnt;
 
-      const purgeRateLimitStmt = db.query(
-        "DELETE FROM rate_limit_events WHERE created_at < datetime('now', $modifier) RETURNING id",
+      db.run(
+        "DELETE FROM rate_limit_events WHERE created_at < datetime('now', ?)",
+        [modifier],
       );
-      const deletedRateLimit = purgeRateLimitStmt.all({ $modifier: modifier });
+      const deletedRateLimit = (db.query("SELECT changes() as cnt").get() as { cnt: number }).cnt;
 
-      return deletedExecutions.length + deletedResilience.length + deletedRateLimit.length;
+      return deletedExecutions + deletedResilience + deletedRateLimit;
     },
 
     checkpoint(): void {

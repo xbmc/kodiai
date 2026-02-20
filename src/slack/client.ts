@@ -1,6 +1,7 @@
 interface CreateSlackClientInput {
   botToken: string;
   fetchImpl?: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  timeoutMs?: number;
 }
 
 interface SlackApiResponse {
@@ -37,6 +38,7 @@ export interface SlackClient {
 
 export function createSlackClient(input: CreateSlackClientInput): SlackClient {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const timeoutMs = input.timeoutMs ?? 10_000;
 
   return {
     async getTokenScopes(): Promise<string[]> {
@@ -46,6 +48,7 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
           authorization: `Bearer ${input.botToken}`,
           "content-type": "application/json; charset=utf-8",
         },
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!response.ok) {
@@ -76,6 +79,7 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
           timestamp: inputData.timestamp,
           name: inputData.name,
         }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!response.ok) {
@@ -100,6 +104,7 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
           timestamp: inputData.timestamp,
           name: inputData.name,
         }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!response.ok) {
@@ -129,6 +134,7 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
           thread_ts: threadTs,
           text: message.text,
         }),
+        signal: AbortSignal.timeout(timeoutMs),
       });
 
       if (!response.ok) {
