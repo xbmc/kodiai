@@ -189,6 +189,16 @@ Plans:
 - [ ] 84-01-PLAN.md — Add embeddings smoke test and fix deploy.sh env vars
 - [ ] 84-02-PLAN.md — Deploy to Azure, verify health, and triage container logs
 
+### Phase 85: Code review fixes — memory leaks, hardcoded defaults, type mismatches, and missing rate limits
+
+**Goal:** Eliminate memory leak vectors, fix hardcoded defaults, improve type safety, and add operational guardrails identified by code review
+**Depends on:** Phase 84
+**Plans:** 2 plans
+
+Plans:
+- [ ] 85-01-PLAN.md — InMemoryCache utility + migrate 4 unbounded stores (C-2, C-3, H-1, H-3)
+- [ ] 85-02-PLAN.md — Fix hardcoded repo, structured logging, type safety, telemetry purge, Slack timeout/rate limiting (C-1, H-4, H-5, H-8, H-10, M-2)
+
 ---
 
 *Roadmap updated: 2026-02-19 -- v0.16 roadmap created*
