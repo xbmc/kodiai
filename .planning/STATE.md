@@ -25,6 +25,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 | Phase 81 P03 | 5 min | 2 tasks | 4 files |
 | Phase 81 P04 | 1 min | 2 tasks | 6 files |
 | Phase 84 P01 | 2 min | 2 tasks | 2 files |
+| Phase 84 P02 | 5 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -32,6 +33,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 84]: Embeddings smoke test uses void Promise pattern, non-blocking, logs pass/fail at boot
+- [Phase 84]: Dockerfile must use Debian (not Alpine) for sqlite-vec glibc compatibility
 
 ### Key Constraints (Carry-Forward)
 
@@ -68,7 +70,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-20T02:22:56.355Z
-**Stopped At:** Completed 84-01-PLAN.md
+**Last session:** 2026-02-20T02:46:00.000Z
+**Stopped At:** Completed 84-02-PLAN.md (all phase 84 plans done)
 **Resume File:** None
-**Next action:** `/gsd:plan-phase 82`
+**Next action:** Phase 84 verification
