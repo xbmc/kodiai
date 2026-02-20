@@ -116,6 +116,38 @@ if (voyageApiKey && learningMemoryStore) {
   }
 }
 
+// Embeddings smoke test -- runs concurrently, does NOT block server startup
+void Promise.resolve()
+  .then(async () => {
+    if (!embeddingProvider || embeddingProvider.model === "none") {
+      return; // no-op provider, skip smoke test
+    }
+    const start = Date.now();
+    try {
+      const result = await embeddingProvider.generate("kodiai smoke test", "query");
+      const latencyMs = Date.now() - start;
+      if (result !== null) {
+        logger.info(
+          { model: embeddingProvider.model, dimensions: embeddingProvider.dimensions, latencyMs },
+          "Embeddings smoke test passed",
+        );
+      } else {
+        logger.warn(
+          { model: embeddingProvider.model },
+          "Embeddings smoke test failed -- VoyageAI returned null (embeddings degraded)",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err, model: embeddingProvider.model },
+        "Embeddings smoke test failed -- error connecting to VoyageAI (embeddings degraded)",
+      );
+    }
+  })
+  .catch((err) => {
+    logger.warn({ err }, "Embeddings smoke test unexpected error (non-fatal)");
+  });
+
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;
 if (learningMemoryStore) {
