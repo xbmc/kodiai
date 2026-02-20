@@ -11,8 +11,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 **Milestone:** v0.16 Review Coverage & Slack UX
 **Phase:** 82 of 84 (Draft PR Review Coverage) -- ready to plan
-**Status:** Ready to plan
-**Last Activity:** 2026-02-19 -- Roadmap created
+**Status:** Milestone complete
+**Last Activity:** 2026-02-20
 
 **Progress:** [██████████] 104%
 
