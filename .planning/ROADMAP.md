@@ -183,7 +183,7 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 
 **Goal:** Confirm VoyageAI embeddings work in the deployed Azure environment, add a startup smoke test, and ensure clean container startup with no error-level output
 **Depends on:** Phase 83
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 84-01-PLAN.md — Add embeddings smoke test and fix deploy.sh env vars
