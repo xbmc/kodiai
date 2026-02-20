@@ -277,11 +277,43 @@ export function createMentionHandler(deps: {
       return "plan";
     }
 
+    const prDirect =
+      /^(?:please\s+)?(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prThisAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?pr\b(?:.{0,80})\b(?:this|it)\b/;
+    const prGenericAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+)?(?:.{0,160})\b(?:pr|pull\s+request)\b/;
+    const prOutcomeGoal =
+      /\b(?:so|to)\s+you\s+can\b(?:.{0,80})\b(?:open(?:\s+up)?|create|submit|raise|make)\b(?:.{0,80})\b(?:pr|pull\s+request)\b/;
+    const prPleaseThis = /^(?:please\s+)?pr\b(?:.{0,80})\b(?:this|it)\b/;
+
+    if (
+      prDirect.test(normalized) ||
+      prAsk.test(normalized) ||
+      prThisAsk.test(normalized) ||
+      prGenericAsk.test(normalized) ||
+      prOutcomeGoal.test(normalized) ||
+      prPleaseThis.test(normalized)
+    ) {
+      return "apply";
+    }
+
     if (isImplementationRequestWithoutPrefix(normalized)) {
       return "apply";
     }
 
     return undefined;
+  }
+
+  function requestsPrOutcome(userQuestion: string): boolean {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    return /\b(?:pr|pull\s+request)\b/.test(normalized);
   }
 
   function summarizeWriteRequest(request: string): string {
@@ -827,7 +859,8 @@ export function createMentionHandler(deps: {
 
         const isWriteRequest = writeIntent.writeIntent;
         const isPlanOnly = writeIntent.keyword === "plan";
-        const writeEnabled = isWriteRequest && !isPlanOnly && config.write.enabled;
+        const writeAllowed = config.write.enabled || (isIssueThreadComment && requestsPrOutcome(writeIntent.request));
+        const writeEnabled = isWriteRequest && !isPlanOnly && writeAllowed;
         const writeSource =
           mention.prNumber !== undefined
             ? { type: "pr" as const, number: mention.prNumber }
@@ -988,7 +1021,7 @@ export function createMentionHandler(deps: {
           return;
         }
 
-        if (isWriteRequest && !isPlanOnly && !config.write.enabled) {
+        if (isWriteRequest && !isPlanOnly && !writeAllowed) {
           logger.info(
             {
               surface: mention.surface,
