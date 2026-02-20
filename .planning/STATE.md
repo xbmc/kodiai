@@ -10,8 +10,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 ## Current Position
 
 **Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 82 of 84 (Draft PR Review Coverage) -- ready to plan
-**Status:** Milestone complete
+**Phase:** 85 (Code Review Fixes) -- Plan 1 of 2 complete
+**Status:** In progress
 **Last Activity:** 2026-02-20
 
 **Progress:** [██████████] 104%
@@ -26,6 +26,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 | Phase 81 P04 | 1 min | 2 tasks | 6 files |
 | Phase 84 P01 | 2 min | 2 tasks | 2 files |
 | Phase 84 P02 | 5 min | 2 tasks | 1 files |
+| Phase 85 P01 | 4 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -34,6 +35,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 84]: Embeddings smoke test uses void Promise pattern, non-blocking, logs pass/fail at boot
 - [Phase 84]: Dockerfile must use Debian (not Alpine) for sqlite-vec glibc compatibility
+- [Phase 85]: All in-memory caches use createInMemoryCache with lazy eviction (no timers), Map insertion order as LRU proxy
 
 ### Key Constraints (Carry-Forward)
 
@@ -56,6 +58,7 @@ None.
 ### Roadmap Evolution
 
 - Phase 84 added: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
+- Phase 85 added: Code review fixes — memory leaks, hardcoded defaults, type mismatches, and missing rate limits
 
 ### Blockers/Concerns
 
@@ -71,7 +74,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-20T03:05:00.000Z
-**Stopped At:** Completed quick task 6 (extensive code review)
+**Last session:** 2026-02-20T03:34:00Z
+**Stopped At:** Completed 85-01-PLAN.md (memory leak fixes)
 **Resume File:** None
-**Next action:** Address critical findings from code review
+**Next action:** Execute 85-02-PLAN.md (remaining code review fixes)
