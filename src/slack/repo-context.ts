@@ -1,5 +1,3 @@
-const DEFAULT_REPO = "xbmc/xbmc";
-
 const CLARIFYING_QUESTION =
   "I could not determine a single repo context. Which repo should I use? Please reply with owner/repo.";
 
@@ -62,7 +60,7 @@ function hasMalformedRepoToken(text: string): boolean {
   return TRAILING_OWNER_PATTERN.test(text) || LEADING_REPO_PATTERN.test(text);
 }
 
-export function resolveSlackRepoContext(text: string): SlackRepoContextResolution {
+export function resolveSlackRepoContext(text: string, defaultRepo: string): SlackRepoContextResolution {
   const repos = extractDistinctRepoTokens(text);
 
   if (repos.length > 1 || hasMalformedRepoToken(text)) {
@@ -76,7 +74,7 @@ export function resolveSlackRepoContext(text: string): SlackRepoContextResolutio
 
   if (repos.length === 1) {
     const repo = repos[0] as string;
-    if (repo === DEFAULT_REPO) {
+    if (repo === defaultRepo) {
       return {
         outcome: "default",
         repo,
@@ -95,7 +93,7 @@ export function resolveSlackRepoContext(text: string): SlackRepoContextResolutio
 
   return {
     outcome: "default",
-    repo: DEFAULT_REPO,
+    repo: defaultRepo,
     acknowledgementText: undefined,
     clarifyingQuestion: undefined,
   };

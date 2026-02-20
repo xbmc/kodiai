@@ -78,6 +78,7 @@ export const LINTER_CONFIGS: Record<string, string[]> = {
  */
 export async function detectRepoTooling(
   workspaceDir: string,
+  logger?: { warn: (obj: unknown, msg: string) => void },
 ): Promise<DetectedTooling> {
   const formatters = new Map<string, string[]>();
   const linters = new Map<string, string[]>();
@@ -118,10 +119,9 @@ export async function detectRepoTooling(
     }
   } catch (error) {
     // Fail-open: log warning but never block the review
-    console.warn(
-      "[enforcement] Tooling detection failed, skipping:",
-      error instanceof Error ? error.message : String(error),
-    );
+    if (logger) {
+      logger.warn({ err: error }, "Tooling detection failed, skipping");
+    }
     return { formatters: new Map(), linters: new Map() };
   }
 

@@ -58,6 +58,7 @@ interface SlackAssistantHandlerDeps {
   addWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   removeWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   confirmationStore?: SlackWriteConfirmationStore;
+  defaultRepo: string;
 }
 
 export type SlackAssistantHandleResult =
@@ -139,14 +140,14 @@ function extractConfirmCommand(text: string): string | undefined {
   return command.length > 0 ? command : undefined;
 }
 
-function buildInstantReply(messageText: string): string | undefined {
+function buildInstantReply(messageText: string, repoContext: string): string | undefined {
   const normalized = messageText
     .toLowerCase()
     .replace(/<@[^>]+>/g, "")
     .trim();
 
   if (normalized === "ping" || normalized === "hi" || normalized === "hello" || normalized === "hey" || normalized === "hey there") {
-    return "Pong! I am here. Ask me anything about xbmc/xbmc and I will answer in read-only mode.";
+    return `Pong! I am here. Ask me anything about ${repoContext} and I will answer in read-only mode.`;
   }
 
   return undefined;
@@ -225,6 +226,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
     addWorkingReaction,
     removeWorkingReaction,
     confirmationStore = createInMemoryWriteConfirmationStore(),
+    defaultRepo,
   } = deps;
 
   async function runAndPublishWrite(input: {
@@ -305,7 +307,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
       }
 
       try {
-        const instantReply = buildInstantReply(payload.text);
+        const instantReply = buildInstantReply(payload.text, defaultRepo);
         if (instantReply) {
           await publishInThread({
             channel: payload.channel,
@@ -316,12 +318,12 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           return {
             outcome: "answered",
             route: "read_only",
-            repo: "xbmc/xbmc",
+            repo: defaultRepo,
             publishedText: instantReply,
           };
         }
 
-        const resolution = resolveSlackRepoContext(payload.text);
+        const resolution = resolveSlackRepoContext(payload.text, defaultRepo);
 
         if (resolution.outcome === "ambiguous") {
           await publishInThread({
