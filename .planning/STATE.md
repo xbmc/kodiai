@@ -10,7 +10,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 ## Current Position
 
 **Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 82 of 83 (Draft PR Review Coverage) -- ready to plan
+**Phase:** 82 of 84 (Draft PR Review Coverage) -- ready to plan
 **Status:** Ready to plan
 **Last Activity:** 2026-02-19 -- Roadmap created
 
@@ -49,6 +49,10 @@ None.
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed. Only review on initial open/ready or manual `review_requested`.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to (via @kodiai mention or review request trigger).
 
+### Roadmap Evolution
+
+- Phase 84 added: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
+
 ### Blockers/Concerns
 
 - Search API rate limit (30/min) requires caching strategy validated under production load
@@ -62,7 +66,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-19T21:33:50.219Z
-**Stopped At:** Phase 82 context gathered
-**Resume File:** .planning/phases/82-draft-pr-review-coverage/82-CONTEXT.md
+**Last session:** 2026-02-20T01:32:21.237Z
+**Stopped At:** Phase 84 context gathered
+**Resume File:** .planning/phases/84-azure-deployment-health-verify-embeddings-voyageai-work-on-deploy-and-fix-container-log-errors/84-CONTEXT.md
 **Next action:** `/gsd:plan-phase 82`
