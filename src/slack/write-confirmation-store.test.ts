@@ -22,8 +22,13 @@ describe("createInMemoryWriteConfirmationStore", () => {
     expect(pending.createdAt).toBe(now);
     expect(pending.expiresAt).toBe(now + 15 * 60 * 1000);
 
-    now += 20 * 60 * 1000;
+    // Entry is still retrievable within TTL
+    now += 14 * 60 * 1000;
     expect(store.getPending("C123", "1700000000.000111")).toEqual(pending);
+
+    // After TTL expires, entry is automatically evicted
+    now += 2 * 60 * 1000;
+    expect(store.getPending("C123", "1700000000.000111")).toBeUndefined();
   });
 
   test("keeps pending state when confirmation command mismatches", () => {

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { loadConfig } from "./config.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createDeduplicator } from "./webhook/dedup.ts";
+import { createInMemoryCache } from "./lib/in-memory-cache.ts";
 import { createGitHubApp } from "./auth/github-app.ts";
 import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
@@ -175,7 +176,10 @@ const eventRouter = createEventRouter(botFilter, logger);
 const executor = createExecutor({ githubApp, logger });
 
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
-const slackInstallationCache = new Map<string, { installationId: number; defaultBranch: string }>();
+const slackInstallationCache = createInMemoryCache<string, { installationId: number; defaultBranch: string }>({
+  maxSize: 500,
+  ttlMs: 60 * 60 * 1000,
+});
 
 void Promise.resolve()
   .then(async () => {
@@ -316,6 +320,7 @@ const slackAssistantHandler = createSlackAssistantHandler({
       logger.warn({ err: error, channel, messageTs }, "Slack working reaction remove failed");
     }
   },
+  defaultRepo: config.slackDefaultRepo,
 });
 
 // Register event handlers

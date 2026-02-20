@@ -1,3 +1,5 @@
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+
 export interface SlackWritePendingConfirmation {
   pending: true;
   channel: string;
@@ -38,8 +40,15 @@ function buildCommand(keyword: "apply" | "change" | "plan", request: string): st
   return `${keyword}: ${request.length > 0 ? request : "<same request>"}`;
 }
 
-export function createInMemoryWriteConfirmationStore(now: () => number = Date.now): SlackWriteConfirmationStore {
-  const pendingByThread = new Map<string, SlackWritePendingConfirmation>();
+export function createInMemoryWriteConfirmationStore(
+  now: () => number = Date.now,
+  options?: { maxSize?: number; ttlMs?: number },
+): SlackWriteConfirmationStore {
+  const cache = createInMemoryCache<string, SlackWritePendingConfirmation>({
+    maxSize: options?.maxSize ?? 1_000,
+    ttlMs: options?.ttlMs ?? 15 * 60 * 1000,
+    now,
+  });
 
   return {
     openPending(input) {
@@ -58,17 +67,17 @@ export function createInMemoryWriteConfirmationStore(now: () => number = Date.no
         expiresAt: createdAt + input.timeoutMs,
       };
 
-      pendingByThread.set(buildStoreKey(input.channel, input.threadTs), pending);
+      cache.set(buildStoreKey(input.channel, input.threadTs), pending);
       return pending;
     },
 
     getPending(channel, threadTs) {
-      return pendingByThread.get(buildStoreKey(channel, threadTs));
+      return cache.get(buildStoreKey(channel, threadTs));
     },
 
     confirm(channel, threadTs, command) {
       const key = buildStoreKey(channel, threadTs);
-      const pending = pendingByThread.get(key);
+      const pending = cache.get(key);
 
       if (!pending) {
         return { outcome: "not_found" };
@@ -78,7 +87,7 @@ export function createInMemoryWriteConfirmationStore(now: () => number = Date.no
         return { outcome: "mismatch", pending };
       }
 
-      pendingByThread.delete(key);
+      cache.delete(key);
       return { outcome: "confirmed", pending };
     },
   };
