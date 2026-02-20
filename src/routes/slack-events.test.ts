@@ -29,6 +29,7 @@ function createTestConfig(): AppConfig {
     slackBotToken: "xoxb-test-token",
     slackBotUserId: "U123BOT",
     slackKodiaiChannelId: "C123KODIAI",
+    slackDefaultRepo: "xbmc/xbmc",
     slackAssistantModel: "claude-3-5-haiku-latest",
     port: 3000,
     logLevel: "info",
