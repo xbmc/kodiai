@@ -74,7 +74,7 @@ export async function applyEnforcement(params: {
 }): Promise<(EnforcementFinding & EnforcedFinding)[]> {
   try {
     // Step 1: Detect repo tooling (filesystem scan)
-    const detectedTooling = await detectRepoTooling(params.workspaceDir);
+    const detectedTooling = await detectRepoTooling(params.workspaceDir, params.logger);
 
     // Step 2: Suppress tooling-covered findings
     const afterTooling = suppressToolingFindings({

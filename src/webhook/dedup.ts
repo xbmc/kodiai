@@ -1,40 +1,35 @@
-const MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
 
 export interface Deduplicator {
   isDuplicate(deliveryId: string): boolean;
 }
 
 /**
- * Creates a delivery ID deduplicator backed by a Map.
- * Tracks delivery IDs with timestamps, evicts entries older than 24 hours
- * every 1000 inserts to bound memory usage.
+ * Creates a delivery ID deduplicator backed by InMemoryCache.
+ * Tracks delivery IDs with TTL-based expiry (24 hours) and bounded
+ * size (50,000 entries) to prevent unbounded memory growth.
  *
  * Factory function (not a singleton) for testability and to avoid
  * module-level side effects.
  */
-export function createDeduplicator(): Deduplicator {
-  const seen = new Map<string, number>();
-  let insertCount = 0;
+export function createDeduplicator(options?: {
+  maxSize?: number;
+  ttlMs?: number;
+  now?: () => number;
+}): Deduplicator {
+  const cache = createInMemoryCache<string, true>({
+    maxSize: options?.maxSize ?? 50_000,
+    ttlMs: options?.ttlMs ?? 24 * 60 * 60 * 1000,
+    now: options?.now,
+  });
 
   return {
     isDuplicate(deliveryId: string): boolean {
-      if (seen.has(deliveryId)) {
+      if (cache.has(deliveryId)) {
         return true;
       }
 
-      seen.set(deliveryId, Date.now());
-      insertCount++;
-
-      // Periodic cleanup every 1000 inserts
-      if (insertCount % 1000 === 0) {
-        const cutoff = Date.now() - MAX_AGE_MS;
-        for (const [id, ts] of seen) {
-          if (ts < cutoff) {
-            seen.delete(id);
-          }
-        }
-      }
-
+      cache.set(deliveryId, true);
       return false;
     },
   };

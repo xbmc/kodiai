@@ -2038,12 +2038,11 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("issue 'can you PR this' wording bypasses write.enabled gate and enters write flow", async () => {
+  test("issue 'can you PR this' wording runs as normal mention when write.enabled is false", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
     let executorCalled = false;
-    const issueReplies: string[] = [];
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -2074,10 +2073,7 @@ describe("createMentionHandler write intent gating", () => {
         },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async (params: { body: string }) => {
-            issueReplies.push(params.body);
-            return { data: {} };
-          },
+          createComment: async () => ({ data: {} }),
         },
         pulls: {
           list: async () => ({ data: [] }),
@@ -2123,14 +2119,14 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
+    // "can you PR this" is not detected as an implementation verb,
+    // so it runs as a normal mention (not write mode)
     expect(executorCalled).toBe(true);
-    expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
 
     await workspaceFixture.cleanup();
   });
 
-  test("issue 'fix this so you can open up a PR' wording bypasses write.enabled gate", async () => {
+  test("issue 'fix this so you can open up a PR' wording is refused when write.enabled is false", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
 
@@ -2214,9 +2210,9 @@ describe("createMentionHandler write intent gating", () => {
       }),
     );
 
-    expect(executorCalled).toBe(true);
+    expect(executorCalled).toBe(false);
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I didn't end up making any file changes.");
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
 
     await workspaceFixture.cleanup();
   });

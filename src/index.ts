@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { loadConfig } from "./config.ts";
 import { createLogger } from "./lib/logger.ts";
 import { createDeduplicator } from "./webhook/dedup.ts";
+import { createInMemoryCache } from "./lib/in-memory-cache.ts";
 import { createGitHubApp } from "./auth/github-app.ts";
 import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
@@ -116,6 +117,38 @@ if (voyageApiKey && learningMemoryStore) {
   }
 }
 
+// Embeddings smoke test -- runs concurrently, does NOT block server startup
+void Promise.resolve()
+  .then(async () => {
+    if (!embeddingProvider || embeddingProvider.model === "none") {
+      return; // no-op provider, skip smoke test
+    }
+    const start = Date.now();
+    try {
+      const result = await embeddingProvider.generate("kodiai smoke test", "query");
+      const latencyMs = Date.now() - start;
+      if (result !== null) {
+        logger.info(
+          { model: embeddingProvider.model, dimensions: embeddingProvider.dimensions, latencyMs },
+          "Embeddings smoke test passed",
+        );
+      } else {
+        logger.warn(
+          { model: embeddingProvider.model },
+          "Embeddings smoke test failed -- VoyageAI returned null (embeddings degraded)",
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err, model: embeddingProvider.model },
+        "Embeddings smoke test failed -- error connecting to VoyageAI (embeddings degraded)",
+      );
+    }
+  })
+  .catch((err) => {
+    logger.warn({ err }, "Embeddings smoke test unexpected error (non-fatal)");
+  });
+
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;
 if (learningMemoryStore) {
@@ -143,7 +176,10 @@ const eventRouter = createEventRouter(botFilter, logger);
 const executor = createExecutor({ githubApp, logger });
 
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
-const slackInstallationCache = new Map<string, { installationId: number; defaultBranch: string }>();
+const slackInstallationCache = createInMemoryCache<string, { installationId: number; defaultBranch: string }>({
+  maxSize: 500,
+  ttlMs: 60 * 60 * 1000,
+});
 
 void Promise.resolve()
   .then(async () => {
@@ -284,6 +320,7 @@ const slackAssistantHandler = createSlackAssistantHandler({
       logger.warn({ err: error, channel, messageTs }, "Slack working reaction remove failed");
     }
   },
+  defaultRepo: config.slackDefaultRepo,
 });
 
 // Register event handlers

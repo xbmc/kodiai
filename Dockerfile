@@ -1,14 +1,14 @@
 # Stage 1: Install production dependencies
-FROM oven/bun:1-alpine AS deps
+FROM oven/bun:1-debian AS deps
 WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --production --frozen-lockfile
 
 # Stage 2: Production image
-FROM oven/bun:1-alpine
+FROM oven/bun:1-debian
 
 # git is required for workspace manager (git clone)
-RUN apk add --no-cache git
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

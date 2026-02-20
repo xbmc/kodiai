@@ -17,6 +17,11 @@ set -euo pipefail
 #                                Generate with: base64 -w0 < private-key.pem
 #   GITHUB_WEBHOOK_SECRET      - Webhook secret configured in the GitHub App
 #   CLAUDE_CODE_OAUTH_TOKEN    - OAuth token from `claude setup-token`
+#   VOYAGE_API_KEY             - VoyageAI API key for embeddings
+#   SLACK_BOT_TOKEN            - Slack bot OAuth token
+#   SLACK_SIGNING_SECRET       - Slack app signing secret
+#   SLACK_BOT_USER_ID          - Slack bot user ID
+#   SLACK_KODIAI_CHANNEL_ID    - Slack channel ID for #kodiai
 #
 # The app's loadPrivateKey() handles base64 decoding automatically, so we
 # pass the base64-encoded value straight through as GITHUB_PRIVATE_KEY.
@@ -48,6 +53,11 @@ missing=()
 [[ -z "${GITHUB_PRIVATE_KEY_BASE64:-}" ]] && missing+=("GITHUB_PRIVATE_KEY_BASE64")
 [[ -z "${GITHUB_WEBHOOK_SECRET:-}" ]]     && missing+=("GITHUB_WEBHOOK_SECRET")
 [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]   && missing+=("CLAUDE_CODE_OAUTH_TOKEN")
+[[ -z "${VOYAGE_API_KEY:-}" ]]            && missing+=("VOYAGE_API_KEY")
+[[ -z "${SLACK_BOT_TOKEN:-}" ]]           && missing+=("SLACK_BOT_TOKEN")
+[[ -z "${SLACK_SIGNING_SECRET:-}" ]]      && missing+=("SLACK_SIGNING_SECRET")
+[[ -z "${SLACK_BOT_USER_ID:-}" ]]         && missing+=("SLACK_BOT_USER_ID")
+[[ -z "${SLACK_KODIAI_CHANNEL_ID:-}" ]]   && missing+=("SLACK_KODIAI_CHANNEL_ID")
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "ERROR: The following environment variables are required but not set:"
@@ -158,6 +168,9 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
       github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
       github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
       claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
+      voyage-api-key="$VOYAGE_API_KEY" \
+      slack-bot-token="$SLACK_BOT_TOKEN" \
+      slack-signing-secret="$SLACK_SIGNING_SECRET" \
     --output none
 
   az containerapp update \
@@ -170,6 +183,11 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
       GITHUB_PRIVATE_KEY=secretref:github-private-key \
       GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
       CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
+      VOYAGE_API_KEY=secretref:voyage-api-key \
+      SLACK_BOT_TOKEN=secretref:slack-bot-token \
+      SLACK_SIGNING_SECRET=secretref:slack-signing-secret \
+      SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
+      SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
       PORT=3000 \
       LOG_LEVEL=info \
     --min-replicas 1 \
@@ -194,11 +212,19 @@ else
       github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
       github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
       claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
+      voyage-api-key="$VOYAGE_API_KEY" \
+      slack-bot-token="$SLACK_BOT_TOKEN" \
+      slack-signing-secret="$SLACK_SIGNING_SECRET" \
     --env-vars \
       GITHUB_APP_ID=secretref:github-app-id \
       GITHUB_PRIVATE_KEY=secretref:github-private-key \
       GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
       CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
+      VOYAGE_API_KEY=secretref:voyage-api-key \
+      SLACK_BOT_TOKEN=secretref:slack-bot-token \
+      SLACK_SIGNING_SECRET=secretref:slack-signing-secret \
+      SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
+      SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
       PORT=3000 \
       LOG_LEVEL=info \
     --output none
@@ -222,6 +248,16 @@ properties:
             secretRef: github-webhook-secret
           - name: CLAUDE_CODE_OAUTH_TOKEN
             secretRef: claude-code-oauth-token
+          - name: VOYAGE_API_KEY
+            secretRef: voyage-api-key
+          - name: SLACK_BOT_TOKEN
+            secretRef: slack-bot-token
+          - name: SLACK_SIGNING_SECRET
+            secretRef: slack-signing-secret
+          - name: SLACK_BOT_USER_ID
+            value: "${SLACK_BOT_USER_ID}"
+          - name: SLACK_KODIAI_CHANNEL_ID
+            value: "${SLACK_KODIAI_CHANNEL_ID}"
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL

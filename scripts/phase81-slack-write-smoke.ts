@@ -98,6 +98,7 @@ export async function evaluateSmokeChecks(options: SmokeEvaluationOptions = {}):
   let explicitWorkspaceCalls = 0;
 
   const explicitHandler = createSlackAssistantHandler({
+    defaultRepo: "xbmc/xbmc",
     createWorkspace: async () => {
       explicitWorkspaceCalls += 1;
       return {
@@ -149,6 +150,7 @@ export async function evaluateSmokeChecks(options: SmokeEvaluationOptions = {}):
   const ambiguousRequest = options.ambiguousRequest ?? "Could you maybe change this when you can?";
 
   const ambiguousHandler = createSlackAssistantHandler({
+    defaultRepo: "xbmc/xbmc",
     createWorkspace: async () => {
       ambiguousWorkspaceCalls += 1;
       return {
@@ -191,6 +193,7 @@ export async function evaluateSmokeChecks(options: SmokeEvaluationOptions = {}):
   const highImpactPublished: string[] = [];
   let highImpactRunWriteCalls = 0;
   const highImpactHandler = createSlackAssistantHandler({
+    defaultRepo: "xbmc/xbmc",
     createWorkspace: async () => ({
       dir: "/tmp/phase81-smoke-confirm",
       cleanup: async () => undefined,
@@ -252,6 +255,7 @@ export async function evaluateSmokeChecks(options: SmokeEvaluationOptions = {}):
   ];
 
   const contractHandler = createSlackAssistantHandler({
+    defaultRepo: "xbmc/xbmc",
     createWorkspace: async () => ({
       dir: "/tmp/phase81-smoke-contract",
       cleanup: async () => undefined,

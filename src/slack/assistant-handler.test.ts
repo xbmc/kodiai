@@ -45,6 +45,7 @@ describe("createSlackAssistantHandler", () => {
       removeWorkingReaction: async ({ channel, messageTs }) => {
         reactions.push(`remove:${channel}:${messageTs}`);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("<@U123BOT> ping"));
@@ -89,6 +90,7 @@ describe("createSlackAssistantHandler", () => {
       removeWorkingReaction: async ({ channel, messageTs }) => {
         reactions.push(`remove:${channel}:${messageTs}`);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("Explain the retry behavior."));
@@ -145,6 +147,7 @@ describe("createSlackAssistantHandler", () => {
       removeWorkingReaction: async ({ channel, messageTs }) => {
         reactions.push(`remove:${channel}:${messageTs}`);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(
@@ -182,6 +185,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
@@ -217,6 +221,7 @@ describe("createSlackAssistantHandler", () => {
         return { answerText: "Done." };
       },
       publishInThread: async () => undefined,
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(
@@ -259,6 +264,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
@@ -314,6 +320,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("apply: update issue note"));
@@ -347,6 +354,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("apply: update src/slack/assistant-handler.ts"));
@@ -385,6 +393,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(createAddressedPayload("Could you maybe change this when you can?"));
@@ -423,6 +432,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(
@@ -470,6 +480,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     await handler.handle(
@@ -517,6 +528,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     await handler.handle(
@@ -572,6 +584,7 @@ describe("createSlackAssistantHandler", () => {
       publishInThread: async ({ text }) => {
         published.push(text);
       },
+      defaultRepo: "xbmc/xbmc",
     });
 
     const result = await handler.handle(

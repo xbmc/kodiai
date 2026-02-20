@@ -1,3 +1,5 @@
+import { createInMemoryCache } from "../lib/in-memory-cache.ts";
+
 export interface SlackThreadSessionKeyInput {
   channel: string;
   threadTs: string;
@@ -18,18 +20,24 @@ function buildThreadSessionKey(input: SlackThreadSessionKeyInput): string {
   return `${channel}::${threadTs}`;
 }
 
-export function createSlackThreadSessionStore(): SlackThreadSessionStore {
-  const startedThreadSessions = new Set<string>();
+export function createSlackThreadSessionStore(options?: {
+  maxSize?: number;
+  ttlMs?: number;
+}): SlackThreadSessionStore {
+  const cache = createInMemoryCache<string, true>({
+    maxSize: options?.maxSize ?? 10_000,
+    ttlMs: options?.ttlMs ?? 24 * 60 * 60 * 1000,
+  });
 
   return {
     markThreadStarted(input) {
       const sessionKey = buildThreadSessionKey(input);
-      const existed = startedThreadSessions.has(sessionKey);
-      startedThreadSessions.add(sessionKey);
+      const existed = cache.has(sessionKey);
+      cache.set(sessionKey, true);
       return !existed;
     },
     isThreadStarted(input) {
-      return startedThreadSessions.has(buildThreadSessionKey(input));
+      return cache.has(buildThreadSessionKey(input));
     },
   };
 }
