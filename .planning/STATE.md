@@ -10,8 +10,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 ## Current Position
 
 **Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 85 (Code Review Fixes) -- Plan 1 of 2 complete
-**Status:** In progress
+**Phase:** 85 (Code Review Fixes) -- Plan 2 of 2 complete
+**Status:** Phase complete
 **Last Activity:** 2026-02-20
 
 **Progress:** [██████████] 104%
@@ -27,6 +27,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 | Phase 84 P01 | 2 min | 2 tasks | 2 files |
 | Phase 84 P02 | 5 min | 2 tasks | 1 files |
 | Phase 85 P01 | 4 min | 2 tasks | 7 files |
+| Phase 85 P02 | 6 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -36,6 +37,8 @@ All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 84]: Embeddings smoke test uses void Promise pattern, non-blocking, logs pass/fail at boot
 - [Phase 84]: Dockerfile must use Debian (not Alpine) for sqlite-vec glibc compatibility
 - [Phase 85]: All in-memory caches use createInMemoryCache with lazy eviction (no timers), Map insertion order as LRU proxy
+- [Phase 85]: Tooling detection logger is optional for backward compatibility; defaultRepo is required in handler deps
+- [Phase 85]: Inline Map-based rate limiter for Slack events rather than external dependency
 
 ### Key Constraints (Carry-Forward)
 
@@ -74,7 +77,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-20T03:34:00Z
-**Stopped At:** Completed 85-01-PLAN.md (memory leak fixes)
+**Last session:** 2026-02-20T03:35:00Z
+**Stopped At:** Completed 85-02-PLAN.md (hardcoded defaults, type safety, rate limiting)
 **Resume File:** None
-**Next action:** Execute 85-02-PLAN.md (remaining code review fixes)
+**Next action:** Phase 85 complete; all code review fixes applied
