@@ -115,6 +115,9 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
           {
             reason: decision.reason,
             eventType: eventCallback.event.type,
+            channel: eventCallback.event.channel,
+            text: eventCallback.event.text?.substring(0, 100),
+            expectedMention: `<@${config.slackBotUserId}>`,
           },
           "Slack event ignored by v1 safety rails",
         );
