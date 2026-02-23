@@ -143,7 +143,8 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
   1. When a draft PR is opened, Kodiai posts a review (no skip/ignore behavior)
   2. The review output for a draft PR contains a visible indicator that the PR is in draft state
   3. Non-draft PR review behavior is unchanged (no regressions)
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 82-01-PLAN.md — Remove draft skip, add draft-aware tone/badge to review prompt and comment validation, with tests
 
 ### Phase 83: Slack Response Conciseness
 **Goal**: Slack responses read like chat messages from a knowledgeable colleague, not like documentation pages
