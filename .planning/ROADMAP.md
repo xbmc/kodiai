@@ -130,7 +130,7 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Expand review coverage to draft PRs and make Slack responses concise and conversational.
 
-- [ ] **Phase 82: Draft PR Review Coverage** - Kodiai reviews draft PRs with draft-aware visual indicators
+- [x] **Phase 82: Draft PR Review Coverage** - Kodiai reviews draft PRs with draft-aware visual indicators (completed 2026-02-23)
 - [ ] **Phase 83: Slack Response Conciseness** - Slack responses are direct, concise, and conversational
 
 ## Phase Details
@@ -178,13 +178,13 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 | 72-76 | v0.13 | 6/6 | Complete | 2026-02-18 |
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
-| 82 | v0.16 | 0/TBD | Not started | - |
+| 82 | 1/1 | Complete   | 2026-02-23 | - |
 | 83 | v0.16 | 0/TBD | Not started | - |
 ### Phase 84: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
 
 **Goal:** Confirm VoyageAI embeddings work in the deployed Azure environment, add a startup smoke test, and ensure clean container startup with no error-level output
 **Depends on:** Phase 83
-**Plans:** 2/2 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 84-01-PLAN.md — Add embeddings smoke test and fix deploy.sh env vars

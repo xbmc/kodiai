@@ -9,8 +9,8 @@ Requirements for v0.16 Review Coverage & Slack UX.
 
 ### Review Coverage
 
-- [ ] **REV-01**: Kodiai reviews draft PRs the same as non-draft PRs (no skip)
-- [ ] **REV-02**: Draft PR reviews include a visual indicator that the PR is a draft (so the review acknowledges draft status)
+- [x] **REV-01**: Kodiai reviews draft PRs the same as non-draft PRs (no skip)
+- [x] **REV-02**: Draft PR reviews include a visual indicator that the PR is a draft (so the review acknowledges draft status)
 
 ### Slack UX
 
@@ -35,8 +35,8 @@ None deferred.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REV-01 | Phase 82 | Pending |
-| REV-02 | Phase 82 | Pending |
+| REV-01 | Phase 82 | Complete |
+| REV-02 | Phase 82 | Complete |
 | SLK-07 | Phase 83 | Pending |
 | SLK-08 | Phase 83 | Pending |
 | SLK-09 | Phase 83 | Pending |

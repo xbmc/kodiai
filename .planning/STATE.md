@@ -10,11 +10,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 ## Current Position
 
 **Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 85 (Code Review Fixes) -- Plan 2 of 2 complete
-**Status:** Milestone complete
-**Last Activity:** 2026-02-20
+**Phase:** 82 (Draft PR Review Coverage) -- Plan 1 of 1 complete
+**Status:** In progress
+**Last Activity:** 2026-02-23
 
-**Progress:** [██████████] 104%
+**Progress:** [██████████] 100%
 
 ## Performance Metrics
 
@@ -28,6 +28,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 | Phase 84 P02 | 5 min | 2 tasks | 1 files |
 | Phase 85 P01 | 4 min | 2 tasks | 7 files |
 | Phase 85 P02 | 6 min | 2 tasks | 10 files |
+| Phase 82 P01 | 4 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -39,6 +40,8 @@ All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 85]: All in-memory caches use createInMemoryCache with lazy eviction (no timers), Map insertion order as LRU proxy
 - [Phase 85]: Tooling detection logger is optional for backward compatibility; defaultRepo is required in handler deps
 - [Phase 85]: Inline Map-based rate limiter for Slack events rather than external dependency
+- [Phase 82]: ready_for_review action forces isDraft=false regardless of pr.draft payload value
+- [Phase 82]: Draft framing only applies to standard template, not delta re-review template
 
 ### Key Constraints (Carry-Forward)
 
@@ -77,7 +80,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-20T03:35:00Z
-**Stopped At:** Completed 85-02-PLAN.md (hardcoded defaults, type safety, rate limiting)
+**Last session:** 2026-02-23T23:12:45Z
+**Stopped At:** Completed 82-01-PLAN.md (draft PR review coverage)
 **Resume File:** None
-**Next action:** Phase 85 complete; all code review fixes applied
+**Next action:** Phase 82 complete; draft PR reviews enabled with soft tone
