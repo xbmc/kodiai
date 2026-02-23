@@ -178,7 +178,7 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 | 72-76 | v0.13 | 6/6 | Complete | 2026-02-18 |
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
-| 82 | 1/1 | Complete   | 2026-02-23 | - |
+| 82 | 1/1 | Complete    | 2026-02-23 | - |
 | 83 | v0.16 | 0/TBD | Not started | - |
 ### Phase 84: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
 
