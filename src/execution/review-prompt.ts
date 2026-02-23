@@ -1223,6 +1223,7 @@ export function buildReviewPrompt(context: {
     skippedQueries: number;
     degradationPath: string;
   } | null;
+  isDraft?: boolean;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1609,8 +1610,13 @@ export function buildReviewPrompt(context: {
       `If you found issues, FIRST post ONE summary comment using the \`mcp__github_comment__create_comment\` tool with issue number ${context.prNumber}. ALWAYS wrap the summary in \`<details>\` tags:`,
       "",
       "<details>",
-      "<summary>Kodiai Review Summary</summary>",
+      context.isDraft
+        ? "<summary>\ud83d\udcdd Kodiai Draft Review Summary</summary>"
+        : "<summary>Kodiai Review Summary</summary>",
       "",
+      ...(context.isDraft
+        ? ["> **Draft** \u2014 This PR is still in draft. Feedback is exploratory; findings use softer language.", ""]
+        : []),
       "## What Changed",
       "<1-2 sentence summary of PR intent from title and description>",
       reviewedLineInstruction,
@@ -1661,6 +1667,12 @@ export function buildReviewPrompt(context: {
       "- Under ## Verdict, use exactly one verdict line with emoji -- determine which one using the Verdict Logic rules above",
       "- A blocker is any [CRITICAL] or [MAJOR] finding under ### Impact. Zero blockers = :green_circle: or :yellow_circle: verdict. Never :red_circle: without blockers",
       "- Since this summary is only posted when issues exist, the verdict will typically be :yellow_circle: or :red_circle:. Use :green_circle: only when all findings are in ### Preference with no Impact findings",
+      ...(context.isDraft
+        ? [
+            "- This is a DRAFT review: use suggestive framing for all findings. Say 'Consider...' or 'You might want to...' instead of 'Should...' or 'Fix this' or 'Must...'",
+            "- Prefix inline comment bodies with 'Consider: ' or 'You might want to: ' instead of imperative directives",
+          ]
+        : []),
       "Then post your inline comments on the specific lines.",
       "",
       "If NO issues found: do NOT post any comment. The system handles approval automatically.",

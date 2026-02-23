@@ -1204,13 +1204,12 @@ export function createReviewHandler(deps: {
       headSha: pr.head.sha ?? "unknown-head-sha",
     });
 
-    // Skip draft PRs (the opened event fires for drafts too)
-    if (pr.draft) {
-      logger.debug(
-        baseLog,
-        "Skipping draft PR",
-      );
-      return;
+    // Draft PR handling: review with softer tone instead of skipping.
+    // When action is "ready_for_review", the PR is no longer a draft — use normal tone
+    // regardless of pr.draft (which may still be truthy in the payload).
+    const isDraft = action === "ready_for_review" ? false : Boolean(pr.draft);
+    if (isDraft) {
+      logger.info({ ...baseLog, isDraft: true }, "Reviewing draft PR with draft tone");
     }
 
     if (/\[no-review\]/i.test(pr.title)) {
@@ -2446,6 +2445,7 @@ export function createReviewHandler(deps: {
           authorTier: authorClassification.tier,
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
+          isDraft,
         });
 
         // Execute review via Claude
@@ -3409,6 +3409,7 @@ export function createReviewHandler(deps: {
                       authorTier: authorClassification.tier,
                       depBumpContext,
                       searchRateLimitDegradation: authorClassification.searchEnrichment,
+                      isDraft,
                     });
 
                     const retryResult = await executor.execute({

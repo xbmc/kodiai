@@ -103,7 +103,9 @@ export function createCommentServer(
 
   function sanitizeKodiaiReviewSummary(body: string): string {
     // Only enforce structure for the PR auto-review summary comment.
-    if (!body.includes("<summary>Kodiai Review Summary</summary>")) {
+    const isReviewSummary = body.includes("<summary>Kodiai Review Summary</summary>");
+    const isDraftReviewSummary = body.includes("<summary>\ud83d\udcdd Kodiai Draft Review Summary</summary>");
+    if (!isReviewSummary && !isDraftReviewSummary) {
       return body;
     }
 
