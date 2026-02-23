@@ -1314,3 +1314,43 @@ describe("depBumpContext", () => {
     expect(prompt).not.toContain("Dependency Bump Context");
   });
 });
+
+describe("draft PR review prompt", () => {
+  test("isDraft true includes draft badge and suggestive tone", () => {
+    const prompt = buildReviewPrompt(baseContext({ isDraft: true }));
+    expect(prompt).toContain("\ud83d\udcdd Kodiai Draft Review Summary");
+    expect(prompt).toContain("> **Draft**");
+    expect(prompt).toContain("suggestive framing");
+    expect(prompt).toContain("Consider...");
+    expect(prompt).not.toMatch(/<summary>Kodiai Review Summary<\/summary>/);
+  });
+
+  test("isDraft false uses standard summary tag without draft framing", () => {
+    const prompt = buildReviewPrompt(baseContext({ isDraft: false }));
+    expect(prompt).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(prompt).not.toContain("Draft Review Summary");
+    expect(prompt).not.toContain("> **Draft**");
+    expect(prompt).not.toContain("suggestive framing");
+  });
+
+  test("isDraft undefined uses standard summary tag without draft framing", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(prompt).not.toContain("Draft Review Summary");
+    expect(prompt).not.toContain("> **Draft**");
+  });
+
+  test("isDraft true with deltaContext does not include draft badge (delta takes precedence)", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      isDraft: true,
+      deltaContext: {
+        lastReviewedHeadSha: "abc123",
+        changedFilesSinceLastReview: ["src/index.ts"],
+        priorFindings: [{ filePath: "src/index.ts", title: "Bug", severity: "MAJOR", category: "Impact" }],
+      },
+    }));
+    // Delta template uses its own summary format, not the standard one
+    expect(prompt).not.toContain("\ud83d\udcdd Kodiai Draft Review Summary");
+    expect(prompt).not.toContain("> **Draft**");
+  });
+});

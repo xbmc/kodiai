@@ -331,6 +331,23 @@ function buildTestSummary(sections: Record<string, string>): string {
   return parts.join("\n");
 }
 
+function buildDraftTestSummary(sections: Record<string, string>): string {
+  const parts = [
+    "<details>",
+    "<summary>\ud83d\udcdd Kodiai Draft Review Summary</summary>",
+    "",
+    "> **Draft** \u2014 This PR is still in draft. Feedback is exploratory; findings use softer language.",
+    "",
+  ];
+  for (const [name, content] of Object.entries(sections)) {
+    parts.push(name);
+    parts.push(content);
+    parts.push("");
+  }
+  parts.push("</details>");
+  return parts.join("\n");
+}
+
 function makeOctokit() {
   let calledBody: string | undefined;
   const octokit = {
@@ -1228,5 +1245,32 @@ describe("Phase 38: Delta Re-Review Sanitizer", () => {
     expect(calledBody).toContain("<summary>Kodiai Re-Review Summary</summary>");
     // Should NOT have been rejected by initial sanitizer for missing ## Observations
     expect(calledBody).not.toContain("## Observations");
+  });
+
+  test("accepts valid draft review summary with five sections", async () => {
+    const body = buildDraftTestSummary({
+      "## What Changed": "Added initial scaffolding for auth module.",
+      "## Strengths": "- :white_check_mark: Clean separation of concerns",
+      "## Observations": "### Impact\n[MEDIUM] src/auth.ts (10): Consider adding token expiration\nYou might want to add an expiration claim to the JWT token.",
+      "## Suggestions": "- Consider: extracting retry logic into shared utility",
+      "## Verdict": ":yellow_circle: **Ready to merge with minor items** -- Optional cleanup suggestions below",
+    });
+
+    const { result, calledBody } = await callCreate(body);
+    expect(result.isError).toBeUndefined();
+    expect(calledBody).toBeDefined();
+    expect(calledBody!).toContain("\ud83d\udcdd Kodiai Draft Review Summary");
+    expect(calledBody!).toContain("## What Changed");
+  });
+
+  test("rejects draft review summary missing required section", async () => {
+    const body = buildDraftTestSummary({
+      "## Observations": "### Impact\n[MAJOR] src/foo.ts (1): Issue\nExplanation here.",
+      "## Verdict": ":red_circle: **Address before merging** -- 1 blocking issue found",
+    });
+
+    const { result } = await callCreate(body);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("## What Changed");
   });
 });

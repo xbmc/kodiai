@@ -7218,3 +7218,163 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
   });
 });
+
+describe("createReviewHandler draft PR behavior", () => {
+  async function runDraftScenario(options: {
+    draft: boolean;
+    action: string;
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    await Bun.write(
+      `${workspaceFixture.dir}/.kodiai.yml`,
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+      ].join("\n") + "\n",
+    );
+
+    let capturedPrompt = "";
+    let executeCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          executeCount++;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-draft-test",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handlerKey = `pull_request.${options.action === "ready_for_review" ? "ready_for_review" : options.action}`;
+    const handler = options.action === "review_requested"
+      ? handlers.get("pull_request.review_requested")
+      : handlers.get(handlerKey);
+    expect(handler).toBeDefined();
+
+    const event = buildReviewRequestedEvent({
+      ...(options.action === "review_requested" ? { requested_reviewer: { login: "kodiai[bot]" } } : {}),
+      action: options.action,
+      pull_request: {
+        number: 101,
+        draft: options.draft,
+        title: "Draft PR test",
+        body: "",
+        commits: 0,
+        additions: 50,
+        deletions: 10,
+        user: { login: "octocat" },
+        base: { ref: "main", sha: "mainsha" },
+        head: {
+          sha: "abcdef1234567890",
+          ref: "feature/draft",
+          repo: {
+            full_name: "acme/repo",
+            name: "repo",
+            owner: { login: "acme" },
+          },
+        },
+        labels: [],
+      },
+    });
+
+    await handler!(event);
+    await workspaceFixture.cleanup();
+
+    return { prompt: capturedPrompt, executeCount };
+  }
+
+  test("reviews draft PRs instead of skipping (draft: true, action: review_requested)", async () => {
+    const { executeCount, prompt } = await runDraftScenario({
+      draft: true,
+      action: "review_requested",
+    });
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("Draft Review Summary");
+  });
+
+  test("ready_for_review uses normal tone even if pr.draft is truthy", async () => {
+    const { executeCount, prompt } = await runDraftScenario({
+      draft: true,
+      action: "ready_for_review",
+    });
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(prompt).not.toContain("Draft Review Summary");
+  });
+
+  test("non-draft PR uses standard review template", async () => {
+    const { executeCount, prompt } = await runDraftScenario({
+      draft: false,
+      action: "review_requested",
+    });
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("<summary>Kodiai Review Summary</summary>");
+    expect(prompt).not.toContain("Draft Review Summary");
+  });
+});
