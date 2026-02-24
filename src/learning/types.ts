@@ -58,21 +58,21 @@ export type SharingConfig = {
 };
 
 export type LearningMemoryStore = {
-  writeMemory(record: LearningMemoryRecord, embedding: Float32Array): void;
+  writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void>;
   retrieveMemories(params: {
     queryEmbedding: Float32Array;
     repo: string;
     topK: number;
-  }): { memoryId: number; distance: number }[];
+  }): Promise<{ memoryId: number; distance: number }[]>;
   retrieveMemoriesForOwner(params: {
     queryEmbedding: Float32Array;
     owner: string;
     excludeRepo: string;
     topK: number;
-  }): { memoryId: number; distance: number }[];
-  getMemoryRecord(memoryId: number): LearningMemoryRecord | null;
-  markStale(embeddingModel: string): number;
-  purgeStaleEmbeddings(): number;
+  }): Promise<{ memoryId: number; distance: number }[]>;
+  getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null>;
+  markStale(embeddingModel: string): Promise<number>;
+  purgeStaleEmbeddings(): Promise<number>;
   close(): void;
 };
 

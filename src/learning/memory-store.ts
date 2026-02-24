@@ -1,6 +1,17 @@
-import type { Database } from "bun:sqlite";
 import type { Logger } from "pino";
+import type { Sql } from "../db/client.ts";
 import type { LearningMemoryRecord, LearningMemoryStore } from "./types.ts";
+
+/**
+ * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
+ */
+function float32ArrayToVectorString(arr: Float32Array): string {
+  const parts: string[] = new Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    parts[i] = String(arr[i]);
+  }
+  return `[${parts.join(",")}]`;
+}
 
 type MemoryRow = {
   id: number;
@@ -16,17 +27,8 @@ type MemoryRow = {
   outcome: string;
   embedding_model: string;
   embedding_dim: number;
-  stale: number;
+  stale: boolean;
   created_at: string;
-};
-
-type VecResultRow = {
-  memory_id: number;
-  distance: number;
-};
-
-type VecVersionRow = {
-  v: string;
 };
 
 function rowToRecord(row: MemoryRow): LearningMemoryRecord {
@@ -44,263 +46,105 @@ function rowToRecord(row: MemoryRow): LearningMemoryRecord {
     outcome: row.outcome as LearningMemoryRecord["outcome"],
     embeddingModel: row.embedding_model,
     embeddingDim: row.embedding_dim,
-    stale: row.stale === 1,
+    stale: row.stale,
     createdAt: row.created_at,
   };
 }
 
-function createNoOpStore(logger: Logger): LearningMemoryStore {
-  logger.warn("Learning memory store running in no-op mode -- all operations are disabled");
-  return {
-    writeMemory() {},
-    retrieveMemories() {
-      return [];
-    },
-    retrieveMemoriesForOwner() {
-      return [];
-    },
-    getMemoryRecord() {
-      return null;
-    },
-    markStale() {
-      return 0;
-    },
-    purgeStaleEmbeddings() {
-      return 0;
-    },
-    close() {},
-  };
-}
-
 /**
- * Create a learning memory store backed by SQLite with sqlite-vec for vector search.
- * Uses a vec0 virtual table with repo partition key for automatic isolation.
- * Fails open to no-op store if sqlite-vec cannot load.
+ * Create a learning memory store backed by PostgreSQL with pgvector for vector search.
+ * Uses HNSW index with cosine distance operator for efficient similarity queries.
+ * Schema is managed by migrations (001-initial-schema.sql + 002-pgvector-indexes.sql).
  */
 export function createLearningMemoryStore(opts: {
-  db: Database;
+  sql: Sql;
   logger: Logger;
 }): LearningMemoryStore {
-  const { db, logger } = opts;
-
-  // Try to load sqlite-vec extension
-  try {
-    // Dynamic import would be better but we need synchronous load
-    const sqliteVec = require("sqlite-vec");
-    sqliteVec.load(db);
-  } catch (err: unknown) {
-    logger.error(
-      { err },
-      "sqlite-vec extension failed to load, learning memory disabled (fail-open)",
-    );
-    return createNoOpStore(logger);
-  }
-
-  // Verify extension loaded
-  try {
-    const versionRow = db.prepare("SELECT vec_version() AS v").get() as VecVersionRow;
-    logger.info({ vecVersion: versionRow.v }, "sqlite-vec loaded successfully");
-  } catch (err: unknown) {
-    logger.error({ err }, "sqlite-vec verification failed, learning memory disabled (fail-open)");
-    return createNoOpStore(logger);
-  }
-
-  // Create metadata table
-  db.run(`
-    CREATE TABLE IF NOT EXISTS learning_memories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      repo TEXT NOT NULL,
-      owner TEXT NOT NULL,
-      finding_id INTEGER,
-      review_id INTEGER,
-      source_repo TEXT NOT NULL,
-      finding_text TEXT NOT NULL,
-      severity TEXT NOT NULL,
-      category TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      outcome TEXT NOT NULL,
-      embedding_model TEXT NOT NULL,
-      embedding_dim INTEGER NOT NULL,
-      stale INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(repo, finding_id, outcome)
-    )
-  `);
-
-  db.run("CREATE INDEX IF NOT EXISTS idx_memories_repo ON learning_memories(repo)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_memories_owner ON learning_memories(owner)");
-  db.run("CREATE INDEX IF NOT EXISTS idx_memories_stale ON learning_memories(stale)");
-
-  // Create vec0 virtual table
-  // Dimension is fixed at 1024 at table creation. Changing dimensions requires table recreation.
-  db.run(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS learning_memory_vec USING vec0(
-      memory_id INTEGER PRIMARY KEY,
-      embedding float[1024],
-      repo TEXT partition key,
-      severity TEXT,
-      category TEXT
-    )
-  `);
-
-  // Prepared statements
-  const insertMemoryStmt = db.prepare(`
-    INSERT INTO learning_memories (
-      repo, owner, finding_id, review_id, source_repo,
-      finding_text, severity, category, file_path, outcome,
-      embedding_model, embedding_dim, stale
-    ) VALUES (
-      $repo, $owner, $findingId, $reviewId, $sourceRepo,
-      $findingText, $severity, $category, $filePath, $outcome,
-      $embeddingModel, $embeddingDim, $stale
-    )
-    RETURNING id
-  `);
-
-  const insertVecStmt = db.prepare(`
-    INSERT INTO learning_memory_vec (memory_id, embedding, repo, severity, category)
-    VALUES ($memoryId, vec_f32($embedding), $repo, $severity, $category)
-  `);
-
-  const retrieveStmt = db.prepare(`
-    SELECT v.memory_id, v.distance
-    FROM learning_memory_vec v
-    INNER JOIN learning_memories m ON m.id = v.memory_id
-    WHERE v.embedding MATCH $queryEmbedding
-      AND v.k = $topK
-      AND v.repo = $repo
-      AND m.stale = 0
-    ORDER BY v.distance
-  `);
-
-  const getRecordStmt = db.prepare(`
-    SELECT * FROM learning_memories WHERE id = $memoryId
-  `);
-
-  const markStaleStmt = db.prepare(`
-    UPDATE learning_memories SET stale = 1
-    WHERE embedding_model != $embeddingModel AND stale = 0
-  `);
-
-  const deleteStaleVecStmt = db.prepare(`
-    DELETE FROM learning_memory_vec
-    WHERE memory_id IN (SELECT id FROM learning_memories WHERE stale = 1)
-  `);
-
-  const deleteStaleMemoriesStmt = db.prepare(`
-    DELETE FROM learning_memories WHERE stale = 1
-  `);
-
-  // For owner-level sharing: find distinct repos for same owner
-  const ownerReposStmt = db.prepare(`
-    SELECT repo, COUNT(*) AS cnt
-    FROM learning_memories
-    WHERE owner = $owner AND repo != $excludeRepo AND stale = 0
-    GROUP BY repo
-    ORDER BY cnt DESC
-    LIMIT 5
-  `);
-
-  const writeMemoryTxn = db.transaction(
-    (record: LearningMemoryRecord, embedding: Float32Array) => {
-      const result = insertMemoryStmt.get({
-        $repo: record.repo,
-        $owner: record.owner,
-        $findingId: record.findingId,
-        $reviewId: record.reviewId,
-        $sourceRepo: record.sourceRepo,
-        $findingText: record.findingText,
-        $severity: record.severity,
-        $category: record.category,
-        $filePath: record.filePath,
-        $outcome: record.outcome,
-        $embeddingModel: record.embeddingModel,
-        $embeddingDim: record.embeddingDim,
-        $stale: record.stale ? 1 : 0,
-      }) as { id: number };
-
-      insertVecStmt.run({
-        $memoryId: result.id,
-        $embedding: embedding,
-        $repo: record.repo,
-        $severity: record.severity,
-        $category: record.category,
-      });
-
-      return result.id;
-    },
-  );
-
-  const purgeTransaction = db.transaction(() => {
-    deleteStaleVecStmt.run();
-    const result = deleteStaleMemoriesStmt.run();
-    return result.changes;
-  });
+  const { sql, logger } = opts;
 
   const store: LearningMemoryStore = {
-    writeMemory(record: LearningMemoryRecord, embedding: Float32Array): void {
+    async writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void> {
+      const embeddingString = float32ArrayToVectorString(embedding);
       try {
-        writeMemoryTxn(record, embedding);
+        await sql`
+          INSERT INTO learning_memories (
+            repo, owner, finding_id, review_id, source_repo,
+            finding_text, severity, category, file_path, outcome,
+            embedding_model, embedding_dim, stale, embedding
+          ) VALUES (
+            ${record.repo}, ${record.owner}, ${record.findingId}, ${record.reviewId}, ${record.sourceRepo},
+            ${record.findingText}, ${record.severity}, ${record.category}, ${record.filePath}, ${record.outcome},
+            ${record.embeddingModel}, ${record.embeddingDim}, ${record.stale}, ${embeddingString}::vector
+          )
+          ON CONFLICT (repo, finding_id, outcome) DO NOTHING
+        `;
       } catch (err: unknown) {
-        // Fail-open: log but don't throw for UNIQUE constraint violations (duplicate writes)
         const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("UNIQUE constraint failed")) {
-          logger.debug({ repo: record.repo, findingId: record.findingId }, "Duplicate memory write skipped");
-          return;
-        }
+        logger.error({ err: message, repo: record.repo, findingId: record.findingId }, "Failed to write memory");
         throw err;
       }
     },
 
-    retrieveMemories(params: {
+    async retrieveMemories(params: {
       queryEmbedding: Float32Array;
       repo: string;
       topK: number;
-    }): { memoryId: number; distance: number }[] {
-      const rows = retrieveStmt.all({
-        $queryEmbedding: params.queryEmbedding,
-        $topK: params.topK,
-        $repo: params.repo,
-      }) as VecResultRow[];
+    }): Promise<{ memoryId: number; distance: number }[]> {
+      const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
+      const rows = await sql`
+        SELECT m.id AS memory_id, m.embedding <=> ${queryEmbeddingString}::vector AS distance
+        FROM learning_memories m
+        WHERE m.repo = ${params.repo} AND m.stale = false
+        ORDER BY m.embedding <=> ${queryEmbeddingString}::vector
+        LIMIT ${params.topK}
+      `;
 
       return rows.map((row) => ({
-        memoryId: row.memory_id,
-        distance: row.distance,
+        memoryId: Number(row.memory_id),
+        distance: Number(row.distance),
       }));
     },
 
-    retrieveMemoriesForOwner(params: {
+    async retrieveMemoriesForOwner(params: {
       queryEmbedding: Float32Array;
       owner: string;
       excludeRepo: string;
       topK: number;
-    }): { memoryId: number; distance: number }[] {
+    }): Promise<{ memoryId: number; distance: number }[]> {
       // Find repos for the same owner (up to 5 most active)
-      const repoRows = ownerReposStmt.all({
-        $owner: params.owner,
-        $excludeRepo: params.excludeRepo,
-      }) as { repo: string; cnt: number }[];
+      const repoRows = await sql`
+        SELECT repo, COUNT(*) AS cnt
+        FROM learning_memories
+        WHERE owner = ${params.owner} AND repo != ${params.excludeRepo} AND stale = false
+        GROUP BY repo
+        ORDER BY cnt DESC
+        LIMIT 5
+      `;
 
       if (repoRows.length === 0) {
         return [];
       }
 
-      // Query each repo partition and merge results
-      const allResults: { memoryId: number; distance: number }[] = [];
+      const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
       const perRepoK = Math.max(1, Math.ceil(params.topK / repoRows.length));
+
+      // Query each repo and merge results
+      const allResults: { memoryId: number; distance: number }[] = [];
 
       for (const repoRow of repoRows) {
         try {
-          const rows = retrieveStmt.all({
-            $queryEmbedding: params.queryEmbedding,
-            $topK: perRepoK,
-            $repo: repoRow.repo,
-          }) as VecResultRow[];
+          const rows = await sql`
+            SELECT m.id AS memory_id, m.embedding <=> ${queryEmbeddingString}::vector AS distance
+            FROM learning_memories m
+            WHERE m.repo = ${repoRow.repo} AND m.stale = false
+            ORDER BY m.embedding <=> ${queryEmbeddingString}::vector
+            LIMIT ${perRepoK}
+          `;
 
           for (const row of rows) {
             allResults.push({
-              memoryId: row.memory_id,
-              distance: row.distance,
+              memoryId: Number(row.memory_id),
+              distance: Number(row.distance),
             });
           }
         } catch (err: unknown) {
@@ -323,26 +167,32 @@ export function createLearningMemoryStore(opts: {
       return deduped.slice(0, params.topK);
     },
 
-    getMemoryRecord(memoryId: number): LearningMemoryRecord | null {
-      const row = getRecordStmt.get({ $memoryId: memoryId }) as MemoryRow | null;
-      if (!row) return null;
-      return rowToRecord(row);
+    async getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null> {
+      const rows = await sql`SELECT * FROM learning_memories WHERE id = ${memoryId}`;
+      if (rows.length === 0) return null;
+      return rowToRecord(rows[0] as unknown as MemoryRow);
     },
 
-    markStale(embeddingModel: string): number {
-      const result = markStaleStmt.run({ $embeddingModel: embeddingModel });
-      return result.changes;
+    async markStale(embeddingModel: string): Promise<number> {
+      const result = await sql`
+        UPDATE learning_memories SET stale = true
+        WHERE embedding_model != ${embeddingModel} AND stale = false
+      `;
+      return result.count;
     },
 
-    purgeStaleEmbeddings(): number {
-      return purgeTransaction();
+    async purgeStaleEmbeddings(): Promise<number> {
+      const result = await sql`
+        DELETE FROM learning_memories WHERE stale = true
+      `;
+      return result.count;
     },
 
     close(): void {
-      // No-op: db lifecycle managed by caller
+      // No-op: sql lifecycle managed by caller
     },
   };
 
-  logger.debug("LearningMemoryStore initialized with vec0 virtual table");
+  logger.debug("LearningMemoryStore initialized with pgvector HNSW index");
   return store;
 }
