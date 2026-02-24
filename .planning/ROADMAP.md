@@ -180,7 +180,7 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82 | 1/1 | Complete    | 2026-02-23 | - |
-| 83 | 1/1 | Complete   | 2026-02-24 | - |
+| 83 | 1/1 | Complete    | 2026-02-24 | - |
 ### Phase 84: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
 
 **Goal:** Confirm VoyageAI embeddings work in the deployed Azure environment, add a startup smoke test, and ensure clean container startup with no error-level output
