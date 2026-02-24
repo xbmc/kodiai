@@ -54,7 +54,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-23
-**Stopped At:** Roadmap created for v0.17 Infrastructure Foundation
-**Resume File:** None
+**Last session:** 2026-02-24T03:34:16.444Z
+**Stopped At:** Phase 86 context gathered
+**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-CONTEXT.md
 **Next action:** `/gsd:plan-phase 86`
