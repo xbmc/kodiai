@@ -12,8 +12,8 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 - [x] **DB-01**: PostgreSQL Flexible Server provisioned on Azure with pgvector extension enabled
 - [x] **DB-02**: Unified schema defined with `embeddings`, `documents`, `chunks` tables and vector columns
 - [ ] **DB-03**: Existing SQLite data (PRs, issues, embeddings) migrated to PostgreSQL
-- [ ] **DB-04**: All DB clients updated from better-sqlite3 to postgres.js
-- [ ] **DB-05**: `src/db/` module targets PostgreSQL; sqlite-vec dependency removed
+- [x] **DB-04**: All DB clients updated from better-sqlite3 to postgres.js
+- [x] **DB-05**: `src/db/` module targets PostgreSQL; sqlite-vec dependency removed
 - [ ] **DB-06**: Integration tests run against Postgres via Docker locally and in CI
 - [ ] **DB-07**: Live reads/writes verified on Azure after deploy
 - [x] **DB-08**: HNSW indexes configured with tuned `m`/`ef_construction` and correct distance operator
@@ -66,8 +66,8 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 | DB-01 | Phase 86 | Complete |
 | DB-02 | Phase 86 | Complete |
 | DB-03 | Phase 86 | Pending |
-| DB-04 | Phase 86 | Pending |
-| DB-05 | Phase 86 | Pending |
+| DB-04 | Phase 86 | Complete |
+| DB-05 | Phase 86 | Complete |
 | DB-06 | Phase 86 | Pending |
 | DB-07 | Phase 86 | Pending |
 | DB-08 | Phase 86 | Complete |

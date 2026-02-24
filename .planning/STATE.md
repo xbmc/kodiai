@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 86 of 88 (PostgreSQL + pgvector on Azure)
-**Plan:** 1 of 4 in current phase
+**Plan:** 2 of 4 in current phase
 **Status:** Executing
-**Last Activity:** 2026-02-24 — Completed 86-01 (PostgreSQL foundation)
+**Last Activity:** 2026-02-24 — Completed 86-02 (Store migration to PostgreSQL)
 
-Progress: [##░░░░░░░░] 25%
+Progress: [#####░░░░░] 50%
 
 ## Accumulated Context
 
@@ -26,6 +26,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **86-01:** Used postgres.js (not pg/drizzle/kysely) for zero-dep tagged-template SQL
 - **86-01:** Telemetry executions table renamed to telemetry_events in PostgreSQL schema
 - **86-01:** learning_memories embedding as vector(1024) inline column, replacing sqlite-vec virtual table
+- **86-02:** All store methods made async (Promise-based) since postgres.js is inherently async
+- **86-02:** checkpoint()/close() become no-ops -- connection lifecycle managed by client.ts
+- **86-02:** db-path.ts deprecated (not deleted) to avoid breaking imports during migration period
 
 ### Key Constraints (Carry-Forward)
 
@@ -58,7 +61,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T04:47:00Z
-**Stopped At:** Completed 86-01-PLAN.md
-**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-01-SUMMARY.md
-**Next action:** `/gsd:execute-phase 86` (plan 02)
+**Last session:** 2026-02-24T04:56:00Z
+**Stopped At:** Completed 86-02-PLAN.md
+**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-02-SUMMARY.md
+**Next action:** `/gsd:execute-phase 86` (plan 03)
