@@ -382,7 +382,7 @@ app.route("/webhooks/slack", createSlackEventRoutes({
     await slackAssistantHandler.handle(payload);
   },
 }));
-app.route("/", createHealthRoutes({ githubApp, logger }));
+app.route("/", createHealthRoutes({ githubApp, logger, sql }));
 
 // Global error handler
 app.onError((err, c) => {
@@ -392,6 +392,70 @@ app.onError((err, c) => {
 
 // Start shutdown manager (SIGTERM/SIGINT handlers)
 shutdownManager.start();
+
+// Startup webhook queue replay: process any webhooks queued during previous shutdown
+const startupReplayStart = Date.now();
+let queuedWebhooksProcessed = 0;
+let queuedWebhooksFailed = 0;
+
+try {
+  const pendingWebhooks = await webhookQueueStore.dequeuePending();
+
+  for (const entry of pendingWebhooks) {
+    try {
+      if (entry.source === "github") {
+        // Reconstruct WebhookEvent from queued data
+        const payload = JSON.parse(entry.body) as Record<string, unknown>;
+        const installation = payload.installation as { id: number } | undefined;
+        const event = {
+          id: entry.deliveryId ?? `replay-${entry.id}`,
+          name: entry.eventName ?? "unknown",
+          payload,
+          installationId: installation?.id ?? 0,
+        };
+        await eventRouter.dispatch(event);
+      } else if (entry.source === "slack") {
+        // Reconstruct Slack bootstrap payload and dispatch
+        const slackPayload = JSON.parse(entry.body) as Record<string, unknown>;
+        const slackEvent = slackPayload.event as Record<string, unknown> | undefined;
+
+        if (slackEvent) {
+          const bootstrapPayload = {
+            channel: (slackEvent.channel as string) ?? "",
+            threadTs: (slackEvent.thread_ts as string) ?? (slackEvent.ts as string) ?? "",
+            messageTs: (slackEvent.ts as string) ?? "",
+            user: (slackEvent.user as string) ?? "",
+            text: (slackEvent.text as string) ?? "",
+            replyTarget: "thread-only" as const,
+          };
+          await slackAssistantHandler.handle(bootstrapPayload);
+        }
+      }
+
+      await webhookQueueStore.markCompleted(entry.id!);
+      queuedWebhooksProcessed++;
+    } catch (err) {
+      logger.warn({ err, id: entry.id, source: entry.source }, "Failed to replay queued webhook");
+      await webhookQueueStore.markFailed(entry.id!);
+      queuedWebhooksFailed++;
+    }
+  }
+} catch (err) {
+  logger.error({ err }, "Startup webhook queue replay failed (non-fatal)");
+}
+
+const startupDurationMs = Date.now() - startupReplayStart;
+if (queuedWebhooksProcessed > 0 || queuedWebhooksFailed > 0) {
+  logger.info(
+    {
+      startupDurationMs,
+      queuedWebhooksProcessed,
+      queuedWebhooksFailed,
+      dbStatus: "connected",
+    },
+    "Startup webhook queue replay complete",
+  );
+}
 
 logger.info({ port: config.port }, "Kodiai server started");
 
