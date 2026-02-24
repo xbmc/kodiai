@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 86 of 88 (PostgreSQL + pgvector on Azure)
-**Plan:** 2 of 4 in current phase
+**Plan:** 3 of 4 in current phase
 **Status:** Executing
-**Last Activity:** 2026-02-24 — Completed 86-02 (Store migration to PostgreSQL)
+**Last Activity:** 2026-02-24 — Completed 86-03 (Learning memory store pgvector migration)
 
-Progress: [#####░░░░░] 50%
+Progress: [#######░░░] 75%
 
 ## Accumulated Context
 
@@ -29,6 +29,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **86-02:** All store methods made async (Promise-based) since postgres.js is inherently async
 - **86-02:** checkpoint()/close() become no-ops -- connection lifecycle managed by client.ts
 - **86-02:** db-path.ts deprecated (not deleted) to avoid breaking imports during migration period
+- **86-03:** All LearningMemoryStore methods async (Promise-based) to match postgres.js
+- **86-03:** Removed createNoOpStore fallback -- pgvector always available in PostgreSQL
+- **86-03:** ON CONFLICT DO NOTHING for duplicate writes instead of catching UNIQUE constraint
 
 ### Key Constraints (Carry-Forward)
 
@@ -61,7 +64,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T04:56:00Z
-**Stopped At:** Completed 86-02-PLAN.md
-**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-02-SUMMARY.md
-**Next action:** `/gsd:execute-phase 86` (plan 03)
+**Last session:** 2026-02-24T04:58:00Z
+**Stopped At:** Completed 86-03-PLAN.md
+**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-03-SUMMARY.md
+**Next action:** `/gsd:execute-phase 86` (plan 04)
