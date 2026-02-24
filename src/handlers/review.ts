@@ -11,8 +11,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
-import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../learning/types.ts";
-import type { IsolationLayer } from "../learning/isolation.ts";
+import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
@@ -42,15 +41,8 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
-import { rerankByLanguage } from "../learning/retrieval-rerank.ts";
-import { applyRecencyWeighting } from "../learning/retrieval-recency.ts";
-import { computeAdaptiveThreshold, type AdaptiveThresholdResult } from "../learning/adaptive-threshold.ts";
-import {
-  buildRetrievalVariants,
-  executeRetrievalVariants,
-  mergeVariantResults,
-} from "../learning/multi-query-retrieval.ts";
-import { buildSnippetAnchors } from "../learning/retrieval-snippets.ts";
+import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
+import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
   buildReviewOutputMarker,
   buildReviewOutputKey,
@@ -1120,17 +1112,11 @@ export function createReviewHandler(deps: {
   knowledgeStore?: KnowledgeStore;
   learningMemoryStore?: LearningMemoryStore;
   embeddingProvider?: EmbeddingProvider;
-  isolationLayer?: IsolationLayer;
+  retriever?: ReturnType<typeof createRetriever>;
   /** Optional injection for deterministic tests. */
   usageAnalyzer?: { analyzePackageUsage: typeof analyzePackageUsage };
   /** Optional injection for deterministic tests. */
   scopeCoordinator?: { detectScopeCoordination: typeof detectScopeCoordination };
-  /** Optional injection for deterministic tests. */
-  retrievalReranker?: { rerankByLanguage: typeof rerankByLanguage };
-  /** Optional injection for deterministic tests. */
-  retrievalRecency?: { applyRecencyWeighting: typeof applyRecencyWeighting };
-  /** Optional injection for deterministic tests. */
-  adaptiveThreshold?: { computeAdaptiveThreshold: typeof computeAdaptiveThreshold };
   /** Optional injection for deterministic tests. */
   searchCache?: SearchCache<number>;
   /** Optional injection for deterministic tests. */
@@ -1147,12 +1133,9 @@ export function createReviewHandler(deps: {
     knowledgeStore,
     learningMemoryStore,
     embeddingProvider,
-    isolationLayer,
+    retriever,
     usageAnalyzer,
     scopeCoordinator,
-    retrievalReranker,
-    retrievalRecency,
-    adaptiveThreshold,
     searchCache: injectedSearchCache,
     searchCacheFactory,
     logger,
@@ -2009,9 +1992,9 @@ export function createReviewHandler(deps: {
           }
         }
 
-        // Retrieval context (LEARN-07)
+        // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         let retrievalCtx: RetrievalContextForPrompt | null = null;
-        if (isolationLayer && embeddingProvider && config.knowledge.retrieval.enabled) {
+        if (retriever) {
           try {
             const variants = buildRetrievalVariants({
               title: pr.title,
@@ -2023,185 +2006,61 @@ export function createReviewHandler(deps: {
               authorTier: authorClassification.tier,
             });
 
-            const maxVariantConcurrency = 2;
-            const variantTopK = Math.max(
-              1,
-              Math.ceil(config.knowledge.retrieval.topK / Math.max(variants.length, 1)),
-            );
-            const resultsByVariant = await executeRetrievalVariants({
-              variants,
-              maxConcurrency: maxVariantConcurrency,
-              execute: async (variant) => {
-                logger.debug(
-                  {
-                    ...baseLog,
-                    gate: "retrieval-variant",
-                    variant: variant.type,
-                    queryLength: variant.query.length,
-                    variantTopK,
-                  },
-                  "Retrieval variant query constructed",
-                );
+            const result = await retriever.retrieve({
+              repo: `${apiOwner}/${apiRepo}`,
+              owner: apiOwner,
+              queries: variants.map((v) => v.query),
+              workspaceDir: workspace.dir,
+              prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
+              logger,
+            });
 
-                const embedResult = await embeddingProvider.generate(variant.query, "query");
-                if (!embedResult) {
-                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
+            if (result && result.findings.length > 0) {
+              // Retrieval quality telemetry (RET-05)
+              if (config.telemetry.enabled) {
+                try {
+                  const resultCount = result.findings.length;
+                  const avgDistance = resultCount > 0
+                    ? result.findings.reduce((sum, r) => sum + (r as any).adjustedDistance, 0) / resultCount
+                    : null;
+                  const languageMatchRatio = resultCount > 0
+                    ? result.findings.filter((r) => (r as any).languageMatch).length / resultCount
+                    : null;
+
+                  await telemetryStore.recordRetrievalQuality({
+                    deliveryId: event.id,
+                    repo: `${apiOwner}/${apiRepo}`,
+                    prNumber: pr.number,
+                    eventType: event.name,
+                    topK: config.knowledge.retrieval.topK,
+                    distanceThreshold: result.provenance.thresholdValue,
+                    thresholdMethod: result.provenance.thresholdMethod,
+                    resultCount,
+                    avgDistance,
+                    languageMatchRatio,
+                  });
+                } catch (err) {
+                  logger.warn(
+                    { ...baseLog, err },
+                    "Retrieval quality telemetry write failed (non-blocking)",
+                  );
                 }
-
-                const retrieval = await isolationLayer.retrieveWithIsolation({
-                  queryEmbedding: embedResult.embedding,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  owner: apiOwner,
-                  sharingEnabled: config.knowledge.sharing.enabled,
-                  topK: variantTopK,
-                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
-                  adaptive: config.knowledge.retrieval.adaptive,
-                  logger,
-                });
-
-                return retrieval.results;
-              },
-            });
-
-            const variantFailures = resultsByVariant.filter((variant) => variant.error);
-            for (const failedVariant of variantFailures) {
-              logger.warn(
-                {
-                  ...baseLog,
-                  gate: "retrieval-variant",
-                  variant: failedVariant.variant.type,
-                  err: failedVariant.error,
-                },
-                "Retrieval variant failed (fail-open)",
-              );
-            }
-
-            const mergedResults = mergeVariantResults({
-              resultsByVariant,
-              topK: config.knowledge.retrieval.topK,
-            });
-
-            const prLanguages = Object.keys(diffAnalysis.filesByLanguage ?? {});
-            const reranker = retrievalReranker?.rerankByLanguage ?? rerankByLanguage;
-            const recencyWeighter = retrievalRecency?.applyRecencyWeighting ?? applyRecencyWeighting;
-            const computeThreshold = adaptiveThreshold?.computeAdaptiveThreshold ?? computeAdaptiveThreshold;
-
-            const languageReranked = mergedResults.length > 0
-              ? reranker({ results: mergedResults, prLanguages })
-              : [];
-            const reranked = languageReranked.length > 0
-              ? recencyWeighter({ results: languageReranked })
-              : [];
-
-            const configuredThreshold = config.knowledge.retrieval.distanceThreshold;
-            let adaptiveResult: AdaptiveThresholdResult = {
-              threshold: configuredThreshold,
-              method: "configured",
-              candidateCount: reranked.length,
-            };
-            let finalReranked = reranked.slice(0, config.knowledge.retrieval.topK);
-
-            if (config.knowledge.retrieval.adaptive) {
-              // Adaptive distance threshold (RET-03): compute on post-rerank distances
-              const distances = reranked.map((r) => r.adjustedDistance);
-              adaptiveResult = computeThreshold({
-                distances,
-                configuredThreshold,
-              });
-              const thresholdFiltered = reranked.filter(
-                (r) => r.adjustedDistance <= adaptiveResult.threshold,
-              );
-              finalReranked = thresholdFiltered.slice(0, config.knowledge.retrieval.topK);
-
-              logger.debug(
-                {
-                  ...baseLog,
-                  gate: "adaptive-threshold",
-                  method: adaptiveResult.method,
-                  threshold: adaptiveResult.threshold,
-                  candidateCount: adaptiveResult.candidateCount,
-                  gapSize: adaptiveResult.gapSize,
-                  preFilterCount: reranked.length,
-                  postFilterCount: finalReranked.length,
-                },
-                "Adaptive threshold applied to retrieval results",
-              );
-            }
-
-            logger.debug(
-              {
-                ...baseLog,
-                gate: "retrieval-rerank",
-                variantCount: variants.length,
-                failedVariantCount: variantFailures.length,
-                mergedResultCount: mergedResults.length,
-                recencyApplied: languageReranked.length > 0,
-                languageResultCount: languageReranked.length,
-                finalResultCount: reranked.length,
-              },
-              "Retrieval reranking complete",
-            );
-
-            // Retrieval quality telemetry (RET-05): derived from reranked distances.
-            // Guarded by telemetry.enabled and must be fail-open.
-            if (config.telemetry.enabled) {
-              try {
-                const resultCount = finalReranked.length;
-                const avgDistance = resultCount > 0
-                  ? finalReranked.reduce((sum, r) => sum + r.adjustedDistance, 0) / resultCount
-                  : null;
-                const languageMatchRatio = resultCount > 0
-                  ? finalReranked.filter((r) => r.languageMatch).length / resultCount
-                  : null;
-
-                await telemetryStore.recordRetrievalQuality({
-                  deliveryId: event.id,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  eventType: event.name,
-                  topK: config.knowledge.retrieval.topK,
-                  distanceThreshold: adaptiveResult.threshold,
-                  thresholdMethod: adaptiveResult.method,
-                  resultCount,
-                  avgDistance,
-                  languageMatchRatio,
-                });
-              } catch (err) {
-                logger.warn(
-                  { ...baseLog, err },
-                  "Retrieval quality telemetry write failed (non-blocking)",
-                );
-              }
-            }
-
-            if (finalReranked.length > 0) {
-              let snippetAnchors = await buildSnippetAnchors({
-                workspaceDir: workspace.dir,
-                findings: finalReranked,
-              });
-
-              if (snippetAnchors.length !== finalReranked.length) {
-                snippetAnchors = finalReranked.map((result) => ({
-                  path: result.record.filePath,
-                  anchor: result.record.filePath,
-                  distance: result.adjustedDistance,
-                }));
               }
 
               retrievalCtx = {
                 maxChars: config.knowledge.retrieval.maxContextChars,
-                findings: finalReranked.map((result, index) => {
-                  const anchor = snippetAnchors[index];
+                findings: result.findings.map((finding, index) => {
+                  const anchor = result.snippetAnchors[index];
                   return {
-                    findingText: result.record.findingText,
-                    severity: result.record.severity,
-                    category: result.record.category,
-                    path: anchor?.path ?? result.record.filePath,
+                    findingText: finding.record.findingText,
+                    severity: finding.record.severity,
+                    category: finding.record.category,
+                    path: anchor?.path ?? finding.record.filePath,
                     line: anchor?.line,
                     snippet: anchor?.snippet,
-                    outcome: result.record.outcome,
-                    distance: result.adjustedDistance,
-                    sourceRepo: result.sourceRepo,
+                    outcome: finding.record.outcome,
+                    distance: (finding as any).adjustedDistance ?? finding.distance,
+                    sourceRepo: finding.sourceRepo,
                   };
                 }),
               };

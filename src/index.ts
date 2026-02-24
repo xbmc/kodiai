@@ -18,10 +18,11 @@ import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
-import { createLearningMemoryStore } from "./learning/memory-store.ts";
-import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
-import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
-import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
+import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
+import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./knowledge/embeddings.ts";
+import type { LearningMemoryStore, EmbeddingProvider } from "./knowledge/types.ts";
+import { createIsolationLayer, type IsolationLayer } from "./knowledge/isolation.ts";
+import { createRetriever } from "./knowledge/retrieval.ts";
 import { createDbClient, type Sql } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { createSlackClient } from "./slack/client.ts";
@@ -161,6 +162,26 @@ if (learningMemoryStore) {
   isolationLayer = createIsolationLayer({ memoryStore: learningMemoryStore, logger });
   logger.info("Learning memory isolation layer initialized");
 }
+
+// Knowledge retrieval (unified pipeline)
+const retriever = isolationLayer && embeddingProvider
+  ? createRetriever({
+      embeddingProvider,
+      isolationLayer,
+      config: {
+        retrieval: {
+          enabled: config.knowledge.retrieval.enabled,
+          topK: config.knowledge.retrieval.topK,
+          distanceThreshold: config.knowledge.retrieval.distanceThreshold,
+          adaptive: config.knowledge.retrieval.adaptive,
+          maxContextChars: config.knowledge.retrieval.maxContextChars,
+        },
+        sharing: {
+          enabled: config.knowledge.sharing.enabled,
+        },
+      },
+    })
+  : undefined;
 
 // Startup maintenance: purge old run state entries
 if (knowledgeStore) {
@@ -326,6 +347,8 @@ const slackAssistantHandler = createSlackAssistantHandler({
       logger.warn({ err: error, channel, messageTs }, "Slack working reaction remove failed");
     }
   },
+  retriever,
+  logger,
   defaultRepo: config.slackDefaultRepo,
 });
 
@@ -340,7 +363,7 @@ createReviewHandler({
   knowledgeStore,
   learningMemoryStore,
   embeddingProvider,
-  isolationLayer,
+  retriever,
   logger,
 });
 createMentionHandler({
@@ -351,6 +374,7 @@ createMentionHandler({
   executor,
   telemetryStore,
   knowledgeStore,
+  retriever,
   logger,
 });
 createFeedbackSyncHandler({

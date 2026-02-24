@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createReviewHandler } from "./review.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
+import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -1813,6 +1814,15 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
       },
     };
 
+    const retriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
+      },
+    });
+
     createReviewHandler({
       eventRouter,
       jobQueue,
@@ -1832,8 +1842,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
         }),
       } as never,
       telemetryStore,
-      embeddingProvider: embeddingProvider as never,
-      isolationLayer: isolationLayer as never,
+      retriever,
       logger: createNoopLogger(),
     });
 
@@ -1864,7 +1873,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("applies recency weighting after language rerank and telemetry captures final distances", async () => {
+  test("retriever pipeline applies reranking and telemetry captures final distances", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createTypeScriptWorkspaceFixture();
 
@@ -1922,66 +1931,13 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
       },
     };
 
-    const callOrder: string[] = [];
-    const languageReranked = [
-      {
-        memoryId: 1,
-        distance: 0.2,
-        adjustedDistance: 0.2,
-        languageMatch: true,
-        record: {
-          repo: "acme/repo",
-          owner: "acme",
-          findingId: 1,
-          reviewId: 1,
-          sourceRepo: "acme/repo",
-          findingText: "Example",
-          severity: "major",
-          category: "correctness",
-          filePath: "src/example.ts",
-          outcome: "accepted",
-          embeddingModel: "test",
-          embeddingDim: 2,
-          stale: false,
-        },
-        sourceRepo: "acme/repo",
+    const retriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
       },
-      {
-        memoryId: 2,
-        distance: 0.4,
-        adjustedDistance: 0.4,
-        languageMatch: false,
-        record: {
-          repo: "acme/repo",
-          owner: "acme",
-          findingId: 1,
-          reviewId: 1,
-          sourceRepo: "acme/repo",
-          findingText: "Example",
-          severity: "major",
-          category: "correctness",
-          filePath: "src/example.py",
-          outcome: "accepted",
-          embeddingModel: "test",
-          embeddingDim: 2,
-          stale: false,
-        },
-        sourceRepo: "acme/repo",
-      },
-    ];
-
-    const rerankMock = mock((_params: any) => {
-      callOrder.push("language");
-      return languageReranked as any;
-    });
-
-    const recencyMock = mock((params: any) => {
-      callOrder.push("recency");
-      expect(params.results).toBe(languageReranked);
-      return [
-        { ...languageReranked[0]!, adjustedDistance: 0.1 },
-        { ...languageReranked[1]!, adjustedDistance: 0.5 },
-      ];
     });
 
     const eventRouter: EventRouter = {
@@ -2042,10 +1998,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
         }),
       } as never,
       telemetryStore,
-      embeddingProvider: embeddingProvider as never,
-      isolationLayer: isolationLayer as never,
-      retrievalReranker: { rerankByLanguage: rerankMock as any },
-      retrievalRecency: { applyRecencyWeighting: recencyMock as any },
+      retriever,
       logger: createNoopLogger(),
     });
 
@@ -2053,14 +2006,12 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
       buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
     );
 
-    expect(callOrder).toEqual(["language", "recency"]);
-
     if (!captured) {
       throw new Error("Expected recordRetrievalQuality to be called");
     }
 
-    // avgDistance must be computed from the final (post-recency) adjustedDistance values.
-    expect(captured.avgDistance).toBeCloseTo((0.1 + 0.5) / 2, 6);
+    // avgDistance uses adjusted distances from the unified retriever pipeline
+    expect(captured.avgDistance).toBeCloseTo(0.315, 6);
 
     await workspaceFixture.cleanup();
   });
@@ -2141,6 +2092,15 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
       },
     };
 
+    const retriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
+      },
+    });
+
     createReviewHandler({
       eventRouter,
       jobQueue,
@@ -2160,8 +2120,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
         }),
       } as never,
       telemetryStore,
-      embeddingProvider: embeddingProvider as never,
-      isolationLayer: isolationLayer as never,
+      retriever,
       logger: createNoopLogger(),
     });
 
@@ -4400,6 +4359,15 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
       },
     };
 
+    const retriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
+      },
+    });
+
     createReviewHandler({
       eventRouter,
       jobQueue,
@@ -4422,17 +4390,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
         },
       } as never,
       telemetryStore: noopTelemetryStore,
-      embeddingProvider: embeddingProvider as never,
-      isolationLayer: isolationLayer as never,
-      retrievalReranker: {
-        rerankByLanguage: ((params: { results: Array<any> }) =>
-          params.results.map((result) => ({
-            ...result,
-            adjustedDistance: result.distance,
-            languageMatch: true,
-          }))) as never,
-      },
-      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+      retriever,
       logger: createNoopLogger(),
     });
 
@@ -4553,6 +4511,15 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
       },
     };
 
+    const failOpenRetriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
+      },
+    });
+
     createReviewHandler({
       eventRouter,
       jobQueue,
@@ -4575,17 +4542,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
         },
       } as never,
       telemetryStore: noopTelemetryStore,
-      embeddingProvider: embeddingProvider as never,
-      isolationLayer: isolationLayer as never,
-      retrievalReranker: {
-        rerankByLanguage: ((params: { results: Array<any> }) =>
-          params.results.map((result) => ({
-            ...result,
-            adjustedDistance: result.distance,
-            languageMatch: true,
-          }))) as never,
-      },
-      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+      retriever: failOpenRetriever,
       logger: createNoopLogger(),
     });
 
@@ -4644,28 +4601,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
       },
     };
 
-    createReviewHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async (context: { prompt: string }) => {
-          capturedPrompt = context.prompt;
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-ret08-anchors",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
+    const anchorRetriever = createRetriever({
       embeddingProvider: {
         model: "test",
         dimensions: 1,
@@ -4729,15 +4665,35 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
           },
         }),
       } as never,
-      retrievalReranker: {
-        rerankByLanguage: ((params: { results: Array<any> }) =>
-          params.results.map((result) => ({
-            ...result,
-            adjustedDistance: result.distance,
-            languageMatch: true,
-          }))) as never,
+      config: {
+        retrieval: { enabled: true, topK: 5, distanceThreshold: 0.3, adaptive: true, maxContextChars: 2000 },
+        sharing: { enabled: false },
       },
-      retrievalRecency: { applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never },
+    });
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-ret08-anchors",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      retriever: anchorRetriever,
       logger: createNoopLogger(),
     });
 
@@ -6476,23 +6432,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     };
     knowledgeStoreOverrides?: Record<string, unknown>;
     configYaml?: string;
-    embeddingProvider?: {
-      model: string;
-      dimensions: number;
-      generate: (query: string) => Promise<{ embedding: Float32Array; model: string; dimensions: number }>;
-    };
-    isolationLayer?: {
-      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => Promise<{
-        results: Array<any>;
-        provenance: Record<string, unknown>;
-      }>;
-    };
-    retrievalReranker?: {
-      rerankByLanguage: (params: { results: Array<any> }) => Array<any>;
-    };
-    retrievalRecency?: {
-      applyRecencyWeighting: (params: { results: Array<any> }) => Array<any>;
-    };
+    retriever?: ReturnType<typeof createRetriever>;
   }): Promise<{ executeCount: number; prompt: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -6570,10 +6510,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
       telemetryStore: (params.telemetryStore ?? noopTelemetryStore) as never,
       knowledgeStore: createKnowledgeStoreStub(params.knowledgeStoreOverrides) as never,
       searchCache: params.searchCache as never,
-      embeddingProvider: params.embeddingProvider as never,
-      isolationLayer: params.isolationLayer as never,
-      retrievalReranker: params.retrievalReranker as never,
-      retrievalRecency: params.retrievalRecency as never,
+      retriever: params.retriever,
       logger: createNoopLogger(),
     });
 
@@ -7001,36 +6938,70 @@ describe("createReviewHandler author-tier search cache integration", () => {
         "  enabled: true",
         "",
       ].join("\n"),
-      embeddingProvider: {
-        model: "test",
-        dimensions: 1,
-        generate: async (query: string) => ({
-          embedding: new Float32Array([query.includes("files:") ? 2 : 1]),
+      retriever: createRetriever({
+        embeddingProvider: {
           model: "test",
           dimensions: 1,
-        }),
-      },
-      isolationLayer: {
-        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
-          const variantId = params.queryEmbedding[0] ?? 0;
-          if (variantId === 1) {
+          generate: async (query: string) => ({
+            embedding: new Float32Array([query.includes("files:") ? 2 : 1]),
+            model: "test",
+            dimensions: 1,
+          }),
+        } as never,
+        isolationLayer: {
+          retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
+            const variantId = params.queryEmbedding[0] ?? 0;
+            if (variantId === 1) {
+              return {
+                results: [
+                  {
+                    memoryId: 1,
+                    distance: 0.12,
+                    sourceRepo: "acme/repo",
+                    record: {
+                      id: 1,
+                      repo: "repo",
+                      owner: "acme",
+                      findingId: 1,
+                      reviewId: 11,
+                      sourceRepo: "acme/repo",
+                      findingText: "feature `token`",
+                      severity: "major",
+                      category: "correctness",
+                      filePath: "src/kept.ts",
+                      outcome: "accepted",
+                      embeddingModel: "test",
+                      embeddingDim: 1,
+                      stale: false,
+                    },
+                  },
+                ],
+                provenance: {
+                  repoSources: ["acme/repo"],
+                  sharedPoolUsed: false,
+                  totalCandidates: 1,
+                  query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
+                },
+              };
+            }
+
             return {
               results: [
                 {
-                  memoryId: 1,
-                  distance: 0.12,
+                  memoryId: 2,
+                  distance: 0.95,
                   sourceRepo: "acme/repo",
                   record: {
-                    id: 1,
+                    id: 2,
                     repo: "repo",
                     owner: "acme",
-                    findingId: 1,
-                    reviewId: 11,
+                    findingId: 2,
+                    reviewId: 12,
                     sourceRepo: "acme/repo",
-                    findingText: "feature `token`",
+                    findingText: "overflow finding ".repeat(40),
                     severity: "major",
                     category: "correctness",
-                    filePath: "src/kept.ts",
+                    filePath: "src/missing.ts",
                     outcome: "accepted",
                     embeddingModel: "test",
                     embeddingDim: 1,
@@ -7045,52 +7016,13 @@ describe("createReviewHandler author-tier search cache integration", () => {
                 query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
               },
             };
-          }
-
-          return {
-            results: [
-              {
-                memoryId: 2,
-                distance: 0.95,
-                sourceRepo: "acme/repo",
-                record: {
-                  id: 2,
-                  repo: "repo",
-                  owner: "acme",
-                  findingId: 2,
-                  reviewId: 12,
-                  sourceRepo: "acme/repo",
-                  findingText: "overflow finding ".repeat(40),
-                  severity: "major",
-                  category: "correctness",
-                  filePath: "src/missing.ts",
-                  outcome: "accepted",
-                  embeddingModel: "test",
-                  embeddingDim: 1,
-                  stale: false,
-                },
-              },
-            ],
-            provenance: {
-              repoSources: ["acme/repo"],
-              sharedPoolUsed: false,
-              totalCandidates: 1,
-              query: { repo: "acme/repo", topK: 2, threshold: 0.3 },
-            },
-          };
+          },
+        } as never,
+        config: {
+          retrieval: { enabled: true, topK: 2, distanceThreshold: 0.3, adaptive: true, maxContextChars: 240 },
+          sharing: { enabled: false },
         },
-      },
-      retrievalReranker: {
-        rerankByLanguage: ((params: { results: Array<any> }) =>
-          params.results.map((result) => ({
-            ...result,
-            adjustedDistance: result.distance,
-            languageMatch: true,
-          }))) as never,
-      },
-      retrievalRecency: {
-        applyRecencyWeighting: ((params: { results: Array<any> }) => params.results) as never,
-      },
+      }),
     });
 
     expect(executeCount).toBe(1);

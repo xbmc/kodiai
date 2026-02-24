@@ -12,8 +12,7 @@ import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
-import type { EmbeddingProvider } from "../learning/types.ts";
-import type { IsolationLayer } from "../learning/isolation.ts";
+import type { createRetriever } from "../knowledge/retrieval.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import {
   fetchAndCheckoutPullRequestHeadRef,
@@ -34,15 +33,7 @@ import {
 import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
-import {
-  buildRetrievalVariants,
-  executeRetrievalVariants,
-  mergeVariantResults,
-} from "../learning/multi-query-retrieval.ts";
-import {
-  buildSnippetAnchors,
-  trimSnippetAnchorsToBudget,
-} from "../learning/retrieval-snippets.ts";
+import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
@@ -139,8 +130,7 @@ export function createMentionHandler(deps: {
   executor: ReturnType<typeof createExecutor>;
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
-  embeddingProvider?: EmbeddingProvider;
-  isolationLayer?: IsolationLayer;
+  retriever?: ReturnType<typeof createRetriever>;
   logger: Logger;
 }): void {
   const {
@@ -150,8 +140,7 @@ export function createMentionHandler(deps: {
     githubApp,
     executor,
     telemetryStore,
-    embeddingProvider,
-    isolationLayer,
+    retriever,
     logger,
   } = deps;
 
@@ -1150,7 +1139,7 @@ export function createMentionHandler(deps: {
         }
 
         let retrievalContext: MentionRetrievalContext | undefined;
-        if (embeddingProvider && isolationLayer && config.knowledge.retrieval.enabled) {
+        if (retriever && config.knowledge.retrieval.enabled) {
           try {
             let filePaths: string[] = [];
             if (mention.prNumber !== undefined && mention.baseRef) {
@@ -1190,129 +1179,36 @@ export function createMentionHandler(deps: {
               riskSignals: [mention.surface, mention.inReplyToId !== undefined ? "reply-thread" : "single-mention"],
               filePaths,
             });
-            const variantTopK = Math.max(1, Math.ceil(retrievalTopK / Math.max(1, variants.length)));
-            const variantResults = await executeRetrievalVariants({
-              variants,
-              maxConcurrency: 2,
-              execute: async (variant) => {
-                const embeddingResult = await embeddingProvider.generate(variant.query, "query");
-                if (!embeddingResult) {
-                  throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
-                }
 
-                const retrieval = await isolationLayer.retrieveWithIsolation({
-                  queryEmbedding: embeddingResult.embedding,
-                  repo: `${mention.owner}/${mention.repo}`,
-                  owner: mention.owner,
-                  sharingEnabled: config.knowledge.sharing.enabled,
-                  topK: variantTopK,
-                  distanceThreshold: config.knowledge.retrieval.distanceThreshold,
-                  adaptive: config.knowledge.retrieval.adaptive,
-                  logger,
-                });
-
-                return retrieval.results;
-              },
-            });
-
-            const variantFailures = variantResults.filter((variant) => variant.error);
-            for (const failedVariant of variantFailures) {
-              logger.warn(
-                {
-                  surface: mention.surface,
-                  owner: mention.owner,
-                  repo: mention.repo,
-                  issueNumber: mention.issueNumber,
-                  prNumber: mention.prNumber,
-                  variant: failedVariant.variant.type,
-                  err: failedVariant.error,
-                },
-                "Mention retrieval variant failed (fail-open)",
-              );
-            }
-
-            const merged = mergeVariantResults({
-              resultsByVariant: variantResults,
+            const result = await retriever.retrieve({
+              repo: `${mention.owner}/${mention.repo}`,
+              owner: mention.owner,
+              queries: variants.map((v) => v.query),
+              workspaceDir: workspace.dir,
+              prLanguages,
               topK: retrievalTopK,
+              logger,
             });
 
-            if (merged.length > 0) {
-              const anchors = await buildSnippetAnchors({
-                workspaceDir: workspace.dir,
-                findings: merged,
-              });
-              const fallbackAnchors = merged.map((result) => ({
-                path: result.record.filePath,
-                anchor: result.record.filePath,
-                line: undefined,
-                snippet: undefined,
-                distance: result.distance,
-              }));
-              const stableAnchors = anchors.length === merged.length ? anchors : fallbackAnchors;
-
-              const trimmedAnchors = trimSnippetAnchorsToBudget({
-                anchors: stableAnchors,
+            if (result && result.findings.length > 0) {
+              retrievalContext = {
                 maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
                 maxItems: retrievalTopK,
-              });
-              const remainingAnchors = [...trimmedAnchors];
-
-              const compareByRelevance = (
-                a: { distance: number; path: string; line?: number },
-                b: { distance: number; path: string; line?: number },
-              ) => {
-                if (a.distance !== b.distance) {
-                  return a.distance - b.distance;
-                }
-                if (a.path !== b.path) {
-                  return a.path.localeCompare(b.path);
-                }
-                return (a.line ?? Number.MAX_SAFE_INTEGER) - (b.line ?? Number.MAX_SAFE_INTEGER);
+                findings: result.findings.slice(0, retrievalTopK).map((finding, index) => {
+                  const anchor = result.snippetAnchors[index];
+                  return {
+                    findingText: finding.record.findingText,
+                    severity: finding.record.severity,
+                    category: finding.record.category,
+                    path: anchor?.path ?? finding.record.filePath,
+                    line: anchor?.line,
+                    snippet: anchor?.snippet,
+                    outcome: finding.record.outcome,
+                    distance: finding.distance,
+                    sourceRepo: finding.sourceRepo,
+                  };
+                }),
               };
-
-              const trimmedFindings = merged
-                .map((result, index) => ({
-                  result,
-                  anchor: stableAnchors[index] ?? {
-                    path: result.record.filePath,
-                    anchor: result.record.filePath,
-                    line: undefined,
-                    snippet: undefined,
-                    distance: result.distance,
-                  },
-                }))
-                .sort((a, b) => compareByRelevance(a.anchor, b.anchor))
-                .filter((entry) => {
-                  const matchIndex = remainingAnchors.findIndex((anchor) =>
-                    anchor.path === entry.anchor.path
-                    && anchor.line === entry.anchor.line
-                    && anchor.snippet === entry.anchor.snippet
-                    && anchor.distance === entry.anchor.distance
-                  );
-                  if (matchIndex === -1) {
-                    return false;
-                  }
-                  remainingAnchors.splice(matchIndex, 1);
-                  return true;
-                });
-
-              if (trimmedFindings.length > 0) {
-                retrievalContext = {
-                  maxChars: MENTION_RETRIEVAL_MAX_CONTEXT_CHARS,
-                  maxItems: retrievalTopK,
-                  findings: trimmedFindings.map(({ result, anchor }) => ({
-                    findingText: result.record.findingText,
-                    severity: result.record.severity,
-                    category: result.record.category,
-                    path: anchor.path,
-                    line: anchor.line,
-                    snippet: anchor.snippet,
-                    outcome: result.record.outcome,
-                    distance: result.distance,
-                    sourceRepo: result.sourceRepo,
-                  })),
-                };
-              }
             }
           } catch (err) {
             logger.warn(

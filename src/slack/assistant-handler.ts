@@ -1,4 +1,6 @@
 import type { Workspace } from "../jobs/types.ts";
+import type { createRetriever, RetrieveResult } from "../knowledge/retrieval.ts";
+import type { Logger } from "pino";
 import { resolveSlackRepoContext } from "./repo-context.ts";
 import {
   resolveSlackWriteIntent,
@@ -58,6 +60,8 @@ interface SlackAssistantHandlerDeps {
   addWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   removeWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   confirmationStore?: SlackWriteConfirmationStore;
+  retriever?: ReturnType<typeof createRetriever>;
+  logger?: Logger;
   defaultRepo: string;
 }
 
@@ -244,6 +248,8 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
     addWorkingReaction,
     removeWorkingReaction,
     confirmationStore = createInMemoryWriteConfirmationStore(),
+    retriever,
+    logger: depsLogger,
     defaultRepo,
   } = deps;
 
@@ -498,11 +504,36 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
         const writeMode = writeIntent.outcome === "write";
         const messageText = writeIntent.outcome === "read_only" ? payload.text : writeIntent.request;
-        const prompt = buildSlackAssistantPrompt({
+        let prompt = buildSlackAssistantPrompt({
           repoContext: resolution.repo,
           messageText,
           writeMode,
         });
+
+        // Weave retrieval context into the prompt (if retriever available)
+        if (retriever && resolution.repo) {
+          try {
+            const retrievalResult = await retriever.retrieve({
+              repo: resolution.repo,
+              owner,
+              queries: [messageText],
+              topK: 3,
+              logger: depsLogger ?? ({ debug() {}, info() {}, warn() {}, error() {} } as unknown as Logger),
+            });
+
+            if (retrievalResult && retrievalResult.findings.length > 0) {
+              const contextLines = retrievalResult.findings.slice(0, 3).map((finding) => {
+                const path = finding.record.filePath;
+                const severity = finding.record.severity;
+                const text = finding.record.findingText;
+                return `- ${text} (file: ${path}, severity: ${severity})`;
+              });
+              prompt += "\n\nRelated context from past reviews (use naturally, do not cite directly):\n" + contextLines.join("\n");
+            }
+          } catch {
+            // Retrieval is optional -- fail silently
+          }
+        }
 
         if (
           writeMode

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createMentionHandler } from "./mention.ts";
+import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
@@ -5243,6 +5244,90 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
       },
     };
 
+    const embeddingProvider = {
+      model: "test",
+      dimensions: 1,
+      generate: async (query: string) => {
+        embeddingQueries.push(query);
+        const variantId = query.includes("files:") ? 2 : query.includes("risk:") ? 3 : 1;
+        return {
+          embedding: new Float32Array([variantId]),
+          model: "test",
+          dimensions: 1,
+        };
+      },
+    };
+
+    const isolationLayer = {
+      retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
+        const variantId = params.queryEmbedding[0] ?? 0;
+        const mk = (memoryId: number, findingText: string, distance: number, filePath?: string) => ({
+          memoryId,
+          distance,
+          sourceRepo: "acme/repo",
+          record: {
+            id: memoryId,
+            repo: "repo",
+            owner: "acme",
+            findingId: memoryId,
+            reviewId: 100 + memoryId,
+            sourceRepo: "acme/repo",
+            findingText,
+            severity: "major",
+            category: "correctness",
+            filePath: filePath ?? `src/f-${memoryId}.ts`,
+            outcome: "accepted",
+            embeddingModel: "test",
+            embeddingDim: 1,
+            stale: false,
+          },
+        });
+
+        if (variantId === 1) {
+          return {
+            results: [mk(1, "base feature", 0.3, "README.md")],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+            },
+          };
+        }
+
+        if (variantId === 2) {
+          return {
+            results: [mk(1, "shared mention finding", 0.25)],
+            provenance: {
+              repoSources: ["acme/repo"],
+              sharedPoolUsed: false,
+              totalCandidates: 1,
+              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+            },
+          };
+        }
+
+        return {
+          results: [mk(2, "shape mention `finding`", 0.2)],
+          provenance: {
+            repoSources: ["acme/repo"],
+            sharedPoolUsed: false,
+            totalCandidates: 1,
+            query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
+          },
+        };
+      },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider: embeddingProvider as never,
+      isolationLayer: isolationLayer as never,
+      config: {
+        retrieval: { enabled: true, topK: 3, distanceThreshold: 0.3, adaptive: true, maxContextChars: 1200 },
+        sharing: { enabled: false },
+      },
+    });
+
     createMentionHandler({
       eventRouter,
       jobQueue,
@@ -5265,79 +5350,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
-      embeddingProvider: {
-        model: "test",
-        dimensions: 1,
-        generate: async (query: string) => {
-          embeddingQueries.push(query);
-          const variantId = query.includes("files:") ? 2 : query.includes("risk:") ? 3 : 1;
-          return {
-            embedding: new Float32Array([variantId]),
-            model: "test",
-            dimensions: 1,
-          };
-        },
-      } as never,
-      isolationLayer: {
-        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
-          const variantId = params.queryEmbedding[0] ?? 0;
-          const mk = (memoryId: number, findingText: string, distance: number, filePath?: string) => ({
-            memoryId,
-            distance,
-            sourceRepo: "acme/repo",
-            record: {
-              id: memoryId,
-              repo: "repo",
-              owner: "acme",
-              findingId: memoryId,
-              reviewId: 100 + memoryId,
-              sourceRepo: "acme/repo",
-              findingText,
-              severity: "major",
-              category: "correctness",
-              filePath: filePath ?? `src/f-${memoryId}.ts`,
-              outcome: "accepted",
-              embeddingModel: "test",
-              embeddingDim: 1,
-              stale: false,
-            },
-          });
-
-          if (variantId === 1) {
-            return {
-              results: [mk(1, "base feature", 0.3, "README.md")],
-              provenance: {
-                repoSources: ["acme/repo"],
-                sharedPoolUsed: false,
-                totalCandidates: 1,
-                query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
-              },
-            };
-          }
-
-          if (variantId === 2) {
-            return {
-              results: [mk(1, "shared mention finding", 0.25)],
-              provenance: {
-                repoSources: ["acme/repo"],
-                sharedPoolUsed: false,
-                totalCandidates: 1,
-                query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
-              },
-            };
-          }
-
-          return {
-            results: [mk(2, "shape mention `finding`", 0.2)],
-            provenance: {
-              repoSources: ["acme/repo"],
-              sharedPoolUsed: false,
-              totalCandidates: 1,
-              query: { repo: "acme/repo", topK: 1, threshold: 0.3 },
-            },
-          };
-        },
-      } as never,
+      retriever,
       logger: createNoopLogger(),
     });
 
@@ -5410,29 +5423,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
       },
     };
 
-    createMentionHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async (ctx: { prompt?: string }) => {
-          executorCalls++;
-          capturedPrompt = ctx.prompt ?? "";
-          return {
-            conclusion: "success",
-            published: true,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-mention-ret07-fail-open",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
+    const failOpenRetriever = createRetriever({
       embeddingProvider: {
         model: "test",
         dimensions: 1,
@@ -5484,6 +5475,36 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
           };
         },
       } as never,
+      config: {
+        retrieval: { enabled: true, topK: 3, distanceThreshold: 0.3, adaptive: true, maxContextChars: 1200 },
+        sharing: { enabled: false },
+      },
+    });
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          executorCalls++;
+          capturedPrompt = ctx.prompt ?? "";
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-ret07-fail-open",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      retriever: failOpenRetriever,
       logger: createNoopLogger(),
     });
 
@@ -5560,29 +5581,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
       },
     };
 
-    createMentionHandler({
-      eventRouter,
-      jobQueue,
-      workspaceManager,
-      githubApp: {
-        getAppSlug: () => "kodiai",
-        getInstallationOctokit: async () => octokit as never,
-      } as unknown as GitHubApp,
-      executor: {
-        execute: async (ctx: { prompt?: string; workspace: { dir: string } }) => {
-          capturedPrompt = ctx.prompt ?? "";
-          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\ncombined degraded + write\n");
-          return {
-            conclusion: "success",
-            published: false,
-            costUsd: 0,
-            numTurns: 1,
-            durationMs: 1,
-            sessionId: "session-mention-combined",
-          };
-        },
-      } as never,
-      telemetryStore: noopTelemetryStore,
+    const combinedRetriever = createRetriever({
       embeddingProvider: {
         model: "test",
         dimensions: 1,
@@ -5634,6 +5633,36 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
           };
         },
       } as never,
+      config: {
+        retrieval: { enabled: true, topK: 3, distanceThreshold: 0.3, adaptive: true, maxContextChars: 1200 },
+        sharing: { enabled: false },
+      },
+    });
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string; workspace: { dir: string } }) => {
+          capturedPrompt = ctx.prompt ?? "";
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\ncombined degraded + write\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-combined",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      retriever: combinedRetriever,
       logger: createNoopLogger(),
     });
 
