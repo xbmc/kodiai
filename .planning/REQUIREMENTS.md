@@ -24,9 +24,9 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 - [x] **DEP-01**: SIGTERM handler added to webhook server and ingestion workers
 - [x] **DEP-02**: In-flight request tracking with drain logic waits for active requests before exit
 - [x] **DEP-03**: Configurable grace window via `SHUTDOWN_GRACE_MS` env var (default 5 minutes)
-- [ ] **DEP-04**: Azure Container Apps configured with minimum replicas, health probes, and rolling deploy
-- [ ] **DEP-05**: Zero dropped webhooks verified during mid-review deploy
-- [ ] **DEP-06**: Graceful restart runbook documented
+- [x] **DEP-04**: Azure Container Apps configured with minimum replicas, health probes, and rolling deploy
+- [x] **DEP-05**: Zero dropped webhooks verified during mid-review deploy
+- [x] **DEP-06**: Graceful restart runbook documented
 
 ### Knowledge
 
@@ -75,9 +75,9 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 | DEP-01 | Phase 87 | Complete |
 | DEP-02 | Phase 87 | Complete |
 | DEP-03 | Phase 87 | Complete |
-| DEP-04 | Phase 87 | Pending |
-| DEP-05 | Phase 87 | Pending |
-| DEP-06 | Phase 87 | Pending |
+| DEP-04 | Phase 87 | Complete |
+| DEP-05 | Phase 87 | Complete |
+| DEP-06 | Phase 87 | Complete |
 | KNW-01 | Phase 88 | Pending |
 | KNW-02 | Phase 88 | Pending |
 | KNW-03 | Phase 88 | Pending |

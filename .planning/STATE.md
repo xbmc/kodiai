@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
-**Plan:** 1 of 2 in current phase
-**Status:** In progress
+**Plan:** 2 of 2 in current phase (complete)
+**Status:** Phase complete
 **Last Activity:** 2026-02-24
 
-Progress: [#####-----] 50%
+Progress: [##########] 100%
 
 ## Accumulated Context
 
@@ -38,6 +38,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **87-01:** Grace window defaults to 5min (SHUTDOWN_GRACE_MS), extends once (doubles) on timeout
 - **87-01:** Readiness probe stays healthy during drain (single replica keeps accepting into queue)
 - **87-01:** Webhook queue telemetry uses fire-and-forget to avoid blocking enqueue
+- **87-02:** /healthz runs SELECT 1 against PostgreSQL for liveness; /health kept as backward-compatible alias
+- **87-02:** Startup webhook replay processes sequentially to avoid overwhelming system on cold start
+- **87-02:** Termination grace period set to 330s (5min SHUTDOWN_GRACE_MS + 30s buffer)
 
 ### Key Constraints (Carry-Forward)
 
@@ -70,7 +73,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T21:25:24Z
-**Stopped At:** Completed 87-01-PLAN.md
-**Resume File:** .planning/phases/87-graceful-shutdown-deploy-hardening/87-01-SUMMARY.md
-**Next action:** Execute 87-02-PLAN.md
+**Last session:** 2026-02-24T21:32:45.653Z
+**Stopped At:** Completed 87-02-PLAN.md (Phase 87 complete)
+**Resume File:** None
+**Next action:** Phase 87 complete. Proceed to next phase or verification.
