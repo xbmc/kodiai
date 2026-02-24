@@ -113,26 +113,26 @@ export type RateLimitEventRecord = {
 };
 
 /**
- * TelemetryStore interface for SQLite-backed execution telemetry.
+ * TelemetryStore interface for PostgreSQL-backed execution telemetry.
  *
- * Created via `createTelemetryStore({ dbPath, logger })` factory function.
- * Uses WAL mode, prepared statements, and auto-checkpoint every 1000 writes.
+ * Created via `createTelemetryStore({ sql, logger })` factory function.
+ * Uses postgres.js tagged-template queries with automatic prepared statements.
  */
 export type TelemetryStore = {
-  /** Insert a telemetry record into the executions table. */
-  record(entry: TelemetryRecord): void;
+  /** Insert a telemetry record into the telemetry_events table. */
+  record(entry: TelemetryRecord): Promise<void>;
   /** Count timeouts for repo+author in last 7 days. */
-  countRecentTimeouts?(repo: string, author: string): number;
-  /** Insert a retrieval quality record into the retrieval_quality table. */
-  recordRetrievalQuality(entry: RetrievalQualityRecord): void;
+  countRecentTimeouts?(repo: string, author: string): Promise<number>;
+  /** Insert a retrieval quality record into the retrieval_quality_events table. */
+  recordRetrievalQuality(entry: RetrievalQualityRecord): Promise<void>;
   /** Insert Search rate-limit telemetry for observability. */
-  recordRateLimitEvent(entry: RateLimitEventRecord): void;
+  recordRateLimitEvent(entry: RateLimitEventRecord): Promise<void>;
   /** Insert structured checkpoint/retry metadata for resilience monitoring. */
-  recordResilienceEvent?(entry: ResilienceEventRecord): void;
+  recordResilienceEvent?(entry: ResilienceEventRecord): Promise<void>;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */
-  purgeOlderThan(days: number): number;
-  /** Run a WAL checkpoint (PASSIVE mode). */
+  purgeOlderThan(days: number): Promise<number>;
+  /** No-op: PostgreSQL has no WAL checkpoint equivalent needed. */
   checkpoint(): void;
-  /** Close the database connection. */
+  /** No-op: connection lifecycle managed by client.ts. */
   close(): void;
 };

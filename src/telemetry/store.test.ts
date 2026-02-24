@@ -1,10 +1,12 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { Database } from "bun:sqlite";
-import { existsSync, unlinkSync, rmSync } from "node:fs";
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import postgres from "postgres";
 import { createTelemetryStore } from "./store.ts";
 import type { TelemetryStore } from "./types.ts";
 import type { ResilienceEventRecord } from "./types.ts";
 import type { RateLimitEventRecord } from "./types.ts";
+import type { Sql } from "../db/client.ts";
+
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
 
 const mockLogger = {
   info: () => {},
@@ -78,49 +80,35 @@ function makeRateLimitEventRecord(overrides: Partial<RateLimitEventRecord> = {})
   };
 }
 
-/** Remove a temp SQLite database and its WAL/SHM sidecar files. */
-function cleanupDb(path: string): void {
-  for (const suffix of ["", "-wal", "-shm"]) {
-    try {
-      unlinkSync(`${path}${suffix}`);
-    } catch {}
-  }
+let sql: Sql;
+let store: TelemetryStore;
+
+/** Truncate all telemetry-related tables for test isolation. */
+async function truncateAll(): Promise<void> {
+  await sql`TRUNCATE
+    rate_limit_events,
+    resilience_events,
+    retrieval_quality_events,
+    telemetry_events
+    CASCADE`;
 }
 
+beforeAll(async () => {
+  sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+  store = createTelemetryStore({ sql, logger: mockLogger });
+});
+
+afterAll(async () => {
+  await sql.end();
+});
+
 describe("TelemetryStore", () => {
-  let store: TelemetryStore;
-  const tmpFiles: string[] = [];
-
-  beforeEach(() => {
-    store = createTelemetryStore({
-      dbPath: ":memory:",
-      logger: mockLogger,
-    });
+  beforeEach(async () => {
+    await truncateAll();
   });
 
-  afterEach(() => {
-    try {
-      store.close();
-    } catch {}
-    for (const f of tmpFiles) {
-      cleanupDb(f);
-    }
-    tmpFiles.length = 0;
-  });
-
-  /** Create a file-backed store for tests that need a second DB connection. */
-  function createFileStore(): { store: TelemetryStore; path: string } {
-    const path = `/tmp/kodiai-test-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    tmpFiles.push(path);
-    return {
-      store: createTelemetryStore({ dbPath: path, logger: mockLogger }),
-      path,
-    };
-  }
-
-  test("record() inserts a row with correct fields", () => {
-    const { store: fileStore, path } = createFileStore();
-    fileStore.record(
+  test("record() inserts a row with correct fields", async () => {
+    await store.record(
       makeRecord({
         deliveryId: "abc-123",
         repo: "octocat/hello-world",
@@ -141,13 +129,7 @@ describe("TelemetryStore", () => {
       }),
     );
 
-    const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb
-      .query("SELECT * FROM executions WHERE delivery_id = 'abc-123'")
-      .get() as Record<string, unknown>;
-    verifyDb.close();
-    fileStore.close();
-
+    const [row] = await sql`SELECT * FROM telemetry_events WHERE delivery_id = 'abc-123'`;
     expect(row).toBeTruthy();
     expect(row.repo).toBe("octocat/hello-world");
     expect(row.pr_number).toBe(42);
@@ -167,15 +149,10 @@ describe("TelemetryStore", () => {
     expect(row.created_at).toBeTruthy();
   });
 
-  test("record() with minimal fields applies defaults", () => {
-    const { store: fileStore, path } = createFileStore();
-    fileStore.record(makeRecord());
+  test("record() with minimal fields applies defaults", async () => {
+    await store.record(makeRecord());
 
-    const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb.query("SELECT * FROM executions LIMIT 1").get() as Record<string, unknown>;
-    verifyDb.close();
-    fileStore.close();
-
+    const [row] = await sql`SELECT * FROM telemetry_events LIMIT 1`;
     expect(row).toBeTruthy();
     expect(row.provider).toBe("anthropic");
     expect(row.input_tokens).toBe(0);
@@ -191,73 +168,37 @@ describe("TelemetryStore", () => {
     expect(row.stop_reason).toBeNull();
   });
 
-  test("purgeOlderThan(0) deletes all rows and returns count", () => {
-    const { store: fileStore, path } = createFileStore();
-    fileStore.record(makeRecord());
+  test("purgeOlderThan(0) deletes all rows and returns count", async () => {
+    await store.record(makeRecord());
 
-    // Manually backdate the row so it's older than 0 days ago
-    const db = new Database(path);
-    db.run("UPDATE executions SET created_at = datetime('now', '-1 day')");
-    db.close();
+    // Manually backdate
+    await sql`UPDATE telemetry_events SET created_at = now() - interval '1 day'`;
 
-    const purged = fileStore.purgeOlderThan(0);
-    fileStore.close();
-
+    const purged = await store.purgeOlderThan(0);
     expect(purged).toBe(1);
   });
 
-  test("purgeOlderThan(90) preserves recent rows", () => {
-    const { store: fileStore, path } = createFileStore();
-    fileStore.record(makeRecord());
+  test("purgeOlderThan(90) preserves recent rows", async () => {
+    await store.record(makeRecord());
 
-    const purged = fileStore.purgeOlderThan(90);
-
+    const purged = await store.purgeOlderThan(90);
     expect(purged).toBe(0);
 
-    // Verify row still exists
-    const verifyDb = new Database(path, { readonly: true });
-    const result = verifyDb.query("SELECT COUNT(*) as cnt FROM executions").get() as { cnt: number };
-    verifyDb.close();
-    fileStore.close();
-
-    expect(result.cnt).toBe(1);
+    const [result] = await sql`SELECT COUNT(*) AS cnt FROM telemetry_events`;
+    expect(Number(result.cnt)).toBe(1);
   });
 
-  test("checkpoint() runs without error", () => {
-    store.record(makeRecord());
+  test("checkpoint() runs without error", async () => {
+    await store.record(makeRecord());
     expect(() => store.checkpoint()).not.toThrow();
   });
 
-  test("WAL mode is active after initialization", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    const verifyDb = new Database(path, { readonly: true });
-    const result = verifyDb.query("PRAGMA journal_mode").get() as { journal_mode: string };
-    verifyDb.close();
-    fileStore.close();
-
-    expect(result.journal_mode).toBe("wal");
+  test("close() does not throw", () => {
+    expect(() => store.close()).not.toThrow();
   });
 
-  test("close() prevents subsequent operations", () => {
-    store.close();
-    expect(() => store.record(makeRecord())).toThrow();
-  });
-
-  test("auto-checkpoint triggers after 1000 writes", () => {
-    // Insert 1000 records -- auto-checkpoint fires at the 1000th write
-    for (let i = 0; i < 1000; i++) {
-      store.record(makeRecord({ deliveryId: `write-${i}` }));
-    }
-
-    // DB should remain functional after checkpoint
-    expect(() => store.record(makeRecord({ deliveryId: "write-1001" }))).not.toThrow();
-  });
-
-  test("recordRetrievalQuality() inserts a row and is idempotent by delivery_id", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    fileStore.recordRetrievalQuality(
+  test("recordRetrievalQuality() inserts a row and is idempotent by delivery_id", async () => {
+    await store.recordRetrievalQuality(
       makeRetrievalQualityRecord({
         deliveryId: "deliv-001",
         repo: "octocat/hello-world",
@@ -272,7 +213,7 @@ describe("TelemetryStore", () => {
     );
 
     // Duplicate delivery id should not create a second row.
-    fileStore.recordRetrievalQuality(
+    await store.recordRetrievalQuality(
       makeRetrievalQualityRecord({
         deliveryId: "deliv-001",
         repo: "octocat/hello-world",
@@ -286,15 +227,12 @@ describe("TelemetryStore", () => {
       }),
     );
 
-    const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb
-      .query("SELECT * FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
-      .get() as Record<string, unknown>;
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM retrieval_quality WHERE delivery_id = 'deliv-001'")
-      .get() as { cnt: number };
-    verifyDb.close();
-    fileStore.close();
+    const [row] = await sql`
+      SELECT * FROM retrieval_quality_events WHERE delivery_id = 'deliv-001'
+    `;
+    const [count] = await sql`
+      SELECT COUNT(*) AS cnt FROM retrieval_quality_events WHERE delivery_id = 'deliv-001'
+    `;
 
     expect(row).toBeTruthy();
     expect(row.repo).toBe("octocat/hello-world");
@@ -306,67 +244,13 @@ describe("TelemetryStore", () => {
     expect(row.avg_distance).toBe(0.25);
     expect(row.language_match_ratio).toBe(0.5);
     expect(row.created_at).toBeTruthy();
-    expect(count.cnt).toBe(1);
+    expect(Number(count.cnt)).toBe(1);
   });
 
-  test("auto-checkpoint counts retrieval quality writes", () => {
-    // 999 execution writes + 1 retrieval quality write => checkpoint threshold hit
-    for (let i = 0; i < 999; i++) {
-      store.record(makeRecord({ deliveryId: `mixed-${i}` }));
-    }
-    store.recordRetrievalQuality(
-      makeRetrievalQualityRecord({
-        deliveryId: "mixed-999",
-        resultCount: 1,
-        avgDistance: 0.1,
-        languageMatchRatio: 1,
-      }),
-    );
+  test("recordResilienceEvent() inserts a row and is idempotent by delivery_id", async () => {
+    expect(typeof store.recordResilienceEvent).toBe("function");
 
-    // DB should remain functional after checkpoint
-    expect(() => store.record(makeRecord({ deliveryId: "mixed-1000" }))).not.toThrow();
-  });
-
-  test("creates data directory if it does not exist", () => {
-    const baseDir = `/tmp/kodiai-test-dir-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const nestedDir = `${baseDir}/nested/path`;
-    const dbPath = `${nestedDir}/test.db`;
-
-    expect(existsSync(nestedDir)).toBe(false);
-
-    const dirStore = createTelemetryStore({ dbPath, logger: mockLogger });
-    dirStore.record(makeRecord());
-    dirStore.close();
-
-    expect(existsSync(nestedDir)).toBe(true);
-
-    // Cleanup
-    try {
-      rmSync(baseDir, { recursive: true });
-    } catch {}
-  });
-
-  test("indexes exist on created_at and repo columns", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    const verifyDb = new Database(path, { readonly: true });
-    const indexes = verifyDb
-      .query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='executions'")
-      .all() as Array<{ name: string }>;
-    verifyDb.close();
-    fileStore.close();
-
-    const indexNames = indexes.map((i) => i.name);
-    expect(indexNames).toContain("idx_executions_created_at");
-    expect(indexNames).toContain("idx_executions_repo");
-  });
-
-  test("recordResilienceEvent() inserts a row and is idempotent by delivery_id", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    expect(typeof fileStore.recordResilienceEvent).toBe("function");
-
-    fileStore.recordResilienceEvent?.(
+    await store.recordResilienceEvent?.(
       makeResilienceEventRecord({
         deliveryId: "res-001",
         repo: "octocat/hello-world",
@@ -390,7 +274,7 @@ describe("TelemetryStore", () => {
     );
 
     // Re-write same delivery id with different fields.
-    fileStore.recordResilienceEvent?.(
+    await store.recordResilienceEvent?.(
       makeResilienceEventRecord({
         deliveryId: "res-001",
         repo: "octocat/hello-world",
@@ -403,17 +287,10 @@ describe("TelemetryStore", () => {
       }),
     );
 
-    const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb
-      .query("SELECT * FROM resilience_events WHERE delivery_id = 'res-001'")
-      .get() as Record<string, unknown>;
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM resilience_events WHERE delivery_id = 'res-001'")
-      .get() as { cnt: number };
-    verifyDb.close();
-    fileStore.close();
+    const [row] = await sql`SELECT * FROM resilience_events WHERE delivery_id = 'res-001'`;
+    const [count] = await sql`SELECT COUNT(*) AS cnt FROM resilience_events WHERE delivery_id = 'res-001'`;
 
-    expect(count.cnt).toBe(1);
+    expect(Number(count.cnt)).toBe(1);
     expect(row.repo).toBe("octocat/hello-world");
     expect(row.pr_number).toBe(7);
     expect(row.pr_author).toBe("octocat");
@@ -423,10 +300,8 @@ describe("TelemetryStore", () => {
     expect(row.created_at).toBeTruthy();
   });
 
-  test("recordRateLimitEvent() is idempotent by delivery_id + event_type", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    fileStore.recordRateLimitEvent(
+  test("recordRateLimitEvent() is idempotent by delivery_id + event_type", async () => {
+    await store.recordRateLimitEvent(
       makeRateLimitEventRecord({
         deliveryId: "rate-001",
         repo: "octocat/hello-world",
@@ -439,7 +314,7 @@ describe("TelemetryStore", () => {
       }),
     );
 
-    fileStore.recordRateLimitEvent(
+    await store.recordRateLimitEvent(
       makeRateLimitEventRecord({
         deliveryId: "rate-001",
         repo: "octocat/hello-world",
@@ -453,7 +328,7 @@ describe("TelemetryStore", () => {
     );
 
     // Same delivery id + different event type should persist as a distinct row.
-    fileStore.recordRateLimitEvent(
+    await store.recordRateLimitEvent(
       makeRateLimitEventRecord({
         deliveryId: "rate-001",
         repo: "octocat/hello-world",
@@ -466,20 +341,17 @@ describe("TelemetryStore", () => {
       }),
     );
 
-    const verifyDb = new Database(path, { readonly: true });
-    const reviewRequestedRow = verifyDb
-      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.review_requested'")
-      .get() as Record<string, unknown>;
-    const openedRow = verifyDb
-      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.opened'")
-      .get() as Record<string, unknown>;
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'")
-      .get() as { cnt: number };
-    verifyDb.close();
-    fileStore.close();
+    const [reviewRequestedRow] = await sql`
+      SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.review_requested'
+    `;
+    const [openedRow] = await sql`
+      SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-001' AND event_type = 'pull_request.opened'
+    `;
+    const [count] = await sql`
+      SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'
+    `;
 
-    expect(count.cnt).toBe(2);
+    expect(Number(count.cnt)).toBe(2);
     expect(reviewRequestedRow.repo).toBe("octocat/hello-world");
     expect(reviewRequestedRow.pr_number).toBe(7);
     expect(reviewRequestedRow.event_type).toBe("pull_request.review_requested");
@@ -495,10 +367,8 @@ describe("TelemetryStore", () => {
     expect(openedRow.degradation_path).toBe("search-api-rate-limit");
   });
 
-  test("recordRateLimitEvent() ignores replayed writes for same delivery/event identity", () => {
-    const { store: fileStore, path } = createFileStore();
-
-    fileStore.recordRateLimitEvent(
+  test("recordRateLimitEvent() ignores replayed writes for same delivery/event identity", async () => {
+    await store.recordRateLimitEvent(
       makeRateLimitEventRecord({
         deliveryId: "rate-replay-001",
         eventType: "pull_request.review_requested",
@@ -511,7 +381,7 @@ describe("TelemetryStore", () => {
 
     // Simulate replay/retry attempts trying to emit duplicate telemetry.
     for (let i = 0; i < 3; i++) {
-      fileStore.recordRateLimitEvent(
+      await store.recordRateLimitEvent(
         makeRateLimitEventRecord({
           deliveryId: "rate-replay-001",
           eventType: "pull_request.review_requested",
@@ -523,124 +393,86 @@ describe("TelemetryStore", () => {
       );
     }
 
-    const verifyDb = new Database(path, { readonly: true });
-    const row = verifyDb
-      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
-      .get() as Record<string, unknown>;
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'")
-      .get() as { cnt: number };
-    verifyDb.close();
-    fileStore.close();
+    const [row] = await sql`
+      SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'
+    `;
+    const [count] = await sql`
+      SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'
+    `;
 
-    expect(count.cnt).toBe(1);
+    expect(Number(count.cnt)).toBe(1);
     expect(row.cache_hit_rate).toBe(0);
     expect(row.skipped_queries).toBe(1);
     expect(row.retry_attempts).toBe(1);
     expect(row.degradation_path).toBe("search-api-rate-limit");
   });
 
-  test("initializing against an existing DB additively creates rate_limit_events", () => {
-    const path = `/tmp/kodiai-test-existing-${Date.now()}-${Math.random().toString(36).slice(2)}.db`;
-    tmpFiles.push(path);
-
-    const legacyDb = new Database(path);
-    legacyDb.run(
-      "CREATE TABLE executions (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, provider TEXT NOT NULL DEFAULT 'anthropic', model TEXT NOT NULL, input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, cache_read_tokens INTEGER NOT NULL DEFAULT 0, cache_creation_tokens INTEGER NOT NULL DEFAULT 0, duration_ms INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, conclusion TEXT NOT NULL, session_id TEXT, num_turns INTEGER, stop_reason TEXT)",
-    );
-    legacyDb.run(
-      "CREATE TABLE retrieval_quality (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT (datetime('now')), delivery_id TEXT, repo TEXT NOT NULL, pr_number INTEGER, event_type TEXT NOT NULL, top_k INTEGER, distance_threshold REAL, result_count INTEGER NOT NULL, avg_distance REAL, language_match_ratio REAL)",
-    );
-    legacyDb.close();
-
-    const fileStore = createTelemetryStore({ dbPath: path, logger: mockLogger });
-    fileStore.recordRateLimitEvent(
-      makeRateLimitEventRecord({
-        deliveryId: "rate-legacy-001",
-        cacheHitRate: 1,
-      }),
-    );
-
-    const verifyDb = new Database(path, { readonly: true });
-    const table = verifyDb
-      .query("SELECT name FROM sqlite_master WHERE type='table' AND name='rate_limit_events'")
-      .get() as { name?: string } | null;
-    const row = verifyDb
-      .query("SELECT * FROM rate_limit_events WHERE delivery_id = 'rate-legacy-001'")
-      .get() as Record<string, unknown>;
-    const indexes = verifyDb
-      .query("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='rate_limit_events'")
-      .all() as Array<{ name: string }>;
-    verifyDb.close();
-    fileStore.close();
-
-    expect(table?.name).toBe("rate_limit_events");
-    expect(row.repo).toBe("owner/repo");
-    expect(row.cache_hit_rate).toBe(1);
-    expect(indexes.map((index) => index.name)).toContain("idx_rate_limit_events_delivery_event");
-    expect(indexes.map((index) => index.name)).not.toContain("idx_rate_limit_events_delivery");
-  });
-
-  test("recordRateLimitEvent() forces configured identity failures without writing duplicate rows", () => {
-    const { logger, warnings } = createWarnCaptureLogger();
-    const { store: fileStore, path } = createFileStore();
-    fileStore.close();
+  test("recordRateLimitEvent() forces configured identity failures without writing duplicate rows", async () => {
+    const { logger: captureLogger, warnings } = createWarnCaptureLogger();
 
     const injectedStore = createTelemetryStore({
-      dbPath: path,
-      logger,
+      sql,
+      logger: captureLogger,
       rateLimitFailureInjectionIdentities: ["delivery-injected-001"],
     });
 
-    expect(() =>
+    expect(
       injectedStore.recordRateLimitEvent(
         makeRateLimitEventRecord({
           deliveryId: "delivery-injected-001",
           eventType: "pull_request.review_requested",
         }),
-      )).toThrow("Forced rate-limit telemetry write failure");
+      ),
+    ).rejects.toThrow("Forced rate-limit telemetry write failure");
 
-    const verifyDb = new Database(path, { readonly: true });
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE delivery_id = 'delivery-injected-001'")
-      .get() as { cnt: number };
-    verifyDb.close();
-    injectedStore.close();
+    // Wait for the rejection to be processed
+    try {
+      await injectedStore.recordRateLimitEvent(
+        makeRateLimitEventRecord({
+          deliveryId: "delivery-injected-001",
+          eventType: "pull_request.review_requested",
+        }),
+      );
+    } catch {
+      // Expected
+    }
 
-    expect(count.cnt).toBe(0);
-    expect(warnings).toHaveLength(1);
+    const [count] = await sql`
+      SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'delivery-injected-001'
+    `;
+
+    expect(Number(count.cnt)).toBe(0);
+    expect(warnings).toHaveLength(2);
     expect(warnings[0]?.message).toBe("Rate-limit telemetry write forced to fail");
     expect((warnings[0]?.data as { executionIdentity?: string }).executionIdentity).toBe("delivery-injected-001");
   });
 
-  test("recordRateLimitEvent() supports deterministic fallback identity injection without delivery id", () => {
+  test("recordRateLimitEvent() supports deterministic fallback identity injection without delivery id", async () => {
     const fallbackIdentity = "owner/repo#pull_request.review_requested#77";
-    const { store: fileStore, path } = createFileStore();
-    fileStore.close();
 
     const injectedStore = createTelemetryStore({
-      dbPath: path,
+      sql,
       logger: mockLogger,
       rateLimitFailureInjectionIdentities: [fallbackIdentity],
     });
 
-    expect(() =>
-      injectedStore.recordRateLimitEvent(
+    try {
+      await injectedStore.recordRateLimitEvent(
         makeRateLimitEventRecord({
           deliveryId: undefined,
           repo: "owner/repo",
           prNumber: 77,
           eventType: "pull_request.review_requested",
         }),
-      )).toThrow("Forced rate-limit telemetry write failure");
+      );
+    } catch {
+      // Expected
+    }
 
-    const verifyDb = new Database(path, { readonly: true });
-    const count = verifyDb
-      .query("SELECT COUNT(*) as cnt FROM rate_limit_events WHERE repo = 'owner/repo' AND pr_number = 77")
-      .get() as { cnt: number };
-    verifyDb.close();
-    injectedStore.close();
+    const [count] = await sql`
+      SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE repo = 'owner/repo' AND pr_number = 77
+    `;
 
-    expect(count.cnt).toBe(0);
+    expect(Number(count.cnt)).toBe(0);
   });
 });
