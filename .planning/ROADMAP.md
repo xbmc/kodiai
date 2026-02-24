@@ -140,7 +140,7 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
 
 - [x] **Phase 86: PostgreSQL + pgvector on Azure** - Provision Postgres, migrate all data, replace SQLite with pgvector and full-text search columns (completed 2026-02-24)
 - [x] **Phase 87: Graceful Shutdown + Deploy Hardening** - SIGTERM handling, drain logic, zero-downtime deploys on Azure Container Apps (completed 2026-02-24)
-- [ ] **Phase 88: Knowledge Layer Extraction** - Unified `src/knowledge/` module eliminating duplicate retrieval paths between GitHub and Slack
+- [x] **Phase 88: Knowledge Layer Extraction** - Unified `src/knowledge/` module eliminating duplicate retrieval paths between GitHub and Slack (completed 2026-02-24)
 
 ## Phase Details
 
@@ -185,7 +185,7 @@ Plans:
   2. Slack assistant handler imports from `src/knowledge/` instead of containing inline DB queries
   3. An E2E test proves that a Slack question and a PR review retrieve from the same corpus using the same code path
   4. No duplicate DB query logic exists between GitHub review and Slack assistant retrieval paths
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 88-01-PLAN.md — Move learning/ to knowledge/, create retrieval.ts and embeddings.ts facades
 - [ ] 88-02-PLAN.md — Wire handlers and Slack to knowledge module, E2E test, delete learning/
@@ -214,7 +214,7 @@ Plans:
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
 | 86 | v0.17 | Complete    | 2026-02-24 | 2026-02-24 |
 | 87 | 2/2 | Complete    | 2026-02-24 | - |
-| 88 | 1/2 | In Progress|  | - |
+| 88 | 2/2 | Complete   | 2026-02-24 | - |
 
 ---
 

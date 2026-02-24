@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.18 Knowledge Layer Extraction
 **Phase:** 88 (Knowledge Layer Extraction)
-**Plan:** 1 of 2 in current phase (plan 01 complete)
-**Status:** In progress
+**Plan:** 2 of 2 in current phase (all plans complete)
+**Status:** Phase complete
 **Last Activity:** 2026-02-24
 
-Progress: [#####-----] 50%
+Progress: [##########] 100%
 
 ## Accumulated Context
 
@@ -45,6 +45,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **88-01:** Factory pattern: createRetriever(deps) returns { retrieve(opts) } for dependency injection
 - **88-01:** Fail-open pipeline: entire retrieve() wrapped in try/catch returning null on failure
 - **88-01:** Learning types merged into knowledge/types.ts (single canonical location)
+- **88-02:** Retriever injected as single dep (not 5 separate deps) -- simplifies handler interfaces
+- **88-02:** Slack retrieval weaves findings into prompt text rather than structured context object
+- **88-02:** Clean break on src/learning/ deletion: no backward-compat re-exports
 
 ### Key Constraints (Carry-Forward)
 
@@ -77,7 +80,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T23:38:30Z
-**Stopped At:** Completed 88-01-PLAN.md
-**Resume File:** .planning/phases/88-knowledge-layer-extraction/88-01-SUMMARY.md
-**Next action:** Execute 88-02-PLAN.md (update handler imports, clean up src/learning/)
+**Last session:** 2026-02-24T23:51:11Z
+**Stopped At:** Completed 88-02-PLAN.md (phase 88 complete)
+**Resume File:** .planning/phases/88-knowledge-layer-extraction/88-02-SUMMARY.md
+**Next action:** Next phase or milestone planning
