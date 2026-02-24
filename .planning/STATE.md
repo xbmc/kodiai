@@ -12,7 +12,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
 **Plan:** 2 of 2 in current phase (complete)
-**Status:** Phase complete
+**Status:** Milestone complete
 **Last Activity:** 2026-02-24
 
 Progress: [##########] 100%
