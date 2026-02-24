@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
-**Plan:** 0 of ? in current phase
-**Status:** Milestone complete
+**Plan:** 1 of 2 in current phase
+**Status:** In progress
 **Last Activity:** 2026-02-24
 
-Progress: [##########] 100%
+Progress: [#####-----] 50%
 
 ## Accumulated Context
 
@@ -35,6 +35,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **86-04:** All stores share single PostgreSQL connection pool via createDbClient()
 - **86-04:** Removed TELEMETRY_DB_PATH and KNOWLEDGE_DB_PATH env vars -- replaced by single DATABASE_URL
 - **86-04:** All handler store calls now properly await async methods (26+ call sites updated)
+- **87-01:** Grace window defaults to 5min (SHUTDOWN_GRACE_MS), extends once (doubles) on timeout
+- **87-01:** Readiness probe stays healthy during drain (single replica keeps accepting into queue)
+- **87-01:** Webhook queue telemetry uses fire-and-forget to avoid blocking enqueue
 
 ### Key Constraints (Carry-Forward)
 
@@ -67,7 +70,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T18:23:01.670Z
-**Stopped At:** Phase 87 context gathered
-**Resume File:** .planning/phases/87-graceful-shutdown-deploy-hardening/87-CONTEXT.md
-**Next action:** Plan Phase 87 (Graceful Shutdown + Deploy Hardening)
+**Last session:** 2026-02-24T21:25:24Z
+**Stopped At:** Completed 87-01-PLAN.md
+**Resume File:** .planning/phases/87-graceful-shutdown-deploy-hardening/87-01-SUMMARY.md
+**Next action:** Execute 87-02-PLAN.md

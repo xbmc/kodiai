@@ -171,7 +171,7 @@ Plans:
   2. The grace window is configurable via `SHUTDOWN_GRACE_MS` and defaults to 5 minutes
   3. A deploy during an active PR review completes the review without dropping the webhook or producing a partial result
   4. Azure Container Apps is configured with health probes and rolling deploy so at least one replica serves traffic at all times during deploy
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 87-01-PLAN.md — SIGTERM handling, drain logic, webhook queue, request tracking
 - [ ] 87-02-PLAN.md — Health probes, startup queue replay, deploy config, runbook
@@ -210,7 +210,7 @@ Plans:
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
 | 86 | v0.17 | Complete    | 2026-02-24 | 2026-02-24 |
-| 87 | v0.17 | 0/? | Not started | - |
+| 87 | 1/2 | In Progress|  | - |
 | 88 | v0.17 | 0/? | Not started | - |
 
 ---
