@@ -67,7 +67,7 @@ completed: 2026-02-24
 - **Duration:** 17 min
 - **Started:** 2026-02-24T05:00:19Z
 - **Completed:** 2026-02-24T05:17:04Z
-- **Tasks:** 2 of 3 (task 3 is human verification checkpoint)
+- **Tasks:** 3 of 3 (all complete, including human verification)
 - **Files modified:** 17
 
 ## Accomplishments
@@ -84,7 +84,7 @@ Each task was committed atomically:
 
 1. **Task 1: Update application entry point, create migration script, clean up SQLite** - `d3ad130912` (feat)
 2. **Task 2: Update CI for PostgreSQL and run full integration test suite** - `5379af76fa` (feat)
-3. **Task 3: Verify PostgreSQL swap and approve Azure deploy** - checkpoint:human-verify (pending)
+3. **Task 3: Verify PostgreSQL swap and approve Azure deploy** - checkpoint:human-verify (APPROVED)
 
 ## Files Created/Modified
 - `src/index.ts` - Unified PostgreSQL initialization, removed all SQLite imports and env vars
@@ -140,16 +140,24 @@ Each task was committed atomically:
 - Pre-existing TypeScript errors in knowledge/store.ts (TransactionSql type issues from 86-02) remain -- these are not caused by this plan and do not affect runtime behavior.
 
 ## User Setup Required
-Before Azure deploy:
-1. Run `bash scripts/provision-postgres.sh` to create Azure PostgreSQL Flexible Server
-2. Run `DATABASE_URL=<azure-connection-string> bun scripts/migrate-sqlite-to-postgres.ts` to migrate data
-3. Add `DATABASE_URL` to Azure Container Apps secrets
-4. Deploy and verify health endpoint returns 200
+None - Azure PostgreSQL provisioned and verified during Task 3 human-verify checkpoint:
+- PostgreSQL Flexible Server provisioned in westus2 (kodiai-pg) with pgvector extension
+- Migrations applied successfully
+- DATABASE_URL secret added to Azure Container Apps
+- Health endpoint returns 200; logs confirm all stores initialized on PostgreSQL
 
 ## Next Phase Readiness
-- Application fully running on PostgreSQL -- SQLite completely removed from runtime
-- CI configured for PostgreSQL testing
-- Ready for Azure deploy after human verification (Task 3 checkpoint)
+- Phase 86 complete: all data in PostgreSQL, SQLite fully removed, live on Azure
+- Phase 87 (Graceful Shutdown + Deploy Hardening) can proceed -- database layer is stable
+- Phase 88 (Knowledge Layer Extraction) can proceed -- all stores use unified postgres.js interface
+
+## Self-Check: PASSED
+
+All files and commits verified:
+- scripts/migrate-sqlite-to-postgres.ts: FOUND
+- 86-04-SUMMARY.md: FOUND
+- Commit d3ad130912: FOUND
+- Commit 5379af76fa: FOUND
 
 ---
 *Phase: 86-postgresql-pgvector-on-azure*

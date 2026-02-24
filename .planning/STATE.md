@@ -5,15 +5,15 @@
 See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 86 - PostgreSQL + pgvector on Azure
+**Current focus:** Phase 87 - Graceful Shutdown + Deploy Hardening
 
 ## Current Position
 
 **Milestone:** v0.17 Infrastructure Foundation
-**Phase:** 86 of 88 (PostgreSQL + pgvector on Azure)
-**Plan:** 4 of 4 in current phase
-**Status:** Executing (checkpoint: human-verify pending)
-**Last Activity:** 2026-02-24 — Completed 86-04 tasks 1-2 (Integration wiring and SQLite removal)
+**Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
+**Plan:** 0 of ? in current phase
+**Status:** Phase 86 complete, Phase 87 not started
+**Last Activity:** 2026-02-24 — Completed 86-04 (Azure deploy verified, PostgreSQL migration complete)
 
 Progress: [##########] 100%
 
@@ -67,7 +67,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T05:17:04Z
-**Stopped At:** 86-04 checkpoint:human-verify (Task 3 -- verify PostgreSQL swap and approve Azure deploy)
+**Last session:** 2026-02-24T06:02:00Z
+**Stopped At:** Completed 86-04-PLAN.md (Phase 86 complete)
 **Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-04-SUMMARY.md
-**Next action:** Verify PostgreSQL swap works end-to-end, then deploy to Azure
+**Next action:** Plan Phase 87 (Graceful Shutdown + Deploy Hardening)

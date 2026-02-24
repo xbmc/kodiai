@@ -157,10 +157,10 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
 **Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 86-01-PLAN.md -- PostgreSQL foundation: provisioning, schema, migrations, client
-- [ ] 86-02-PLAN.md -- Port KnowledgeStore and TelemetryStore to postgres.js
-- [ ] 86-03-PLAN.md -- Port LearningMemoryStore to pgvector
-- [ ] 86-04-PLAN.md -- Wire entry point, migration script, CI, SQLite removal, deploy
+- [x] 86-01-PLAN.md -- PostgreSQL foundation: provisioning, schema, migrations, client
+- [x] 86-02-PLAN.md -- Port KnowledgeStore and TelemetryStore to postgres.js
+- [x] 86-03-PLAN.md -- Port LearningMemoryStore to pgvector
+- [x] 86-04-PLAN.md -- Wire entry point, migration script, CI, SQLite removal, deploy
 
 ### Phase 87: Graceful Shutdown + Deploy Hardening
 **Goal**: Server handles SIGTERM gracefully, drains in-flight work, and Azure deploys cause zero dropped webhooks
@@ -206,7 +206,7 @@ Plans:
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
-| 86 | 4/4 | Complete   | 2026-02-24 | - |
+| 86 | v0.17 | 4/4 | Complete | 2026-02-24 |
 | 87 | v0.17 | 0/? | Not started | - |
 | 88 | v0.17 | 0/? | Not started | - |
 
