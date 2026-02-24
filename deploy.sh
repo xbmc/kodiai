@@ -58,6 +58,7 @@ missing=()
 [[ -z "${SLACK_SIGNING_SECRET:-}" ]]      && missing+=("SLACK_SIGNING_SECRET")
 [[ -z "${SLACK_BOT_USER_ID:-}" ]]         && missing+=("SLACK_BOT_USER_ID")
 [[ -z "${SLACK_KODIAI_CHANNEL_ID:-}" ]]   && missing+=("SLACK_KODIAI_CHANNEL_ID")
+[[ -z "${DATABASE_URL:-}" ]]              && missing+=("DATABASE_URL")
 
 if [[ ${#missing[@]} -gt 0 ]]; then
   echo "ERROR: The following environment variables are required but not set:"
@@ -68,6 +69,9 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   echo "Hint: base64-encode your PEM key with:  base64 -w0 < private-key.pem"
   exit 1
 fi
+
+# -- Optional environment variables with defaults --------------------------------
+SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-300000}
 
 echo "==> Installing / upgrading Azure CLI extensions..."
 if ! az extension show --name containerapp >/dev/null 2>&1; then
@@ -171,6 +175,7 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
       voyage-api-key="$VOYAGE_API_KEY" \
       slack-bot-token="$SLACK_BOT_TOKEN" \
       slack-signing-secret="$SLACK_SIGNING_SECRET" \
+      database-url="$DATABASE_URL" \
     --output none
 
   az containerapp update \
@@ -186,12 +191,15 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
       VOYAGE_API_KEY=secretref:voyage-api-key \
       SLACK_BOT_TOKEN=secretref:slack-bot-token \
       SLACK_SIGNING_SECRET=secretref:slack-signing-secret \
+      DATABASE_URL=secretref:database-url \
       SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
       SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
+      SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
       PORT=3000 \
       LOG_LEVEL=info \
     --min-replicas 1 \
     --max-replicas 1 \
+    --termination-grace-period 330 \
     --output none
 else
   echo "==> Creating container app: $APP_NAME..."
@@ -207,6 +215,7 @@ else
     --ingress external \
     --min-replicas 1 \
     --max-replicas 1 \
+    --termination-grace-period 330 \
     --secrets \
       github-app-id="$GITHUB_APP_ID" \
       github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
@@ -215,6 +224,7 @@ else
       voyage-api-key="$VOYAGE_API_KEY" \
       slack-bot-token="$SLACK_BOT_TOKEN" \
       slack-signing-secret="$SLACK_SIGNING_SECRET" \
+      database-url="$DATABASE_URL" \
     --env-vars \
       GITHUB_APP_ID=secretref:github-app-id \
       GITHUB_PRIVATE_KEY=secretref:github-private-key \
@@ -223,8 +233,10 @@ else
       VOYAGE_API_KEY=secretref:voyage-api-key \
       SLACK_BOT_TOKEN=secretref:slack-bot-token \
       SLACK_SIGNING_SECRET=secretref:slack-signing-secret \
+      DATABASE_URL=secretref:database-url \
       SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
       SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
+      SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
       PORT=3000 \
       LOG_LEVEL=info \
     --output none
@@ -254,10 +266,14 @@ properties:
             secretRef: slack-bot-token
           - name: SLACK_SIGNING_SECRET
             secretRef: slack-signing-secret
+          - name: DATABASE_URL
+            secretRef: database-url
           - name: SLACK_BOT_USER_ID
             value: "${SLACK_BOT_USER_ID}"
           - name: SLACK_KODIAI_CHANNEL_ID
             value: "${SLACK_KODIAI_CHANNEL_ID}"
+          - name: SHUTDOWN_GRACE_MS
+            value: "${SHUTDOWN_GRACE_MS}"
           - name: PORT
             value: "3000"
           - name: LOG_LEVEL
@@ -265,7 +281,7 @@ properties:
         probes:
           - type: liveness
             httpGet:
-              path: /health
+              path: /healthz
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 30
@@ -279,11 +295,11 @@ properties:
             failureThreshold: 3
           - type: startup
             httpGet:
-              path: /health
+              path: /healthz
               port: 3000
             initialDelaySeconds: 3
-            periodSeconds: 3
-            failureThreshold: 30
+            periodSeconds: 5
+            failureThreshold: 40
 YAML
 
   az containerapp update \
@@ -300,6 +316,30 @@ FQDN=$(az containerapp show \
   --resource-group "$RESOURCE_GROUP" \
   --query properties.configuration.ingress.fqdn \
   --output tsv)
+
+# -- Post-deploy health check --------------------------------------------------
+echo "==> Waiting for new revision to become healthy (up to 60s)..."
+HEALTH_OK=false
+for i in $(seq 1 12); do
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/healthz" 2>/dev/null || echo "000")
+  if [[ "$HTTP_STATUS" == "200" ]]; then
+    HEALTH_OK=true
+    echo "  Health check passed (HTTP $HTTP_STATUS)"
+    break
+  fi
+  echo "  Attempt $i/12: HTTP $HTTP_STATUS, retrying in 5s..."
+  sleep 5
+done
+
+if [[ "$HEALTH_OK" != "true" ]]; then
+  echo ""
+  echo "WARNING: Post-deploy health check failed!"
+  echo "  The new revision may not be healthy."
+  echo "  To rollback, list revisions and redirect traffic:"
+  echo "    az containerapp revision list -n $APP_NAME -g $RESOURCE_GROUP -o table"
+  echo "    az containerapp ingress traffic set -n $APP_NAME -g $RESOURCE_GROUP --revision-weight <prev-revision>=100"
+  echo ""
+fi
 
 # -- Done ---------------------------------------------------------------------
 echo ""
