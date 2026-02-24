@@ -14,10 +14,10 @@ Requirements for v0.16 Review Coverage & Slack UX.
 
 ### Slack UX
 
-- [ ] **SLK-07**: Slack responses omit preamble phrases ("Here's a summary", "Here's what I found")
-- [ ] **SLK-08**: Slack responses omit Sources/References sections
-- [ ] **SLK-09**: Slack responses are concise (1-3 sentences for simple questions, proportional for complex ones)
-- [ ] **SLK-10**: Slack responses use conversational tone (no headers/bullet structure for simple answers)
+- [x] **SLK-07**: Slack responses omit preamble phrases ("Here's a summary", "Here's what I found")
+- [x] **SLK-08**: Slack responses omit Sources/References sections
+- [x] **SLK-09**: Slack responses are concise (1-3 sentences for simple questions, proportional for complex ones)
+- [x] **SLK-10**: Slack responses use conversational tone (no headers/bullet structure for simple answers)
 
 ## Future Requirements
 
@@ -37,10 +37,10 @@ None deferred.
 |-------------|-------|--------|
 | REV-01 | Phase 82 | Complete |
 | REV-02 | Phase 82 | Complete |
-| SLK-07 | Phase 83 | Pending |
-| SLK-08 | Phase 83 | Pending |
-| SLK-09 | Phase 83 | Pending |
-| SLK-10 | Phase 83 | Pending |
+| SLK-07 | Phase 83 | Complete |
+| SLK-08 | Phase 83 | Complete |
+| SLK-09 | Phase 83 | Complete |
+| SLK-10 | Phase 83 | Complete |
 
 **Coverage:**
 - v0.16 requirements: 6 total

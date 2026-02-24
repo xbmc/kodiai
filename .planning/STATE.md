@@ -10,9 +10,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 ## Current Position
 
 **Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 82 (Draft PR Review Coverage) -- Plan 1 of 1 complete
+**Phase:** 83 (Slack Response Conciseness) -- Plan 1 of 1 complete
 **Status:** Ready to plan
-**Last Activity:** 2026-02-23
+**Last Activity:** 2026-02-24
 
 **Progress:** [██████████] 100%
 
@@ -29,6 +29,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 | Phase 85 P01 | 4 min | 2 tasks | 7 files |
 | Phase 85 P02 | 6 min | 2 tasks | 10 files |
 | Phase 82 P01 | 4 min | 2 tasks | 6 files |
+| Phase 83 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -42,6 +43,7 @@ All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 85]: Inline Map-based rate limiter for Slack events rather than external dependency
 - [Phase 82]: ready_for_review action forces isDraft=false regardless of pr.draft payload value
 - [Phase 82]: Draft framing only applies to standard template, not delta re-review template
+- [Phase 83]: Prompt encodes all four conciseness dimensions inline rather than referencing external config
 
 ### Key Constraints (Carry-Forward)
 
@@ -80,7 +82,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T01:30:00.152Z
-**Stopped At:** Phase 83 context gathered
-**Resume File:** .planning/phases/83-slack-response-conciseness/83-CONTEXT.md
-**Next action:** Phase 82 complete; draft PR reviews enabled with soft tone
+**Last session:** 2026-02-24T02:02:00Z
+**Stopped At:** Completed 83-01-PLAN.md
+**Resume File:** .planning/phases/83-slack-response-conciseness/83-01-SUMMARY.md
+**Next action:** Phase 83 complete; Slack prompt conciseness rules live
