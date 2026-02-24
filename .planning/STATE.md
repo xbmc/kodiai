@@ -67,7 +67,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T06:02:00Z
-**Stopped At:** Completed 86-04-PLAN.md (Phase 86 complete)
-**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-04-SUMMARY.md
+**Last session:** 2026-02-24T18:23:01.670Z
+**Stopped At:** Phase 87 context gathered
+**Resume File:** .planning/phases/87-graceful-shutdown-deploy-hardening/87-CONTEXT.md
 **Next action:** Plan Phase 87 (Graceful Shutdown + Deploy Hardening)
