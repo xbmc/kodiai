@@ -18,6 +18,7 @@
 - ✅ **v0.14 Slack Integration** — Phases 77-80 (shipped 2026-02-19)
 - ✅ **v0.15 Slack Write Workflows** — Phase 81 (shipped 2026-02-19)
 - ✅ **v0.16 Review Coverage & Slack UX** — Phases 82-85 (shipped 2026-02-24)
+- [ ] **v0.17 Infrastructure Foundation** — Phases 86-88 (in progress)
 
 ## Phases
 
@@ -133,6 +134,50 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
 
 </details>
 
+### v0.17 Infrastructure Foundation (In Progress)
+
+**Milestone Goal:** Replace SQLite with shared PostgreSQL + pgvector, harden the deployment lifecycle, and extract a unified knowledge layer for both GitHub and Slack.
+
+- [ ] **Phase 86: PostgreSQL + pgvector on Azure** - Provision Postgres, migrate all data, replace SQLite with pgvector and full-text search columns
+- [ ] **Phase 87: Graceful Shutdown + Deploy Hardening** - SIGTERM handling, drain logic, zero-downtime deploys on Azure Container Apps
+- [ ] **Phase 88: Knowledge Layer Extraction** - Unified `src/knowledge/` module eliminating duplicate retrieval paths between GitHub and Slack
+
+## Phase Details
+
+### Phase 86: PostgreSQL + pgvector on Azure
+**Goal**: All persistent data lives in PostgreSQL with pgvector indexes and full-text search columns, SQLite fully removed
+**Depends on**: Nothing (first phase of v0.17)
+**Requirements**: DB-01, DB-02, DB-03, DB-04, DB-05, DB-06, DB-07, DB-08, DB-09
+**Success Criteria** (what must be TRUE):
+  1. Application boots and connects to Azure PostgreSQL Flexible Server with pgvector extension loaded
+  2. All existing PR, issue, and embedding data is queryable in PostgreSQL after migration
+  3. Vector similarity queries return results using HNSW indexes with correct distance operators
+  4. `tsvector` columns exist on document/chunk tables and accept full-text search queries
+  5. Integration test suite passes against a Dockerized PostgreSQL instance locally and in CI, with no sqlite-vec or better-sqlite3 imports remaining
+**Plans**: TBD
+
+### Phase 87: Graceful Shutdown + Deploy Hardening
+**Goal**: Server handles SIGTERM gracefully, drains in-flight work, and Azure deploys cause zero dropped webhooks
+**Depends on**: Phase 86
+**Requirements**: DEP-01, DEP-02, DEP-03, DEP-04, DEP-05, DEP-06
+**Success Criteria** (what must be TRUE):
+  1. Sending SIGTERM to the running server causes it to stop accepting new requests and wait for in-flight requests to finish before exiting
+  2. The grace window is configurable via `SHUTDOWN_GRACE_MS` and defaults to 5 minutes
+  3. A deploy during an active PR review completes the review without dropping the webhook or producing a partial result
+  4. Azure Container Apps is configured with health probes and rolling deploy so at least one replica serves traffic at all times during deploy
+**Plans**: TBD
+
+### Phase 88: Knowledge Layer Extraction
+**Goal**: GitHub and Slack retrieval share a single `src/knowledge/` module with no duplicated query logic
+**Depends on**: Phase 86
+**Requirements**: KNW-01, KNW-02, KNW-03, KNW-04, KNW-05, KNW-06
+**Success Criteria** (what must be TRUE):
+  1. `src/knowledge/retrieval.ts` and `src/knowledge/embeddings.ts` exist and are the sole entry points for retrieval and embedding operations
+  2. Slack assistant handler imports from `src/knowledge/` instead of containing inline DB queries
+  3. An E2E test proves that a Slack question and a PR review retrieve from the same corpus using the same code path
+  4. No duplicate DB query logic exists between GitHub review and Slack assistant retrieval paths
+**Plans**: TBD
+
 ## Progress
 
 **Total shipped:** 16 milestones, 85 phases, 204 plans
@@ -155,7 +200,10 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
+| 86 | v0.17 | 0/? | Not started | - |
+| 87 | v0.17 | 0/? | Not started | - |
+| 88 | v0.17 | 0/? | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-24 -- v0.16 shipped*
+*Roadmap updated: 2026-02-23 -- v0.17 roadmap created*

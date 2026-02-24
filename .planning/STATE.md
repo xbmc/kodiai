@@ -5,14 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.17 Infrastructure Foundation
+**Current focus:** Phase 86 - PostgreSQL + pgvector on Azure
 
 ## Current Position
 
 **Milestone:** v0.17 Infrastructure Foundation
-**Phase:** Not started (defining requirements)
-**Status:** Defining requirements
-**Last Activity:** 2026-02-23 — Milestone v0.17 started
+**Phase:** 86 of 88 (PostgreSQL + pgvector on Azure)
+**Plan:** 0 of ? in current phase
+**Status:** Ready to plan
+**Last Activity:** 2026-02-23 — Roadmap created for v0.17
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
@@ -22,12 +25,11 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 
 ### Key Constraints (Carry-Forward)
 
-- Timeout retry capped at 1 max to avoid queue starvation
-- Adaptive thresholds need minimum 8-candidate guard
-- Recency weighting needs severity-aware decay floor (0.3 minimum)
-- Checkpoint publishing must use buffer-and-flush on abort, not streaming
 - Schema migrations must be additive-only (new tables, nullable columns)
 - Slack v1: single workspace, single channel (#kodiai), in-process session state
+- Timeout retry capped at 1 max to avoid queue starvation
+- Adaptive thresholds need minimum 8-candidate guard
+- Checkpoint publishing must use buffer-and-flush on abort, not streaming
 
 ### Pending Todos
 
@@ -37,10 +39,6 @@ None.
 
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed. Only review on initial open/ready or manual `review_requested`.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to (via @kodiai mention or review request trigger).
-
-### Roadmap Evolution
-
-None — clean slate for v0.17.
 
 ### Blockers/Concerns
 
@@ -57,6 +55,6 @@ None — clean slate for v0.17.
 ## Session Continuity
 
 **Last session:** 2026-02-23
-**Stopped At:** Defining v0.17 requirements
-**Resume File:** .planning/MILESTONES.md
-**Next action:** Complete requirements and roadmap for v0.17
+**Stopped At:** Roadmap created for v0.17 Infrastructure Foundation
+**Resume File:** None
+**Next action:** `/gsd:plan-phase 86`
