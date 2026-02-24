@@ -171,7 +171,10 @@ Plans:
   2. The grace window is configurable via `SHUTDOWN_GRACE_MS` and defaults to 5 minutes
   3. A deploy during an active PR review completes the review without dropping the webhook or producing a partial result
   4. Azure Container Apps is configured with health probes and rolling deploy so at least one replica serves traffic at all times during deploy
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 87-01-PLAN.md — SIGTERM handling, drain logic, webhook queue, request tracking
+- [ ] 87-02-PLAN.md — Health probes, startup queue replay, deploy config, runbook
 
 ### Phase 88: Knowledge Layer Extraction
 **Goal**: GitHub and Slack retrieval share a single `src/knowledge/` module with no duplicated query logic
