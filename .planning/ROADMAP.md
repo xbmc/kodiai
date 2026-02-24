@@ -154,7 +154,7 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
   3. Vector similarity queries return results using HNSW indexes with correct distance operators
   4. `tsvector` columns exist on document/chunk tables and accept full-text search queries
   5. Integration test suite passes against a Dockerized PostgreSQL instance locally and in CI, with no sqlite-vec or better-sqlite3 imports remaining
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 - [ ] 86-01-PLAN.md -- PostgreSQL foundation: provisioning, schema, migrations, client
@@ -206,7 +206,7 @@ Plans:
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
-| 86 | v0.17 | 0/? | Not started | - |
+| 86 | 1/4 | In Progress|  | - |
 | 87 | v0.17 | 0/? | Not started | - |
 | 88 | v0.17 | 0/? | Not started | - |
 
