@@ -35,6 +35,7 @@
     "p-queue": "^9.1.0",
     "picomatch": "^4.0.2",
     "pino": "^10.3.0",
+    "postgres": "^3.4.8",
     "sqlite-vec": "^0.1.7-alpha.2",
     "voyageai": "^0.1.0",
     "zod": "^4.3.6"
