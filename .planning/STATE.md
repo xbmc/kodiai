@@ -5,17 +5,17 @@
 See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 87 - Graceful Shutdown + Deploy Hardening
+**Current focus:** Phase 88 - Knowledge Layer Extraction
 
 ## Current Position
 
-**Milestone:** v0.17 Infrastructure Foundation
-**Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
-**Plan:** 2 of 2 in current phase (complete)
-**Status:** Milestone complete
+**Milestone:** v0.18 Knowledge Layer Extraction
+**Phase:** 88 (Knowledge Layer Extraction)
+**Plan:** 1 of 2 in current phase (plan 01 complete)
+**Status:** In progress
 **Last Activity:** 2026-02-24
 
-Progress: [##########] 100%
+Progress: [#####-----] 50%
 
 ## Accumulated Context
 
@@ -41,6 +41,10 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **87-02:** /healthz runs SELECT 1 against PostgreSQL for liveness; /health kept as backward-compatible alias
 - **87-02:** Startup webhook replay processes sequentially to avoid overwhelming system on cold start
 - **87-02:** Termination grace period set to 330s (5min SHUTDOWN_GRACE_MS + 30s buffer)
+- **88-01:** Multi-query first-class: queries[] array maps to variant types (intent, file-path, code-shape)
+- **88-01:** Factory pattern: createRetriever(deps) returns { retrieve(opts) } for dependency injection
+- **88-01:** Fail-open pipeline: entire retrieve() wrapped in try/catch returning null on failure
+- **88-01:** Learning types merged into knowledge/types.ts (single canonical location)
 
 ### Key Constraints (Carry-Forward)
 
@@ -73,7 +77,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T23:14:51.006Z
-**Stopped At:** Phase 88 context gathered
-**Resume File:** .planning/phases/88-knowledge-layer-extraction/88-CONTEXT.md
-**Next action:** Phase 87 complete. Proceed to next phase or verification.
+**Last session:** 2026-02-24T23:38:30Z
+**Stopped At:** Completed 88-01-PLAN.md
+**Resume File:** .planning/phases/88-knowledge-layer-extraction/88-01-SUMMARY.md
+**Next action:** Execute 88-02-PLAN.md (update handler imports, clean up src/learning/)

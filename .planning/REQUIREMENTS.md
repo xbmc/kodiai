@@ -30,10 +30,10 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 
 ### Knowledge
 
-- [ ] **KNW-01**: Retrieval logic extracted into `src/knowledge/retrieval.ts`
-- [ ] **KNW-02**: Embedding logic extracted into `src/knowledge/embeddings.ts`
+- [x] **KNW-01**: Retrieval logic extracted into `src/knowledge/retrieval.ts`
+- [x] **KNW-02**: Embedding logic extracted into `src/knowledge/embeddings.ts`
 - [ ] **KNW-03**: Slack assistant handler uses `src/knowledge/` instead of inline queries
-- [ ] **KNW-04**: Shared context-building utilities (chunk ranking, source attribution) in knowledge module
+- [x] **KNW-04**: Shared context-building utilities (chunk ranking, source attribution) in knowledge module
 - [ ] **KNW-05**: No duplicate DB query logic between GitHub and Slack retrieval paths
 - [ ] **KNW-06**: E2E test verifies Slack retrieves from same corpus as PR review
 
@@ -78,10 +78,10 @@ Requirements for v0.17 Infrastructure Foundation. Each maps to roadmap phases.
 | DEP-04 | Phase 87 | Complete |
 | DEP-05 | Phase 87 | Complete |
 | DEP-06 | Phase 87 | Complete |
-| KNW-01 | Phase 88 | Pending |
-| KNW-02 | Phase 88 | Pending |
+| KNW-01 | Phase 88 | Complete |
+| KNW-02 | Phase 88 | Complete |
 | KNW-03 | Phase 88 | Pending |
-| KNW-04 | Phase 88 | Pending |
+| KNW-04 | Phase 88 | Complete |
 | KNW-05 | Phase 88 | Pending |
 | KNW-06 | Phase 88 | Pending |
 

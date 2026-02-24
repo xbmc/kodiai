@@ -185,7 +185,7 @@ Plans:
   2. Slack assistant handler imports from `src/knowledge/` instead of containing inline DB queries
   3. An E2E test proves that a Slack question and a PR review retrieve from the same corpus using the same code path
   4. No duplicate DB query logic exists between GitHub review and Slack assistant retrieval paths
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 88-01-PLAN.md — Move learning/ to knowledge/, create retrieval.ts and embeddings.ts facades
 - [ ] 88-02-PLAN.md — Wire handlers and Slack to knowledge module, E2E test, delete learning/
@@ -214,7 +214,7 @@ Plans:
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
 | 86 | v0.17 | Complete    | 2026-02-24 | 2026-02-24 |
 | 87 | 2/2 | Complete    | 2026-02-24 | - |
-| 88 | v0.17 | 0/? | Not started | - |
+| 88 | 1/2 | In Progress|  | - |
 
 ---
 
