@@ -1,10 +1,10 @@
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { Database } from "bun:sqlite";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import postgres from "postgres";
 import { createKnowledgeStore } from "./store.ts";
 import type { KnowledgeStore } from "./types.ts";
+import type { Sql } from "../db/client.ts";
+
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
 
 const mockLogger = {
   info: () => {},
@@ -17,41 +17,40 @@ const mockLogger = {
   level: "silent",
 } as unknown as import("pino").Logger;
 
-function createFileStore(): { store: KnowledgeStore; dbPath: string; cleanup: () => void } {
-  const dir = mkdtempSync(join(tmpdir(), "kodiai-knowledge-test-"));
-  const dbPath = join(dir, "knowledge.db");
-  const store = createKnowledgeStore({ dbPath, logger: mockLogger });
-  return {
-    store,
-    dbPath,
-    cleanup: () => {
-      try {
-        store.close();
-      } catch {
-        // ignore close errors in test cleanup
-      }
-      try {
-        rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup failures
-      }
-    },
-  };
+let sql: Sql;
+let store: KnowledgeStore;
+
+/** Truncate all knowledge-related tables for test isolation. */
+async function truncateAll(): Promise<void> {
+  await sql`TRUNCATE
+    review_checkpoints,
+    feedback_reactions,
+    suppression_log,
+    findings,
+    dep_bump_merge_history,
+    global_patterns,
+    author_cache,
+    run_state,
+    reviews
+    CASCADE`;
 }
 
+beforeAll(async () => {
+  sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+  store = createKnowledgeStore({ sql, logger: mockLogger });
+});
+
+afterAll(async () => {
+  await sql.end();
+});
+
 describe("KnowledgeStore", () => {
-  let fixture: { store: KnowledgeStore; dbPath: string; cleanup: () => void };
-
-  beforeEach(() => {
-    fixture = createFileStore();
+  beforeEach(async () => {
+    await truncateAll();
   });
 
-  afterEach(() => {
-    fixture.cleanup();
-  });
-
-  test("recordReview returns integer id and persists review row", () => {
-    const reviewId = fixture.store.recordReview({
+  test("recordReview returns integer id and persists review row", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 42,
       headSha: "abc123",
@@ -73,10 +72,7 @@ describe("KnowledgeStore", () => {
     expect(Number.isInteger(reviewId)).toBe(true);
     expect(reviewId).toBeGreaterThan(0);
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const row = db.query("SELECT * FROM reviews WHERE id = ?").get(reviewId) as Record<string, unknown>;
-    db.close();
-
+    const [row] = await sql`SELECT * FROM reviews WHERE id = ${reviewId}`;
     expect(row).toBeTruthy();
     expect(row.repo).toBe("owner/repo");
     expect(row.pr_number).toBe(42);
@@ -85,8 +81,8 @@ describe("KnowledgeStore", () => {
     expect(row.suppressions_applied).toBe(2);
   });
 
-  test("recordFindings batch inserts findings linked to review", () => {
-    const reviewId = fixture.store.recordReview({
+  test("recordFindings batch inserts findings linked to review", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 7,
       filesAnalyzed: 2,
@@ -100,7 +96,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         filePath: "src/api/auth.ts",
@@ -114,22 +110,16 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const finding = db.query("SELECT * FROM findings WHERE review_id = ?").get(reviewId) as Record<
-      string,
-      unknown
-    >;
-    db.close();
-
+    const [finding] = await sql`SELECT * FROM findings WHERE review_id = ${reviewId}`;
     expect(finding).toBeTruthy();
     expect(finding.file_path).toBe("src/api/auth.ts");
     expect(finding.severity).toBe("major");
     expect(finding.category).toBe("security");
-    expect(finding.suppressed).toBe(0);
+    expect(finding.suppressed).toBe(false);
   });
 
-  test("recordFindings persists deterministic comment linkage fields", () => {
-    const reviewId = fixture.store.recordReview({
+  test("recordFindings persists deterministic comment linkage fields", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 77,
       filesAnalyzed: 1,
@@ -143,7 +133,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         commentId: 1234,
@@ -158,19 +148,16 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const finding = db
-      .query("SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ?")
-      .get(reviewId) as Record<string, unknown>;
-    db.close();
-
+    const [finding] = await sql`
+      SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ${reviewId}
+    `;
     expect(finding.comment_id).toBe(1234);
     expect(finding.comment_surface).toBe("pull_request_review_comment");
     expect(finding.review_output_key).toBe("kodiai-review-output:v1:test");
   });
 
-  test("recordFeedbackReactions is append-only and deduplicates by repo/comment/reaction", () => {
-    const reviewId = fixture.store.recordReview({
+  test("recordFeedbackReactions is append-only and deduplicates by repo/comment/reaction", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 88,
       filesAnalyzed: 1,
@@ -184,7 +171,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         commentId: 222,
@@ -199,13 +186,9 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const findingRow = db
-      .query("SELECT id FROM findings WHERE review_id = ?")
-      .get(reviewId) as { id: number };
-    db.close();
+    const [findingRow] = await sql`SELECT id FROM findings WHERE review_id = ${reviewId}`;
 
-    fixture.store.recordFeedbackReactions([
+    await store.recordFeedbackReactions([
       {
         repo: "owner/repo",
         reviewId,
@@ -253,13 +236,10 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const verifyDb = new Database(fixture.dbPath, { readonly: true });
-    const rows = verifyDb
-      .query(
-        "SELECT reaction_content, reactor_login, severity, category, file_path, title FROM feedback_reactions WHERE finding_id = ? ORDER BY reaction_id ASC",
-      )
-      .all(findingRow.id) as Array<Record<string, unknown>>;
-    verifyDb.close();
+    const rows = await sql`
+      SELECT reaction_content, reactor_login, severity, category, file_path, title
+      FROM feedback_reactions WHERE finding_id = ${findingRow.id} ORDER BY reaction_id ASC
+    `;
 
     expect(rows).toHaveLength(2);
     expect(rows[0]?.reaction_content).toBe("+1");
@@ -272,8 +252,8 @@ describe("KnowledgeStore", () => {
     expect(rows[0]?.title).toBe("Sanitize request body");
   });
 
-  test("listRecentFindingCommentCandidates returns linked findings for repo", () => {
-    const reviewId = fixture.store.recordReview({
+  test("listRecentFindingCommentCandidates returns linked findings for repo", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 89,
       filesAnalyzed: 1,
@@ -287,7 +267,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         commentId: 444,
@@ -302,7 +282,7 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const candidates = fixture.store.listRecentFindingCommentCandidates("owner/repo", 10);
+    const candidates = await store.listRecentFindingCommentCandidates("owner/repo", 10);
     expect(candidates.length).toBe(1);
     expect(candidates[0]?.commentId).toBe(444);
     expect(candidates[0]?.commentSurface).toBe("pull_request_review_comment");
@@ -310,8 +290,8 @@ describe("KnowledgeStore", () => {
     expect(candidates[0]?.filePath).toBe("src/candidate.ts");
   });
 
-  test("getFindingByCommentId returns finding metadata and null when missing", () => {
-    const reviewId = fixture.store.recordReview({
+  test("getFindingByCommentId returns finding metadata and null when missing", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 90,
       filesAnalyzed: 1,
@@ -325,7 +305,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         commentId: 5566,
@@ -341,7 +321,7 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const finding = fixture.store.getFindingByCommentId?.({
+    const finding = await store.getFindingByCommentId?.({
       repo: "owner/repo",
       commentId: 5566,
     });
@@ -353,15 +333,15 @@ describe("KnowledgeStore", () => {
       title: "Guard nullable value",
     });
 
-    const missing = fixture.store.getFindingByCommentId?.({
+    const missing = await store.getFindingByCommentId?.({
       repo: "owner/repo",
       commentId: 999999,
     });
     expect(missing).toBeNull();
   });
 
-  test("upsertAuthorCache persists and retrieves author cache rows", () => {
-    fixture.store.upsertAuthorCache?.({
+  test("upsertAuthorCache persists and retrieves author cache rows", async () => {
+    await store.upsertAuthorCache?.({
       repo: "owner/repo",
       authorLogin: "alice",
       tier: "regular",
@@ -369,21 +349,20 @@ describe("KnowledgeStore", () => {
       prCount: 3,
     });
 
-    const cached = fixture.store.getAuthorCache?.({
+    const cached = await store.getAuthorCache?.({
       repo: "owner/repo",
       authorLogin: "alice",
     });
 
-    expect(cached).toEqual({
-      tier: "regular",
-      authorAssociation: "CONTRIBUTOR",
-      prCount: 3,
-      cachedAt: expect.any(String),
-    });
+    expect(cached).toBeTruthy();
+    expect(cached!.tier).toBe("regular");
+    expect(cached!.authorAssociation).toBe("CONTRIBUTOR");
+    expect(cached!.prCount).toBe(3);
+    expect(cached!.cachedAt).toBeTruthy();
   });
 
-  test("upsertAuthorCache skips write when repo identity is missing", () => {
-    fixture.store.upsertAuthorCache?.({
+  test("upsertAuthorCache skips write when repo identity is missing", async () => {
+    await store.upsertAuthorCache?.({
       repo: "",
       authorLogin: "alice",
       tier: "regular",
@@ -391,17 +370,12 @@ describe("KnowledgeStore", () => {
       prCount: 1,
     });
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const countRow = db
-      .query("SELECT COUNT(*) AS count FROM author_cache")
-      .get() as { count: number };
-    db.close();
-
-    expect(countRow.count).toBe(0);
+    const [countRow] = await sql`SELECT COUNT(*) AS count FROM author_cache`;
+    expect(Number(countRow.count)).toBe(0);
   });
 
-  test("recordSuppressionLog stores suppression entries", () => {
-    const reviewId = fixture.store.recordReview({
+  test("recordSuppressionLog stores suppression entries", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 9,
       filesAnalyzed: 1,
@@ -415,7 +389,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordSuppressionLog([
+    await store.recordSuppressionLog([
       {
         reviewId,
         pattern: "missing JSDoc",
@@ -424,28 +398,22 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const row = db.query("SELECT * FROM suppression_log WHERE review_id = ?").get(reviewId) as Record<
-      string,
-      unknown
-    >;
-    db.close();
-
+    const [row] = await sql`SELECT * FROM suppression_log WHERE review_id = ${reviewId}`;
     expect(row).toBeTruthy();
     expect(row.pattern).toBe("missing JSDoc");
     expect(row.matched_count).toBe(2);
     expect(row.finding_ids).toBe("[11,12]");
   });
 
-  test("recordGlobalPattern upserts anonymized aggregate counts", () => {
-    fixture.store.recordGlobalPattern({
+  test("recordGlobalPattern upserts anonymized aggregate counts", async () => {
+    await store.recordGlobalPattern({
       severity: "major",
       category: "correctness",
       confidenceBand: "high",
       patternFingerprint: "fp-abc123",
       count: 2,
     });
-    fixture.store.recordGlobalPattern({
+    await store.recordGlobalPattern({
       severity: "major",
       category: "correctness",
       confidenceBand: "high",
@@ -453,14 +421,10 @@ describe("KnowledgeStore", () => {
       count: 3,
     });
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const row = db
-      .query(
-        "SELECT severity, category, confidence_band, pattern_fingerprint, count FROM global_patterns WHERE pattern_fingerprint = ?",
-      )
-      .get("fp-abc123") as Record<string, unknown>;
-    db.close();
-
+    const [row] = await sql`
+      SELECT severity, category, confidence_band, pattern_fingerprint, count
+      FROM global_patterns WHERE pattern_fingerprint = ${"fp-abc123"}
+    `;
     expect(row.severity).toBe("major");
     expect(row.category).toBe("correctness");
     expect(row.confidence_band).toBe("high");
@@ -468,8 +432,8 @@ describe("KnowledgeStore", () => {
     expect(row.count).toBe(5);
   });
 
-  test("recordDepBumpMergeHistory persists idempotent dep bump merge row", () => {
-    fixture.store.recordDepBumpMergeHistory({
+  test("recordDepBumpMergeHistory persists idempotent dep bump merge row", async () => {
+    await store.recordDepBumpMergeHistory({
       repo: "owner/repo",
       prNumber: 123,
       mergedAt: "2026-02-15T00:00:00Z",
@@ -487,27 +451,22 @@ describe("KnowledgeStore", () => {
       isSecurityBump: false,
     });
 
-    fixture.store.recordDepBumpMergeHistory({
+    await store.recordDepBumpMergeHistory({
       repo: "owner/repo",
       prNumber: 123,
       source: "dependabot",
       packageName: "lodash",
     });
 
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const countRow = db
-      .query(
-        "SELECT COUNT(*) AS count FROM dep_bump_merge_history WHERE repo = ? AND pr_number = ?",
-      )
-      .get("owner/repo", 123) as { count: number };
-    const row = db
-      .query(
-        "SELECT repo, pr_number, source, package_name, semver_bump_type FROM dep_bump_merge_history WHERE repo = ? AND pr_number = ?",
-      )
-      .get("owner/repo", 123) as Record<string, unknown>;
-    db.close();
+    const [countRow] = await sql`
+      SELECT COUNT(*) AS count FROM dep_bump_merge_history WHERE repo = ${"owner/repo"} AND pr_number = ${123}
+    `;
+    const [row] = await sql`
+      SELECT repo, pr_number, source, package_name, semver_bump_type
+      FROM dep_bump_merge_history WHERE repo = ${"owner/repo"} AND pr_number = ${123}
+    `;
 
-    expect(countRow.count).toBe(1);
+    expect(Number(countRow.count)).toBe(1);
     expect(row.repo).toBe("owner/repo");
     expect(row.pr_number).toBe(123);
     expect(row.source).toBe("dependabot");
@@ -515,8 +474,8 @@ describe("KnowledgeStore", () => {
     expect(row.semver_bump_type).toBe("patch");
   });
 
-  test("getRepoStats returns aggregate totals and top files", () => {
-    const reviewId = fixture.store.recordReview({
+  test("getRepoStats returns aggregate totals and top files", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 1,
       filesAnalyzed: 3,
@@ -530,7 +489,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         filePath: "src/a.ts",
@@ -552,7 +511,7 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const stats = fixture.store.getRepoStats("owner/repo");
+    const stats = await store.getRepoStats("owner/repo");
     expect(stats.totalReviews).toBe(1);
     expect(stats.totalFindings).toBe(2);
     expect(stats.findingsBySeverity.critical).toBe(1);
@@ -563,8 +522,8 @@ describe("KnowledgeStore", () => {
     expect(stats.topFiles[0]).toEqual({ path: "src/a.ts", findingCount: 2 });
   });
 
-  test("getRepoTrends returns daily aggregate rows", () => {
-    const reviewId = fixture.store.recordReview({
+  test("getRepoTrends returns daily aggregate rows", async () => {
+    const reviewId = await store.recordReview({
       repo: "owner/repo",
       prNumber: 3,
       filesAnalyzed: 2,
@@ -578,7 +537,7 @@ describe("KnowledgeStore", () => {
       conclusion: "success",
     });
 
-    fixture.store.recordFindings([
+    await store.recordFindings([
       {
         reviewId,
         filePath: "src/trends.ts",
@@ -599,7 +558,7 @@ describe("KnowledgeStore", () => {
       },
     ]);
 
-    const trends = fixture.store.getRepoTrends("owner/repo", 30);
+    const trends = await store.getRepoTrends("owner/repo", 30);
     expect(trends.length).toBeGreaterThan(0);
     expect(trends[0]?.reviewCount).toBe(1);
     expect(trends[0]?.findingsCount).toBe(2);
@@ -607,8 +566,8 @@ describe("KnowledgeStore", () => {
     expect(trends[0]?.avgConfidence).toBe(65);
   });
 
-  test("empty repo returns zeroed stats and empty trends", () => {
-    const stats = fixture.store.getRepoStats("unknown/repo");
+  test("empty repo returns zeroed stats and empty trends", async () => {
+    const stats = await store.getRepoStats("unknown/repo");
     expect(stats.totalReviews).toBe(0);
     expect(stats.totalFindings).toBe(0);
     expect(stats.totalSuppressed).toBe(0);
@@ -616,13 +575,13 @@ describe("KnowledgeStore", () => {
     expect(stats.avgConfidence).toBe(0);
     expect(stats.topFiles).toEqual([]);
 
-    const trends = fixture.store.getRepoTrends("unknown/repo", 30);
+    const trends = await store.getRepoTrends("unknown/repo", 30);
     expect(trends).toEqual([]);
   });
 
-  test("enforces foreign key constraints", () => {
-    expect(() =>
-      fixture.store.recordFindings([
+  test("enforces foreign key constraints", async () => {
+    expect(
+      store.recordFindings([
         {
           reviewId: 999_999,
           filePath: "src/nope.ts",
@@ -632,10 +591,11 @@ describe("KnowledgeStore", () => {
           title: "Orphan finding",
           suppressed: false,
         },
-      ])).toThrow();
+      ]),
+    ).rejects.toThrow();
 
-    expect(() =>
-      fixture.store.recordFeedbackReactions([
+    expect(
+      store.recordFeedbackReactions([
         {
           repo: "owner/repo",
           reviewId: 999_998,
@@ -650,50 +610,13 @@ describe("KnowledgeStore", () => {
           filePath: "src/nope.ts",
           title: "Orphan reaction",
         },
-      ])).toThrow();
-  });
-
-  test("WAL mode and foreign key relationships are present", () => {
-    const db = new Database(fixture.dbPath, { readonly: true });
-    const journalMode = db.query("PRAGMA journal_mode").get() as { journal_mode: string };
-    const findingsFk = db.query("PRAGMA foreign_key_list(findings)").all() as Array<
-      Record<string, unknown>
-    >;
-    const suppressionFk = db.query("PRAGMA foreign_key_list(suppression_log)").all() as Array<
-      Record<string, unknown>
-    >;
-    const reactionFk = db.query("PRAGMA foreign_key_list(feedback_reactions)").all() as Array<
-      Record<string, unknown>
-    >;
-    db.close();
-
-    expect(journalMode.journal_mode).toBe("wal");
-    expect(findingsFk.length).toBeGreaterThan(0);
-    expect(suppressionFk.length).toBeGreaterThan(0);
-    expect(reactionFk.length).toBeGreaterThan(0);
-  });
-
-  test("close prevents future operations", () => {
-    fixture.store.close();
-    expect(() =>
-      fixture.store.recordReview({
-        repo: "owner/repo",
-        prNumber: 1,
-        filesAnalyzed: 0,
-        linesChanged: 0,
-        findingsCritical: 0,
-        findingsMajor: 0,
-        findingsMedium: 0,
-        findingsMinor: 0,
-        findingsTotal: 0,
-        suppressionsApplied: 0,
-        conclusion: "success",
-      })).toThrow();
+      ]),
+    ).rejects.toThrow();
   });
 
   describe("run state", () => {
-    test("checkAndClaimRun returns new for first run", () => {
-      const result = fixture.store.checkAndClaimRun({
+    test("checkAndClaimRun returns new for first run", async () => {
+      const result = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 10,
         baseSha: "base-aaa",
@@ -708,7 +631,7 @@ describe("KnowledgeStore", () => {
       expect(result.supersededRunKeys).toEqual([]);
     });
 
-    test("checkAndClaimRun returns duplicate for same SHA pair", () => {
+    test("checkAndClaimRun returns duplicate for same SHA pair", async () => {
       const params = {
         repo: "owner/repo",
         prNumber: 11,
@@ -718,11 +641,11 @@ describe("KnowledgeStore", () => {
         action: "opened",
       };
 
-      const first = fixture.store.checkAndClaimRun(params);
+      const first = await store.checkAndClaimRun(params);
       expect(first.shouldProcess).toBe(true);
       expect(first.reason).toBe("new");
 
-      const second = fixture.store.checkAndClaimRun({
+      const second = await store.checkAndClaimRun({
         ...params,
         deliveryId: "delivery-second",
       });
@@ -730,8 +653,8 @@ describe("KnowledgeStore", () => {
       expect(second.reason).toBe("duplicate");
     });
 
-    test("force push supersedes prior runs", () => {
-      const firstRun = fixture.store.checkAndClaimRun({
+    test("force push supersedes prior runs", async () => {
+      const firstRun = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 12,
         baseSha: "base-aaa",
@@ -742,7 +665,7 @@ describe("KnowledgeStore", () => {
       expect(firstRun.shouldProcess).toBe(true);
       expect(firstRun.reason).toBe("new");
 
-      const secondRun = fixture.store.checkAndClaimRun({
+      const secondRun = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 12,
         baseSha: "base-aaa",
@@ -754,17 +677,13 @@ describe("KnowledgeStore", () => {
       expect(secondRun.reason).toBe("superseded-prior");
       expect(secondRun.supersededRunKeys).toContain(firstRun.runKey);
 
-      // Verify the old run is now superseded in the database
-      const db = new Database(fixture.dbPath, { readonly: true });
-      const row = db.query("SELECT status, superseded_by FROM run_state WHERE run_key = ?").get(firstRun.runKey) as Record<string, unknown>;
-      db.close();
-
+      const [row] = await sql`SELECT status, superseded_by FROM run_state WHERE run_key = ${firstRun.runKey}`;
       expect(row.status).toBe("superseded");
       expect(row.superseded_by).toBe(secondRun.runKey);
     });
 
-    test("completeRun marks run as completed", () => {
-      const result = fixture.store.checkAndClaimRun({
+    test("completeRun marks run as completed", async () => {
+      const result = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 13,
         baseSha: "base-ccc",
@@ -774,19 +693,15 @@ describe("KnowledgeStore", () => {
       });
       expect(result.shouldProcess).toBe(true);
 
-      fixture.store.completeRun(result.runKey);
+      await store.completeRun(result.runKey);
 
-      const db = new Database(fixture.dbPath, { readonly: true });
-      const row = db.query("SELECT status, completed_at FROM run_state WHERE run_key = ?").get(result.runKey) as Record<string, unknown>;
-      db.close();
-
+      const [row] = await sql`SELECT status, completed_at FROM run_state WHERE run_key = ${result.runKey}`;
       expect(row.status).toBe("completed");
       expect(row.completed_at).toBeTruthy();
     });
 
-    test("purgeOldRuns removes old completed runs", () => {
-      // Create and complete a run
-      const result = fixture.store.checkAndClaimRun({
+    test("purgeOldRuns removes old completed runs", async () => {
+      const result = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 14,
         baseSha: "base-eee",
@@ -794,28 +709,22 @@ describe("KnowledgeStore", () => {
         deliveryId: "delivery-d",
         action: "opened",
       });
-      fixture.store.completeRun(result.runKey);
+      await store.completeRun(result.runKey);
 
       // Manually backdate the run for purge testing
-      const db = new Database(fixture.dbPath);
-      db.run(
-        "UPDATE run_state SET created_at = datetime('now', '-60 days') WHERE run_key = ?",
-        [result.runKey],
-      );
-      db.close();
+      await sql`
+        UPDATE run_state SET created_at = now() - interval '60 days' WHERE run_key = ${result.runKey}
+      `;
 
-      const purged = fixture.store.purgeOldRuns(30);
+      const purged = await store.purgeOldRuns(30);
       expect(purged).toBeGreaterThanOrEqual(1);
 
-      const verifyDb = new Database(fixture.dbPath, { readonly: true });
-      const row = verifyDb.query("SELECT * FROM run_state WHERE run_key = ?").get(result.runKey);
-      verifyDb.close();
-
-      expect(row).toBeNull();
+      const rows = await sql`SELECT * FROM run_state WHERE run_key = ${result.runKey}`;
+      expect(rows.length).toBe(0);
     });
 
-    test("different delivery IDs for same SHA pair are still duplicates", () => {
-      const first = fixture.store.checkAndClaimRun({
+    test("different delivery IDs for same SHA pair are still duplicates", async () => {
+      const first = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 15,
         baseSha: "base-ggg",
@@ -825,7 +734,7 @@ describe("KnowledgeStore", () => {
       });
       expect(first.shouldProcess).toBe(true);
 
-      const second = fixture.store.checkAndClaimRun({
+      const second = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 15,
         baseSha: "base-ggg",
@@ -835,19 +744,15 @@ describe("KnowledgeStore", () => {
       });
       expect(second.shouldProcess).toBe(false);
       expect(second.reason).toBe("duplicate");
-
-      // Verify both share the same run_key
       expect(second.runKey).toBe(first.runKey);
     });
   });
 
   describe("incremental re-review queries", () => {
-    test("getLastReviewedHeadSha returns null when no completed review exists", () => {
-      // No runs at all
-      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
+    test("getLastReviewedHeadSha returns null when no completed review exists", async () => {
+      expect(await store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
 
-      // Pending run (not completed)
-      fixture.store.checkAndClaimRun({
+      await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 99,
         baseSha: "base-aaa",
@@ -855,12 +760,11 @@ describe("KnowledgeStore", () => {
         deliveryId: "delivery-pending",
         action: "opened",
       });
-      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
+      expect(await store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 99 })).toBeNull();
     });
 
-    test("getLastReviewedHeadSha returns head_sha of most recent completed review", () => {
-      // Create and complete first run
-      const first = fixture.store.checkAndClaimRun({
+    test("getLastReviewedHeadSha returns head_sha of most recent completed review", async () => {
+      const first = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 100,
         baseSha: "base-aaa",
@@ -868,12 +772,11 @@ describe("KnowledgeStore", () => {
         deliveryId: "delivery-first",
         action: "opened",
       });
-      fixture.store.completeRun(first.runKey);
+      await store.completeRun(first.runKey);
 
-      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-first");
+      expect(await store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-first");
 
-      // Create and complete second run (new push)
-      const second = fixture.store.checkAndClaimRun({
+      const second = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 100,
         baseSha: "base-aaa",
@@ -881,14 +784,13 @@ describe("KnowledgeStore", () => {
         deliveryId: "delivery-second",
         action: "synchronize",
       });
-      fixture.store.completeRun(second.runKey);
+      await store.completeRun(second.runKey);
 
-      expect(fixture.store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-second");
+      expect(await store.getLastReviewedHeadSha({ repo: "owner/repo", prNumber: 100 })).toBe("head-second");
     });
 
-    test("getPriorReviewFindings returns unsuppressed findings from latest completed review", () => {
-      // Set up a completed run + review with findings
-      const run = fixture.store.checkAndClaimRun({
+    test("getPriorReviewFindings returns unsuppressed findings from latest completed review", async () => {
+      const run = await store.checkAndClaimRun({
         repo: "owner/repo",
         prNumber: 200,
         baseSha: "base-aaa",
@@ -896,9 +798,9 @@ describe("KnowledgeStore", () => {
         deliveryId: "delivery-review-1",
         action: "opened",
       });
-      fixture.store.completeRun(run.runKey);
+      await store.completeRun(run.runKey);
 
-      const reviewId = fixture.store.recordReview({
+      const reviewId = await store.recordReview({
         repo: "owner/repo",
         prNumber: 200,
         headSha: "head-review-1",
@@ -914,7 +816,7 @@ describe("KnowledgeStore", () => {
         conclusion: "success",
       });
 
-      fixture.store.recordFindings([
+      await store.recordFindings([
         {
           reviewId,
           filePath: "src/api/routes.ts",
@@ -950,7 +852,7 @@ describe("KnowledgeStore", () => {
         },
       ]);
 
-      const findings = fixture.store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 200 });
+      const findings = await store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 200 });
       expect(findings).toHaveLength(2);
 
       expect(findings[0]?.filePath).toBe("src/api/routes.ts");
@@ -970,8 +872,8 @@ describe("KnowledgeStore", () => {
       expect(findings[1]?.commentId).toBeNull();
     });
 
-    test("getPriorReviewFindings returns empty array when no completed review exists", () => {
-      const findings = fixture.store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 999 });
+    test("getPriorReviewFindings returns empty array when no completed review exists", async () => {
+      const findings = await store.getPriorReviewFindings({ repo: "owner/repo", prNumber: 999 });
       expect(findings).toEqual([]);
     });
   });

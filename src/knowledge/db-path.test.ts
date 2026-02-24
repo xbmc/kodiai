@@ -1,52 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { join, resolve } from "node:path";
-import { DEFAULT_KNOWLEDGE_DB_PATH, resolveKnowledgeDbPath } from "./db-path.ts";
+import { resolveKnowledgeDbPath } from "./db-path.ts";
 
-describe("resolveKnowledgeDbPath", () => {
-  test("uses KNOWLEDGE_DB_PATH before default path", () => {
-    const runtimeDir = "/srv/kodiai-runtime";
+describe("resolveKnowledgeDbPath (deprecated - PostgreSQL migration)", () => {
+  test("returns DATABASE_URL when set", () => {
     const resolved = resolveKnowledgeDbPath({
-      env: { KNOWLEDGE_DB_PATH: "./runtime/kodiai-knowledge.db" },
-      cwd: runtimeDir,
+      env: { DATABASE_URL: "postgresql://kodiai:kodiai@localhost:5432/kodiai" },
     });
 
     expect(resolved.source).toBe("env");
-    expect(resolved.dbPath).toBe(resolve(runtimeDir, "./runtime/kodiai-knowledge.db"));
+    expect(resolved.dbPath).toBe("postgresql://kodiai:kodiai@localhost:5432/kodiai");
   });
 
-  test("gives explicit --db override precedence over KNOWLEDGE_DB_PATH", () => {
+  test("falls back to KNOWLEDGE_DB_PATH when DATABASE_URL not set", () => {
     const resolved = resolveKnowledgeDbPath({
-      dbPath: "./operator/override.db",
-      env: { KNOWLEDGE_DB_PATH: "./runtime/from-env.db" },
-      cwd: "/home/keith/src/kodiai",
+      env: { KNOWLEDGE_DB_PATH: "./data/legacy.db" },
     });
 
-    expect(resolved.source).toBe("arg");
-    expect(resolved.dbPath).toBe(resolve("/home/keith/src/kodiai", "./operator/override.db"));
+    expect(resolved.source).toBe("env");
+    expect(resolved.dbPath).toBe("./data/legacy.db");
   });
 
-  test("returns stable absolute default path from caller cwd", () => {
-    const resolved = resolveKnowledgeDbPath({ cwd: "/tmp/operator-session" });
+  test("returns default path when no env vars set", () => {
+    const resolved = resolveKnowledgeDbPath({ env: {} });
 
     expect(resolved.source).toBe("default");
-    expect(resolved.dbPath).toBe(join("/tmp/operator-session", DEFAULT_KNOWLEDGE_DB_PATH));
-  });
-
-  test("keeps runtime DB location when operator cwd differs", () => {
-    const runtimeDb = "/var/lib/kodiai/data/kodiai-knowledge.db";
-
-    const runtimeResolved = resolveKnowledgeDbPath({
-      env: { KNOWLEDGE_DB_PATH: runtimeDb },
-      cwd: "/srv/kodiai",
-    });
-
-    const operatorResolved = resolveKnowledgeDbPath({
-      env: { KNOWLEDGE_DB_PATH: runtimeDb },
-      cwd: "/home/keith/src/kodiai",
-    });
-
-    expect(runtimeResolved.dbPath).toBe(runtimeDb);
-    expect(operatorResolved.dbPath).toBe(runtimeDb);
-    expect(operatorResolved.source).toBe("env");
+    expect(resolved.dbPath).toBe("./data/kodiai-knowledge.db");
   });
 });
