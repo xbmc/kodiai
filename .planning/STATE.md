@@ -11,11 +11,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 86 of 88 (PostgreSQL + pgvector on Azure)
-**Plan:** 3 of 4 in current phase
-**Status:** Executing
-**Last Activity:** 2026-02-24 — Completed 86-03 (Learning memory store pgvector migration)
+**Plan:** 4 of 4 in current phase
+**Status:** Executing (checkpoint: human-verify pending)
+**Last Activity:** 2026-02-24 — Completed 86-04 tasks 1-2 (Integration wiring and SQLite removal)
 
-Progress: [#######░░░] 75%
+Progress: [##########] 100%
 
 ## Accumulated Context
 
@@ -32,6 +32,9 @@ All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions tab
 - **86-03:** All LearningMemoryStore methods async (Promise-based) to match postgres.js
 - **86-03:** Removed createNoOpStore fallback -- pgvector always available in PostgreSQL
 - **86-03:** ON CONFLICT DO NOTHING for duplicate writes instead of catching UNIQUE constraint
+- **86-04:** All stores share single PostgreSQL connection pool via createDbClient()
+- **86-04:** Removed TELEMETRY_DB_PATH and KNOWLEDGE_DB_PATH env vars -- replaced by single DATABASE_URL
+- **86-04:** All handler store calls now properly await async methods (26+ call sites updated)
 
 ### Key Constraints (Carry-Forward)
 
@@ -64,7 +67,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T04:58:00Z
-**Stopped At:** Completed 86-03-PLAN.md
-**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-03-SUMMARY.md
-**Next action:** `/gsd:execute-phase 86` (plan 04)
+**Last session:** 2026-02-24T05:17:04Z
+**Stopped At:** 86-04 checkpoint:human-verify (Task 3 -- verify PostgreSQL swap and approve Azure deploy)
+**Resume File:** .planning/phases/86-postgresql-pgvector-on-azure/86-04-SUMMARY.md
+**Next action:** Verify PostgreSQL swap works end-to-end, then deploy to Azure
