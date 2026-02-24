@@ -154,7 +154,13 @@ See `.planning/milestones/v0.16-ROADMAP.md` for full phase details.
   3. Vector similarity queries return results using HNSW indexes with correct distance operators
   4. `tsvector` columns exist on document/chunk tables and accept full-text search queries
   5. Integration test suite passes against a Dockerized PostgreSQL instance locally and in CI, with no sqlite-vec or better-sqlite3 imports remaining
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 86-01-PLAN.md -- PostgreSQL foundation: provisioning, schema, migrations, client
+- [ ] 86-02-PLAN.md -- Port KnowledgeStore and TelemetryStore to postgres.js
+- [ ] 86-03-PLAN.md -- Port LearningMemoryStore to pgvector
+- [ ] 86-04-PLAN.md -- Wire entry point, migration script, CI, SQLite removal, deploy
 
 ### Phase 87: Graceful Shutdown + Deploy Hardening
 **Goal**: Server handles SIGTERM gracefully, drains in-flight work, and Azure deploys cause zero dropped webhooks
