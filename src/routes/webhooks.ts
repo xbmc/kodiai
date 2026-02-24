@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.ts";
 import type { Deduplicator } from "../webhook/dedup.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
+import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../lifecycle/types.ts";
 import { verifyWebhookSignature } from "../webhook/verify.ts";
 import { createChildLogger } from "../lib/logger.ts";
 
@@ -13,10 +14,13 @@ interface WebhookRouteDeps {
   dedup: Deduplicator;
   githubApp: GitHubApp;
   eventRouter: EventRouter;
+  requestTracker: RequestTracker;
+  webhookQueueStore: WebhookQueueStore;
+  shutdownManager: ShutdownManager;
 }
 
 export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
-  const { config, logger, dedup, eventRouter } = deps;
+  const { config, logger, dedup, eventRouter, requestTracker, webhookQueueStore, shutdownManager } = deps;
   const app = new Hono();
 
   app.post("/github", async (c) => {
@@ -81,12 +85,37 @@ export function createWebhookRoutes(deps: WebhookRouteDeps): Hono {
       "Webhook accepted and queued for dispatch",
     );
 
+    // During shutdown drain: queue webhook to PostgreSQL for replay after restart
+    if (shutdownManager.isShuttingDown()) {
+      const headersRecord: Record<string, string> = {};
+      for (const [key, value] of Object.entries({
+        "x-hub-signature-256": signature ?? "",
+        "x-github-delivery": deliveryId,
+        "x-github-event": eventName,
+        "user-agent": userAgent,
+      })) {
+        headersRecord[key] = value;
+      }
+
+      await webhookQueueStore.enqueue({
+        source: "github",
+        deliveryId,
+        eventName,
+        headers: headersRecord,
+        body,
+      });
+
+      return c.json({ received: true, queued: true });
+    }
+
     // Fire-and-fork: dispatch event asynchronously without awaiting.
     // Return 200 immediately to avoid GitHub's 10-second webhook timeout.
     const childLogger = createChildLogger(logger, { deliveryId, eventName });
+    const untrackJob = requestTracker.trackJob();
     Promise.resolve()
       .then(() => eventRouter.dispatch(event))
-      .catch((err) => childLogger.error({ err, deliveryId }, "Event dispatch failed"));
+      .catch((err) => childLogger.error({ err, deliveryId }, "Event dispatch failed"))
+      .finally(() => untrackJob());
 
     return c.json({ received: true });
   });

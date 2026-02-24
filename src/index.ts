@@ -27,6 +27,9 @@ import { runMigrations } from "./db/migrate.ts";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
+import { createRequestTracker } from "./lifecycle/request-tracker.ts";
+import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
+import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 
 // Fail fast on missing or invalid config
 const config = await loadConfig();
@@ -73,6 +76,16 @@ if (rateLimitFailureInjectionIdentities.length > 0) {
     "Rate-limit telemetry failure injection enabled",
   );
 }
+
+// Lifecycle: request tracking, webhook queuing, shutdown management
+const requestTracker = createRequestTracker();
+const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore });
+const shutdownManager = createShutdownManager({
+  logger,
+  requestTracker,
+  webhookQueueStore,
+  closeDb,
+});
 
 // Startup maintenance: purge old rows (TELEM-07)
 const purgedCount = await telemetryStore.purgeOlderThan(90);
@@ -358,10 +371,13 @@ createDepBumpMergeHistoryHandler({
 const app = new Hono();
 
 // Mount routes
-app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter }));
+app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter, requestTracker, webhookQueueStore, shutdownManager }));
 app.route("/webhooks/slack", createSlackEventRoutes({
   config,
   logger,
+  shutdownManager,
+  webhookQueueStore,
+  requestTracker,
   onAllowedBootstrap: async (payload) => {
     await slackAssistantHandler.handle(payload);
   },
@@ -373,6 +389,9 @@ app.onError((err, c) => {
   logger.error({ err, path: c.req.path, method: c.req.method }, "Unhandled error");
   return c.json({ error: "Internal Server Error" }, 500);
 });
+
+// Start shutdown manager (SIGTERM/SIGINT handlers)
+shutdownManager.start();
 
 logger.info({ port: config.port }, "Kodiai server started");
 

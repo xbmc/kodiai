@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Logger } from "pino";
 import type { AppConfig } from "../config.ts";
+import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "../lifecycle/types.ts";
 import { evaluateSlackV1Rails, type SlackV1BootstrapPayload } from "../slack/safety-rails.ts";
 import {
   createSlackThreadSessionStore,
@@ -12,12 +13,15 @@ import { verifySlackRequest } from "../slack/verify.ts";
 interface SlackEventsRouteDeps {
   config: AppConfig;
   logger: Logger;
+  shutdownManager?: ShutdownManager;
+  webhookQueueStore?: WebhookQueueStore;
+  requestTracker?: RequestTracker;
   onAllowedBootstrap?: (payload: SlackV1BootstrapPayload) => Promise<void> | void;
   threadSessionStore?: SlackThreadSessionStore;
 }
 
 export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
-  const { config, logger, onAllowedBootstrap } = deps;
+  const { config, logger, onAllowedBootstrap, shutdownManager, webhookQueueStore, requestTracker } = deps;
   const threadSessionStore = deps.threadSessionStore ?? createSlackThreadSessionStore();
   const recentAddressed = new Map<string, number>();
   const DUPLICATE_WINDOW_MS = 5000;
@@ -101,6 +105,22 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
       return c.text(urlVerification.challenge, 200);
     }
 
+    // During shutdown drain: queue Slack event to PostgreSQL for replay after restart
+    // URL verification is handled above (always responds), but real events get queued
+    if (shutdownManager?.isShuttingDown() && webhookQueueStore) {
+      const headersRecord: Record<string, string> = {};
+      if (timestampHeader) headersRecord["x-slack-request-timestamp"] = timestampHeader;
+      if (signatureHeader) headersRecord["x-slack-signature"] = signatureHeader;
+
+      await webhookQueueStore.enqueue({
+        source: "slack",
+        headers: headersRecord,
+        body,
+      });
+
+      return c.json({ ok: true, queued: true });
+    }
+
     const eventCallback = toSlackEventCallback(payload);
     if (eventCallback) {
       const decision = evaluateSlackV1Rails({
@@ -131,6 +151,7 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         return c.json({ ok: true });
       }
 
+      const untrackJob = requestTracker?.trackJob();
       Promise.resolve().then(async () => {
         const addressed = decision.bootstrap;
         if (decision.reason === "mention_only_bootstrap") {
@@ -160,6 +181,8 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
         logger.info({ ...addressed, reason: decision.reason }, "Slack addressed event accepted for async processing");
       }).catch((error) => {
         logger.error({ err: error }, "Slack addressed event async processing failed");
+      }).finally(() => {
+        untrackJob?.();
       });
 
       return c.json({ ok: true });
