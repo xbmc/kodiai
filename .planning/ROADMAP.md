@@ -155,7 +155,8 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
   2. Slack responses never include a Sources or References section at the end
   3. Simple factual questions receive 1-3 sentence answers without headers or bullet lists
   4. Complex questions receive proportionally longer answers but still use minimal formatting (no unnecessary headers/structure)
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 83-01-PLAN.md — Rewrite Slack assistant prompt for conciseness, tone, and formatting rules
 
 ## Progress
 
@@ -179,7 +180,7 @@ See `.planning/milestones/v0.15-ROADMAP.md` for full phase details.
 | 77-80 | v0.14 | 8/8 | Complete | 2026-02-19 |
 | 81 | v0.15 | 4/4 | Complete | 2026-02-19 |
 | 82 | 1/1 | Complete    | 2026-02-23 | - |
-| 83 | v0.16 | 0/TBD | Not started | - |
+| 83 | v0.16 | 0/1 | Not started | - |
 ### Phase 84: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
 
 **Goal:** Confirm VoyageAI embeddings work in the deployed Azure environment, add a startup smoke test, and ensure clean container startup with no error-level output
