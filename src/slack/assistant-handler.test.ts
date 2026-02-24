@@ -113,8 +113,15 @@ describe("createSlackAssistantHandler", () => {
       triggerBody: "Explain the retry behavior.",
     });
     expect(executionInputs[0]?.prompt).toContain("Repository context: xbmc/xbmc");
-    expect(executionInputs[0]?.prompt).toContain("Slack response style:");
-    expect(executionInputs[0]?.prompt).toContain("Lead with the direct answer in the first sentence.");
+    // SLK-07: No preamble
+    expect(executionInputs[0]?.prompt).toContain("Never open with phrases like");
+    // SLK-08: No trailing sections
+    expect(executionInputs[0]?.prompt).toContain("Never append Sources, References");
+    // SLK-09: Length calibration
+    expect(executionInputs[0]?.prompt).toContain("Simple factual questions: 1 sentence max");
+    // SLK-10: Casual tone
+    expect(executionInputs[0]?.prompt).toContain("Casual tone, like a friend who knows the codebase");
+    // Read-only mode preserved
     expect(executionInputs[0]?.prompt).toContain("Do not create branches, commits, pull requests");
     expect(executionInputs[0]?.prompt).toContain("Do not run CI/build commands");
     expect(reactions).toEqual([
