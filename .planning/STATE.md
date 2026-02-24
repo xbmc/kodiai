@@ -2,30 +2,17 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-24)
+See: `.planning/PROJECT.md` (updated 2026-02-23)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.17 Infrastructure Foundation
 
 ## Current Position
 
-**Milestone:** v0.16 Review Coverage & Slack UX — SHIPPED
-**Phase:** All complete (82-85)
-**Status:** Milestone complete, ready for next
-**Last Activity:** 2026-02-24
-
-**Progress:** [██████████] 100%
-
-## Performance Metrics
-
-| Plan | Duration | Scope | Files |
-|------|----------|-------|-------|
-| Phase 82 P01 | 4 min | 2 tasks | 6 files |
-| Phase 83 P01 | 1 min | 2 tasks | 2 files |
-| Phase 84 P01 | 2 min | 2 tasks | 2 files |
-| Phase 84 P02 | 5 min | 2 tasks | 1 files |
-| Phase 85 P01 | 4 min | 2 tasks | 7 files |
-| Phase 85 P02 | 6 min | 2 tasks | 10 files |
+**Milestone:** v0.17 Infrastructure Foundation
+**Phase:** Not started (defining requirements)
+**Status:** Defining requirements
+**Last Activity:** 2026-02-23 — Milestone v0.17 started
 
 ## Accumulated Context
 
@@ -53,7 +40,7 @@ None.
 
 ### Roadmap Evolution
 
-None — clean slate for next milestone.
+None — clean slate for v0.17.
 
 ### Blockers/Concerns
 
@@ -69,7 +56,7 @@ None — clean slate for next milestone.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24
-**Stopped At:** v0.16 milestone completed
+**Last session:** 2026-02-23
+**Stopped At:** Defining v0.17 requirements
 **Resume File:** .planning/MILESTONES.md
-**Next action:** /gsd:new-milestone to define next milestone
+**Next action:** Complete requirements and roadmap for v0.17

@@ -57,9 +57,14 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 - Bounded in-memory caches with TTL eviction, per-channel Slack rate limiting, and 10s request timeouts
 - ~84,000 lines of TypeScript, 1,100+ tests passing
 
-## Next Milestone Goals
+## Current Milestone: v0.17 Infrastructure Foundation
 
-(No active milestone — use `/gsd:new-milestone` to define next milestone)
+**Goal:** Replace SQLite with shared PostgreSQL + pgvector, harden the deployment lifecycle, and extract a unified knowledge layer for both GitHub and Slack.
+
+**Target features:**
+- PostgreSQL + pgvector replacing SQLite + sqlite-vec (HNSW indexes, hybrid search foundation)
+- Graceful shutdown with SIGTERM handling, drain logic, and zero-downtime deploys
+- Shared `src/knowledge/` module eliminating duplicate retrieval paths between GitHub and Slack
 
 ## Requirements
 
@@ -135,7 +140,12 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 
 ### Active
 
-(No active requirements — use `/gsd:new-milestone` to define next milestone)
+- [ ] PostgreSQL + pgvector database replacing all SQLite usage
+- [ ] HNSW index tuning with correct distance operators
+- [ ] Full-text search columns for hybrid search foundation
+- [ ] Graceful shutdown with SIGTERM handling and drain logic
+- [ ] Zero-downtime deploys on Azure Container Apps
+- [ ] Unified knowledge layer in `src/knowledge/` for GitHub and Slack
 
 ### Out of Scope
 
@@ -206,4 +216,4 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-24 after v0.16 milestone completion*
+*Last updated: 2026-02-23 after v0.17 milestone start*
