@@ -51,7 +51,7 @@ function createNoopLogger(): Logger {
 
 function createMockStore(patterns: FeedbackPattern[]): KnowledgeStore {
   return {
-    aggregateFeedbackPatterns: (_repo: string) => patterns,
+    aggregateFeedbackPatterns: async (_repo: string) => patterns,
   } as unknown as KnowledgeStore;
 }
 
@@ -79,11 +79,11 @@ describe("evaluateFeedbackSuppressions", () => {
     },
   };
 
-  test("early-returns empty result when config.enabled is false", () => {
+  test("early-returns empty result when config.enabled is false", async () => {
     const store = createMockStore([
       makePattern({ thumbsDownCount: 10, distinctReactors: 10, distinctPRs: 10 }),
     ]);
-    const result = evaluateFeedbackSuppressions({
+    const result = await evaluateFeedbackSuppressions({
       store,
       repo: "owner/repo",
       config: { ...defaultConfig, enabled: false },
@@ -94,7 +94,7 @@ describe("evaluateFeedbackSuppressions", () => {
     expect(result.patterns).toHaveLength(0);
   });
 
-  test("filters out safety-protected patterns", () => {
+  test("filters out safety-protected patterns", async () => {
     const critical = makePattern({
       fingerprint: "fp-critical",
       severity: "critical",
@@ -106,7 +106,7 @@ describe("evaluateFeedbackSuppressions", () => {
       category: "style",
     });
     const store = createMockStore([critical, medium]);
-    const result = evaluateFeedbackSuppressions({
+    const result = await evaluateFeedbackSuppressions({
       store,
       repo: "owner/repo",
       config: defaultConfig,
@@ -119,7 +119,7 @@ describe("evaluateFeedbackSuppressions", () => {
     expect(result.patterns[0]!.fingerprint).toBe("fp-medium");
   });
 
-  test("filters out major security patterns (safety-protected)", () => {
+  test("filters out major security patterns (safety-protected)", async () => {
     const majorSecurity = makePattern({
       fingerprint: "fp-major-sec",
       severity: "major",
@@ -131,7 +131,7 @@ describe("evaluateFeedbackSuppressions", () => {
       category: "style",
     });
     const store = createMockStore([majorSecurity, majorStyle]);
-    const result = evaluateFeedbackSuppressions({
+    const result = await evaluateFeedbackSuppressions({
       store,
       repo: "owner/repo",
       config: defaultConfig,
@@ -142,11 +142,11 @@ describe("evaluateFeedbackSuppressions", () => {
     expect(result.suppressedPatternCount).toBe(1);
   });
 
-  test("returns correct fingerprints set and count", () => {
+  test("returns correct fingerprints set and count", async () => {
     const p1 = makePattern({ fingerprint: "fp-1", severity: "medium", category: "style" });
     const p2 = makePattern({ fingerprint: "fp-2", severity: "minor", category: "documentation" });
     const store = createMockStore([p1, p2]);
-    const result = evaluateFeedbackSuppressions({
+    const result = await evaluateFeedbackSuppressions({
       store,
       repo: "owner/repo",
       config: defaultConfig,
@@ -157,7 +157,7 @@ describe("evaluateFeedbackSuppressions", () => {
     expect(result.patterns).toHaveLength(2);
   });
 
-  test("returns empty result on store error (fail-open)", () => {
+  test("returns empty result on store error (fail-open)", async () => {
     const errorStore = {
       aggregateFeedbackPatterns: () => {
         throw new Error("DB connection failed");
@@ -170,7 +170,7 @@ describe("evaluateFeedbackSuppressions", () => {
         warnings.push(msg ?? String(data));
       },
     } as unknown as Logger;
-    const result = evaluateFeedbackSuppressions({
+    const result = await evaluateFeedbackSuppressions({
       store: errorStore,
       repo: "owner/repo",
       config: defaultConfig,

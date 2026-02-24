@@ -595,7 +595,7 @@ async function resolveAuthorTier(params: {
   let searchCacheHit = false;
 
   try {
-    const cached = knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
+    const cached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
     if (cached) {
       return {
         tier: cached.tier as AuthorTier,
@@ -708,7 +708,7 @@ async function resolveAuthorTier(params: {
   }).tier;
 
   try {
-    knowledgeStore.upsertAuthorCache?.({
+    await knowledgeStore.upsertAuthorCache?.({
       repo: repoSlug,
       authorLogin,
       tier,
@@ -1398,7 +1398,7 @@ export function createReviewHandler(deps: {
       // Fail-open: if knowledgeStore is undefined or query throws, proceed with review.
       if (knowledgeStore) {
         try {
-          const runCheck = knowledgeStore.checkAndClaimRun({
+          const runCheck = await knowledgeStore.checkAndClaimRun({
             repo: `${apiOwner}/${apiRepo}`,
             prNumber: pr.number,
             baseSha: pr.base.sha,
@@ -1695,7 +1695,7 @@ export function createReviewHandler(deps: {
 
         if (config.telemetry.enabled) {
           try {
-            telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
+            await telemetryStore.recordRateLimitEvent(rateLimitTelemetryEvent);
           } catch (err) {
             logger.warn(
               {
@@ -1994,7 +1994,7 @@ export function createReviewHandler(deps: {
         let priorFindings: PriorFinding[] = [];
         if (knowledgeStore && incrementalResult?.mode === "incremental") {
           try {
-            priorFindings = knowledgeStore.getPriorReviewFindings({
+            priorFindings = await knowledgeStore.getPriorReviewFindings({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
             });
@@ -2154,7 +2154,7 @@ export function createReviewHandler(deps: {
                   ? finalReranked.filter((r) => r.languageMatch).length / resultCount
                   : null;
 
-                telemetryStore.recordRetrievalQuality({
+                await telemetryStore.recordRetrievalQuality({
                   deliveryId: event.id,
                   repo: `${apiOwner}/${apiRepo}`,
                   prNumber: pr.number,
@@ -2526,7 +2526,7 @@ export function createReviewHandler(deps: {
         // Early returns empty when feedback.autoSuppress.enabled is false (FEED-08).
         // Fail-open: errors log warning and return empty suppression set.
         const feedbackSuppression = knowledgeStore
-          ? evaluateFeedbackSuppressions({
+          ? await evaluateFeedbackSuppressions({
               store: knowledgeStore,
               repo: `${apiOwner}/${apiRepo}`,
               config: config.feedback.autoSuppress,
@@ -2693,7 +2693,7 @@ export function createReviewHandler(deps: {
         let deltaClassification: DeltaClassification | null = null;
         if (incrementalResult?.mode === "incremental" && priorFindingCtx) {
           try {
-            const priorFindings = knowledgeStore!.getPriorReviewFindings({
+            const priorFindings = await knowledgeStore!.getPriorReviewFindings({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
             });
@@ -2831,10 +2831,10 @@ export function createReviewHandler(deps: {
           }
         }
 
-        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
+        // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
           try {
-            telemetryStore.record({
+            await telemetryStore.record({
               deliveryId: event.id,
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
@@ -2894,7 +2894,7 @@ export function createReviewHandler(deps: {
 
         if (knowledgeStore) {
           try {
-            reviewId = knowledgeStore.recordReview({
+            reviewId = await knowledgeStore.recordReview({
               repo: `${apiOwner}/${apiRepo}`,
               prNumber: pr.number,
               headSha: pr.head.sha,
@@ -2934,7 +2934,7 @@ export function createReviewHandler(deps: {
               "Knowledge store: review recorded",
             );
 
-            knowledgeStore.recordFindings(
+            await knowledgeStore.recordFindings(
               processedFindings.map((finding) => ({
                 reviewId: recordedReviewId,
                 commentId: finding.commentId,
@@ -2952,7 +2952,7 @@ export function createReviewHandler(deps: {
               })),
             );
 
-            knowledgeStore.recordSuppressionLog(
+            await knowledgeStore.recordSuppressionLog(
               Array.from(suppressionMatchCounts.entries()).map(([pattern, matchedCount]) => ({
                 reviewId: recordedReviewId,
                 pattern,
@@ -2989,7 +2989,7 @@ export function createReviewHandler(deps: {
                 }
 
                 for (const aggregate of aggregateCounts.values()) {
-                  knowledgeStore.recordGlobalPattern({
+                  await knowledgeStore.recordGlobalPattern({
                     severity: aggregate.severity,
                     category: aggregate.category,
                     confidenceBand: aggregate.confidenceBand,
@@ -3028,7 +3028,7 @@ export function createReviewHandler(deps: {
         if (knowledgeStore) {
           try {
             const runKey = `${apiOwner}/${apiRepo}:pr-${pr.number}:base-${pr.base.sha}:head-${pr.head.sha}`;
-            knowledgeStore.completeRun(runKey);
+            await knowledgeStore.completeRun(runKey);
           } catch (err) {
             logger.warn({ ...baseLog, err }, 'Failed to mark run as completed (non-fatal)');
           }
@@ -3143,14 +3143,14 @@ export function createReviewHandler(deps: {
 
           if (result.isTimeout) {
             // Step 1: Read checkpoint data
-            const checkpoint = knowledgeStore?.getCheckpoint?.(reviewOutputKey) ?? null;
+            const checkpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
             const hasPublishedInlines = result.published ?? false;
 
             const hasCheckpointResults = (checkpoint?.findingCount ?? 0) >= 1;
             const hasPartialResults = hasCheckpointResults || hasPublishedInlines;
 
             // Step 2: Check chronic timeout threshold before publishing
-            const recentTimeouts = telemetryStore.countRecentTimeouts?.(
+            const recentTimeouts = await telemetryStore.countRecentTimeouts?.(
               `${apiOwner}/${apiRepo}`,
               pr.user.login,
             ) ?? 0;
@@ -3193,7 +3193,7 @@ export function createReviewHandler(deps: {
             // Use saveCheckpoint() to ensure a record exists even when the run
             // timed out before the checkpoint tool was ever called.
             if (knowledgeStore?.saveCheckpoint) {
-              knowledgeStore.saveCheckpoint({
+              await knowledgeStore.saveCheckpoint({
                 reviewOutputKey,
                 repo: `${apiOwner}/${apiRepo}`,
                 prNumber: pr.number,
@@ -3226,7 +3226,7 @@ export function createReviewHandler(deps: {
             // Structured resilience telemetry (best-effort)
             if (config.telemetry.enabled) {
               try {
-                telemetryStore.recordResilienceEvent?.({
+                await telemetryStore.recordResilienceEvent?.({
                   deliveryId: event.id,
                   repo: `${apiOwner}/${apiRepo}`,
                   prNumber: pr.number,
@@ -3285,7 +3285,7 @@ export function createReviewHandler(deps: {
                 // Update resilience telemetry with retry plan
                 if (config.telemetry.enabled) {
                   try {
-                    telemetryStore.recordResilienceEvent?.({
+                    await telemetryStore.recordResilienceEvent?.({
                       deliveryId: event.id,
                       repo: `${apiOwner}/${apiRepo}`,
                       prNumber: pr.number,
@@ -3432,14 +3432,14 @@ export function createReviewHandler(deps: {
                       enableCommentTools: false,
                     });
 
-                      const retryCheckpoint = knowledgeStore?.getCheckpoint?.(retryReviewOutputKey) ?? null;
+                      const retryCheckpoint = (await knowledgeStore?.getCheckpoint?.(retryReviewOutputKey)) ?? null;
                       const retryHasResults =
                         (retryCheckpoint?.findingCount ?? 0) >= 1 ||
                         (retryResult.published ?? false);
 
                       if (config.telemetry.enabled) {
                         try {
-                          telemetryStore.recordResilienceEvent?.({
+                          await telemetryStore.recordResilienceEvent?.({
                             deliveryId: `${event.id}-retry-1`,
                             parentDeliveryId: event.id,
                             repo: `${apiOwner}/${apiRepo}`,
@@ -3488,7 +3488,7 @@ export function createReviewHandler(deps: {
                       });
 
                       const retryOctokit = await githubApp.getInstallationOctokit(event.installationId);
-                      const storedCheckpoint = knowledgeStore?.getCheckpoint?.(reviewOutputKey) ?? null;
+                      const storedCheckpoint = (await knowledgeStore?.getCheckpoint?.(reviewOutputKey)) ?? null;
                       const commentIdToUpdate = storedCheckpoint?.partialCommentId ?? partialCommentId;
 
                       if (!commentIdToUpdate) {
@@ -3532,7 +3532,7 @@ export function createReviewHandler(deps: {
 
                     if (config.telemetry.enabled) {
                       try {
-                        telemetryStore.record({
+                        await telemetryStore.record({
                           deliveryId: `${event.id}-retry-1`,
                           repo: `${apiOwner}/${apiRepo}`,
                           prNumber: pr.number,

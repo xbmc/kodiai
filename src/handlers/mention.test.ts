@@ -22,7 +22,7 @@ function createNoopLogger(): Logger {
   } as unknown as Logger;
 }
 
-const noopTelemetryStore = { record: () => {}, purgeOlderThan: () => 0, checkpoint: () => {}, close: () => {} } as never;
+const noopTelemetryStore = { record: async () => {}, purgeOlderThan: async () => 0, checkpoint: () => {}, close: () => {} } as never;
 
 async function createWorkspaceFixture(configYml = "mention:\n  enabled: true\n") {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-mention-handler-"));

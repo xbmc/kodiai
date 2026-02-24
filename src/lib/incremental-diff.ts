@@ -21,14 +21,14 @@ export async function computeIncrementalDiff(params: {
   workspaceDir: string;
   repo: string;
   prNumber: number;
-  getLastReviewedHeadSha: (params: { repo: string; prNumber: number }) => string | null;
+  getLastReviewedHeadSha: (params: { repo: string; prNumber: number }) => string | null | Promise<string | null>;
   logger: Logger;
 }): Promise<IncrementalDiffResult> {
   const { workspaceDir, repo, prNumber, getLastReviewedHeadSha, logger } = params;
 
   try {
     // Step 1: Look up the last completed review's head SHA
-    const lastHeadSha = getLastReviewedHeadSha({ repo, prNumber });
+    const lastHeadSha = await getLastReviewedHeadSha({ repo, prNumber });
 
     if (!lastHeadSha) {
       return {

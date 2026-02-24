@@ -18,14 +18,12 @@ import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
-import { resolveKnowledgeDbPath } from "./knowledge/db-path.ts";
 import { createLearningMemoryStore } from "./learning/memory-store.ts";
 import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
 import { createDbClient, type Sql } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
-import { Database } from "bun:sqlite";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
@@ -50,14 +48,18 @@ if (staleCount > 0) {
   logger.info({ staleCount }, "Cleaned up stale workspaces from previous run");
 }
 
-// Telemetry storage (SQLite with WAL mode)
-const telemetryDbPath = process.env.TELEMETRY_DB_PATH ?? "./data/kodiai-telemetry.db";
+// PostgreSQL connection (all stores share single connection pool)
+const { sql, close: closeDb } = createDbClient({ logger });
+await runMigrations(sql);
+logger.info("PostgreSQL connected and migrations applied");
+
+// Telemetry storage
 const rateLimitFailureInjectionIdentities = (process.env.TELEMETRY_RATE_LIMIT_FAILURE_IDENTITIES ?? "")
   .split(",")
   .map((value) => value.trim())
   .filter((value) => value.length > 0);
 const telemetryStore = createTelemetryStore({
-  dbPath: telemetryDbPath,
+  sql,
   logger,
   rateLimitFailureInjectionIdentities,
 });
@@ -72,34 +74,21 @@ if (rateLimitFailureInjectionIdentities.length > 0) {
   );
 }
 
-// Startup maintenance: purge old rows (TELEM-07) and checkpoint WAL (TELEM-08)
-const purgedCount = telemetryStore.purgeOlderThan(90);
+// Startup maintenance: purge old rows (TELEM-07)
+const purgedCount = await telemetryStore.purgeOlderThan(90);
 if (purgedCount > 0) {
   logger.info({ purgedCount }, "Telemetry retention purge complete");
 }
-telemetryStore.checkpoint();
 
-const knowledgeDb = resolveKnowledgeDbPath();
-const knowledgeStore = createKnowledgeStore({ dbPath: knowledgeDb.dbPath, logger });
-logger.info(
-  { knowledgeDbPath: knowledgeDb.dbPath, source: knowledgeDb.source },
-  "Knowledge store path resolved",
-);
-knowledgeStore.checkpoint();
+const knowledgeStore = createKnowledgeStore({ sql, logger });
+logger.info("Knowledge store initialized (PostgreSQL)");
 
 // Learning memory (v0.5 LEARN-06, migrated to PostgreSQL + pgvector in v0.17)
 let learningMemoryStore: LearningMemoryStore | undefined;
 let embeddingProvider: EmbeddingProvider | undefined;
-let pgSql: Sql | undefined;
 
 try {
-  const pgClient = createDbClient({ logger });
-  pgSql = pgClient.sql;
-
-  // Run migrations to ensure schema is up to date
-  await runMigrations(pgSql);
-
-  learningMemoryStore = createLearningMemoryStore({ sql: pgSql, logger });
+  learningMemoryStore = createLearningMemoryStore({ sql, logger });
   logger.info("Learning memory store initialized (PostgreSQL + pgvector)");
 } catch (err) {
   logger.warn({ err }, "Learning memory store failed to initialize (fail-open, learning disabled)");
@@ -163,7 +152,7 @@ if (learningMemoryStore) {
 // Startup maintenance: purge old run state entries
 if (knowledgeStore) {
   try {
-    const runsPurged = knowledgeStore.purgeOldRuns(30);
+    const runsPurged = await knowledgeStore.purgeOldRuns(30);
     if (runsPurged > 0) {
       logger.info({ runsPurged }, "Run state retention purge complete");
     }

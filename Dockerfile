@@ -19,8 +19,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock tsconfig.json ./
 COPY src/ ./src/
 
-# Create data directory for telemetry SQLite database
-RUN mkdir -p /app/data && chown bun:bun /app/data
+# DATABASE_URL is provided via Azure Container Apps secrets at runtime
+ENV DATABASE_URL=""
 
 # Run as non-root user (oven/bun images include 'bun' user)
 USER bun

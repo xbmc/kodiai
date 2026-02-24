@@ -162,7 +162,7 @@ export function createDepBumpMergeHistoryHandler(deps: {
 
         ctx.mergeConfidence = computeMergeConfidence(ctx);
 
-        knowledgeStore.recordDepBumpMergeHistory({
+        await knowledgeStore.recordDepBumpMergeHistory({
           repo: `${owner}/${repo}`,
           prNumber: pr.number,
           mergedAt: pr.merged_at ?? null,

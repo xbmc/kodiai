@@ -119,8 +119,9 @@ export function createFeedbackSyncHandler(deps: {
 
       let candidates: SyncCandidate[] = [];
       try {
-        candidates = knowledgeStore
-          .listRecentFindingCommentCandidates(repo, Math.max(1, maxCandidates))
+        const allCandidates = await knowledgeStore
+          .listRecentFindingCommentCandidates(repo, Math.max(1, maxCandidates));
+        candidates = allCandidates
           .filter((candidate) => isRecentEnough(candidate.createdAt, recentWindowDays));
       } catch (err) {
         logger.warn({ err, repo }, "Feedback sync candidate lookup failed; continuing");
@@ -181,7 +182,7 @@ export function createFeedbackSyncHandler(deps: {
       }
 
       try {
-        knowledgeStore.recordFeedbackReactions(reactionsToRecord);
+        await knowledgeStore.recordFeedbackReactions(reactionsToRecord);
       } catch (err) {
         logger.warn({ err, repo }, "Feedback sync reaction persistence failed; continuing");
       }

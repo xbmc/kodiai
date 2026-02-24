@@ -5,7 +5,7 @@ import { aggregateSuppressiblePatterns } from "./aggregator.ts";
 
 function createMockStore(patterns: FeedbackPattern[]): KnowledgeStore {
   return {
-    aggregateFeedbackPatterns: (_repo: string) => patterns,
+    aggregateFeedbackPatterns: async (_repo: string) => patterns,
   } as unknown as KnowledgeStore;
 }
 
@@ -30,49 +30,49 @@ function makePattern(overrides: Partial<FeedbackPattern> = {}): FeedbackPattern 
 }
 
 describe("aggregateSuppressiblePatterns", () => {
-  test("includes pattern exceeding all thresholds", () => {
+  test("includes pattern exceeding all thresholds", async () => {
     const pattern = makePattern({ thumbsDownCount: 5, distinctReactors: 4, distinctPRs: 3 });
     const store = createMockStore([pattern]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(1);
     expect(result[0]!.fingerprint).toBe("fp-test");
   });
 
-  test("excludes pattern with thumbsDown below threshold", () => {
+  test("excludes pattern with thumbsDown below threshold", async () => {
     const pattern = makePattern({ thumbsDownCount: 2 });
     const store = createMockStore([pattern]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(0);
   });
 
-  test("excludes pattern with insufficient distinct reactors", () => {
+  test("excludes pattern with insufficient distinct reactors", async () => {
     const pattern = makePattern({ thumbsDownCount: 3, distinctReactors: 1 });
     const store = createMockStore([pattern]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(0);
   });
 
-  test("excludes pattern with insufficient distinct PRs", () => {
+  test("excludes pattern with insufficient distinct PRs", async () => {
     const pattern = makePattern({ thumbsDownCount: 3, distinctReactors: 3, distinctPRs: 1 });
     const store = createMockStore([pattern]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(0);
   });
 
-  test("includes pattern exactly at thresholds", () => {
+  test("includes pattern exactly at thresholds", async () => {
     const pattern = makePattern({ thumbsDownCount: 3, distinctReactors: 3, distinctPRs: 2 });
     const store = createMockStore([pattern]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(1);
   });
 
-  test("returns empty array for empty store", () => {
+  test("returns empty array for empty store", async () => {
     const store = createMockStore([]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(0);
   });
 
-  test("respects custom thresholds", () => {
+  test("respects custom thresholds", async () => {
     const pattern = makePattern({ thumbsDownCount: 4, distinctReactors: 4, distinctPRs: 3 });
     const store = createMockStore([pattern]);
     const customThresholds: FeedbackThresholds = {
@@ -80,16 +80,16 @@ describe("aggregateSuppressiblePatterns", () => {
       minDistinctReactors: 3,
       minDistinctPRs: 2,
     };
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", customThresholds);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", customThresholds);
     expect(result).toHaveLength(0);
   });
 
-  test("filters mixed patterns correctly", () => {
+  test("filters mixed patterns correctly", async () => {
     const good = makePattern({ fingerprint: "fp-good", thumbsDownCount: 5, distinctReactors: 4, distinctPRs: 3 });
     const bad1 = makePattern({ fingerprint: "fp-bad1", thumbsDownCount: 1, distinctReactors: 4, distinctPRs: 3 });
     const bad2 = makePattern({ fingerprint: "fp-bad2", thumbsDownCount: 5, distinctReactors: 1, distinctPRs: 3 });
     const store = createMockStore([good, bad1, bad2]);
-    const result = aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
+    const result = await aggregateSuppressiblePatterns(store, "owner/repo", DEFAULT_THRESHOLDS);
     expect(result).toHaveLength(1);
     expect(result[0]!.fingerprint).toBe("fp-good");
   });

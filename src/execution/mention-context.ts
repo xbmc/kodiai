@@ -19,7 +19,13 @@ export type BuildMentionContextOptions = {
   /** Max characters to include from PR description (after sanitization). */
   maxPrBodyChars?: number;
   /** Optional callback to hydrate finding metadata for review-thread parent comments. */
-  findingLookup?: (repo: string, commentId: number) => {
+  findingLookup?: (repo: string, commentId: number) => Promise<{
+    severity: string;
+    category: string;
+    filePath: string;
+    startLine: number | null;
+    title: string;
+  } | null> | {
     severity: string;
     category: string;
     filePath: string;
@@ -366,9 +372,9 @@ export async function buildMentionContext(
       const reviewOutputMarkerRe = /<!-- kodiai:review-output-key:[^>]+ -->/;
       const isKodiaiFinding = reviewOutputMarkerRe.test(parent.body ?? "");
       if (isKodiaiFinding && options.findingLookup) {
-        let finding: ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>;
+        let finding: Awaited<ReturnType<NonNullable<BuildMentionContextOptions["findingLookup"]>>>;
         try {
-          finding = options.findingLookup(
+          finding = await options.findingLookup(
             `${mention.owner}/${mention.repo}`,
             mention.inReplyToId,
           );

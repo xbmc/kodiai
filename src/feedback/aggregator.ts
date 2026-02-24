@@ -7,12 +7,12 @@ import type { KnowledgeStore } from "../knowledge/types.ts";
  *
  * Returns suppression candidates (before safety guard filtering).
  */
-export function aggregateSuppressiblePatterns(
+export async function aggregateSuppressiblePatterns(
   store: KnowledgeStore,
   repo: string,
   thresholds: FeedbackThresholds,
-): FeedbackPattern[] {
-  const patterns = store.aggregateFeedbackPatterns(repo);
+): Promise<FeedbackPattern[]> {
+  const patterns = await store.aggregateFeedbackPatterns(repo);
   return patterns.filter(
     (p) =>
       p.thumbsDownCount >= thresholds.minThumbsDown &&

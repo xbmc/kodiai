@@ -37,12 +37,12 @@ const EMPTY_RESULT: FeedbackSuppressionResult = {
  * 4. Returns suppression set with fingerprints and count
  * 5. Fail-open: on any error, logs warning and returns empty result
  */
-export function evaluateFeedbackSuppressions(params: {
+export async function evaluateFeedbackSuppressions(params: {
   store: KnowledgeStore;
   repo: string;
   config: FeedbackSuppressionConfig;
   logger: Logger;
-}): FeedbackSuppressionResult {
+}): Promise<FeedbackSuppressionResult> {
   const { store, repo, config, logger } = params;
 
   if (!config.enabled) {
@@ -50,7 +50,7 @@ export function evaluateFeedbackSuppressions(params: {
   }
 
   try {
-    const candidates = aggregateSuppressiblePatterns(
+    const candidates = await aggregateSuppressiblePatterns(
       store,
       repo,
       config.thresholds,

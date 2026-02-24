@@ -25,10 +25,12 @@ function createNoopLogger(): Logger {
 }
 
 const noopTelemetryStore = {
-  record: () => {},
-  recordRetrievalQuality: () => {},
-  recordRateLimitEvent: () => {},
-  purgeOlderThan: () => 0,
+  record: async () => {},
+  recordRetrievalQuality: async () => {},
+  recordRateLimitEvent: async () => {},
+  recordResilienceEvent: async () => {},
+  countRecentTimeouts: async () => 0,
+  purgeOlderThan: async () => 0,
   checkpoint: () => {},
   close: () => {},
 } as never;
@@ -61,14 +63,14 @@ function createCaptureLogger() {
 
 function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
   return {
-    recordReview: () => 1,
-    recordFindings: () => undefined,
-    recordFeedbackReactions: () => undefined,
-    listRecentFindingCommentCandidates: () => [],
-    recordSuppressionLog: () => undefined,
-    recordGlobalPattern: () => undefined,
-    recordDepBumpMergeHistory: () => undefined,
-    getRepoStats: () => ({
+    recordReview: async () => 1,
+    recordFindings: async () => undefined,
+    recordFeedbackReactions: async () => undefined,
+    listRecentFindingCommentCandidates: async () => [],
+    recordSuppressionLog: async () => undefined,
+    recordGlobalPattern: async () => undefined,
+    recordDepBumpMergeHistory: async () => undefined,
+    getRepoStats: async () => ({
       totalReviews: 0,
       totalFindings: 0,
       findingsBySeverity: { critical: 0, major: 0, medium: 0, minor: 0 },
@@ -77,23 +79,23 @@ function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
       avgConfidence: 0,
       topFiles: [],
     }),
-    getRepoTrends: () => [],
-    checkAndClaimRun: () => ({
+    getRepoTrends: async () => [],
+    checkAndClaimRun: async () => ({
       shouldProcess: true,
       runKey: "run-key",
       reason: "new" as const,
       supersededRunKeys: [],
     }),
-    completeRun: () => undefined,
-    purgeOldRuns: () => 0,
-    getAuthorCache: () => null,
-    upsertAuthorCache: () => undefined,
-    purgeStaleAuthorCache: () => 0,
-    getLastReviewedHeadSha: () => null,
-    getPriorReviewFindings: () => [],
-    aggregateFeedbackPatterns: () => [],
-    clearFeedbackSuppressions: () => 0,
-    listFeedbackSuppressions: () => [],
+    completeRun: async () => undefined,
+    purgeOldRuns: async () => 0,
+    getAuthorCache: async () => null,
+    upsertAuthorCache: async () => undefined,
+    purgeStaleAuthorCache: async () => 0,
+    getLastReviewedHeadSha: async () => null,
+    getPriorReviewFindings: async () => [],
+    aggregateFeedbackPatterns: async () => [],
+    clearFeedbackSuppressions: async () => 0,
+    listFeedbackSuppressions: async () => [],
     checkpoint: () => undefined,
     close: () => undefined,
     ...overrides,
@@ -2893,20 +2895,10 @@ describe("createReviewHandler finding extraction", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        ...createKnowledgeStoreStub(),
-        recordReview: (entry: Record<string, unknown>) => {
+        recordReview: async (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 1;
         },
-        recordFindings: () => undefined,
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
-        checkpoint: () => undefined,
-        close: () => undefined,
       },
       logger: createNoopLogger(),
     });
@@ -3088,23 +3080,16 @@ describe("createReviewHandler finding extraction", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: (entry: Record<string, unknown>) => {
+        recordReview: async (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 99;
         },
-        recordFindings: (findings: Record<string, unknown>[]) => {
+        recordFindings: async (findings: Record<string, unknown>[]) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: (entries: Record<string, unknown>[]) => {
+        recordSuppressionLog: async (entries: Record<string, unknown>[]) => {
           recordedSuppressions.push(...entries);
         },
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
-        checkpoint: () => undefined,
-        close: () => undefined,
       },
       logger: createNoopLogger(),
     });
@@ -3466,16 +3451,16 @@ describe("createReviewHandler global knowledge sharing", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: () => undefined,
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: (entry: Record<string, unknown>) => {
+        recordReview: async () => 1,
+        recordFindings: async () => undefined,
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async (entry: Record<string, unknown>) => {
           globalWrites.push(entry);
         },
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
       },
@@ -3609,16 +3594,16 @@ describe("createReviewHandler global knowledge sharing", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: () => undefined,
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: (entry: Record<string, unknown>) => {
+        recordReview: async () => 1,
+        recordFindings: async () => undefined,
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async (entry: Record<string, unknown>) => {
           globalWrites.push(entry);
         },
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
       },
@@ -3755,16 +3740,16 @@ describe("createReviewHandler enforcement integration", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
       },
@@ -3899,16 +3884,16 @@ describe("createReviewHandler enforcement integration", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           debugFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
       },
@@ -4039,16 +4024,16 @@ describe("createReviewHandler enforcement integration", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
       },
@@ -4258,19 +4243,10 @@ describe("createReviewHandler enforcement integration", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: (entry: Record<string, unknown>) => {
+        recordReview: async (entry: Record<string, unknown>) => {
           recordedReviews.push(entry);
           return 1;
         },
-        recordFindings: () => undefined,
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
-        checkpoint: () => undefined,
-        close: () => undefined,
       },
       logger: createNoopLogger(),
     });
@@ -4921,20 +4897,20 @@ describe("createReviewHandler feedback-driven suppression", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
         // Return a feedback pattern that matches our finding and exceeds thresholds
-        aggregateFeedbackPatterns: () => [
+        aggregateFeedbackPatterns: async () => [
           {
             fingerprint: findingFp,
             thumbsDownCount: 5,
@@ -4946,8 +4922,8 @@ describe("createReviewHandler feedback-driven suppression", () => {
             sampleTitle: findingTitle,
           },
         ],
-        clearFeedbackSuppressions: () => 0,
-        listFeedbackSuppressions: () => [],
+        clearFeedbackSuppressions: async () => 0,
+        listFeedbackSuppressions: async () => [],
       },
       logger: createNoopLogger(),
     });
@@ -5073,24 +5049,24 @@ describe("createReviewHandler feedback-driven suppression", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
-        aggregateFeedbackPatterns: () => {
+        aggregateFeedbackPatterns: async () => {
           aggregateCalled = true;
           return [];
         },
-        clearFeedbackSuppressions: () => 0,
-        listFeedbackSuppressions: () => [],
+        clearFeedbackSuppressions: async () => 0,
+        listFeedbackSuppressions: async () => [],
       },
       logger: createNoopLogger(),
     });
@@ -5242,20 +5218,20 @@ describe("createReviewHandler feedback-driven suppression", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
         // Return a CRITICAL security pattern -- should be protected by safety guard
-        aggregateFeedbackPatterns: () => [
+        aggregateFeedbackPatterns: async () => [
           {
             fingerprint: findingFp,
             thumbsDownCount: 10,
@@ -5267,8 +5243,8 @@ describe("createReviewHandler feedback-driven suppression", () => {
             sampleTitle: findingTitle,
           },
         ],
-        clearFeedbackSuppressions: () => 0,
-        listFeedbackSuppressions: () => [],
+        clearFeedbackSuppressions: async () => 0,
+        listFeedbackSuppressions: async () => [],
       },
       logger: createNoopLogger(),
     });
@@ -5413,24 +5389,24 @@ describe("createReviewHandler feedback-driven suppression", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: (findings: Array<Record<string, unknown>>) => {
+        recordReview: async () => 1,
+        recordFindings: async (findings: Array<Record<string, unknown>>) => {
           recordedFindings.push(...findings);
         },
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
         // Throw an error to simulate store failure
-        aggregateFeedbackPatterns: () => {
+        aggregateFeedbackPatterns: async () => {
           throw new Error("Database connection lost");
         },
-        clearFeedbackSuppressions: () => 0,
-        listFeedbackSuppressions: () => [],
+        clearFeedbackSuppressions: async () => 0,
+        listFeedbackSuppressions: async () => [],
       },
       logger: capLogger,
     });
@@ -5609,18 +5585,18 @@ describe("createReviewHandler feedback-driven suppression", () => {
       telemetryStore: noopTelemetryStore,
       knowledgeStore: {
         ...createKnowledgeStoreStub(),
-        recordReview: () => 1,
-        recordFindings: () => undefined,
-        recordFeedbackReactions: () => undefined,
-        listRecentFindingCommentCandidates: () => [],
-        recordSuppressionLog: () => undefined,
-        recordGlobalPattern: () => undefined,
-        getRepoStats: () => ({}) as never,
-        getRepoTrends: () => [],
+        recordReview: async () => 1,
+        recordFindings: async () => undefined,
+        recordFeedbackReactions: async () => undefined,
+        listRecentFindingCommentCandidates: async () => [],
+        recordSuppressionLog: async () => undefined,
+        recordGlobalPattern: async () => undefined,
+        getRepoStats: async () => ({}) as never,
+        getRepoTrends: async () => [],
         checkpoint: () => undefined,
         close: () => undefined,
         // Return 2 patterns matching both findings, both suppressible (medium/minor)
-        aggregateFeedbackPatterns: () => [
+        aggregateFeedbackPatterns: async () => [
           {
             fingerprint: findingFp1,
             thumbsDownCount: 5,
@@ -5642,8 +5618,8 @@ describe("createReviewHandler feedback-driven suppression", () => {
             sampleTitle: findingTitle2,
           },
         ],
-        clearFeedbackSuppressions: () => 0,
-        listFeedbackSuppressions: () => [],
+        clearFeedbackSuppressions: async () => 0,
+        listFeedbackSuppressions: async () => [],
       },
       logger: createNoopLogger(),
     });

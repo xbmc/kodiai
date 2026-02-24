@@ -742,7 +742,7 @@ export function createMentionHandler(deps: {
         }
 
         const findingLookup = deps.knowledgeStore?.getFindingByCommentId
-          ? (repo: string, commentId: number) =>
+          ? async (repo: string, commentId: number) =>
               deps.knowledgeStore!.getFindingByCommentId!({ repo, commentId })
           : undefined;
 
@@ -1135,7 +1135,7 @@ export function createMentionHandler(deps: {
         if (mention.inReplyToId !== undefined && findingLookup) {
           try {
             findingContext =
-              findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId) ?? undefined;
+              (await findingLookup(`${mention.owner}/${mention.repo}`, mention.inReplyToId)) ?? undefined;
           } catch (err) {
             logger.warn(
               {
@@ -1416,10 +1416,10 @@ export function createMentionHandler(deps: {
           prConversationTouchedAt.set(conversationKey, Date.now());
         }
 
-        // Fire-and-forget telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
+        // Telemetry capture (TELEM-03, TELEM-05, CONFIG-10)
         if (config.telemetry.enabled) {
           try {
-            telemetryStore.record({
+            await telemetryStore.record({
               deliveryId: event.id,
               repo: `${mention.owner}/${mention.repo}`,
               prNumber: mention.prNumber,
