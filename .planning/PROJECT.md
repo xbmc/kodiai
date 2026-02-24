@@ -8,10 +8,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews, co
 
 When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, contextual answers to questions, or PR creation from Slack write requests — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.15 Slack Write Workflows
+## Latest Release: v0.16 Review Coverage & Slack UX
 
-**Shipped:** 2026-02-19
-**Phases:** 81 (1 phase, 4 plans)
+**Shipped:** 2026-02-24
+**Phases:** 82-85 (4 phases, 6 plans)
+
+**Delivered:**
+- Draft PRs now reviewed with soft suggestive tone, memo badge, and draft framing
+- Slack responses rewritten for conciseness — answer-first, no preamble, no sources
+- Non-blocking VoyageAI embeddings smoke test on container boot
+- Dockerfile switched from Alpine to Debian for sqlite-vec glibc compatibility
+- InMemoryCache utility eliminates 4 unbounded memory leak vectors
+- Config-driven default repo, typed APIs, Slack timeout, and rate limiting
+
+<details>
+<summary>Previous Release: v0.15 Slack Write Workflows (2026-02-19)</summary>
 
 **Delivered:**
 - Deterministic Slack write-intent routing with explicit prefix detection, medium-confidence conversational heuristics, and ambiguous read-only fallback
@@ -19,8 +30,10 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 - High-impact confirmation gating for destructive/migration/security requests with 15-minute pending timeout
 - Phase 81 smoke and regression verification gates (SLK81-SMOKE, SLK81-REG) with stable package aliases
 
+</details>
+
 <details>
-<summary>Previous Release: v0.14 Slack Integration (2026-02-19)</summary>
+<summary>v0.14 Slack Integration (2026-02-19)</summary>
 
 **Delivered:**
 - Slack ingress with fail-closed v0 signature/timestamp verification and secure `/webhooks/slack/events` endpoint
@@ -31,54 +44,22 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-<details>
-<summary>v0.13 Reliability Follow-Through (2026-02-18)</summary>
-
-**Delivered:**
-- Deterministic live telemetry verification tooling and OPS75 preflight evidence gates for cache/degraded/fail-open check families
-- Degraded retrieval contract enforcement with exact disclosure sentence and bounded markdown-safe evidence rendering
-- Deterministic reliability regression gate CLI with machine-checkable check-ID diagnostics
-- Live OPS smoke/runbook capture workflow for reproducible evidence gathering
-
-**Accepted debt at closure:**
-- OPS75 final PASS evidence run remains incomplete (`OPS75-CACHE-01`, `OPS75-CACHE-02`, `OPS75-ONCE-01`)
-
-</details>
-
-<details>
-<summary>v0.11 Issue Workflows (2026-02-16)</summary>
-
-**Delivered:**
-- In-thread issue Q&A with direct, actionable answers and code-path pointers when repository context is relevant
-- Explicit issue write-mode via `apply:` / `change:` opens PRs against default branch when `write.enabled: true`
-- Issue write-mode idempotency and in-flight de-dupe prevent duplicate PR creation on replayed or concurrent triggers
-- Issue write policy guardrails enforce allow/deny path + secret-scan refusals with clear, actionable remediation
-- Missing-permission and disabled-write failures now return deterministic guidance for minimum scopes/config and same-command retry
-
-</details>
-
 ## Current State
 
-v0.15 ships a fully operational GitHub App + Slack assistant that:
-- Automatically reviews PRs with inline comments, suggestions, and optional silent approvals
+v0.16 ships a fully operational GitHub App + Slack assistant that:
+- Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
-- Operates as a Slack assistant in `#kodiai` with thread-based sessions, read-only code Q&A, and write-mode PR creation
+- Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
 - Routes Slack write intent through policy/permission gates with high-impact confirmation for destructive operations
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
 - Applies deterministic diff/risk context, learning memory, and language-specific enforcement
 - Ships with operator smoke/regression verification gates for both GitHub and Slack surfaces
-- 1,102 tests passing (100% pass rate), ~54,500 lines of TypeScript
+- Bounded in-memory caches with TTL eviction, per-channel Slack rate limiting, and 10s request timeouts
+- ~84,000 lines of TypeScript, 1,100+ tests passing
 
 ## Next Milestone Goals
 
-**v0.16 Review Coverage & Slack UX**
-
-**Goal:** Expand review coverage to draft PRs and make Slack responses concise and conversational.
-
-**Target features:**
-- Review all PRs including drafts (remove draft skip logic)
-- Slack responses: direct, concise, chat-native tone — no preamble, no unnecessary structure, no sources in chat
-- Configurable draft review behavior (opt-in/opt-out via `.kodiai.yml`)
+(No active milestone — use `/gsd:new-milestone` to define next milestone)
 
 ## Requirements
 
@@ -145,6 +126,12 @@ v0.15 ships a fully operational GitHub App + Slack assistant that:
 - ✓ Slack write execution with PR-only publish and policy/permission enforcement — v0.15
 - ✓ High-impact Slack write confirmation gating with pending timeout — v0.15
 - ✓ Phase 81 smoke/regression verification gates for Slack write mode — v0.15
+- ✓ Kodiai reviews draft PRs the same as non-draft PRs — v0.16
+- ✓ Draft PR reviews include a visible indicator that the PR is a draft — v0.16
+- ✓ Slack responses omit preamble phrases — v0.16
+- ✓ Slack responses omit Sources/References sections — v0.16
+- ✓ Slack responses are concise (1-3 sentences for simple questions) — v0.16
+- ✓ Slack responses use conversational tone — v0.16
 
 ### Active
 
@@ -174,7 +161,7 @@ v0.15 ships a fully operational GitHub App + Slack assistant that:
 - **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
 - **Slack:** Bot token with `chat:write`, `reactions:write` scopes; signing secret for ingress verification
-- **Codebase:** ~54,500 lines of TypeScript, 1,102 tests passing (100% pass rate)
+- **Codebase:** ~84,000 lines of TypeScript, 1,100+ tests passing
 
 ## Key Decisions
 
@@ -201,6 +188,12 @@ v0.15 ships a fully operational GitHub App + Slack assistant that:
 | Medium-confidence conversational write detection | score>=3 heuristics route ambiguous asks to read-only with rerun guidance | ✓ Good — v0.15 |
 | High-impact confirmation gating | Destructive/migration/security requests require exact confirm command with 15-min timeout | ✓ Good — v0.15 |
 | PR-only Slack write execution | Executor edits workspace, runner handles branch push and PR creation; no direct repo writes from Slack | ✓ Good — v0.15 |
+| ready_for_review forces isDraft=false | PR payload may still have draft=true during transition; override ensures correct tone | ✓ Good — v0.16 |
+| Inline prompt conciseness rules | All four conciseness dimensions encoded directly in prompt rather than external config | ✓ Good — v0.16 |
+| Void Promise smoke test pattern | Non-blocking startup diagnostics that log pass/fail without preventing boot | ✓ Good — v0.16 |
+| Debian over Alpine for containers | sqlite-vec ships glibc-linked binaries; Alpine musl cannot load them | ✓ Good — v0.16 |
+| Lazy eviction InMemoryCache | No timers/intervals; expired entries evicted on access and insert | ✓ Good — v0.16 |
+| Inline Slack rate limiter | Per-channel sliding window (30/60s) using Map instead of external dependency | ✓ Good — v0.16 |
 
 ## Constraints
 
@@ -213,4 +206,4 @@ v0.15 ships a fully operational GitHub App + Slack assistant that:
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-19 after v0.14 + v0.15 milestone completion*
+*Last updated: 2026-02-24 after v0.16 milestone completion*

@@ -2,16 +2,16 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-19)
+See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.16 Review Coverage & Slack UX
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-**Milestone:** v0.16 Review Coverage & Slack UX
-**Phase:** 83 (Slack Response Conciseness) -- Plan 1 of 1 complete
-**Status:** Ready to plan
+**Milestone:** v0.16 Review Coverage & Slack UX — SHIPPED
+**Phase:** All complete (82-85)
+**Status:** Milestone complete, ready for next
 **Last Activity:** 2026-02-24
 
 **Progress:** [██████████] 100%
@@ -20,30 +20,18 @@ See: `.planning/PROJECT.md` (updated 2026-02-19)
 
 | Plan | Duration | Scope | Files |
 |------|----------|-------|-------|
-| Phase 81 P01 | 4 min | 2 tasks | 6 files |
-| Phase 81 P02 | 7 min | 2 tasks | 9 files |
-| Phase 81 P03 | 5 min | 2 tasks | 4 files |
-| Phase 81 P04 | 1 min | 2 tasks | 6 files |
+| Phase 82 P01 | 4 min | 2 tasks | 6 files |
+| Phase 83 P01 | 1 min | 2 tasks | 2 files |
 | Phase 84 P01 | 2 min | 2 tasks | 2 files |
 | Phase 84 P02 | 5 min | 2 tasks | 1 files |
 | Phase 85 P01 | 4 min | 2 tasks | 7 files |
 | Phase 85 P02 | 6 min | 2 tasks | 10 files |
-| Phase 82 P01 | 4 min | 2 tasks | 6 files |
-| Phase 83 P01 | 1 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-All decisions through v0.15 archived to `.planning/PROJECT.md` Key Decisions table.
-- [Phase 84]: Embeddings smoke test uses void Promise pattern, non-blocking, logs pass/fail at boot
-- [Phase 84]: Dockerfile must use Debian (not Alpine) for sqlite-vec glibc compatibility
-- [Phase 85]: All in-memory caches use createInMemoryCache with lazy eviction (no timers), Map insertion order as LRU proxy
-- [Phase 85]: Tooling detection logger is optional for backward compatibility; defaultRepo is required in handler deps
-- [Phase 85]: Inline Map-based rate limiter for Slack events rather than external dependency
-- [Phase 82]: ready_for_review action forces isDraft=false regardless of pr.draft payload value
-- [Phase 82]: Draft framing only applies to standard template, not delta re-review template
-- [Phase 83]: Prompt encodes all four conciseness dimensions inline rather than referencing external config
+All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -65,8 +53,7 @@ None.
 
 ### Roadmap Evolution
 
-- Phase 84 added: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
-- Phase 85 added: Code review fixes — memory leaks, hardcoded defaults, type mismatches, and missing rate limits
+None — clean slate for next milestone.
 
 ### Blockers/Concerns
 
@@ -82,7 +69,7 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T02:02:00Z
-**Stopped At:** Completed 83-01-PLAN.md
-**Resume File:** .planning/phases/83-slack-response-conciseness/83-01-SUMMARY.md
-**Next action:** Phase 83 complete; Slack prompt conciseness rules live
+**Last session:** 2026-02-24
+**Stopped At:** v0.16 milestone completed
+**Resume File:** .planning/MILESTONES.md
+**Next action:** /gsd:new-milestone to define next milestone
