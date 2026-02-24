@@ -12,7 +12,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 **Milestone:** v0.18 Knowledge Layer Extraction
 **Phase:** 88 (Knowledge Layer Extraction)
 **Plan:** 2 of 2 in current phase (all plans complete)
-**Status:** Phase complete
+**Status:** Milestone complete
 **Last Activity:** 2026-02-24
 
 Progress: [##########] 100%
