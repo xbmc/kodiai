@@ -12,8 +12,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-23)
 **Milestone:** v0.17 Infrastructure Foundation
 **Phase:** 87 of 88 (Graceful Shutdown + Deploy Hardening)
 **Plan:** 0 of ? in current phase
-**Status:** Phase 86 complete, Phase 87 not started
-**Last Activity:** 2026-02-24 — Completed 86-04 (Azure deploy verified, PostgreSQL migration complete)
+**Status:** Milestone complete
+**Last Activity:** 2026-02-24
 
 Progress: [##########] 100%
 
