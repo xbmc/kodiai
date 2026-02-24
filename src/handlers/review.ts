@@ -2048,7 +2048,7 @@ export function createReviewHandler(deps: {
                   throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
                 }
 
-                const retrieval = isolationLayer.retrieveWithIsolation({
+                const retrieval = await isolationLayer.retrieveWithIsolation({
                   queryEmbedding: embedResult.embedding,
                   repo: `${apiOwner}/${apiRepo}`,
                   owner: apiOwner,
@@ -3080,7 +3080,7 @@ export function createReviewHandler(deps: {
                   stale: false,
                 };
 
-                learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
+                await learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);
                 written++;
               } catch (err) {
                 failed++;

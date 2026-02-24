@@ -1740,7 +1740,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     };
 
     const isolationLayer = {
-      retrieveWithIsolation: () => {
+      retrieveWithIsolation: async () => {
         const mkRecord = (filePath: string) => ({
           repo: "acme/repo",
           owner: "acme",
@@ -1888,7 +1888,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     };
 
     const isolationLayer = {
-      retrieveWithIsolation: () => {
+      retrieveWithIsolation: async () => {
         const mkRecord = (filePath: string) => ({
           repo: "acme/repo",
           owner: "acme",
@@ -2089,7 +2089,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     };
 
     const isolationLayer = {
-      retrieveWithIsolation: () => ({
+      retrieveWithIsolation: async () => ({
         results: [],
         provenance: {
           repoSources: ["acme/repo"],
@@ -4323,7 +4323,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
     };
 
     const isolationLayer = {
-      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+      retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
         const variantId = params.queryEmbedding[0] ?? 0;
         retrieveCalls.push(variantId);
 
@@ -4500,7 +4500,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
     };
 
     const isolationLayer = {
-      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+      retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
         const variantId = params.queryEmbedding[0] ?? 0;
         const findingText = variantId === 1 ? "intent variant finding" : "shape variant finding";
         const memoryId = variantId === 1 ? 11 : 12;
@@ -4700,7 +4700,7 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
         }),
       } as never,
       isolationLayer: {
-        retrieveWithIsolation: () => ({
+        retrieveWithIsolation: async () => ({
           results: [
             {
               memoryId: 1,
@@ -6506,10 +6506,10 @@ describe("createReviewHandler author-tier search cache integration", () => {
       generate: (query: string) => Promise<{ embedding: Float32Array; model: string; dimensions: number }>;
     };
     isolationLayer?: {
-      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+      retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => Promise<{
         results: Array<any>;
         provenance: Record<string, unknown>;
-      };
+      }>;
     };
     retrievalReranker?: {
       rerankByLanguage: (params: { results: Array<any> }) => Array<any>;
@@ -7035,7 +7035,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
         }),
       },
       isolationLayer: {
-        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
           const variantId = params.queryEmbedding[0] ?? 0;
           if (variantId === 1) {
             return {

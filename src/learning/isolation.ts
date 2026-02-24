@@ -15,7 +15,7 @@ export type IsolationLayer = {
     distanceThreshold: number;
     adaptive?: boolean;
     logger: Logger;
-  }): RetrievalWithProvenance;
+  }): Promise<RetrievalWithProvenance>;
 };
 
 /**
@@ -29,7 +29,7 @@ export function createIsolationLayer(opts: {
   const { memoryStore, logger: baseLogger } = opts;
 
   return {
-    retrieveWithIsolation(params): RetrievalWithProvenance {
+    async retrieveWithIsolation(params): Promise<RetrievalWithProvenance> {
       const {
         queryEmbedding,
         repo,
@@ -46,7 +46,7 @@ export function createIsolationLayer(opts: {
       const internalTopK = adaptive ? Math.max(20, topK * 4) : topK;
 
       // Step 1: Always query repo-scoped memories first
-      const repoResults = memoryStore.retrieveMemories({
+      const repoResults = await memoryStore.retrieveMemories({
         queryEmbedding,
         repo,
         topK: internalTopK,
@@ -61,7 +61,7 @@ export function createIsolationLayer(opts: {
 
       // Step 3: If sharing enabled, query owner's other repos
       if (sharingEnabled) {
-        const rawShared = memoryStore.retrieveMemoriesForOwner({
+        const rawShared = await memoryStore.retrieveMemoriesForOwner({
           queryEmbedding,
           owner,
           excludeRepo: repo,
@@ -90,7 +90,7 @@ export function createIsolationLayer(opts: {
       const repoSources = new Set<string>();
 
       for (const candidate of topCandidates) {
-        const record = memoryStore.getMemoryRecord(candidate.memoryId);
+        const record = await memoryStore.getMemoryRecord(candidate.memoryId);
         if (!record) continue;
 
         results.push({

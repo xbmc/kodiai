@@ -1200,7 +1200,7 @@ export function createMentionHandler(deps: {
                   throw new Error(`Embedding unavailable for ${variant.type} retrieval variant`);
                 }
 
-                const retrieval = isolationLayer.retrieveWithIsolation({
+                const retrieval = await isolationLayer.retrieveWithIsolation({
                   queryEmbedding: embeddingResult.embedding,
                   repo: `${mention.owner}/${mention.repo}`,
                   owner: mention.owner,

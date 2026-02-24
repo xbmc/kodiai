@@ -87,10 +87,10 @@ describe("LearningMemoryStore (pgvector)", () => {
     // Verify record stored via direct SQL
     const rows = await sql`SELECT * FROM learning_memories WHERE finding_id = 1001`;
     expect(rows.length).toBe(1);
-    expect(rows[0].repo).toBe("owner/repo-a");
-    expect(rows[0].owner).toBe("owner");
-    expect(rows[0].severity).toBe("major");
-    expect(rows[0].embedding).not.toBeNull();
+    expect(rows[0]!.repo).toBe("owner/repo-a");
+    expect(rows[0]!.owner).toBe("owner");
+    expect(rows[0]!.severity).toBe("major");
+    expect(rows[0]!.embedding).not.toBeNull();
   });
 
   test("writeMemory stores record and getMemoryRecord retrieves it", async () => {
@@ -101,7 +101,7 @@ describe("LearningMemoryStore (pgvector)", () => {
 
     // Get the inserted ID
     const rows = await sql`SELECT id FROM learning_memories WHERE finding_id = 1001`;
-    const id = rows[0].id;
+    const id = rows[0]!.id;
 
     const stored = await store.getMemoryRecord(id);
     expect(stored).not.toBeNull();
@@ -186,7 +186,7 @@ describe("LearningMemoryStore (pgvector)", () => {
 
     // Verify only one record exists
     const rows = await sql`SELECT COUNT(*)::int AS cnt FROM learning_memories WHERE finding_id = 4001`;
-    expect(rows[0].cnt).toBe(1);
+    expect(rows[0]!.cnt).toBe(1);
   });
 
   test("markStale marks old model embeddings", async () => {
@@ -217,8 +217,8 @@ describe("LearningMemoryStore (pgvector)", () => {
 
     // Verify: old model record is stale
     const rows = await sql`SELECT id, stale FROM learning_memories ORDER BY finding_id`;
-    expect(rows[0].stale).toBe(true);
-    expect(rows[1].stale).toBe(false);
+    expect(rows[0]!.stale).toBe(true);
+    expect(rows[1]!.stale).toBe(false);
   });
 
   test("purgeStaleEmbeddings removes stale records", async () => {
@@ -234,7 +234,7 @@ describe("LearningMemoryStore (pgvector)", () => {
 
     // Verify record exists
     const rowsBefore = await sql`SELECT COUNT(*)::int AS cnt FROM learning_memories`;
-    expect(rowsBefore[0].cnt).toBe(1);
+    expect(rowsBefore[0]!.cnt).toBe(1);
 
     // Mark stale and purge
     await store.markStale("voyage-code-3");
@@ -243,7 +243,7 @@ describe("LearningMemoryStore (pgvector)", () => {
 
     // Record should be gone
     const rowsAfter = await sql`SELECT COUNT(*)::int AS cnt FROM learning_memories`;
-    expect(rowsAfter[0].cnt).toBe(0);
+    expect(rowsAfter[0]!.cnt).toBe(0);
   });
 
   test("getMemoryRecord returns null for non-existent id", async () => {

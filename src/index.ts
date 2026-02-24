@@ -23,6 +23,8 @@ import { createLearningMemoryStore } from "./learning/memory-store.ts";
 import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./learning/embedding-provider.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "./learning/types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./learning/isolation.ts";
+import { createDbClient, type Sql } from "./db/client.ts";
+import { runMigrations } from "./db/migrate.ts";
 import { Database } from "bun:sqlite";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
@@ -85,18 +87,20 @@ logger.info(
 );
 knowledgeStore.checkpoint();
 
-// Learning memory (v0.5 LEARN-06)
+// Learning memory (v0.5 LEARN-06, migrated to PostgreSQL + pgvector in v0.17)
 let learningMemoryStore: LearningMemoryStore | undefined;
 let embeddingProvider: EmbeddingProvider | undefined;
+let pgSql: Sql | undefined;
 
 try {
-  const learningDb = new Database(knowledgeDb.dbPath, { create: true });
-  learningDb.run("PRAGMA journal_mode = WAL");
-  learningDb.run("PRAGMA synchronous = NORMAL");
-  learningDb.run("PRAGMA busy_timeout = 5000");
+  const pgClient = createDbClient({ logger });
+  pgSql = pgClient.sql;
 
-  learningMemoryStore = createLearningMemoryStore({ db: learningDb, logger });
-  logger.info("Learning memory store initialized");
+  // Run migrations to ensure schema is up to date
+  await runMigrations(pgSql);
+
+  learningMemoryStore = createLearningMemoryStore({ sql: pgSql, logger });
+  logger.info("Learning memory store initialized (PostgreSQL + pgvector)");
 } catch (err) {
   logger.warn({ err }, "Learning memory store failed to initialize (fail-open, learning disabled)");
 }

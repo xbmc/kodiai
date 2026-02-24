@@ -5279,7 +5279,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
         },
       } as never,
       isolationLayer: {
-        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
           const variantId = params.queryEmbedding[0] ?? 0;
           const mk = (memoryId: number, findingText: string, distance: number, filePath?: string) => ({
             memoryId,
@@ -5448,7 +5448,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
         },
       } as never,
       isolationLayer: {
-        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
           const variantId = params.queryEmbedding[0] ?? 0;
           const findingText = variantId === 1 ? "intent-only mention finding" : "shape-only mention finding";
           return {
@@ -5598,7 +5598,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
         },
       } as never,
       isolationLayer: {
-        retrieveWithIsolation: (params: { queryEmbedding: Float32Array }) => {
+        retrieveWithIsolation: async (params: { queryEmbedding: Float32Array }) => {
           const variantId = params.queryEmbedding[0] ?? 0;
           const findingText = variantId === 1 ? "intent-only mention finding" : "shape mention `finding`";
           return {
