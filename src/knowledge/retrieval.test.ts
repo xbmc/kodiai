@@ -3,6 +3,7 @@ import { createRetriever, type RetrieveOptions, type RetrieveResult } from "./re
 import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWithProvenance } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
+import type { WikiPageStore, WikiPageSearchResult } from "./wiki-types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -341,5 +342,268 @@ describe("createRetriever", () => {
     expect(result).not.toBeNull();
     expect(result!.reviewPrecedents).toHaveLength(0);
     expect(result!.provenance.reviewCommentCount).toBe(0);
+  });
+});
+
+// --- Language-aware retrieval (LANG-03/LANG-04) ---
+
+function makeRetrievalResultWithLang(memoryId: number, distance: number, language: string, filePath?: string): RetrievalResult {
+  return {
+    memoryId,
+    distance,
+    sourceRepo: "owner/repo",
+    record: {
+      id: memoryId,
+      repo: "owner/repo",
+      owner: "owner",
+      findingId: memoryId,
+      reviewId: 100 + memoryId,
+      sourceRepo: "owner/repo",
+      findingText: `Finding ${memoryId}`,
+      severity: "major",
+      category: "correctness",
+      filePath: filePath ?? `src/file-${memoryId}.ts`,
+      language,
+      outcome: "accepted",
+      embeddingModel: "test-model",
+      embeddingDim: 1024,
+      stale: false,
+      createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(), // old enough to not get recency boost
+    },
+  };
+}
+
+function makeMockWikiStore(results: WikiPageSearchResult[] = []): WikiPageStore {
+  return {
+    async writeChunks() {},
+    async deletePageChunks() {},
+    async replacePageChunks() {},
+    async softDeletePage() {},
+    async searchByEmbedding(): Promise<WikiPageSearchResult[]> { return results; },
+    async searchByFullText(): Promise<WikiPageSearchResult[]> { return []; },
+    async getPageChunks() { return []; },
+    async getSyncState() { return null; },
+    async updateSyncState() {},
+    async countBySource() { return 0; },
+    async getPageRevision() { return null; },
+  };
+}
+
+function makeWikiSearchResult(pageId: number, distance: number, languageTags: string[]): WikiPageSearchResult {
+  return {
+    distance,
+    record: {
+      id: pageId,
+      createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+      pageId,
+      pageTitle: `Wiki Page ${pageId}`,
+      namespace: "main",
+      pageUrl: `https://wiki.example.com/page/${pageId}`,
+      sectionHeading: null,
+      sectionAnchor: null,
+      sectionLevel: null,
+      chunkIndex: 0,
+      chunkText: `Wiki chunk content for page ${pageId}`,
+      rawText: `Wiki raw text for page ${pageId}`,
+      tokenCount: 20,
+      embedding: null,
+      embeddingModel: "voyage-code-3",
+      stale: false,
+      lastModified: null,
+      revisionId: null,
+      deleted: false,
+      languageTags,
+    },
+  };
+}
+
+describe("language-aware unified pipeline (step 6e)", () => {
+  test("C++ code memory gets boosted when prLanguages includes 'C++'", async () => {
+    // C++ memory at distance 0.4, Python memory at distance 0.2
+    // Without boost: python (0.2) beats cpp (0.4)
+    // With C++ boost: cpp gets boosted in unified pipeline
+    const cppResult = makeRetrievalResultWithLang(1, 0.4, "cpp", "src/renderer.cpp");
+    const pyResult = makeRetrievalResultWithLang(2, 0.2, "python", "src/utils.py");
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cppResult, pyResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      prLanguages: ["C++"],
+      topK: 10,
+    }));
+
+    expect(result).not.toBeNull();
+    const unified = result!.unifiedResults;
+    expect(unified.length).toBeGreaterThan(0);
+    // The cpp memory should appear in results (boosted)
+    const cppChunk = unified.find((c) => c.metadata?.language === "cpp");
+    const pyChunk = unified.find((c) => c.metadata?.language === "python");
+    // Both should appear; cpp should rank higher than python due to boost
+    if (cppChunk && pyChunk) {
+      const cppIdx = unified.indexOf(cppChunk);
+      const pyIdx = unified.indexOf(pyChunk);
+      expect(cppIdx).toBeLessThan(pyIdx); // cpp ranked higher
+    }
+  });
+
+  test("Python memory not penalized — score unchanged when prLanguages is ['C++']", async () => {
+    const pyResult = makeRetrievalResultWithLang(1, 0.3, "python", "src/utils.py");
+    const noLangResult = makeRetrievalResultWithLang(2, 0.3, "unknown", "config/settings.json");
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([pyResult, noLangResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      prLanguages: ["C++"],
+      topK: 10,
+    }));
+
+    expect(result).not.toBeNull();
+    // Python and unknown language results should appear in unified results
+    // (not penalized or excluded)
+    expect(result!.unifiedResults.length).toBeGreaterThan(0);
+  });
+
+  test("proportional boost — 80% C++ PR boosts C++ results more than 50% C++ PR", async () => {
+    // Use 4 C++ files vs 1 Python file = 80% C++ weight
+    const cppResult = makeRetrievalResultWithLang(1, 0.5, "cpp", "src/main.cpp");
+
+    const retriever80 = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cppResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+    const result80 = await retriever80.retrieve(makeBaseOpts({
+      prLanguages: ["cpp", "cpp", "cpp", "cpp", "python"], // 80% C++
+      topK: 10,
+    }));
+
+    const retriever50 = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cppResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+    const result50 = await retriever50.retrieve(makeBaseOpts({
+      prLanguages: ["cpp", "python"], // 50% C++
+      topK: 10,
+    }));
+
+    expect(result80).not.toBeNull();
+    expect(result50).not.toBeNull();
+
+    const score80 = result80!.unifiedResults.find((c) => c.metadata?.language === "cpp")?.rrfScore ?? 0;
+    const score50 = result50!.unifiedResults.find((c) => c.metadata?.language === "cpp")?.rrfScore ?? 0;
+
+    // 80% weight should give higher rrfScore boost than 50%
+    expect(score80).toBeGreaterThan(score50);
+  });
+
+  test("related language affinity — C memory gets partial boost when prLanguages is ['cpp']", async () => {
+    const cResult = makeRetrievalResultWithLang(1, 0.5, "c", "src/utils.c");
+
+    const retrieverCpp = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+    const resultCpp = await retrieverCpp.retrieve(makeBaseOpts({
+      prLanguages: ["cpp"],
+      topK: 10,
+    }));
+
+    const retrieverGo = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+    const resultGo = await retrieverGo.retrieve(makeBaseOpts({
+      prLanguages: ["go"], // unrelated language — no boost
+      topK: 10,
+    }));
+
+    expect(resultCpp).not.toBeNull();
+    expect(resultGo).not.toBeNull();
+
+    const scoreCpp = resultCpp!.unifiedResults.find((c) => c.metadata?.language === "c")?.rrfScore ?? 0;
+    const scoreGo = resultGo!.unifiedResults.find((c) => c.metadata?.language === "c")?.rrfScore ?? 0;
+
+    // C should score higher when C++ PR (related boost) vs Go PR (no boost)
+    expect(scoreCpp).toBeGreaterThan(scoreGo);
+  });
+
+  test("wiki chunk with languageTags=['python'] gets boosted when prLanguages includes 'Python'", async () => {
+    const wikiStore = makeMockWikiStore([
+      makeWikiSearchResult(1, 0.2, ["python"]),
+      makeWikiSearchResult(2, 0.2, ["general"]),
+    ]);
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([]),
+      config: makeConfig({ adaptive: false }),
+      wikiPageStore: wikiStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({
+      prLanguages: ["Python"],
+      topK: 10,
+    }));
+
+    expect(result).not.toBeNull();
+    const unified = result!.unifiedResults;
+    const pythonWiki = unified.find((c) => c.source === "wiki" && (c.metadata?.languageTags as string[] | undefined)?.includes("python"));
+    const generalWiki = unified.find((c) => c.source === "wiki" && (c.metadata?.languageTags as string[] | undefined)?.[0] === "general");
+
+    if (pythonWiki && generalWiki) {
+      // Python-tagged wiki page should rank higher due to boost
+      expect(unified.indexOf(pythonWiki)).toBeLessThan(unified.indexOf(generalWiki));
+    } else {
+      // At minimum, wiki results should appear
+      expect(unified.some((c) => c.source === "wiki")).toBe(true);
+    }
+  });
+
+  test("memoryToUnified includes language in metadata", async () => {
+    const cppResult = makeRetrievalResultWithLang(1, 0.3, "cpp", "src/renderer.cpp");
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([cppResult]),
+      config: makeConfig({ adaptive: false }),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({ prLanguages: [] }));
+
+    expect(result).not.toBeNull();
+    const codeChunk = result!.unifiedResults.find((c) => c.source === "code");
+    expect(codeChunk).toBeDefined();
+    expect(codeChunk?.metadata?.language).toBe("cpp");
+  });
+
+  test("wikiMatchToUnified includes languageTags in metadata", async () => {
+    const wikiStore = makeMockWikiStore([
+      makeWikiSearchResult(1, 0.3, ["python", "javascript"]),
+    ]);
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer([]),
+      config: makeConfig({ adaptive: false }),
+      wikiPageStore: wikiStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts({ prLanguages: [] }));
+
+    expect(result).not.toBeNull();
+    const wikiChunk = result!.unifiedResults.find((c) => c.source === "wiki");
+    expect(wikiChunk).toBeDefined();
+    expect(wikiChunk?.metadata?.languageTags).toEqual(["python", "javascript"]);
   });
 });

@@ -18,6 +18,8 @@ export type WikiKnowledgeMatch = {
   sectionAnchor: string | null;
   lastModified: string | null;
   source: "wiki";
+  /** Language affinity tags from the wiki page (e.g. ["python", "javascript"] or ["general"]). */
+  languageTags: string[];
 };
 
 /** Default cosine distance threshold for wiki page search. */
@@ -82,6 +84,7 @@ export async function searchWikiPages(opts: {
         sectionAnchor: r.record.sectionAnchor,
         lastModified: r.record.lastModified,
         source: "wiki" as const,
+        languageTags: r.record.languageTags ?? [],
       };
     });
 }

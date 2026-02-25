@@ -19,6 +19,7 @@ import {
   type RankedSourceList,
 } from "./cross-corpus-rrf.ts";
 import { deduplicateChunks } from "./dedup.ts";
+import { classifyFileLanguage, RELATED_LANGUAGES } from "../execution/diff-analysis.ts";
 
 export type TriggerType = "pr_review" | "issue" | "question" | "slack";
 
@@ -98,6 +99,80 @@ const SOURCE_WEIGHTS: Record<TriggerType, Record<string, number>> = {
   slack: { code: 1.0, review_comment: 1.0, wiki: 1.0 },
 };
 
+/** How much to boost exact-language matches in the unified pipeline. */
+const LANGUAGE_BOOST_FACTOR = 0.25;
+/** Related language gets this fraction of the exact match boost. */
+const LANGUAGE_AFFINITY_RATIO = 0.5;
+
+/**
+ * Build proportional language weights from the PR languages array.
+ * E.g. ["cpp", "cpp", "cpp", "cpp", "python"] -> Map { "cpp": 0.8, "python": 0.2 }
+ * Languages are normalized to lowercase before counting.
+ */
+function buildProportionalLanguageWeights(prLanguages: string[]): Map<string, number> {
+  if (prLanguages.length === 0) return new Map();
+  const counts = new Map<string, number>();
+  for (const lang of prLanguages) {
+    const normalized = lang.toLowerCase()
+      .replace("c++", "cpp")
+      .replace("c#", "csharp")
+      .replace("objective-c++", "objectivecpp")
+      .replace("objective-c", "objectivec")
+      .replace("f#", "fsharp");
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+  }
+  const total = prLanguages.length;
+  const weights = new Map<string, number>();
+  for (const [lang, count] of counts) {
+    weights.set(lang, count / total);
+  }
+  return weights;
+}
+
+/**
+ * Extract the language from a unified chunk for language boost purposes.
+ * - code chunks: reads metadata.language
+ * - wiki chunks: reads first non-"general" tag from metadata.languageTags
+ * - review_comment chunks: classifies from metadata.filePath
+ */
+function getChunkLanguage(chunk: UnifiedRetrievalChunk): string | null {
+  if (chunk.source === "code") {
+    const lang = chunk.metadata?.language as string | undefined;
+    return lang ?? null;
+  }
+  if (chunk.source === "wiki") {
+    const tags = chunk.metadata?.languageTags as string[] | undefined;
+    if (!tags || tags.length === 0) return null;
+    // Prefer specific language over "general"
+    const specific = tags.find((t) => t !== "general");
+    return specific ?? (tags[0] === "general" ? null : (tags[0] ?? null));
+  }
+  if (chunk.source === "review_comment") {
+    const filePath = chunk.metadata?.filePath as string | undefined;
+    if (!filePath) return null;
+    const classified = classifyFileLanguage(filePath);
+    if (classified === "Unknown") return null;
+    return classified.toLowerCase()
+      .replace("c++", "cpp")
+      .replace("c#", "csharp")
+      .replace("objective-c++", "objectivecpp")
+      .replace("objective-c", "objectivec")
+      .replace("f#", "fsharp");
+  }
+  return null;
+}
+
+function hasRelatedLanguage(lang: string, weightMap: Map<string, number>): boolean {
+  const related = RELATED_LANGUAGES[lang];
+  return related?.some((r) => weightMap.has(r)) ?? false;
+}
+
+function getMaxRelatedWeight(lang: string, weightMap: Map<string, number>): number {
+  const related = RELATED_LANGUAGES[lang];
+  if (!related) return 0;
+  return Math.max(0, ...related.map((r) => weightMap.get(r) ?? 0));
+}
+
 /**
  * Normalize a review comment match to UnifiedRetrievalChunk.
  */
@@ -141,6 +216,7 @@ function wikiMatchToUnified(match: WikiKnowledgeMatch): UnifiedRetrievalChunk {
       pageTitle: match.pageTitle,
       namespace: match.namespace,
       sectionHeading: match.sectionHeading,
+      languageTags: match.languageTags ?? [],
     },
   };
 }
@@ -149,6 +225,16 @@ function wikiMatchToUnified(match: WikiKnowledgeMatch): UnifiedRetrievalChunk {
  * Normalize a learning memory result to UnifiedRetrievalChunk.
  */
 function memoryToUnified(result: MergedRetrievalResult): UnifiedRetrievalChunk {
+  // Use stored language; fallback to runtime classification for old records without language field
+  const language = result.record.language
+    ?? classifyFileLanguage(result.record.filePath).toLowerCase()
+         .replace("c#", "csharp")
+         .replace("c++", "cpp")
+         .replace("objective-c++", "objectivecpp")
+         .replace("objective-c", "objectivec")
+         .replace("f#", "fsharp")
+         .replace("unknown", "unknown");
+
   return {
     id: `code:${result.memoryId}`,
     text: result.record.findingText,
@@ -164,6 +250,7 @@ function memoryToUnified(result: MergedRetrievalResult): UnifiedRetrievalChunk {
       severity: result.record.severity,
       category: result.record.category,
       outcome: result.record.outcome,
+      language,
     },
   };
 }
@@ -452,7 +539,7 @@ export function createRetriever(deps: {
           ? wikiFullTextResult.value.map((r) => {
               const record = (r as { record?: unknown }).record;
               if (record && typeof record === "object" && "chunkText" in record) {
-                const rec = record as { chunkText: string; pageId?: number; pageTitle?: string; namespace?: string; pageUrl?: string; sectionHeading?: string | null; sectionAnchor?: string | null; lastModified?: string | null };
+                const rec = record as { chunkText: string; pageId?: number; pageTitle?: string; namespace?: string; pageUrl?: string; sectionHeading?: string | null; sectionAnchor?: string | null; lastModified?: string | null; languageTags?: string[] };
                 return wikiMatchToUnified({
                   chunkText: rec.chunkText,
                   rawText: rec.chunkText,
@@ -465,6 +552,7 @@ export function createRetriever(deps: {
                   sectionAnchor: rec.sectionAnchor ?? null,
                   lastModified: rec.lastModified ?? null,
                   source: "wiki",
+                  languageTags: rec.languageTags ?? [],
                 });
               }
               return null;
@@ -523,6 +611,33 @@ export function createRetriever(deps: {
         const weight = weights[chunk.source] ?? 1.0;
         chunk.rrfScore *= weight;
       }
+
+      // 6e-bis: Apply language-aware boost to unified results (LANG-03/LANG-04)
+      // Single location for language weighting — unified pipeline only.
+      // Legacy rerankByLanguage in step 4 only affects findings[] output (backward compat).
+      // Policy: boost-only — non-matching results NEVER penalized.
+      const langWeightMap = buildProportionalLanguageWeights(prLanguages);
+      if (langWeightMap.size > 0) {
+        for (const chunk of unifiedResults) {
+          const chunkLang = getChunkLanguage(chunk);
+          if (!chunkLang || chunkLang === "unknown" || chunkLang === "general") continue;
+
+          let boost = 0;
+          if (langWeightMap.has(chunkLang)) {
+            // Exact match: boost proportional to that language's share of PR changes
+            boost = langWeightMap.get(chunkLang)! * LANGUAGE_BOOST_FACTOR;
+          } else if (hasRelatedLanguage(chunkLang, langWeightMap)) {
+            // Related language: fraction of exact match boost
+            boost = getMaxRelatedWeight(chunkLang, langWeightMap) * LANGUAGE_BOOST_FACTOR * LANGUAGE_AFFINITY_RATIO;
+          }
+          // else: no match — no change to score (NEVER penalize)
+
+          if (boost > 0) {
+            chunk.rrfScore *= (1 + boost);
+          }
+        }
+      }
+
       unifiedResults.sort((a, b) => b.rrfScore - a.rrfScore);
       unifiedResults = unifiedResults.slice(0, topK);
 
