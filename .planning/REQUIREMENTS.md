@@ -83,32 +83,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LLM-01 | — | Pending |
-| LLM-02 | — | Pending |
-| LLM-03 | — | Pending |
-| LLM-04 | — | Pending |
-| LLM-05 | — | Pending |
-| WIKI-01 | — | Pending |
-| WIKI-02 | — | Pending |
-| WIKI-03 | — | Pending |
-| WIKI-04 | — | Pending |
-| WIKI-05 | — | Pending |
-| CLST-01 | — | Pending |
-| CLST-02 | — | Pending |
-| CLST-03 | — | Pending |
-| CLST-04 | — | Pending |
-| CLST-05 | — | Pending |
-| PROF-01 | — | Pending |
-| PROF-02 | — | Pending |
-| PROF-03 | — | Pending |
-| PROF-04 | — | Pending |
-| PROF-05 | — | Pending |
+| LLM-01 | Phase 97 | Pending |
+| LLM-02 | Phase 97 | Pending |
+| LLM-03 | Phase 97 | Pending |
+| LLM-04 | Phase 97 | Pending |
+| LLM-05 | Phase 97 | Pending |
+| WIKI-01 | Phase 99 | Pending |
+| WIKI-02 | Phase 99 | Pending |
+| WIKI-03 | Phase 99 | Pending |
+| WIKI-04 | Phase 99 | Pending |
+| WIKI-05 | Phase 99 | Pending |
+| CLST-01 | Phase 100 | Pending |
+| CLST-02 | Phase 100 | Pending |
+| CLST-03 | Phase 100 | Pending |
+| CLST-04 | Phase 100 | Pending |
+| CLST-05 | Phase 100 | Pending |
+| PROF-01 | Phase 98 | Pending |
+| PROF-02 | Phase 98 | Pending |
+| PROF-03 | Phase 98 | Pending |
+| PROF-04 | Phase 98 | Pending |
+| PROF-05 | Phase 98 | Pending |
 
 **Coverage:**
 - v0.20 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after initial definition*
+*Last updated: 2026-02-25 after roadmap creation*

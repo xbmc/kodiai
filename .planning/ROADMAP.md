@@ -21,6 +21,7 @@
 - ✅ **v0.17 Infrastructure Foundation** — Phases 86-88 (shipped 2026-02-24)
 - ✅ **v0.18 Knowledge Ingestion** — Phases 89-92 (shipped 2026-02-25)
 - ✅ **v0.19 Intelligent Retrieval Enhancements** — Phases 93-96 (shipped 2026-02-25)
+- 🚧 **v0.20 Multi-Model & Active Intelligence** — Phases 97-100 (in progress)
 
 ## Phases
 
@@ -157,6 +158,15 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 
 </details>
 
+### v0.20 Multi-Model & Active Intelligence (In Progress)
+
+See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
+
+- [ ] **Phase 97: Multi-LLM Routing & Cost Tracking** - Vercel AI SDK integration with task-based model routing, provider config, and per-invocation cost logging
+- [ ] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior
+- [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub
+- [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews
+
 ## Progress
 
 **Total shipped:** 19 milestones, 96 phases, 241 plans
@@ -182,7 +192,11 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 | 86-88 | v0.17 | 8/8 | Complete | 2026-02-24 |
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
+| 97 | v0.20 | 0/TBD | Not started | - |
+| 98 | v0.20 | 0/TBD | Not started | - |
+| 99 | v0.20 | 0/TBD | Not started | - |
+| 100 | v0.20 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-25 -- v0.19 Intelligent Retrieval Enhancements shipped*
+*Roadmap updated: 2026-02-25 -- v0.20 Multi-Model & Active Intelligence roadmap created*
