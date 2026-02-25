@@ -71,35 +71,35 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LANG-01 | — | Pending |
-| LANG-02 | — | Pending |
-| LANG-03 | — | Pending |
-| LANG-04 | — | Pending |
-| LANG-05 | — | Pending |
-| DEPS-01 | — | Pending |
-| DEPS-02 | — | Pending |
-| DEPS-03 | — | Pending |
-| DEPS-04 | — | Pending |
-| DEPS-05 | — | Pending |
-| DEPS-06 | — | Pending |
-| DEPS-07 | — | Pending |
-| DEPS-08 | — | Pending |
-| CIFR-01 | — | Pending |
-| CIFR-02 | — | Pending |
-| CIFR-03 | — | Pending |
-| CIFR-04 | — | Pending |
-| CIFR-05 | — | Pending |
-| SNIP-01 | — | Pending |
-| SNIP-02 | — | Pending |
-| SNIP-03 | — | Pending |
-| SNIP-04 | — | Pending |
-| SNIP-05 | — | Pending |
+| LANG-01 | Phase 93 | Pending |
+| LANG-02 | Phase 93 | Pending |
+| LANG-03 | Phase 93 | Pending |
+| LANG-04 | Phase 93 | Pending |
+| LANG-05 | Phase 93 | Pending |
+| DEPS-01 | Phase 94 | Pending |
+| DEPS-02 | Phase 94 | Pending |
+| DEPS-03 | Phase 94 | Pending |
+| DEPS-04 | Phase 94 | Pending |
+| DEPS-05 | Phase 94 | Pending |
+| DEPS-06 | Phase 94 | Pending |
+| DEPS-07 | Phase 94 | Pending |
+| DEPS-08 | Phase 94 | Pending |
+| CIFR-01 | Phase 95 | Pending |
+| CIFR-02 | Phase 95 | Pending |
+| CIFR-03 | Phase 95 | Pending |
+| CIFR-04 | Phase 95 | Pending |
+| CIFR-05 | Phase 95 | Pending |
+| SNIP-01 | Phase 96 | Pending |
+| SNIP-02 | Phase 96 | Pending |
+| SNIP-03 | Phase 96 | Pending |
+| SNIP-04 | Phase 96 | Pending |
+| SNIP-05 | Phase 96 | Pending |
 
 **Coverage:**
 - v0.19 requirements: 23 total
-- Mapped to phases: 0
-- Unmapped: 23 ⚠️
+- Mapped to phases: 23
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after initial definition*
+*Last updated: 2026-02-25 after roadmap creation*
