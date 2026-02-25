@@ -27,7 +27,7 @@
 ### Phase 89 — PR Review Comment Ingestion
 **Goal:** 18 months of human review comments from xbmc/xbmc embedded and searchable
 **Requirements:** KI-01 through KI-06
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
 - [ ] 89-01-PLAN.md — Schema, store, and thread-aware chunker for review comments

@@ -11,8 +11,8 @@ See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Milestone:** v0.18 Knowledge Ingestion
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Status:** Milestone defined — ready for `/gsd:plan-phase 89`
-**Last Activity:** 2026-02-24
+**Status:** Executing Phase 89 — Plan 01 complete (1/4 plans)
+**Last Activity:** 2026-02-25
 
 Progress: [----------] 0% (0/3 phases)
 
@@ -20,7 +20,7 @@ Progress: [----------] 0% (0/3 phases)
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| 89 | PR Review Comment Ingestion | Pending |
+| 89 | PR Review Comment Ingestion | In Progress (1/4 plans) |
 | 90 | MediaWiki Content Ingestion | Pending |
 | 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
 
@@ -29,6 +29,11 @@ Progress: [----------] 0% (0/3 phases)
 ### Decisions
 
 All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions table.
+
+- **Phase 89-01:** Whitespace-based token counting for chunker (no external tokenizer dependency)
+- **Phase 89-01:** ON CONFLICT DO NOTHING for idempotent backfill writes
+- **Phase 89-01:** Bot filtering via configurable Set<string> plus [bot] suffix detection
+- **Phase 89-01:** updateChunks uses DELETE + INSERT in transaction for re-chunking on edit
 
 ### Key Constraints (Carry-Forward)
 
@@ -79,6 +84,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T01:47:39.667Z
-**Stopped At:** Phase 89 context gathered
-**Next action:** `/gsd:plan-phase 89` to plan PR Review Comment Ingestion
+**Last session:** 2026-02-25T03:27:31.445Z
+**Stopped At:** Completed 89-01-PLAN.md
+**Next action:** `/gsd:execute-phase 89` to continue with Plan 02 (backfill pipeline)
