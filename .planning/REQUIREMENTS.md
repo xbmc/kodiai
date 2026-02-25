@@ -14,8 +14,8 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 - [x] **KI-02**: Review comments stored with metadata: PR number, file, line range, author, date
 - [x] **KI-03**: Semantic chunking at per-comment/per-thread boundaries with overlapping sliding windows (512 tokens, 128 overlap) for long threads
 - [x] **KI-04**: Incremental sync ingests new review comments on PR close/merge via webhook
-- [ ] **KI-05**: Review comment corpus available via `src/knowledge/retrieval.ts` retrieval path
-- [ ] **KI-06**: Bot can cite human review precedents ("reviewers have historically flagged this pattern") in responses
+- [x] **KI-05**: Review comment corpus available via `src/knowledge/retrieval.ts` retrieval path
+- [x] **KI-06**: Bot can cite human review precedents ("reviewers have historically flagged this pattern") in responses
 
 ### MediaWiki Content Ingestion
 
@@ -61,8 +61,8 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 | KI-02 | Phase 89 | Complete |
 | KI-03 | Phase 89 | Complete |
 | KI-04 | Phase 89 | Complete |
-| KI-05 | Phase 89 | Pending |
-| KI-06 | Phase 89 | Pending |
+| KI-05 | Phase 89 | Complete |
+| KI-06 | Phase 89 | Complete |
 | KI-07 | Phase 90 | Pending |
 | KI-08 | Phase 90 | Pending |
 | KI-09 | Phase 90 | Pending |
