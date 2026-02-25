@@ -69,6 +69,20 @@ import {
   createSearchCache,
   type SearchCache,
 } from "../lib/search-cache.ts";
+import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
+import {
+  parseVersionFileDiff,
+  fetchDependsChangelog,
+  verifyHash,
+  detectPatchChanges,
+} from "../lib/depends-bump-enrichment.ts";
+import { findDependencyConsumers, checkTransitiveDependencies } from "../lib/depends-impact-analyzer.ts";
+import {
+  buildDependsReviewComment,
+  buildDependsInlineComments,
+  computeDependsVerdict,
+  type DependsReviewData,
+} from "../lib/depends-review-builder.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -1724,8 +1738,229 @@ export function createReviewHandler(deps: {
         });
         const allChangedFiles = diffContext.changedFiles;
 
+        // ── [depends] deep-review detection (DEPS-01/02) ──
+        // Runs BEFORE Dependabot detection. If matched, Dependabot path is skipped.
+        let dependsBumpInfo: DependsBumpInfo | null = null;
+        try {
+          dependsBumpInfo = detectDependsBump(pr.title);
+          if (dependsBumpInfo) {
+            logger.info({
+              ...baseLog,
+              gate: "depends-bump-detect",
+              packages: dependsBumpInfo.packages.map(p => p.name),
+              platform: dependsBumpInfo.platform,
+              isGroup: dependsBumpInfo.isGroup,
+            }, "[depends] bump detected — entering deep-review pipeline");
+          }
+        } catch (err) {
+          logger.warn({ ...baseLog, err, gate: "depends-bump-detect" }, "[depends] detection failed (fail-open)");
+        }
+
+        // ── [depends] deep-review pipeline ──
+        // When a [depends] bump is detected, run enrichment, build structured comment, and post.
+        if (dependsBumpInfo) {
+          try {
+            // 1. Fetch PR files with status/patch from GitHub API
+            const prFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
+              owner: apiOwner,
+              repo: apiRepo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const prFilesForDepends = prFilesResponse.data.map(f => ({
+              filename: f.filename,
+              status: f.status,
+              patch: f.patch,
+            }));
+
+            // 2. Parse VERSION file diffs from PR files
+            const versionDiffs = [];
+            for (const pkg of dependsBumpInfo.packages) {
+              const versionFile = prFilesForDepends.find(f =>
+                f.filename.toLowerCase().includes(pkg.name.toLowerCase()) &&
+                f.filename.toUpperCase().includes("VERSION")
+              );
+              const vFileDiff = versionFile?.patch ? parseVersionFileDiff(versionFile.patch) : null;
+              versionDiffs.push({
+                packageName: pkg.name,
+                oldVersion: vFileDiff?.oldVersion ?? pkg.oldVersion,
+                newVersion: vFileDiff?.newVersion ?? pkg.newVersion,
+                versionFileDiff: vFileDiff,
+              });
+            }
+
+            // 3. Fetch changelogs (parallel)
+            const changelogs = await Promise.all(
+              dependsBumpInfo.packages.map(async pkg => {
+                const vd = versionDiffs.find(v => v.packageName === pkg.name);
+                const changelog = await fetchDependsChangelog({
+                  libraryName: pkg.name,
+                  oldVersion: vd?.oldVersion ?? pkg.oldVersion ?? "",
+                  newVersion: vd?.newVersion ?? pkg.newVersion ?? "",
+                  octokit: idempotencyOctokit,
+                  timeoutMs: 4000,
+                  versionFileDiff: vd?.versionFileDiff ?? null,
+                });
+                return { packageName: pkg.name, changelog };
+              })
+            );
+
+            // 4. Verify hashes (parallel)
+            const hashResults = await Promise.all(
+              versionDiffs.map(async vd => {
+                if (!vd.versionFileDiff?.newSha512) {
+                  return { packageName: vd.packageName, result: { status: "skipped" as const, detail: "No hash in VERSION file" } };
+                }
+                const archiveUrl = vd.versionFileDiff.newBaseUrl && vd.versionFileDiff.newArchive
+                  ? `${vd.versionFileDiff.newBaseUrl}/${vd.versionFileDiff.newArchive}`
+                  : null;
+                if (!archiveUrl) {
+                  return { packageName: vd.packageName, result: { status: "skipped" as const, detail: "Cannot construct download URL" } };
+                }
+                const result = await verifyHash({
+                  url: archiveUrl,
+                  expectedSha512: vd.versionFileDiff.newSha512,
+                  timeoutMs: 5000,
+                });
+                return { packageName: vd.packageName, result };
+              })
+            );
+
+            // 5. Detect patch changes
+            const patchChanges = detectPatchChanges(
+              prFilesForDepends.filter((f): f is typeof f & { status: string } => !!f.status)
+            );
+
+            // 6. Impact analysis (workspace required)
+            let dependsImpact = null;
+            let dependsTransitive = null;
+            if (workspace) {
+              try {
+                const primaryPkg = dependsBumpInfo.packages[0];
+                if (primaryPkg) {
+                  dependsImpact = await findDependencyConsumers({
+                    workspaceDir: workspace.dir,
+                    libraryName: primaryPkg.name,
+                    octokit: idempotencyOctokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    timeBudgetMs: 3000,
+                  });
+                  dependsTransitive = await checkTransitiveDependencies({
+                    libraryName: primaryPkg.name,
+                    octokit: idempotencyOctokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                  });
+                }
+              } catch (err) {
+                logger.warn({ ...baseLog, err, gate: "depends-impact" }, "Impact analysis failed (fail-open)");
+              }
+            }
+
+            // 7. Retrieval context (past reviews/wiki about this dependency)
+            let dependsRetrievalContext: string | null = null;
+            if (retriever) {
+              try {
+                const primaryPkg = dependsBumpInfo.packages[0];
+                if (primaryPkg) {
+                  const result = await retriever.retrieve({
+                    repo: `${apiOwner}/${apiRepo}`,
+                    owner: apiOwner,
+                    queries: [`${primaryPkg.name} dependency bump update`],
+                    workspaceDir: workspace?.dir ?? "",
+                    prLanguages: ["c", "cpp", "cmake"],
+                    logger,
+                    triggerType: "pr_review",
+                  });
+                  if (result && result.unifiedResults && result.unifiedResults.length > 0) {
+                    dependsRetrievalContext = result.unifiedResults
+                      .slice(0, 3)
+                      .map(r => `- ${r.snippet ?? r.text ?? ""}`)
+                      .filter(s => s.length > 2)
+                      .join("\n");
+                  }
+                }
+              } catch (err) {
+                logger.warn({ ...baseLog, err, gate: "depends-retrieval" }, "Retrieval context failed (fail-open)");
+              }
+            }
+
+            // 8. Build and post the deep-review comment
+            const reviewData: DependsReviewData = {
+              info: dependsBumpInfo,
+              versionDiffs,
+              changelogs,
+              hashResults,
+              patchChanges,
+              impact: dependsImpact,
+              transitive: dependsTransitive,
+              retrievalContext: dependsRetrievalContext,
+              platform: dependsBumpInfo.platform,
+            };
+
+            const verdict = computeDependsVerdict(reviewData);
+            const commentBody = buildDependsReviewComment(reviewData);
+            const inlineComments = buildDependsInlineComments(reviewData, prFilesForDepends);
+
+            // Post top-level summary comment
+            await idempotencyOctokit.rest.issues.createComment({
+              owner: apiOwner,
+              repo: apiRepo,
+              issue_number: pr.number,
+              body: commentBody,
+            });
+
+            // Post inline review comments (if any)
+            if (inlineComments.length > 0) {
+              await idempotencyOctokit.rest.pulls.createReview({
+                owner: apiOwner,
+                repo: apiRepo,
+                pull_number: pr.number,
+                event: "COMMENT",
+                comments: inlineComments.map(c => ({
+                  path: c.path,
+                  line: c.line,
+                  body: c.body,
+                })),
+              });
+            }
+
+            logger.info({
+              ...baseLog,
+              gate: "depends-review-complete",
+              verdict: verdict.level,
+              packagesCount: dependsBumpInfo.packages.length,
+              inlineCommentCount: inlineComments.length,
+              hasRetrievalContext: !!dependsRetrievalContext,
+            }, "[depends] deep review posted");
+
+            // 9. Determine if standard Claude review should also run
+            const buildConfigPaths = ["tools/depends/", "cmake/modules/", "project/BuildDependencies/", "project/cmake/"];
+            const hasSourceChanges = prFilesForDepends.some(f =>
+              !buildConfigPaths.some(prefix => f.filename.startsWith(prefix)) &&
+              !f.filename.toUpperCase().includes("VERSION") &&
+              !f.filename.endsWith(".patch")
+            );
+
+            if (!hasSourceChanges) {
+              // Pure dependency bump -- skip standard Claude review
+              logger.info({ ...baseLog, gate: "depends-review-skip-standard", verdict: verdict.level }, "[depends] pure dep bump — skipping standard review");
+              return;
+            }
+
+            logger.info({ ...baseLog, gate: "depends-review-continue", verdict: verdict.level, hasSourceChanges }, "[depends] source changes detected — continuing to standard review");
+          } catch (err) {
+            logger.warn({ ...baseLog, err, gate: "depends-pipeline" }, "[depends] pipeline failed (fail-open, falling through to standard review)");
+            // Reset dependsBumpInfo so Dependabot detection can still run
+            dependsBumpInfo = null;
+          }
+        }
+
         // ── Dependency bump detection (DEP-01/02/03) ──
+        // Skipped when [depends] detection matched (mutual exclusivity)
         let depBumpContext: DepBumpContext | null = null;
+        if (!dependsBumpInfo) {
         try {
           const detection = detectDepBump({
             prTitle: pr.title,
@@ -1889,6 +2124,7 @@ export function createReviewHandler(deps: {
             );
           }
         }
+        } // end if (!dependsBumpInfo) -- mutual exclusivity guard
 
         const skipMatchers = config.review.skipPaths
           .map(normalizeSkipPattern)
