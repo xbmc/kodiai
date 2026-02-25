@@ -96,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25
-**Stopped At:** Phase 89 complete, ready to plan Phase 90
-**Resume file:** None
+**Last session:** 2026-02-25T05:03:36.104Z
+**Stopped At:** Phase 90 context gathered
+**Resume file:** .planning/phases/90-mediawiki-content-ingestion/90-CONTEXT.md
