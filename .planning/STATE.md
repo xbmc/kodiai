@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Milestone:** v0.18 Knowledge Ingestion
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Status:** Phase 89 complete (5/5 plans)
+**Status:** Milestone complete
 **Last Activity:** 2026-02-25
 
 Progress: [###-------] 33% (1/3 phases)
