@@ -39,32 +39,38 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.19 Intelligent Retrieval Enhancements
+<details>
+<summary>Previous Release: v0.19 Intelligent Retrieval Enhancements (2026-02-25)</summary>
 
-**Goal:** Make retrieval smarter with language-aware boosting and sub-function granularity, add specialized deep-review pipelines for dependency bumps, and recognize unrelated CI failures.
-
-**Target features:**
-- Language-aware boosting — schema extension + retrieval ranking boost by language
-- Code snippet embedding — hunk-level embedding for sub-function granularity (exploratory)
-- `[depends]` PR deep review — specialized in-depth pipeline for dependency bump PRs
-- Unrelated CI failure recognition — detect and annotate CI failures unrelated to PR scope
-
+**Shipped:** 2026-02-25
+**Phases:** 93-96 (4 phases, 14 plans)
 **Source:** [Issue #42](https://github.com/xbmc/kodiai/issues/42)
+
+**Delivered:**
+- Language-aware retrieval boosting with 61-extension classification, proportional multi-language boost, and schema migration with backfill
+- Specialized [depends] deep-review pipeline for Kodi-convention dependency bump PRs with changelog analysis, impact assessment, hash verification, and transitive dependency checks
+- Unrelated CI failure recognition using Checks API base-branch comparison with flakiness tracking and annotation comments
+- Hunk-level code snippet embedding as 4th retrieval corpus with content-hash dedup and fire-and-forget integration
+
+</details>
 
 ## Current State
 
-v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified under a single retrieval call with hybrid BM25+vector search and RRF merging:
+v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snippets) with language-aware boosting, specialized dependency review, and CI failure recognition:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
-- Three knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages)
-- Unified retrieval: single `createRetriever()` call fans out to all three corpora with source-aware RRF ranking
+- Four knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets)
+- Unified retrieval: single `createRetriever()` call fans out to all four corpora with source-aware RRF ranking
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
-- Source attribution: every chunk labeled [code], [review], or [wiki] with inline citations in responses
+- Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
+- Source attribution: every chunk labeled [code], [review], [wiki], or [snippet] with inline citations
+- Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
+- CI failure recognition: base-branch comparison via Checks API with flakiness tracking
 - All consumers wired: @mention, PR review (primary + retry), Slack — all get unified cross-corpus context
 - Incremental sync: webhooks for review comments, scheduled job for wiki pages
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~65,000 lines of TypeScript, 1,200+ tests passing
+- ~68,000 lines of TypeScript, 1,494 tests passing
 
 ## Requirements
 
@@ -156,12 +162,13 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - ✓ Source-aware re-ranking and attribution (code / review / wiki labels) on every chunk — v0.18
 - ✓ Near-duplicate deduplication across corpora via cosine similarity threshold — v0.18
 - ✓ Language-aware retrieval boosting with 61-extension classification map and proportional boost-only ranking — v0.19
+- ✓ `[depends]` PR deep review pipeline with changelog analysis, impact assessment, and hash verification — v0.19
+- ✓ Unrelated CI failure recognition with Checks API base-branch comparison and flakiness tracking — v0.19
+- ✓ Hunk-level code snippet embedding as 4th retrieval corpus with content-hash dedup and configurable caps — v0.19
 
 ### Active
 
-- [ ] Code snippet embedding for sub-function granularity
-- [ ] `[depends]` PR deep review pipeline with changelog analysis and impact assessment
-- [ ] Unrelated CI failure recognition with reasoning annotations
+(None — define next milestone with `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -187,7 +194,7 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - **Storage:** Azure PostgreSQL Flexible Server with pgvector extension (HNSW indexes, tsvector columns)
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
 - **Slack:** Bot token with `chat:write`, `reactions:write` scopes; signing secret for ingress verification
-- **Codebase:** ~56,000 lines of TypeScript, 1,100+ tests passing
+- **Codebase:** ~68,000 lines of TypeScript, 1,494 tests passing
 
 ## Key Decisions
 
@@ -241,6 +248,11 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 | Proportional multi-language boosting | PR language distribution (80% C++ / 20% Python) drives boost weights; reflects actual change volume | ✓ Good — v0.19 |
 | Related language affinity at 50% boost | C/C++, TS/JS get partial boost via RELATED_LANGUAGES map; captures ecosystem proximity | ✓ Good — v0.19 |
 | Page-level wiki language tagging | All chunks from a page share same tags; avoids per-chunk detection overhead | ✓ Good — v0.19 |
+| Sequential [depends] vs Dependabot detection | detectDependsBump() returns null for non-matching; Dependabot runs only if [depends] didn't match | ✓ Good — v0.19 |
+| Three-tier changelog fallback | github-releases -> diff-analysis (synthesized) -> unavailable; graceful degradation | ✓ Good — v0.19 |
+| Checks API over Actions API for CI | External CI systems (Jenkins) visible; not limited to GitHub Actions | ✓ Good — v0.19 |
+| Content-hash dedup for hunk embedding | SHA-256 keyed UPSERT; identical hunks never re-embedded | ✓ Good — v0.19 |
+| Fire-and-forget hunk embedding | Async after review completion with .catch(); never blocks review response | ✓ Good — v0.19 |
 
 ## Constraints
 
@@ -253,4 +265,4 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after Phase 93*
+*Last updated: 2026-02-25 after v0.19 milestone*
