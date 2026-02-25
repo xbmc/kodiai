@@ -23,5 +23,21 @@ export type {
   FindingSeverity, FindingCategory,
 } from "./types.ts";
 
+// Review comment store
+export { createReviewCommentStore } from "./review-comment-store.ts";
+
+// Review comment chunker
+export { chunkReviewThread } from "./review-comment-chunker.ts";
+
+// Review comment types
+export type {
+  ReviewCommentStore, ReviewCommentChunk, ReviewCommentSearchResult,
+  ReviewCommentRecord, ReviewCommentInput, SyncState,
+} from "./review-comment-types.ts";
+
+// Review comment backfill
+export { backfillReviewComments, syncSinglePR } from "./review-comment-backfill.ts";
+export type { BackfillResult, BackfillOptions } from "./review-comment-backfill.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";

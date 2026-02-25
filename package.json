@@ -15,7 +15,8 @@
     "verify:phase80:regression": "bun scripts/phase80-slack-regression-gate.ts",
     "verify:phase81:smoke": "bun scripts/phase81-slack-write-smoke.ts",
     "verify:phase81:regression": "bun scripts/phase81-slack-write-regression-gate.ts",
-    "migrate:sqlite-to-pg": "bun scripts/migrate-sqlite-to-postgres.ts"
+    "migrate:sqlite-to-pg": "bun scripts/migrate-sqlite-to-postgres.ts",
+    "backfill:reviews": "bun scripts/backfill-review-comments.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",
