@@ -1,5 +1,7 @@
 import type { MentionEvent } from "../handlers/mention-types.ts";
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { sanitizeContent } from "../lib/sanitizer.ts";
+import { formatUnifiedContext } from "./review-prompt.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -35,6 +37,10 @@ export function buildMentionPrompt(params: {
   };
   customInstructions?: string;
   outputLanguage?: string;
+  /** Unified cross-corpus retrieval results (KI-11/KI-12) */
+  unifiedResults?: UnifiedRetrievalChunk[];
+  /** Pre-assembled context window from unified pipeline */
+  contextWindow?: string;
 }): string {
   const {
     mention,
@@ -44,6 +50,8 @@ export function buildMentionPrompt(params: {
     findingContext,
     customInstructions,
     outputLanguage,
+    unifiedResults,
+    contextWindow,
   } = params;
   const lines: string[] = [];
 
@@ -85,7 +93,19 @@ export function buildMentionPrompt(params: {
     lines.push("");
   }
 
-  if (retrievalContext && retrievalContext.findings.length > 0) {
+  // Unified cross-corpus context takes precedence over legacy retrieval (KI-11/KI-12)
+  if (unifiedResults && unifiedResults.length > 0) {
+    const unified = formatUnifiedContext({ unifiedResults, contextWindow });
+    if (unified.length > 0) {
+      lines.push(unified);
+      lines.push("");
+      lines.push(
+        "When referencing information from the knowledge base, cite sources using the labels provided (e.g., [wiki: Page Title], [review: PR #123], [code: file.ts]).",
+      );
+      lines.push("");
+    }
+  } else if (retrievalContext && retrievalContext.findings.length > 0) {
+    // Legacy retrieval path (backward compat when unified pipeline not active)
     const maxChars = retrievalContext.maxChars ?? 1200;
     const maxItems = retrievalContext.maxItems ?? 3;
 

@@ -1139,6 +1139,10 @@ export function createMentionHandler(deps: {
         }
 
         let retrievalContext: MentionRetrievalContext | undefined;
+        let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
+        let contextWindowForPrompt: string | undefined;
+        let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
+        let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         if (retriever && config.knowledge.retrieval.enabled) {
           try {
             let filePaths: string[] = [];
@@ -1190,6 +1194,18 @@ export function createMentionHandler(deps: {
               logger,
               triggerType: "question",
             });
+
+            // Capture unified cross-corpus results (KI-11/KI-12)
+            if (result && result.unifiedResults && result.unifiedResults.length > 0) {
+              unifiedResultsForPrompt = result.unifiedResults;
+              contextWindowForPrompt = result.contextWindow;
+            }
+            if (result && result.reviewPrecedents.length > 0) {
+              reviewPrecedentsForPrompt = result.reviewPrecedents;
+            }
+            if (result && result.wikiKnowledge.length > 0) {
+              wikiKnowledgeForPrompt = result.wikiKnowledge;
+            }
 
             if (result && result.findings.length > 0) {
               retrievalContext = {
@@ -1272,6 +1288,9 @@ export function createMentionHandler(deps: {
             .filter((s) => (s ?? "").trim().length > 0)
             .join("\n\n"),
           outputLanguage: config.review.outputLanguage,
+          // Unified cross-corpus context (KI-11/KI-12)
+          unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+          contextWindow: contextWindowForPrompt,
         });
 
         // Execute via Claude

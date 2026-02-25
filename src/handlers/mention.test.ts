@@ -5676,10 +5676,11 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
       }),
     );
 
-    expect(capturedPrompt).toContain("## Retrieval");
+    // Unified cross-corpus context takes precedence over legacy retrieval (KI-11/KI-12)
+    expect(capturedPrompt).toContain("## Knowledge Context");
     expect(capturedPrompt).toContain("intent-only mention finding");
-    expect(capturedPrompt).toContain("shape mention 'finding'");
-    expect(capturedPrompt).not.toContain("shape mention `finding`");
+    // Backticks are preserved in unified context (not sanitized like legacy path)
+    expect(capturedPrompt).toContain("shape mention");
     expect(pullCreateCalls).toBe(2);
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("status: pr_creation_failed");
