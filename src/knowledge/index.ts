@@ -42,5 +42,21 @@ export type { BackfillResult, BackfillOptions } from "./review-comment-backfill.
 // Review comment retrieval
 export { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
 
+// Wiki page store
+export { createWikiPageStore } from "./wiki-store.ts";
+
+// Wiki page chunker
+export { chunkWikiPage, stripHtmlToMarkdown } from "./wiki-chunker.ts";
+
+// Wiki page types
+export type {
+  WikiPageStore, WikiPageChunk, WikiPageInput,
+  WikiPageRecord, WikiPageSearchResult, WikiSyncState,
+} from "./wiki-types.ts";
+
+// Wiki backfill
+export { backfillWikiPages } from "./wiki-backfill.ts";
+export type { WikiBackfillResult, WikiBackfillOptions } from "./wiki-backfill.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";
