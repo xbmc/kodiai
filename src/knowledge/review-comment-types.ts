@@ -114,6 +114,13 @@ export type ReviewCommentStore = {
     topK: number;
   }): Promise<ReviewCommentSearchResult[]>;
 
+  /** Full-text search using tsvector GIN index. */
+  searchByFullText(params: {
+    query: string;
+    repo: string;
+    topK: number;
+  }): Promise<ReviewCommentSearchResult[]>;
+
   /** Get all comments in a thread, ordered by creation time. */
   getThreadComments(threadId: string): Promise<ReviewCommentRecord[]>;
 

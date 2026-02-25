@@ -197,6 +197,31 @@ export function createReviewCommentStore(opts: {
       }));
     },
 
+    async searchByFullText(params: {
+      query: string;
+      repo: string;
+      topK: number;
+    }): Promise<ReviewCommentSearchResult[]> {
+      if (!params.query.trim()) return [];
+
+      const rows = await sql`
+        SELECT *,
+          ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
+        FROM review_comments
+        WHERE repo = ${params.repo}
+          AND stale = false
+          AND deleted = false
+          AND search_tsv @@ plainto_tsquery('english', ${params.query})
+        ORDER BY rank DESC
+        LIMIT ${params.topK}
+      `;
+
+      return rows.map((row) => ({
+        record: rowToRecord(row as unknown as CommentRow),
+        distance: 1 - Number((row as Record<string, unknown>).rank),
+      }));
+    },
+
     async getThreadComments(threadId: string): Promise<ReviewCommentRecord[]> {
       const rows = await sql`
         SELECT * FROM review_comments

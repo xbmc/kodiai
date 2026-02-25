@@ -309,6 +309,11 @@ export type LearningMemoryStore = {
     topK: number;
   }): Promise<{ memoryId: number; distance: number }[]>;
   getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null>;
+  searchByFullText?(params: {
+    query: string;
+    repo: string;
+    topK: number;
+  }): Promise<{ memoryId: number; rank: number }[]>;
   markStale(embeddingModel: string): Promise<number>;
   purgeStaleEmbeddings(): Promise<number>;
   close(): void;

@@ -92,6 +92,13 @@ export type WikiPageStore = {
     namespace?: string;
   }): Promise<WikiPageSearchResult[]>;
 
+  /** Full-text search using tsvector GIN index. */
+  searchByFullText(params: {
+    query: string;
+    topK: number;
+    namespace?: string;
+  }): Promise<WikiPageSearchResult[]>;
+
   /** Get all chunks for a page, ordered by chunk index. */
   getPageChunks(pageId: number): Promise<WikiPageRecord[]>;
 

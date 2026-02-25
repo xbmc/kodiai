@@ -167,6 +167,30 @@ export function createLearningMemoryStore(opts: {
       return deduped.slice(0, params.topK);
     },
 
+    searchByFullText: async (params: {
+      query: string;
+      repo: string;
+      topK: number;
+    }): Promise<{ memoryId: number; rank: number }[]> => {
+      if (!params.query.trim()) return [];
+
+      const rows = await sql`
+        SELECT m.id AS memory_id,
+          ts_rank(m.search_tsv, plainto_tsquery('english', ${params.query})) AS rank
+        FROM learning_memories m
+        WHERE m.repo = ${params.repo}
+          AND m.stale = false
+          AND m.search_tsv @@ plainto_tsquery('english', ${params.query})
+        ORDER BY rank DESC
+        LIMIT ${params.topK}
+      `;
+
+      return rows.map((row) => ({
+        memoryId: Number(row.memory_id),
+        rank: Number(row.rank),
+      }));
+    },
+
     async getMemoryRecord(memoryId: number): Promise<LearningMemoryRecord | null> {
       const rows = await sql`SELECT * FROM learning_memories WHERE id = ${memoryId}`;
       if (rows.length === 0) return null;

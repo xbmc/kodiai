@@ -188,6 +188,42 @@ export function createWikiPageStore(opts: {
       }));
     },
 
+    async searchByFullText(params: {
+      query: string;
+      topK: number;
+      namespace?: string;
+    }): Promise<WikiPageSearchResult[]> {
+      if (!params.query.trim()) return [];
+
+      const rows = params.namespace
+        ? await sql`
+            SELECT *,
+              ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
+            FROM wiki_pages
+            WHERE namespace = ${params.namespace}
+              AND stale = false
+              AND deleted = false
+              AND search_tsv @@ plainto_tsquery('english', ${params.query})
+            ORDER BY rank DESC
+            LIMIT ${params.topK}
+          `
+        : await sql`
+            SELECT *,
+              ts_rank(search_tsv, plainto_tsquery('english', ${params.query})) AS rank
+            FROM wiki_pages
+            WHERE stale = false
+              AND deleted = false
+              AND search_tsv @@ plainto_tsquery('english', ${params.query})
+            ORDER BY rank DESC
+            LIMIT ${params.topK}
+          `;
+
+      return rows.map((row) => ({
+        record: rowToRecord(row as unknown as WikiRow),
+        distance: 1 - Number((row as Record<string, unknown>).rank),
+      }));
+    },
+
     async getPageChunks(pageId: number): Promise<WikiPageRecord[]> {
       const rows = await sql`
         SELECT * FROM wiki_pages
