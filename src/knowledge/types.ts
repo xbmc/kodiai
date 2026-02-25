@@ -251,6 +251,7 @@ export type LearningMemoryRecord = {
   severity: FindingSeverity;
   category: FindingCategory;
   filePath: string;
+  language?: string;
   outcome: MemoryOutcome;
   embeddingModel: string;
   embeddingDim: number;

@@ -36,10 +36,12 @@ CREATE TABLE IF NOT EXISTS wiki_pages (
   revision_id INTEGER,
 
   -- Lifecycle
-  deleted BOOLEAN NOT NULL DEFAULT false,
-
-  UNIQUE(page_id, COALESCE(section_anchor, ''), chunk_index)
+  deleted BOOLEAN NOT NULL DEFAULT false
 );
+
+-- Unique constraint using expression (COALESCE not allowed in inline UNIQUE constraint)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_pages_unique_chunk
+  ON wiki_pages (page_id, COALESCE(section_anchor, ''), chunk_index);
 
 -- Indexes for common query patterns
 CREATE INDEX IF NOT EXISTS idx_wiki_pages_page_id

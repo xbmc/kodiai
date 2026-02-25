@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { LearningMemoryRecord, LearningMemoryStore } from "./types.ts";
+import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -24,6 +25,7 @@ type MemoryRow = {
   severity: string;
   category: string;
   file_path: string;
+  language: string | null;
   outcome: string;
   embedding_model: string;
   embedding_dim: number;
@@ -43,6 +45,7 @@ function rowToRecord(row: MemoryRow): LearningMemoryRecord {
     severity: row.severity as LearningMemoryRecord["severity"],
     category: row.category as LearningMemoryRecord["category"],
     filePath: row.file_path,
+    language: row.language ?? undefined,
     outcome: row.outcome as LearningMemoryRecord["outcome"],
     embeddingModel: row.embedding_model,
     embeddingDim: row.embedding_dim,
@@ -65,15 +68,20 @@ export function createLearningMemoryStore(opts: {
   const store: LearningMemoryStore = {
     async writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void> {
       const embeddingString = float32ArrayToVectorString(embedding);
+      // Use record.language if caller pre-classified (e.g., context-aware for .h files),
+      // otherwise classify from filePath. Normalize to lowercase for DB storage.
+      const language = record.language
+        ? record.language.toLowerCase()
+        : classifyFileLanguage(record.filePath).toLowerCase().replace("unknown", "unknown");
       try {
         await sql`
           INSERT INTO learning_memories (
             repo, owner, finding_id, review_id, source_repo,
-            finding_text, severity, category, file_path, outcome,
+            finding_text, severity, category, file_path, language, outcome,
             embedding_model, embedding_dim, stale, embedding
           ) VALUES (
             ${record.repo}, ${record.owner}, ${record.findingId}, ${record.reviewId}, ${record.sourceRepo},
-            ${record.findingText}, ${record.severity}, ${record.category}, ${record.filePath}, ${record.outcome},
+            ${record.findingText}, ${record.severity}, ${record.category}, ${record.filePath}, ${language}, ${record.outcome},
             ${record.embeddingModel}, ${record.embeddingDim}, ${record.stale}, ${embeddingString}::vector
           )
           ON CONFLICT (repo, finding_id, outcome) DO NOTHING

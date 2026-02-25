@@ -251,6 +251,43 @@ describe("LearningMemoryStore (pgvector)", () => {
     expect(result).toBeNull();
   });
 
+  test("writeMemory stores language field classified from filePath", async () => {
+    const record = makeRecord({ findingId: 9001, filePath: "src/utils.ts" });
+    const embedding = makeEmbedding(900);
+
+    await store.writeMemory(record, embedding);
+
+    const rows = await sql`SELECT language FROM learning_memories WHERE finding_id = 9001`;
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.language).toBe("typescript");
+  });
+
+  test("writeMemory uses record.language when provided instead of classifying from filePath", async () => {
+    // Caller pre-classified with context-aware classification
+    const record = makeRecord({ findingId: 9002, filePath: "include/header.h", language: "cpp" });
+    const embedding = makeEmbedding(901);
+
+    await store.writeMemory(record, embedding);
+
+    const rows = await sql`SELECT language FROM learning_memories WHERE finding_id = 9002`;
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.language).toBe("cpp");
+  });
+
+  test("getMemoryRecord returns language field", async () => {
+    const record = makeRecord({ findingId: 9003, filePath: "cmd/server.go" });
+    const embedding = makeEmbedding(902);
+
+    await store.writeMemory(record, embedding);
+
+    const rows = await sql`SELECT id FROM learning_memories WHERE finding_id = 9003`;
+    const id = rows[0]!.id;
+
+    const stored = await store.getMemoryRecord(id);
+    expect(stored).not.toBeNull();
+    expect(stored!.language).toBe("go");
+  });
+
   test("retrieveMemoriesForOwner works cross-repo", async () => {
     const embedding = makeEmbedding(600);
     const similarEmbedding = makeEmbedding(601);
