@@ -72,6 +72,13 @@ Plans:
 **Goal:** Unified retrieval across all knowledge sources with source-aware ranking
 **Requirements:** KI-13 through KI-19
 **Depends on:** Phases 89, 90
+**Plans:** 4/4 plans complete
+
+Plans:
+- [ ] 91-01-PLAN.md — Hybrid search (vector + BM25) per corpus with RRF merge
+- [ ] 91-02-PLAN.md — Cross-corpus RRF engine and cosine deduplication
+- [ ] 91-03-PLAN.md — Unified retrieval pipeline refactor with context assembly
+- [ ] 91-04-PLAN.md — Consumer integration, citation formatting, and E2E test
 
 **Scope:**
 - Multi-source query fan-out: single retrieval call queries code, review comments, wiki simultaneously
