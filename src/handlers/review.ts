@@ -1996,6 +1996,8 @@ export function createReviewHandler(deps: {
         let retrievalCtx: RetrievalContextForPrompt | null = null;
         let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
+        let unifiedResultsForPrompt: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] = [];
+        let contextWindowForPrompt: string | undefined;
         if (retriever) {
           try {
             const variants = buildRetrievalVariants({
@@ -2015,7 +2017,14 @@ export function createReviewHandler(deps: {
               workspaceDir: workspace.dir,
               prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
               logger,
+              triggerType: "pr_review",
             });
+
+            // Capture unified cross-corpus results (KI-13/KI-17)
+            if (result && result.unifiedResults && result.unifiedResults.length > 0) {
+              unifiedResultsForPrompt = result.unifiedResults;
+              contextWindowForPrompt = result.contextWindow;
+            }
 
             // Capture review precedents regardless of learning memory findings
             if (result && result.reviewPrecedents.length > 0) {
@@ -2288,6 +2297,9 @@ export function createReviewHandler(deps: {
           // Review comment precedents (KI-05/KI-06)
           reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
           wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
+          // Unified cross-corpus retrieval (KI-13/KI-17)
+          unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+          contextWindow: contextWindowForPrompt,
           // Multi-language context and localized output (LANG-01)
           filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,

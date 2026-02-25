@@ -962,6 +962,69 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Unified cross-corpus context formatting (KI-17)
+// ---------------------------------------------------------------------------
+
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
+
+const MAX_UNIFIED_CITATIONS = 8;
+
+/**
+ * Format unified cross-corpus retrieval results as a prompt section.
+ * Produces inline source labels with clickable links and alternate source annotations.
+ *
+ * Returns empty string when no results exist.
+ */
+export function formatUnifiedContext(params: {
+  unifiedResults: UnifiedRetrievalChunk[];
+  contextWindow?: string;
+  maxCitations?: number;
+}): string {
+  const { unifiedResults, contextWindow, maxCitations = MAX_UNIFIED_CITATIONS } = params;
+
+  if (unifiedResults.length === 0) return "";
+
+  // If contextWindow is pre-assembled, use it as a base
+  if (contextWindow) {
+    const bullets: string[] = [];
+    const capped = unifiedResults.slice(0, maxCitations);
+
+    for (const chunk of capped) {
+      const label = chunk.sourceUrl
+        ? `${chunk.sourceLabel}(${chunk.sourceUrl})`
+        : chunk.sourceLabel;
+
+      const excerpt = truncateAtWordBoundary(
+        chunk.text.replace(/\n/g, " ").trim(),
+        300,
+      );
+
+      let entry = `- ${label}: "${excerpt}"`;
+
+      // Alternate source annotations
+      if (chunk.alternateSources && chunk.alternateSources.length > 0) {
+        entry += ` (also found in ${chunk.alternateSources.join(", ")})`;
+      }
+
+      bullets.push(entry);
+    }
+
+    return [
+      "## Knowledge Context",
+      "",
+      "Relevant context from code reviews, human review comments, and wiki documentation.",
+      "Cite sources naturally using their labels. Only cite when directly relevant.",
+      "",
+      "---",
+      ...bullets,
+      "---",
+    ].join("\n");
+  }
+
+  return "";
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Language-specific guidance section (CTX-06)
 // ---------------------------------------------------------------------------
 export function buildLanguageGuidanceSection(
@@ -1339,6 +1402,9 @@ export function buildReviewPrompt(context: {
     degradationPath: string;
   } | null;
   isDraft?: boolean;
+  // Unified cross-corpus retrieval (KI-13/KI-17)
+  unifiedResults?: UnifiedRetrievalChunk[];
+  contextWindow?: string;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1415,30 +1481,41 @@ export function buildReviewPrompt(context: {
     lines.push("", buildIncrementalReviewSection(context.incrementalContext));
   }
 
-  // --- Retrieval context (learning memory) ---
-  if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
-    const retrievalSection = buildRetrievalContextSection({
-      findings: context.retrievalContext.findings,
-      maxChars: context.retrievalContext.maxChars,
+  // --- Knowledge context (unified cross-corpus or legacy) ---
+  if (context.unifiedResults && context.unifiedResults.length > 0) {
+    // Unified cross-corpus retrieval (KI-13/KI-17): single section replaces
+    // separate retrieval, precedent, and wiki sections
+    const unifiedSection = formatUnifiedContext({
+      unifiedResults: context.unifiedResults,
+      contextWindow: context.contextWindow,
     });
-    if (retrievalSection) {
-      lines.push("", retrievalSection);
+    if (unifiedSection) {
+      lines.push("", unifiedSection);
     }
-  }
-
-  // --- Review precedents (KI-05/KI-06) ---
-  if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
-    const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
-    if (precedentsSection) {
-      lines.push("", precedentsSection);
+  } else {
+    // Legacy path: separate sections for backward compatibility
+    if (context.retrievalContext && context.retrievalContext.findings.length > 0) {
+      const retrievalSection = buildRetrievalContextSection({
+        findings: context.retrievalContext.findings,
+        maxChars: context.retrievalContext.maxChars,
+      });
+      if (retrievalSection) {
+        lines.push("", retrievalSection);
+      }
     }
-  }
 
-  // --- Wiki knowledge (KI-11/KI-12) ---
-  if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
-    const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
-    if (wikiSection) {
-      lines.push("", wikiSection);
+    if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
+      const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
+      if (precedentsSection) {
+        lines.push("", precedentsSection);
+      }
+    }
+
+    if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
+      const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
+      if (wikiSection) {
+        lines.push("", wikiSection);
+      }
     }
   }
 

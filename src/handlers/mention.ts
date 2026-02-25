@@ -1188,6 +1188,7 @@ export function createMentionHandler(deps: {
               prLanguages,
               topK: retrievalTopK,
               logger,
+              triggerType: "question",
             });
 
             if (result && result.findings.length > 0) {

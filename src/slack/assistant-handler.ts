@@ -519,9 +519,12 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
               queries: [messageText],
               topK: 3,
               logger: depsLogger ?? ({ debug() {}, info() {}, warn() {}, error() {} } as unknown as Logger),
+              triggerType: "slack",
             });
 
-            if (retrievalResult && retrievalResult.findings.length > 0) {
+            if (retrievalResult && retrievalResult.contextWindow) {
+              prompt += "\n\nRelated context from knowledge base:\n" + retrievalResult.contextWindow;
+            } else if (retrievalResult && retrievalResult.findings.length > 0) {
               const contextLines = retrievalResult.findings.slice(0, 3).map((finding) => {
                 const path = finding.record.filePath;
                 const severity = finding.record.severity;
