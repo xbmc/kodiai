@@ -1994,6 +1994,7 @@ export function createReviewHandler(deps: {
 
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         let retrievalCtx: RetrievalContextForPrompt | null = null;
+        let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
         if (retriever) {
           try {
             const variants = buildRetrievalVariants({
@@ -2014,6 +2015,11 @@ export function createReviewHandler(deps: {
               prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
               logger,
             });
+
+            // Capture review precedents regardless of learning memory findings
+            if (result && result.reviewPrecedents.length > 0) {
+              reviewPrecedentsForPrompt = result.reviewPrecedents;
+            }
 
             if (result && result.findings.length > 0) {
               // Retrieval quality telemetry (RET-05)
@@ -2273,6 +2279,8 @@ export function createReviewHandler(deps: {
           } : null,
           // Learning memory retrieval context (LEARN-07)
           retrievalContext: retrievalCtx,
+          // Review comment precedents (KI-05/KI-06)
+          reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
           // Multi-language context and localized output (LANG-01)
           filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,
@@ -3247,6 +3255,7 @@ export function createReviewHandler(deps: {
                         unresolvedPriorFindings: priorFindingCtx?.unresolvedOnUnchangedCode ?? [],
                       } : null,
                       retrievalContext: retrievalCtx,
+                      reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
                       filesByLanguage: diffAnalysis?.filesByLanguage,
                       outputLanguage: config.review.outputLanguage,
                       prLabels,

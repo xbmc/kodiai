@@ -2,6 +2,7 @@ import { sanitizeContent } from "../lib/sanitizer.ts";
 import picomatch from "picomatch";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
+import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
@@ -849,6 +850,69 @@ export function buildRetrievalContextSection(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Review precedents section (KI-05/KI-06)
+// ---------------------------------------------------------------------------
+
+const MAX_REVIEW_PRECEDENTS = 5;
+const MAX_EXCERPT_CHARS = 200;
+
+/**
+ * Truncate text to a maximum number of characters, ending at a word boundary.
+ */
+function truncateAtWordBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const truncated = text.slice(0, maxChars);
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > maxChars * 0.5) {
+    return truncated.slice(0, lastSpace) + "...";
+  }
+  return truncated + "...";
+}
+
+/**
+ * Format review comment matches as a prompt section with inline citation instructions.
+ * Returns empty string when no matches exist (no section noise).
+ */
+export function formatReviewPrecedents(matches: ReviewCommentMatch[]): string {
+  if (matches.length === 0) return "";
+
+  const sorted = [...matches].sort((a, b) => a.distance - b.distance);
+  const capped = sorted.slice(0, MAX_REVIEW_PRECEDENTS);
+
+  const bullets: string[] = [];
+  for (const match of capped) {
+    const date = match.githubCreatedAt.slice(0, 10); // YYYY-MM-DD
+    const location = match.filePath
+      ? match.startLine && match.endLine
+        ? `\`${match.filePath}:${match.startLine}-${match.endLine}\``
+        : `\`${match.filePath}\``
+      : "general review";
+    const excerpt = truncateAtWordBoundary(
+      match.chunkText.replace(/\n/g, " ").trim(),
+      MAX_EXCERPT_CHARS,
+    );
+
+    bullets.push(
+      `- **PR #${match.prNumber}** (@${match.authorLogin}, ${date}) on ${location}:\n  "${excerpt}"`,
+    );
+  }
+
+  return [
+    "## Human Review Precedents",
+    "",
+    "The following are relevant comments from past human code reviews. Reference them when",
+    "the current change exhibits a similar pattern. Cite with:",
+    "`(reviewers have previously flagged this pattern -- PR #1234, @author)`",
+    "",
+    "Only cite when there is a strong match. Do not force citations.",
+    "",
+    "---",
+    ...bullets,
+    "---",
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Language-specific guidance section (CTX-06)
 // ---------------------------------------------------------------------------
 export function buildLanguageGuidanceSection(
@@ -1203,6 +1267,7 @@ export function buildReviewPrompt(context: {
     }>;
     maxChars?: number;
   } | null;
+  reviewPrecedents?: ReviewCommentMatch[];
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
@@ -1308,6 +1373,14 @@ export function buildReviewPrompt(context: {
     });
     if (retrievalSection) {
       lines.push("", retrievalSection);
+    }
+  }
+
+  // --- Review precedents (KI-05/KI-06) ---
+  if (context.reviewPrecedents && context.reviewPrecedents.length > 0) {
+    const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
+    if (precedentsSection) {
+      lines.push("", precedentsSection);
     }
   }
 

@@ -1,5 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import type { DiffAnalysis } from "./diff-analysis.ts";
+import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.ts";
 import {
   SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE,
   buildAuthorExperienceSection,
@@ -17,6 +18,7 @@ import {
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
   buildVerdictLogicSection,
+  formatReviewPrecedents,
   matchPathInstructions,
 } from "./review-prompt.ts";
 
@@ -1352,5 +1354,120 @@ describe("draft PR review prompt", () => {
     // Delta template uses its own summary format, not the standard one
     expect(prompt).not.toContain("\ud83d\udcdd Kodiai Draft Review Summary");
     expect(prompt).not.toContain("> **Draft**");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 89-04: Review Precedents (KI-05/KI-06)
+// ---------------------------------------------------------------------------
+
+function makeReviewCommentMatch(overrides: Partial<ReviewCommentMatch> = {}): ReviewCommentMatch {
+  return {
+    chunkText: "This lock ordering can cause deadlocks when called from the rendering thread",
+    distance: 0.25,
+    repo: "owner/repo",
+    prNumber: 5678,
+    prTitle: "Fix threading issue",
+    filePath: "src/video/VideoPlayer.cpp",
+    authorLogin: "contributor",
+    authorAssociation: "MEMBER",
+    githubCreatedAt: "2025-08-15T10:00:00Z",
+    startLine: 120,
+    endLine: 145,
+    source: "review_comment",
+    ...overrides,
+  };
+}
+
+describe("formatReviewPrecedents", () => {
+  test("empty matches produces no section", () => {
+    expect(formatReviewPrecedents([])).toBe("");
+  });
+
+  test("single match formats correctly with PR number, author, date, file path", () => {
+    const section = formatReviewPrecedents([makeReviewCommentMatch()]);
+    expect(section).toContain("## Human Review Precedents");
+    expect(section).toContain("**PR #5678**");
+    expect(section).toContain("@contributor");
+    expect(section).toContain("2025-08-15");
+    expect(section).toContain("`src/video/VideoPlayer.cpp:120-145`");
+    expect(section).toContain("deadlocks");
+    expect(section).toContain("Only cite when there is a strong match");
+  });
+
+  test("multiple matches sorted by distance (best first)", () => {
+    const matches = [
+      makeReviewCommentMatch({ distance: 0.5, prNumber: 111 }),
+      makeReviewCommentMatch({ distance: 0.1, prNumber: 222 }),
+      makeReviewCommentMatch({ distance: 0.3, prNumber: 333 }),
+    ];
+    const section = formatReviewPrecedents(matches);
+    const pr222Idx = section.indexOf("PR #222");
+    const pr333Idx = section.indexOf("PR #333");
+    const pr111Idx = section.indexOf("PR #111");
+    expect(pr222Idx).toBeLessThan(pr333Idx);
+    expect(pr333Idx).toBeLessThan(pr111Idx);
+  });
+
+  test("long chunk text truncated to 200 chars at word boundary", () => {
+    const longText = "This is a very long review comment that goes on and on about various issues. " +
+      "It discusses threading, memory management, lock ordering, and many other important topics " +
+      "that are relevant to the code review. The reviewer was very thorough in their analysis.";
+    const match = makeReviewCommentMatch({ chunkText: longText });
+    const section = formatReviewPrecedents([match]);
+    // The excerpt should be truncated and end with "..."
+    expect(section).toContain("...");
+    // Should not contain the full text
+    expect(section).not.toContain("very thorough in their analysis");
+  });
+
+  test("matches without filePath show general review instead", () => {
+    const match = makeReviewCommentMatch({ filePath: null });
+    const section = formatReviewPrecedents([match]);
+    expect(section).toContain("general review");
+    expect(section).not.toContain("`null`");
+  });
+
+  test("matches with filePath but no line range show file only", () => {
+    const match = makeReviewCommentMatch({ startLine: null, endLine: null });
+    const section = formatReviewPrecedents([match]);
+    expect(section).toContain("`src/video/VideoPlayer.cpp`");
+    expect(section).not.toContain("120-145");
+  });
+
+  test("section appears after Learning Context section in full prompt", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      retrievalContext: {
+        findings: [{
+          findingText: "SQL injection risk",
+          severity: "major",
+          category: "security",
+          path: "src/db.ts",
+          outcome: "accepted",
+          distance: 0.12,
+          sourceRepo: "owner/repo",
+        }],
+      },
+      reviewPrecedents: [makeReviewCommentMatch()],
+    }));
+    const learningIdx = prompt.indexOf("## Similar Prior Findings (Learning Context)");
+    const precedentsIdx = prompt.indexOf("## Human Review Precedents");
+    expect(learningIdx).toBeGreaterThan(-1);
+    expect(precedentsIdx).toBeGreaterThan(-1);
+    expect(precedentsIdx).toBeGreaterThan(learningIdx);
+  });
+
+  test("existing prompt tests continue to pass without reviewPrecedents", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Human Review Precedents");
+  });
+
+  test("caps at 5 matches", () => {
+    const matches = Array.from({ length: 8 }, (_, i) =>
+      makeReviewCommentMatch({ prNumber: 100 + i, distance: 0.1 + i * 0.05 }),
+    );
+    const section = formatReviewPrecedents(matches);
+    const prMatches = section.match(/\*\*PR #\d+\*\*/g);
+    expect(prMatches).toHaveLength(5);
   });
 });
