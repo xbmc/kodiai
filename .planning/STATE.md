@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Intelligent Retrieval Enhancements
 status: unknown
-stopped_at: Completed 93-02-PLAN.md
-last_updated: "2026-02-25T17:30:57.613Z"
+stopped_at: Completed 93-01-PLAN.md
+last_updated: "2026-02-25T17:33:38.166Z"
 progress:
   total_phases: 80
   completed_phases: 76
   total_plans: 190
-  completed_plans: 196
+  completed_plans: 197
 ---
 
 # Project State
@@ -24,9 +24,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 ## Current Position
 
 Phase: 93 of 96 (Language-Aware Retrieval Boosting)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-02-25 -- v0.19 roadmap created (4 phases, 23 requirements)
+Plan: 1 of 4 in current phase
+Status: In progress
+Last activity: 2026-02-25 -- 93-01 complete: language schema, expanded taxonomy, backfill script
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -45,6 +45,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 93 P02 | 4 | 2 tasks | 5 files |
+| Phase 93 P01 | 5 | 4 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,8 @@ Progress: [░░░░░░░░░░] 0%
 All decisions through v0.18 archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 93]: Language tags determined at page level so all chunks from a page share the same tags
 - [Phase 93]: Two-pass detection: fenced code blocks + prose mentions; default ['general'] for non-code pages
+- [Phase 93]: Kept classifyFileLanguage returning Title Case for backward compatibility; classifyFileLanguageWithContext returns lowercase for DB storage
+- [Phase 93]: .h files default to 'c', upgrade to 'cpp' when C++ context files present in PR; record.language takes precedence in writeMemory for caller pre-classification
 
 ### Key Constraints (Carry-Forward)
 
@@ -99,6 +102,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T17:30:57.610Z
-**Stopped At:** Completed 93-02-PLAN.md
+**Last session:** 2026-02-25T17:33:38.163Z
+**Stopped At:** Completed 93-01-PLAN.md
 **Resume file:** None
