@@ -19,7 +19,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 93 - Language-Aware Retrieval Boosting
+**Current focus:** Milestone v0.19 complete — all phases finished
 
 ## Current Position
 
@@ -28,7 +28,7 @@ Plan: 4 of 4 in current phase (COMPLETE)
 Status: Phase complete
 Last activity: 2026-02-25 -- 93-04 complete: language wiring through handlers, wiki languageTags tests, e2e language boost tests
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████████████████] 199/190 plans (100%)
 
 ## Performance Metrics
 
@@ -107,6 +107,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T17:48:24Z
-**Stopped At:** Completed 93-04-PLAN.md
+**Last session:** 2026-02-25
+**Stopped At:** Phase 93 complete, milestone v0.19 complete — all 4 phases finished
 **Resume file:** None

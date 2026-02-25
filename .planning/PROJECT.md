@@ -155,10 +155,10 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - ✓ Hybrid search (BM25 + vector) with RRF merging across heterogeneous sources — v0.18
 - ✓ Source-aware re-ranking and attribution (code / review / wiki labels) on every chunk — v0.18
 - ✓ Near-duplicate deduplication across corpora via cosine similarity threshold — v0.18
+- ✓ Language-aware retrieval boosting with 61-extension classification map and proportional boost-only ranking — v0.19
 
 ### Active
 
-- [ ] Language-aware boosting with schema extension and retrieval ranking
 - [ ] Code snippet embedding for sub-function granularity
 - [ ] `[depends]` PR deep review pipeline with changelog analysis and impact assessment
 - [ ] Unrelated CI failure recognition with reasoning annotations
@@ -237,6 +237,10 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 | Source-aware weight multipliers | Wiki 1.2x, review 1.1x, code 1.0x in re-ranking; domain knowledge slightly preferred | ✓ Good — v0.18 |
 | Optional learningMemoryStore in createRetriever | Backward-compatible; code corpus gets hybrid search when store is available | ✓ Good — v0.18 |
 | Inline citations [wiki: Page] / [review: PR #] | Differentiated source types in mention responses for user clarity | ✓ Good — v0.18 |
+| Boost-only language policy (no penalty) | Non-matching language results keep original score; avoids false negatives from language mismatch | ✓ Good — v0.19 |
+| Proportional multi-language boosting | PR language distribution (80% C++ / 20% Python) drives boost weights; reflects actual change volume | ✓ Good — v0.19 |
+| Related language affinity at 50% boost | C/C++, TS/JS get partial boost via RELATED_LANGUAGES map; captures ecosystem proximity | ✓ Good — v0.19 |
+| Page-level wiki language tagging | All chunks from a page share same tags; avoids per-chunk detection overhead | ✓ Good — v0.19 |
 
 ## Constraints
 
@@ -249,4 +253,4 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after v0.19 milestone start*
+*Last updated: 2026-02-25 after Phase 93*
