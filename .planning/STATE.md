@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Milestone:** v0.18 Knowledge Ingestion — SHIPPED
 **Status:** Complete
-Last activity: 2026-02-25 - Completed quick task 8: Issue triage — close #65, bump version labels on #73/#74/#75
+Last activity: 2026-02-25 - Completed quick task 9: Reorder milestone roadmap — #42=v0.19, #66=v0.20, bump #73-75
 
 Progress: [##########] 100% (18 milestones shipped, 92 phases, 227 plans)
 
@@ -66,9 +66,10 @@ None.
 | 6 | Extensive code review of entire codebase (97 files, 23,570 lines) | 2026-02-20 | ae782876aa | [6-extensive-code-review](./quick/6-extensive-code-review/) |
 | 7 | Fix all PR #67 review comments | 2026-02-25 | 47b30fb5dd | [7-fix-all-pr-67-review-comments](./quick/7-fix-all-pr-67-review-comments/) |
 | 8 | Issue triage: close #65, bump version labels on #73/#74/#75 | 2026-02-25 | 96ef6a0922 | [8-read-thru-the-open-issues-close-comment-](./quick/8-read-thru-the-open-issues-close-comment-/) |
+| 9 | Reorder milestone roadmap: #42=v0.19, #66=v0.20, bump #73-75 | 2026-02-25 | (gh-only) | [9-reorder-milestone-roadmap-66-and-42-befo](./quick/9-reorder-milestone-roadmap-66-and-42-befo/) |
 
 ## Session Continuity
 
 **Last session:** 2026-02-25
-**Stopped At:** Quick task 8 complete — issue triage done, next milestone is v0.19
+**Stopped At:** Quick task 9 complete — milestone roadmap reordered, #42/#66 now precede #73-75
 **Resume file:** .planning/MILESTONES.md
