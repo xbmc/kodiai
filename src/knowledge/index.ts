@@ -1,5 +1,14 @@
 // Retrieval (primary API)
-export { createRetriever, type RetrieveOptions, type RetrieveResult } from "./retrieval.ts";
+export { createRetriever, type RetrieveOptions, type RetrieveResult, type TriggerType } from "./retrieval.ts";
+
+// Hybrid search
+export { hybridSearchMerge, type HybridSearchResult } from "./hybrid-search.ts";
+
+// Cross-corpus RRF
+export { crossCorpusRRF, type UnifiedRetrievalChunk, type SourceType, type RankedSourceList } from "./cross-corpus-rrf.ts";
+
+// Deduplication
+export { deduplicateChunks, jaccardSimilarity } from "./dedup.ts";
 
 // Embeddings
 export { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./embeddings.ts";
