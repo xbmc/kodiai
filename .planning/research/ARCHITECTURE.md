@@ -1,14 +1,12 @@
 # Architecture Patterns
 
-**Domain:** v0.10 -- Advanced Dependency Signals, Checkpoint Publishing, Advanced Retrieval
-**Researched:** 2026-02-15
-**Confidence:** HIGH (based on direct codebase analysis of review.ts, knowledge/store.ts, learning/, execution/executor.ts, and all supporting modules)
+**Domain:** v0.19 -- Intelligent Retrieval Enhancements (language-aware boosting, hunk-level embedding, [depends] PR deep review, CI failure recognition)
+**Researched:** 2026-02-25
+**Confidence:** HIGH (based on direct codebase analysis of all integration points: retrieval.ts, retrieval-rerank.ts, dep-bump-detector.ts, ci-status-server.ts, review.ts, review-prompt.ts, cross-corpus-rrf.ts, and database migrations)
 
 ## Recommended Architecture
 
-v0.10 adds depth to three existing subsystems: dependency analysis, execution resilience, and retrieval intelligence. All nine integration questions resolve to modifications of existing pipeline stages or small new modules that plug into well-defined extension points. No new services, no new databases, no new runtime processes.
-
-The core design principle remains: **fail-open enrichment stages that add context without blocking the pipeline.**
+v0.19 adds four capabilities to the existing pipeline. Three are modifications to existing components; one ([depends] PR deep review) requires meaningful new logic. No new services, databases, or runtime processes are needed. The core design principle continues: **fail-open enrichment stages that add context without blocking the pipeline.**
 
 ### System Integration Map
 
@@ -28,517 +26,484 @@ The core design principle remains: **fail-open enrichment stages that add contex
 |  |-  computeIncrementalDiff()                                                     |
 |  |-  collectDiffContext()                                                          |
 |  |-  detectDepBump() + extractDepBumpDetails() + classifyDepBump()                |
-|  |-* analyzeAPIUsage()              [NEW - Q1, needs workspace]                   |
-|  |-* correlateMultiPackage()        [NEW - Q3, groups related bumps]              |
+|  |-  [NEW] detectDependsPrefix() -- extends dep-bump detection for [depends]      |
+|  |-  analyzeDiff() + classifyLanguages()                                          |
 |                                                                                   |
-|  STAGE 3: ENRICHMENT                                                              |
+|  STAGE 3: ENRICHMENT (all fail-open)                                              |
 |  |-  fetchSecurityAdvisories() + fetchChangelog()                                 |
 |  |-  computeMergeConfidence()                                                     |
-|  |-* recordDepHistory()             [NEW - Q2, persist to knowledge store]        |
-|  |-* applyAdaptiveThresholds()      [NEW - Q6, adjusts confidence]               |
-|  |-  analyzeDiff()                                                                |
-|  |-  computeFileRiskScores() + triageFilesByRisk()                                |
+|  |-  analyzePackageUsage()                                                        |
+|  |-  [NEW] fetchUpstreamChangelog() -- for [depends] non-npm deps (CMake/vcpkg)   |
+|  |-  [NEW] analyzeDependencyImpact() -- hash/URL/patch/build verification         |
 |                                                                                   |
 |  STAGE 4: RETRIEVAL                                                               |
-|  |-  buildRetrievalQuery() + embeddingProvider.generate()                         |
-|  |-  isolationLayer.retrieveWithIsolation()                                       |
-|  |-  rerankByLanguage()                                                           |
-|  |-* applyRecencyWeight()           [NEW - Q7, at query time]                     |
-|  |-* mapCrossLanguageEquivalence()  [NEW - Q9, lookup table]                      |
+|  |-  buildRetrievalVariants()                                                     |
+|  |-  createRetriever().retrieve()                                                 |
+|  |     |-  [MODIFIED] rerankByLanguage() -- uses DB language column                |
+|  |     |-  [MODIFIED] crossCorpusRRF() -- language-aware weight boost              |
+|  |-  [EXPLORATORY] hunk-level snippet embedding                                   |
 |                                                                                   |
-|  STAGE 5: PROMPT + EXECUTION                                                      |
+|  STAGE 5: PROMPT ASSEMBLY                                                         |
 |  |-  buildReviewPrompt()                                                          |
-|  |-  executor.execute()  <-- Claude Code CLI via Agent SDK                        |
-|  |-*   checkpoint mid-execution     [NEW - Q4, via MCP tool]                      |
+|  |     |-  [MODIFIED] buildDepBumpSection() -- [depends] deep review template      |
+|  |     |-  [NEW] buildCIFailureAnalysisSection()                                  |
+|  |-  [NEW] buildDependsDeepReviewPrompt() -- specialized prompt for [depends] PRs |
 |                                                                                   |
-|  STAGE 6: POST-PROCESSING                                                         |
-|  |-  extractFindingsFromReviewComments()                                          |
-|  |-  applyEnforcement()                                                           |
-|  |-  suppression pipeline                                                         |
-|  |-  prioritizeFindings()                                                         |
-|  |-  removeFilteredInlineComments()                                               |
-|  |-  review details publication                                                   |
-|  |-  telemetry + knowledge store writes                                           |
-|  |-* recordRetrievalTelemetry()     [NEW - Q8, inline collection]                 |
-|  |-* timeoutRetry()                 [NEW - Q5, re-enter via queue]                |
+|  STAGE 6: EXECUTION                                                               |
+|  |-  executor.execute()                                                           |
+|  |     |-  [MODIFIED] ci-status-server.ts -- adds failure classification tool      |
+|  |-  Post-execution enforcement + publishing                                      |
+|  |-  [NEW] CI failure annotation step (post-review)                               |
+|                                                                                   |
 +-----------------------------------------------------------------------------------+
 ```
 
-## Component Boundaries and Integration Answers
+## Component Boundaries
 
-### Q1: API Usage Analysis -- After Dep Bump Detection, Before Enrichment
+### Feature 1: Language-Aware Retrieval Boosting
 
-**Where:** Between `classifyDepBump()` and `fetchSecurityAdvisories()` in Stage 2 (approximately line 1430 in review.ts).
+| Component | Type | Responsibility | Communicates With |
+|-----------|------|---------------|-------------------|
+| `007-language-column.sql` (migration) | NEW | Add `language TEXT` column to `learning_memories` table | Database |
+| `memory-store.ts` | MODIFIED | Populate language column on write, expose in retrieval results | `learning_memories` table |
+| `retrieval-rerank.ts` | MODIFIED | Use DB language column instead of runtime file-path classification | `memory-store.ts` results |
+| `cross-corpus-rrf.ts` | MODIFIED | Add optional language-aware weight multiplier to source weights | `retrieval.ts` |
+| `retrieval.ts` | MODIFIED | Pass PR languages through to cross-corpus RRF for weighting | `cross-corpus-rrf.ts`, `retrieval-rerank.ts` |
 
-**Why this location:**
-- API usage analysis needs the cloned workspace (available since Stage 1)
-- It needs `depBumpContext.details.packageName` and `depBumpContext.details.ecosystem` (produced by dep bump detection)
-- Its output (import counts, usage patterns) feeds into merge confidence scoring and the review prompt
-- It does NOT need enrichment results (advisories, changelog), so it can run in parallel with them
+**Data Flow:**
 
-**Component:** New `src/lib/dep-bump-usage-analyzer.ts` module.
+```
+1. On memory write: classifyFileLanguage(record.filePath) -> store as `language` column
+2. On retrieval: learning_memories query returns language per row
+3. rerankByLanguage() uses stored language (no runtime re-classification)
+4. Unified pipeline: crossCorpusRRF receives prLanguages, applies boost multiplier
+   to chunks where chunk.metadata.language matches PR languages
+```
+
+**Key Design Decision:** The existing `rerankByLanguage()` in `retrieval-rerank.ts` already does language-based distance adjustment (0.85x boost / 1.15x penalty) but derives language from `classifyFileLanguage(result.record.filePath)` at query time. Adding a `language` column to `learning_memories` eliminates this runtime derivation and makes language a first-class indexed field -- enabling future SQL-level filtering (WHERE language = 'TypeScript') without embedding recomputation.
+
+The cross-corpus extension is more impactful: currently `SOURCE_WEIGHTS` in `retrieval.ts` only weight by corpus type (code/review/wiki). Adding a language dimension means code chunks in the PR's language(s) get boosted in the unified ranking. This is a multiplicative modifier on the existing RRF score.
+
+**Schema Change:**
+
+```sql
+-- Migration 007-language-column.sql
+ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
+CREATE INDEX IF NOT EXISTS idx_memories_language ON learning_memories(language);
+
+-- Backfill from file_path (one-time, can run async)
+UPDATE learning_memories
+SET language = CASE
+  WHEN file_path LIKE '%.ts' OR file_path LIKE '%.tsx' THEN 'TypeScript'
+  WHEN file_path LIKE '%.py' THEN 'Python'
+  WHEN file_path LIKE '%.go' THEN 'Go'
+  WHEN file_path LIKE '%.rs' THEN 'Rust'
+  WHEN file_path LIKE '%.cpp' OR file_path LIKE '%.cc' THEN 'C++'
+  WHEN file_path LIKE '%.c' OR file_path LIKE '%.h' THEN 'C'
+  WHEN file_path LIKE '%.java' THEN 'Java'
+  ELSE NULL
+END
+WHERE language IS NULL;
+```
+
+### Feature 2: Hunk-Level Code Snippet Embedding (Exploratory)
+
+| Component | Type | Responsibility | Communicates With |
+|-----------|------|---------------|-------------------|
+| `hunk-embedder.ts` | NEW | Extract diff hunks, chunk at function/block boundaries, embed | `embeddings.ts`, `memory-store.ts` |
+| `007-code-snippets.sql` (or same migration) | NEW | `code_snippets` table for hunk-level embeddings | Database |
+| `retrieval.ts` | MODIFIED | Fan-out to code_snippets corpus in parallel search | `hunk-embedder.ts` store |
+
+**Data Flow:**
+
+```
+1. During review: diff hunks extracted from PR
+2. Each hunk parsed into sub-function chunks (split at function/class/block boundaries)
+3. Each chunk embedded via Voyage AI and stored in code_snippets table
+4. On subsequent reviews: retrieval fans out to code_snippets alongside existing 3 corpora
+5. Results merge via existing crossCorpusRRF (new source type: "code_snippet")
+```
+
+**Key Design Decision:** This is exploratory. The current `learning_memories` corpus stores finding-level text (what Kodiai observed about code). Code snippets would store actual code fragments at hunk/function granularity. This is a different semantic space -- findings are opinions about code, snippets are the code itself.
+
+**Recommended approach:** Start with a standalone `code_snippets` table sharing the same schema pattern as `review_comments` (text + embedding + metadata). Add as a 4th corpus in `crossCorpusRRF` with source type `"code_snippet"`. The `SourceType` union in `cross-corpus-rrf.ts` needs extending from `"code" | "review_comment" | "wiki"` to include `"code_snippet"`.
+
+**Defer if:** Embedding costs are a concern. Each PR hunk gets embedded on every review, which multiplies Voyage API calls. Consider caching by file+hunk content hash.
+
+### Feature 3: [depends] PR Deep Review Pipeline
+
+This is the most substantial new capability. The existing dep-bump pipeline handles npm/pip/cargo Dependabot/Renovate PRs. The `[depends]` pattern is Kodi-specific: PRs like `[depends] Bump zlib 1.3.2` or `[Windows] Refresh fstrcmp 0.7` that update C/C++ library dependencies managed via CMake/vcpkg, not package managers.
+
+| Component | Type | Responsibility | Communicates With |
+|-----------|------|---------------|-------------------|
+| `dep-bump-detector.ts` | MODIFIED | Detect `[depends]` prefix and platform-specific patterns | `review.ts` |
+| `depends-deep-review.ts` | NEW | Orchestrate the deep review pipeline | Multiple enrichment modules |
+| `depends-changelog-fetcher.ts` | NEW | Fetch upstream changelog/release notes for C/C++ libs | GitHub API, upstream repos |
+| `depends-impact-analyzer.ts` | NEW | Analyze impact on Kodi codebase (consumers, patches, build) | Workspace filesystem |
+| `depends-build-verifier.ts` | NEW | Verify hash/URL changes, patch status, build config | Workspace filesystem |
+| `review-prompt.ts` | MODIFIED | `buildDependsDeepReviewPrompt()` for structured output | `depends-deep-review.ts` |
+| `review.ts` | MODIFIED | Route [depends] PRs through deep review pipeline | `depends-deep-review.ts` |
+
+**Detection Extension:**
 
 ```typescript
-// Integration point in review.ts (conceptual)
-if (depBumpContext && depBumpContext.details.packageName && !depBumpContext.details.isGroup) {
-  // Run usage analysis in parallel with enrichment
-  const [secResult, clogResult, usageResult] = await Promise.allSettled([
-    fetchSecurityAdvisories({ ... }),
-    fetchChangelog({ ... }),
-    analyzeAPIUsage({
-      workspaceDir: workspace.dir,
-      packageName: depBumpContext.details.packageName,
-      ecosystem: depBumpContext.details.ecosystem,
-      timeoutMs: 5000,
-    }),
-  ]);
-  depBumpContext.usage = usageResult.status === "fulfilled" ? usageResult.value : null;
+// In dep-bump-detector.ts -- new detection patterns for Kodi-style deps
+const DEPENDS_PREFIX_RE = /^\[depends\]\s+/i;
+const PLATFORM_DEP_RE = /^\[(Windows|Linux|macOS|Android|iOS|all)\]\s+(Refresh|Bump|Update)\s+/i;
+const KODI_DEP_TITLE_RE = /\b(bump|refresh|update)\s+\S+\s+(?:\d[\d.]*)/i;
+
+export function detectDependsPrefix(params: {
+  prTitle: string;
+  changedFiles: string[];
+}): DependsDetection | null {
+  // Signal 1: [depends] prefix
+  if (DEPENDS_PREFIX_RE.test(params.prTitle)) return { type: "depends-prefix" };
+  // Signal 2: Platform prefix + dependency verb
+  if (PLATFORM_DEP_RE.test(params.prTitle)) return { type: "platform-dep" };
+  // Signal 3: Changed files in cmake/ or tools/depends/
+  if (params.changedFiles.some(f =>
+    f.startsWith("cmake/") || f.startsWith("tools/depends/"))) {
+    return { type: "build-system-change" };
+  }
+  return null;
 }
 ```
 
-**Why parallel with enrichment:** Both enrichment and usage analysis are independent I/O-bound tasks. Running them in the existing `Promise.allSettled` block adds zero latency. The workspace is alive throughout Stage 2-3 since cleanup happens in the `finally` block.
+**Deep Review Pipeline:**
 
-**Fail-open pattern:** Returns `null` on any error, consistent with `fetchSecurityAdvisories` and `fetchChangelog`.
-
----
-
-### Q2: Dependency History Persistence -- Extend Knowledge Store, New Table
-
-**Decision:** New `dep_bump_history` table in the EXISTING knowledge store SQLite database. NOT a separate database, NOT extending the `reviews` or `findings` tables.
-
-**Why new table in existing DB:**
-- The knowledge store already owns the `repo` partitioning concept
-- SQLite WAL mode handles concurrent reads/writes across tables
-- The knowledge store's `checkpoint()` and `close()` lifecycle covers all tables
-- A separate DB would require separate lifecycle management, connection pooling, and migration logic -- unnecessary complexity
-- Extending `reviews` would bloat the generic review table with dep-bump-specific columns (only ~15-20% of reviews are dep bumps)
-
-**Schema:**
-
-```sql
-CREATE TABLE IF NOT EXISTS dep_bump_history (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  repo TEXT NOT NULL,
-  pr_number INTEGER NOT NULL,
-  review_id INTEGER REFERENCES reviews(id),
-  package_name TEXT NOT NULL,
-  ecosystem TEXT,
-  old_version TEXT,
-  new_version TEXT,
-  bump_type TEXT,           -- major/minor/patch/unknown
-  is_breaking INTEGER DEFAULT 0,
-  is_security_bump INTEGER DEFAULT 0,
-  merge_confidence TEXT,    -- high/medium/low
-  source TEXT,              -- dependabot/renovate/unknown
-  usage_import_count INTEGER,
-  usage_api_surface TEXT    -- JSON: top API patterns found
-);
-
-CREATE INDEX IF NOT EXISTS idx_dep_history_repo_pkg
-  ON dep_bump_history(repo, package_name);
-CREATE INDEX IF NOT EXISTS idx_dep_history_repo_created
-  ON dep_bump_history(repo, created_at);
+```
+detectDependsPrefix() triggers:
+  1. Parse dependency name + versions from title/changed files
+  2. Parallel enrichment (all fail-open):
+     a. Fetch upstream changelog (GitHub releases API, project website)
+     b. Scan changed CMake/build files for hash changes
+     c. Detect removed/added patches in tools/depends/
+     d. Find Kodi source files that #include or link this dependency
+     e. Check for transitive dependency additions
+  3. Assemble DependsDeepReviewContext
+  4. Build specialized prompt with structured sections:
+     - Version diff summary
+     - Upstream changelog highlights relevant to Kodi
+     - Impact assessment (which Kodi files consume this dep)
+     - Hash/URL verification status
+     - Patch status (removed/added/modified)
+     - Build config changes
+     - Action items
 ```
 
-**Write point:** After `knowledgeStore.recordReview()` in post-processing (Stage 6, approximately line 2302 in review.ts). The `reviewId` returned by `recordReview()` links the dep history to the review.
-
-**Interface extension:** Add `recordDepBumpHistory()` and `getDepBumpHistory()` methods to the `KnowledgeStore` type.
-
----
-
-### Q3: Multi-Package Correlation -- Pre-Processing Step (Before Enrichment)
-
-**Decision:** Pre-processing grouping step that runs AFTER dep bump detection but BEFORE enrichment. NOT post-classification grouping.
-
-**Why pre-processing:**
-- Multi-package bumps (Renovate group updates, monorepo dependency sets) need to be identified before enrichment so that the enrichment loop can process each package individually but tag them with a correlation ID
-- Post-classification grouping would mean running enrichment without knowing packages are related, then retroactively trying to correlate -- this loses the ability to cross-reference changelog entries or share advisory context
-- The existing `isGroup: true` flag from `extractDepBumpDetails()` already detects group bumps but currently skips enrichment entirely. Multi-package correlation allows partial enrichment of group bumps
-
-**Component:** New `src/lib/dep-bump-correlator.ts` module.
+**Integration Point in review.ts:**
 
 ```typescript
-// Integration concept
-if (depBumpContext && depBumpContext.details.isGroup) {
-  const correlated = correlateGroupPackages({
-    workspaceDir: workspace.dir,
+// After existing depBumpContext detection, add [depends] detection
+let dependsContext: DependsDeepReviewContext | null = null;
+
+if (!depBumpContext) {
+  // Not a standard Dependabot/Renovate PR; try [depends] detection
+  const dependsDetection = detectDependsPrefix({
+    prTitle: pr.title,
     changedFiles: allChangedFiles,
-    ecosystem: depBumpContext.details.ecosystem,
   });
-  depBumpContext.correlatedPackages = correlated; // Array of per-package details
-}
-```
-
-**Why this is practical:** The workspace has the actual lockfile diffs (package-lock.json, yarn.lock, etc.) which contain the individual package changes even in group bumps. Parsing the lockfile diff to extract individual packages is deterministic and fast.
-
----
-
-### Q4: Checkpoint Publishing -- MCP Tool During Execution
-
-**Decision:** New MCP tool that Claude can invoke during execution to save partial results. NOT file-based checkpointing, NOT streaming interception.
-
-**Why MCP tool:**
-- The executor uses the Agent SDK's `query()` which streams messages. We already track `published` via an `onPublish` callback in MCP server setup (line 76 in executor.ts)
-- Adding a `checkpoint` MCP tool follows the exact same pattern as `comment-server.ts` and `inline-review-server.ts`
-- The executor's `for await (const message of sdkQuery)` loop streams messages -- intercepting partial results there is fragile and couples checkpoint logic to message parsing
-- An MCP tool lets Claude explicitly decide when to checkpoint (e.g., "I've reviewed half the files, saving progress")
-- The checkpoint data goes to the knowledge store, associated with the `reviewOutputKey`
-
-**Component:** New `src/execution/mcp/checkpoint-server.ts`.
-
-```typescript
-// MCP tool signature
-{
-  name: "save_review_checkpoint",
-  description: "Save partial review progress that can be resumed if the session times out",
-  inputSchema: {
-    type: "object",
-    properties: {
-      filesReviewed: { type: "array", items: { type: "string" } },
-      findingsSoFar: { type: "number" },
-      summaryDraft: { type: "string" },
-    },
-  },
-}
-```
-
-**Storage:** New `review_checkpoints` table in the knowledge store:
-
-```sql
-CREATE TABLE IF NOT EXISTS review_checkpoints (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  review_output_key TEXT NOT NULL,
-  repo TEXT NOT NULL,
-  pr_number INTEGER NOT NULL,
-  checkpoint_data TEXT NOT NULL,  -- JSON blob
-  UNIQUE(review_output_key)      -- one checkpoint per review attempt
-);
-```
-
-**Write mechanism:** The MCP tool handler writes directly to the knowledge store. The `knowledgeStore` reference is passed through the MCP server builder, matching the existing pattern where `getOctokit` is injected.
-
-**Read mechanism:** On timeout retry (Q5), the handler reads the checkpoint before building the prompt to know which files were already reviewed.
-
----
-
-### Q5: Timeout Retry -- Re-Enter Pipeline via Job Queue
-
-**Decision:** Re-enter the pipeline through the job queue. NOT spawn a separate process.
-
-**Why re-enter via queue:**
-- The job queue already handles per-installation concurrency (`PQueue({ concurrency: 1 })`). Spawning a separate process would bypass this, potentially running two reviews on the same PR simultaneously
-- The retry needs access to all the same context: workspace, config, dep bump context, etc. Re-entering the handler function with retry state is simpler than serializing context to a separate process
-- The existing idempotency check (`checkAndClaimRun`) already handles re-runs by checking SHA pairs. A retry needs a distinct run key (e.g., appending `-retry-1`)
-
-**Mechanism:**
-
-```typescript
-// In review.ts, after executor.execute() returns
-if (result.isTimeout && !result.published) {
-  // Full timeout with no output: retry with reduced scope
-  const checkpoint = knowledgeStore?.getCheckpoint?.(reviewOutputKey);
-  const retryConfig = {
-    maxRetries: config.timeout.maxRetries ?? 1,
-    currentRetry: (retryCount ?? 0) + 1,
-    checkpoint,  // Files already reviewed
-    reducedScope: true,  // Force minimal profile
-  };
-
-  if (retryConfig.currentRetry <= retryConfig.maxRetries) {
-    // Re-enqueue with retry metadata
-    await jobQueue.enqueue(event.installationId, async () => {
-      await handleReviewRetry(event, retryConfig);
+  if (dependsDetection) {
+    dependsContext = await buildDependsDeepReviewContext({
+      prTitle: pr.title,
+      prBody: pr.body ?? "",
+      changedFiles: allChangedFiles,
+      workspaceDir: workspace.dir,
+      octokit: idempotencyOctokit,
+      owner,
+      repo,
+      logger,
     });
   }
-} else if (result.isTimeout && result.published) {
-  // Partial timeout: results already published, just log
-  // (existing TMO-03 "timeout_partial" telemetry handles this)
 }
 ```
 
-**Why NOT a new job type:** The retry IS a review job -- it uses the same workspace setup, same config, same enrichment pipeline. The only differences are: (1) a checkpoint provides already-reviewed files, (2) the profile is forced to `minimal`, (3) the prompt includes "continue from where you left off" context. These are parameters to the existing flow, not a different flow.
+**Prompt specialization:** When `dependsContext` is present, inject a specialized deep review prompt section via `buildDependsDeepReviewSection(dependsContext)` in `review-prompt.ts`. This replaces the standard `buildDepBumpSection()` since the review should be MORE thorough, not lighter.
 
-**Retry limit:** Configurable via `.kodiai.yml` (`timeout.maxRetries`, default 1). Prevents infinite retry loops on genuinely large PRs.
+### Feature 4: Unrelated CI Failure Recognition
 
----
+| Component | Type | Responsibility | Communicates With |
+|-----------|------|---------------|-------------------|
+| `ci-failure-analyzer.ts` | NEW | Classify CI failures as related/unrelated to PR scope | GitHub Actions API |
+| `ci-status-server.ts` | MODIFIED | Add `classify_ci_failures` tool for structured analysis | `ci-failure-analyzer.ts` |
+| `review-prompt.ts` | MODIFIED | Add CI failure context section to prompt | `ci-failure-analyzer.ts` results |
+| `review.ts` | MODIFIED | Fetch CI status post-review, annotate if unrelated failures | `ci-failure-analyzer.ts` |
 
-### Q6: Adaptive Thresholds -- Calibrated Over Time, Applied Per-Query
+**Data Flow:**
 
-**Decision:** Calibrated over time using historical dep bump data, applied per-query when computing merge confidence. NOT recomputed from scratch each time.
-
-**Why calibrated + cached:**
-- Per-query computation from raw history would require scanning all historical dep bump records on every review -- expensive for repos with hundreds of dep bumps
-- The calibration produces a small set of per-repo, per-ecosystem threshold adjustments that change slowly (weekly cadence is fine)
-- Applied per-query means the `computeMergeConfidence()` function receives the current thresholds as a parameter, keeping it pure
-
-**Component:** New `src/lib/adaptive-thresholds.ts` module.
-
-```typescript
-export type AdaptiveThreshold = {
-  repo: string;
-  ecosystem: string;
-  patchAutoMergeRate: number;    // % of patches that were merged without issues
-  minorBreakingRate: number;     // % of minor bumps that had breaking changes
-  majorSafeRate: number;         // % of major bumps that were safe
-  calibratedAt: string;
-};
-
-export function calibrateThresholds(params: {
-  depBumpHistory: DepBumpHistoryRecord[];
-  minSampleSize: number;  // default 10
-}): AdaptiveThreshold;
-
-export function applyAdaptiveThresholds(params: {
-  baseConfidence: MergeConfidence;
-  thresholds: AdaptiveThreshold | null;
-  bumpType: string;
-  ecosystem: string;
-}): MergeConfidence;
+```
+1. After Claude execution completes, fetch CI status for the PR head SHA
+2. If failures exist:
+   a. For each failed workflow run, fetch job details (existing MCP tool)
+   b. Extract failed step names and log snippets
+   c. Compare failure context against PR changed files/scope:
+      - Does the failed job test files this PR touches? -> RELATED
+      - Is this a known flaky workflow (gradle parallel, infra timeouts)? -> UNRELATED
+      - Does the failure pre-date this PR's commits? -> UNRELATED
+   d. Classify each failure as: RELATED | UNRELATED | UNCERTAIN
+3. If unrelated failures detected:
+   a. Post a comment noting which failures appear unrelated with reasoning
+   b. Do NOT block approval verdict on unrelated failures
 ```
 
-**Storage:** Calibrated thresholds stored in a new `adaptive_thresholds` table in the knowledge store. Recalculated when `dep_bump_history` has 10+ new entries since last calibration.
-
-**Integration point:** Between `computeMergeConfidence()` and `buildReviewPrompt()` in the review handler. The merge confidence result is adjusted by the adaptive thresholds before being passed to the prompt builder.
-
----
-
-### Q7: Recency Weighting -- Applied at Query Time
-
-**Decision:** Applied at query time as a distance multiplier during retrieval reranking. NOT stored as metadata.
-
-**Why query-time:**
-- Recency is relative to "now," which changes continuously. Storing a pre-computed recency weight as metadata means it's stale by the next query
-- The `learning_memories` table already has `created_at` timestamps. The reranker already adjusts distances via multipliers (see `rerankByLanguage` which applies `sameLanguageBoost: 0.85` and `crossLanguagePenalty: 1.15`)
-- Adding recency weighting to the same reranking step is natural: older memories get a distance penalty, newer memories get a boost
-
-**Component:** Extend `src/learning/retrieval-rerank.ts` with recency factor.
+**Classification Heuristics:**
 
 ```typescript
-export type RecencyConfig = {
-  halfLifeDays: number;     // default 90 -- memory at 50% weight after 90 days
-  minWeight: number;        // default 0.5 -- floor to prevent ancient memories from vanishing
+export type CIFailureClassification = {
+  runId: number;
+  workflowName: string;
+  conclusion: "related" | "unrelated" | "uncertain";
+  reasoning: string;
+  failedJobs: Array<{
+    jobName: string;
+    failedSteps: string[];
+  }>;
 };
 
-// Inside rerankByLanguage (or a new rerankWithRecency wrapper):
-const ageInDays = (Date.now() - new Date(result.record.createdAt).getTime()) / 86400000;
-const recencyMultiplier = Math.max(
-  config.minWeight,
-  Math.exp(-0.693 * ageInDays / config.halfLifeDays)  // exponential decay, ln(2) = 0.693
-);
-const adjustedDistance = result.distance * languageMultiplier / recencyMultiplier;
+export function classifyCIFailure(params: {
+  workflowRun: WorkflowRunSummary;
+  failedJobs: JobDetail[];
+  changedFiles: string[];
+  prLanguages: string[];
+}): CIFailureClassification {
+  // Heuristic 1: Job name contains platform not in changed files
+  //   e.g., "Android Build" but PR only touches Linux CMake -> UNRELATED
+  // Heuristic 2: Failed step is a known infra issue
+  //   e.g., "gradle" + "parallel" -> UNRELATED (known flaky)
+  // Heuristic 3: No changed files overlap with job's test scope
+  //   Based on workflow path filters vs. PR changed files
+  // Heuristic 4: Same workflow failed on main branch recently -> UNRELATED
+  // Default: UNCERTAIN (let Claude's review decide)
+}
 ```
 
-**Why NOT store as metadata:** The `stale` boolean already exists on `LearningMemoryRecord` for model-migration invalidation. Recency is orthogonal -- a fresh memory from a deprecated model is stale but recent. Mixing these concerns in stored metadata creates conflicting signals.
+**Post-Review Annotation:**
 
----
+Rather than injecting CI failure context into the review prompt (which would consume tokens for every review), the CI failure analysis runs as a post-review step. If unrelated failures are detected, a separate comment is posted:
 
-### Q8: Retrieval Telemetry -- Inline Collection in Review Pipeline
+```markdown
+### CI Status Note
 
-**Decision:** Inline collection within the review pipeline, writing to the existing telemetry store. NOT a separate collection path.
+The following CI failures appear **unrelated** to this PR's changes:
 
-**Why inline:**
-- Retrieval happens once per review, in a specific pipeline stage (Stage 4). There is no parallel or background retrieval that would benefit from a separate collector
-- The telemetry store already has fire-and-forget writes (WAL mode, synchronous NORMAL). Adding retrieval metrics to the same write is zero additional I/O
-- A separate collection path would need its own store reference, error handling, and lifecycle -- all already present in the review handler
+| Workflow | Status | Reasoning |
+|----------|--------|-----------|
+| Android Build | :red_circle: Failed | Gradle parallel build issue (known flaky) |
+| iOS Package | :red_circle: Failed | Pre-existing failure on `main` branch |
 
-**Component:** Extend `TelemetryRecord` with optional retrieval fields.
-
-```typescript
-// Extension to TelemetryRecord in telemetry/types.ts
-export type TelemetryRecord = {
-  // ... existing fields ...
-  retrievalQueryMs?: number;        // Time to generate embedding + query
-  retrievalCandidates?: number;     // Total candidates before reranking
-  retrievalReturned?: number;       // Results after reranking + threshold
-  retrievalAvgDistance?: number;     // Average distance of returned results
-  retrievalLanguageMatches?: number; // How many results matched PR language
-};
+These failures should not block merge of this PR.
 ```
 
-**Collection point:** Wrap the retrieval block (approximately lines 1588-1633 in review.ts) with timing:
-
-```typescript
-const retrievalStart = Date.now();
-// ... existing retrieval logic ...
-const retrievalMs = Date.now() - retrievalStart;
-// Store metrics for later telemetry write
-retrievalTelemetry = {
-  retrievalQueryMs: retrievalMs,
-  retrievalCandidates: retrieval.provenance.totalCandidates,
-  retrievalReturned: reranked.length,
-  // etc.
-};
-```
-
-**Why NOT extend the telemetry table:** The telemetry table uses `ALTER TABLE ADD COLUMN` migration pattern (same as knowledge store). Adding nullable columns for retrieval metrics is backward-compatible and follows existing patterns.
-
----
-
-### Q9: Cross-Language Equivalence -- Lookup Table
-
-**Decision:** Static lookup table mapping equivalent concepts across languages. NOT embedding space, NOT LLM-based.
-
-**Why lookup table:**
-- Cross-language equivalence for dependency analysis is a bounded problem: "express" (npm) has no equivalent in Python, but "lodash" (npm) maps to "underscore" patterns in Python. These mappings are ecosystem-specific and relatively stable
-- Embedding space similarity would conflate semantically similar but functionally different packages (e.g., "flask" and "express" are both web frameworks but have completely different APIs and review implications)
-- LLM-based mapping would add latency and cost to every dep bump review for a lookup that can be precomputed
-- The retrieval reranker already uses a simple mapping (`classifyFileLanguage` in diff-analysis.ts). Extending this pattern to package equivalence is consistent
-
-**Component:** New `src/lib/cross-language-equivalence.ts` module.
-
-```typescript
-// Static mapping of equivalent package patterns across ecosystems
-const EQUIVALENCE_MAP: Record<string, Record<string, string[]>> = {
-  "web-framework": {
-    npm: ["express", "fastify", "koa", "hapi"],
-    python: ["flask", "django", "fastapi", "starlette"],
-    ruby: ["rails", "sinatra"],
-    go: ["gin", "echo", "fiber"],
-  },
-  "orm": {
-    npm: ["prisma", "typeorm", "sequelize", "drizzle-orm"],
-    python: ["sqlalchemy", "django-orm", "peewee"],
-    ruby: ["activerecord"],
-    go: ["gorm", "ent"],
-  },
-  // ... bounded set of ~20-30 categories
-};
-
-export function findEquivalentPackages(params: {
-  packageName: string;
-  sourceEcosystem: string;
-  targetEcosystem?: string;
-}): { category: string; equivalents: Record<string, string[]> } | null;
-```
-
-**Usage:** When building the retrieval query for dep bump PRs, include equivalent package names to find relevant memories from other ecosystems. This feeds into `buildRetrievalQuery()` as additional context.
-
-**Why bounded:** The lookup table covers common categories (web frameworks, ORMs, test frameworks, linters, etc.) and explicitly returns `null` for unknown packages. This is intentional -- for niche packages, cross-language equivalence is meaningless. The table can be extended incrementally.
-
----
-
-## Data Flow Changes
-
-### New Data Written Per Review
-
-| Data | Destination | When | Fail Behavior |
-|------|-------------|------|---------------|
-| API usage analysis | `depBumpContext.usage` (in-memory) | Stage 2, parallel with enrichment | `null` (fail-open) |
-| Dep bump history | `dep_bump_history` table | Stage 6, after `recordReview()` | Warn + continue |
-| Multi-package correlation | `depBumpContext.correlatedPackages` (in-memory) | Stage 2, after detection | `null` (fail-open) |
-| Checkpoint | `review_checkpoints` table | Stage 5, during execution (MCP) | Warn + continue |
-| Adaptive thresholds | `adaptive_thresholds` table | Lazy recalibration | Use defaults |
-| Retrieval telemetry | `executions` table (existing) | Stage 6, with telemetry write | Warn + continue |
-
-### New Data Read Per Review
-
-| Data | Source | When | Fallback |
-|------|--------|------|----------|
-| Checkpoint (on retry) | `review_checkpoints` table | Stage 1, before prompt build | Full re-review |
-| Adaptive thresholds | `adaptive_thresholds` table | Stage 3, after merge confidence | Unadjusted confidence |
-| Dep bump history | `dep_bump_history` table | Stage 3, for threshold calibration | No adaptive adjustment |
-| Cross-language map | Static in-memory lookup | Stage 4, during query build | No cross-language results |
-
----
+**Alternative considered:** Inject into the review prompt so Claude reasons about CI. Rejected because: (1) CI data is large and token-expensive, (2) Claude is not well-suited to diagnosing build system failures, (3) deterministic heuristics are more reliable for "is this failure related to the PR?" classification.
 
 ## Patterns to Follow
 
-### Pattern 1: Fail-Open Enrichment Stage
-**What:** Every new pipeline stage returns `null` on error and logs a warning. The pipeline continues with degraded context rather than failing the review.
-**When:** All nine new integration points follow this pattern.
-**Why:** The existing codebase uses this pattern consistently (see `fetchSecurityAdvisories`, `fetchChangelog`, `resolveAuthorTier`, retrieval context). Breaking this pattern for new features would create inconsistent failure modes.
+### Pattern 1: Fail-Open Enrichment
 
-### Pattern 2: Promise.allSettled for Independent I/O
-**What:** Group independent async operations in `Promise.allSettled()` blocks.
-**When:** API usage analysis runs alongside enrichment (both need workspace + dep bump context, neither needs the other's output).
-**Why:** Lines 1439-1456 already use this pattern for security + changelog fetching. Adding usage analysis as a third parallel operation is zero-cost.
+**What:** Every new enrichment stage wraps in try/catch and returns null on failure. The review pipeline continues without that enrichment.
 
-### Pattern 3: Knowledge Store Table Extension
-**What:** New tables in the existing SQLite database, with `ensureTableColumn` migrations for backward compatibility.
-**When:** Dep bump history, checkpoints, adaptive thresholds.
-**Why:** The knowledge store already manages 5+ tables with this pattern. `CREATE TABLE IF NOT EXISTS` + `ensureTableColumn()` handles schema evolution without formal migrations.
+**When:** All enrichment steps (changelog fetch, impact analysis, CI failure classification).
 
-### Pattern 4: MCP Tool for Execution-Time Communication
-**What:** New MCP tools registered with the executor to enable Claude to save state during execution.
-**When:** Checkpoint publishing.
-**Why:** MCP servers are the only sanctioned way to extend Claude's capabilities during execution. The pattern is established by `comment-server.ts`, `inline-review-server.ts`, and `review-comment-thread-server.ts`.
+**Example:**
+```typescript
+let dependsContext: DependsDeepReviewContext | null = null;
+try {
+  dependsContext = await buildDependsDeepReviewContext({ ... });
+} catch (err) {
+  logger.warn({ err, gate: "depends-deep-review" }, "Deep review enrichment failed (fail-open)");
+}
+```
 
----
+### Pattern 2: Parallel Promise.allSettled for Independent Enrichments
+
+**What:** Independent enrichment operations run in parallel via `Promise.allSettled`, each fail-open independently.
+
+**When:** Multiple enrichment operations that don't depend on each other.
+
+**Example (already used in review.ts for dep-bump enrichment):**
+```typescript
+const [changelogResult, impactResult, patchResult] = await Promise.allSettled([
+  fetchUpstreamChangelog({ ... }),
+  analyzeDependencyImpact({ ... }),
+  verifyBuildChanges({ ... }),
+]);
+```
+
+### Pattern 3: Detection Cascade (Not Parallel)
+
+**What:** Detection stages run sequentially -- first check standard dep-bump, then check [depends] prefix. Only one fires.
+
+**When:** Mutually exclusive detection paths.
+
+**Rationale:** A PR cannot be both a Dependabot PR and a [depends] PR. The detection is cheap (regex), so sequential is fine.
+
+### Pattern 4: Migration + Backfill Pattern
+
+**What:** Schema migrations add nullable columns with indexes. A separate backfill step populates existing rows. Write path immediately populates for new rows.
+
+**When:** Adding language column to learning_memories.
+
+**Example:**
+```sql
+-- Migration: add column (nullable, no default -- doesn't lock table)
+ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
+
+-- Backfill script (runs separately, can be interrupted/resumed)
+UPDATE learning_memories SET language = ... WHERE language IS NULL LIMIT 1000;
+```
+
+### Pattern 5: Source Type Extension for Cross-Corpus
+
+**What:** New knowledge sources integrate by: (1) implementing the search interface, (2) adding a source type to `SourceType`, (3) providing a `RankedSourceList` entry in the retrieval pipeline.
+
+**When:** Adding code_snippets as a 4th corpus.
+
+**Example:**
+```typescript
+// In cross-corpus-rrf.ts
+export type SourceType = "code" | "review_comment" | "wiki" | "code_snippet";
+
+// In retrieval.ts, add to parallel fan-out
+const snippetVectorResult = deps.codeSnippetStore
+  ? searchCodeSnippets({ ... })
+  : Promise.resolve([]);
+```
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Separate Process for Retry
-**What:** Spawning a new Node/Bun process for timeout retry.
-**Why bad:** Bypasses per-installation concurrency control (PQueue), loses injected dependencies, requires serialization of workspace/config state.
-**Instead:** Re-enqueue through the existing job queue with retry metadata.
+### Anti-Pattern 1: Token-Heavy CI Context in Review Prompt
 
-### Anti-Pattern 2: Stored Recency Weights
-**What:** Pre-computing and storing recency scores on learning memory records.
-**Why bad:** Recency is relative to "now" -- stored scores are stale immediately. Would require periodic batch updates or accept inaccurate weights.
-**Instead:** Compute recency multiplier at query time from the existing `created_at` timestamp.
+**What:** Injecting full CI run logs or detailed job output into the review prompt.
 
-### Anti-Pattern 3: LLM-Based Cross-Language Mapping
-**What:** Using Claude to map package equivalences at review time.
-**Why bad:** Adds 1-3 seconds latency and API cost per dep bump review for a lookup that can be precomputed. The mapping domain is bounded (common package categories) not open-ended.
-**Instead:** Static lookup table, extended incrementally as needed.
+**Why bad:** CI output is verbose (thousands of lines), highly structured (not prose), and poorly suited to LLM analysis. It wastes context window budget and produces unreliable conclusions.
 
-### Anti-Pattern 4: New SQLite Database for Dep History
-**What:** Creating a separate SQLite file for dependency bump data.
-**Why bad:** Requires separate lifecycle management (open/close/checkpoint), separate connection handling, separate backup strategy. The knowledge store already manages partitioned data across tables.
-**Instead:** New table in the existing knowledge store database.
+**Instead:** Use deterministic heuristics for CI failure classification. Only inject a brief summary (2-3 lines) if needed for verdict context.
 
----
+### Anti-Pattern 2: Blocking on Enrichment Failures
 
-## Suggested Build Order
+**What:** Making the review pipeline fail if changelog fetch or impact analysis throws.
 
-The nine features have these dependency relationships:
+**Why bad:** Network failures, API rate limits, and missing upstream repos are common. A review that takes 30 seconds is better than no review at all.
 
+**Instead:** Every enrichment stage is fail-open. Missing context leads to a less detailed review, not a failed review.
+
+### Anti-Pattern 3: Re-embedding Existing Memories for Language Column
+
+**What:** Updating embeddings when adding the language column to learning_memories.
+
+**Why bad:** Language is metadata about the file path, not about the embedding content. Re-embedding is expensive and unnecessary.
+
+**Instead:** Backfill the language column from file_path using a simple SQL CASE expression.
+
+### Anti-Pattern 4: Coupling [depends] Detection to Existing Dep-Bump Pipeline
+
+**What:** Trying to make `[depends]` PRs flow through the existing Dependabot/Renovate pipeline.
+
+**Why bad:** The existing pipeline assumes npm/pip/cargo ecosystem semantics (semver parsing, package registry lookups, lockfile analysis). Kodi's `[depends]` PRs use CMake, vcpkg, and custom build scripts -- completely different tooling.
+
+**Instead:** Create a separate detection path (`detectDependsPrefix()`) that triggers a distinct enrichment pipeline (`buildDependsDeepReviewContext()`). The two pipelines share the same review handler integration point but are otherwise independent.
+
+## Data Model Changes
+
+### New Tables
+
+```sql
+-- code_snippets (exploratory -- only if hunk embedding feature proceeds)
+CREATE TABLE IF NOT EXISTS code_snippets (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  repo TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  file_path TEXT NOT NULL,
+  start_line INTEGER NOT NULL,
+  end_line INTEGER NOT NULL,
+  hunk_content TEXT NOT NULL,
+  language TEXT,
+  chunk_text TEXT NOT NULL,
+  token_count INTEGER NOT NULL,
+  embedding vector(1024),
+  embedding_model TEXT,
+  stale BOOLEAN NOT NULL DEFAULT false,
+  content_hash TEXT NOT NULL,
+  UNIQUE(repo, file_path, content_hash)
+);
 ```
-INDEPENDENT:
-  Q9 (cross-language lookup) -- no deps, pure utility module
-  Q8 (retrieval telemetry)   -- extends existing types, no new tables
 
-Q2 DEPENDS ON: nothing (new table + write logic)
-Q1 DEPENDS ON: nothing (new module + parallel integration)
-Q3 DEPENDS ON: Q1 loosely (uses same workspace analysis patterns)
+### Schema Modifications
 
-Q6 DEPENDS ON: Q2 (reads dep_bump_history for calibration)
-Q7 DEPENDS ON: nothing (extends reranker)
-
-Q4 DEPENDS ON: nothing (new MCP tool + checkpoint table)
-Q5 DEPENDS ON: Q4 (reads checkpoints for retry context)
+```sql
+-- learning_memories: add language column
+ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
+CREATE INDEX IF NOT EXISTS idx_memories_language ON learning_memories(language);
 ```
 
-**Recommended phase ordering:**
+### No Schema Changes Needed For
 
-1. **Foundation layer** (Q2, Q8, Q9) -- New tables, type extensions, utility modules. No pipeline changes.
-2. **Analysis layer** (Q1, Q3, Q7) -- New analysis modules that plug into existing pipeline stages.
-3. **Intelligence layer** (Q6) -- Adaptive thresholds that consume dep history from Phase 1.
-4. **Resilience layer** (Q4, Q5) -- Checkpoint MCP tool and retry logic. These are the most complex integration points and benefit from all other features being stable.
-
----
+- CI failure recognition (ephemeral -- classify at review time, post comment, no persistence)
+- [depends] deep review (enrichment context assembled at review time, injected into prompt)
 
 ## Scalability Considerations
 
-| Concern | At 100 reviews/day | At 1K reviews/day | At 10K reviews/day |
-|---------|--------------------|--------------------|---------------------|
-| dep_bump_history table size | ~500 rows/month | ~5K rows/month | ~50K rows/month, add retention purge |
-| Checkpoint writes during execution | Negligible (1-2 per review) | Negligible | Add bulk insert |
-| Adaptive threshold recalibration | On every dep bump review | Every 10th dep bump | Background job with caching |
-| Cross-language lookup | In-memory, instant | In-memory, instant | In-memory, instant |
-| Retrieval with recency weighting | +1ms per result | +1ms per result | Consider pre-filtering by date |
+| Concern | Current State | After v0.19 |
+|---------|--------------|-------------|
+| Retrieval fan-out latency | 6 parallel searches (3 vector + 3 BM25) | 8 parallel searches if code_snippets added; marginal increase |
+| Embedding API calls | 1 per retrieval query | +N per PR if hunk embedding enabled; cache by content_hash mitigates |
+| CI API calls | 0 per review | 2-3 per review (list runs + list jobs for failures); within rate limits |
+| Database size | ~10K learning_memories, ~50K review_comments | language column: trivial. code_snippets: ~5K rows/month if enabled |
+| Prompt token usage | ~4K-8K tokens | [depends] deep review may add ~2K tokens of context; CI annotation is post-review (separate comment) |
 
-All scalability concerns are manageable at projected usage levels. The `dep_bump_history` table is the only one that grows unboundedly and should get the same `purgeOlderThan(days)` pattern used by the telemetry store.
+## Build Order and Dependencies
+
+```
+Phase 1: Language-Aware Boosting (schema + retrieval)
+  ├── Migration 007: ADD COLUMN language
+  ├── memory-store.ts: populate on write
+  ├── Backfill script: populate existing rows
+  ├── retrieval-rerank.ts: use stored language
+  └── retrieval.ts + cross-corpus-rrf.ts: language weight in unified pipeline
+
+Phase 2: [depends] PR Deep Review
+  ├── dep-bump-detector.ts: add detectDependsPrefix()
+  ├── depends-changelog-fetcher.ts: upstream changelog for C/C++ deps
+  ├── depends-impact-analyzer.ts: Kodi consumer analysis
+  ├── depends-build-verifier.ts: hash/URL/patch verification
+  ├── depends-deep-review.ts: orchestrator
+  ├── review-prompt.ts: buildDependsDeepReviewSection()
+  └── review.ts: route [depends] PRs through deep review
+
+Phase 3: CI Failure Recognition
+  ├── ci-failure-analyzer.ts: classification heuristics
+  ├── ci-status-server.ts: add classify_ci_failures tool (optional)
+  ├── review.ts: post-review CI failure annotation step
+  └── review-prompt.ts: brief CI status summary (optional)
+
+Phase 4: Code Snippet Embedding (Exploratory)
+  ├── Migration: code_snippets table
+  ├── hunk-embedder.ts: diff parsing + chunking + embedding
+  ├── code-snippet-store.ts: CRUD + search
+  ├── cross-corpus-rrf.ts: add "code_snippet" source type
+  └── retrieval.ts: fan-out to code_snippets in parallel search
+```
+
+**Phase ordering rationale:**
+
+1. **Language-aware boosting first** because it is the smallest, most self-contained change (one migration, two module modifications). It also validates the schema extension pattern used by Phase 4.
+
+2. **[depends] deep review second** because it is the highest-value feature (from issue #42 description: "not a lighter review -- should be MORE thorough") and has no dependency on other features.
+
+3. **CI failure recognition third** because it is independent of retrieval changes and can be developed in parallel with Phase 2 if capacity allows. It has the simplest codebase footprint (one new module, one handler modification).
+
+4. **Code snippet embedding last** because it is explicitly exploratory, has the highest cost (embedding API calls), and its value is uncertain. It depends on Phase 1's language column pattern being validated first.
 
 ## Sources
 
-- Direct codebase analysis: `src/handlers/review.ts` (2500+ lines, complete pipeline)
-- Direct codebase analysis: `src/knowledge/store.ts` and `src/knowledge/types.ts`
-- Direct codebase analysis: `src/learning/memory-store.ts`, `src/learning/retrieval-query.ts`, `src/learning/retrieval-rerank.ts`
-- Direct codebase analysis: `src/execution/executor.ts` and `src/execution/mcp/` directory
-- Direct codebase analysis: `src/lib/dep-bump-detector.ts`, `src/lib/dep-bump-enrichment.ts`, `src/lib/merge-confidence.ts`
-- Direct codebase analysis: `src/jobs/queue.ts` (PQueue per-installation concurrency model)
-- Direct codebase analysis: `src/telemetry/store.ts` and `src/telemetry/types.ts`
-- Confidence: HIGH -- all recommendations based on actual code patterns observed in the codebase, not training data assumptions
+- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/retrieval.ts` (unified retrieval pipeline)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/retrieval-rerank.ts` (language re-ranking)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/cross-corpus-rrf.ts` (RRF merging)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/lib/dep-bump-detector.ts` (dep-bump detection)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/execution/mcp/ci-status-server.ts` (CI status MCP)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/handlers/review.ts` (review handler pipeline)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/execution/review-prompt.ts` (prompt assembly)
+- Direct codebase analysis of `/home/keith/src/kodiai/src/db/migrations/` (all 6 existing migrations)
+- Issue #42: v0.19 Intelligent Retrieval Enhancements (feature requirements)
