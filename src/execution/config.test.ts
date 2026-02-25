@@ -1188,6 +1188,40 @@ test("retrieval section custom values are honored", async () => {
   }
 });
 
+// Phase 96: hunkEmbedding config tests
+
+test("hunkEmbedding defaults are applied when omitted", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    const { config } = await loadRepoConfig(dir);
+    expect(config.knowledge.retrieval.hunkEmbedding.enabled).toBe(true);
+    expect(config.knowledge.retrieval.hunkEmbedding.maxHunksPerPr).toBe(100);
+    expect(config.knowledge.retrieval.hunkEmbedding.minChangedLines).toBe(3);
+    expect(config.knowledge.retrieval.hunkEmbedding.excludePatterns).toContain("*.lock");
+    expect(config.knowledge.retrieval.hunkEmbedding.excludePatterns).toContain("vendor/**");
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("hunkEmbedding custom values are honored", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "knowledge:\n  retrieval:\n    hunkEmbedding:\n      enabled: false\n      maxHunksPerPr: 50\n      minChangedLines: 5\n      excludePatterns:\n        - '*.generated.*'\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+    expect(config.knowledge.retrieval.hunkEmbedding.enabled).toBe(false);
+    expect(config.knowledge.retrieval.hunkEmbedding.maxHunksPerPr).toBe(50);
+    expect(config.knowledge.retrieval.hunkEmbedding.minChangedLines).toBe(5);
+    expect(config.knowledge.retrieval.hunkEmbedding.excludePatterns).toEqual(["*.generated.*"]);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
 // Phase 32: outputLanguage config tests
 
 test("default config has review.outputLanguage === 'en'", async () => {

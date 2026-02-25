@@ -252,6 +252,33 @@ const sharingSchema = z
   })
   .default({ enabled: false });
 
+const hunkEmbeddingSchema = z
+  .object({
+    enabled: z.boolean().default(true),
+    maxHunksPerPr: z.number().min(1).max(1000).default(100),
+    minChangedLines: z.number().min(1).max(50).default(3),
+    excludePatterns: z.array(z.string()).default([
+      "*.lock",
+      "vendor/**",
+      "generated/**",
+      "*.generated.*",
+      "*.min.js",
+      "*.min.css",
+      "dist/**",
+      "build/**",
+      "node_modules/**",
+    ]),
+  })
+  .default({
+    enabled: true,
+    maxHunksPerPr: 100,
+    minChangedLines: 3,
+    excludePatterns: [
+      "*.lock", "vendor/**", "generated/**", "*.generated.*",
+      "*.min.js", "*.min.css", "dist/**", "build/**", "node_modules/**",
+    ],
+  });
+
 const retrievalSchema = z
   .object({
     enabled: z.boolean().default(true),
@@ -259,6 +286,8 @@ const retrievalSchema = z
     distanceThreshold: z.number().min(0).max(2).default(0.3),
     adaptive: z.boolean().default(true),
     maxContextChars: z.number().min(0).max(5000).default(2000),
+    /** Hunk-level PR diff embedding configuration. */
+    hunkEmbedding: hunkEmbeddingSchema,
   })
   .default({
     enabled: true,
@@ -266,6 +295,15 @@ const retrievalSchema = z
     distanceThreshold: 0.3,
     adaptive: true,
     maxContextChars: 2000,
+    hunkEmbedding: {
+      enabled: true,
+      maxHunksPerPr: 100,
+      minChangedLines: 3,
+      excludePatterns: [
+        "*.lock", "vendor/**", "generated/**", "*.generated.*",
+        "*.min.js", "*.min.css", "dist/**", "build/**", "node_modules/**",
+      ],
+    },
   });
 
 const knowledgeSchema = z
@@ -293,6 +331,15 @@ const knowledgeSchema = z
       distanceThreshold: 0.3,
       adaptive: true,
       maxContextChars: 2000,
+      hunkEmbedding: {
+        enabled: true,
+        maxHunksPerPr: 100,
+        minChangedLines: 3,
+        excludePatterns: [
+          "*.lock", "vendor/**", "generated/**", "*.generated.*",
+          "*.min.js", "*.min.css", "dist/**", "build/**", "node_modules/**",
+        ],
+      },
     },
   });
 
