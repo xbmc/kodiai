@@ -54,6 +54,16 @@ export function createSlackEventRoutes(deps: SlackEventsRouteDeps): Hono {
     }
 
     timestamps.push(now);
+
+    // Lazily prune stale channels to keep Map bounded
+    if (channelEventTimestamps.size > 100) {
+      for (const [ch, ts] of channelEventTimestamps) {
+        if (ts.length === 0 || ts[ts.length - 1] <= cutoff) {
+          channelEventTimestamps.delete(ch);
+        }
+      }
+    }
+
     return false;
   }
 

@@ -84,7 +84,6 @@ const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore 
 const shutdownManager = createShutdownManager({
   logger,
   requestTracker,
-  webhookQueueStore,
   closeDb,
 });
 

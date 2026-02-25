@@ -42,18 +42,16 @@ export function createWebhookQueueStore(opts: {
       );
 
       // Telemetry: fire-and-forget (do not await -- enqueue must not block on telemetry)
-      try {
-        void telemetryStore.record({
-          repo: entry.source,
-          eventType: "webhook_queued",
-          model: "none",
-          conclusion: "queued",
-          deliveryId: entry.deliveryId ?? undefined,
-          sessionId: row?.id?.toString(),
-        });
-      } catch (err) {
+      telemetryStore.record({
+        repo: entry.source,
+        eventType: "webhook_queued",
+        model: "none",
+        conclusion: "queued",
+        deliveryId: entry.deliveryId ?? undefined,
+        sessionId: row?.id?.toString(),
+      }).catch((err) => {
         logger.warn({ err }, "Telemetry record failed for webhook_queued (non-fatal)");
-      }
+      });
     },
 
     async dequeuePending() {
@@ -95,18 +93,16 @@ export function createWebhookQueueStore(opts: {
 
         // Telemetry: fire-and-forget per dequeued row
         for (const entry of entries) {
-          try {
-            void telemetryStore.record({
-              repo: entry.source,
-              eventType: "webhook_replayed",
-              model: "none",
-              conclusion: "replayed",
-              deliveryId: entry.deliveryId ?? undefined,
-              sessionId: entry.id?.toString(),
-            });
-          } catch (err) {
+          telemetryStore.record({
+            repo: entry.source,
+            eventType: "webhook_replayed",
+            model: "none",
+            conclusion: "replayed",
+            deliveryId: entry.deliveryId ?? undefined,
+            sessionId: entry.id?.toString(),
+          }).catch((err) => {
             logger.warn({ err, id: entry.id }, "Telemetry record failed for webhook_replayed (non-fatal)");
-          }
+          });
         }
       }
 

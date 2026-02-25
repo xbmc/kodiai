@@ -22,6 +22,8 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
   const { maxSize, ttlMs } = options;
   const clock = options.now ?? Date.now;
   const store = new Map<K, CacheEntry<V>>();
+  const EVICT_EVERY = 16;
+  let setCounter = 0;
 
   function isExpired(entry: CacheEntry<V>): boolean {
     return clock() >= entry.expiresAt;
@@ -59,8 +61,12 @@ export function createInMemoryCache<K, V>(options: InMemoryCacheOptions): InMemo
       // Delete existing entry first so re-insertion moves it to end of Map iteration order
       store.delete(key);
 
-      // Evict expired entries first
-      evictExpired();
+      // Amortized expired-entry cleanup: scan every EVICT_EVERY inserts or when at capacity
+      setCounter++;
+      if (setCounter >= EVICT_EVERY || store.size >= maxSize) {
+        evictExpired();
+        setCounter = 0;
+      }
 
       // If still at or over maxSize, evict oldest non-expired entries
       if (store.size >= maxSize) {

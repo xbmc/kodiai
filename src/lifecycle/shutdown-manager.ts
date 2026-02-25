@@ -1,10 +1,9 @@
 import type { Logger } from "pino";
-import type { RequestTracker, ShutdownManager, WebhookQueueStore } from "./types.ts";
+import type { RequestTracker, ShutdownManager } from "./types.ts";
 
 interface ShutdownManagerDeps {
   logger: Logger;
   requestTracker: RequestTracker;
-  webhookQueueStore: WebhookQueueStore;
   closeDb: () => Promise<void>;
   graceMs?: number;
 }
@@ -19,7 +18,7 @@ interface ShutdownManagerDeps {
  * 4. On successful drain, close DB and exit 0
  */
 export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManager {
-  const { logger, requestTracker, webhookQueueStore: _webhookQueueStore, closeDb } = deps;
+  const { logger, requestTracker, closeDb } = deps;
   const graceMs = deps.graceMs ?? (parseInt(process.env.SHUTDOWN_GRACE_MS ?? "", 10) || 300_000);
   let shuttingDown = false;
 
@@ -43,11 +42,19 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
       "Shutdown signal received, starting graceful drain",
     );
 
+    async function safeCloseDb(): Promise<void> {
+      try {
+        await closeDb();
+      } catch (err) {
+        logger.error({ err }, "closeDb failed during shutdown (continuing to exit)");
+      }
+    }
+
     // First drain attempt
     try {
       await requestTracker.waitForDrain(graceMs);
       logger.info("Graceful drain completed successfully");
-      await closeDb();
+      await safeCloseDb();
       process.exit(0);
     } catch {
       // First drain timed out -- extend grace once (double)
@@ -66,7 +73,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
       try {
         await requestTracker.waitForDrain(extendedGraceMs);
         logger.info("Graceful drain completed after extended grace");
-        await closeDb();
+        await safeCloseDb();
         process.exit(0);
       } catch {
         // Extended drain also timed out -- force exit
@@ -79,7 +86,7 @@ export function createShutdownManager(deps: ShutdownManagerDeps): ShutdownManage
           },
           "Force exit after extended grace timeout, work abandoned",
         );
-        await closeDb();
+        await safeCloseDb();
         process.exit(1);
       }
     }

@@ -199,7 +199,7 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
       LOG_LEVEL=info \
     --min-replicas 1 \
     --max-replicas 1 \
-    --termination-grace-period 330 \
+    --termination-grace-period 630 \
     --output none
 else
   echo "==> Creating container app: $APP_NAME..."
@@ -215,7 +215,7 @@ else
     --ingress external \
     --min-replicas 1 \
     --max-replicas 1 \
-    --termination-grace-period 330 \
+    --termination-grace-period 630 \
     --secrets \
       github-app-id="$GITHUB_APP_ID" \
       github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \

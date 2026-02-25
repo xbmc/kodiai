@@ -58,7 +58,7 @@ else
     --tier "${TIER}" \
     --version "${PG_VERSION}" \
     --storage-size "${STORAGE_SIZE}" \
-    --public-access "0.0.0.0" \
+    --public-access "none" \
     --output none
   echo "    Server created."
 fi
@@ -82,14 +82,16 @@ az postgres flexible-server db create \
   --output none 2>/dev/null || true
 echo "    Database '${DB_NAME}' ready."
 
-# ── Output connection string ─────────────────────────────────────────────────
-CONNECTION_STRING="postgresql://${ADMIN_USER}:${ADMIN_PASSWORD}@${SERVER_NAME}.postgres.database.azure.com:5432/${DB_NAME}?sslmode=require"
-
+# ── Output connection info (no secrets) ──────────────────────────────────────
 echo ""
 echo "==> Provisioning complete."
 echo ""
-echo "Connection string (set as DATABASE_URL):"
-echo "  ${CONNECTION_STRING}"
+echo "Host: ${SERVER_NAME}.postgres.database.azure.com"
+echo "Database: ${DB_NAME}"
+echo "User: ${ADMIN_USER}"
 echo ""
-echo "Example:"
-echo "  export DATABASE_URL='${CONNECTION_STRING}'"
+echo "Set DATABASE_URL in your environment:"
+echo "  export DATABASE_URL='postgresql://${ADMIN_USER}:<password>@${SERVER_NAME}.postgres.database.azure.com:5432/${DB_NAME}?sslmode=require'"
+echo ""
+echo "NOTE: Configure firewall rules to allow access from your IP/VNet:"
+echo "  az postgres flexible-server firewall-rule create --resource-group ${RESOURCE_GROUP} --name ${SERVER_NAME} --rule-name AllowMyIP --start-ip-address <your-ip> --end-ip-address <your-ip>"
