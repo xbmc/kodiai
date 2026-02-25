@@ -185,6 +185,7 @@ const retriever = isolationLayer && embeddingProvider
           enabled: config.knowledge.sharing.enabled,
         },
       },
+      reviewCommentStore,
     })
   : undefined;
 

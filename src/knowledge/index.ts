@@ -39,5 +39,8 @@ export type {
 export { backfillReviewComments, syncSinglePR } from "./review-comment-backfill.ts";
 export type { BackfillResult, BackfillOptions } from "./review-comment-backfill.ts";
 
+// Review comment retrieval
+export { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";

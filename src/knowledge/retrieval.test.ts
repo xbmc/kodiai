@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { createRetriever, type RetrieveOptions, type RetrieveResult } from "./retrieval.ts";
 import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWithProvenance } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
+import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -253,5 +254,92 @@ describe("createRetriever", () => {
     expect(typeof result!.provenance.sharedPoolUsed).toBe("boolean");
     expect(typeof result!.provenance.thresholdMethod).toBe("string");
     expect(typeof result!.provenance.thresholdValue).toBe("number");
+  });
+
+  test("reviewPrecedents populated when reviewCommentStore provided", async () => {
+    const results = [makeRetrievalResult(1, 0.2)];
+    const mockCommentStore: ReviewCommentStore = {
+      async writeChunks() {},
+      async softDelete() {},
+      async updateChunks() {},
+      async searchByEmbedding(): Promise<ReviewCommentSearchResult[]> {
+        return [{
+          distance: 0.25,
+          record: {
+            id: 1, createdAt: "2025-01-01T00:00:00Z", repo: "owner/repo", owner: "owner",
+            prNumber: 123, prTitle: "Fix bug", commentGithubId: 1001, threadId: "t1",
+            inReplyToId: null, filePath: "src/auth.ts", startLine: 42, endLine: 50,
+            diffHunk: null, authorLogin: "reviewer1", authorAssociation: "MEMBER",
+            body: "Review comment", chunkIndex: 0, chunkText: "This is a review comment",
+            tokenCount: 5, embedding: null, embeddingModel: "voyage-code-3",
+            stale: false, githubCreatedAt: "2025-08-15T10:00:00Z", githubUpdatedAt: null,
+            deleted: false, backfillBatch: null,
+          },
+        }];
+      },
+      async getThreadComments() { return []; },
+      async getSyncState() { return null; },
+      async updateSyncState() {},
+      async getLatestCommentDate() { return null; },
+      async countByRepo() { return 0; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+      reviewCommentStore: mockCommentStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+    expect(result).not.toBeNull();
+    expect(result!.reviewPrecedents).toHaveLength(1);
+    expect(result!.reviewPrecedents[0]!.source).toBe("review_comment");
+    expect(result!.reviewPrecedents[0]!.authorLogin).toBe("reviewer1");
+    expect(result!.provenance.reviewCommentCount).toBe(1);
+  });
+
+  test("review comment search failure does not block learning memory results", async () => {
+    const results = [makeRetrievalResult(1, 0.2)];
+    const throwingCommentStore: ReviewCommentStore = {
+      async writeChunks() {},
+      async softDelete() {},
+      async updateChunks() {},
+      async searchByEmbedding(): Promise<ReviewCommentSearchResult[]> {
+        throw new Error("Review comment store connection failed");
+      },
+      async getThreadComments() { return []; },
+      async getSyncState() { return null; },
+      async updateSyncState() {},
+      async getLatestCommentDate() { return null; },
+      async countByRepo() { return 0; },
+    };
+
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+      reviewCommentStore: throwingCommentStore,
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+    expect(result).not.toBeNull();
+    expect(result!.findings.length).toBeGreaterThan(0);
+    expect(result!.reviewPrecedents).toHaveLength(0);
+    expect(result!.provenance.reviewCommentCount).toBe(0);
+  });
+
+  test("existing behavior unchanged when reviewCommentStore is undefined", async () => {
+    const results = [makeRetrievalResult(1, 0.2)];
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+    expect(result).not.toBeNull();
+    expect(result!.reviewPrecedents).toHaveLength(0);
+    expect(result!.provenance.reviewCommentCount).toBe(0);
   });
 });

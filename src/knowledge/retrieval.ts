@@ -3,11 +3,13 @@ import type { EmbeddingProvider, RetrievalResult } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { MergedRetrievalResult, MultiQueryVariantType } from "./multi-query-retrieval.ts";
 import type { SnippetAnchor } from "./retrieval-snippets.ts";
+import type { ReviewCommentStore } from "./review-comment-types.ts";
 import { executeRetrievalVariants, mergeVariantResults } from "./multi-query-retrieval.ts";
 import { rerankByLanguage } from "./retrieval-rerank.ts";
 import { applyRecencyWeighting } from "./retrieval-recency.ts";
 import { computeAdaptiveThreshold } from "./adaptive-threshold.ts";
 import { buildSnippetAnchors, trimSnippetAnchorsToBudget } from "./retrieval-snippets.ts";
+import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
 
 export type RetrieveOptions = {
   repo: string;
@@ -33,12 +35,14 @@ export type RetrieveOptions = {
 export type RetrieveResult = {
   findings: MergedRetrievalResult[];
   snippetAnchors: SnippetAnchor[];
+  reviewPrecedents: ReviewCommentMatch[];
   provenance: {
     queryCount: number;
     candidateCount: number;
     sharedPoolUsed: boolean;
     thresholdMethod: string;
     thresholdValue: number;
+    reviewCommentCount: number;
   };
 };
 
@@ -66,6 +70,7 @@ export function createRetriever(deps: {
   embeddingProvider: EmbeddingProvider;
   isolationLayer: IsolationLayer;
   config: RetrieverConfig;
+  reviewCommentStore?: ReviewCommentStore;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
 
@@ -130,6 +135,24 @@ export function createRetriever(deps: {
           { variant: failed.variant.type, err: failed.error },
           "Retrieval variant failed (fail-open)",
         );
+      }
+
+      // Step 2b: Fan out to review comment corpus (parallel with variant execution)
+      let reviewPrecedents: ReviewCommentMatch[] = [];
+      if (deps.reviewCommentStore) {
+        try {
+          // Use first query (intent variant) for review comment search
+          reviewPrecedents = await searchReviewComments({
+            store: deps.reviewCommentStore,
+            embeddingProvider: deps.embeddingProvider,
+            query: opts.queries[0]!,
+            repo: opts.repo,
+            topK: 5,
+            logger: opts.logger,
+          });
+        } catch (err) {
+          opts.logger.warn({ err }, "Review comment retrieval failed (fail-open)");
+        }
       }
 
       // Step 3: Merge variant results
@@ -207,12 +230,14 @@ export function createRetriever(deps: {
       return {
         findings: finalReranked,
         snippetAnchors,
+        reviewPrecedents,
         provenance: {
           queryCount: opts.queries.length,
           candidateCount: totalCandidates,
           sharedPoolUsed,
           thresholdMethod,
           thresholdValue,
+          reviewCommentCount: reviewPrecedents.length,
         },
       };
     } catch (err) {
