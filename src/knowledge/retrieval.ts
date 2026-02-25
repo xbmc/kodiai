@@ -12,6 +12,8 @@ import { computeAdaptiveThreshold } from "./adaptive-threshold.ts";
 import { buildSnippetAnchors, trimSnippetAnchorsToBudget } from "./retrieval-snippets.ts";
 import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
 import { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
+import { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
+import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import { hybridSearchMerge } from "./hybrid-search.ts";
 import {
   crossCorpusRRF,
@@ -66,6 +68,7 @@ export type RetrieveResult = {
     thresholdValue: number;
     reviewCommentCount: number;
     wikiPageCount: number;
+    snippetCount: number;
     unifiedResultCount: number;
     hybridSearchUsed: boolean;
     rrfK: number;
@@ -93,10 +96,10 @@ const DEDUP_THRESHOLD = 0.9;
 
 /** Source weight multipliers for context-dependent re-ranking. */
 const SOURCE_WEIGHTS: Record<TriggerType, Record<string, number>> = {
-  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0 },
-  issue: { code: 1.0, review_comment: 1.0, wiki: 1.2 },
-  question: { code: 1.0, review_comment: 1.0, wiki: 1.2 },
-  slack: { code: 1.0, review_comment: 1.0, wiki: 1.0 },
+  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0, snippet: 1.1 },
+  issue: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8 },
+  question: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8 },
+  slack: { code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0 },
 };
 
 /** How much to boost exact-language matches in the unified pipeline. */
@@ -159,6 +162,10 @@ function getChunkLanguage(chunk: UnifiedRetrievalChunk): string | null {
       .replace("objective-c", "objectivec")
       .replace("f#", "fsharp");
   }
+  if (chunk.source === "snippet") {
+    const lang = chunk.metadata?.language as string | undefined;
+    return lang ?? null;
+  }
   return null;
 }
 
@@ -217,6 +224,31 @@ function wikiMatchToUnified(match: WikiKnowledgeMatch): UnifiedRetrievalChunk {
       namespace: match.namespace,
       sectionHeading: match.sectionHeading,
       languageTags: match.languageTags ?? [],
+    },
+  };
+}
+
+/**
+ * Normalize a code snippet match to UnifiedRetrievalChunk.
+ */
+function snippetToUnified(match: CodeSnippetMatch, repo: string): UnifiedRetrievalChunk {
+  return {
+    id: `snippet:${match.contentHash}:${match.distance}`,
+    text: match.embeddedText,
+    source: "snippet",
+    sourceLabel: `[snippet] PR #${match.prNumber}: ${match.prTitle ?? "untitled"} — ${match.filePath}:${match.startLine}-${match.endLine}`,
+    sourceUrl: `https://github.com/${repo}/pull/${match.prNumber}`,
+    vectorDistance: match.distance,
+    rrfScore: 0,
+    createdAt: match.createdAt,
+    metadata: {
+      contentHash: match.contentHash,
+      filePath: match.filePath,
+      startLine: match.startLine,
+      endLine: match.endLine,
+      prNumber: match.prNumber,
+      prTitle: match.prTitle,
+      language: match.language,
     },
   };
 }
@@ -299,6 +331,7 @@ export function createRetriever(deps: {
   reviewCommentStore?: ReviewCommentStore;
   wikiPageStore?: WikiPageStore;
   memoryStore?: LearningMemoryStore;
+  codeSnippetStore?: CodeSnippetStore;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
 
@@ -332,7 +365,7 @@ export function createRetriever(deps: {
       const maxVariantConcurrency = 2;
       const variantTopK = Math.max(1, Math.ceil(topK / Math.max(variants.length, 1)));
 
-      // Step 3: Parallel fan-out — all 6 searches (3 vector + 3 BM25) at once
+      // Step 3: Parallel fan-out — all 7 searches (4 vector + 3 BM25) at once
       const [
         variantResults,
         reviewVectorResult,
@@ -340,6 +373,7 @@ export function createRetriever(deps: {
         memoryFullTextResult,
         reviewFullTextResult,
         wikiFullTextResult,
+        snippetVectorResult,
       ] = await Promise.allSettled([
         // (a) Learning memory vector search (multi-variant)
         executeRetrievalVariants({
@@ -407,6 +441,17 @@ export function createRetriever(deps: {
               topK: 5,
             })
           : Promise.resolve([]),
+        // (g) Code snippet vector search
+        deps.codeSnippetStore
+          ? searchCodeSnippets({
+              store: deps.codeSnippetStore,
+              embeddingProvider: deps.embeddingProvider,
+              query: intentQuery,
+              repo: opts.repo,
+              topK: 5,
+              logger: opts.logger,
+            })
+          : Promise.resolve([] as CodeSnippetMatch[]),
       ]);
 
       // Extract settled results (fail-open)
@@ -416,6 +461,8 @@ export function createRetriever(deps: {
         reviewVectorResult.status === "fulfilled" ? reviewVectorResult.value : [];
       const wikiKnowledge =
         wikiVectorResult.status === "fulfilled" ? wikiVectorResult.value : [];
+      const snippetResults =
+        snippetVectorResult.status === "fulfilled" ? snippetVectorResult.value : [];
 
       // Log failures
       if (variantResults.status === "rejected") {
@@ -426,6 +473,9 @@ export function createRetriever(deps: {
       }
       if (wikiVectorResult.status === "rejected") {
         logger.warn({ err: wikiVectorResult.reason }, "Wiki vector search failed (fail-open)");
+      }
+      if (snippetVectorResult.status === "rejected") {
+        logger.warn({ err: snippetVectorResult.reason }, "Code snippet vector search failed (fail-open)");
       }
 
       // Log variant-level failures
@@ -495,6 +545,7 @@ export function createRetriever(deps: {
       const codeChunks = finalReranked.map((r) => memoryToUnified(r as unknown as MergedRetrievalResult));
       const reviewChunks = reviewPrecedents.map((m) => reviewMatchToUnified(m, opts.repo));
       const wikiChunks = wikiKnowledge.map(wikiMatchToUnified);
+      const snippetChunks = snippetResults.map((m) => snippetToUnified(m, opts.repo));
 
       // 6b: Per-corpus hybrid merge (vector + BM25 via RRF)
       // Review comments: merge vector + BM25
@@ -586,6 +637,11 @@ export function createRetriever(deps: {
         similarityThreshold: DEDUP_THRESHOLD,
         mode: "within-corpus",
       });
+      const dedupedSnippets = deduplicateChunks({
+        chunks: snippetChunks,
+        similarityThreshold: DEDUP_THRESHOLD,
+        mode: "within-corpus",
+      });
 
       // 6d: Cross-corpus RRF
       const sourceLists: RankedSourceList[] = [];
@@ -597,6 +653,9 @@ export function createRetriever(deps: {
       }
       if (dedupedWiki.length > 0) {
         sourceLists.push({ source: "wiki", items: dedupedWiki });
+      }
+      if (dedupedSnippets.length > 0) {
+        sourceLists.push({ source: "snippet", items: dedupedSnippets });
       }
 
       let unifiedResults = crossCorpusRRF({
@@ -675,6 +734,7 @@ export function createRetriever(deps: {
           thresholdValue,
           reviewCommentCount: reviewPrecedents.length,
           wikiPageCount: wikiKnowledge.length,
+          snippetCount: snippetResults.length,
           unifiedResultCount: unifiedResults.length,
           hybridSearchUsed: true,
           rrfK: RRF_K,

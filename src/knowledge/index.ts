@@ -74,5 +74,20 @@ export { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
 export { createWikiSyncScheduler } from "./wiki-sync.ts";
 export type { WikiSyncSchedulerOptions, WikiSyncResult } from "./wiki-sync.ts";
 
+// Code snippet store
+export { createCodeSnippetStore } from "./code-snippet-store.ts";
+
+// Code snippet chunker
+export { parseDiffHunks, buildEmbeddingText, isExcludedPath, applyHunkCap, computeContentHash } from "./code-snippet-chunker.ts";
+export type { ParsedHunk } from "./code-snippet-chunker.ts";
+
+// Code snippet types
+export type {
+  CodeSnippetStore, CodeSnippetRecord, CodeSnippetOccurrence, CodeSnippetSearchResult,
+} from "./code-snippet-types.ts";
+
+// Code snippet retrieval
+export { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";

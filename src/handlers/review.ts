@@ -50,6 +50,14 @@ import {
 } from "./review-idempotency.ts";
 import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
 import picomatch from "picomatch";
+import {
+  parseDiffHunks,
+  buildEmbeddingText,
+  isExcludedPath,
+  applyHunkCap,
+  computeContentHash,
+} from "../knowledge/code-snippet-chunker.ts";
+import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
@@ -1104,6 +1112,148 @@ function normalizeReviewerLogin(login: string): string {
 }
 
 /**
+ * Split a full unified diff (multi-file) into per-file segments.
+ * Returns an array of `{ filename, patch }` objects for each file in the diff.
+ */
+function splitDiffByFile(diffContent: string): Array<{ filename: string; patch: string }> {
+  const DIFF_HEADER_RE = /^diff --git a\/(.+) b\/(.+)$/;
+  const lines = diffContent.split("\n");
+  const files: Array<{ filename: string; patch: string }> = [];
+  let currentFilename: string | null = null;
+  let currentLines: string[] = [];
+
+  for (const line of lines) {
+    const headerMatch = DIFF_HEADER_RE.exec(line);
+    if (headerMatch) {
+      // Flush previous file
+      if (currentFilename !== null && currentLines.length > 0) {
+        files.push({ filename: currentFilename, patch: currentLines.join("\n") });
+      }
+      currentFilename = headerMatch[2]!;
+      currentLines = [];
+    } else if (currentFilename !== null) {
+      currentLines.push(line);
+    }
+  }
+  // Flush last file
+  if (currentFilename !== null && currentLines.length > 0) {
+    files.push({ filename: currentFilename, patch: currentLines.join("\n") });
+  }
+
+  return files;
+}
+
+/**
+ * Embed diff hunks from a PR into the code snippet store.
+ *
+ * Fire-and-forget async function — errors are logged and swallowed.
+ * Called after review completion so embedding latency doesn't affect review speed.
+ */
+async function embedDiffHunks(params: {
+  diffFiles: Array<{ filename: string; patch?: string }>;
+  repo: string;
+  owner: string;
+  prNumber: number;
+  prTitle: string;
+  codeSnippetStore: CodeSnippetStore;
+  embeddingProvider: EmbeddingProvider;
+  config: { enabled: boolean; maxHunksPerPr: number; minChangedLines: number; excludePatterns: string[] };
+  logger: Logger;
+}): Promise<void> {
+  const {
+    diffFiles,
+    repo,
+    owner,
+    prNumber,
+    prTitle,
+    codeSnippetStore,
+    embeddingProvider,
+    config: hunkConfig,
+    logger,
+  } = params;
+
+  if (!hunkConfig.enabled) return;
+
+  try {
+    // 1. Parse hunks from each file, applying exclusions
+    const allHunks: import("../knowledge/code-snippet-chunker.ts").ParsedHunk[] = [];
+
+    for (const file of diffFiles) {
+      if (!file.patch) continue;
+      if (isExcludedPath(file.filename, hunkConfig.excludePatterns)) continue;
+
+      const hunks = parseDiffHunks({
+        diffText: file.patch,
+        filePath: file.filename,
+        minChangedLines: hunkConfig.minChangedLines,
+      });
+      allHunks.push(...hunks);
+    }
+
+    if (allHunks.length === 0) return;
+
+    // 2. Apply per-PR hunk cap
+    const cappedHunks = applyHunkCap(allHunks, hunkConfig.maxHunksPerPr);
+
+    // 3. Embed and store each hunk
+    let embeddedCount = 0;
+    let failedCount = 0;
+
+    for (const hunk of cappedHunks) {
+      try {
+        const embeddedText = buildEmbeddingText({ hunk, prTitle });
+        const contentHash = computeContentHash(embeddedText);
+
+        const embeddingResult = await embeddingProvider.generate(embeddedText, "document");
+        if (!embeddingResult) {
+          failedCount++;
+          continue;
+        }
+
+        await codeSnippetStore.writeSnippet(
+          {
+            contentHash,
+            embeddedText,
+            language: hunk.language,
+            embeddingModel: embeddingResult.model,
+          },
+          embeddingResult.embedding,
+        );
+
+        await codeSnippetStore.writeOccurrence({
+          contentHash,
+          repo,
+          owner,
+          prNumber,
+          prTitle,
+          filePath: hunk.filePath,
+          startLine: hunk.startLine,
+          endLine: hunk.startLine + hunk.addedLines.length - 1,
+          functionContext: hunk.functionContext || null,
+        });
+
+        embeddedCount++;
+      } catch (err) {
+        failedCount++;
+        logger.warn(
+          { err, filePath: hunk.filePath, startLine: hunk.startLine },
+          "Hunk embedding failed for individual hunk (fail-open)",
+        );
+      }
+    }
+
+    if (embeddedCount > 0 || failedCount > 0) {
+      logger.info(
+        { repo, prNumber, hunkCount: cappedHunks.length, embeddedCount, failedCount },
+        "Hunk embedding complete",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, repo, prNumber }, "Hunk embedding pipeline failed (fail-open)");
+  }
+}
+
+/**
  * Create the review handler and register it with the event router.
  *
  * Handles `pull_request.opened`, `pull_request.ready_for_review`, and
@@ -1135,6 +1285,8 @@ export function createReviewHandler(deps: {
   searchCache?: SearchCache<number>;
   /** Optional injection for deterministic tests. */
   searchCacheFactory?: () => SearchCache<number>;
+  /** Optional code snippet store for hunk embedding. */
+  codeSnippetStore?: CodeSnippetStore;
   logger: Logger;
 }): void {
   const {
@@ -1152,6 +1304,7 @@ export function createReviewHandler(deps: {
     scopeCoordinator,
     searchCache: injectedSearchCache,
     searchCacheFactory,
+    codeSnippetStore,
     logger,
   } = deps;
 
@@ -3232,6 +3385,26 @@ export function createReviewHandler(deps: {
               { ...baseLog, err },
               'Learning memory write pipeline failed (fail-open)',
             );
+          });
+        }
+
+        // Async hunk embedding (SNIP-01): embed PR diff hunks for future retrieval.
+        // Fire-and-forget: does not block review completion.
+        const hunkEmbeddingConfig = config.knowledge.retrieval.hunkEmbedding;
+        if (codeSnippetStore && embeddingProvider && hunkEmbeddingConfig.enabled && diffContext.diffContent) {
+          const diffFiles = splitDiffByFile(diffContext.diffContent);
+          embedDiffHunks({
+            diffFiles,
+            repo: `${apiOwner}/${apiRepo}`,
+            owner: apiOwner,
+            prNumber: pr.number,
+            prTitle: pr.title,
+            codeSnippetStore,
+            embeddingProvider,
+            config: hunkEmbeddingConfig,
+            logger,
+          }).catch((err) => {
+            logger.warn({ ...baseLog, err }, "Hunk embedding failed (fire-and-forget)");
           });
         }
 

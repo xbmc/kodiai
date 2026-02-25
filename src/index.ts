@@ -21,6 +21,7 @@ import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.t
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
+import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
@@ -175,6 +176,10 @@ logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 const wikiPageStore = createWikiPageStore({ sql, logger });
 logger.info("Wiki page store initialized (PostgreSQL + pgvector)");
 
+// Code snippet store (v0.19 SNIP-01)
+const codeSnippetStore = createCodeSnippetStore({ sql, logger });
+logger.info("Code snippet store initialized (PostgreSQL + pgvector)");
+
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;
 if (learningMemoryStore) {
@@ -202,6 +207,7 @@ const retriever = isolationLayer && embeddingProvider
       reviewCommentStore,
       wikiPageStore,
       memoryStore: learningMemoryStore,
+      codeSnippetStore,
     })
   : undefined;
 
@@ -386,6 +392,7 @@ createReviewHandler({
   learningMemoryStore,
   embeddingProvider,
   retriever,
+  codeSnippetStore,
   logger,
 });
 createMentionHandler({
