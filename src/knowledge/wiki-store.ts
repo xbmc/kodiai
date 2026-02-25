@@ -39,6 +39,7 @@ type WikiRow = {
   last_modified: string | null;
   revision_id: number | null;
   deleted: boolean;
+  language_tags: string[];
 };
 
 function rowToRecord(row: WikiRow): WikiPageRecord {
@@ -62,6 +63,7 @@ function rowToRecord(row: WikiRow): WikiPageRecord {
     lastModified: row.last_modified,
     revisionId: row.revision_id,
     deleted: row.deleted,
+    languageTags: row.language_tags ?? [],
   };
 }
 
@@ -84,19 +86,20 @@ export function createWikiPageStore(opts: {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
           const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
+          const languageTags = chunk.languageTags ?? ["general"];
           await sql`
             INSERT INTO wiki_pages (
               page_id, page_title, namespace, page_url,
               section_heading, section_anchor, section_level,
               chunk_index, chunk_text, raw_text, token_count,
               embedding, embedding_model, stale,
-              last_modified, revision_id
+              last_modified, revision_id, language_tags
             ) VALUES (
               ${chunk.pageId}, ${chunk.pageTitle}, ${chunk.namespace}, ${chunk.pageUrl},
               ${chunk.sectionHeading ?? null}, ${sectionAnchor}, ${chunk.sectionLevel ?? null},
               ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.rawText}, ${chunk.tokenCount},
               ${embeddingValue}::vector, ${embeddingModel}, ${chunk.embedding ? false : true},
-              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}
+              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}, ${sql.array(languageTags)}
             )
             ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
           `;
@@ -127,19 +130,20 @@ export function createWikiPageStore(opts: {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
           const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
+          const languageTags = chunk.languageTags ?? ["general"];
           await tx`
             INSERT INTO wiki_pages (
               page_id, page_title, namespace, page_url,
               section_heading, section_anchor, section_level,
               chunk_index, chunk_text, raw_text, token_count,
               embedding, embedding_model, stale,
-              last_modified, revision_id
+              last_modified, revision_id, language_tags
             ) VALUES (
               ${chunk.pageId}, ${chunk.pageTitle}, ${chunk.namespace}, ${chunk.pageUrl},
               ${chunk.sectionHeading ?? null}, ${sectionAnchor}, ${chunk.sectionLevel ?? null},
               ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.rawText}, ${chunk.tokenCount},
               ${embeddingValue}::vector, ${embeddingModel}, ${chunk.embedding ? false : true},
-              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}
+              ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}, ${sql.array(languageTags)}
             )
           `;
         }

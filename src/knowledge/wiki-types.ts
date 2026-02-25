@@ -54,6 +54,8 @@ export type WikiPageRecord = {
   lastModified: string | null;
   revisionId: number | null;
   deleted: boolean;
+  /** Language affinity tags persisted from detectLanguageTags at ingest time. */
+  languageTags: string[];
 };
 
 /** Search result with cosine distance score. */

@@ -236,4 +236,68 @@ describe("WikiPageStore (pgvector)", () => {
     const state = await store.getSyncState("unknown.wiki");
     expect(state).toBeNull();
   });
+
+  test("writeChunks stores language_tags and getPageChunks returns them", async () => {
+    if (!store) return;
+    const chunk = makeChunk({
+      languageTags: ["python", "typescript"],
+      embedding: makeEmbedding(60),
+    });
+    await store.writeChunks([chunk]);
+
+    const result = await store.getPageChunks(100);
+    expect(result.length).toBe(1);
+    expect(result[0]!.languageTags).toEqual(["python", "typescript"]);
+  });
+
+  test("writeChunks defaults language_tags to ['general'] when not set", async () => {
+    if (!store) return;
+    const chunk = makeChunk({ embedding: makeEmbedding(61) });
+    // No languageTags set
+    await store.writeChunks([chunk]);
+
+    const result = await store.getPageChunks(100);
+    expect(result.length).toBe(1);
+    expect(result[0]!.languageTags).toEqual(["general"]);
+  });
+
+  test("searchByEmbedding returns language_tags in results", async () => {
+    if (!store) return;
+    const emb = makeEmbedding(70);
+    await store.writeChunks([
+      makeChunk({ languageTags: ["python"], embedding: emb }),
+    ]);
+
+    const results = await store.searchByEmbedding({
+      queryEmbedding: emb,
+      topK: 5,
+    });
+
+    expect(results.length).toBe(1);
+    expect(results[0]!.record.languageTags).toEqual(["python"]);
+  });
+
+  test("replacePageChunks replaces language_tags on re-ingest", async () => {
+    if (!store) return;
+    // Write initial chunk with python tag
+    await store.writeChunks([
+      makeChunk({ languageTags: ["python"], embedding: makeEmbedding(80) }),
+    ]);
+
+    // Replace with new chunk that has different tags
+    await store.replacePageChunks(100, [
+      makeChunk({
+        languageTags: ["typescript", "javascript"],
+        rawText: "Updated TypeScript content",
+        chunkText: "Test Page > Introduction: Updated TypeScript content",
+        embedding: makeEmbedding(81),
+      }),
+    ]);
+
+    const result = await store.getPageChunks(100);
+    expect(result.length).toBe(1);
+    expect(result[0]!.languageTags).toEqual(["typescript", "javascript"]);
+    // Old python tag should be gone
+    expect(result[0]!.languageTags).not.toContain("python");
+  });
 });
