@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Intelligent Retrieval Enhancements
-status: unknown
-stopped_at: Phase 94 context gathered
-last_updated: "2026-02-25T18:24:55.636Z"
+status: in-progress
+stopped_at: Completed 94-01-PLAN.md
+last_updated: "2026-02-25T18:48:54Z"
 progress:
   total_phases: 83
   completed_phases: 77
   total_plans: 190
-  completed_plans: 199
+  completed_plans: 200
 ---
 
 # Project State
@@ -23,12 +23,12 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 ## Current Position
 
-Phase: 93 of 96 (Language-Aware Retrieval Boosting)
-Plan: 4 of 4 in current phase (COMPLETE)
-Status: Phase complete
-Last activity: 2026-02-25 -- 93-04 complete: language wiring through handlers, wiki languageTags tests, e2e language boost tests
+Phase: 94 of 96 (depends-pr-deep-review)
+Plan: 1 of 4 in current phase
+Status: In progress
+Last activity: 2026-02-25 -- 94-01 complete: detectDependsBump() with TDD, 30 tests passing
 
-Progress: [████████████████████] 199/190 plans (100%)
+Progress: [████████████████████] 200/190 plans (100%)
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [████████████████████] 199/190
 | Phase 93 P02 | 4 | 2 tasks | 5 files |
 | Phase 93 P01 | 5 | 4 tasks | 8 files |
 | Phase 93 P03 | 6 | 2 tasks | 6 files |
+| Phase 94 P01 | 1 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,8 @@ All decisions through v0.18 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 93]: Single location for language weighting per pipeline path: rerankByLanguage for legacy findings[], step 6e-bis for unified results — no double-boost
 - [Phase 93]: classifyFileLanguageWithContext used for memory writes — resolves .h ambiguity using PR context files (not classifyFileLanguage which returns Title Case)
 - [Phase 93]: prLanguages normalized to lowercase in mention.ts at construction time — single normalization site, keeps retrieval.ts clean
+- [Phase 94]: detectDependsBump() returns null for non-matching titles enabling mutual exclusion with detectDepBump()
+- [Phase 94]: Multi-package split on " / " separator; isGroup=true when no packages have versions
 
 ### Key Constraints (Carry-Forward)
 
@@ -107,6 +110,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T18:24:55.633Z
-**Stopped At:** Phase 94 context gathered
-**Resume file:** .planning/phases/94-depends-pr-deep-review/94-CONTEXT.md
+**Last session:** 2026-02-25T18:48:54Z
+**Stopped At:** Completed 94-01-PLAN.md
+**Resume file:** .planning/phases/94-depends-pr-deep-review/94-01-SUMMARY.md

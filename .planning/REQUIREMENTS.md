@@ -17,8 +17,8 @@ Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap 
 
 ### `[depends]` PR Deep Review
 
-- [ ] **DEPS-01**: Kodiai detects `[depends]` prefix and dependency-bump patterns in PR titles automatically (e.g. "[depends] Bump zlib 1.3.2", "[Windows] Refresh fstrcmp 0.7")
-- [ ] **DEPS-02**: Detection is mutually exclusive with existing Dependabot/Renovate pipeline — a PR triggers one path, not both
+- [x] **DEPS-01**: Kodiai detects `[depends]` prefix and dependency-bump patterns in PR titles automatically (e.g. "[depends] Bump zlib 1.3.2", "[Windows] Refresh fstrcmp 0.7")
+- [x] **DEPS-02**: Detection is mutually exclusive with existing Dependabot/Renovate pipeline — a PR triggers one path, not both
 - [ ] **DEPS-03**: Kodiai fetches upstream changelog / release notes for the new dependency version
 - [ ] **DEPS-04**: Kodiai analyzes what changed between old and new version — breaking changes, deprecations, new APIs
 - [ ] **DEPS-05**: Kodiai assesses impact on the Kodi codebase — which files consume this dependency and whether they are affected by upstream changes
@@ -76,8 +76,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LANG-03 | Phase 93 | Complete |
 | LANG-04 | Phase 93 | Complete |
 | LANG-05 | Phase 93 | Complete |
-| DEPS-01 | Phase 94 | Pending |
-| DEPS-02 | Phase 94 | Pending |
+| DEPS-01 | Phase 94 | Complete |
+| DEPS-02 | Phase 94 | Complete |
 | DEPS-03 | Phase 94 | Pending |
 | DEPS-04 | Phase 94 | Pending |
 | DEPS-05 | Phase 94 | Pending |
