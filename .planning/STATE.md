@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Intelligent Retrieval Enhancements
-status: in-progress
-stopped_at: Completed 94-03-PLAN.md
-last_updated: "2026-02-25T18:54:36Z"
+status: unknown
+stopped_at: Completed 94-04-PLAN.md
+last_updated: "2026-02-25T19:03:01.425Z"
 progress:
   total_phases: 83
-  completed_phases: 77
-  total_plans: 190
-  completed_plans: 202
+  completed_phases: 78
+  total_plans: 194
+  completed_plans: 203
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 ## Current Position
 
 Phase: 94 of 96 (depends-pr-deep-review)
-Plan: 3 of 4 in current phase
+Plan: 4 of 4 in current phase
 Status: In progress
-Last activity: 2026-02-25 -- 94-03 complete: impact analysis with #include tracing, cmake parsing, transitive dependency detection
+Last activity: 2026-02-25 -- 94-04 complete: structured review comment builder and pipeline integration for [depends] deep review
 
-Progress: [████████████████████] 201/190 plans (100%)
+Progress: [████████████████████] 202/190 plans (100%)
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [████████████████████] 201/190
 | Phase 94 P01 | 1 | 2 tasks | 2 files |
 | Phase 94 P02 | 2 | 2 tasks | 2 files |
 | Phase 94 P03 | 3 | 2 tasks | 2 files |
+| Phase 94 P04 | 332s | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,9 @@ All decisions through v0.18 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 94]: Dual grep pass (#include + cmake target_link_libraries) with filePath dedup for consumer discovery
 - [Phase 94]: parseCmakeFindModule uses line-start anchoring to skip commented find_dependency lines
 - [Phase 94]: Transitive check fetches cmake/modules/ from GitHub via Octokit getContent, fail-open on missing directory
+- [Phase 94]: Verdict heuristic: risky on hash mismatch/patch removal/breaking+many-consumers; needs-attention on breaking/transitive/many-consumers/hash-unavailable
+- [Phase 94]: Full [depends] pipeline fail-open: on error, resets dependsBumpInfo to null so Dependabot detection can still run
+- [Phase 94]: Standard Claude review only runs when PR touches source beyond build config paths (tools/depends/, cmake/modules/, etc)
 
 ### Key Constraints (Carry-Forward)
 
@@ -117,6 +121,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T18:54:36Z
-**Stopped At:** Completed 94-03-PLAN.md
-**Resume file:** .planning/phases/94-depends-pr-deep-review/94-03-SUMMARY.md
+**Last session:** 2026-02-25T19:03:01.422Z
+**Stopped At:** Completed 94-04-PLAN.md
+**Resume file:** None

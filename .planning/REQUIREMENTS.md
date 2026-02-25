@@ -24,7 +24,7 @@ Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap 
 - [x] **DEPS-05**: Kodiai assesses impact on the Kodi codebase — which files consume this dependency and whether they are affected by upstream changes
 - [x] **DEPS-06**: Kodiai verifies hash/URL changes, checks for removed/added patches, and validates build config changes
 - [x] **DEPS-07**: Kodiai checks if the bump introduces new transitive dependencies or version conflicts
-- [ ] **DEPS-08**: Kodiai surfaces a structured review comment with version diff summary, changelog highlights relevant to Kodi, impact assessment, and action items
+- [x] **DEPS-08**: Kodiai surfaces a structured review comment with version diff summary, changelog highlights relevant to Kodi, impact assessment, and action items
 
 ### CI Failure Recognition
 
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPS-05 | Phase 94 | Complete |
 | DEPS-06 | Phase 94 | Complete |
 | DEPS-07 | Phase 94 | Complete |
-| DEPS-08 | Phase 94 | Pending |
+| DEPS-08 | Phase 94 | Complete |
 | CIFR-01 | Phase 95 | Pending |
 | CIFR-02 | Phase 95 | Pending |
 | CIFR-03 | Phase 95 | Pending |
