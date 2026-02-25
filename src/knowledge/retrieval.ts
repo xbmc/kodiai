@@ -4,12 +4,14 @@ import type { IsolationLayer } from "./isolation.ts";
 import type { MergedRetrievalResult, MultiQueryVariantType } from "./multi-query-retrieval.ts";
 import type { SnippetAnchor } from "./retrieval-snippets.ts";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
+import type { WikiPageStore } from "./wiki-types.ts";
 import { executeRetrievalVariants, mergeVariantResults } from "./multi-query-retrieval.ts";
 import { rerankByLanguage } from "./retrieval-rerank.ts";
 import { applyRecencyWeighting } from "./retrieval-recency.ts";
 import { computeAdaptiveThreshold } from "./adaptive-threshold.ts";
 import { buildSnippetAnchors, trimSnippetAnchorsToBudget } from "./retrieval-snippets.ts";
 import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
+import { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
 
 export type RetrieveOptions = {
   repo: string;
@@ -36,6 +38,7 @@ export type RetrieveResult = {
   findings: MergedRetrievalResult[];
   snippetAnchors: SnippetAnchor[];
   reviewPrecedents: ReviewCommentMatch[];
+  wikiKnowledge: WikiKnowledgeMatch[];
   provenance: {
     queryCount: number;
     candidateCount: number;
@@ -43,6 +46,7 @@ export type RetrieveResult = {
     thresholdMethod: string;
     thresholdValue: number;
     reviewCommentCount: number;
+    wikiPageCount: number;
   };
 };
 
@@ -71,6 +75,7 @@ export function createRetriever(deps: {
   isolationLayer: IsolationLayer;
   config: RetrieverConfig;
   reviewCommentStore?: ReviewCommentStore;
+  wikiPageStore?: WikiPageStore;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
 
@@ -155,6 +160,22 @@ export function createRetriever(deps: {
         }
       }
 
+      // Step 2c: Fan out to wiki corpus (parallel with other retrievals)
+      let wikiKnowledge: WikiKnowledgeMatch[] = [];
+      if (deps.wikiPageStore) {
+        try {
+          wikiKnowledge = await searchWikiPages({
+            store: deps.wikiPageStore,
+            embeddingProvider: deps.embeddingProvider,
+            query: opts.queries[0]!,
+            topK: 5,
+            logger: opts.logger,
+          });
+        } catch (err) {
+          opts.logger.warn({ err }, "Wiki retrieval failed (fail-open)");
+        }
+      }
+
       // Step 3: Merge variant results
       const mergedResults = mergeVariantResults({
         resultsByVariant,
@@ -231,6 +252,7 @@ export function createRetriever(deps: {
         findings: finalReranked,
         snippetAnchors,
         reviewPrecedents,
+        wikiKnowledge,
         provenance: {
           queryCount: opts.queries.length,
           candidateCount: totalCandidates,
@@ -238,6 +260,7 @@ export function createRetriever(deps: {
           thresholdMethod,
           thresholdValue,
           reviewCommentCount: reviewPrecedents.length,
+          wikiPageCount: wikiKnowledge.length,
         },
       };
     } catch (err) {

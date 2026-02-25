@@ -1995,6 +1995,7 @@ export function createReviewHandler(deps: {
         // Retrieval context (LEARN-07) -- unified retrieval via knowledge/retrieval.ts
         let retrievalCtx: RetrievalContextForPrompt | null = null;
         let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
+        let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
         if (retriever) {
           try {
             const variants = buildRetrievalVariants({
@@ -2019,6 +2020,11 @@ export function createReviewHandler(deps: {
             // Capture review precedents regardless of learning memory findings
             if (result && result.reviewPrecedents.length > 0) {
               reviewPrecedentsForPrompt = result.reviewPrecedents;
+            }
+
+            // Capture wiki knowledge regardless of learning memory findings
+            if (result && result.wikiKnowledge.length > 0) {
+              wikiKnowledgeForPrompt = result.wikiKnowledge;
             }
 
             if (result && result.findings.length > 0) {
@@ -2281,6 +2287,7 @@ export function createReviewHandler(deps: {
           retrievalContext: retrievalCtx,
           // Review comment precedents (KI-05/KI-06)
           reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
+          wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
           // Multi-language context and localized output (LANG-01)
           filesByLanguage: diffAnalysis?.filesByLanguage,
           outputLanguage: config.review.outputLanguage,

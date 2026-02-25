@@ -3,6 +3,7 @@ import picomatch from "picomatch";
 import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
 import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.ts";
+import type { WikiKnowledgeMatch } from "../knowledge/wiki-retrieval.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
@@ -912,6 +913,54 @@ export function formatReviewPrecedents(matches: ReviewCommentMatch[]): string {
   ].join("\n");
 }
 
+const MAX_WIKI_KNOWLEDGE = 5;
+const MAX_WIKI_EXCERPT_CHARS = 200;
+
+/**
+ * Format wiki knowledge matches as a prompt section with inline citation instructions.
+ * Returns empty string when no matches exist (no section noise).
+ */
+export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
+  if (matches.length === 0) return "";
+
+  const sorted = [...matches].sort((a, b) => a.distance - b.distance);
+  const capped = sorted.slice(0, MAX_WIKI_KNOWLEDGE);
+
+  const bullets: string[] = [];
+  for (const match of capped) {
+    const label = match.sectionHeading
+      ? `${match.pageTitle} > ${match.sectionHeading}`
+      : match.pageTitle;
+
+    const freshness = match.lastModified
+      ? ` (updated ${match.lastModified.slice(0, 7)})`
+      : "";
+
+    const excerpt = truncateAtWordBoundary(
+      match.rawText.replace(/\n/g, " ").trim(),
+      MAX_WIKI_EXCERPT_CHARS,
+    );
+
+    bullets.push(
+      `- **[Wiki] ${label}** ([source](${match.pageUrl}))${freshness}:\n  "${excerpt}"`,
+    );
+  }
+
+  return [
+    "## Wiki Knowledge",
+    "",
+    "The following are relevant kodi.wiki articles. Reference them when the current change",
+    "relates to documented Kodi architecture, APIs, or features. Cite with:",
+    '`Per the wiki: "quote" ([source](url))`',
+    "",
+    "Only cite when directly relevant. Do not force citations.",
+    "",
+    "---",
+    ...bullets,
+    "---",
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Helper: Language-specific guidance section (CTX-06)
 // ---------------------------------------------------------------------------
@@ -1268,6 +1317,7 @@ export function buildReviewPrompt(context: {
     maxChars?: number;
   } | null;
   reviewPrecedents?: ReviewCommentMatch[];
+  wikiKnowledge?: WikiKnowledgeMatch[];
   filesByLanguage?: Record<string, string[]>;
   outputLanguage?: string;
   prLabels?: string[];
@@ -1381,6 +1431,14 @@ export function buildReviewPrompt(context: {
     const precedentsSection = formatReviewPrecedents(context.reviewPrecedents);
     if (precedentsSection) {
       lines.push("", precedentsSection);
+    }
+  }
+
+  // --- Wiki knowledge (KI-11/KI-12) ---
+  if (context.wikiKnowledge && context.wikiKnowledge.length > 0) {
+    const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
+    if (wikiSection) {
+      lines.push("", wikiSection);
     }
   }
 

@@ -18,6 +18,8 @@ import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
 import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
+import { createWikiPageStore } from "./knowledge/wiki-store.ts";
+import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
@@ -83,10 +85,17 @@ if (rateLimitFailureInjectionIdentities.length > 0) {
 // Lifecycle: request tracking, webhook queuing, shutdown management
 const requestTracker = createRequestTracker();
 const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore });
+// Mutable reference for wiki sync scheduler (set later, stopped on shutdown)
+let _wikiSyncSchedulerRef: { stop: () => void } | null = null;
+
 const shutdownManager = createShutdownManager({
   logger,
   requestTracker,
-  closeDb,
+  closeDb: async () => {
+    // Stop wiki sync scheduler before closing DB
+    _wikiSyncSchedulerRef?.stop();
+    await closeDb();
+  },
 });
 
 // Startup maintenance: purge old rows (TELEM-07)
@@ -161,6 +170,10 @@ void Promise.resolve()
 const reviewCommentStore = createReviewCommentStore({ sql, logger });
 logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 
+// Wiki page store (v0.18 KI-10)
+const wikiPageStore = createWikiPageStore({ sql, logger });
+logger.info("Wiki page store initialized (PostgreSQL + pgvector)");
+
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;
 if (learningMemoryStore) {
@@ -186,6 +199,7 @@ const retriever = isolationLayer && embeddingProvider
         },
       },
       reviewCommentStore,
+      wikiPageStore,
     })
   : undefined;
 
@@ -405,6 +419,21 @@ if (reviewCommentStore && embeddingProvider) {
     embeddingProvider,
     logger,
   });
+}
+
+// Wiki sync scheduler (KI-10: daily incremental sync via RecentChanges API)
+const wikiSyncScheduler = embeddingProvider
+  ? createWikiSyncScheduler({
+      store: wikiPageStore,
+      embeddingProvider,
+      source: "kodi.wiki",
+      logger,
+    })
+  : null;
+if (wikiSyncScheduler) {
+  wikiSyncScheduler.start();
+  _wikiSyncSchedulerRef = wikiSyncScheduler;
+  logger.info("Wiki sync scheduler started (24h interval, 60s startup delay)");
 }
 
 const app = new Hono();

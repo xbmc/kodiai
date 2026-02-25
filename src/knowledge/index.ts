@@ -58,5 +58,12 @@ export type {
 export { backfillWikiPages } from "./wiki-backfill.ts";
 export type { WikiBackfillResult, WikiBackfillOptions } from "./wiki-backfill.ts";
 
+// Wiki retrieval
+export { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
+
+// Wiki sync
+export { createWikiSyncScheduler } from "./wiki-sync.ts";
+export type { WikiSyncSchedulerOptions, WikiSyncResult } from "./wiki-sync.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";
