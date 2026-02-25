@@ -2,17 +2,15 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-23)
+See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 88 - Knowledge Layer Extraction
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-**Milestone:** v0.18 Knowledge Layer Extraction
-**Phase:** 88 (Knowledge Layer Extraction)
-**Plan:** 2 of 2 in current phase (all plans complete)
-**Status:** Milestone complete
+**Milestone:** v0.17 Infrastructure Foundation (SHIPPED)
+**Status:** Milestone complete — ready for `/gsd:new-milestone`
 **Last Activity:** 2026-02-24
 
 Progress: [##########] 100%
@@ -21,33 +19,7 @@ Progress: [##########] 100%
 
 ### Decisions
 
-All decisions through v0.16 archived to `.planning/PROJECT.md` Key Decisions table.
-
-- **86-01:** Used postgres.js (not pg/drizzle/kysely) for zero-dep tagged-template SQL
-- **86-01:** Telemetry executions table renamed to telemetry_events in PostgreSQL schema
-- **86-01:** learning_memories embedding as vector(1024) inline column, replacing sqlite-vec virtual table
-- **86-02:** All store methods made async (Promise-based) since postgres.js is inherently async
-- **86-02:** checkpoint()/close() become no-ops -- connection lifecycle managed by client.ts
-- **86-02:** db-path.ts deprecated (not deleted) to avoid breaking imports during migration period
-- **86-03:** All LearningMemoryStore methods async (Promise-based) to match postgres.js
-- **86-03:** Removed createNoOpStore fallback -- pgvector always available in PostgreSQL
-- **86-03:** ON CONFLICT DO NOTHING for duplicate writes instead of catching UNIQUE constraint
-- **86-04:** All stores share single PostgreSQL connection pool via createDbClient()
-- **86-04:** Removed TELEMETRY_DB_PATH and KNOWLEDGE_DB_PATH env vars -- replaced by single DATABASE_URL
-- **86-04:** All handler store calls now properly await async methods (26+ call sites updated)
-- **87-01:** Grace window defaults to 5min (SHUTDOWN_GRACE_MS), extends once (doubles) on timeout
-- **87-01:** Readiness probe stays healthy during drain (single replica keeps accepting into queue)
-- **87-01:** Webhook queue telemetry uses fire-and-forget to avoid blocking enqueue
-- **87-02:** /healthz runs SELECT 1 against PostgreSQL for liveness; /health kept as backward-compatible alias
-- **87-02:** Startup webhook replay processes sequentially to avoid overwhelming system on cold start
-- **87-02:** Termination grace period set to 330s (5min SHUTDOWN_GRACE_MS + 30s buffer)
-- **88-01:** Multi-query first-class: queries[] array maps to variant types (intent, file-path, code-shape)
-- **88-01:** Factory pattern: createRetriever(deps) returns { retrieve(opts) } for dependency injection
-- **88-01:** Fail-open pipeline: entire retrieve() wrapped in try/catch returning null on failure
-- **88-01:** Learning types merged into knowledge/types.ts (single canonical location)
-- **88-02:** Retriever injected as single dep (not 5 separate deps) -- simplifies handler interfaces
-- **88-02:** Slack retrieval weaves findings into prompt text rather than structured context object
-- **88-02:** Clean break on src/learning/ deletion: no backward-compat re-exports
+All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -80,7 +52,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24T23:51:11Z
-**Stopped At:** Completed 88-02-PLAN.md (phase 88 complete)
-**Resume File:** .planning/phases/88-knowledge-layer-extraction/88-02-SUMMARY.md
-**Next action:** Next phase or milestone planning
+**Last session:** 2026-02-24
+**Stopped At:** v0.17 milestone archived
+**Next action:** `/gsd:new-milestone` for v0.18

@@ -8,10 +8,20 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews, co
 
 When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, contextual answers to questions, or PR creation from Slack write requests — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.16 Review Coverage & Slack UX
+## Latest Release: v0.17 Infrastructure Foundation
 
 **Shipped:** 2026-02-24
-**Phases:** 82-85 (4 phases, 6 plans)
+**Phases:** 86-88 (3 phases, 8 plans)
+
+**Delivered:**
+- PostgreSQL + pgvector replaces all SQLite storage (HNSW indexes, tsvector columns, single DATABASE_URL)
+- Graceful shutdown with SIGTERM handling, in-flight drain, and webhook queue replay on restart
+- Zero-downtime deploys with health probes, rolling deploy config, and startup webhook replay
+- Unified `src/knowledge/` module with `createRetriever()` factory for both GitHub and Slack retrieval
+- E2E test proving shared retrieval path; `src/learning/` deleted (17 files removed)
+
+<details>
+<summary>Previous Release: v0.16 Review Coverage & Slack UX (2026-02-24)</summary>
 
 **Delivered:**
 - Draft PRs now reviewed with soft suggestive tone, memo badge, and draft framing
@@ -21,8 +31,10 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 - InMemoryCache utility eliminates 4 unbounded memory leak vectors
 - Config-driven default repo, typed APIs, Slack timeout, and rate limiting
 
+</details>
+
 <details>
-<summary>Previous Release: v0.15 Slack Write Workflows (2026-02-19)</summary>
+<summary>v0.15 Slack Write Workflows (2026-02-19)</summary>
 
 **Delivered:**
 - Deterministic Slack write-intent routing with explicit prefix detection, medium-confidence conversational heuristics, and ambiguous read-only fallback
@@ -32,39 +44,19 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-<details>
-<summary>v0.14 Slack Integration (2026-02-19)</summary>
-
-**Delivered:**
-- Slack ingress with fail-closed v0 signature/timestamp verification and secure `/webhooks/slack/events` endpoint
-- V1 safety rails enforcing `#kodiai`-only, thread-only replies, and mention-only thread bootstrap
-- Deterministic thread session semantics: `@kodiai` bootstrap starts threads, follow-ups auto-route without repeated mentions
-- Read-only assistant routing with default `xbmc/xbmc` repo context, explicit override, and one-question ambiguity handling
-- Operator hardening with deterministic smoke verifier (SLK80-SMOKE), regression gate (SLK80-REG), and deployment runbook
-
-</details>
-
 ## Current State
 
-v0.16 ships a fully operational GitHub App + Slack assistant that:
+v0.17 ships a fully operational GitHub App + Slack assistant backed by PostgreSQL:
+- All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns (SQLite removed)
+- Graceful shutdown with SIGTERM handling, drain logic, webhook queue replay, and zero-downtime deploys
+- Unified `src/knowledge/` module with single retrieval path for both GitHub and Slack
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
 - Routes Slack write intent through policy/permission gates with high-impact confirmation for destructive operations
 - Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
-- Applies deterministic diff/risk context, learning memory, and language-specific enforcement
-- Ships with operator smoke/regression verification gates for both GitHub and Slack surfaces
 - Bounded in-memory caches with TTL eviction, per-channel Slack rate limiting, and 10s request timeouts
-- ~84,000 lines of TypeScript, 1,100+ tests passing
-
-## Current Milestone: v0.17 Infrastructure Foundation
-
-**Goal:** Replace SQLite with shared PostgreSQL + pgvector, harden the deployment lifecycle, and extract a unified knowledge layer for both GitHub and Slack.
-
-**Target features:**
-- PostgreSQL + pgvector replacing SQLite + sqlite-vec (HNSW indexes, hybrid search foundation)
-- Graceful shutdown with SIGTERM handling, drain logic, and zero-downtime deploys
-- Shared `src/knowledge/` module eliminating duplicate retrieval paths between GitHub and Slack
+- ~56,000 lines of TypeScript, 1,100+ tests passing
 
 ## Requirements
 
@@ -137,15 +129,16 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 - ✓ Slack responses omit Sources/References sections — v0.16
 - ✓ Slack responses are concise (1-3 sentences for simple questions) — v0.16
 - ✓ Slack responses use conversational tone — v0.16
+- ✓ PostgreSQL + pgvector database replacing all SQLite usage — v0.17
+- ✓ HNSW index tuning with correct distance operators — v0.17
+- ✓ Full-text search columns for hybrid search foundation — v0.17
+- ✓ Graceful shutdown with SIGTERM handling and drain logic — v0.17
+- ✓ Zero-downtime deploys on Azure Container Apps — v0.17
+- ✓ Unified knowledge layer in `src/knowledge/` for GitHub and Slack — v0.17
 
 ### Active
 
-- [ ] PostgreSQL + pgvector database replacing all SQLite usage
-- [ ] HNSW index tuning with correct distance operators
-- [ ] Full-text search columns for hybrid search foundation
-- [ ] Graceful shutdown with SIGTERM handling and drain logic
-- [ ] Zero-downtime deploys on Azure Container Apps
-- [ ] Unified knowledge layer in `src/knowledge/` for GitHub and Slack
+(None — define with `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -168,10 +161,10 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 - **Test repo:** `kodiai/xbmc` (public fork) used to validate PR review + mention flows
 - **Core stack:** Bun + Hono, Octokit, Agent SDK (`query()`), in-process MCP servers, in-process queue (p-queue)
 - **Execution model:** clone workspace -> build prompt -> invoke Claude Code -> publish outputs via MCP tools
-- **Storage:** SQLite WAL databases (`./data/kodiai-telemetry.db`, `./data/kodiai-knowledge.db`) with sqlite-vec extension for vector retrieval
+- **Storage:** Azure PostgreSQL Flexible Server with pgvector extension (HNSW indexes, tsvector columns)
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
 - **Slack:** Bot token with `chat:write`, `reactions:write` scopes; signing secret for ingress verification
-- **Codebase:** ~84,000 lines of TypeScript, 1,100+ tests passing
+- **Codebase:** ~56,000 lines of TypeScript, 1,100+ tests passing
 
 ## Key Decisions
 
@@ -204,6 +197,11 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 | Debian over Alpine for containers | sqlite-vec ships glibc-linked binaries; Alpine musl cannot load them | ✓ Good — v0.16 |
 | Lazy eviction InMemoryCache | No timers/intervals; expired entries evicted on access and insert | ✓ Good — v0.16 |
 | Inline Slack rate limiter | Per-channel sliding window (30/60s) using Map instead of external dependency | ✓ Good — v0.16 |
+| postgres.js over pg/drizzle/kysely | Zero-dep tagged-template SQL, native Bun support, connection pooling | ✓ Good — v0.17 |
+| Single DATABASE_URL connection pool | All stores share one pool; replaced separate TELEMETRY_DB_PATH/KNOWLEDGE_DB_PATH | ✓ Good — v0.17 |
+| SIGTERM drain with webhook queue | In-flight work completes, new webhooks queued to PostgreSQL for replay on restart | ✓ Good — v0.17 |
+| createRetriever() factory pattern | Single dep injection point for all handlers; fail-open with try/catch returning null | ✓ Good — v0.17 |
+| Clean break on src/learning/ deletion | No backward-compat re-exports; all consumers updated to src/knowledge/ | ✓ Good — v0.17 |
 
 ## Constraints
 
@@ -216,4 +214,4 @@ v0.16 ships a fully operational GitHub App + Slack assistant that:
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-23 after v0.17 milestone start*
+*Last updated: 2026-02-24 after v0.17 milestone*
