@@ -200,6 +200,7 @@ const retriever = isolationLayer && embeddingProvider
       },
       reviewCommentStore,
       wikiPageStore,
+      memoryStore: learningMemoryStore,
     })
   : undefined;
 

@@ -4703,8 +4703,10 @@ describe("createReviewHandler multi-query retrieval orchestration (RET-07)", () 
       buildReviewRequestedEvent({ requested_reviewer: { login: "kodiai[bot]" } }),
     );
 
-    expect(capturedPrompt).toContain("`README.md:2` -- `feature token`");
-    expect(capturedPrompt).toContain("`src/missing.ts` -- missing file signal");
+    // Unified cross-corpus context renders source labels (KI-13)
+    expect(capturedPrompt).toContain("Knowledge Context");
+    expect(capturedPrompt).toContain("feature token");
+    expect(capturedPrompt).toContain("missing file signal");
 
     await workspaceFixture.cleanup();
   });

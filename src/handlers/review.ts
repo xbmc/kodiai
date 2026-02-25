@@ -3275,6 +3275,10 @@ export function createReviewHandler(deps: {
                       } : null,
                       retrievalContext: retrievalCtx,
                       reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
+                      wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
+                      // Unified cross-corpus retrieval on retry path (KI-13)
+                      unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+                      contextWindow: contextWindowForPrompt,
                       filesByLanguage: diffAnalysis?.filesByLanguage,
                       outputLanguage: config.review.outputLanguage,
                       prLabels,
