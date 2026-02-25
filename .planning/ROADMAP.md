@@ -20,6 +20,66 @@
 - ✅ **v0.16 Review Coverage & Slack UX** — Phases 82-85 (shipped 2026-02-24)
 - ✅ **v0.17 Infrastructure Foundation** — Phases 86-88 (shipped 2026-02-24)
 
+## Active: v0.18 Knowledge Ingestion (Phases 89-91)
+
+**Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
+
+### Phase 89 — PR Review Comment Ingestion
+**Goal:** 18 months of human review comments from xbmc/xbmc embedded and searchable
+**Requirements:** KI-01 through KI-06
+**Plans:** 4 plans
+
+Plans:
+- [ ] 89-01-PLAN.md — Schema, store, and thread-aware chunker for review comments
+- [ ] 89-02-PLAN.md — Backfill CLI with GitHub API pagination and rate limiting
+- [ ] 89-03-PLAN.md — Incremental webhook sync for review comment lifecycle
+- [ ] 89-04-PLAN.md — Retrieval integration and inline citation formatting
+
+**Scope:**
+- GitHub API backfill: fetch all PR review comments from xbmc/xbmc (18 months)
+- Chunk and embed review comments with metadata: PR number, file, line range, author, date
+- `knowledge.review_comments` table in PostgreSQL with pgvector embeddings
+- Semantic chunking at per-comment/per-thread boundaries with overlapping sliding windows (1024 tokens, 256 overlap)
+- Incremental sync: webhook handler ingests new review comments on create/edit/delete
+- Retrieval integration: review comment corpus available via `src/knowledge/retrieval.ts`
+- Validation: bot cites human review precedents in responses
+
+**Deliverable:** Human review comments are a first-class retrieval source; bot surfaces "reviewers have historically flagged this pattern" evidence.
+
+### Phase 90 — MediaWiki Content Ingestion
+**Goal:** kodi.wiki content chunked, embedded, and searchable
+**Requirements:** KI-07 through KI-12
+
+**Scope:**
+- MediaWiki API export: fetch all pages from kodi.wiki (or targeted namespaces)
+- HTML → markdown stripping; chunk by section heading with overlapping windows
+- Embed and store with metadata: page title, section, last modified, URL
+- `knowledge.wiki_pages` table in PostgreSQL with pgvector embeddings
+- Incremental sync: scheduled job (daily/weekly) detects changed pages
+- Retrieval integration: wiki corpus available via `src/knowledge/retrieval.ts`
+- Validation: bot answers architecture/feature questions with wiki citations
+
+**Deliverable:** kodi.wiki is searchable; bot responses cite wiki pages with links.
+
+### Phase 91 — Cross-Corpus Retrieval Integration
+**Goal:** Unified retrieval across all knowledge sources with source-aware ranking
+**Requirements:** KI-13 through KI-19
+**Depends on:** Phases 89, 90
+
+**Scope:**
+- Multi-source query fan-out: single retrieval call queries code, review comments, wiki simultaneously
+- Hybrid search (BM25 + vector): combine pgvector semantic similarity with PostgreSQL tsvector full-text search per corpus
+- Reciprocal Rank Fusion (RRF): merge ranked lists using `1/(k + rank)` per list, summed across lists
+- Source-aware re-ranking: weight by recency, source type, and relevance score
+- Result attribution: every retrieved chunk carries source label (code / review / wiki)
+- Context assembly: build LLM context window with attributed chunks, respect token budget
+- Deduplication: collapse near-duplicate chunks via cosine similarity threshold on pgvector results
+- End-to-end test: PR review response cites code context + human review precedent + wiki page
+
+**Deliverable:** All three corpora queried on every retrieval call; responses cite sources by type; no retrieval path bypasses the unified layer.
+
+---
+
 ## Phases
 
 <details>
@@ -144,6 +204,7 @@ See `.planning/milestones/v0.17-ROADMAP.md` for full phase details.
 ## Progress
 
 **Total shipped:** 17 milestones, 88 phases, 212 plans
+**Active:** v0.18 Knowledge Ingestion — Phases 89-91
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -167,4 +228,4 @@ See `.planning/milestones/v0.17-ROADMAP.md` for full phase details.
 
 ---
 
-*Roadmap updated: 2026-02-24 -- v0.17 milestone archived*
+*Roadmap updated: 2026-02-24 -- v0.18 milestone created from Issue #65*
