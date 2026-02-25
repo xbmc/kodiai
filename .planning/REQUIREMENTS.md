@@ -13,7 +13,7 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 - [x] **KI-01**: 18 months of human PR review comments from xbmc/xbmc backfilled, chunked, embedded, and stored in PostgreSQL
 - [x] **KI-02**: Review comments stored with metadata: PR number, file, line range, author, date
 - [x] **KI-03**: Semantic chunking at per-comment/per-thread boundaries with overlapping sliding windows (512 tokens, 128 overlap) for long threads
-- [ ] **KI-04**: Incremental sync ingests new review comments on PR close/merge via webhook
+- [x] **KI-04**: Incremental sync ingests new review comments on PR close/merge via webhook
 - [ ] **KI-05**: Review comment corpus available via `src/knowledge/retrieval.ts` retrieval path
 - [ ] **KI-06**: Bot can cite human review precedents ("reviewers have historically flagged this pattern") in responses
 
@@ -60,7 +60,7 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 | KI-01 | Phase 89 | Complete |
 | KI-02 | Phase 89 | Complete |
 | KI-03 | Phase 89 | Complete |
-| KI-04 | Phase 89 | Pending |
+| KI-04 | Phase 89 | Complete |
 | KI-05 | Phase 89 | Pending |
 | KI-06 | Phase 89 | Pending |
 | KI-07 | Phase 90 | Pending |

@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Milestone:** v0.18 Knowledge Ingestion
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Status:** Executing Phase 89 — Plan 01 complete (1/4 plans)
+**Status:** Executing Phase 89 — Plan 03 complete (2/4 plans)
 **Last Activity:** 2026-02-25
 
 Progress: [----------] 0% (0/3 phases)
@@ -20,7 +20,7 @@ Progress: [----------] 0% (0/3 phases)
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| 89 | PR Review Comment Ingestion | In Progress (1/4 plans) |
+| 89 | PR Review Comment Ingestion | In Progress (2/4 plans) |
 | 90 | MediaWiki Content Ingestion | Pending |
 | 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
 
@@ -34,6 +34,9 @@ All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions tab
 - **Phase 89-01:** ON CONFLICT DO NOTHING for idempotent backfill writes
 - **Phase 89-01:** Bot filtering via configurable Set<string> plus [bot] suffix detection
 - **Phase 89-01:** updateChunks uses DELETE + INSERT in transaction for re-chunking on edit
+- **Phase 89-03:** Standalone chunk per new comment (no thread re-chunking on reply) for simplicity
+- **Phase 89-03:** Delete handler calls softDelete directly (no job queue) since no embedding needed
+- **Phase 89-03:** Bot filtering in handler layer before job enqueueing to avoid wasting queue slots
 
 ### Key Constraints (Carry-Forward)
 
@@ -84,6 +87,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T03:27:31.445Z
-**Stopped At:** Completed 89-01-PLAN.md
-**Next action:** `/gsd:execute-phase 89` to continue with Plan 02 (backfill pipeline)
+**Last session:** 2026-02-25T03:31:08Z
+**Stopped At:** Completed 89-03-PLAN.md
+**Next action:** `/gsd:execute-phase 89` to continue with Plan 04 (retrieval integration)
