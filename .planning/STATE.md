@@ -65,9 +65,10 @@ None.
 | 5 | Merge feat/issue-write-pr to main and redeploy to Azure | 2026-02-19 | e5bc338ce4 | [5-merge-feat-issue-write-pr-to-main-and-re](./quick/5-merge-feat-issue-write-pr-to-main-and-re/) |
 | 6 | Extensive code review of entire codebase (97 files, 23,570 lines) | 2026-02-20 | ae782876aa | [6-extensive-code-review](./quick/6-extensive-code-review/) |
 | 7 | Fix all PR #67 review comments | 2026-02-25 | 47b30fb5dd | [7-fix-all-pr-67-review-comments](./quick/7-fix-all-pr-67-review-comments/) |
+| 8 | Issue triage: close #65, bump version labels on #73/#74/#75 | 2026-02-25 | (no file commits) | [8-read-thru-the-open-issues-close-comment-](./quick/8-read-thru-the-open-issues-close-comment-/) |
 
 ## Session Continuity
 
 **Last session:** 2026-02-25
-**Stopped At:** v0.18 milestone complete — all 19 requirements satisfied, tagged, archived
+**Stopped At:** Quick task 8 complete — issue triage done, next milestone is v0.19
 **Resume file:** .planning/MILESTONES.md
