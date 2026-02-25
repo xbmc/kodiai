@@ -16,6 +16,8 @@ import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
+import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
+import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
@@ -154,6 +156,10 @@ void Promise.resolve()
   .catch((err) => {
     logger.warn({ err }, "Embeddings smoke test unexpected error (non-fatal)");
   });
+
+// Review comment store (v0.18 KI-04)
+const reviewCommentStore = createReviewCommentStore({ sql, logger });
+logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;
@@ -390,6 +396,15 @@ createDepBumpMergeHistoryHandler({
   knowledgeStore,
   logger,
 });
+if (reviewCommentStore && embeddingProvider) {
+  createReviewCommentSyncHandler({
+    eventRouter,
+    jobQueue,
+    store: reviewCommentStore,
+    embeddingProvider,
+    logger,
+  });
+}
 
 const app = new Hono();
 
