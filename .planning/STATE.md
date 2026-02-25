@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 90 — MediaWiki Content Ingestion
+**Current focus:** Phase 91 — Cross-Corpus Retrieval Integration (complete)
 
 ## Current Position
 
@@ -14,15 +14,15 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 **Status:** Milestone complete
 **Last Activity:** 2026-02-25
 
-Progress: [###-------] 33% (1/3 phases)
+Progress: [##########] 100% (3/3 phases)
 
 ### Phase Status
 
 | Phase | Title | Status |
 |-------|-------|--------|
 | 89 | PR Review Comment Ingestion | Complete (5/5 plans) |
-| 90 | MediaWiki Content Ingestion | Pending |
-| 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
+| 90 | MediaWiki Content Ingestion | Complete (3/3 plans) |
+| 91 | Cross-Corpus Retrieval Integration | Complete (4/4 plans) |
 
 ## Accumulated Context
 
@@ -96,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T06:25:21.415Z
-**Stopped At:** Phase 91 context gathered
-**Resume file:** .planning/phases/91-cross-corpus-retrieval-integration/91-CONTEXT.md
+**Last session:** 2026-02-24
+**Stopped At:** Phase 91 complete — all 4 plans executed
+**Resume file:** .planning/phases/91-cross-corpus-retrieval-integration/91-04-SUMMARY.md

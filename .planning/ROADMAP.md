@@ -75,10 +75,10 @@ Plans:
 **Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 91-01-PLAN.md — Hybrid search (vector + BM25) per corpus with RRF merge
-- [ ] 91-02-PLAN.md — Cross-corpus RRF engine and cosine deduplication
-- [ ] 91-03-PLAN.md — Unified retrieval pipeline refactor with context assembly
-- [ ] 91-04-PLAN.md — Consumer integration, citation formatting, and E2E test
+- [x] 91-01-PLAN.md — Hybrid search (vector + BM25) per corpus with RRF merge
+- [x] 91-02-PLAN.md — Cross-corpus RRF engine and cosine deduplication
+- [x] 91-03-PLAN.md — Unified retrieval pipeline refactor with context assembly
+- [x] 91-04-PLAN.md — Consumer integration, citation formatting, and E2E test
 
 **Scope:**
 - Multi-source query fan-out: single retrieval call queries code, review comments, wiki simultaneously
