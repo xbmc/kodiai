@@ -1,3 +1,17 @@
+---
+gsd_state_version: 1.0
+milestone: v0.1
+milestone_name: Intelligent Retrieval Enhancements
+status: unknown
+stopped_at: Phase 93 context gathered
+last_updated: "2026-02-25T16:24:28.248Z"
+progress:
+  total_phases: 80
+  completed_phases: 76
+  total_plans: 186
+  completed_plans: 195
+---
+
 # Project State
 
 ## Project Reference
@@ -82,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25
-**Stopped At:** v0.19 roadmap created -- 4 phases (93-96), 23 requirements mapped
-**Resume file:** None
+**Last session:** 2026-02-25T16:24:28.245Z
+**Stopped At:** Phase 93 context gathered
+**Resume file:** .planning/phases/93-language-aware-retrieval-boosting/93-CONTEXT.md
