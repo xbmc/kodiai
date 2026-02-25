@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1
-milestone_name: milestone
-status: unknown
-stopped_at: "Completed quick-12: closed issue #42"
-last_updated: "2026-02-25T21:26:34.661Z"
+milestone: v0.20
+milestone_name: Multi-Model & Active Intelligence
+status: defining_requirements
+stopped_at: ""
+last_updated: "2026-02-25"
 progress:
-  total_phases: 79
-  completed_phases: 76
-  total_plans: 186
-  completed_plans: 195
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,16 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.19 complete — planning next milestone
+**Current focus:** v0.20 Multi-Model & Active Intelligence
 
 ## Current Position
 
-Phase: 96 of 96 (code-snippet-embedding)
-Plan: 4 of 4 in current phase
-Status: Milestone Complete
-Last activity: 2026-02-25 - Completed quick task 12: Close/comment on all open issues that have been addressed
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-25 — Milestone v0.20 started
 
-Progress: [████████████████████] 241/241 plans (100%)
+Progress: [░░░░░░░░░░░░░░░░░░░░] 0/0 plans (0%)
 
 ## Accumulated Context
 

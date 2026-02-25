@@ -54,6 +54,18 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.20 Multi-Model & Active Intelligence
+
+**Goal:** Add task-based model routing via Vercel AI SDK, automated wiki staleness detection, emergent review pattern clustering, and contributor profiles with cross-platform identity linking.
+
+**Source:** [Issue #66](https://github.com/xbmc/kodiai/issues/66)
+
+**Target features:**
+- Multi-LLM via Vercel AI SDK — task-based model routing with configurable providers, cost tracking
+- Wiki Staleness Detection — automated stale page identification with code evidence and scheduled reports
+- Review Pattern Clustering — HDBSCAN-based emergent theme discovery surfaced in PR reviews
+- Contributor Profiles + Cross-Platform Identity — GitHub/Slack identity linking with adaptive behavior
+
 ## Current State
 
 v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snippets) with language-aware boosting, specialized dependency review, and CI failure recognition:
@@ -168,7 +180,14 @@ v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snip
 
 ### Active
 
-(None — define next milestone with `/gsd:new-milestone`)
+- [ ] Task-based model routing via Vercel AI SDK with configurable providers per task type
+- [ ] Cost tracking with model, token counts, and estimated cost per task logged to Postgres
+- [ ] Automated wiki staleness detection comparing wiki pages against code changes
+- [ ] Scheduled staleness reports (GitHub issue or Slack message) with evidence snippets
+- [ ] HDBSCAN-based review pattern clustering with auto-generated theme labels
+- [ ] Recurring review patterns surfaced in PR review context
+- [ ] Contributor profile table with GitHub/Slack identity linking
+- [ ] Adaptive review and retrieval behavior based on contributor expertise
 
 ### Out of Scope
 
@@ -265,4 +284,4 @@ v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snip
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after v0.19 milestone*
+*Last updated: 2026-02-25 after v0.20 milestone start*
