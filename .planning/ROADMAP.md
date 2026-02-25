@@ -100,9 +100,9 @@ Plans:
 **Plans:** 3/3 plans complete
 
 Plans:
-- [ ] 92-01-PLAN.md — Wire mention handler to unified retrieval with source citations
-- [ ] 92-02-PLAN.md — Fix review retry context and wire learningMemoryStore for hybrid search
-- [ ] 92-03-PLAN.md — Verify and update REQUIREMENTS.md checkboxes
+- [x] 92-01-PLAN.md — Wire mention handler to unified retrieval with source citations
+- [x] 92-02-PLAN.md — Fix review retry context and wire learningMemoryStore for hybrid search
+- [x] 92-03-PLAN.md — Verify and update REQUIREMENTS.md checkboxes
 
 **Scope:**
 - Wire mention handler (mention.ts) to consume unifiedResults, contextWindow, wikiKnowledge, reviewPrecedents from retrieval

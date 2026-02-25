@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 91 — Cross-Corpus Retrieval Integration (complete)
+**Current focus:** Phase 92 — Wire Unified Retrieval to All Consumers (complete)
 
 ## Current Position
 
@@ -14,7 +14,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 **Status:** Milestone complete
 **Last Activity:** 2026-02-25
 
-Progress: [##########] 100% (3/3 phases)
+Progress: [##########] 100% (4/4 phases)
 
 ### Phase Status
 
@@ -23,6 +23,7 @@ Progress: [##########] 100% (3/3 phases)
 | 89 | PR Review Comment Ingestion | Complete (5/5 plans) |
 | 90 | MediaWiki Content Ingestion | Complete (3/3 plans) |
 | 91 | Cross-Corpus Retrieval Integration | Complete (4/4 plans) |
+| 92 | Wire Unified Retrieval to All Consumers | Complete (3/3 plans) |
 
 ## Accumulated Context
 
@@ -96,6 +97,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T07:30:30.784Z
-**Stopped At:** Phase 92 context gathered
-**Resume file:** .planning/phases/92-wire-unified-retrieval-consumers/92-CONTEXT.md
+**Last session:** 2026-02-24
+**Stopped At:** Phase 92 complete — all v0.18 requirements satisfied
+**Resume file:** .planning/phases/92-wire-unified-retrieval-consumers/92-03-SUMMARY.md
