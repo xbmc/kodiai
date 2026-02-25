@@ -5,15 +5,24 @@
 See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.16 Review Coverage & Slack UX
+**Current focus:** v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus Retrieval
 
 ## Current Position
 
-**Milestone:** v0.17 Infrastructure Foundation (SHIPPED)
-**Status:** Milestone complete — ready for `/gsd:new-milestone`
-**Last Activity:** 2026-02-25
+**Milestone:** v0.18 Knowledge Ingestion
+**Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
+**Status:** Milestone defined — ready for `/gsd:plan-phase 89`
+**Last Activity:** 2026-02-24
 
-Progress: [##########] 100%
+Progress: [----------] 0% (0/3 phases)
+
+### Phase Status
+
+| Phase | Title | Status |
+|-------|-------|--------|
+| 89 | PR Review Comment Ingestion | Pending |
+| 90 | MediaWiki Content Ingestion | Pending |
+| 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
 
 ## Accumulated Context
 
@@ -28,6 +37,17 @@ All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions tab
 - Timeout retry capped at 1 max to avoid queue starvation
 - Adaptive thresholds need minimum 8-candidate guard
 - Checkpoint publishing must use buffer-and-flush on abort, not streaming
+- Existing `learning_memories` table uses voyage-code-3 (1024 dims) — new corpora should use same model
+- Fail-open philosophy: embedding/retrieval failures logged but never block critical path
+
+### Key Infrastructure (v0.17 Foundation)
+
+- PostgreSQL + pgvector with HNSW indexes (m=16, ef_construction=64) and tsvector GIN indexes
+- `learning_memories` table: existing vector storage for review findings
+- `createRetriever()` factory: single dep injection point for all retrieval
+- VoyageAI embeddings: voyage-code-3, 1024 dims, fail-open with null returns
+- Multi-query retrieval: 3 variants (intent, file-path, code-shape) with weighted merge
+- Isolation layer: repo-scoped + owner-level shared pool retrieval
 
 ### Pending Todos
 
@@ -40,11 +60,12 @@ None.
 
 ### Roadmap Evolution
 
-- Phase 84 added: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
-- Phase 85 added: Code review fixes — memory leaks, hardcoded defaults, type mismatches, and missing rate limits
+(None yet for v0.18)
 
 ### Blockers/Concerns
 
+- GitHub API rate limits for 18-month backfill (~5000 requests/hour for authenticated apps)
+- kodi.wiki size/page count unknown — may need namespace filtering
 - Search API rate limit (30/min) requires caching strategy validated under production load
 
 ### Quick Tasks Completed
@@ -58,6 +79,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-24
-**Stopped At:** v0.17 milestone archived
-**Next action:** `/gsd:new-milestone` for v0.18
+**Last session:** 2026-02-25T01:47:39.667Z
+**Stopped At:** Phase 89 context gathered
+**Next action:** `/gsd:plan-phase 89` to plan PR Review Comment Ingestion
