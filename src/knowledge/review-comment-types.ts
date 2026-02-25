@@ -46,6 +46,7 @@ export type ReviewCommentChunk = {
   githubCreatedAt: Date;
   githubUpdatedAt?: Date | null;
   backfillBatch?: string | null;
+  embedding?: Float32Array | null;
 };
 
 /** Full database row type with all columns. */

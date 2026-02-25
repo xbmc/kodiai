@@ -95,18 +95,22 @@ export function createReviewCommentStore(opts: {
 
       for (const chunk of chunks) {
         try {
+          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
+          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
           await sql`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
               thread_id, in_reply_to_id, file_path, start_line, end_line,
               diff_hunk, author_login, author_association, body,
               chunk_index, chunk_text, token_count,
+              embedding, embedding_model,
               github_created_at, github_updated_at, backfill_batch
             ) VALUES (
               ${chunk.repo}, ${chunk.owner}, ${chunk.prNumber}, ${chunk.prTitle ?? null}, ${chunk.commentGithubId},
               ${chunk.threadId}, ${chunk.inReplyToId ?? null}, ${chunk.filePath ?? null}, ${chunk.startLine ?? null}, ${chunk.endLine ?? null},
               ${chunk.diffHunk ?? null}, ${chunk.authorLogin}, ${chunk.authorAssociation ?? null}, ${chunk.body},
               ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.tokenCount},
+              ${embeddingValue}::vector, ${embeddingModel},
               ${chunk.githubCreatedAt}, ${chunk.githubUpdatedAt ?? null}, ${chunk.backfillBatch ?? null}
             )
             ON CONFLICT (repo, comment_github_id, chunk_index) DO NOTHING
@@ -145,18 +149,22 @@ export function createReviewCommentStore(opts: {
 
         // Insert new chunks
         for (const chunk of chunks) {
+          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
+          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
           await tx`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
               thread_id, in_reply_to_id, file_path, start_line, end_line,
               diff_hunk, author_login, author_association, body,
               chunk_index, chunk_text, token_count,
+              embedding, embedding_model,
               github_created_at, github_updated_at, backfill_batch
             ) VALUES (
               ${chunk.repo}, ${chunk.owner}, ${chunk.prNumber}, ${chunk.prTitle ?? null}, ${chunk.commentGithubId},
               ${chunk.threadId}, ${chunk.inReplyToId ?? null}, ${chunk.filePath ?? null}, ${chunk.startLine ?? null}, ${chunk.endLine ?? null},
               ${chunk.diffHunk ?? null}, ${chunk.authorLogin}, ${chunk.authorAssociation ?? null}, ${chunk.body},
               ${chunk.chunkIndex}, ${chunk.chunkText}, ${chunk.tokenCount},
+              ${embeddingValue}::vector, ${embeddingModel},
               ${chunk.githubCreatedAt}, ${chunk.githubUpdatedAt ?? null}, ${chunk.backfillBatch ?? null}
             )
           `;
@@ -178,6 +186,7 @@ export function createReviewCommentStore(opts: {
         WHERE repo = ${params.repo}
           AND stale = false
           AND deleted = false
+          AND embedding IS NOT NULL
         ORDER BY embedding <=> ${queryEmbeddingString}::vector
         LIMIT ${params.topK}
       `;
