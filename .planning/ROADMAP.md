@@ -238,7 +238,7 @@ Phases execute in numeric order: 93 -> 94 -> 95 -> 96
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93 | 4/4 | Complete    | 2026-02-25 | - |
 | 94 | 4/4 | Complete    | 2026-02-25 | - |
-| 95 | v0.19 | 0/? | Not started | - |
+| 95 | 1/2 | In Progress|  | - |
 | 96 | v0.19 | 0/? | Not started | - |
 
 ---
