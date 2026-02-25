@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Milestone:** v0.18 Knowledge Ingestion
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Status:** Phase 89 complete (4/4 plans)
+**Status:** Phase 89 complete (5/5 plans)
 **Last Activity:** 2026-02-25
 
 Progress: [###-------] 33% (1/3 phases)
@@ -20,7 +20,7 @@ Progress: [###-------] 33% (1/3 phases)
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| 89 | PR Review Comment Ingestion | Complete (4/4 plans) |
+| 89 | PR Review Comment Ingestion | Complete (5/5 plans) |
 | 90 | MediaWiki Content Ingestion | Pending |
 | 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
 
@@ -43,6 +43,9 @@ All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 89]: Phase 89-04: 0.7 cosine distance default threshold for review comment search (tunable in Phase 91)
 - [Phase 89]: Phase 89-04: Review comment results independent from learning memory (separate reviewPrecedents array)
 - [Phase 89]: Phase 89-04: topK=5 separate budget for review comment search
+- [Phase 89]: Phase 89-05: Mutate chunk.embedding in-place rather than returning separate embedding arrays
+- [Phase 89]: Phase 89-05: voyage-code-3 hardcoded as embedding_model (matches learning_memories convention)
+- [Phase 89]: Phase 89-05: NULL embedding filter in searchByEmbedding to prevent NaN cosine distances
 
 ### Key Constraints (Carry-Forward)
 
@@ -93,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T03:41:07Z
-**Stopped At:** Completed 89-04-PLAN.md (Phase 89 complete)
+**Last session:** 2026-02-25T04:46:41Z
+**Stopped At:** Completed 89-05-PLAN.md (Phase 89 gap closure complete)
 **Next action:** `/gsd:execute-phase 90` to begin Phase 90 (MediaWiki Content Ingestion)
