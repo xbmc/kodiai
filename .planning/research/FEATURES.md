@@ -1,200 +1,362 @@
 # Feature Landscape
 
-**Domain:** Intelligent retrieval enhancements, specialized review pipelines, and CI failure analysis for AI code review
+**Domain:** AI-powered code review assistant -- multi-LLM routing, wiki staleness detection, review pattern clustering, contributor profiles
 **Researched:** 2026-02-25
-**Milestone:** v0.19 Intelligent Retrieval Enhancements
-**Confidence:** HIGH (all four features verified against existing codebase, real user feedback, and issue #42 requirements)
+**Milestone:** v0.20 Multi-Model & Active Intelligence
+**Confidence:** HIGH for routing and profiles, MEDIUM for clustering and staleness
 
 ## Existing Foundation (Already Built)
 
-These features are production and form the base for v0.19:
+These features are production and form the base for v0.20:
 
-| Existing Capability | Module | How v0.19 Extends It |
+| Existing Capability | Module | How v0.20 Extends It |
 |---------------------|--------|---------------------|
-| Language-aware re-ranking (boost same-language, penalize cross-language) | `knowledge/retrieval-rerank.ts` | Schema extension: store `language` column on learning_memories so boosting works at DB level, not just post-hoc |
-| File-path language classification (20 languages) | `execution/diff-analysis.ts` | `classifyFileLanguage()` is the source of truth; new schema column derives from this at write time |
-| Snippet anchoring (file-level grounding for retrieval results) | `knowledge/retrieval-snippets.ts` | Hunk-level embedding replaces file-level anchoring with sub-function granularity |
-| Three-stage dep bump detection (detect, extract, classify) | `lib/dep-bump-detector.ts` | `[depends]` PR detection extends Stage 1 with Kodi-specific title patterns |
-| Security advisory + changelog enrichment | `lib/dep-bump-enrichment.ts` | Deep review pipeline wraps existing enrichment with impact analysis and hash verification |
-| Merge confidence scoring | `lib/merge-confidence.ts` | Deep review adds structured output with changelog highlights and action items |
-| CI status MCP server (get_ci_status, get_workflow_run_details) | `execution/mcp/ci-status-server.ts` | CI failure recognition adds scope-diff correlation to determine unrelatedness |
-| Unified cross-corpus retrieval (code + review + wiki) | `knowledge/retrieval.ts` | Language boosting and snippet embedding improve result quality within existing pipeline |
-| Hybrid BM25+vector search with RRF merging | `knowledge/hybrid-search.ts` | Language column enables language-filtered BM25 queries for precision |
+| Claude Agent SDK `query()` with MCP tools | `execution/executor.ts` | Non-agentic tasks routed to Vercel AI SDK `generateText()` while agentic tasks keep Agent SDK |
+| `.kodiai.yml` config with model override | `execution/config.ts` | Extend with `models:` section mapping task types to provider/model pairs |
+| Telemetry with provider, model, tokens, costUsd | `telemetry/types.ts` | Wire Vercel AI SDK usage callbacks into existing telemetry schema |
+| Wiki pages ingested with section chunking | `knowledge/wiki-store.ts`, `wiki-sync.ts` | Cross-reference wiki content against code changes for staleness scoring |
+| 18 months of review comments embedded | `knowledge/review-comment-store.ts` | Run HDBSCAN clustering on existing embeddings to discover review themes |
+| Author classifier (first-time/regular/core) | `lib/author-classifier.ts` | Extend with per-topic expertise scores from contributor profile data |
+| Slack thread sessions with user IDs | `slack/thread-session-store.ts` | Map Slack user IDs to GitHub usernames for cross-platform identity |
+| Cross-corpus retrieval with RRF | `knowledge/retrieval.ts` | Inject cluster pattern context into retrieval pipeline |
 
 ## Table Stakes
 
-Features users expect given the existing system. Missing these = regression or gap in capability promise.
+Features users expect once these capabilities are advertised. Missing = feature feels half-baked.
 
-### 1. Language-Aware Retrieval Boosting (Schema Extension)
-
-| Aspect | Detail |
-|--------|--------|
-| **Feature** | Add `language` column to `learning_memories` table; use it for database-level filtering and boosted retrieval ranking |
-| **Why Expected** | `retrieval-rerank.ts` already boosts by language, but it re-derives language from `filePath` at query time. Storing language at write time enables DB-level WHERE clauses and index-assisted filtering |
-| **Complexity** | Low |
-| **Dependencies** | Migration script (ALTER TABLE), `classifyFileLanguage()` from diff-analysis.ts, backfill existing rows |
-| **User Experience** | No visible UX change. Retrieval results become more relevant -- same-language code examples surface more often. Provenance logging shows language filter was applied |
-| **Confidence** | HIGH -- schema is under our control, `classifyFileLanguage()` is well-tested, rerank logic exists |
-
-**What changes:**
-- New PostgreSQL migration: `ALTER TABLE learning_memories ADD COLUMN language TEXT`
-- Write path: derive language via `classifyFileLanguage(record.filePath)` before INSERT
-- Backfill script: UPDATE existing rows with derived language
-- Retrieval: add optional `WHERE language = ANY($prLanguages)` to vector search query
-- Re-ranking: `retrieval-rerank.ts` can use stored language instead of re-deriving
-- BM25: add language as filter parameter to `searchByFullText`
-
-### 2. `[depends]` PR Deep Review Pipeline
-
-| Aspect | Detail |
-|--------|--------|
-| **Feature** | Specialized, in-depth review pipeline for Kodi-style dependency bump PRs (e.g., `[depends] Bump zlib 1.3.2`, `[Windows] Refresh fstrcmp 0.7`) |
-| **Why Expected** | Existing dep-bump detection only handles Dependabot/Renovate title patterns. Kodi uses manual `[depends]` prefix convention for C/C++ library bumps that compile from source. These PRs have hidden blast radius and need MORE review, not less |
-| **Complexity** | High |
-| **Dependencies** | `dep-bump-detector.ts` (Stage 1 extension), `dep-bump-enrichment.ts` (changelog/security), `review-prompt.ts` (prompt section), CI status server |
-| **User Experience** | When Kodiai detects a `[depends]` PR, the review includes a structured deep-review section: version diff summary, upstream changelog highlights relevant to Kodi, impact assessment (which Kodi files consume this dependency), hash/URL verification, patch validation, and explicit action items. The review is thorough, not lighter |
-| **Confidence** | HIGH -- issue #42 has concrete examples (xbmc/xbmc#27900, #27870), existing enrichment pipeline provides foundation |
-
-**What this involves:**
-1. **Detection extension** -- Add `[depends]` and `[Windows]` title prefix patterns to Stage 1 detection (currently only Dependabot/Renovate). These PRs are NOT bot PRs, so the two-signal requirement needs adjustment: title pattern alone is sufficient for `[depends]`
-2. **Upstream analysis** -- For C/C++ libraries compiled from source, fetch changelog/release notes from upstream project (not package registry). Need to resolve library name to upstream repo (e.g., "zlib" -> madler/zlib on GitHub)
-3. **Impact assessment** -- Grep workspace for `#include` / usage of the dependency's headers. Cross-reference with breaking changes from changelog
-4. **Build config validation** -- Check CMakeLists.txt / build system changes: hash changes, URL changes, removed/added patches, version string updates
-5. **Structured output** -- Dedicated prompt section with: version diff, changelog highlights, impact analysis, hash verification checklist, action items
-6. **Integration** -- Wire into existing `handlePullRequest` flow alongside current dep-bump pipeline
-
-**Kodi-specific context:**
-- `[depends]` PRs update C/C++ libraries that Kodi compiles from source (not package managers)
-- Patches are often applied on top of upstream (patch files in `tools/depends/target/`)
-- Hash/URL changes in build recipes must be verified against upstream releases
-- Build system uses CMake; dependency configs live in `tools/depends/`
-
-### 3. Unrelated CI Failure Recognition
-
-| Aspect | Detail |
-|--------|--------|
-| **Feature** | Detect when CI failures are unrelated to the PR's changed files/scope; annotate with reasoning so maintainers can merge confidently |
-| **Why Expected** | Direct user feedback: garbear on xbmc/xbmc#27884 said "We can merge with unrelated failures. The failure is a gradle problem with parallel builds for Android." Maintainers waste time investigating CI failures that have nothing to do with their PR |
-| **Complexity** | Medium-High |
-| **Dependencies** | `ci-status-server.ts` (existing MCP tool for CI data), `diff-analysis.ts` (changed files), GitHub Actions API |
-| **User Experience** | When CI fails, Kodiai adds a comment (or section in review) noting which failures appear unrelated, with reasoning. Example: "CI failure in `build-android` appears unrelated to this PR -- the failing step `gradle assemble` is a known flaky build issue, and none of the 5 files changed in this PR touch Android build configuration." Does NOT block approval on unrelated failures |
-| **Confidence** | MEDIUM-HIGH -- the MCP server already fetches CI data; the challenge is the heuristic for determining unrelatedness |
-
-**How unrelatedness is determined:**
-1. **File scope correlation** -- Compare PR's changed files against the failing workflow's trigger paths and test directories. If no overlap, likely unrelated
-2. **Historical flakiness** -- Track which workflows fail frequently across different PRs. If `build-android` fails on 30% of PRs regardless of content, it is likely flaky
-3. **Step-level analysis** -- Use `get_workflow_run_details` to identify the specific failed step. Map step names to file domains (e.g., "gradle" -> Android, "cmake" -> C++ build)
-4. **Failure message pattern matching** -- Known patterns like "timeout", "network error", "parallel build race" indicate infrastructure rather than code issues
-5. **Cross-PR comparison** -- If the same workflow failed on the base branch (main) recently, the failure predates this PR
+| Feature | Why Expected | Complexity | Dependencies on Existing | Notes |
+|---------|--------------|------------|--------------------------|-------|
+| **Task-based model routing** | Users expect the right model for the right job -- cheap models for summaries, strong models for security review | Medium | Executor (`query()` call), `.kodiai.yml` config, telemetry store | Vercel AI SDK `generateText`/`streamText` with provider registry alongside existing Agent SDK for agentic tasks |
+| **Provider configuration in .kodiai.yml** | Per-repo model preferences are the established config pattern | Low | Config loader (`loadRepoConfig`) | Extend existing schema with `models:` section mapping task types to model IDs |
+| **Cost tracking per invocation** | Multi-model without cost visibility is irresponsible | Low | Telemetry store already tracks `provider`, `model`, `inputTokens`, `outputTokens`, `costUsd` | Existing `TelemetryRecord` schema already has the columns; wire Vercel AI SDK usage callbacks |
+| **Wiki staleness scoring** | Without a score, "stale" is meaningless -- needs evidence-based ranking | Medium | Wiki store (`wiki_pages` table with `lastModified`, `revisionId`), code snippet store | Compare wiki page references against code corpus for deleted/changed symbols |
+| **Staleness report delivery** | Detecting staleness without reporting it is useless | Low | Slack client, GitHub issue creation via Octokit | Scheduled job posts to Slack `#kodiai` or creates GitHub issue |
+| **Cluster label generation** | Unlabeled clusters are noise, not insight | Medium | Review comment store (18 months of data), embedding provider | LLM-generated labels from cluster centroids or representative samples |
+| **GitHub/Slack identity linking** | Cross-platform profiles are the whole point of contributor features | Low | Slack thread session store, GitHub webhook payloads | Manual mapping table with optional heuristic suggestions |
+| **Contributor expertise inference** | Profile without expertise data is just a user record | Medium | Existing author-classifier (3-tier), review comment history, PR metadata | Extend author-classifier tiers with per-topic expertise scores |
 
 ## Differentiators
 
-Features that set the product apart. Not expected, but valuable.
+Features that set kodiai apart from generic code review bots. Not expected, but high-value.
 
-### 4. Code Snippet Embedding (Hunk-Level Granularity)
-
-| Aspect | Detail |
-|--------|--------|
-| **Feature** | Embed diff hunks at sub-function granularity for more precise semantic retrieval, rather than file-level or finding-level memories |
-| **Why Expected** | NOT expected -- explicitly marked as "exploratory" in issue #42. Current retrieval works at finding-level (one embedding per `findingText`). Hunk-level embedding would capture the actual code context around findings |
-| **Complexity** | High |
-| **Dependencies** | Diff parser (hunk extraction), embedding provider (Voyage AI), new table or extended schema, retrieval pipeline changes |
-| **User Experience** | Retrieval results include actual code snippets from past reviews, not just finding descriptions. When reviewing a PR that touches similar code to a past PR, Kodiai can cite the specific code pattern from the prior review |
-| **Confidence** | MEDIUM -- this is exploratory. Research supports sub-function chunking for better retrieval, but the cost/benefit for Kodiai's use case needs validation |
-
-**What this involves:**
-1. **Hunk extraction** -- Parse unified diff format to extract individual hunks with surrounding context lines
-2. **Context enrichment** -- Use Tree-sitter or simple heuristics to expand hunks to encompass the full function/method boundary
-3. **New storage** -- Likely a `code_snippets` table with columns: repo, pr_number, file_path, start_line, end_line, hunk_text, language, embedding
-4. **Embedding pipeline** -- Embed each hunk at write time (during review comment backfill or on PR review completion)
-5. **Retrieval integration** -- Add as fourth corpus in the unified retrieval pipeline (alongside code, review, wiki)
-6. **Budget management** -- Hunks are small, so many embeddings per PR. Need token/cost budgeting
-
-**Research context:**
-- ContextCRBench (2025) demonstrates hunk-level quality assessment works well for code review
-- Greptile's research confirms per-function chunking outperforms per-file for code search
-- Tree-sitter AST parsing provides reliable function boundary detection across languages
+| Feature | Value Proposition | Complexity | Dependencies on Existing | Notes |
+|---------|-------------------|------------|--------------------------|-------|
+| **Emergent review theme discovery** | No other bot surfaces "your last 50 PRs keep hitting the same 3 issues" from raw review data | High | Review comment store (embedded chunks), embedding provider (Voyage AI) | HDBSCAN on review comment embeddings; auto-discovers themes without predefined categories |
+| **Recurring pattern injection into PR reviews** | "This PR triggers pattern X which appeared in 12 prior reviews" -- contextual, not just statistical | Medium | Review pipeline prompt builder, cross-corpus retrieval | Insert top-matching cluster themes into review prompt as additional context |
+| **Wiki-to-code evidence linking** | Show exactly which code changes made a wiki page stale, with file paths and commit SHAs | High | Wiki store, code snippet store, git history access | Cross-reference wiki page content against code symbol changes; requires entity extraction |
+| **Adaptive review depth per contributor** | First-time contributors get more explanation; core maintainers get terse, high-signal reviews | Low | Author-classifier already does 3-tier classification | Wire existing `AuthorTier` plus new expertise into review prompt template variations |
+| **Multi-model cost optimization** | Route simple tasks to cheap models, complex tasks to frontier models -- visible cost savings | Medium | New model router, telemetry cost tracking | Show cost delta vs single-model baseline in telemetry reports |
+| **Cross-platform activity timeline** | Unified view of a contributor's GitHub PRs + Slack questions for mentoring insight | Medium | Contributor profile table, telemetry store, Slack thread sessions | Query across surfaces for a single identity |
 
 ## Anti-Features
 
-Features to explicitly NOT build.
+Features to explicitly NOT build in this milestone.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| Auto-merge on CI pass | Kodiai is a reviewer, not a merge bot. Auto-merge crosses trust boundary | Comment with merge confidence assessment; let humans merge |
-| CI failure auto-retry | Retrying workflows is an operational action, not a review action | Annotate as unrelated; let maintainers decide to retry |
-| Dependency auto-update PRs | Kodiai reviews PRs, it does not create dependency bump PRs | Review Dependabot/Renovate PRs that already exist |
-| Full AST parsing for all languages | Tree-sitter for 20+ languages is heavy infra. Hunk extraction does not require full AST | Use regex-based function boundary detection, or limit AST to C/C++ for Kodi |
-| Real-time CI monitoring | Watching CI in real-time adds webhook complexity and cost | Check CI status at review time or on explicit request |
-| Package vulnerability database sync | Maintaining our own advisory database duplicates GitHub Advisory Database | Query GitHub Advisory API on-demand (existing pattern) |
-| Language-specific linter integration | Running linters is CI's job, not Kodiai's | Detect when linter CI steps fail; reference linter results in review |
-| Hunk embedding for all past PRs | Backfilling embeddings for all historical hunks is expensive and speculative | Start with new PRs only; backfill selectively if value is proven |
+| **Real-time model switching mid-review** | Agent SDK `query()` is the agentic backbone with MCP tools; swapping models mid-execution breaks tool continuity | Route to different models per *task type* (review vs summary vs mention), not mid-task |
+| **User-facing LLM provider selection UI** | No dashboard exists; GitHub comments are the interface | Config via `.kodiai.yml` model overrides per task type |
+| **Automatic cross-platform identity resolution without confirmation** | False positives linking wrong GitHub/Slack accounts cause trust erosion | Manual linking with optional heuristic suggestions (same display name, email overlap) |
+| **Custom clustering algorithm implementation** | HDBSCAN is well-studied; reimplementing wastes time and introduces bugs | Use `hdbscan-ts` npm package (TypeScript HDBSCAN implementation) |
+| **Real-time clustering on every PR** | HDBSCAN on thousands of embeddings is expensive; unnecessary per-PR | Scheduled batch job (daily/weekly) with cached cluster assignments |
+| **Wiki edit suggestions** | Kodiai is a reviewer, not a wiki editor; auto-editing wiki pages crosses trust boundaries | Surface staleness reports with evidence; humans decide what to update |
+| **Bedrock/Vertex/arbitrary provider auth** | OAuth-only constraint for v1 (per PROJECT.md Out of Scope) | Support Vercel AI SDK providers that work with API keys: OpenAI, Anthropic, Google AI Studio |
+| **Full contributor dashboard** | No UI surface exists; building one is a separate project | Expose contributor data through Slack queries and GitHub issue reports |
+| **Hunk embedding for all past PRs as part of clustering** | Backfilling for clustering purposes is expensive and speculative | Cluster existing review comment embeddings which are already stored |
 
 ## Feature Dependencies
 
 ```
-Language-Aware Boosting (schema)
-  -> No dependencies on other new features
-  -> Improves retrieval quality for all other features
+                    .kodiai.yml model config
+                           |
+                           v
+Task-based model router -----> Cost tracking per invocation
+        |                              |
+        v                              v
+Vercel AI SDK integration      Telemetry store extension
+        |
+        v
+Non-agentic task routing (summaries, label generation)
+        |
+        v
+Cluster label generation (uses cheap model)
 
-[depends] PR Deep Review
-  -> Extends dep-bump-detector.ts Stage 1
-  -> Uses dep-bump-enrichment.ts (changelog, security)
-  -> Uses ci-status-server.ts (for build verification)
-  -> Benefits from Language-Aware Boosting (C/C++ context retrieval)
 
-CI Failure Recognition
-  -> Uses ci-status-server.ts (get_ci_status, get_workflow_run_details)
-  -> Uses diff-analysis.ts (changed file list)
-  -> Independent of other new features
-  -> Complements [depends] deep review (build failures in dep bumps)
+Wiki page store (existing) -----> Wiki staleness scoring
+Code snippet store (existing) -/       |
+                                       v
+                               Staleness report delivery
+                                       |
+                                       v
+                               Wiki-to-code evidence linking
 
-Code Snippet Embedding (exploratory)
-  -> Depends on Language-Aware Boosting schema pattern (adds language column)
-  -> New table, new corpus in retrieval pipeline
-  -> Independent of [depends] and CI recognition
-  -> Highest risk, lowest priority
+
+Review comment store (existing) -----> HDBSCAN clustering job
+Embedding provider (existing) ------/       |
+                                            v
+                                    Cluster label generation
+                                            |
+                                            v
+                                    Pattern injection into PR reviews
+
+
+Author classifier (existing) -----> Contributor profile table
+GitHub webhooks (existing) -------/       |
+Slack sessions (existing) -------/        v
+                                   GitHub/Slack identity linking
+                                          |
+                                          v
+                                   Expertise inference
+                                          |
+                                          v
+                                   Adaptive review depth
 ```
 
 ## MVP Recommendation
 
-**Phase 1: Foundation (low risk, immediate value)**
-1. Language-aware boosting schema extension -- migration, backfill, retrieval integration
-2. CI failure recognition -- scope correlation heuristic, comment annotation
+### Phase 1: Multi-LLM Routing (foundation for everything else)
 
-**Phase 2: Deep Review Pipeline (high value, medium risk)**
-3. `[depends]` PR deep review -- detection extension, impact analysis, structured output
+Prioritize first because cluster labeling, staleness evidence generation, and contributor expertise inference all benefit from cheap model routing.
 
-**Phase 3: Exploratory (high risk, deferred)**
-4. Code snippet embedding -- exploratory, validate approach before committing
+1. **Vercel AI SDK integration** -- wrap `generateText` with provider registry alongside existing Agent SDK `query()` for agentic tasks
+2. **Task-type model configuration** -- extend `.kodiai.yml` with `models:` section mapping task types to provider/model pairs
+3. **Cost tracking extension** -- existing telemetry schema already has `provider`, `model`, `costUsd` columns; wire Vercel AI SDK usage callbacks
 
-**Rationale:**
-- Language boosting is a schema change that improves everything else and has zero UX risk
-- CI failure recognition is a direct response to user feedback with clear acceptance criteria
-- `[depends]` deep review is the highest-value feature but also the most complex; it benefits from language boosting being in place first (C/C++ retrieval)
-- Code snippet embedding is explicitly exploratory in the issue and should not block the other three
+### Phase 2: Review Pattern Clustering (highest differentiation value)
+
+18 months of embedded review comments already exist. Clustering is pure computation on existing data.
+
+1. **HDBSCAN batch clustering job** -- `hdbscan-ts` on review comment embeddings, store cluster assignments
+2. **Cluster label generation** -- LLM-generated labels from representative samples per cluster (uses cheap model from Phase 1)
+3. **Pattern injection into PR reviews** -- match incoming PR against known clusters, inject top matches into review prompt
+
+### Phase 3: Wiki Staleness Detection (leverages existing wiki corpus)
+
+Wiki pages already ingested with section chunking. Staleness detection is cross-referencing against code changes.
+
+1. **Staleness scoring** -- compare wiki page content against recent code changes; score by reference decay
+2. **Evidence linking** -- identify specific code changes that invalidate wiki content
+3. **Report delivery** -- scheduled Slack message or GitHub issue with ranked stale pages and evidence
+
+### Phase 4: Contributor Profiles (builds on all prior phases)
+
+Identity linking is the foundation; expertise inference uses review history and pattern clusters from Phase 2.
+
+1. **Contributor profile table** -- GitHub/Slack identity linking with manual confirmation
+2. **Expertise inference** -- per-topic scores from review comment history and PR metadata
+3. **Adaptive behavior** -- wire expertise into review prompt and retrieval weighting
 
 **Defer:**
-- Code snippet embedding: Mark as exploratory spike. Build a prototype for one language (C++) on a small corpus to validate retrieval quality improvement before investing in full pipeline
+- **Cross-platform activity timeline**: Requires UI surface that does not exist; revisit when dashboard is in scope
+- **Wiki-to-code deep symbol-level evidence linking**: Start with file-path-level staleness detection and iterate to symbol extraction later
+
+## Detailed Feature Specifications
+
+### Multi-LLM Task Routing
+
+**How it works:** The Vercel AI SDK provides a unified `generateText()` / `streamText()` interface with pluggable providers. Each provider (Anthropic, OpenAI, Google) is registered once. A task router maps task types to model IDs. The existing Agent SDK `query()` remains for agentic tasks requiring MCP tools.
+
+**Task types for kodiai:**
+| Task Type | Current Approach | Recommended Model | Rationale |
+|-----------|-----------------|-------------------|-----------|
+| PR review (agentic) | Claude Agent SDK `query()` with MCP tools | Claude Sonnet 4 (keep Agent SDK) | Needs tool use, file editing, MCP servers |
+| PR summary generation | Part of review prompt | GPT-4o-mini or Claude Haiku | Simple summarization, low cost |
+| @mention response | Claude Agent SDK `query()` | Claude Sonnet 4 (keep Agent SDK) | Needs tool use for code navigation |
+| Cluster label generation | N/A (new) | GPT-4o-mini or Claude Haiku | Template-based, low complexity |
+| Staleness evidence synthesis | N/A (new) | Claude Haiku | Needs reasoning but no tools |
+| Slack Q&A | Claude Agent SDK `query()` | Claude Sonnet 4 (keep Agent SDK) | Needs retrieval context reasoning |
+
+**Key insight:** The Agent SDK `query()` remains the backbone for agentic tasks (review, mention, Slack write). Vercel AI SDK handles non-agentic tasks (summaries, label generation, staleness synthesis) where tool use is not needed. This is additive, not a replacement.
+
+**Vercel AI SDK integration pattern:**
+```typescript
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
+import { openai } from '@ai-sdk/openai';
+
+// Provider registry
+const providers = { anthropic, openai };
+
+// Task router
+const taskModels = {
+  'summary': 'openai:gpt-4o-mini',
+  'cluster-label': 'anthropic:claude-3-5-haiku-20241022',
+  'staleness-evidence': 'anthropic:claude-3-5-haiku-20241022',
+};
+
+// Usage with built-in token tracking
+const result = await generateText({
+  model: resolveModel(taskModels[taskType]),
+  prompt: taskPrompt,
+});
+// result.usage.promptTokens, result.usage.completionTokens available
+```
+
+**Confidence:** HIGH -- Vercel AI SDK is well-documented, actively maintained, and the provider model maps directly to kodiai's task types.
+
+### Review Pattern Clustering (HDBSCAN)
+
+**How it works:**
+1. Extract embeddings from review comment chunks (already stored in `review_comments` table with Voyage AI embeddings)
+2. Run HDBSCAN with `minClusterSize: 5` on the embedding vectors
+3. HDBSCAN automatically determines cluster count and identifies noise points
+4. For each cluster, sample 3-5 representative comments (closest to centroid)
+5. Send representatives to cheap LLM to generate a human-readable theme label
+6. Store cluster assignments and labels in a `review_clusters` table
+7. On new PR review, compute embedding similarity of PR diff against cluster centroids
+8. Inject top-2 matching patterns as additional context in review prompt
+
+**Why HDBSCAN over K-means:**
+- No need to specify cluster count upfront (emergent discovery)
+- Handles noise (not every comment belongs to a theme)
+- Works well with high-dimensional embedding spaces
+- Varying density clusters (some themes appear 100x, others 10x)
+
+**TypeScript implementation:** `hdbscan-ts` (npm) -- TypeScript HDBSCAN based on Campello et al. 2017. Accepts `number[][]`, returns `labels_` and `probabilities_`. Fits directly into the existing Bun/TypeScript stack. Install: `npm install hdbscan-ts`.
+
+**Scale concern:** 18 months of review comments = thousands of chunks. HDBSCAN is O(n^2) in worst case. For ~10K-50K chunks, this runs in seconds on modern hardware. Schedule as a batch job (daily or weekly), not per-request.
+
+**Storage schema:**
+```sql
+CREATE TABLE review_clusters (
+  id SERIAL PRIMARY KEY,
+  cluster_id INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  representative_ids INTEGER[] NOT NULL,
+  centroid vector(1024),
+  chunk_count INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  refreshed_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE review_comment_cluster_assignments (
+  chunk_id INTEGER REFERENCES review_comments(id),
+  cluster_id INTEGER NOT NULL,
+  probability REAL NOT NULL,
+  assigned_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (chunk_id)
+);
+```
+
+**Confidence:** MEDIUM -- `hdbscan-ts` package exists but is not heavily battle-tested (low npm download count). May need to validate on actual review comment embeddings. Fallback: shell out to Python scikit-learn HDBSCAN if TypeScript package has quality issues.
+
+### Wiki Staleness Detection
+
+**How it works:**
+1. For each wiki page, extract referenced code elements (file paths, function names, class names, API endpoints) using regex and heuristic extraction from wiki prose
+2. Compare against recent code changes (git log, code snippet store) to find:
+   - Deleted files/functions referenced by the wiki page
+   - Renamed/moved files referenced by the wiki page
+   - Significantly modified files (high churn) referenced by the wiki page
+3. Score staleness: `staleness = (deleted_refs * 3 + modified_refs * 1) / total_refs`
+4. Pages with staleness score above threshold get flagged
+5. Generate evidence snippet using cheap LLM: "Page X references `PlayerCoreFactory::GetPlayers()` which was removed in commit abc123"
+6. Deliver via scheduled report (Slack message to `#kodiai` or GitHub issue)
+
+**Existing infrastructure leveraged:**
+- `wiki_pages` table with `lastModified`, `revisionId`, section content, `stale` boolean column already exists
+- `code_snippets` table with hunk-level embeddings and file paths
+- Wiki sync scheduler already runs on a schedule (can piggyback staleness check)
+- Slack client already posts to `#kodiai`
+
+**Staleness signals (ranked by reliability):**
+1. **Deleted symbol references** -- wiki mentions function/file that no longer exists (HIGH signal)
+2. **Time-based decay** -- wiki page not updated in 6+ months while referenced code changed significantly (MEDIUM signal)
+3. **Semantic drift** -- embedding similarity between wiki content and current code drops below threshold (LOW signal, experimental)
+
+**Report format:**
+```
+Wiki Staleness Report (2026-02-25)
+===================================
+3 pages flagged as potentially stale:
+
+1. HOW-TO:Compile_Kodi (staleness: 0.72)
+   - References `tools/depends/target/zlib/Makefile` (deleted 2026-01-15)
+   - Last wiki edit: 2025-08-03 (7 months ago)
+
+2. Development/Code_style_conventions (staleness: 0.45)
+   - References `docs/CODING_STYLE.md` (significantly modified, 23 commits since wiki edit)
+   - Last wiki edit: 2025-11-20 (3 months ago)
+
+3. JSON-RPC_API/v13 (staleness: 0.38)
+   - References `xbmc/interfaces/json-rpc/` (4 files changed since wiki edit)
+   - Last wiki edit: 2025-09-01 (6 months ago)
+```
+
+**Confidence:** MEDIUM -- File-path-level staleness detection is straightforward. Symbol-level extraction (function names from wiki prose) is harder and may need iteration. Start with file-path references and `lastModified` age. The `stale` boolean column already exists in wiki_pages schema, which is encouraging.
+
+### Contributor Profiles & Cross-Platform Identity
+
+**How it works:**
+1. **Profile table:** `contributor_profiles` with `github_username`, `slack_user_id`, `display_name`, `expertise_topics`, `linked_at`
+2. **Identity linking:** Manual command in Slack (`@kodiai link github:username`), or auto-suggest based on matching display names/emails
+3. **Expertise inference:** Aggregate from:
+   - Existing `AuthorTier` classification (first-time / regular / core)
+   - File paths they frequently modify (from PR metadata in telemetry)
+   - Review comment topics they engage with (from review comment store author field)
+   - Languages they work in (from language classification on their PRs)
+4. **Adaptive behavior:** Wire expertise into:
+   - Review prompt: more/less explanation based on experience level
+   - Retrieval weighting: boost results from their own prior reviews
+   - Slack responses: adjust depth based on inferred expertise
+
+**Existing infrastructure leveraged:**
+- `author-classifier.ts` already classifies `first-time` / `regular` / `core` based on association + PR count
+- Telemetry store tracks `prAuthor` per execution
+- Slack thread session store has Slack user IDs
+- Review comment store has author metadata from 18 months of backfill
+
+**Cross-platform matching heuristics (for suggestions only, not auto-linking):**
+1. Exact GitHub username match in Slack display name or status field
+2. Email overlap (if available via GitHub API `GET /users/{username}`)
+3. Same display name across platforms
+4. Manual confirmation always required -- heuristics only suggest, never auto-link
+
+**Storage schema:**
+```sql
+CREATE TABLE contributor_profiles (
+  id SERIAL PRIMARY KEY,
+  github_username TEXT UNIQUE,
+  slack_user_id TEXT UNIQUE,
+  display_name TEXT,
+  expertise_topics JSONB DEFAULT '{}',
+  author_tier TEXT DEFAULT 'regular',
+  pr_count INTEGER DEFAULT 0,
+  last_active_at TIMESTAMPTZ,
+  linked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Confidence:** HIGH for the profile table and manual linking. MEDIUM for expertise inference (needs tuning of topic extraction from review history). LOW for automatic identity resolution (heuristics are unreliable; manual linking is the safe default).
 
 ## Complexity Assessment
 
 | Feature | Complexity | LOC Estimate | Test Estimate | Risk |
 |---------|-----------|-------------|--------------|------|
-| Language-aware boosting (schema) | Low | ~200 | ~100 | Low -- migration + backfill, well-understood pattern |
-| CI failure recognition | Medium | ~500 | ~300 | Medium -- heuristic accuracy is the main challenge |
-| `[depends]` deep review | High | ~800 | ~400 | Medium -- Kodi-specific patterns need careful testing |
-| Code snippet embedding | High | ~1000+ | ~500+ | High -- new corpus, new table, embedding cost unknown |
+| Multi-LLM routing + config | Medium | ~400 | ~200 | Low -- Vercel AI SDK well-documented |
+| Cost tracking extension | Low | ~100 | ~50 | Low -- existing schema has columns |
+| HDBSCAN clustering job | High | ~600 | ~300 | Medium -- `hdbscan-ts` needs validation |
+| Cluster labels + injection | Medium | ~400 | ~200 | Medium -- prompt engineering for labels |
+| Wiki staleness scoring | Medium | ~500 | ~250 | Medium -- entity extraction accuracy |
+| Staleness reports | Low | ~200 | ~100 | Low -- existing Slack/GitHub clients |
+| Contributor profile table | Low | ~300 | ~150 | Low -- standard CRUD |
+| Identity linking | Low | ~200 | ~100 | Low -- manual flow |
+| Expertise inference | Medium | ~400 | ~200 | Medium -- topic extraction tuning |
+| Adaptive review behavior | Low | ~200 | ~100 | Low -- prompt variation |
+| **Total** | | **~3,300** | **~1,650** | |
 
 ## Sources
 
-- [Issue #42: v0.19 Intelligent Retrieval Enhancements](https://github.com/xbmc/kodiai/issues/42)
-- [xbmc/xbmc#27900: [depends] Bump zlib 1.3.2](https://github.com/xbmc/xbmc/pull/27900) -- example `[depends]` PR
-- [xbmc/xbmc#27870: [Windows] Refresh fstrcmp 0.7](https://github.com/xbmc/xbmc/pull/27870) -- example platform-scoped dep bump
-- [xbmc/xbmc#27884: Unrelated CI failure feedback from garbear](https://github.com/xbmc/xbmc/pull/27884) -- user feedback driving CI recognition
-- [xbmc/xbmc#22546: [depends][Android] Add base dependencies setup for libdovi](https://github.com/xbmc/xbmc/pull/22546) -- example of platform-scoped `[depends]`
-- [ContextCRBench: Benchmarking LLMs for Fine-Grained Code Review](https://arxiv.org/abs/2511.07017) -- hunk-level quality assessment research
-- [Greptile: Codebases are uniquely hard to search semantically](https://www.greptile.com/blog/semantic-codebase-search) -- per-function chunking rationale
-- [Understanding and Detecting Flaky Builds in GitHub Actions](https://www.arxiv.org/pdf/2602.02307) -- flaky test detection research
-- [Oppia: If CI checks fail on your PR](https://github.com/oppia/oppia/wiki/If-CI-checks-fail-on-your-PR) -- file-scope heuristic for unrelated failures
-- Codebase verification: `src/knowledge/retrieval-rerank.ts`, `src/lib/dep-bump-detector.ts`, `src/execution/mcp/ci-status-server.ts`, `src/knowledge/retrieval.ts`, `src/knowledge/memory-store.ts`
+- [Vercel AI SDK Documentation](https://vercel.com/docs/ai-sdk)
+- [Vercel AI SDK 6 Announcement](https://vercel.com/blog/ai-sdk-6)
+- [Vercel AI Gateway for Multi-Model Integration (InfoQ)](https://www.infoq.com/news/2025/09/vercel-ai-gateway/)
+- [hdbscan-ts npm package](https://www.npmjs.com/package/hdbscan-ts)
+- [HDBSCAN scikit-learn documentation](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.HDBSCAN.html)
+- [hdbscan-js JavaScript implementation](https://github.com/shaileshpandit/hdbscan-js)
+- [Detecting outdated code element references in documentation (Springer)](https://link.springer.com/article/10.1007/s10664-023-10397-6)
+- [Google Code Wiki -- staleness detection approach (Medium)](https://medium.com/@yuwidhgamage/the-end-of-stale-documentation-deep-dive-into-googles-new-code-wiki-f67652aeb4de)
+- [Content Freshness automation patterns (Cobbai)](https://cobbai.com/blog/knowledge-freshness-automation)
+- [GitHub/Slack identity mapping patterns](https://github.com/hmcts/github-slack-user-mappings)
+- [OpenRouter AI SDK Provider](https://github.com/OpenRouterTeam/ai-sdk-provider)
+- Codebase: `src/execution/executor.ts`, `src/telemetry/types.ts`, `src/knowledge/wiki-types.ts`, `src/knowledge/wiki-sync.ts`, `src/knowledge/review-comment-store.ts`, `src/lib/author-classifier.ts`, `src/knowledge/retrieval.ts`

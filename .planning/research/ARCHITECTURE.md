@@ -1,509 +1,593 @@
 # Architecture Patterns
 
-**Domain:** v0.19 -- Intelligent Retrieval Enhancements (language-aware boosting, hunk-level embedding, [depends] PR deep review, CI failure recognition)
+**Domain:** Multi-LLM routing, wiki staleness detection, review pattern clustering, contributor profiles for existing GitHub App
 **Researched:** 2026-02-25
-**Confidence:** HIGH (based on direct codebase analysis of all integration points: retrieval.ts, retrieval-rerank.ts, dep-bump-detector.ts, ci-status-server.ts, review.ts, review-prompt.ts, cross-corpus-rrf.ts, and database migrations)
 
 ## Recommended Architecture
 
-v0.19 adds four capabilities to the existing pipeline. Three are modifications to existing components; one ([depends] PR deep review) requires meaningful new logic. No new services, databases, or runtime processes are needed. The core design principle continues: **fail-open enrichment stages that add context without blocking the pipeline.**
+Four new subsystems integrate into the existing Kodiai architecture. Each is designed as an additive module following the established factory-function pattern, with clear integration points into the current event router, retrieval pipeline, and telemetry stack.
 
-### System Integration Map
-
-```
-+-----------------------------------------------------------------------------------+
-| Review Pipeline (handleReview in review.ts)                                       |
-|                                                                                   |
-| [Webhook] -> [Router] -> [Job Queue] -> [handleReview()]                          |
-|                                                                                   |
-|  STAGE 1: WORKSPACE + CONFIG                                                      |
-|  |-  workspaceManager.create()                                                    |
-|  |-  loadRepoConfig()                                                             |
-|  |-  parsePRIntent()                                                              |
-|  |-  resolveAuthorTier()                                                          |
-|                                                                                   |
-|  STAGE 2: DIFF + DETECTION                                                        |
-|  |-  computeIncrementalDiff()                                                     |
-|  |-  collectDiffContext()                                                          |
-|  |-  detectDepBump() + extractDepBumpDetails() + classifyDepBump()                |
-|  |-  [NEW] detectDependsPrefix() -- extends dep-bump detection for [depends]      |
-|  |-  analyzeDiff() + classifyLanguages()                                          |
-|                                                                                   |
-|  STAGE 3: ENRICHMENT (all fail-open)                                              |
-|  |-  fetchSecurityAdvisories() + fetchChangelog()                                 |
-|  |-  computeMergeConfidence()                                                     |
-|  |-  analyzePackageUsage()                                                        |
-|  |-  [NEW] fetchUpstreamChangelog() -- for [depends] non-npm deps (CMake/vcpkg)   |
-|  |-  [NEW] analyzeDependencyImpact() -- hash/URL/patch/build verification         |
-|                                                                                   |
-|  STAGE 4: RETRIEVAL                                                               |
-|  |-  buildRetrievalVariants()                                                     |
-|  |-  createRetriever().retrieve()                                                 |
-|  |     |-  [MODIFIED] rerankByLanguage() -- uses DB language column                |
-|  |     |-  [MODIFIED] crossCorpusRRF() -- language-aware weight boost              |
-|  |-  [EXPLORATORY] hunk-level snippet embedding                                   |
-|                                                                                   |
-|  STAGE 5: PROMPT ASSEMBLY                                                         |
-|  |-  buildReviewPrompt()                                                          |
-|  |     |-  [MODIFIED] buildDepBumpSection() -- [depends] deep review template      |
-|  |     |-  [NEW] buildCIFailureAnalysisSection()                                  |
-|  |-  [NEW] buildDependsDeepReviewPrompt() -- specialized prompt for [depends] PRs |
-|                                                                                   |
-|  STAGE 6: EXECUTION                                                               |
-|  |-  executor.execute()                                                           |
-|  |     |-  [MODIFIED] ci-status-server.ts -- adds failure classification tool      |
-|  |-  Post-execution enforcement + publishing                                      |
-|  |-  [NEW] CI failure annotation step (post-review)                               |
-|                                                                                   |
-+-----------------------------------------------------------------------------------+
-```
-
-## Component Boundaries
-
-### Feature 1: Language-Aware Retrieval Boosting
-
-| Component | Type | Responsibility | Communicates With |
-|-----------|------|---------------|-------------------|
-| `007-language-column.sql` (migration) | NEW | Add `language TEXT` column to `learning_memories` table | Database |
-| `memory-store.ts` | MODIFIED | Populate language column on write, expose in retrieval results | `learning_memories` table |
-| `retrieval-rerank.ts` | MODIFIED | Use DB language column instead of runtime file-path classification | `memory-store.ts` results |
-| `cross-corpus-rrf.ts` | MODIFIED | Add optional language-aware weight multiplier to source weights | `retrieval.ts` |
-| `retrieval.ts` | MODIFIED | Pass PR languages through to cross-corpus RRF for weighting | `cross-corpus-rrf.ts`, `retrieval-rerank.ts` |
-
-**Data Flow:**
+### High-Level Component Map
 
 ```
-1. On memory write: classifyFileLanguage(record.filePath) -> store as `language` column
-2. On retrieval: learning_memories query returns language per row
-3. rerankByLanguage() uses stored language (no runtime re-classification)
-4. Unified pipeline: crossCorpusRRF receives prLanguages, applies boost multiplier
-   to chunks where chunk.metadata.language matches PR languages
+                         +---------------------------+
+                         |     Webhook / Slack       |
+                         |     Event Ingress         |
+                         +------------+--------------+
+                                      |
+                         +------------v--------------+
+                         |      Event Router         |
+                         |  (existing, unchanged)    |
+                         +------------+--------------+
+                                      |
+               +-----------+----------+-----------+
+               |           |                      |
+    +----------v-------+ +-v--------------+  +----v-----------------+
+    |  Review Handler  | | Mention Handler|  |  Scheduled Jobs      |
+    |  (modified)      | | (modified)     |  |  (new + modified)    |
+    +----------+-------+ +-------+--------+  +----+-----------------+
+               |                 |                 |
+    +----------v-----------------v-----------------v-------------------+
+    |                                                                  |
+    |  +-------------+  +--------------+  +--------------------------+ |
+    |  | Model Router|  | Contributor  |  | NEW: src/intelligence/   | |
+    |  | (NEW)       |  | Profiles     |  |  - pattern-cluster.ts    | |
+    |  | src/llm/    |  | (NEW)        |  |  - wiki-staleness.ts     | |
+    |  |             |  | src/identity/ |  |                          | |
+    |  +------+------+  +------+-------+  +------------+-------------+ |
+    |         |                |                        |               |
+    |  +------v----------------v------------------------v-------------+ |
+    |  |              PostgreSQL (existing pool)                      | |
+    |  |  + model_cost_events  + contributor_profiles                 | |
+    |  |  + review_patterns    + identity_links                      | |
+    |  |  + wiki_staleness_snapshots                                 | |
+    |  +-------------------------------------------------------------+ |
+    |                                                                  |
+    +------------------------------------------------------------------+
 ```
 
-**Key Design Decision:** The existing `rerankByLanguage()` in `retrieval-rerank.ts` already does language-based distance adjustment (0.85x boost / 1.15x penalty) but derives language from `classifyFileLanguage(result.record.filePath)` at query time. Adding a `language` column to `learning_memories` eliminates this runtime derivation and makes language a first-class indexed field -- enabling future SQL-level filtering (WHERE language = 'TypeScript') without embedding recomputation.
+### New Modules
 
-The cross-corpus extension is more impactful: currently `SOURCE_WEIGHTS` in `retrieval.ts` only weight by corpus type (code/review/wiki). Adding a language dimension means code chunks in the PR's language(s) get boosted in the unified ranking. This is a multiplicative modifier on the existing RRF score.
+| Module | Location | Responsibility | Integrates With |
+|--------|----------|----------------|-----------------|
+| Model Router | `src/llm/` | Task-based LLM selection via Vercel AI SDK provider registry | Executor, telemetry, config |
+| Contributor Profiles | `src/identity/` | Cross-platform identity linking (GitHub + Slack) and expertise tracking | Review handler, mention handler, Slack assistant, retrieval |
+| Pattern Clustering | `src/intelligence/pattern-cluster.ts` | HDBSCAN clustering of review findings into emergent themes | Review handler (output enrichment), scheduled job (batch clustering) |
+| Wiki Staleness | `src/intelligence/wiki-staleness.ts` | Detect wiki pages invalidated by code changes | Wiki sync scheduler, scheduled job, GitHub issue/Slack report |
 
-**Schema Change:**
+### Existing Modules Modified
+
+| Module | Change | Reason |
+|--------|--------|--------|
+| `src/execution/executor.ts` | No change -- Agent SDK `query()` stays for agentic PR review | Model router handles only new non-agentic tasks |
+| `src/execution/config.ts` | Add `models` section to `.kodiai.yml` schema | Per-repo model preferences |
+| `src/handlers/review.ts` | Inject contributor profile for tone adaptation; inject pattern clusters into prompt context | Adaptive behavior + pattern surfacing |
+| `src/handlers/mention.ts` | Inject contributor profile for expertise-aware responses | Adaptive behavior |
+| `src/knowledge/wiki-sync.ts` | After sync, trigger staleness detection pass | Staleness detection pipeline |
+| `src/telemetry/store.ts` | Add `recordModelCost()` method for per-task cost tracking | Multi-model cost observability |
+| `src/index.ts` | Wire new stores, scheduler hooks, identity resolution | Bootstrap new subsystems |
+| `src/config.ts` | Add optional env vars for additional LLM provider keys | Multi-provider auth |
+
+## Component Details
+
+### 1. Model Router (`src/llm/`)
+
+**Purpose:** Provide task-based model selection so different operations use appropriately-sized models.
+
+**Key insight:** The current executor calls Claude Agent SDK `query()` for everything. The Agent SDK must remain for the agentic PR review loop (it provides the full toolchain: file reading, MCP tool servers, workspace interaction, multi-turn tool use). But non-agentic tasks -- staleness analysis, pattern labeling, contributor summary generation, Slack Q&A -- can use Vercel AI SDK `generateText()` with cheaper/faster models.
+
+**Files:**
+
+```
+src/llm/
+  index.ts              # Re-exports
+  registry.ts           # createModelRegistry() -- Vercel AI SDK provider registry
+  router.ts             # createModelRouter() -- task-type -> model mapping
+  types.ts              # TaskType, ModelSelection, CostRecord types
+  cost-tracker.ts       # Per-invocation cost logging to PostgreSQL
+```
+
+**Architecture:**
+
+```typescript
+// registry.ts -- wraps Vercel AI SDK createProviderRegistry()
+import { createProviderRegistry, customProvider } from "ai";
+import { anthropic } from "@ai-sdk/anthropic";
+
+export function createModelRegistry(config: ModelRegistryConfig) {
+  return createProviderRegistry({
+    anthropic: customProvider({
+      languageModels: {
+        "review": anthropic("claude-sonnet-4-5"),
+        "analysis": anthropic("claude-haiku-4-5"),
+        "fast": anthropic("claude-haiku-4-5"),
+      },
+      fallbackProvider: anthropic,
+    }),
+    // Additional providers can be registered with API keys from env vars
+  });
+}
+
+// router.ts -- maps task types to model IDs
+type TaskType =
+  | "pr_review"           // Agentic loop (stays on Agent SDK, NOT routed here)
+  | "staleness_analysis"  // Wiki staleness reasoning
+  | "pattern_labeling"    // Cluster theme naming
+  | "contributor_summary" // Profile generation
+  | "slack_qa"            // Slack assistant
+  | "mention_response";   // @mention reply
+
+export function createModelRouter(registry, config) {
+  const taskModelMap: Record<TaskType, string> = {
+    pr_review: "anthropic:review",            // NOT used via generateText
+    staleness_analysis: "anthropic:analysis",
+    pattern_labeling: "anthropic:fast",
+    contributor_summary: "anthropic:fast",
+    slack_qa: "anthropic:analysis",
+    mention_response: "anthropic:analysis",
+  };
+
+  return {
+    async generate(task: TaskType, prompt: string, options?) {
+      const modelId = config.overrides?.[task] ?? taskModelMap[task];
+      const model = registry.languageModel(modelId);
+      const result = await generateText({ model, prompt, ...options });
+      // fire-and-forget cost tracking
+      void costTracker.record({ task, modelId, ...result.usage });
+      return result;
+    },
+  };
+}
+```
+
+**Integration points:**
+- PR review stays on Agent SDK `query()`. The model router is used for new non-agentic tasks only.
+- `src/intelligence/*.ts`: Staleness analysis and pattern labeling call `modelRouter.generate()`.
+- `src/slack/assistant-handler.ts`: Can optionally route through model router instead of hardcoded `slackAssistantModel`.
+- `.kodiai.yml`: New `models` section allows per-repo task->model overrides.
+- `src/config.ts`: New optional env vars `ANTHROPIC_API_KEY` (separate from Claude Max OAuth used by Agent SDK).
+
+**Critical constraint:** The Agent SDK `query()` uses Claude Max OAuth. Vercel AI SDK providers use API keys. These are separate auth paths. PR review continues through Agent SDK; only new non-agentic tasks use Vercel AI SDK.
+
+### 2. Contributor Profiles (`src/identity/`)
+
+**Purpose:** Link GitHub and Slack identities, track expertise areas, and adapt review/response behavior per contributor.
+
+**Files:**
+
+```
+src/identity/
+  index.ts                  # Re-exports
+  store.ts                  # createContributorStore() -- PostgreSQL CRUD
+  types.ts                  # ContributorProfile, IdentityLink types
+  linker.ts                 # Identity resolution: GitHub login <-> Slack user ID
+  expertise.ts              # Compute expertise from review history + PR activity
+```
+
+**Schema (new migration 010-contributor-profiles.sql):**
 
 ```sql
--- Migration 007-language-column.sql
-ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
-CREATE INDEX IF NOT EXISTS idx_memories_language ON learning_memories(language);
+CREATE TABLE contributor_profiles (
+  id              SERIAL PRIMARY KEY,
+  github_login    TEXT UNIQUE,
+  slack_user_id   TEXT UNIQUE,
+  display_name    TEXT,
+  expertise_areas JSONB DEFAULT '[]',
+  review_stats    JSONB DEFAULT '{}',
+  first_seen_at   TIMESTAMPTZ DEFAULT now(),
+  last_active_at  TIMESTAMPTZ DEFAULT now(),
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
 
--- Backfill from file_path (one-time, can run async)
-UPDATE learning_memories
-SET language = CASE
-  WHEN file_path LIKE '%.ts' OR file_path LIKE '%.tsx' THEN 'TypeScript'
-  WHEN file_path LIKE '%.py' THEN 'Python'
-  WHEN file_path LIKE '%.go' THEN 'Go'
-  WHEN file_path LIKE '%.rs' THEN 'Rust'
-  WHEN file_path LIKE '%.cpp' OR file_path LIKE '%.cc' THEN 'C++'
-  WHEN file_path LIKE '%.c' OR file_path LIKE '%.h' THEN 'C'
-  WHEN file_path LIKE '%.java' THEN 'Java'
-  ELSE NULL
-END
-WHERE language IS NULL;
+CREATE INDEX idx_contributor_github ON contributor_profiles(github_login);
+CREATE INDEX idx_contributor_slack ON contributor_profiles(slack_user_id);
 ```
 
-### Feature 2: Hunk-Level Code Snippet Embedding (Exploratory)
+**Identity linking approach:**
 
-| Component | Type | Responsibility | Communicates With |
-|-----------|------|---------------|-------------------|
-| `hunk-embedder.ts` | NEW | Extract diff hunks, chunk at function/block boundaries, embed | `embeddings.ts`, `memory-store.ts` |
-| `007-code-snippets.sql` (or same migration) | NEW | `code_snippets` table for hunk-level embeddings | Database |
-| `retrieval.ts` | MODIFIED | Fan-out to code_snippets corpus in parallel search | `hunk-embedder.ts` store |
-
-**Data Flow:**
-
-```
-1. During review: diff hunks extracted from PR
-2. Each hunk parsed into sub-function chunks (split at function/class/block boundaries)
-3. Each chunk embedded via Voyage AI and stored in code_snippets table
-4. On subsequent reviews: retrieval fans out to code_snippets alongside existing 3 corpora
-5. Results merge via existing crossCorpusRRF (new source type: "code_snippet")
-```
-
-**Key Design Decision:** This is exploratory. The current `learning_memories` corpus stores finding-level text (what Kodiai observed about code). Code snippets would store actual code fragments at hunk/function granularity. This is a different semantic space -- findings are opinions about code, snippets are the code itself.
-
-**Recommended approach:** Start with a standalone `code_snippets` table sharing the same schema pattern as `review_comments` (text + embedding + metadata). Add as a 4th corpus in `crossCorpusRRF` with source type `"code_snippet"`. The `SourceType` union in `cross-corpus-rrf.ts` needs extending from `"code" | "review_comment" | "wiki"` to include `"code_snippet"`.
-
-**Defer if:** Embedding costs are a concern. Each PR hunk gets embedded on every review, which multiplies Voyage API calls. Consider caching by file+hunk content hash.
-
-### Feature 3: [depends] PR Deep Review Pipeline
-
-This is the most substantial new capability. The existing dep-bump pipeline handles npm/pip/cargo Dependabot/Renovate PRs. The `[depends]` pattern is Kodi-specific: PRs like `[depends] Bump zlib 1.3.2` or `[Windows] Refresh fstrcmp 0.7` that update C/C++ library dependencies managed via CMake/vcpkg, not package managers.
-
-| Component | Type | Responsibility | Communicates With |
-|-----------|------|---------------|-------------------|
-| `dep-bump-detector.ts` | MODIFIED | Detect `[depends]` prefix and platform-specific patterns | `review.ts` |
-| `depends-deep-review.ts` | NEW | Orchestrate the deep review pipeline | Multiple enrichment modules |
-| `depends-changelog-fetcher.ts` | NEW | Fetch upstream changelog/release notes for C/C++ libs | GitHub API, upstream repos |
-| `depends-impact-analyzer.ts` | NEW | Analyze impact on Kodi codebase (consumers, patches, build) | Workspace filesystem |
-| `depends-build-verifier.ts` | NEW | Verify hash/URL changes, patch status, build config | Workspace filesystem |
-| `review-prompt.ts` | MODIFIED | `buildDependsDeepReviewPrompt()` for structured output | `depends-deep-review.ts` |
-| `review.ts` | MODIFIED | Route [depends] PRs through deep review pipeline | `depends-deep-review.ts` |
-
-**Detection Extension:**
+Explicit linking via Slack command (`!kodiai link @github-user`) or automatic matching when GitHub profile email matches Slack profile email. No external SCIM or OAuth dance needed for a single-workspace setup.
 
 ```typescript
-// In dep-bump-detector.ts -- new detection patterns for Kodi-style deps
-const DEPENDS_PREFIX_RE = /^\[depends\]\s+/i;
-const PLATFORM_DEP_RE = /^\[(Windows|Linux|macOS|Android|iOS|all)\]\s+(Refresh|Bump|Update)\s+/i;
-const KODI_DEP_TITLE_RE = /\b(bump|refresh|update)\s+\S+\s+(?:\d[\d.]*)/i;
+// linker.ts
+export function createIdentityLinker(deps: { store: ContributorStore; logger: Logger }) {
+  return {
+    // Called by review handler on every PR event -- upsert GitHub identity
+    async touchGitHub(login: string, metadata?: { prLanguages?: string[] }),
 
-export function detectDependsPrefix(params: {
-  prTitle: string;
-  changedFiles: string[];
-}): DependsDetection | null {
-  // Signal 1: [depends] prefix
-  if (DEPENDS_PREFIX_RE.test(params.prTitle)) return { type: "depends-prefix" };
-  // Signal 2: Platform prefix + dependency verb
-  if (PLATFORM_DEP_RE.test(params.prTitle)) return { type: "platform-dep" };
-  // Signal 3: Changed files in cmake/ or tools/depends/
-  if (params.changedFiles.some(f =>
-    f.startsWith("cmake/") || f.startsWith("tools/depends/"))) {
-    return { type: "build-system-change" };
-  }
-  return null;
+    // Called by Slack handler -- upsert Slack identity
+    async touchSlack(slackUserId: string, displayName?: string),
+
+    // Explicit link command from Slack
+    async linkIdentities(githubLogin: string, slackUserId: string),
+
+    // Resolve: given a GitHub login, find the full profile
+    async resolveFromGitHub(login: string): Promise<ContributorProfile | null>,
+
+    // Resolve: given a Slack user ID, find the full profile
+    async resolveFromSlack(slackUserId: string): Promise<ContributorProfile | null>,
+  };
 }
 ```
 
-**Deep Review Pipeline:**
+**Expertise computation:**
+
+Derive expertise from existing data rather than requiring manual input:
+- PR file paths -> language/area classification (reuse `classifyFileLanguage()` from `src/execution/diff-analysis.ts`)
+- Review comment frequency by file area
+- Approval patterns on specific subsystems
+
+Run as a periodic batch job (daily), not on every request.
+
+**Integration points:**
+- `src/handlers/review.ts`: After loading PR metadata, resolve contributor profile. Pass expertise to prompt builder for tone calibration (existing author-experience detection in v0.8 can use real data instead of heuristics).
+- `src/handlers/mention.ts`: Resolve profile to tailor response depth.
+- `src/slack/assistant-handler.ts`: Resolve Slack user to GitHub identity for context-aware answers.
+- `src/knowledge/retrieval.ts`: Contributor expertise can influence source weighting (boost wiki for newcomers, boost code for experts).
+
+### 3. Review Pattern Clustering (`src/intelligence/pattern-cluster.ts`)
+
+**Purpose:** Discover emergent themes in review findings (e.g., "memory management issues," "missing error handling") and surface them as context in PR reviews.
+
+**Files:**
 
 ```
-detectDependsPrefix() triggers:
-  1. Parse dependency name + versions from title/changed files
-  2. Parallel enrichment (all fail-open):
-     a. Fetch upstream changelog (GitHub releases API, project website)
-     b. Scan changed CMake/build files for hash changes
-     c. Detect removed/added patches in tools/depends/
-     d. Find Kodi source files that #include or link this dependency
-     e. Check for transitive dependency additions
-  3. Assemble DependsDeepReviewContext
-  4. Build specialized prompt with structured sections:
-     - Version diff summary
-     - Upstream changelog highlights relevant to Kodi
-     - Impact assessment (which Kodi files consume this dep)
-     - Hash/URL verification status
-     - Patch status (removed/added/modified)
-     - Build config changes
-     - Action items
+src/intelligence/
+  index.ts                  # Re-exports
+  pattern-cluster.ts        # HDBSCAN clustering + theme extraction
+  pattern-store.ts          # PostgreSQL persistence for clusters
+  pattern-types.ts          # Cluster, Theme, PatternMatch types
 ```
 
-**Integration Point in review.ts:**
+**HDBSCAN implementation choice:** Use `hdbscanjs` (npm) -- pure JavaScript implementation with no native dependencies, compatible with Bun. The dataset size (thousands of review findings, not millions) does not require optimized native code. Each finding is already embedded as a 1024-dim vector via Voyage AI, so the distance matrix computation is straightforward.
 
-```typescript
-// After existing depBumpContext detection, add [depends] detection
-let dependsContext: DependsDeepReviewContext | null = null;
+**Schema (new migration 011-review-patterns.sql):**
 
-if (!depBumpContext) {
-  // Not a standard Dependabot/Renovate PR; try [depends] detection
-  const dependsDetection = detectDependsPrefix({
-    prTitle: pr.title,
-    changedFiles: allChangedFiles,
-  });
-  if (dependsDetection) {
-    dependsContext = await buildDependsDeepReviewContext({
-      prTitle: pr.title,
-      prBody: pr.body ?? "",
-      changedFiles: allChangedFiles,
-      workspaceDir: workspace.dir,
-      octokit: idempotencyOctokit,
-      owner,
-      repo,
-      logger,
-    });
-  }
-}
+```sql
+CREATE TABLE review_pattern_clusters (
+  id              SERIAL PRIMARY KEY,
+  repo            TEXT NOT NULL,
+  cluster_label   TEXT NOT NULL,
+  description     TEXT,
+  finding_count   INT NOT NULL DEFAULT 0,
+  centroid        vector(1024),
+  sample_findings JSONB DEFAULT '[]',
+  first_seen_at   TIMESTAMPTZ NOT NULL,
+  last_seen_at    TIMESTAMPTZ NOT NULL,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_pattern_clusters_repo ON review_pattern_clusters(repo);
+CREATE INDEX idx_pattern_clusters_hnsw ON review_pattern_clusters
+  USING hnsw (centroid vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 ```
 
-**Prompt specialization:** When `dependsContext` is present, inject a specialized deep review prompt section via `buildDependsDeepReviewSection(dependsContext)` in `review-prompt.ts`. This replaces the standard `buildDepBumpSection()` since the review should be MORE thorough, not lighter.
-
-### Feature 4: Unrelated CI Failure Recognition
-
-| Component | Type | Responsibility | Communicates With |
-|-----------|------|---------------|-------------------|
-| `ci-failure-analyzer.ts` | NEW | Classify CI failures as related/unrelated to PR scope | GitHub Actions API |
-| `ci-status-server.ts` | MODIFIED | Add `classify_ci_failures` tool for structured analysis | `ci-failure-analyzer.ts` |
-| `review-prompt.ts` | MODIFIED | Add CI failure context section to prompt | `ci-failure-analyzer.ts` results |
-| `review.ts` | MODIFIED | Fetch CI status post-review, annotate if unrelated failures | `ci-failure-analyzer.ts` |
-
-**Data Flow:**
+**Processing pipeline:**
 
 ```
-1. After Claude execution completes, fetch CI status for the PR head SHA
-2. If failures exist:
-   a. For each failed workflow run, fetch job details (existing MCP tool)
-   b. Extract failed step names and log snippets
-   c. Compare failure context against PR changed files/scope:
-      - Does the failed job test files this PR touches? -> RELATED
-      - Is this a known flaky workflow (gradle parallel, infra timeouts)? -> UNRELATED
-      - Does the failure pre-date this PR's commits? -> UNRELATED
-   d. Classify each failure as: RELATED | UNRELATED | UNCERTAIN
-3. If unrelated failures detected:
-   a. Post a comment noting which failures appear unrelated with reasoning
-   b. Do NOT block approval verdict on unrelated failures
+1. Scheduled job (weekly): Fetch all review findings with embeddings for a repo
+2. Run HDBSCAN on embedding vectors (min_cluster_size=5, min_samples=3)
+3. For each cluster:
+   a. Compute centroid (mean of member embeddings)
+   b. Select top-3 representative findings (closest to centroid)
+   c. Call model router (task: "pattern_labeling") to generate theme label + description
+4. Upsert clusters to review_pattern_clusters table
+5. During PR review: query clusters by embedding similarity to current findings
+6. Inject matching patterns into review prompt as "Recurring themes in this codebase"
 ```
 
-**Classification Heuristics:**
+**Integration points:**
+- `src/handlers/review.ts`: After retrieval, query pattern clusters for context enrichment. Include in prompt as "Known recurring patterns" section.
+- `src/knowledge/store.ts`: Findings already stored with embeddings -- query them for clustering input.
+- `src/llm/router.ts`: Pattern labeling uses `pattern_labeling` task type (cheap/fast model).
+- Scheduled job in `src/index.ts`: Register weekly interval, integrate with shutdown manager.
 
-```typescript
-export type CIFailureClassification = {
-  runId: number;
-  workflowName: string;
-  conclusion: "related" | "unrelated" | "uncertain";
-  reasoning: string;
-  failedJobs: Array<{
-    jobName: string;
-    failedSteps: string[];
-  }>;
-};
+### 4. Wiki Staleness Detection (`src/intelligence/wiki-staleness.ts`)
 
-export function classifyCIFailure(params: {
-  workflowRun: WorkflowRunSummary;
-  failedJobs: JobDetail[];
-  changedFiles: string[];
-  prLanguages: string[];
-}): CIFailureClassification {
-  // Heuristic 1: Job name contains platform not in changed files
-  //   e.g., "Android Build" but PR only touches Linux CMake -> UNRELATED
-  // Heuristic 2: Failed step is a known infra issue
-  //   e.g., "gradle" + "parallel" -> UNRELATED (known flaky)
-  // Heuristic 3: No changed files overlap with job's test scope
-  //   Based on workflow path filters vs. PR changed files
-  // Heuristic 4: Same workflow failed on main branch recently -> UNRELATED
-  // Default: UNCERTAIN (let Claude's review decide)
-}
+**Purpose:** Identify wiki pages that reference code patterns, APIs, or behaviors that have changed since the page was last updated.
+
+**Files:**
+
+```
+src/intelligence/
+  wiki-staleness.ts         # Staleness detection logic
+  wiki-staleness-types.ts   # StalePageReport, StalenessSignal types
+  wiki-staleness-report.ts  # Format reports for GitHub issue / Slack message
 ```
 
-**Post-Review Annotation:**
+**Detection approach:**
 
-Rather than injecting CI failure context into the review prompt (which would consume tokens for every review), the CI failure analysis runs as a post-review step. If unrelated failures are detected, a separate comment is posted:
+The wiki pages are already chunked and embedded. Code changes from PRs are tracked. The staleness detection cross-references these:
 
-```markdown
-### CI Status Note
+```
+1. For each merged PR (or batch of recent merges):
+   a. Extract changed file paths and function/class names from diff
+   b. Query wiki page embeddings for semantic similarity to changed code
+   c. For matches above threshold: compare wiki page last_synced_at vs merge date
+   d. If wiki references code that changed AFTER wiki was last updated -> STALE signal
 
-The following CI failures appear **unrelated** to this PR's changes:
+2. Evidence collection:
+   a. Which code changed (file, function, PR number)
+   b. Which wiki section references it (page title, section heading, snippet)
+   c. How confident is the staleness signal (embedding similarity score)
 
-| Workflow | Status | Reasoning |
-|----------|--------|-----------|
-| Android Build | :red_circle: Failed | Gradle parallel build issue (known flaky) |
-| iOS Package | :red_circle: Failed | Pre-existing failure on `main` branch |
-
-These failures should not block merge of this PR.
+3. Report generation:
+   a. Group stale signals by wiki page
+   b. Call model router (task: "staleness_analysis") to summarize evidence
+   c. Publish as GitHub issue or Slack message
 ```
 
-**Alternative considered:** Inject into the review prompt so Claude reasons about CI. Rejected because: (1) CI data is large and token-expensive, (2) Claude is not well-suited to diagnosing build system failures, (3) deterministic heuristics are more reliable for "is this failure related to the PR?" classification.
+**Schema (new migration 012-wiki-staleness.sql):**
+
+```sql
+CREATE TABLE wiki_staleness_signals (
+  id               SERIAL PRIMARY KEY,
+  repo             TEXT NOT NULL,
+  wiki_page_title  TEXT NOT NULL,
+  wiki_section     TEXT,
+  pr_number        INT NOT NULL,
+  changed_file     TEXT NOT NULL,
+  similarity_score FLOAT NOT NULL,
+  evidence_snippet TEXT,
+  status           TEXT DEFAULT 'pending',
+  detected_at      TIMESTAMPTZ DEFAULT now(),
+  reported_at      TIMESTAMPTZ
+);
+
+CREATE INDEX idx_staleness_repo_status ON wiki_staleness_signals(repo, status);
+```
+
+**Integration points:**
+- `src/knowledge/wiki-sync.ts`: After wiki sync completes, trigger staleness check against recent PRs.
+- `src/handlers/review.ts`: On PR merge event, fire-and-forget staleness check for the merged changes.
+- Scheduled job: Weekly batch scan comparing all wiki pages against recent code changes.
+- Report output: Create GitHub issue in wiki source repo or post to `#kodiai` Slack channel.
+
+## Data Flow Changes
+
+### Current Flow (unchanged for PR review)
+
+```
+Webhook -> Event Router -> Review Handler -> Retrieval -> Prompt Builder
+  -> Agent SDK query() -> MCP tools -> GitHub
+```
+
+### New Flow: Non-Agentic Tasks via Model Router
+
+```
+Scheduled Job / Post-Review Hook
+  -> Model Router (Vercel AI SDK generateText())
+  -> PostgreSQL (store results)
+  -> GitHub Issue / Slack (publish reports)
+```
+
+### New Flow: Identity-Enriched Review
+
+```
+Webhook -> Review Handler
+  -> Contributor Profile lookup (identity store, cached)
+  -> Retrieval (existing, + pattern cluster query)
+  -> Prompt Builder (enriched with profile + patterns)
+  -> Agent SDK query() (unchanged)
+  -> Telemetry (enhanced with model cost tracking)
+```
 
 ## Patterns to Follow
 
-### Pattern 1: Fail-Open Enrichment
+### Pattern 1: Factory Function with Dependency Injection
 
-**What:** Every new enrichment stage wraps in try/catch and returns null on failure. The review pipeline continues without that enrichment.
+**What:** Every new module exports a `createXxx(deps)` factory function that receives its dependencies explicitly.
 
-**When:** All enrichment steps (changelog fetch, impact analysis, CI failure classification).
+**When:** All new stores, routers, and services.
+
+**Why:** This is the established pattern across the entire codebase (`createKnowledgeStore`, `createTelemetryStore`, `createReviewCommentStore`, `createRetriever`, `createExecutor`, `createJobQueue`).
 
 **Example:**
 ```typescript
-let dependsContext: DependsDeepReviewContext | null = null;
-try {
-  dependsContext = await buildDependsDeepReviewContext({ ... });
-} catch (err) {
-  logger.warn({ err, gate: "depends-deep-review" }, "Deep review enrichment failed (fail-open)");
+export function createContributorStore(deps: {
+  sql: Sql;
+  logger: Logger;
+}): ContributorStore {
+  const { sql, logger } = deps;
+  return {
+    async upsertFromGitHub(login: string): Promise<ContributorProfile> {
+      const [row] = await sql`
+        INSERT INTO contributor_profiles (github_login, last_active_at)
+        VALUES (${login}, now())
+        ON CONFLICT (github_login)
+        DO UPDATE SET last_active_at = now(), updated_at = now()
+        RETURNING *
+      `;
+      return mapRow(row);
+    },
+  };
 }
 ```
 
-### Pattern 2: Parallel Promise.allSettled for Independent Enrichments
+### Pattern 2: Fire-and-Forget for Non-Critical Work
 
-**What:** Independent enrichment operations run in parallel via `Promise.allSettled`, each fail-open independently.
+**What:** Async operations that should not block the critical path use `void promise.catch()`.
 
-**When:** Multiple enrichment operations that don't depend on each other.
+**When:** Cost tracking, staleness detection after PR merge, pattern cluster updates.
 
-**Example (already used in review.ts for dep-bump enrichment):**
-```typescript
-const [changelogResult, impactResult, patchResult] = await Promise.allSettled([
-  fetchUpstreamChangelog({ ... }),
-  analyzeDependencyImpact({ ... }),
-  verifyBuildChanges({ ... }),
-]);
-```
-
-### Pattern 3: Detection Cascade (Not Parallel)
-
-**What:** Detection stages run sequentially -- first check standard dep-bump, then check [depends] prefix. Only one fires.
-
-**When:** Mutually exclusive detection paths.
-
-**Rationale:** A PR cannot be both a Dependabot PR and a [depends] PR. The detection is cheap (regex), so sequential is fine.
-
-### Pattern 4: Migration + Backfill Pattern
-
-**What:** Schema migrations add nullable columns with indexes. A separate backfill step populates existing rows. Write path immediately populates for new rows.
-
-**When:** Adding language column to learning_memories.
-
-**Example:**
-```sql
--- Migration: add column (nullable, no default -- doesn't lock table)
-ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
-
--- Backfill script (runs separately, can be interrupted/resumed)
-UPDATE learning_memories SET language = ... WHERE language IS NULL LIMIT 1000;
-```
-
-### Pattern 5: Source Type Extension for Cross-Corpus
-
-**What:** New knowledge sources integrate by: (1) implementing the search interface, (2) adding a source type to `SourceType`, (3) providing a `RankedSourceList` entry in the retrieval pipeline.
-
-**When:** Adding code_snippets as a 4th corpus.
+**Why:** Established pattern throughout codebase -- hunk embedding, telemetry recording, and smoke tests all use this.
 
 **Example:**
 ```typescript
-// In cross-corpus-rrf.ts
-export type SourceType = "code" | "review_comment" | "wiki" | "code_snippet";
+// In review handler, after review completes:
+void detectWikiStaleness({
+  repo: `${owner}/${repo}`,
+  changedFiles: diffFiles,
+  wikiPageStore,
+  modelRouter,
+  stalenessStore,
+  logger,
+}).catch((err) => logger.warn({ err }, "Wiki staleness detection failed (non-fatal)"));
+```
 
-// In retrieval.ts, add to parallel fan-out
-const snippetVectorResult = deps.codeSnippetStore
-  ? searchCodeSnippets({ ... })
-  : Promise.resolve([]);
+### Pattern 3: Scheduled Job via setInterval with Shutdown Integration
+
+**What:** Periodic jobs registered as intervals, stopped via shutdown manager.
+
+**When:** Pattern clustering (weekly), wiki staleness batch scan, expertise recomputation (daily).
+
+**Why:** The wiki sync scheduler already uses this exact pattern. No external cron dependency needed for a single-instance app.
+
+**Example:**
+```typescript
+const patternClusterInterval = setInterval(async () => {
+  try {
+    await runPatternClustering({ /* deps */ });
+  } catch (err) {
+    logger.warn({ err }, "Pattern clustering failed (non-fatal)");
+  }
+}, 7 * 24 * 60 * 60 * 1000); // weekly
+
+// Register with shutdown manager
+shutdownManager.onShutdown(() => clearInterval(patternClusterInterval));
+```
+
+### Pattern 4: Lazy Resolution with InMemoryCache
+
+**What:** Profile lookups use the existing `createInMemoryCache` with short TTL.
+
+**When:** Contributor profile resolution in handlers.
+
+**Why:** Avoids database hit on every webhook event. The `createInMemoryCache` pattern with lazy eviction is already used for Slack installation context.
+
+**Example:**
+```typescript
+const profileCache = createInMemoryCache<string, ContributorProfile>({
+  maxSize: 500,
+  ttlMs: 15 * 60 * 1000, // 15 min
+});
 ```
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Token-Heavy CI Context in Review Prompt
+### Anti-Pattern 1: Replacing Agent SDK with Vercel AI SDK for PR Review
 
-**What:** Injecting full CI run logs or detailed job output into the review prompt.
+**What:** Attempting to use Vercel AI SDK `generateText()` for the agentic PR review loop.
 
-**Why bad:** CI output is verbose (thousands of lines), highly structured (not prose), and poorly suited to LLM analysis. It wastes context window budget and produces unreliable conclusions.
+**Why bad:** The Claude Agent SDK provides the full Claude Code toolchain (file reading, MCP tool servers, workspace interaction, multi-turn tool use). Vercel AI SDK provides text generation but not this agentic infrastructure. PR review fundamentally requires the agent loop.
 
-**Instead:** Use deterministic heuristics for CI failure classification. Only inject a brief summary (2-3 lines) if needed for verdict context.
+**Instead:** Use Vercel AI SDK only for non-agentic tasks (classification, summarization, labeling). Keep Agent SDK for PR review and mention handling.
 
-### Anti-Pattern 2: Blocking on Enrichment Failures
+### Anti-Pattern 2: Synchronous Identity Resolution on Every Request
 
-**What:** Making the review pipeline fail if changelog fetch or impact analysis throws.
+**What:** Querying contributor_profiles table on every webhook event before processing.
 
-**Why bad:** Network failures, API rate limits, and missing upstream repos are common. A review that takes 30 seconds is better than no review at all.
+**Why bad:** Adds latency to the critical path. Most events do not need profile data.
 
-**Instead:** Every enrichment stage is fail-open. Missing context leads to a less detailed review, not a failed review.
+**Instead:** Lazy resolution -- only query when the handler actually needs profile data (review prompt building, not webhook receipt). Cache with short TTL.
 
-### Anti-Pattern 3: Re-embedding Existing Memories for Language Column
+### Anti-Pattern 3: Real-Time Clustering on Every Review
 
-**What:** Updating embeddings when adding the language column to learning_memories.
+**What:** Running HDBSCAN after every PR review to update clusters.
 
-**Why bad:** Language is metadata about the file path, not about the embedding content. Re-embedding is expensive and unnecessary.
+**Why bad:** HDBSCAN on thousands of embeddings is O(n^2) for distance computation. Even with the JS implementation, this adds seconds of compute.
 
-**Instead:** Backfill the language column from file_path using a simple SQL CASE expression.
+**Instead:** Batch clustering on a schedule (weekly). During PR review, only query existing clusters by embedding similarity (fast HNSW lookup on centroid column).
 
-### Anti-Pattern 4: Coupling [depends] Detection to Existing Dep-Bump Pipeline
+### Anti-Pattern 4: Storing Provider API Keys in .kodiai.yml
 
-**What:** Trying to make `[depends]` PRs flow through the existing Dependabot/Renovate pipeline.
+**What:** Allowing repos to specify their own LLM API keys in the config file.
 
-**Why bad:** The existing pipeline assumes npm/pip/cargo ecosystem semantics (semver parsing, package registry lookups, lockfile analysis). Kodi's `[depends]` PRs use CMake, vcpkg, and custom build scripts -- completely different tooling.
+**Why bad:** Config files are committed to git. API keys in git repos are a security incident.
 
-**Instead:** Create a separate detection path (`detectDependsPrefix()`) that triggers a distinct enrichment pipeline (`buildDependsDeepReviewContext()`). The two pipelines share the same review handler integration point but are otherwise independent.
+**Instead:** All provider API keys are server-side env vars only. `.kodiai.yml` can specify task->model name preferences, not credentials.
 
-## Data Model Changes
+### Anti-Pattern 5: Coupling Vercel AI SDK Token Tracking to Existing Telemetry
 
-### New Tables
+**What:** Trying to use the existing `TelemetryRecord` type for Vercel AI SDK calls.
+
+**Why bad:** The existing telemetry is tightly structured around Agent SDK result messages (session_id, num_turns, stop_reason, cache tokens). Vercel AI SDK returns different usage metadata.
+
+**Instead:** Create a separate `model_cost_events` table with its own schema optimized for per-task cost tracking. Keep existing telemetry_events for Agent SDK executions.
+
+## Database Migration Plan
+
+Four new migrations, following the existing sequential numbering (current latest is 009):
+
+| Migration | Tables | Purpose |
+|-----------|--------|---------|
+| `010-contributor-profiles.sql` | `contributor_profiles` | Identity linking and expertise tracking |
+| `011-review-patterns.sql` | `review_pattern_clusters` | Clustered review theme persistence |
+| `012-wiki-staleness.sql` | `wiki_staleness_signals` | Staleness detection signal storage |
+| `013-model-cost-events.sql` | `model_cost_events` | Per-task LLM cost tracking |
+
+The `model_cost_events` table extends telemetry:
 
 ```sql
--- code_snippets (exploratory -- only if hunk embedding feature proceeds)
-CREATE TABLE IF NOT EXISTS code_snippets (
-  id BIGSERIAL PRIMARY KEY,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  repo TEXT NOT NULL,
-  owner TEXT NOT NULL,
-  pr_number INTEGER NOT NULL,
-  file_path TEXT NOT NULL,
-  start_line INTEGER NOT NULL,
-  end_line INTEGER NOT NULL,
-  hunk_content TEXT NOT NULL,
-  language TEXT,
-  chunk_text TEXT NOT NULL,
-  token_count INTEGER NOT NULL,
-  embedding vector(1024),
-  embedding_model TEXT,
-  stale BOOLEAN NOT NULL DEFAULT false,
-  content_hash TEXT NOT NULL,
-  UNIQUE(repo, file_path, content_hash)
+CREATE TABLE model_cost_events (
+  id              SERIAL PRIMARY KEY,
+  task_type       TEXT NOT NULL,
+  provider        TEXT NOT NULL,
+  model           TEXT NOT NULL,
+  input_tokens    INT DEFAULT 0,
+  output_tokens   INT DEFAULT 0,
+  estimated_cost  FLOAT DEFAULT 0,
+  repo            TEXT,
+  delivery_id     TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_model_cost_task ON model_cost_events(task_type);
+CREATE INDEX idx_model_cost_created ON model_cost_events(created_at);
 ```
-
-### Schema Modifications
-
-```sql
--- learning_memories: add language column
-ALTER TABLE learning_memories ADD COLUMN IF NOT EXISTS language TEXT;
-CREATE INDEX IF NOT EXISTS idx_memories_language ON learning_memories(language);
-```
-
-### No Schema Changes Needed For
-
-- CI failure recognition (ephemeral -- classify at review time, post comment, no persistence)
-- [depends] deep review (enrichment context assembled at review time, injected into prompt)
 
 ## Scalability Considerations
 
-| Concern | Current State | After v0.19 |
-|---------|--------------|-------------|
-| Retrieval fan-out latency | 6 parallel searches (3 vector + 3 BM25) | 8 parallel searches if code_snippets added; marginal increase |
-| Embedding API calls | 1 per retrieval query | +N per PR if hunk embedding enabled; cache by content_hash mitigates |
-| CI API calls | 0 per review | 2-3 per review (list runs + list jobs for failures); within rate limits |
-| Database size | ~10K learning_memories, ~50K review_comments | language column: trivial. code_snippets: ~5K rows/month if enabled |
-| Prompt token usage | ~4K-8K tokens | [depends] deep review may add ~2K tokens of context; CI annotation is post-review (separate comment) |
+| Concern | Current Scale | v0.20 Impact | Mitigation |
+|---------|--------------|--------------|------------|
+| LLM API calls | ~50/day (reviews + mentions) | +20-30/day (staleness, patterns, labels) | Cheaper models (Haiku) for new tasks; batch where possible |
+| Database size | ~100K rows across tables | +50K/year (staleness signals, cost events, clusters) | Retention purge (existing pattern); staleness signals auto-resolve |
+| Embedding computation | ~200/day (chunks) | No increase (reuse existing embeddings for clustering) | N/A |
+| Scheduled jobs | 1 (wiki sync every 6h) | +2 (pattern clustering weekly, expertise daily) | Stagger schedules; all fire-and-forget |
+| Memory (HDBSCAN) | N/A | O(n^2) distance matrix for clustering | Cap at 5000 findings per clustering run; shard by repo |
 
-## Build Order and Dependencies
+## Build Order Rationale
 
 ```
-Phase 1: Language-Aware Boosting (schema + retrieval)
-  ├── Migration 007: ADD COLUMN language
-  ├── memory-store.ts: populate on write
-  ├── Backfill script: populate existing rows
-  ├── retrieval-rerank.ts: use stored language
-  └── retrieval.ts + cross-corpus-rrf.ts: language weight in unified pipeline
+Phase 1: Model Router + Cost Tracking
+  Deps: none
+  New: src/llm/, migration 013
+  Modified: src/config.ts (env vars)
+  Rationale: Foundation for all other features -- staleness and pattern
+    labeling need generateText(). Self-contained with no changes to
+    existing review flow.
 
-Phase 2: [depends] PR Deep Review
-  ├── dep-bump-detector.ts: add detectDependsPrefix()
-  ├── depends-changelog-fetcher.ts: upstream changelog for C/C++ deps
-  ├── depends-impact-analyzer.ts: Kodi consumer analysis
-  ├── depends-build-verifier.ts: hash/URL/patch verification
-  ├── depends-deep-review.ts: orchestrator
-  ├── review-prompt.ts: buildDependsDeepReviewSection()
-  └── review.ts: route [depends] PRs through deep review
+Phase 2: Contributor Profiles + Identity Linking
+  Deps: none (independent of Phase 1)
+  New: src/identity/, migration 010
+  Modified: src/handlers/review.ts, src/handlers/mention.ts, src/index.ts
+  Rationale: Prerequisite for adaptive behavior. Light handler integration.
 
-Phase 3: CI Failure Recognition
-  ├── ci-failure-analyzer.ts: classification heuristics
-  ├── ci-status-server.ts: add classify_ci_failures tool (optional)
-  ├── review.ts: post-review CI failure annotation step
-  └── review-prompt.ts: brief CI status summary (optional)
+Phase 3: Wiki Staleness Detection
+  Deps: Phase 1 (model router for staleness analysis LLM calls)
+  New: src/intelligence/wiki-staleness*.ts, migration 012
+  Modified: src/knowledge/wiki-sync.ts, src/index.ts
+  Rationale: Uses existing wiki store and code change data. Model router
+    provides the LLM summarization capability.
 
-Phase 4: Code Snippet Embedding (Exploratory)
-  ├── Migration: code_snippets table
-  ├── hunk-embedder.ts: diff parsing + chunking + embedding
-  ├── code-snippet-store.ts: CRUD + search
-  ├── cross-corpus-rrf.ts: add "code_snippet" source type
-  └── retrieval.ts: fan-out to code_snippets in parallel search
+Phase 4: Review Pattern Clustering
+  Deps: Phase 1 (model router for theme labeling)
+  New: src/intelligence/pattern-cluster*.ts, migration 011
+  Modified: src/handlers/review.ts (prompt injection), src/index.ts
+  Rationale: Most complex feature. HDBSCAN integration, cluster management,
+    prompt enrichment. Depends on model router for theme generation.
 ```
 
-**Phase ordering rationale:**
+**Dependency chain:** Model Router is the foundation -- it provides `generateText()` to both staleness analysis and pattern labeling. Contributor Profiles are independent and can be built in parallel with Phase 1. Wiki Staleness and Pattern Clustering both require Model Router to be available.
 
-1. **Language-aware boosting first** because it is the smallest, most self-contained change (one migration, two module modifications). It also validates the schema extension pattern used by Phase 4.
-
-2. **[depends] deep review second** because it is the highest-value feature (from issue #42 description: "not a lighter review -- should be MORE thorough") and has no dependency on other features.
-
-3. **CI failure recognition third** because it is independent of retrieval changes and can be developed in parallel with Phase 2 if capacity allows. It has the simplest codebase footprint (one new module, one handler modification).
-
-4. **Code snippet embedding last** because it is explicitly exploratory, has the highest cost (embedding API calls), and its value is uncertain. It depends on Phase 1's language column pattern being validated first.
+**Phases 1 and 2 can run in parallel.** Phases 3 and 4 depend on Phase 1 completion.
 
 ## Sources
 
-- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/retrieval.ts` (unified retrieval pipeline)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/retrieval-rerank.ts` (language re-ranking)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/knowledge/cross-corpus-rrf.ts` (RRF merging)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/lib/dep-bump-detector.ts` (dep-bump detection)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/execution/mcp/ci-status-server.ts` (CI status MCP)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/handlers/review.ts` (review handler pipeline)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/execution/review-prompt.ts` (prompt assembly)
-- Direct codebase analysis of `/home/keith/src/kodiai/src/db/migrations/` (all 6 existing migrations)
-- Issue #42: v0.19 Intelligent Retrieval Enhancements (feature requirements)
+- [Vercel AI SDK Provider Management](https://ai-sdk.dev/docs/ai-sdk-core/provider-management) -- HIGH confidence, official docs
+- [Vercel AI SDK generateText](https://ai-sdk.dev/docs/ai-sdk-core/generating-text) -- HIGH confidence, official docs
+- [AI SDK 6 announcement](https://vercel.com/blog/ai-sdk-6) -- HIGH confidence, official blog
+- [hdbscanjs npm package](https://www.npmjs.com/package/hdbscanjs) -- MEDIUM confidence, community package
+- [GitHub Slack user mappings pattern](https://github.com/hmcts/github-slack-user-mappings) -- MEDIUM confidence, community pattern
+- Codebase analysis: `src/execution/executor.ts`, `src/knowledge/retrieval.ts`, `src/index.ts`, `src/telemetry/`, `src/config.ts`, `src/execution/config.ts`, `src/db/migrations/` -- HIGH confidence, primary source
