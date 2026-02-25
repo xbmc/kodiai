@@ -50,6 +50,12 @@ Plans:
 ### Phase 90 — MediaWiki Content Ingestion
 **Goal:** kodi.wiki content chunked, embedded, and searchable
 **Requirements:** KI-07 through KI-12
+**Plans:** 3 plans
+
+Plans:
+- [ ] 90-01-PLAN.md — Schema, store, and section-based chunker for wiki pages
+- [ ] 90-02-PLAN.md — Backfill CLI with MediaWiki API pagination and HTML-to-markdown conversion
+- [ ] 90-03-PLAN.md — Incremental sync scheduler and retrieval integration with citation formatting
 
 **Scope:**
 - MediaWiki API export: fetch all pages from kodi.wiki (or targeted namespaces)
