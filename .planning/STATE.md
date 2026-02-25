@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Milestone:** v0.18 Knowledge Ingestion — SHIPPED
 **Status:** Complete
-Last activity: 2026-02-25 - Completed quick task 9: Reorder milestone roadmap — #42=v0.19, #66=v0.20, bump #73-75
+Last activity: 2026-02-25 - Completed quick task 10: Update issue #42 with [depends] PR handling and unrelated CI failure scope items
 
 Progress: [##########] 100% (18 milestones shipped, 92 phases, 227 plans)
 
@@ -67,9 +67,10 @@ None.
 | 7 | Fix all PR #67 review comments | 2026-02-25 | 47b30fb5dd | [7-fix-all-pr-67-review-comments](./quick/7-fix-all-pr-67-review-comments/) |
 | 8 | Issue triage: close #65, bump version labels on #73/#74/#75 | 2026-02-25 | 96ef6a0922 | [8-read-thru-the-open-issues-close-comment-](./quick/8-read-thru-the-open-issues-close-comment-/) |
 | 9 | Reorder milestone roadmap: #42=v0.19, #66=v0.20, bump #73-75 | 2026-02-25 | (gh-only) | [9-reorder-milestone-roadmap-66-and-42-befo](./quick/9-reorder-milestone-roadmap-66-and-42-befo/) |
+| 10 | Update issue #42 with [depends] PR handling and unrelated CI failure scope items | 2026-02-25 | (gh-only) | [10-update-issue-42-with-depends-pr-handling](./quick/10-update-issue-42-with-depends-pr-handling/) |
 
 ## Session Continuity
 
 **Last session:** 2026-02-25
-**Stopped At:** Quick task 9 complete — milestone roadmap reordered, #42/#66 now precede #73-75
+**Stopped At:** Quick task 10 complete — issue #42 updated with 4 scope items for v0.19
 **Resume file:** .planning/MILESTONES.md
