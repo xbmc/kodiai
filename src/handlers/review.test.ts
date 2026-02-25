@@ -1861,14 +1861,14 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     expect(entry.eventType).toBe("pull_request");
     expect(entry.topK).toBe(5);
     // < 8 candidates -> percentile fallback (idx=floor(2*0.75)=1)
-    // adjusted distances: 0.2*0.85=0.17, 0.4*1.15=0.46 -> threshold=0.46
-    expect(entry.distanceThreshold).toBeCloseTo(0.46, 6);
+    // adjusted distances: 0.2*0.85=0.17 (TS match), 0.4*1.0=0.40 (Python: no penalty) -> threshold=0.40
+    expect(entry.distanceThreshold).toBeCloseTo(0.40, 6);
     expect(entry.thresholdMethod).toBe("percentile");
     expect(entry.resultCount).toBe(2);
     expect(entry.languageMatchRatio).toBe(0.5);
 
-    // avgDistance uses adjusted distances: (0.2*0.85 + 0.4*1.15) / 2 = 0.315
-    expect(entry.avgDistance).toBeCloseTo(0.315, 6);
+    // avgDistance uses adjusted distances: (0.2*0.85 + 0.4*1.0) / 2 = 0.285 (no cross-language penalty)
+    expect(entry.avgDistance).toBeCloseTo(0.285, 6);
 
     await workspaceFixture.cleanup();
   });
@@ -2011,7 +2011,8 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
     }
 
     // avgDistance uses adjusted distances from the unified retriever pipeline
-    expect(captured.avgDistance).toBeCloseTo(0.315, 6);
+    // (0.2*0.85 + 0.4*1.0) / 2 = 0.285 (no cross-language penalty in new policy)
+    expect(captured.avgDistance).toBeCloseTo(0.285, 6);
 
     await workspaceFixture.cleanup();
   });
