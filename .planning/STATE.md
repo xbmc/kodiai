@@ -24,9 +24,9 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 ## Current Position
 
 Phase: 93 of 96 (Language-Aware Retrieval Boosting)
-Plan: 1 of 4 in current phase
-Status: In progress
-Last activity: 2026-02-25 -- 93-01 complete: language schema, expanded taxonomy, backfill script
+Plan: 4 of 4 in current phase (COMPLETE)
+Status: Phase complete
+Last activity: 2026-02-25 -- 93-04 complete: language wiring through handlers, wiki languageTags tests, e2e language boost tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -59,6 +59,8 @@ All decisions through v0.18 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 93]: .h files default to 'c', upgrade to 'cpp' when C++ context files present in PR; record.language takes precedence in writeMemory for caller pre-classification
 - [Phase 93]: Boost-only policy in unified pipeline: non-matching language results never penalized, only matching ones boosted (LANG-03/LANG-04)
 - [Phase 93]: Single location for language weighting per pipeline path: rerankByLanguage for legacy findings[], step 6e-bis for unified results — no double-boost
+- [Phase 93]: classifyFileLanguageWithContext used for memory writes — resolves .h ambiguity using PR context files (not classifyFileLanguage which returns Title Case)
+- [Phase 93]: prLanguages normalized to lowercase in mention.ts at construction time — single normalization site, keeps retrieval.ts clean
 
 ### Key Constraints (Carry-Forward)
 
@@ -105,6 +107,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T17:42:44.442Z
-**Stopped At:** Completed 93-03-PLAN.md
+**Last session:** 2026-02-25T17:48:24Z
+**Stopped At:** Completed 93-04-PLAN.md
 **Resume file:** None

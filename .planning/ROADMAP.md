@@ -154,7 +154,7 @@ See `.planning/milestones/v0.18-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Make retrieval smarter with language-aware boosting and sub-function granularity, add a specialized deep-review pipeline for dependency bump PRs, and recognize unrelated CI failures.
 
-- [ ] **Phase 93: Language-Aware Retrieval Boosting** - Schema extension + retrieval ranking boost by stored language metadata
+- [x] **Phase 93: Language-Aware Retrieval Boosting** - Schema extension + retrieval ranking boost by stored language metadata (completed 2026-02-25)
 - [ ] **Phase 94: [depends] PR Deep Review** - Specialized in-depth review pipeline for Kodi-convention dependency bump PRs
 - [ ] **Phase 95: CI Failure Recognition** - Detect and annotate CI failures unrelated to the PR with base-branch comparison reasoning
 - [ ] **Phase 96: Code Snippet Embedding** - Hunk-level embedding for sub-function granularity retrieval (exploratory, feature-flagged)
@@ -236,7 +236,7 @@ Phases execute in numeric order: 93 -> 94 -> 95 -> 96
 | 82-85 | v0.16 | 6/6 | Complete | 2026-02-24 |
 | 86-88 | v0.17 | 8/8 | Complete | 2026-02-24 |
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
-| 93 | 3/4 | In Progress|  | - |
+| 93 | 4/4 | Complete   | 2026-02-25 | - |
 | 94 | v0.19 | 0/? | Not started | - |
 | 95 | v0.19 | 0/? | Not started | - |
 | 96 | v0.19 | 0/? | Not started | - |
