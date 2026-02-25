@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   analyzeDiff,
   classifyFileLanguage,
+  classifyFileLanguageWithContext,
   classifyLanguages,
   parseNumstatPerFile,
+  EXTENSION_LANGUAGE_MAP,
+  RELATED_LANGUAGES,
   MAX_ANALYSIS_FILES,
   MAX_ANALYSIS_TIME_MS,
   type DiffAnalysisInput,
@@ -311,5 +314,112 @@ describe("parseNumstatPerFile", () => {
     expect(result.size).toBe(2);
     expect(result.get("src/foo.ts")).toEqual({ added: 10, removed: 5 });
     expect(result.get("src/bar.ts")).toEqual({ added: 20, removed: 3 });
+  });
+});
+
+// ---------- EXTENSION_LANGUAGE_MAP coverage ----------
+
+test("EXTENSION_LANGUAGE_MAP covers 30+ language extensions", () => {
+  expect(Object.keys(EXTENSION_LANGUAGE_MAP).length).toBeGreaterThanOrEqual(30);
+});
+
+test("classifyFileLanguage covers newly added language extensions", () => {
+  // Functional languages
+  expect(classifyFileLanguage("lib/code.hs")).toBe("Haskell");
+  expect(classifyFileLanguage("lib/main.ml")).toBe("OCaml");
+  expect(classifyFileLanguage("src/lib.mli")).toBe("OCaml");
+  expect(classifyFileLanguage("Program.fs")).toBe("F#");
+  expect(classifyFileLanguage("Script.fsx")).toBe("F#");
+  expect(classifyFileLanguage("app.jl")).toBe("Julia");
+
+  // Systems / hardware
+  expect(classifyFileLanguage("core.v")).toBe("Verilog");
+  expect(classifyFileLanguage("core.sv")).toBe("Verilog");
+  expect(classifyFileLanguage("cpu.vhd")).toBe("VHDL");
+  expect(classifyFileLanguage("CMakeLists.cmake")).toBe("CMake");
+
+  // Dynamic / scripting
+  expect(classifyFileLanguage("stats.r")).toBe("R");
+  expect(classifyFileLanguage("analysis.R")).toBe("R");
+  expect(classifyFileLanguage("Controller.m")).toBe("Objective-C");
+  expect(classifyFileLanguage("View.mm")).toBe("Objective-C++");
+  expect(classifyFileLanguage("script.pl")).toBe("Perl");
+  expect(classifyFileLanguage("module.pm")).toBe("Perl");
+
+  // JVM / functional on JVM
+  expect(classifyFileLanguage("App.clj")).toBe("Clojure");
+  expect(classifyFileLanguage("handler.cljs")).toBe("Clojure");
+  expect(classifyFileLanguage("server.erl")).toBe("Erlang");
+  expect(classifyFileLanguage("header.hrl")).toBe("Erlang");
+  expect(classifyFileLanguage("Build.groovy")).toBe("Groovy");
+});
+
+// ---------- classifyFileLanguageWithContext ----------
+
+describe("classifyFileLanguageWithContext", () => {
+  test("returns lowercase language for non-ambiguous extensions", () => {
+    expect(classifyFileLanguageWithContext("src/main.ts")).toBe("typescript");
+    expect(classifyFileLanguageWithContext("lib/code.py")).toBe("python");
+    expect(classifyFileLanguageWithContext("cmd/server.go")).toBe("go");
+  });
+
+  test(".h file with C++ context returns 'cpp'", () => {
+    expect(classifyFileLanguageWithContext("include/header.h", ["src/main.cpp", "src/utils.hpp"])).toBe("cpp");
+  });
+
+  test(".h file with C++ context via .cc extension returns 'cpp'", () => {
+    expect(classifyFileLanguageWithContext("include/header.h", ["lib/module.cc"])).toBe("cpp");
+  });
+
+  test(".h file with C++ context via .cxx extension returns 'cpp'", () => {
+    expect(classifyFileLanguageWithContext("include/header.h", ["lib/module.cxx"])).toBe("cpp");
+  });
+
+  test(".h file with only C context returns 'c'", () => {
+    expect(classifyFileLanguageWithContext("include/header.h", ["src/main.c", "src/util.c"])).toBe("c");
+  });
+
+  test(".h file with no context returns 'c' (fallback)", () => {
+    expect(classifyFileLanguageWithContext("include/header.h")).toBe("c");
+    expect(classifyFileLanguageWithContext("include/header.h", [])).toBe("c");
+  });
+
+  test(".h file with mixed C and C++ context returns 'cpp' (C++ wins)", () => {
+    expect(classifyFileLanguageWithContext("include/header.h", ["src/main.c", "lib/module.cpp"])).toBe("cpp");
+  });
+
+  test("returns 'unknown' for unrecognized extension", () => {
+    expect(classifyFileLanguageWithContext("file.xyz")).toBe("unknown");
+  });
+});
+
+// ---------- RELATED_LANGUAGES ----------
+
+describe("RELATED_LANGUAGES", () => {
+  test("c relates to cpp", () => {
+    expect(RELATED_LANGUAGES["c"]).toContain("cpp");
+  });
+
+  test("cpp relates to c", () => {
+    expect(RELATED_LANGUAGES["cpp"]).toContain("c");
+  });
+
+  test("typescript relates to javascript", () => {
+    expect(RELATED_LANGUAGES["typescript"]).toContain("javascript");
+  });
+
+  test("javascript relates to typescript", () => {
+    expect(RELATED_LANGUAGES["javascript"]).toContain("typescript");
+  });
+
+  test("objectivec relates to c and cpp", () => {
+    expect(RELATED_LANGUAGES["objectivec"]).toContain("c");
+    expect(RELATED_LANGUAGES["objectivec"]).toContain("cpp");
+  });
+
+  test("objectivecpp relates to c, cpp, and objectivec", () => {
+    expect(RELATED_LANGUAGES["objectivecpp"]).toContain("c");
+    expect(RELATED_LANGUAGES["objectivecpp"]).toContain("cpp");
+    expect(RELATED_LANGUAGES["objectivecpp"]).toContain("objectivec");
   });
 });

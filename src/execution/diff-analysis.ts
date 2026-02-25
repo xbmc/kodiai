@@ -43,12 +43,97 @@ export const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
   ex: "Elixir",
   exs: "Elixir",
   zig: "Zig",
+  // Functional languages
+  r: "R",
+  R: "R",
+  m: "Objective-C",
+  mm: "Objective-C++",
+  pl: "Perl",
+  pm: "Perl",
+  clj: "Clojure",
+  cljs: "Clojure",
+  cljc: "Clojure",
+  erl: "Erlang",
+  hrl: "Erlang",
+  hs: "Haskell",
+  ml: "OCaml",
+  mli: "OCaml",
+  fs: "F#",
+  fsx: "F#",
+  fsi: "F#",
+  jl: "Julia",
+  groovy: "Groovy",
+  gvy: "Groovy",
+  // Hardware description
+  v: "Verilog",
+  sv: "Verilog",
+  vhd: "VHDL",
+  vhdl: "VHDL",
+  // Build systems
+  cmake: "CMake",
 };
 
+/**
+ * Map of language names (lowercase) to related languages for affinity boosting.
+ * Used by retrieval reranking to give partial boost to related languages.
+ */
+export const RELATED_LANGUAGES: Record<string, string[]> = {
+  c: ["cpp"],
+  cpp: ["c"],
+  typescript: ["javascript"],
+  javascript: ["typescript"],
+  objectivec: ["c", "cpp"],
+  objectivecpp: ["c", "cpp", "objectivec"],
+  kotlin: ["java"],
+};
+
+/**
+ * C++ context extensions — presence in context files signals a C++ project.
+ */
+const CPP_EXTENSIONS = new Set(["cpp", "cc", "cxx", "hpp", "hxx"]);
+
 export function classifyFileLanguage(filePath: string): string {
-  const ext = filePath.split(".").pop()?.toLowerCase();
+  const ext = filePath.split(".").pop();
   if (!ext) return "Unknown";
+  // Preserve case for R (extension is case-sensitive)
   return EXTENSION_LANGUAGE_MAP[ext] ?? "Unknown";
+}
+
+/**
+ * Context-aware language classification. Returns lowercase language names for
+ * consistency with database storage. Resolves ambiguous extensions (e.g., .h)
+ * using context files from the same PR/repository.
+ *
+ * @param filePath - Path to classify
+ * @param contextFiles - Other files in the PR/repo (used to resolve .h ambiguity)
+ */
+export function classifyFileLanguageWithContext(
+  filePath: string,
+  contextFiles?: string[],
+): string {
+  const ext = filePath.split(".").pop();
+  if (!ext) return "unknown";
+
+  // Resolve .h ambiguity: C++ if any C++ files present in context, else C
+  if (ext === "h" || ext === "H") {
+    if (contextFiles && contextFiles.length > 0) {
+      const hasCpp = contextFiles.some((f) => {
+        const ctxExt = f.split(".").pop()?.toLowerCase();
+        return ctxExt !== undefined && CPP_EXTENSIONS.has(ctxExt);
+      });
+      return hasCpp ? "cpp" : "c";
+    }
+    return "c"; // fallback: default to C
+  }
+
+  const displayLang = EXTENSION_LANGUAGE_MAP[ext];
+  if (!displayLang) return "unknown";
+  return displayLang.toLowerCase()
+    .replace("c#", "csharp")
+    .replace("c++", "cpp")
+    .replace("objective-c++", "objectivecpp")
+    .replace("objective-c", "objectivec")
+    .replace("f#", "fsharp");
 }
 
 export function classifyLanguages(files: string[]): Record<string, string[]> {
