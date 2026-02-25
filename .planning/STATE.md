@@ -2,10 +2,10 @@
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-24)
+See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus Retrieval
+**Current focus:** Phase 90 — MediaWiki Content Ingestion
 
 ## Current Position
 
@@ -96,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T04:46:41Z
-**Stopped At:** Completed 89-05-PLAN.md (Phase 89 gap closure complete)
-**Next action:** `/gsd:execute-phase 90` to begin Phase 90 (MediaWiki Content Ingestion)
+**Last session:** 2026-02-25
+**Stopped At:** Phase 89 complete, ready to plan Phase 90
+**Resume file:** None

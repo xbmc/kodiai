@@ -8,7 +8,19 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews, co
 
 When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, contextual answers to questions, or PR creation from Slack write requests — without requiring any workflow setup in the target repo.
 
-## Latest Release: v0.17 Infrastructure Foundation
+## Current Milestone: v0.18 Knowledge Ingestion
+
+**Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
+**Phases:** 89-91 (3 phases)
+**Depends on:** v0.17 (PostgreSQL + pgvector infrastructure)
+
+**Scope:**
+- Phase 89: PR Review Comment Ingestion — backfill 18 months of xbmc/xbmc review comments, embed, store, incremental sync
+- Phase 90: MediaWiki Content Ingestion — kodi.wiki export, section chunking, embedding, scheduled sync
+- Phase 91: Cross-Corpus Retrieval Integration — multi-source fan-out, hybrid BM25+vector, RRF, source attribution
+
+<details>
+<summary>Previous Release: v0.17 Infrastructure Foundation (2026-02-24)</summary>
 
 **Shipped:** 2026-02-24
 **Phases:** 86-88 (3 phases, 8 plans)
@@ -19,6 +31,8 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 - Zero-downtime deploys with health probes, rolling deploy config, and startup webhook replay
 - Unified `src/knowledge/` module with `createRetriever()` factory for both GitHub and Slack retrieval
 - E2E test proving shared retrieval path; `src/learning/` deleted (17 files removed)
+
+</details>
 
 <details>
 <summary>Previous Release: v0.16 Review Coverage & Slack UX (2026-02-24)</summary>
@@ -46,7 +60,7 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 ## Current State
 
-v0.17 ships a fully operational GitHub App + Slack assistant backed by PostgreSQL:
+v0.18 extends the knowledge corpus beyond indexed code with PR review comment ingestion, wiki content, and unified cross-corpus retrieval:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns (SQLite removed)
 - Graceful shutdown with SIGTERM handling, drain logic, webhook queue replay, and zero-downtime deploys
 - Unified `src/knowledge/` module with single retrieval path for both GitHub and Slack
@@ -135,10 +149,21 @@ v0.17 ships a fully operational GitHub App + Slack assistant backed by PostgreSQ
 - ✓ Graceful shutdown with SIGTERM handling and drain logic — v0.17
 - ✓ Zero-downtime deploys on Azure Container Apps — v0.17
 - ✓ Unified knowledge layer in `src/knowledge/` for GitHub and Slack — v0.17
+- ✓ 18 months of xbmc/xbmc PR review comments backfilled, chunked, embedded, and searchable — v0.18
+- ✓ Review comments stored with metadata (PR number, file, line range, author, date) — v0.18
+- ✓ Semantic chunking with overlapping sliding windows (1024 tokens, 256 overlap) — v0.18
+- ✓ Incremental review comment sync via webhook on create/edit/delete — v0.18
+- ✓ Review comment vector search with embedding persistence and NULL filtering — v0.18
+- ✓ Retrieval integration with inline review precedent citations — v0.18
 
 ### Active
 
-(None — define with `/gsd:new-milestone`)
+- [ ] kodi.wiki content exported, markdown-stripped, section-chunked, embedded, and searchable — v0.18
+- [ ] Wiki incremental sync via scheduled job detecting changed pages — v0.18
+- [ ] Single retrieval call fans out to code, review comments, and wiki simultaneously — v0.18
+- [ ] Hybrid search (BM25 + vector) with RRF merging across heterogeneous sources — v0.18
+- [ ] Source-aware re-ranking and attribution (code / review / wiki labels) on every chunk — v0.18
+- [ ] Near-duplicate deduplication across corpora via cosine similarity threshold — v0.18
 
 ### Out of Scope
 
@@ -202,6 +227,12 @@ v0.17 ships a fully operational GitHub App + Slack assistant backed by PostgreSQ
 | SIGTERM drain with webhook queue | In-flight work completes, new webhooks queued to PostgreSQL for replay on restart | ✓ Good — v0.17 |
 | createRetriever() factory pattern | Single dep injection point for all handlers; fail-open with try/catch returning null | ✓ Good — v0.17 |
 | Clean break on src/learning/ deletion | No backward-compat re-exports; all consumers updated to src/knowledge/ | ✓ Good — v0.17 |
+| Whitespace-based token counting for chunker | No external tokenizer dependency; good enough for window sizing | ✓ Good — v0.18 |
+| ON CONFLICT DO NOTHING for backfill writes | Idempotent re-runs without upsert complexity | ✓ Good — v0.18 |
+| DELETE + INSERT for comment edits | Simpler than diffing chunk boundaries; transaction ensures atomicity | ✓ Good — v0.18 |
+| Standalone chunk per new comment (no thread re-chunking) | Avoids re-embedding entire threads on each reply | ✓ Good — v0.18 |
+| Adaptive rate limiting (1.5s/3s delays) | Stays well within GitHub API 5000 req/hr limit for 18-month backfill | ✓ Good — v0.18 |
+| Mutate chunk.embedding in-place | Avoids parallel array tracking; embedding travels with chunk through pipeline | ✓ Good — v0.18 |
 
 ## Constraints
 
@@ -214,4 +245,4 @@ v0.17 ships a fully operational GitHub App + Slack assistant backed by PostgreSQ
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-24 after v0.17 milestone*
+*Last updated: 2026-02-25 after Phase 89 (v0.18)*
