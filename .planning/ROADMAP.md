@@ -20,7 +20,7 @@
 - ✅ **v0.16 Review Coverage & Slack UX** — Phases 82-85 (shipped 2026-02-24)
 - ✅ **v0.17 Infrastructure Foundation** — Phases 86-88 (shipped 2026-02-24)
 
-## Active: v0.18 Knowledge Ingestion (Phases 89-91)
+## Active: v0.18 Knowledge Ingestion (Phases 89-92)
 
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
 
@@ -91,6 +91,21 @@ Plans:
 - End-to-end test: PR review response cites code context + human review precedent + wiki page
 
 **Deliverable:** All three corpora queried on every retrieval call; responses cite sources by type; no retrieval path bypasses the unified layer.
+
+### Phase 92 — Wire Unified Retrieval to All Consumers
+**Goal:** Close all audit gaps by wiring unified retrieval output to mention handler, review retry, and code BM25
+**Requirements:** KI-11, KI-12, KI-13, KI-14
+**Depends on:** Phases 89, 90, 91
+**Gap Closure:** Closes gaps from v0.18 audit
+
+**Scope:**
+- Wire mention handler (mention.ts) to consume unifiedResults, contextWindow, wikiKnowledge, reviewPrecedents from retrieval
+- Update mention-prompt.ts to accept and format unified context in @mention responses
+- Fix review retry buildReviewPrompt call (review.ts) to pass full unified context on retry path
+- Pass learningMemoryStore to createRetriever() (index.ts) so code corpus gets hybrid BM25+vector search
+- Update REQUIREMENTS.md checkboxes for satisfied-but-unchecked requirements (KI-07–10, KI-15–19)
+
+**Deliverable:** All consumers use unified retrieval output; @mention flow includes wiki+review citations; review retry preserves full context; code corpus gets hybrid search.
 
 ---
 
@@ -218,7 +233,7 @@ See `.planning/milestones/v0.17-ROADMAP.md` for full phase details.
 ## Progress
 
 **Total shipped:** 17 milestones, 88 phases, 212 plans
-**Active:** v0.18 Knowledge Ingestion — Phases 89-91
+**Active:** v0.18 Knowledge Ingestion — Phases 89-92
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|

@@ -19,10 +19,10 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 
 ### MediaWiki Content Ingestion
 
-- [ ] **KI-07**: kodi.wiki content exported via MediaWiki API (all pages or targeted namespaces)
-- [ ] **KI-08**: HTML stripped to markdown, chunked by section heading with overlapping windows
-- [ ] **KI-09**: Wiki chunks stored with metadata: page title, section, last modified, URL
-- [ ] **KI-10**: Incremental sync via scheduled job (daily/weekly) detects changed pages
+- [x] **KI-07**: kodi.wiki content exported via MediaWiki API (all pages or targeted namespaces)
+- [x] **KI-08**: HTML stripped to markdown, chunked by section heading with overlapping windows
+- [x] **KI-09**: Wiki chunks stored with metadata: page title, section, last modified, URL
+- [x] **KI-10**: Incremental sync via scheduled job (daily/weekly) detects changed pages
 - [ ] **KI-11**: Wiki corpus available via `src/knowledge/retrieval.ts` retrieval path
 - [ ] **KI-12**: Bot can answer architecture/feature questions with wiki citations and links
 
@@ -30,19 +30,19 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 
 - [ ] **KI-13**: Single retrieval call fans out to code, review comments, and wiki simultaneously
 - [ ] **KI-14**: Hybrid search combining pgvector semantic similarity with PostgreSQL tsvector full-text search per corpus
-- [ ] **KI-15**: Reciprocal Rank Fusion (RRF) merges ranked lists from heterogeneous sources using `1/(k + rank)` scoring
-- [ ] **KI-16**: Source-aware re-ranking weights results by recency, source type, and relevance score
-- [ ] **KI-17**: Every retrieved chunk carries source label (code / review / wiki) for attribution
-- [ ] **KI-18**: Context assembly respects token budget with attributed chunks
-- [ ] **KI-19**: Near-duplicate chunks from different sources collapsed via cosine similarity threshold
+- [x] **KI-15**: Reciprocal Rank Fusion (RRF) merges ranked lists from heterogeneous sources using `1/(k + rank)` scoring
+- [x] **KI-16**: Source-aware re-ranking weights results by recency, source type, and relevance score
+- [x] **KI-17**: Every retrieved chunk carries source label (code / review / wiki) for attribution
+- [x] **KI-18**: Context assembly respects token budget with attributed chunks
+- [x] **KI-19**: Near-duplicate chunks from different sources collapsed via cosine similarity threshold
 
 ### Success Criteria (from Issue #65)
 
-- [ ] 18 months of review comments indexed and returning results in retrieval
-- [ ] kodi.wiki fully indexed with incremental sync running on schedule
+- [x] 18 months of review comments indexed and returning results in retrieval
+- [x] kodi.wiki fully indexed with incremental sync running on schedule
 - [ ] Single retrieval call fans out to all corpora with source attribution in responses
 - [ ] Hybrid search (BM25 + vector) operational with RRF merging across sources
-- [ ] Chunking uses semantic boundaries with overlap, not naive fixed-size splits
+- [x] Chunking uses semantic boundaries with overlap, not naive fixed-size splits
 
 ## Out of Scope
 
@@ -63,19 +63,19 @@ Requirements for v0.18 Knowledge Ingestion — PR Comments, Wiki, Cross-Corpus R
 | KI-04 | Phase 89 | Complete |
 | KI-05 | Phase 89 | Complete |
 | KI-06 | Phase 89 | Complete |
-| KI-07 | Phase 90 | Pending |
-| KI-08 | Phase 90 | Pending |
-| KI-09 | Phase 90 | Pending |
-| KI-10 | Phase 90 | Pending |
-| KI-11 | Phase 90 | Pending |
-| KI-12 | Phase 90 | Pending |
-| KI-13 | Phase 91 | Pending |
-| KI-14 | Phase 91 | Pending |
-| KI-15 | Phase 91 | Pending |
-| KI-16 | Phase 91 | Pending |
-| KI-17 | Phase 91 | Pending |
-| KI-18 | Phase 91 | Pending |
-| KI-19 | Phase 91 | Pending |
+| KI-07 | Phase 90 | Complete |
+| KI-08 | Phase 90 | Complete |
+| KI-09 | Phase 90 | Complete |
+| KI-10 | Phase 90 | Complete |
+| KI-11 | Phase 92 | Pending |
+| KI-12 | Phase 92 | Pending |
+| KI-13 | Phase 92 | Pending |
+| KI-14 | Phase 92 | Pending |
+| KI-15 | Phase 91 | Complete |
+| KI-16 | Phase 91 | Complete |
+| KI-17 | Phase 91 | Complete |
+| KI-18 | Phase 91 | Complete |
+| KI-19 | Phase 91 | Complete |
 
 **Coverage:**
 - v0.18 requirements: 19 total
