@@ -5,7 +5,7 @@
 See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.16 Review Coverage & Slack UX
 
 ## Current Position
 
@@ -37,6 +37,11 @@ None.
 
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed. Only review on initial open/ready or manual `review_requested`.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to (via @kodiai mention or review request trigger).
+
+### Roadmap Evolution
+
+- Phase 84 added: Azure deployment health — verify embeddings/VoyageAI work on deploy and fix container log errors
+- Phase 85 added: Code review fixes — memory leaks, hardcoded defaults, type mismatches, and missing rate limits
 
 ### Blockers/Concerns
 
