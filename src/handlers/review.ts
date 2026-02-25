@@ -16,7 +16,7 @@ import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incre
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { loadRepoConfig } from "../execution/config.ts";
-import { analyzeDiff, parseNumstatPerFile } from "../execution/diff-analysis.ts";
+import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
 import {
   buildReviewPrompt,
@@ -2964,6 +2964,8 @@ export function createReviewHandler(deps: {
                   embeddingModel: embeddingResult.model,
                   embeddingDim: embeddingResult.dimensions,
                   stale: false,
+                  // Context-aware language classification: .h files in C++ PRs become "cpp" (LANG-01)
+                  language: classifyFileLanguageWithContext(finding.filePath, changedFiles),
                 };
 
                 await learningMemoryStore.writeMemory(memoryRecord, embeddingResult.embedding);

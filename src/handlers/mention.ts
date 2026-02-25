@@ -1171,7 +1171,14 @@ export function createMentionHandler(deps: {
               new Set(
                 filePaths
                   .map((filePath) => classifyFileLanguage(filePath))
-                  .filter((language) => language !== "Unknown"),
+                  .filter((language) => language !== "Unknown")
+                  // Normalize to lowercase for language-aware boosting in retrieval (LANG-01)
+                  .map((language) => language.toLowerCase()
+                    .replace("c++", "cpp")
+                    .replace("c#", "csharp")
+                    .replace("objective-c++", "objectivecpp")
+                    .replace("objective-c", "objectivec")
+                    .replace("f#", "fsharp")),
               ),
             );
             const retrievalTopK = Math.max(1, Math.min(config.knowledge.retrieval.topK, 3));

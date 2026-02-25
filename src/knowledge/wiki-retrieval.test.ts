@@ -37,6 +37,7 @@ function createMockRecord(overrides: Partial<WikiPageRecord> = {}): WikiPageReco
     lastModified: "2025-01-15T12:00:00Z",
     revisionId: 42,
     deleted: false,
+    languageTags: [],
     ...overrides,
   };
 }
@@ -255,5 +256,46 @@ describe("searchWikiPages", () => {
     expect(match.lastModified).toBe("2024-06-15T10:00:00Z");
     expect(match.rawText).toBeTruthy();
     expect(match.chunkText).toBeTruthy();
+  });
+
+  test("returns languageTags from record in search results", async () => {
+    const record = createMockRecord({
+      pageId: 50,
+      pageTitle: "C++ Best Practices",
+      languageTags: ["cpp", "c"],
+    });
+    const store = createMockStore([{ record, distance: 0.3 }]);
+
+    const results = await searchWikiPages({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      query: "cpp best practices",
+      topK: 5,
+      logger: createMockLogger(),
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.languageTags).toEqual(["cpp", "c"]);
+  });
+
+  test("results with no language_tags default to empty array", async () => {
+    // Records that have languageTags as empty array (general pages)
+    const record = createMockRecord({
+      pageId: 51,
+      pageTitle: "General Architecture",
+      languageTags: [],
+    });
+    const store = createMockStore([{ record, distance: 0.3 }]);
+
+    const results = await searchWikiPages({
+      store,
+      embeddingProvider: createMockEmbeddingProvider(),
+      query: "architecture",
+      topK: 5,
+      logger: createMockLogger(),
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]!.languageTags).toEqual([]);
   });
 });
