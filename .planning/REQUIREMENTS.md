@@ -28,11 +28,11 @@ Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap 
 
 ### CI Failure Recognition
 
-- [ ] **CIFR-01**: Kodiai fetches CI check results for the PR head SHA using the Checks API
-- [ ] **CIFR-02**: Kodiai compares CI check results against the base branch SHA to identify failures also present on base
-- [ ] **CIFR-03**: Kodiai posts an annotation comment identifying which failures appear unrelated to the PR with reasoning
-- [ ] **CIFR-04**: Kodiai does not block approval or lower merge confidence based on unrelated CI failures
-- [ ] **CIFR-05**: Kodiai tracks historically flaky workflows/steps and uses flakiness history as a signal for unrelatedness
+- [x] **CIFR-01**: Kodiai fetches CI check results for the PR head SHA using the Checks API
+- [x] **CIFR-02**: Kodiai compares CI check results against the base branch SHA to identify failures also present on base
+- [x] **CIFR-03**: Kodiai posts an annotation comment identifying which failures appear unrelated to the PR with reasoning
+- [x] **CIFR-04**: Kodiai does not block approval or lower merge confidence based on unrelated CI failures
+- [x] **CIFR-05**: Kodiai tracks historically flaky workflows/steps and uses flakiness history as a signal for unrelatedness
 
 ### Code Snippet Embedding
 
@@ -84,11 +84,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPS-06 | Phase 94 | Complete |
 | DEPS-07 | Phase 94 | Complete |
 | DEPS-08 | Phase 94 | Complete |
-| CIFR-01 | Phase 95 | Pending |
-| CIFR-02 | Phase 95 | Pending |
-| CIFR-03 | Phase 95 | Pending |
-| CIFR-04 | Phase 95 | Pending |
-| CIFR-05 | Phase 95 | Pending |
+| CIFR-01 | Phase 95 | Complete |
+| CIFR-02 | Phase 95 | Complete |
+| CIFR-03 | Phase 95 | Complete |
+| CIFR-04 | Phase 95 | Complete |
+| CIFR-05 | Phase 95 | Complete |
 | SNIP-01 | Phase 96 | Pending |
 | SNIP-02 | Phase 96 | Pending |
 | SNIP-03 | Phase 96 | Pending |
