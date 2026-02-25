@@ -1,69 +1,81 @@
-# Requirements: Kodiai v0.19
+# Requirements: Kodiai v0.20
 
 **Defined:** 2026-02-25
 **Core Value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
+**Source:** [Issue #66](https://github.com/xbmc/kodiai/issues/66)
 
-## v0.19 Requirements
+## v0.20 Requirements
 
-Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap phases.
+Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap phases.
 
-### Language-Aware Retrieval
+### Multi-LLM Routing
 
-- [x] **LANG-01**: Learning memory records store the programming language of their source file
-- [x] **LANG-02**: Existing learning memory records are backfilled with language classification
-- [x] **LANG-03**: Retrieval re-ranking applies language-aware boost/penalty using stored language instead of re-classifying at query time
-- [x] **LANG-04**: Double-boost risk eliminated — unified pipeline is the single location for language weighting
-- [x] **LANG-05**: Wiki pages are tagged with language affinity so language-filtered retrieval spans all corpora
+- [ ] **LLM-01**: Non-agentic tasks (summaries, labels, scoring) route through Vercel AI SDK `generateText()` while agentic tasks (PR review, mentions, Slack write) remain on Claude Agent SDK `query()`
+- [ ] **LLM-02**: Task types (`pr-summary`, `cluster-label`, `staleness-evidence`) map to configurable model IDs via a task router
+- [ ] **LLM-03**: `.kodiai.yml` `models:` section allows per-repo model overrides per task type
+- [ ] **LLM-04**: Provider fallback: if configured provider is unavailable, fall back to configured default model
+- [ ] **LLM-05**: Each non-agentic LLM invocation logs model, provider, token counts, and estimated cost to Postgres
 
-### `[depends]` PR Deep Review
+### Wiki Staleness Detection
 
-- [x] **DEPS-01**: Kodiai detects `[depends]` prefix and dependency-bump patterns in PR titles automatically (e.g. "[depends] Bump zlib 1.3.2", "[Windows] Refresh fstrcmp 0.7")
-- [x] **DEPS-02**: Detection is mutually exclusive with existing Dependabot/Renovate pipeline — a PR triggers one path, not both
-- [x] **DEPS-03**: Kodiai fetches upstream changelog / release notes for the new dependency version
-- [x] **DEPS-04**: Kodiai analyzes what changed between old and new version — breaking changes, deprecations, new APIs
-- [x] **DEPS-05**: Kodiai assesses impact on the Kodi codebase — which files consume this dependency and whether they are affected by upstream changes
-- [x] **DEPS-06**: Kodiai verifies hash/URL changes, checks for removed/added patches, and validates build config changes
-- [x] **DEPS-07**: Kodiai checks if the bump introduces new transitive dependencies or version conflicts
-- [x] **DEPS-08**: Kodiai surfaces a structured review comment with version diff summary, changelog highlights relevant to Kodi, impact assessment, and action items
+- [ ] **WIKI-01**: Scheduled job compares wiki page content references against recent code changes to compute staleness scores
+- [ ] **WIKI-02**: File-path-level evidence linking identifies specific code changes that invalidate wiki content with commit SHAs
+- [ ] **WIKI-03**: Staleness report delivered on schedule (Slack message to `#kodiai` or GitHub issue) listing top-N stale pages with evidence
+- [ ] **WIKI-04**: Staleness threshold configurable via `.kodiai.yml` `wiki.staleness_threshold_days`
+- [ ] **WIKI-05**: Two-tier detection: cheap heuristic pass first, LLM evaluation only on flagged subset (capped at 20 pages/cycle)
 
-### CI Failure Recognition
+### Review Pattern Clustering
 
-- [x] **CIFR-01**: Kodiai fetches CI check results for the PR head SHA using the Checks API
-- [x] **CIFR-02**: Kodiai compares CI check results against the base branch SHA to identify failures also present on base
-- [x] **CIFR-03**: Kodiai posts an annotation comment identifying which failures appear unrelated to the PR with reasoning
-- [x] **CIFR-04**: Kodiai does not block approval or lower merge confidence based on unrelated CI failures
-- [x] **CIFR-05**: Kodiai tracks historically flaky workflows/steps and uses flakiness history as a signal for unrelatedness
+- [ ] **CLST-01**: HDBSCAN batch clustering job runs on review comment embeddings to discover emergent review themes without predefined categories
+- [ ] **CLST-02**: Cluster labels auto-generated from representative samples using cheap LLM via task router
+- [ ] **CLST-03**: Clusters with 3+ members in the last 60 days surfaced in PR review context as recurring patterns
+- [ ] **CLST-04**: Cluster assignments and labels persisted in Postgres with scheduled refresh (weekly)
+- [ ] **CLST-05**: Dimensionality reduction (UMAP or equivalent) applied before clustering to handle 1024-dim embeddings
 
-### Code Snippet Embedding
+### Contributor Profiles
 
-- [x] **SNIP-01**: PR diff hunks are chunked at the hunk level for embedding
-- [x] **SNIP-02**: Hunk embeddings are stored in a dedicated `code_snippets` table with PR/file/line metadata
-- [x] **SNIP-03**: Content-hash caching prevents re-embedding identical hunks across PRs
-- [x] **SNIP-04**: Hunk embeddings are integrated into the cross-corpus retrieval pipeline as a fourth corpus
-- [x] **SNIP-05**: Embedding cost is bounded — only hunks from PRs that produce findings are persisted (or configurable limit)
+- [ ] **PROF-01**: Contributor profile table stores GitHub username, Slack user ID, display name, expertise topics, and author tier
+- [ ] **PROF-02**: GitHub/Slack identity linking via explicit Slack command with optional heuristic suggestions (never auto-linked)
+- [ ] **PROF-03**: Expertise inference derives per-topic scores from commit history, review comment topics, and language usage
+- [ ] **PROF-04**: Adaptive review depth: lighter review for high-tenure contributors in their expertise areas, more explanation for newcomers
+- [ ] **PROF-05**: Privacy opt-out flag per contributor; no profile built without consent mechanism
 
 ## Future Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
+
+### Cross-Platform Activity
+
+- **ACTV-01**: Unified timeline of a contributor's GitHub PRs + Slack questions for mentoring insight
+- **ACTV-02**: Activity-based contributor recommendations for code review assignments
+
+### Advanced Wiki Intelligence
+
+- **AWIKI-01**: Symbol-level staleness detection (function names, class names extracted from wiki prose)
+- **AWIKI-02**: Wiki edit suggestions with draft content for stale sections
+
+### Clustering Enhancements
+
+- **ECLST-01**: Trend detection showing cluster growth/shrinkage over time
+- **ECLST-02**: Cross-repo pattern comparison when multiple repos are monitored
 
 ### Retrieval Quality
 
 - **RETQ-01**: A/B testing framework for retrieval strategies to measure quality impact
 - **RETQ-02**: Retrieval quality metrics dashboard with precision/recall tracking
 
-### CI Intelligence
-
-- **CINT-01**: CI failure auto-retry recommendations for known-transient failures
-- **CINT-02**: CI failure root-cause analysis linking failures to specific PR changes
-
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| LLM-based CI failure attribution | Unreliable; deterministic heuristics + base-branch comparison preferred |
-| Full CI log ingestion into review prompt | Token-wasteful; structured heuristics produce better results |
-| Lower-dimensional embedding model for snippets | Unvalidated quality tradeoff; use voyage-code-3 consistently |
-| Real-time CI status streaming | GitHub webhooks sufficient; no need for polling |
+| Real-time model switching mid-review | Agent SDK `query()` with MCP tools cannot swap models mid-execution |
+| User-facing LLM provider selection UI | No dashboard exists; config via `.kodiai.yml` |
+| Automatic cross-platform identity resolution | False positives erode trust; manual linking required |
+| Wiki edit suggestions / auto-editing | Kodiai is a reviewer, not a wiki editor |
+| Bedrock/Vertex/arbitrary provider auth | OAuth-only constraint for v1 |
+| Full contributor dashboard | No UI surface exists |
+| Real-time clustering per PR | HDBSCAN is expensive; scheduled batch only |
+| Streaming AI SDK responses | Bun streaming issue (oven-sh/bun#25630); use `generateText()` only |
 
 ## Traceability
 
@@ -71,35 +83,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LANG-01 | Phase 93 | Complete |
-| LANG-02 | Phase 93 | Complete |
-| LANG-03 | Phase 93 | Complete |
-| LANG-04 | Phase 93 | Complete |
-| LANG-05 | Phase 93 | Complete |
-| DEPS-01 | Phase 94 | Complete |
-| DEPS-02 | Phase 94 | Complete |
-| DEPS-03 | Phase 94 | Complete |
-| DEPS-04 | Phase 94 | Complete |
-| DEPS-05 | Phase 94 | Complete |
-| DEPS-06 | Phase 94 | Complete |
-| DEPS-07 | Phase 94 | Complete |
-| DEPS-08 | Phase 94 | Complete |
-| CIFR-01 | Phase 95 | Complete |
-| CIFR-02 | Phase 95 | Complete |
-| CIFR-03 | Phase 95 | Complete |
-| CIFR-04 | Phase 95 | Complete |
-| CIFR-05 | Phase 95 | Complete |
-| SNIP-01 | Phase 96 | Complete |
-| SNIP-02 | Phase 96 | Complete |
-| SNIP-03 | Phase 96 | Complete |
-| SNIP-04 | Phase 96 | Complete |
-| SNIP-05 | Phase 96 | Complete |
+| LLM-01 | — | Pending |
+| LLM-02 | — | Pending |
+| LLM-03 | — | Pending |
+| LLM-04 | — | Pending |
+| LLM-05 | — | Pending |
+| WIKI-01 | — | Pending |
+| WIKI-02 | — | Pending |
+| WIKI-03 | — | Pending |
+| WIKI-04 | — | Pending |
+| WIKI-05 | — | Pending |
+| CLST-01 | — | Pending |
+| CLST-02 | — | Pending |
+| CLST-03 | — | Pending |
+| CLST-04 | — | Pending |
+| CLST-05 | — | Pending |
+| PROF-01 | — | Pending |
+| PROF-02 | — | Pending |
+| PROF-03 | — | Pending |
+| PROF-04 | — | Pending |
+| PROF-05 | — | Pending |
 
 **Coverage:**
-- v0.19 requirements: 23 total
-- Mapped to phases: 23
-- Unmapped: 0
+- v0.20 requirements: 20 total
+- Mapped to phases: 0
+- Unmapped: 20 ⚠️
 
 ---
 *Requirements defined: 2026-02-25*
-*Last updated: 2026-02-25 after roadmap creation*
+*Last updated: 2026-02-25 after initial definition*
