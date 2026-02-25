@@ -73,14 +73,13 @@ async function embedChunks(
   chunks: ReviewCommentChunk[],
   embeddingProvider: EmbeddingProvider,
 ): Promise<ReviewCommentChunk[]> {
-  // Embedding is written directly to the DB column by the store in a future phase.
-  // For now, we rely on writeChunks/updateChunks to store without embedding,
-  // and a separate embedding pass can update them later.
-  // However, the plan says to call embeddingProvider.generate for each chunk.
-  // We do so but only for side-effect logging / metrics — the store doesn't accept
-  // an embedding field on ReviewCommentChunk yet.
   for (const chunk of chunks) {
-    await embeddingProvider.generate(chunk.chunkText, "document");
+    try {
+      const result = await embeddingProvider.generate(chunk.chunkText, "document");
+      chunk.embedding = result ?? null;
+    } catch {
+      chunk.embedding = null;
+    }
   }
   return chunks;
 }

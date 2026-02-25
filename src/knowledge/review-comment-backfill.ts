@@ -1,6 +1,6 @@
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import type { ReviewCommentInput, ReviewCommentStore } from "./review-comment-types.ts";
+import type { ReviewCommentChunk, ReviewCommentInput, ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkReviewThread } from "./review-comment-chunker.ts";
 
@@ -194,7 +194,7 @@ export function groupCommentsIntoThreads(
 // ── Embedding helper ────────────────────────────────────────────────────────
 
 async function embedChunks(
-  chunks: { chunkText: string }[],
+  chunks: ReviewCommentChunk[],
   embeddingProvider: EmbeddingProvider,
   store: ReviewCommentStore,
   logger: Logger,
@@ -203,26 +203,18 @@ async function embedChunks(
   let embeddingsGenerated = 0;
   let embeddingsFailed = 0;
 
-  // For each chunk, embed and store. Embedding column is updated via separate SQL
-  // since writeChunks doesn't handle embeddings (they are nullable).
-  // Actually, looking at the store -- writeChunks inserts without embedding column.
-  // Embeddings are stored separately. For backfill, we'll store chunks first, then
-  // the embedding can be added in a future update pass, OR we can modify writeChunks
-  // to accept embeddings.
-  //
-  // For now: store chunks without embeddings, then log the embedding counts.
-  // The plan says "still store the chunk without embedding (set embedding = null)"
-  // which aligns with the current writeChunks implementation.
-
   for (const chunk of chunks) {
     try {
       const result = await embeddingProvider.generate(chunk.chunkText, "document");
       if (result) {
+        chunk.embedding = result;
         embeddingsGenerated++;
       } else {
+        chunk.embedding = null;
         embeddingsFailed++;
       }
     } catch {
+      chunk.embedding = null;
       embeddingsFailed++;
     }
   }
