@@ -9,11 +9,10 @@ See: `.planning/PROJECT.md` (updated 2026-02-25)
 
 ## Current Position
 
-**Milestone:** v0.18 Knowledge Ingestion — SHIPPED
-**Status:** Complete
-Last activity: 2026-02-25 - Completed quick task 11: Fix #42 depends-PR scope — deep review, not lighter
-
-Progress: [##########] 100% (18 milestones shipped, 92 phases, 227 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-25 — Milestone v0.19 started
 
 ## Accumulated Context
 

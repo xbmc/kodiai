@@ -39,6 +39,18 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.19 Intelligent Retrieval Enhancements
+
+**Goal:** Make retrieval smarter with language-aware boosting and sub-function granularity, add specialized deep-review pipelines for dependency bumps, and recognize unrelated CI failures.
+
+**Target features:**
+- Language-aware boosting — schema extension + retrieval ranking boost by language
+- Code snippet embedding — hunk-level embedding for sub-function granularity (exploratory)
+- `[depends]` PR deep review — specialized in-depth pipeline for dependency bump PRs
+- Unrelated CI failure recognition — detect and annotate CI failures unrelated to PR scope
+
+**Source:** [Issue #42](https://github.com/xbmc/kodiai/issues/42)
+
 ## Current State
 
 v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified under a single retrieval call with hybrid BM25+vector search and RRF merging:
@@ -146,7 +158,10 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 
 ### Active
 
-(None — all requirements through v0.18 shipped. Define next milestone with `/gsd:new-milestone`.)
+- [ ] Language-aware boosting with schema extension and retrieval ranking
+- [ ] Code snippet embedding for sub-function granularity
+- [ ] `[depends]` PR deep review pipeline with changelog analysis and impact assessment
+- [ ] Unrelated CI failure recognition with reasoning annotations
 
 ### Out of Scope
 
@@ -234,4 +249,4 @@ v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified 
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after v0.18 milestone*
+*Last updated: 2026-02-25 after v0.19 milestone start*
