@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-24)
 
 **Milestone:** v0.18 Knowledge Ingestion
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Status:** Executing Phase 89 — Plan 03 complete (2/4 plans)
+**Status:** Executing Phase 89 — Plan 02 complete (3/4 plans)
 **Last Activity:** 2026-02-25
 
 Progress: [----------] 0% (0/3 phases)
@@ -20,7 +20,7 @@ Progress: [----------] 0% (0/3 phases)
 
 | Phase | Title | Status |
 |-------|-------|--------|
-| 89 | PR Review Comment Ingestion | In Progress (2/4 plans) |
+| 89 | PR Review Comment Ingestion | In Progress (3/4 plans) |
 | 90 | MediaWiki Content Ingestion | Pending |
 | 91 | Cross-Corpus Retrieval Integration | Pending (blocked by 89, 90) |
 
@@ -37,6 +37,9 @@ All decisions through v0.17 archived to `.planning/PROJECT.md` Key Decisions tab
 - **Phase 89-03:** Standalone chunk per new comment (no thread re-chunking on reply) for simplicity
 - **Phase 89-03:** Delete handler calls softDelete directly (no job queue) since no embedding needed
 - **Phase 89-03:** Bot filtering in handler layer before job enqueueing to avoid wasting queue slots
+- [Phase 89]: Phase 89-02: Adaptive rate limiting with 1.5s delay at <50% remaining, 3s delay at <20%
+- [Phase 89]: Phase 89-02: Thread grouping via in_reply_to_id chains from flat GitHub API responses
+- [Phase 89]: Phase 89-02: CLI uses GitHub App auth with getRepoInstallationContext for installation discovery
 
 ### Key Constraints (Carry-Forward)
 
@@ -87,6 +90,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T03:31:08Z
-**Stopped At:** Completed 89-03-PLAN.md
+**Last session:** 2026-02-25T03:34:39.417Z
+**Stopped At:** Completed 89-02-PLAN.md
 **Next action:** `/gsd:execute-phase 89` to continue with Plan 04 (retrieval integration)
