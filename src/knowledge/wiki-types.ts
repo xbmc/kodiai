@@ -29,6 +29,8 @@ export type WikiPageChunk = {
   lastModified?: Date | null;
   revisionId?: number | null;
   embedding?: Float32Array | null;
+  /** Language affinity tags derived from page content analysis (e.g. ["python", "javascript"] or ["general"]). */
+  languageTags?: string[];
 };
 
 /** Full database row type with all columns. */

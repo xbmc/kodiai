@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { chunkWikiPage, stripHtmlToMarkdown, countTokens } from "./wiki-chunker.ts";
+import { chunkWikiPage, stripHtmlToMarkdown, countTokens, detectLanguageTags } from "./wiki-chunker.ts";
 import type { WikiPageInput } from "./wiki-types.ts";
 
 function makePage(overrides: Partial<WikiPageInput> = {}): WikiPageInput {
@@ -96,6 +96,76 @@ describe("stripHtmlToMarkdown", () => {
     const result = stripHtmlToMarkdown(html);
     expect(result).toContain("- First item");
     expect(result).toContain("- Second item");
+  });
+});
+
+describe("detectLanguageTags", () => {
+  it("returns ['python'] for content with python fenced code block", () => {
+    const content = "Some description.\n\n```python\ndef hello():\n    print('hi')\n```\n\nMore text.";
+    expect(detectLanguageTags(content)).toEqual(["python"]);
+  });
+
+  it("returns ['c', 'cpp'] for content with both c and cpp code blocks (sorted)", () => {
+    const content = "C example:\n```c\nint main() {}\n```\n\nC++ example:\n```cpp\nclass Foo {};\n```";
+    const tags = detectLanguageTags(content);
+    expect(tags).toContain("c");
+    expect(tags).toContain("cpp");
+    expect(tags).toHaveLength(2);
+    // Should be sorted
+    expect(tags).toEqual([...tags].sort());
+  });
+
+  it("returns ['general'] for content with no code blocks or language references", () => {
+    const content = "This is a general wiki page about Kodi settings and configuration. ".repeat(10);
+    expect(detectLanguageTags(content)).toEqual(["general"]);
+  });
+
+  it("returns ['typescript'] for content mentioning 'TypeScript API'", () => {
+    const content = "This page documents the TypeScript API for add-on development. Use the TypeScript implementation to build your add-on.";
+    expect(detectLanguageTags(content)).toEqual(["typescript"]);
+  });
+
+  it("returns ['javascript', 'python'] for content with both python and javascript code blocks (sorted)", () => {
+    const content = "Python example:\n```python\nprint('hello')\n```\nJavaScript example:\n```javascript\nconsole.log('hello');\n```";
+    const tags = detectLanguageTags(content);
+    expect(tags).toContain("python");
+    expect(tags).toContain("javascript");
+    expect(tags).toHaveLength(2);
+    expect(tags).toEqual([...tags].sort());
+  });
+
+  it("normalizes fenced code block language aliases: py->python, js->javascript, ts->typescript", () => {
+    const content = "```py\nprint('hi')\n```\n```js\nconsole.log('hi');\n```\n```ts\nconst x: number = 1;\n```";
+    const tags = detectLanguageTags(content);
+    expect(tags).toContain("python");
+    expect(tags).toContain("javascript");
+    expect(tags).toContain("typescript");
+    expect(tags).not.toContain("py");
+    expect(tags).not.toContain("js");
+    expect(tags).not.toContain("ts");
+  });
+
+  it("chunkWikiPage output includes languageTags on each chunk", () => {
+    const html = `<p>${"Python API documentation. ".repeat(30)}</p><pre><code class="python">def foo(): pass</code></pre>`;
+    const page: WikiPageInput = {
+      pageId: 999,
+      pageTitle: "Python API",
+      namespace: "Main",
+      pageUrl: "https://kodi.wiki/view/Python_API",
+      htmlContent: html,
+    };
+    const chunks = chunkWikiPage(page);
+    expect(chunks.length).toBeGreaterThan(0);
+    for (const chunk of chunks) {
+      expect(chunk.languageTags).toBeDefined();
+      expect(Array.isArray(chunk.languageTags)).toBe(true);
+    }
+    // All chunks from same page get same tags (page-level analysis)
+    const allTags = chunks.map((c) => c.languageTags);
+    const firstTags = JSON.stringify(allTags[0]);
+    for (const tags of allTags) {
+      expect(JSON.stringify(tags)).toBe(firstTags);
+    }
   });
 });
 

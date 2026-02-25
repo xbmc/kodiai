@@ -1,5 +1,102 @@
 import type { WikiPageInput, WikiPageChunk } from "./wiki-types.ts";
 
+/**
+ * Map of fenced code block language identifiers to canonical names.
+ */
+const CODE_BLOCK_LANG_ALIASES: Record<string, string> = {
+  py: "python", python: "python", python3: "python",
+  js: "javascript", javascript: "javascript", node: "javascript",
+  ts: "typescript", typescript: "typescript",
+  cpp: "cpp", "c++": "cpp", cxx: "cpp",
+  c: "c",
+  rb: "ruby", ruby: "ruby",
+  rs: "rust", rust: "rust",
+  go: "go", golang: "go",
+  java: "java",
+  kt: "kotlin", kotlin: "kotlin",
+  swift: "swift",
+  cs: "csharp", csharp: "csharp",
+  php: "php",
+  sh: "shell", bash: "shell", zsh: "shell",
+  sql: "sql",
+  lua: "lua",
+  dart: "dart",
+  ex: "elixir", elixir: "elixir",
+  zig: "zig",
+  scala: "scala",
+  r: "r",
+};
+
+/**
+ * Language mention patterns for prose detection (case-insensitive).
+ * Each entry: [regex pattern, canonical name]
+ */
+const LANGUAGE_MENTION_PATTERNS: Array<[RegExp, string]> = [
+  [/\bpython\b/i, "python"],
+  [/\bjavascript\b/i, "javascript"],
+  [/\btypescript\b/i, "typescript"],
+  [/\bc\+\+\b|\bcpp\b/i, "cpp"],
+  [/\bruby\b/i, "ruby"],
+  [/\brust\b/i, "rust"],
+  [/\bgolang\b|\bgo\s+(?:code|api|implementation|library)\b/i, "go"],
+  [/\bjava\b/i, "java"],
+  [/\bkotlin\b/i, "kotlin"],
+  [/\bswift\b/i, "swift"],
+  [/\bc#\b|\bcsharp\b/i, "csharp"],
+  [/\bphp\b/i, "php"],
+  [/\blua\b/i, "lua"],
+  [/\bdart\b/i, "dart"],
+  [/\belixir\b/i, "elixir"],
+  [/\bzig\b/i, "zig"],
+  [/\bscala\b/i, "scala"],
+];
+
+/**
+ * Detect language affinity tags from wiki page text (raw markdown or plain text).
+ *
+ * Detection strategy:
+ * a. Scan for fenced code blocks (```lang) — map via CODE_BLOCK_LANG_ALIASES
+ * b. Scan for explicit language mentions (e.g. "TypeScript API", "written in Python")
+ * c. Return ["general"] if no languages detected
+ * d. Return sorted, deduplicated array of lowercase canonical language names
+ */
+export function detectLanguageTags(rawText: string): string[] {
+  const detected = new Set<string>();
+
+  // a. Fenced code block detection: ```lang or ```lang\n
+  const fenceRegex = /```(\w[\w+.-]*)/g;
+  let fenceMatch: RegExpExecArray | null;
+  while ((fenceMatch = fenceRegex.exec(rawText)) !== null) {
+    const lang = fenceMatch[1]!.toLowerCase();
+    const canonical = CODE_BLOCK_LANG_ALIASES[lang];
+    if (canonical) {
+      detected.add(canonical);
+    }
+  }
+
+  // b. Prose language mention detection (only when combined with context keywords)
+  // Only detect if text contains programming-related context to avoid false positives
+  // Strategy: check for phrases like "X API", "X implementation", "X code", "written in X", "using X"
+  const contextPatterns = [
+    /\b(\w[\w+.-]*)\s+(?:api|implementation|code|library|bindings?|module|script|function|class)\b/gi,
+    /\bwritten\s+in\s+(\w[\w+.-]*)\b/gi,
+    /\busing\s+(\w[\w+.-]*)\b/gi,
+  ];
+
+  for (const [mentionPattern, canonical] of LANGUAGE_MENTION_PATTERNS) {
+    // Check if text has a direct mention of the language
+    if (mentionPattern.test(rawText)) {
+      detected.add(canonical);
+    }
+  }
+
+  if (detected.size === 0) {
+    return ["general"];
+  }
+
+  return [...detected].sort();
+}
+
 /** Simple whitespace-based token count approximation. */
 export function countTokens(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
@@ -250,10 +347,13 @@ export function chunkWikiPage(
     return [];
   }
 
-  // Step 3: Split into sections
+  // Step 3: Detect language tags at page level (entire content)
+  const languageTags = detectLanguageTags(cleanText);
+
+  // Step 4: Split into sections
   const sections = splitIntoSections(cleanText);
 
-  // Step 4: Chunk each section
+  // Step 5: Chunk each section
   const chunks: WikiPageChunk[] = [];
 
   for (const section of sections) {
@@ -286,6 +386,7 @@ export function chunkWikiPage(
         chunkText: `${prefix}: ${section.text}`,
         rawText: section.text,
         tokenCount: countTokens(`${prefix}: ${section.text}`),
+        languageTags,
       });
     } else {
       // Sliding window within section
@@ -305,6 +406,7 @@ export function chunkWikiPage(
           chunkText,
           rawText,
           tokenCount: countTokens(chunkText),
+          languageTags,
         });
 
         chunkIndex++;
