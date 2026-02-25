@@ -16,6 +16,7 @@ import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
+import { createCIFailureHandler } from "./handlers/ci-failure.ts";
 import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
@@ -410,6 +411,13 @@ createDepBumpMergeHistoryHandler({
   jobQueue,
   githubApp,
   knowledgeStore,
+  logger,
+});
+createCIFailureHandler({
+  eventRouter,
+  jobQueue,
+  githubApp,
+  sql,
   logger,
 });
 if (reviewCommentStore && embeddingProvider) {
