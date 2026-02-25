@@ -27,13 +27,14 @@
 ### Phase 89 — PR Review Comment Ingestion
 **Goal:** 18 months of human review comments from xbmc/xbmc embedded and searchable
 **Requirements:** KI-01 through KI-06
-**Plans:** 4/4 plans complete
+**Plans:** 5 plans (4 complete + 1 gap closure)
 
 Plans:
 - [ ] 89-01-PLAN.md — Schema, store, and thread-aware chunker for review comments
 - [ ] 89-02-PLAN.md — Backfill CLI with GitHub API pagination and rate limiting
 - [ ] 89-03-PLAN.md — Incremental webhook sync for review comment lifecycle
 - [ ] 89-04-PLAN.md — Retrieval integration and inline citation formatting
+- [ ] 89-05-PLAN.md — Gap closure: fix embedding persistence across pipeline
 
 **Scope:**
 - GitHub API backfill: fetch all PR review comments from xbmc/xbmc (18 months)
