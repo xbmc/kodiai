@@ -11,8 +11,8 @@ Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap 
 
 - [x] **LANG-01**: Learning memory records store the programming language of their source file
 - [x] **LANG-02**: Existing learning memory records are backfilled with language classification
-- [ ] **LANG-03**: Retrieval re-ranking applies language-aware boost/penalty using stored language instead of re-classifying at query time
-- [ ] **LANG-04**: Double-boost risk eliminated — unified pipeline is the single location for language weighting
+- [x] **LANG-03**: Retrieval re-ranking applies language-aware boost/penalty using stored language instead of re-classifying at query time
+- [x] **LANG-04**: Double-boost risk eliminated — unified pipeline is the single location for language weighting
 - [x] **LANG-05**: Wiki pages are tagged with language affinity so language-filtered retrieval spans all corpora
 
 ### `[depends]` PR Deep Review
@@ -73,8 +73,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | LANG-01 | Phase 93 | Complete |
 | LANG-02 | Phase 93 | Complete |
-| LANG-03 | Phase 93 | Pending |
-| LANG-04 | Phase 93 | Pending |
+| LANG-03 | Phase 93 | Complete |
+| LANG-04 | Phase 93 | Complete |
 | LANG-05 | Phase 93 | Complete |
 | DEPS-01 | Phase 94 | Pending |
 | DEPS-02 | Phase 94 | Pending |

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: Intelligent Retrieval Enhancements
 status: unknown
-stopped_at: Completed 93-01-PLAN.md
-last_updated: "2026-02-25T17:33:38.166Z"
+stopped_at: Completed 93-03-PLAN.md
+last_updated: "2026-02-25T17:42:44.445Z"
 progress:
   total_phases: 80
   completed_phases: 76
   total_plans: 190
-  completed_plans: 197
+  completed_plans: 198
 ---
 
 # Project State
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 93 P02 | 4 | 2 tasks | 5 files |
 | Phase 93 P01 | 5 | 4 tasks | 8 files |
+| Phase 93 P03 | 6 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -56,6 +57,8 @@ All decisions through v0.18 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 93]: Two-pass detection: fenced code blocks + prose mentions; default ['general'] for non-code pages
 - [Phase 93]: Kept classifyFileLanguage returning Title Case for backward compatibility; classifyFileLanguageWithContext returns lowercase for DB storage
 - [Phase 93]: .h files default to 'c', upgrade to 'cpp' when C++ context files present in PR; record.language takes precedence in writeMemory for caller pre-classification
+- [Phase 93]: Boost-only policy in unified pipeline: non-matching language results never penalized, only matching ones boosted (LANG-03/LANG-04)
+- [Phase 93]: Single location for language weighting per pipeline path: rerankByLanguage for legacy findings[], step 6e-bis for unified results — no double-boost
 
 ### Key Constraints (Carry-Forward)
 
@@ -102,6 +105,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-25T17:33:38.163Z
-**Stopped At:** Completed 93-01-PLAN.md
+**Last session:** 2026-02-25T17:42:44.442Z
+**Stopped At:** Completed 93-03-PLAN.md
 **Resume file:** None
