@@ -21,9 +21,9 @@ Requirements for v0.19 Intelligent Retrieval Enhancements. Each maps to roadmap 
 - [x] **DEPS-02**: Detection is mutually exclusive with existing Dependabot/Renovate pipeline — a PR triggers one path, not both
 - [x] **DEPS-03**: Kodiai fetches upstream changelog / release notes for the new dependency version
 - [x] **DEPS-04**: Kodiai analyzes what changed between old and new version — breaking changes, deprecations, new APIs
-- [ ] **DEPS-05**: Kodiai assesses impact on the Kodi codebase — which files consume this dependency and whether they are affected by upstream changes
+- [x] **DEPS-05**: Kodiai assesses impact on the Kodi codebase — which files consume this dependency and whether they are affected by upstream changes
 - [x] **DEPS-06**: Kodiai verifies hash/URL changes, checks for removed/added patches, and validates build config changes
-- [ ] **DEPS-07**: Kodiai checks if the bump introduces new transitive dependencies or version conflicts
+- [x] **DEPS-07**: Kodiai checks if the bump introduces new transitive dependencies or version conflicts
 - [ ] **DEPS-08**: Kodiai surfaces a structured review comment with version diff summary, changelog highlights relevant to Kodi, impact assessment, and action items
 
 ### CI Failure Recognition
@@ -80,9 +80,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEPS-02 | Phase 94 | Complete |
 | DEPS-03 | Phase 94 | Complete |
 | DEPS-04 | Phase 94 | Complete |
-| DEPS-05 | Phase 94 | Pending |
+| DEPS-05 | Phase 94 | Complete |
 | DEPS-06 | Phase 94 | Complete |
-| DEPS-07 | Phase 94 | Pending |
+| DEPS-07 | Phase 94 | Complete |
 | DEPS-08 | Phase 94 | Pending |
 | CIFR-01 | Phase 95 | Pending |
 | CIFR-02 | Phase 95 | Pending |
