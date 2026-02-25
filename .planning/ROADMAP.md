@@ -206,7 +206,7 @@ See `.planning/milestones/v0.18-ROADMAP.md` for full phase details.
   2. Identical hunks appearing in multiple PRs are not re-embedded (content-hash deduplication)
   3. Hunk embeddings appear in cross-corpus retrieval results with a `[snippet]` source label alongside code, review, and wiki results
   4. Embedding cost is bounded -- only hunks from PRs that produce findings are persisted, with a configurable per-PR hunk cap
-  5. The feature ships behind a `.kodiai.yml` flag (`retrieval.hunkEmbedding.enabled`) defaulting to disabled
+  5. The feature ships behind a `.kodiai.yml` flag (`retrieval.hunkEmbedding.enabled`) defaulting to enabled
 **Plans**: TBD
 
 ## Progress
