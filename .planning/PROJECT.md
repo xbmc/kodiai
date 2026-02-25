@@ -8,16 +8,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews, co
 
 When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, contextual answers to questions, or PR creation from Slack write requests — without requiring any workflow setup in the target repo.
 
-## Current Milestone: v0.18 Knowledge Ingestion
+<details>
+<summary>Previous Release: v0.18 Knowledge Ingestion (2026-02-25)</summary>
 
+**Shipped:** 2026-02-25
+**Phases:** 89-92 (4 phases, 15 plans)
 **Source:** [Issue #65](https://github.com/xbmc/kodiai/issues/65)
-**Phases:** 89-91 (3 phases)
-**Depends on:** v0.17 (PostgreSQL + pgvector infrastructure)
 
-**Scope:**
-- Phase 89: PR Review Comment Ingestion — backfill 18 months of xbmc/xbmc review comments, embed, store, incremental sync
-- Phase 90: MediaWiki Content Ingestion — kodi.wiki export, section chunking, embedding, scheduled sync
-- Phase 91: Cross-Corpus Retrieval Integration — multi-source fan-out, hybrid BM25+vector, RRF, source attribution
+**Delivered:**
+- 18 months of xbmc/xbmc PR review comments backfilled, embedded, and searchable with inline precedent citations
+- kodi.wiki fully exported via MediaWiki API with section-based chunking, scheduled sync, and wiki citations
+- Hybrid BM25+vector search per corpus with Reciprocal Rank Fusion merging across all three corpora
+- Unified cross-corpus retrieval pipeline with source-aware re-ranking and cosine deduplication
+- All consumers wired — @mention includes wiki+review citations, review retry preserves context, code gets hybrid search
+
+</details>
 
 <details>
 <summary>Previous Release: v0.17 Infrastructure Foundation (2026-02-24)</summary>
@@ -34,43 +39,20 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-<details>
-<summary>Previous Release: v0.16 Review Coverage & Slack UX (2026-02-24)</summary>
-
-**Delivered:**
-- Draft PRs now reviewed with soft suggestive tone, memo badge, and draft framing
-- Slack responses rewritten for conciseness — answer-first, no preamble, no sources
-- Non-blocking VoyageAI embeddings smoke test on container boot
-- Dockerfile switched from Alpine to Debian for sqlite-vec glibc compatibility
-- InMemoryCache utility eliminates 4 unbounded memory leak vectors
-- Config-driven default repo, typed APIs, Slack timeout, and rate limiting
-
-</details>
-
-<details>
-<summary>v0.15 Slack Write Workflows (2026-02-19)</summary>
-
-**Delivered:**
-- Deterministic Slack write-intent routing with explicit prefix detection, medium-confidence conversational heuristics, and ambiguous read-only fallback
-- Guarded PR-only write execution with Slack-to-GitHub publish flow mirroring comment links/excerpts back into threads
-- High-impact confirmation gating for destructive/migration/security requests with 15-minute pending timeout
-- Phase 81 smoke and regression verification gates (SLK81-SMOKE, SLK81-REG) with stable package aliases
-
-</details>
-
 ## Current State
 
-v0.18 extends the knowledge corpus beyond indexed code with PR review comment ingestion, wiki content, and unified cross-corpus retrieval:
-- All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns (SQLite removed)
-- Graceful shutdown with SIGTERM handling, drain logic, webhook queue replay, and zero-downtime deploys
-- Unified `src/knowledge/` module with single retrieval path for both GitHub and Slack
+v0.18 shipped. Three knowledge corpora (code, PR review comments, wiki) unified under a single retrieval call with hybrid BM25+vector search and RRF merging:
+- All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
+- Three knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages)
+- Unified retrieval: single `createRetriever()` call fans out to all three corpora with source-aware RRF ranking
+- Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
+- Source attribution: every chunk labeled [code], [review], or [wiki] with inline citations in responses
+- All consumers wired: @mention, PR review (primary + retry), Slack — all get unified cross-corpus context
+- Incremental sync: webhooks for review comments, scheduled job for wiki pages
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- Routes Slack write intent through policy/permission gates with high-impact confirmation for destructive operations
-- Adapts review behavior via per-repo mode/severity/focus/profile/path-instruction controls
-- Bounded in-memory caches with TTL eviction, per-channel Slack rate limiting, and 10s request timeouts
-- ~56,000 lines of TypeScript, 1,100+ tests passing
+- ~65,000 lines of TypeScript, 1,200+ tests passing
 
 ## Requirements
 
@@ -155,15 +137,16 @@ v0.18 extends the knowledge corpus beyond indexed code with PR review comment in
 - ✓ Incremental review comment sync via webhook on create/edit/delete — v0.18
 - ✓ Review comment vector search with embedding persistence and NULL filtering — v0.18
 - ✓ Retrieval integration with inline review precedent citations — v0.18
+- ✓ kodi.wiki content exported, markdown-stripped, section-chunked, embedded, and searchable — v0.18
+- ✓ Wiki incremental sync via scheduled job detecting changed pages — v0.18
+- ✓ Single retrieval call fans out to code, review comments, and wiki simultaneously — v0.18
+- ✓ Hybrid search (BM25 + vector) with RRF merging across heterogeneous sources — v0.18
+- ✓ Source-aware re-ranking and attribution (code / review / wiki labels) on every chunk — v0.18
+- ✓ Near-duplicate deduplication across corpora via cosine similarity threshold — v0.18
 
 ### Active
 
-- [ ] kodi.wiki content exported, markdown-stripped, section-chunked, embedded, and searchable — v0.18
-- [ ] Wiki incremental sync via scheduled job detecting changed pages — v0.18
-- [ ] Single retrieval call fans out to code, review comments, and wiki simultaneously — v0.18
-- [ ] Hybrid search (BM25 + vector) with RRF merging across heterogeneous sources — v0.18
-- [ ] Source-aware re-ranking and attribution (code / review / wiki labels) on every chunk — v0.18
-- [ ] Near-duplicate deduplication across corpora via cosine similarity threshold — v0.18
+(None — all requirements through v0.18 shipped. Define next milestone with `/gsd:new-milestone`.)
 
 ### Out of Scope
 
@@ -233,6 +216,12 @@ v0.18 extends the knowledge corpus beyond indexed code with PR review comment in
 | Standalone chunk per new comment (no thread re-chunking) | Avoids re-embedding entire threads on each reply | ✓ Good — v0.18 |
 | Adaptive rate limiting (1.5s/3s delays) | Stays well within GitHub API 5000 req/hr limit for 18-month backfill | ✓ Good — v0.18 |
 | Mutate chunk.embedding in-place | Avoids parallel array tracking; embedding travels with chunk through pipeline | ✓ Good — v0.18 |
+| Section-based wiki chunking | Split at heading boundaries; preserves semantic coherence vs fixed-size splits | ✓ Good — v0.18 |
+| Reciprocal Rank Fusion (k=60) | Standard RRF constant; merges heterogeneous ranked lists without score normalization | ✓ Good — v0.18 |
+| Cosine similarity dedup (0.95 threshold) | Collapse near-duplicates across corpora without losing distinct-but-similar results | ✓ Good — v0.18 |
+| Source-aware weight multipliers | Wiki 1.2x, review 1.1x, code 1.0x in re-ranking; domain knowledge slightly preferred | ✓ Good — v0.18 |
+| Optional learningMemoryStore in createRetriever | Backward-compatible; code corpus gets hybrid search when store is available | ✓ Good — v0.18 |
+| Inline citations [wiki: Page] / [review: PR #] | Differentiated source types in mention responses for user clarity | ✓ Good — v0.18 |
 
 ## Constraints
 
@@ -245,4 +234,4 @@ v0.18 extends the knowledge corpus beyond indexed code with PR review comment in
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after Phase 89 (v0.18)*
+*Last updated: 2026-02-25 after v0.18 milestone*
