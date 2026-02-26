@@ -21,6 +21,10 @@ const configSchema = z.object({
         .map((b) => b.trim().toLowerCase())
         .filter(Boolean),
     ),
+  slackWikiChannelId: z.string().default(""),
+  wikiStalenessThresholdDays: z.coerce.number().min(1).max(365).default(30),
+  wikiGithubOwner: z.string().default("xbmc"),
+  wikiGithubRepo: z.string().default("xbmc"),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -81,6 +85,10 @@ export async function loadConfig(): Promise<AppConfig> {
     port: process.env.PORT,
     logLevel: process.env.LOG_LEVEL,
     botAllowList: process.env.BOT_ALLOW_LIST,
+    slackWikiChannelId: process.env.SLACK_WIKI_CHANNEL_ID,
+    wikiStalenessThresholdDays: process.env.WIKI_STALENESS_THRESHOLD_DAYS,
+    wikiGithubOwner: process.env.WIKI_GITHUB_OWNER,
+    wikiGithubRepo: process.env.WIKI_GITHUB_REPO,
   });
 
   if (!result.success) {
