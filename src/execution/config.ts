@@ -457,11 +457,21 @@ const feedbackSchema = z
     },
   });
 
+const modelsSchema = z
+  .record(z.string(), z.string())
+  .default({});
+
 const repoConfigSchema = z.object({
   model: z.string().default("claude-sonnet-4-5-20250929"),
   maxTurns: z.number().min(1).max(100).default(25),
   timeoutSeconds: z.number().min(30).max(1800).default(600),
   systemPromptAppend: z.string().optional(),
+  /** Per-task-type model overrides (e.g., "review.full": "gpt-4o-mini"). */
+  models: modelsSchema,
+  /** Global default model for task routing. */
+  defaultModel: z.string().optional(),
+  /** Default fallback model for when primary model fails. */
+  defaultFallbackModel: z.string().optional(),
   /**
    * Write-mode gates mention-driven code modifications (branch/commit/push).
    * This is deny-by-default. Enabling this does not affect review-only behavior.
@@ -732,11 +742,63 @@ export async function loadRepoConfig(
     });
   }
 
+  // models
+  const modelsResult = modelsSchema.safeParse(obj.models);
+  let models: z.infer<typeof modelsSchema>;
+  if (modelsResult.success) {
+    models = modelsResult.data;
+  } else {
+    models = modelsSchema.parse({});
+    warnings.push({
+      section: "models",
+      issues: modelsResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // defaultModel
+  const defaultModelSchema = z.string().optional();
+  const defaultModelResult = defaultModelSchema.safeParse(obj.defaultModel);
+  let defaultModel: string | undefined;
+  if (defaultModelResult.success) {
+    defaultModel = defaultModelResult.data;
+  } else {
+    defaultModel = undefined;
+    warnings.push({
+      section: "defaultModel",
+      issues: defaultModelResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
+  // defaultFallbackModel
+  const defaultFallbackModelSchema = z.string().optional();
+  const defaultFallbackModelResult = defaultFallbackModelSchema.safeParse(
+    obj.defaultFallbackModel,
+  );
+  let defaultFallbackModel: string | undefined;
+  if (defaultFallbackModelResult.success) {
+    defaultFallbackModel = defaultFallbackModelResult.data;
+  } else {
+    defaultFallbackModel = undefined;
+    warnings.push({
+      section: "defaultFallbackModel",
+      issues: defaultFallbackModelResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   const config: RepoConfig = {
     model,
     maxTurns,
     timeoutSeconds,
     systemPromptAppend,
+    models,
+    defaultModel,
+    defaultFallbackModel,
     review,
     write,
     mention,

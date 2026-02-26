@@ -1,0 +1,11 @@
+{
+  "lastUpdated": "2026-02-25",
+  "models": {
+    "claude-sonnet-4-20250514": { "inputPerMillion": 3.00, "outputPerMillion": 15.00 },
+    "claude-sonnet-4-5-20250929": { "inputPerMillion": 3.00, "outputPerMillion": 15.00 },
+    "claude-haiku-4-5-20250929": { "inputPerMillion": 0.80, "outputPerMillion": 4.00 },
+    "gpt-4o-mini": { "inputPerMillion": 0.15, "outputPerMillion": 0.60 },
+    "o3-mini": { "inputPerMillion": 1.10, "outputPerMillion": 4.40 },
+    "gemini-2.0-flash": { "inputPerMillion": 0.10, "outputPerMillion": 0.40 }
+  }
+}
