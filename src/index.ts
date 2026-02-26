@@ -31,6 +31,8 @@ import { createIsolationLayer, type IsolationLayer } from "./knowledge/isolation
 import { createRetriever } from "./knowledge/retrieval.ts";
 import { createDbClient, type Sql } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
+import { createContributorProfileStore } from "./contributor/index.ts";
+import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
@@ -108,6 +110,9 @@ if (purgedCount > 0) {
 
 const knowledgeStore = createKnowledgeStore({ sql, logger });
 logger.info("Knowledge store initialized (PostgreSQL)");
+
+const contributorProfileStore = createContributorProfileStore({ sql, logger });
+logger.info("Contributor profile store initialized (PostgreSQL)");
 
 // Learning memory (v0.5 LEARN-06, migrated to PostgreSQL + pgvector in v0.17)
 let learningMemoryStore: LearningMemoryStore | undefined;
@@ -395,6 +400,8 @@ createReviewHandler({
   embeddingProvider,
   retriever,
   codeSnippetStore,
+  contributorProfileStore,
+  slackBotToken: config.slackBotToken,
   logger,
 });
 createMentionHandler({
@@ -467,6 +474,11 @@ app.route("/webhooks/slack", createSlackEventRoutes({
   onAllowedBootstrap: async (payload) => {
     await slackAssistantHandler.handle(payload);
   },
+}));
+app.route("/webhooks/slack/commands", createSlackCommandRoutes({
+  config,
+  logger,
+  profileStore: contributorProfileStore,
 }));
 app.route("/", createHealthRoutes({ githubApp, logger, sql }));
 

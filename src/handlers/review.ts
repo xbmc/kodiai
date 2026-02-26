@@ -63,6 +63,7 @@ import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
+import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
   detectDepBump,
@@ -1313,6 +1314,8 @@ export function createReviewHandler(deps: {
   codeSnippetStore?: CodeSnippetStore;
   /** Optional contributor profile store for 4-tier expertise-based reviews. */
   contributorProfileStore?: ContributorProfileStore;
+  /** Optional Slack bot token for identity suggestion DMs. */
+  slackBotToken?: string;
   logger: Logger;
 }): void {
   const {
@@ -1332,6 +1335,7 @@ export function createReviewHandler(deps: {
     searchCacheFactory,
     codeSnippetStore,
     contributorProfileStore,
+    slackBotToken,
     logger,
   } = deps;
 
@@ -1856,6 +1860,19 @@ export function createReviewHandler(deps: {
               "Author classification failed (fail-open, using regular tier)",
             );
           }
+        }
+
+        // Fire-and-forget: suggest identity linking via DM for unlinked contributors
+        if (!authorClassification.expertise && slackBotToken && contributorProfileStore) {
+          suggestIdentityLink({
+            githubUsername: pr.user.login,
+            githubDisplayName: pr.user.name ?? null,
+            slackBotToken,
+            profileStore: contributorProfileStore,
+            logger,
+          }).catch((err) =>
+            logger.warn({ ...baseLog, err }, "Identity suggestion check failed (non-blocking)"),
+          );
         }
 
         // Emit rate-limit telemetry from a single deterministic point after
