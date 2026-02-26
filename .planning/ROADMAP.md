@@ -163,7 +163,7 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
 - [x] **Phase 97: Multi-LLM Routing & Cost Tracking** - Vercel AI SDK integration with task-based model routing, provider config, and per-invocation cost logging (completed 2026-02-26)
-- [ ] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior (not started)
+- [x] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior (completed 2026-02-25)
 - [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub (not started)
 - [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews (not started)
 
@@ -188,10 +188,10 @@ Plans:
 **Requirements**: PROF-01, PROF-02, PROF-03, PROF-04, PROF-05
 
 Plans:
-- [ ] 98-01: Schema, types, and profile store -- migration 011, contributor types, profile store CRUD with tests
-- [ ] 98-02: Slash command route and handler -- /kodiai link|unlink|profile|opt-out commands with Hono route
-- [ ] 98-03: Expertise scorer, tier calculator, identity matcher -- scoring engine with decay, percentile tiers, heuristic name matching
-- [ ] 98-04: Adaptive review wiring -- 4-tier prompt adaptation, profile-aware author tier resolution, route mounting, identity suggestion DMs
+- [x] 98-01: Schema, types, and profile store -- migration 011, contributor types, profile store CRUD with tests
+- [x] 98-02: Slash command route and handler -- /kodiai link|unlink|profile|opt-out commands with Hono route
+- [x] 98-03: Expertise scorer, tier calculator, identity matcher -- scoring engine with decay, percentile tiers, heuristic name matching
+- [x] 98-04: Adaptive review wiring -- 4-tier prompt adaptation, profile-aware author tier resolution, route mounting, identity suggestion DMs
 
 ### Phase 99: Wiki Staleness Detection
 **Goal**: Kodiai automatically identifies wiki pages invalidated by code changes and delivers evidence-backed staleness reports on schedule
@@ -205,7 +205,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 19 milestones, 97 phases, 244 plans
+**Total shipped:** 19 milestones, 98 phases, 248 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -229,10 +229,10 @@ Plans:
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97 | v0.20 | 3/3 | Complete | 2026-02-26 |
-| 98 | 3/4 | In Progress|  | - |
+| 98 | v0.20 | 4/4 | Complete | 2026-02-25 |
 | 99 | v0.20 | 0/TBD | Not started | - |
 | 100 | v0.20 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-26 -- Phase 97 completed (Multi-LLM Routing & Cost Tracking)*
+*Roadmap updated: 2026-02-25 -- Phase 98 completed (Contributor Profiles & Identity Linking)*
