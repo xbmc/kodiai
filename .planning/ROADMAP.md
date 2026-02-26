@@ -163,9 +163,9 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
 - [x] **Phase 97: Multi-LLM Routing & Cost Tracking** - Vercel AI SDK integration with task-based model routing, provider config, and per-invocation cost logging (completed 2026-02-26)
-- [ ] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior
-- [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub
-- [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews
+- [ ] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior (not started)
+- [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub (not started)
+- [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews (not started)
 
 ### Phase 97: Multi-LLM Routing & Cost Tracking
 **Goal**: Non-agentic tasks route through configurable models via Vercel AI SDK while agentic tasks remain on Claude Agent SDK, with full cost visibility per invocation
@@ -178,9 +178,9 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
   4. Every non-agentic LLM call produces a row in Postgres with model ID, provider, task type, token counts, and estimated USD cost
 
 Plans:
-- [ ] 97-01: Task routing foundation -- AI SDK packages, task types, provider registry, task router, pricing config, config schema extension
-- [ ] 97-02: Cost tracking infrastructure -- llm_cost_events migration, LlmCostRecord type, CostTracker module
-- [ ] 97-03: Generate wrapper and wiring -- generateWithFallback, fallback detection, executor/handler integration
+- [x] 97-01: Task routing foundation -- AI SDK packages, task types, provider registry, task router, pricing config, config schema extension
+- [x] 97-02: Cost tracking infrastructure -- llm_cost_events migration, LlmCostRecord type, CostTracker module
+- [x] 97-03: Generate wrapper and wiring -- generateWithFallback, fallback detection, executor/handler integration
 
 ### Phase 98: Contributor Profiles & Identity Linking
 **Goal**: Contributors have cross-platform profiles with expertise scores that adapt Kodiai's review depth and tone
@@ -199,7 +199,7 @@ Plans:
 
 ## Progress
 
-**Total shipped:** 19 milestones, 96 phases, 241 plans
+**Total shipped:** 19 milestones, 97 phases, 244 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -222,11 +222,11 @@ Plans:
 | 86-88 | v0.17 | 8/8 | Complete | 2026-02-24 |
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
-| 97 | 3/3 | Complete   | 2026-02-26 | - |
+| 97 | v0.20 | 3/3 | Complete | 2026-02-26 |
 | 98 | v0.20 | 0/TBD | Not started | - |
 | 99 | v0.20 | 0/TBD | Not started | - |
 | 100 | v0.20 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-25 -- v0.20 Multi-Model & Active Intelligence roadmap created*
+*Roadmap updated: 2026-02-26 -- Phase 97 completed (Multi-LLM Routing & Cost Tracking)*
