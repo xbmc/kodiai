@@ -1313,6 +1313,7 @@ export function createMentionHandler(deps: {
           deliveryId: event.id,
           botHandles: possibleHandles,
           writeMode: writeEnabled,
+          taskType: "mention.response",
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,

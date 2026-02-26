@@ -6,10 +6,14 @@ import type { ExecutionContext, ExecutionResult, ExecutionPublishEvent } from ".
 import { loadRepoConfig } from "./config.ts";
 import { buildMcpServers, buildAllowedMcpTools } from "./mcp/index.ts";
 import { buildPrompt } from "./prompt.ts";
+import type { CostTracker } from "../llm/cost-tracker.ts";
+import type { ResolvedModel } from "../llm/task-router.ts";
 
 export function createExecutor(deps: {
   githubApp: GitHubApp;
   logger: Logger;
+  costTracker?: CostTracker;
+  taskRouter?: { resolve(taskType: string): ResolvedModel };
 }) {
   const { githubApp, logger } = deps;
 
@@ -33,12 +37,30 @@ export function createExecutor(deps: {
             "Config section invalid, using defaults",
           );
         }
-        const model = context.modelOverride ?? config.model;
+        // Resolve model via TaskRouter when available
+        const taskType = context.taskType ?? "review.full";
+        let model: string;
+        if (deps.taskRouter) {
+          const resolved = deps.taskRouter.resolve(taskType);
+          model = context.modelOverride ?? resolved.modelId;
+          logger.info(
+            {
+              taskType,
+              resolvedModel: resolved.modelId,
+              sdk: resolved.sdk,
+              provider: resolved.provider,
+              modelSource: context.modelOverride ? "override" : "router",
+            },
+            "Task router resolved model",
+          );
+        } else {
+          model = context.modelOverride ?? config.model;
+        }
         const maxTurns = context.maxTurnsOverride ?? config.maxTurns;
         logger.info(
           {
             model,
-            modelSource: context.modelOverride ? "override" : "config",
+            modelSource: context.modelOverride ? "override" : deps.taskRouter ? "router" : "config",
             maxTurns,
             maxTurnsSource: context.maxTurnsOverride ? "override" : "config",
           },
@@ -208,6 +230,22 @@ export function createExecutor(deps: {
           (sum, [, u]) => sum + u.cacheCreationInputTokens,
           0,
         );
+
+        // Track Agent SDK cost (fire-and-forget, fail-open)
+        if (deps.costTracker) {
+          deps.costTracker.trackAgentSdkCall({
+            repo: `${context.owner}/${context.repo}`,
+            taskType,
+            model: primaryModel,
+            inputTokens: totalInput,
+            outputTokens: totalOutput,
+            cacheReadTokens: totalCacheRead,
+            cacheWriteTokens: totalCacheCreation,
+            durationMs: resultMessage.duration_ms ?? durationMs,
+            costUsd: resultMessage.total_cost_usd,
+            deliveryId: context.deliveryId,
+          });
+        }
 
         return {
           conclusion:

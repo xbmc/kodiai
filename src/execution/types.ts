@@ -53,6 +53,9 @@ export type ExecutionContext = {
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
 
+  /** Task type for LLM routing and cost tracking (e.g., "review.full", "mention.response"). */
+  taskType?: string;
+
   /**
    * Enables write-mode execution.
    *
