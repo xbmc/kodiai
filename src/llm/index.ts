@@ -43,3 +43,12 @@ export {
   type CostTracker,
   type LlmCostRecord,
 } from "./cost-tracker.ts";
+
+// Fallback
+export { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
+
+// Generate wrapper
+export {
+  generateWithFallback,
+  type GenerateResult,
+} from "./generate.ts";
