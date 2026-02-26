@@ -167,6 +167,36 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 - [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub
 - [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews
 
+### Phase 97: Multi-LLM Routing & Cost Tracking
+**Goal**: Non-agentic tasks route through configurable models via Vercel AI SDK while agentic tasks remain on Claude Agent SDK, with full cost visibility per invocation
+**Depends on**: Nothing (foundation phase)
+**Requirements**: LLM-01, LLM-02, LLM-03, LLM-04, LLM-05
+**Success Criteria** (what must be TRUE):
+  1. A non-agentic task (e.g., generating a summary label) completes via Vercel AI SDK `generateText()` using the configured model, while PR review and mention handling still use Claude Agent SDK `query()`
+  2. Changing the `models:` section in `.kodiai.yml` causes the specified task type to route to a different model on next invocation
+  3. When a configured provider is unavailable, the task falls back to the default model and completes successfully
+  4. Every non-agentic LLM call produces a row in Postgres with model ID, provider, task type, token counts, and estimated USD cost
+
+Plans:
+- [ ] 97-01: Task routing foundation -- AI SDK packages, task types, provider registry, task router, pricing config, config schema extension
+- [ ] 97-02: Cost tracking infrastructure -- llm_cost_events migration, LlmCostRecord type, CostTracker module
+- [ ] 97-03: Generate wrapper and wiring -- generateWithFallback, fallback detection, executor/handler integration
+
+### Phase 98: Contributor Profiles & Identity Linking
+**Goal**: Contributors have cross-platform profiles with expertise scores that adapt Kodiai's review depth and tone
+**Depends on**: Nothing (independent of Phase 97)
+**Requirements**: PROF-01, PROF-02, PROF-03, PROF-04, PROF-05
+
+### Phase 99: Wiki Staleness Detection
+**Goal**: Kodiai automatically identifies wiki pages invalidated by code changes and delivers evidence-backed staleness reports on schedule
+**Depends on**: Phase 97 (model router needed for LLM staleness evaluation)
+**Requirements**: WIKI-01, WIKI-02, WIKI-03, WIKI-04, WIKI-05
+
+### Phase 100: Review Pattern Clustering
+**Goal**: Kodiai discovers emergent review themes from 18 months of review comment embeddings and surfaces recurring patterns in PR reviews
+**Depends on**: Phase 97 (model router needed for cluster label generation)
+**Requirements**: CLST-01, CLST-02, CLST-03, CLST-04, CLST-05
+
 ## Progress
 
 **Total shipped:** 19 milestones, 96 phases, 241 plans
