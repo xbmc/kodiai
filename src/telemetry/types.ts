@@ -113,6 +113,29 @@ export type RateLimitEventRecord = {
 };
 
 /**
+ * LLM cost tracking record for per-invocation cost visibility.
+ * Maps to the `llm_cost_events` table.
+ * Tracks both AI SDK and Agent SDK invocations.
+ */
+export type LlmCostRecord = {
+  deliveryId?: string;
+  repo: string;
+  taskType: string;
+  model: string;
+  provider: string;
+  sdk: "agent" | "ai";
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  estimatedCostUsd: number;
+  durationMs?: number;
+  usedFallback: boolean;
+  fallbackReason?: string;
+  error?: string;
+};
+
+/**
  * TelemetryStore interface for PostgreSQL-backed execution telemetry.
  *
  * Created via `createTelemetryStore({ sql, logger })` factory function.
@@ -129,6 +152,8 @@ export type TelemetryStore = {
   recordRateLimitEvent(entry: RateLimitEventRecord): Promise<void>;
   /** Insert structured checkpoint/retry metadata for resilience monitoring. */
   recordResilienceEvent?(entry: ResilienceEventRecord): Promise<void>;
+  /** Insert an LLM cost tracking record into the llm_cost_events table. */
+  recordLlmCost(entry: LlmCostRecord): Promise<void>;
   /** Delete rows older than the given number of days. Returns count of deleted rows. */
   purgeOlderThan(days: number): Promise<number>;
   /** No-op: PostgreSQL has no WAL checkpoint equivalent needed. */
