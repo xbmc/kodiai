@@ -26,6 +26,7 @@ import { createClusterScheduler } from "./knowledge/cluster-scheduler.ts";
 import { createClusterStore } from "./knowledge/cluster-store.ts";
 import { matchClusterPatterns } from "./knowledge/cluster-matcher.ts";
 import { createTaskRouter } from "./llm/task-router.ts";
+import { createCostTracker } from "./llm/cost-tracker.ts";
 import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
@@ -90,6 +91,9 @@ if (rateLimitFailureInjectionIdentities.length > 0) {
     "Rate-limit telemetry failure injection enabled",
   );
 }
+
+// Cost tracker (shared across executor and scheduled jobs)
+const costTracker = createCostTracker({ telemetryStore, logger });
 
 // Lifecycle: request tracking, webhook queuing, shutdown management
 const requestTracker = createRequestTracker();
@@ -242,7 +246,8 @@ const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, l
 const eventRouter = createEventRouter(botFilter, logger);
 
 // Execution engine
-const executor = createExecutor({ githubApp, logger });
+const taskRouter = createTaskRouter({ models: {} }, logger);
+const executor = createExecutor({ githubApp, logger, taskRouter, costTracker });
 
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
 const slackInstallationCache = createInMemoryCache<string, { installationId: number; defaultBranch: string }>({
@@ -488,6 +493,7 @@ const wikiStalenessDetector = config.slackWikiChannelId
       githubApp,
       slackClient,
       taskRouter: stalenessTaskRouter,
+      costTracker,
       logger,
       githubOwner: config.wikiGithubOwner,
       githubRepo: config.wikiGithubRepo,
