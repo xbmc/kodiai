@@ -1,362 +1,182 @@
-# Feature Landscape
+# Feature Research
 
-**Domain:** AI-powered code review assistant -- multi-LLM routing, wiki staleness detection, review pattern clustering, contributor profiles
-**Researched:** 2026-02-25
-**Milestone:** v0.20 Multi-Model & Active Intelligence
-**Confidence:** HIGH for routing and profiles, MEDIUM for clustering and staleness
+**Domain:** GitHub issue triage automation -- template validation, labeling, commenting, duplicate detection
+**Researched:** 2026-02-26
+**Milestone:** v0.21 Issue Triage Foundation
+**Confidence:** HIGH for core triage features, MEDIUM for advanced classification
 
 ## Existing Foundation (Already Built)
 
-These features are production and form the base for v0.20:
+These features are production and form the base for v0.21:
 
-| Existing Capability | Module | How v0.20 Extends It |
+| Existing Capability | Module | How v0.21 Extends It |
 |---------------------|--------|---------------------|
-| Claude Agent SDK `query()` with MCP tools | `execution/executor.ts` | Non-agentic tasks routed to Vercel AI SDK `generateText()` while agentic tasks keep Agent SDK |
-| `.kodiai.yml` config with model override | `execution/config.ts` | Extend with `models:` section mapping task types to provider/model pairs |
-| Telemetry with provider, model, tokens, costUsd | `telemetry/types.ts` | Wire Vercel AI SDK usage callbacks into existing telemetry schema |
-| Wiki pages ingested with section chunking | `knowledge/wiki-store.ts`, `wiki-sync.ts` | Cross-reference wiki content against code changes for staleness scoring |
-| 18 months of review comments embedded | `knowledge/review-comment-store.ts` | Run HDBSCAN clustering on existing embeddings to discover review themes |
-| Author classifier (first-time/regular/core) | `lib/author-classifier.ts` | Extend with per-topic expertise scores from contributor profile data |
-| Slack thread sessions with user IDs | `slack/thread-session-store.ts` | Map Slack user IDs to GitHub usernames for cross-platform identity |
-| Cross-corpus retrieval with RRF | `knowledge/retrieval.ts` | Inject cluster pattern context into retrieval pipeline |
+| `@kodiai` mention handling on issue_comment surface | `handlers/mention.ts`, `mention-types.ts` | Triage agent wired as new intent when mention is on an issue (not PR) |
+| `.kodiai.yml` config with feature gating | `execution/config.ts` | Add `triage:` section to enable/disable and configure label sets |
+| MCP tool pattern (github_pr_review, github_pr_comment) | `execution/executor.ts` | Add `github_issue_label` and `github_issue_comment` MCP tools following existing patterns |
+| PostgreSQL with pgvector HNSW + tsvector | Knowledge stores | New `issues` table with same hybrid search pattern for duplicate detection |
+| Voyage AI embeddings with chunking pipeline | `knowledge/` stores | Embed issue bodies for semantic similarity search |
+| Multi-LLM task routing via Vercel AI SDK | `execution/task-router.ts` | Triage classification as non-agentic task routed to fast/cheap model |
+| Contributor profiles with expertise tiers | `knowledge/contributor-profile-store.ts` | Tone adaptation based on whether issue author is first-timer vs core contributor |
+| `normalizeIssueComment()` already distinguishes issue vs PR surface | `handlers/mention-types.ts` | Surface detection already works; triage logic branches on `surface === "issue_comment"` |
 
 ## Table Stakes
 
-Features users expect once these capabilities are advertised. Missing = feature feels half-baked.
+Features users expect from any issue triage bot. Missing these makes the feature feel broken or useless.
 
 | Feature | Why Expected | Complexity | Dependencies on Existing | Notes |
 |---------|--------------|------------|--------------------------|-------|
-| **Task-based model routing** | Users expect the right model for the right job -- cheap models for summaries, strong models for security review | Medium | Executor (`query()` call), `.kodiai.yml` config, telemetry store | Vercel AI SDK `generateText`/`streamText` with provider registry alongside existing Agent SDK for agentic tasks |
-| **Provider configuration in .kodiai.yml** | Per-repo model preferences are the established config pattern | Low | Config loader (`loadRepoConfig`) | Extend existing schema with `models:` section mapping task types to model IDs |
-| **Cost tracking per invocation** | Multi-model without cost visibility is irresponsible | Low | Telemetry store already tracks `provider`, `model`, `inputTokens`, `outputTokens`, `costUsd` | Existing `TelemetryRecord` schema already has the columns; wire Vercel AI SDK usage callbacks |
-| **Wiki staleness scoring** | Without a score, "stale" is meaningless -- needs evidence-based ranking | Medium | Wiki store (`wiki_pages` table with `lastModified`, `revisionId`), code snippet store | Compare wiki page references against code corpus for deleted/changed symbols |
-| **Staleness report delivery** | Detecting staleness without reporting it is useless | Low | Slack client, GitHub issue creation via Octokit | Scheduled job posts to Slack `#kodiai` or creates GitHub issue |
-| **Cluster label generation** | Unlabeled clusters are noise, not insight | Medium | Review comment store (18 months of data), embedding provider | LLM-generated labels from cluster centroids or representative samples |
-| **GitHub/Slack identity linking** | Cross-platform profiles are the whole point of contributor features | Low | Slack thread session store, GitHub webhook payloads | Manual mapping table with optional heuristic suggestions |
-| **Contributor expertise inference** | Profile without expertise data is just a user record | Medium | Existing author-classifier (3-tier), review comment history, PR metadata | Extend author-classifier tiers with per-topic expertise scores |
+| **Template field validation** | Primary stated goal. Issues missing required fields (version, steps to reproduce, logs) are the #1 maintainer pain point. xbmc/xbmc uses markdown templates with `bug_report.md` and `roadmap_item.md` -- bot must parse heading-based sections and detect empty/placeholder content. | MEDIUM | Mention handler (trigger path), config loader | Must handle both YAML form templates and markdown templates. xbmc uses markdown format. Parse `### Section Name` headings and check body below each for "No response" / empty / placeholder text. |
+| **Label application on triage outcome** | Every triage bot applies labels -- "needs more info", "bug", "feature request", type classification. Without labeling the bot is just a commenter. | LOW | New `github_issue_label` MCP tool, Octokit `issues.addLabels()` | Label must exist in repo or be created. Use `issues.addLabels()` (additive, not replacement). Configurable label names in `.kodiai.yml`. |
+| **Guidance comment when fields missing** | Bot must explain what is missing and how to fix it. Comment should be specific ("Missing: Kodi version, Steps to reproduce") not generic ("Please fill out the template"). | LOW | New `github_issue_comment` MCP tool, existing comment posting patterns | Follow existing tracking comment pattern (post once, update on re-triage). Include checklist of missing fields. |
+| **Config gating via .kodiai.yml** | Triage must be opt-in. Auto-triaging issues without consent would anger maintainers. Every serious bot provides config toggle. | LOW | Config schema extension | `triage: { enabled: false }` default. Mirrors existing `write: { enabled: false }` pattern. |
+| **Trigger via @kodiai mention on issues** | Consistent with existing UX -- maintainers already use @kodiai on PRs. Same invocation pattern on issues. | LOW | Mention handler already routes issue_comment surface | Branch in mention handler: if surface is issue_comment and not on a PR, check triage config and dispatch to triage agent. |
+| **Bot self-loop prevention** | Bot must not triage its own comments or react to its own labels. Already solved for PR reviews but must extend to issue surface. | LOW | Existing `botHandles` defense-in-depth sanitization | Same pattern: check comment author against bot handle before processing. |
 
 ## Differentiators
 
-Features that set kodiai apart from generic code review bots. Not expected, but high-value.
+Features that set Kodiai's triage apart from actions/stale, fancy-triage-bot, and basic GitHub Actions workflows.
 
 | Feature | Value Proposition | Complexity | Dependencies on Existing | Notes |
 |---------|-------------------|------------|--------------------------|-------|
-| **Emergent review theme discovery** | No other bot surfaces "your last 50 PRs keep hitting the same 3 issues" from raw review data | High | Review comment store (embedded chunks), embedding provider (Voyage AI) | HDBSCAN on review comment embeddings; auto-discovers themes without predefined categories |
-| **Recurring pattern injection into PR reviews** | "This PR triggers pattern X which appeared in 12 prior reviews" -- contextual, not just statistical | Medium | Review pipeline prompt builder, cross-corpus retrieval | Insert top-matching cluster themes into review prompt as additional context |
-| **Wiki-to-code evidence linking** | Show exactly which code changes made a wiki page stale, with file paths and commit SHAs | High | Wiki store, code snippet store, git history access | Cross-reference wiki page content against code symbol changes; requires entity extraction |
-| **Adaptive review depth per contributor** | First-time contributors get more explanation; core maintainers get terse, high-signal reviews | Low | Author-classifier already does 3-tier classification | Wire existing `AuthorTier` plus new expertise into review prompt template variations |
-| **Multi-model cost optimization** | Route simple tasks to cheap models, complex tasks to frontier models -- visible cost savings | Medium | New model router, telemetry cost tracking | Show cost delta vs single-model baseline in telemetry reports |
-| **Cross-platform activity timeline** | Unified view of a contributor's GitHub PRs + Slack questions for mentoring insight | Medium | Contributor profile table, telemetry store, Slack thread sessions | Query across surfaces for a single identity |
+| **Semantic duplicate detection** | Most triage bots use string similarity or keyword matching. Kodiai has an embedding pipeline and pgvector -- can do real semantic similarity against all past issues. Maintainers spend significant time closing duplicates; 30% of triage users want duplicate detection (per GitHub research). | MEDIUM | Issue vector corpus (new), Voyage AI embeddings, pgvector HNSW search | Embed issue title+body, search against existing issues with cosine similarity. Threshold configurable. Comment with "This may be related to #123, #456" with similarity scores. |
+| **Knowledge-informed triage** | Kodiai already has wiki, code, review comment, and snippet corpora. Triage can cross-reference issue content against codebase to identify affected components, relevant wiki pages, and past review patterns. No competing bot has this. | MEDIUM | Cross-corpus retrieval pipeline, RRF merging | Retrieve relevant code files and wiki pages to add context to triage comment: "This appears to affect `xbmc/cores/VideoPlayer/` -- see [wiki: Video Playback Architecture]" |
+| **Contributor-aware tone** | First-time issue reporters get friendlier, more explanatory guidance. Core contributors get terse, actionable feedback. Existing contributor profiles enable this for free. | LOW | Contributor profile store, expertise tiers | Map issue author to contributor profile. Adjust comment verbosity and tone based on tier. Same pattern as adaptive review depth. |
+| **Area/component classification** | LLM reads issue content and classifies into project-specific area labels (e.g., "Component: VideoPlayer", "Component: PVR", "Platform: Android"). VS Code's triage bot does this with ML models on a 30-min cycle; Kodiai can do it inline with LLM on mention trigger. | MEDIUM | Task router (non-agentic task), configurable label taxonomy in .kodiai.yml | Define area labels in config. LLM classifies; agent applies via MCP tool. Non-agentic task routed to fast model. |
+| **Issue corpus for retrieval augmentation** | Storing issues as embeddings creates a 5th retrieval corpus. Future PR reviews can surface "This change may address #789" and mention responses can reference past issues. Compounds value across the whole product. | MEDIUM | New issue store following knowledge store patterns | Schema: `issues(id, repo, number, title, body, state, labels, author, created_at, embedding, tsv)`. HNSW + tsvector indexes matching existing corpus pattern. |
+| **Template-aware smart parsing** | Rather than regex-matching section headers, use LLM to understand what information is present vs missing even when users don't follow the template structure exactly. Handles cases where users provide info but in the wrong section. | LOW | Task router for classification | Parse with LLM rather than rigid regex. "User provided version info in the description body but not in the Version field" -- still mark as satisfied. |
 
 ## Anti-Features
 
-Features to explicitly NOT build in this milestone.
+Features that seem valuable but create problems. Explicitly avoid these.
 
-| Anti-Feature | Why Avoid | What to Do Instead |
-|--------------|-----------|-------------------|
-| **Real-time model switching mid-review** | Agent SDK `query()` is the agentic backbone with MCP tools; swapping models mid-execution breaks tool continuity | Route to different models per *task type* (review vs summary vs mention), not mid-task |
-| **User-facing LLM provider selection UI** | No dashboard exists; GitHub comments are the interface | Config via `.kodiai.yml` model overrides per task type |
-| **Automatic cross-platform identity resolution without confirmation** | False positives linking wrong GitHub/Slack accounts cause trust erosion | Manual linking with optional heuristic suggestions (same display name, email overlap) |
-| **Custom clustering algorithm implementation** | HDBSCAN is well-studied; reimplementing wastes time and introduces bugs | Use `hdbscan-ts` npm package (TypeScript HDBSCAN implementation) |
-| **Real-time clustering on every PR** | HDBSCAN on thousands of embeddings is expensive; unnecessary per-PR | Scheduled batch job (daily/weekly) with cached cluster assignments |
-| **Wiki edit suggestions** | Kodiai is a reviewer, not a wiki editor; auto-editing wiki pages crosses trust boundaries | Surface staleness reports with evidence; humans decide what to update |
-| **Bedrock/Vertex/arbitrary provider auth** | OAuth-only constraint for v1 (per PROJECT.md Out of Scope) | Support Vercel AI SDK providers that work with API keys: OpenAI, Anthropic, Google AI Studio |
-| **Full contributor dashboard** | No UI surface exists; building one is a separate project | Expose contributor data through Slack queries and GitHub issue reports |
-| **Hunk embedding for all past PRs as part of clustering** | Backfilling for clustering purposes is expensive and speculative | Cluster existing review comment embeddings which are already stored |
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Auto-triage on issue.opened event** | "Triage everything automatically!" Seems efficient. | Maintainers lose control. False positives anger users. Auto-commenting on every issue is noisy. xbmc/xbmc gets community contributions from non-technical users who would be confused by bot comments they didn't ask for. VS Code can do this at scale with ML models trained on 100K+ issues; Kodiai cannot. | Trigger only on explicit `@kodiai` mention or configurable `issues.opened` opt-in (default off). Start with mention-only; add auto-triage later if maintainers request it. |
+| **Auto-close issues** | "Close issues that don't follow template." Common in stale bots. | Hostile to contributors. Closes legitimate issues with formatting problems. Creates PR for the bot to get an issue reopened. Even VS Code's bot only auto-closes after 60 days of inactivity, not on template violations. | Comment with guidance and apply "needs more info" label. Let humans close. |
+| **Auto-assign to maintainers** | "Route issues to the right person." | Requires knowing team structure, on-call rotations, expertise areas. Wrong assignment is worse than no assignment -- people ignore mis-routed issues. VS Code trains ML models monthly on Azure for this. | Apply area/component labels. Maintainers can set up GitHub CODEOWNERS or notification filters on labels. |
+| **Priority/severity auto-classification** | "Label P0/P1/P2 automatically." | Priority is a human judgment call requiring business context, user impact assessment, and roadmap awareness. LLM-assigned priority will be wrong often enough to erode trust. | Classify type (bug/feature/question) and area -- these are more objective. Leave priority to maintainers. |
+| **Stale issue management** | "Close issues after 30 days of inactivity." | Well-solved by existing tools (actions/stale). Adding this creates feature overlap and maintenance burden. Not related to triage intelligence. | Recommend actions/stale in docs. Keep Kodiai focused on intelligent triage, not lifecycle management. |
+| **Real-time streaming triage UI** | "Show triage progress in a dashboard." | Out of scope per PROJECT.md constraints. GitHub comments are the interface. | Post triage results as issue comment. |
 
 ## Feature Dependencies
 
 ```
-                    .kodiai.yml model config
-                           |
-                           v
-Task-based model router -----> Cost tracking per invocation
-        |                              |
-        v                              v
-Vercel AI SDK integration      Telemetry store extension
-        |
-        v
-Non-agentic task routing (summaries, label generation)
-        |
-        v
-Cluster label generation (uses cheap model)
-
-
-Wiki page store (existing) -----> Wiki staleness scoring
-Code snippet store (existing) -/       |
-                                       v
-                               Staleness report delivery
-                                       |
-                                       v
-                               Wiki-to-code evidence linking
-
-
-Review comment store (existing) -----> HDBSCAN clustering job
-Embedding provider (existing) ------/       |
-                                            v
-                                    Cluster label generation
-                                            |
-                                            v
-                                    Pattern injection into PR reviews
-
-
-Author classifier (existing) -----> Contributor profile table
-GitHub webhooks (existing) -------/       |
-Slack sessions (existing) -------/        v
-                                   GitHub/Slack identity linking
-                                          |
-                                          v
-                                   Expertise inference
-                                          |
-                                          v
-                                   Adaptive review depth
+[Issue Schema & Vector Corpus]
+    |
+    |--required-by--> [Semantic Duplicate Detection]
+    |--required-by--> [Issue Corpus for Retrieval Augmentation]
+    |--required-by--> [Knowledge-Informed Triage] (needs issue history for context)
+    |
+[github_issue_label MCP Tool]
+    |--required-by--> [Label Application]
+    |--required-by--> [Area/Component Classification]
+    |
+[github_issue_comment MCP Tool]
+    |--required-by--> [Guidance Comment]
+    |--required-by--> [Duplicate Detection Comment]
+    |--required-by--> [Knowledge-Informed Triage Comment]
+    |
+[Template Field Validation]
+    |--required-by--> [Guidance Comment] (needs to know what is missing)
+    |
+[Config Gating (.kodiai.yml)]
+    |--required-by--> [All triage features] (nothing fires without opt-in)
+    |
+[Contributor Profile Store] --enhances--> [Contributor-Aware Tone]
+[Cross-Corpus Retrieval] --enhances--> [Knowledge-Informed Triage]
+[Task Router] --enhances--> [Area/Component Classification]
 ```
 
-## MVP Recommendation
+### Dependency Notes
 
-### Phase 1: Multi-LLM Routing (foundation for everything else)
+- **Issue Schema required before Duplicate Detection:** Cannot search for similar issues without the vector corpus. Schema and embedding pipeline must land first.
+- **MCP Tools required before any agent action:** The triage agent uses `github_issue_label` and `github_issue_comment` as its output mechanism. These are prerequisite for all visible triage behavior.
+- **Config gating is Phase 1 work:** Must exist before any triage logic fires, even in dev. Prevents accidental activation.
+- **Template Validation before Guidance Comment:** The comment content depends on knowing which fields are missing. Validation logic is the input; comment is the output.
+- **Contributor profiles enhance but don't block:** Tone adaptation is a nice-to-have that uses existing infrastructure. Triage works without it; just uses default tone.
 
-Prioritize first because cluster labeling, staleness evidence generation, and contributor expertise inference all benefit from cheap model routing.
+## MVP Definition
 
-1. **Vercel AI SDK integration** -- wrap `generateText` with provider registry alongside existing Agent SDK `query()` for agentic tasks
-2. **Task-type model configuration** -- extend `.kodiai.yml` with `models:` section mapping task types to provider/model pairs
-3. **Cost tracking extension** -- existing telemetry schema already has `provider`, `model`, `costUsd` columns; wire Vercel AI SDK usage callbacks
+### Launch With (v0.21)
 
-### Phase 2: Review Pattern Clustering (highest differentiation value)
+Minimum viable triage -- what the milestone issue (#73) explicitly requires.
 
-18 months of embedded review comments already exist. Clustering is pure computation on existing data.
+- [ ] **Issue schema & vector corpus** -- PostgreSQL table with HNSW + tsvector indexes following existing knowledge store patterns
+- [ ] **`github_issue_label` MCP tool** -- Additive label application via Octokit, agent-callable
+- [ ] **`github_issue_comment` MCP tool** -- Post or update issue comment, agent-callable
+- [ ] **Template parser** -- Read `.github/ISSUE_TEMPLATE/` files from repo, identify required sections, detect missing/empty/placeholder content in issue body
+- [ ] **Triage agent** -- Wired to @kodiai mention on issues. Validates template fields, comments with specific guidance, applies "Ignored rules" label when fields are missing
+- [ ] **Config gating** -- `triage: { enabled: true/false }` in `.kodiai.yml`, default disabled
 
-1. **HDBSCAN batch clustering job** -- `hdbscan-ts` on review comment embeddings, store cluster assignments
-2. **Cluster label generation** -- LLM-generated labels from representative samples per cluster (uses cheap model from Phase 1)
-3. **Pattern injection into PR reviews** -- match incoming PR against known clusters, inject top matches into review prompt
+### Add After Validation (v0.21.x or v0.22)
 
-### Phase 3: Wiki Staleness Detection (leverages existing wiki corpus)
+Features to add once core triage is working and maintainers have feedback.
 
-Wiki pages already ingested with section chunking. Staleness detection is cross-referencing against code changes.
+- [ ] **Semantic duplicate detection** -- Trigger: maintainers report duplicate issues are a bigger pain than template violations
+- [ ] **Area/component classification** -- Trigger: label taxonomy defined in `.kodiai.yml` with maintainer-provided area list
+- [ ] **Knowledge-informed triage comments** -- Trigger: cross-corpus retrieval producing useful context for issue content
+- [ ] **Contributor-aware tone** -- Trigger: contributor profiles populated for the target repo
+- [ ] **Auto-triage on issues.opened** -- Trigger: maintainers explicitly request it after using mention-based triage successfully
 
-1. **Staleness scoring** -- compare wiki page content against recent code changes; score by reference decay
-2. **Evidence linking** -- identify specific code changes that invalidate wiki content
-3. **Report delivery** -- scheduled Slack message or GitHub issue with ranked stale pages and evidence
+### Future Consideration (v0.23+)
 
-### Phase 4: Contributor Profiles (builds on all prior phases)
+Features to defer until triage product-market fit is established.
 
-Identity linking is the foundation; expertise inference uses review history and pattern clusters from Phase 2.
+- [ ] **Issue corpus as 5th retrieval source for PR reviews** -- Requires issue backfill pipeline similar to review comment backfill
+- [ ] **Issue-to-PR linking** -- Detect when a PR addresses an open issue and comment on both
+- [ ] **Batch triage** -- Triage backlog of unlabeled issues in bulk (VS Code does this on a schedule)
+- [ ] **Custom validation rules** -- User-defined validators beyond template field presence (regex, team verification)
 
-1. **Contributor profile table** -- GitHub/Slack identity linking with manual confirmation
-2. **Expertise inference** -- per-topic scores from review comment history and PR metadata
-3. **Adaptive behavior** -- wire expertise into review prompt and retrieval weighting
+## Feature Prioritization Matrix
 
-**Defer:**
-- **Cross-platform activity timeline**: Requires UI surface that does not exist; revisit when dashboard is in scope
-- **Wiki-to-code deep symbol-level evidence linking**: Start with file-path-level staleness detection and iterate to symbol extraction later
+| Feature | User Value | Implementation Cost | Priority | Rationale |
+|---------|------------|---------------------|----------|-----------|
+| Template field validation | HIGH | MEDIUM | P1 | Core ask from issue #73. Primary maintainer pain point. |
+| Label application | HIGH | LOW | P1 | Useless without visible action. Labels are the triage output. |
+| Guidance comment | HIGH | LOW | P1 | Users need to know what to fix. Comment is the communication channel. |
+| Config gating | HIGH | LOW | P1 | Safety requirement. Must exist before anything else fires. |
+| @kodiai mention trigger | HIGH | LOW | P1 | Consistent with existing UX. Reuses proven infrastructure. |
+| Issue schema & corpus | MEDIUM | MEDIUM | P1 | Foundation for duplicate detection and retrieval. Build now even if not fully used in v0.21. |
+| MCP tools (label + comment) | HIGH | LOW | P1 | Agent's hands. Required for any visible output. |
+| Semantic duplicate detection | HIGH | MEDIUM | P2 | High value but needs corpus populated first. Add in follow-up. |
+| Area/component classification | MEDIUM | MEDIUM | P2 | Needs per-repo label taxonomy. More config complexity. |
+| Knowledge-informed triage | MEDIUM | LOW | P2 | Low cost (retrieval pipeline exists) but needs tuning for issue context. |
+| Contributor-aware tone | LOW | LOW | P3 | Polish feature. Profiles may not be populated for issue authors. |
+| Auto-triage on opened | MEDIUM | LOW | P3 | Must prove value with mentions first. Risk of noise. |
 
-## Detailed Feature Specifications
+## Competitor Feature Analysis
 
-### Multi-LLM Task Routing
+| Feature | actions/stale | fancy-triage-bot | issue-ops/validator | VS Code triage | GitHub AI triage (native) | Kodiai (planned) |
+|---------|--------------|------------------|---------------------|----------------|--------------------------|-----------------|
+| Template validation | No | Glob pattern matching | YAML form validation with custom rules | No (different approach) | No | LLM-based semantic parsing of markdown templates |
+| Label application | Stale label only | Pattern-matched labels | No (validation only) | ML-classified area labels | AI-suggested labels | Agent-applied labels via MCP tool |
+| Guidance comments | Stale warning only | Configurable per-pattern | Validation summary comment | Needs-more-info comment | No | Specific missing-field checklist with contributor-aware tone |
+| Duplicate detection | No | No | No | No | Similarity check (experimental) | Semantic vector similarity via pgvector |
+| Codebase awareness | No | No | No | Feature area ML model | No | Cross-corpus retrieval (code, wiki, reviews, snippets) |
+| Auto-close | After inactivity | No | No | After 60 days low votes | No | Explicitly avoided (anti-feature) |
+| Config approach | Workflow YAML | Workflow YAML | Workflow YAML + config | Workflow YAML + Azure ML | Repository settings | `.kodiai.yml` (consistent with existing Kodiai config) |
+| Trigger mechanism | Scheduled cron | issues.opened event | issues.opened event | 30-min scheduled batch | issues.opened event | @kodiai mention (opt-in, explicit) |
 
-**How it works:** The Vercel AI SDK provides a unified `generateText()` / `streamText()` interface with pluggable providers. Each provider (Anthropic, OpenAI, Google) is registered once. A task router maps task types to model IDs. The existing Agent SDK `query()` remains for agentic tasks requiring MCP tools.
+### Key Competitive Insight
 
-**Task types for kodiai:**
-| Task Type | Current Approach | Recommended Model | Rationale |
-|-----------|-----------------|-------------------|-----------|
-| PR review (agentic) | Claude Agent SDK `query()` with MCP tools | Claude Sonnet 4 (keep Agent SDK) | Needs tool use, file editing, MCP servers |
-| PR summary generation | Part of review prompt | GPT-4o-mini or Claude Haiku | Simple summarization, low cost |
-| @mention response | Claude Agent SDK `query()` | Claude Sonnet 4 (keep Agent SDK) | Needs tool use for code navigation |
-| Cluster label generation | N/A (new) | GPT-4o-mini or Claude Haiku | Template-based, low complexity |
-| Staleness evidence synthesis | N/A (new) | Claude Haiku | Needs reasoning but no tools |
-| Slack Q&A | Claude Agent SDK `query()` | Claude Sonnet 4 (keep Agent SDK) | Needs retrieval context reasoning |
+Most existing triage tools are GitHub Actions that run on `issues.opened` with pattern matching or simple validation. They lack codebase awareness, semantic understanding, and knowledge retrieval. Kodiai's advantage is the existing knowledge platform (4 corpora + hybrid search + contributor profiles) that no Actions-based tool can replicate. The mention-triggered approach is also unique -- it gives maintainers control over when triage happens rather than auto-firing on every issue.
 
-**Key insight:** The Agent SDK `query()` remains the backbone for agentic tasks (review, mention, Slack write). Vercel AI SDK handles non-agentic tasks (summaries, label generation, staleness synthesis) where tool use is not needed. This is additive, not a replacement.
-
-**Vercel AI SDK integration pattern:**
-```typescript
-import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
-import { openai } from '@ai-sdk/openai';
-
-// Provider registry
-const providers = { anthropic, openai };
-
-// Task router
-const taskModels = {
-  'summary': 'openai:gpt-4o-mini',
-  'cluster-label': 'anthropic:claude-3-5-haiku-20241022',
-  'staleness-evidence': 'anthropic:claude-3-5-haiku-20241022',
-};
-
-// Usage with built-in token tracking
-const result = await generateText({
-  model: resolveModel(taskModels[taskType]),
-  prompt: taskPrompt,
-});
-// result.usage.promptTokens, result.usage.completionTokens available
-```
-
-**Confidence:** HIGH -- Vercel AI SDK is well-documented, actively maintained, and the provider model maps directly to kodiai's task types.
-
-### Review Pattern Clustering (HDBSCAN)
-
-**How it works:**
-1. Extract embeddings from review comment chunks (already stored in `review_comments` table with Voyage AI embeddings)
-2. Run HDBSCAN with `minClusterSize: 5` on the embedding vectors
-3. HDBSCAN automatically determines cluster count and identifies noise points
-4. For each cluster, sample 3-5 representative comments (closest to centroid)
-5. Send representatives to cheap LLM to generate a human-readable theme label
-6. Store cluster assignments and labels in a `review_clusters` table
-7. On new PR review, compute embedding similarity of PR diff against cluster centroids
-8. Inject top-2 matching patterns as additional context in review prompt
-
-**Why HDBSCAN over K-means:**
-- No need to specify cluster count upfront (emergent discovery)
-- Handles noise (not every comment belongs to a theme)
-- Works well with high-dimensional embedding spaces
-- Varying density clusters (some themes appear 100x, others 10x)
-
-**TypeScript implementation:** `hdbscan-ts` (npm) -- TypeScript HDBSCAN based on Campello et al. 2017. Accepts `number[][]`, returns `labels_` and `probabilities_`. Fits directly into the existing Bun/TypeScript stack. Install: `npm install hdbscan-ts`.
-
-**Scale concern:** 18 months of review comments = thousands of chunks. HDBSCAN is O(n^2) in worst case. For ~10K-50K chunks, this runs in seconds on modern hardware. Schedule as a batch job (daily or weekly), not per-request.
-
-**Storage schema:**
-```sql
-CREATE TABLE review_clusters (
-  id SERIAL PRIMARY KEY,
-  cluster_id INTEGER NOT NULL,
-  label TEXT NOT NULL,
-  representative_ids INTEGER[] NOT NULL,
-  centroid vector(1024),
-  chunk_count INTEGER NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  refreshed_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE review_comment_cluster_assignments (
-  chunk_id INTEGER REFERENCES review_comments(id),
-  cluster_id INTEGER NOT NULL,
-  probability REAL NOT NULL,
-  assigned_at TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (chunk_id)
-);
-```
-
-**Confidence:** MEDIUM -- `hdbscan-ts` package exists but is not heavily battle-tested (low npm download count). May need to validate on actual review comment embeddings. Fallback: shell out to Python scikit-learn HDBSCAN if TypeScript package has quality issues.
-
-### Wiki Staleness Detection
-
-**How it works:**
-1. For each wiki page, extract referenced code elements (file paths, function names, class names, API endpoints) using regex and heuristic extraction from wiki prose
-2. Compare against recent code changes (git log, code snippet store) to find:
-   - Deleted files/functions referenced by the wiki page
-   - Renamed/moved files referenced by the wiki page
-   - Significantly modified files (high churn) referenced by the wiki page
-3. Score staleness: `staleness = (deleted_refs * 3 + modified_refs * 1) / total_refs`
-4. Pages with staleness score above threshold get flagged
-5. Generate evidence snippet using cheap LLM: "Page X references `PlayerCoreFactory::GetPlayers()` which was removed in commit abc123"
-6. Deliver via scheduled report (Slack message to `#kodiai` or GitHub issue)
-
-**Existing infrastructure leveraged:**
-- `wiki_pages` table with `lastModified`, `revisionId`, section content, `stale` boolean column already exists
-- `code_snippets` table with hunk-level embeddings and file paths
-- Wiki sync scheduler already runs on a schedule (can piggyback staleness check)
-- Slack client already posts to `#kodiai`
-
-**Staleness signals (ranked by reliability):**
-1. **Deleted symbol references** -- wiki mentions function/file that no longer exists (HIGH signal)
-2. **Time-based decay** -- wiki page not updated in 6+ months while referenced code changed significantly (MEDIUM signal)
-3. **Semantic drift** -- embedding similarity between wiki content and current code drops below threshold (LOW signal, experimental)
-
-**Report format:**
-```
-Wiki Staleness Report (2026-02-25)
-===================================
-3 pages flagged as potentially stale:
-
-1. HOW-TO:Compile_Kodi (staleness: 0.72)
-   - References `tools/depends/target/zlib/Makefile` (deleted 2026-01-15)
-   - Last wiki edit: 2025-08-03 (7 months ago)
-
-2. Development/Code_style_conventions (staleness: 0.45)
-   - References `docs/CODING_STYLE.md` (significantly modified, 23 commits since wiki edit)
-   - Last wiki edit: 2025-11-20 (3 months ago)
-
-3. JSON-RPC_API/v13 (staleness: 0.38)
-   - References `xbmc/interfaces/json-rpc/` (4 files changed since wiki edit)
-   - Last wiki edit: 2025-09-01 (6 months ago)
-```
-
-**Confidence:** MEDIUM -- File-path-level staleness detection is straightforward. Symbol-level extraction (function names from wiki prose) is harder and may need iteration. Start with file-path references and `lastModified` age. The `stale` boolean column already exists in wiki_pages schema, which is encouraging.
-
-### Contributor Profiles & Cross-Platform Identity
-
-**How it works:**
-1. **Profile table:** `contributor_profiles` with `github_username`, `slack_user_id`, `display_name`, `expertise_topics`, `linked_at`
-2. **Identity linking:** Manual command in Slack (`@kodiai link github:username`), or auto-suggest based on matching display names/emails
-3. **Expertise inference:** Aggregate from:
-   - Existing `AuthorTier` classification (first-time / regular / core)
-   - File paths they frequently modify (from PR metadata in telemetry)
-   - Review comment topics they engage with (from review comment store author field)
-   - Languages they work in (from language classification on their PRs)
-4. **Adaptive behavior:** Wire expertise into:
-   - Review prompt: more/less explanation based on experience level
-   - Retrieval weighting: boost results from their own prior reviews
-   - Slack responses: adjust depth based on inferred expertise
-
-**Existing infrastructure leveraged:**
-- `author-classifier.ts` already classifies `first-time` / `regular` / `core` based on association + PR count
-- Telemetry store tracks `prAuthor` per execution
-- Slack thread session store has Slack user IDs
-- Review comment store has author metadata from 18 months of backfill
-
-**Cross-platform matching heuristics (for suggestions only, not auto-linking):**
-1. Exact GitHub username match in Slack display name or status field
-2. Email overlap (if available via GitHub API `GET /users/{username}`)
-3. Same display name across platforms
-4. Manual confirmation always required -- heuristics only suggest, never auto-link
-
-**Storage schema:**
-```sql
-CREATE TABLE contributor_profiles (
-  id SERIAL PRIMARY KEY,
-  github_username TEXT UNIQUE,
-  slack_user_id TEXT UNIQUE,
-  display_name TEXT,
-  expertise_topics JSONB DEFAULT '{}',
-  author_tier TEXT DEFAULT 'regular',
-  pr_count INTEGER DEFAULT 0,
-  last_active_at TIMESTAMPTZ,
-  linked_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
-**Confidence:** HIGH for the profile table and manual linking. MEDIUM for expertise inference (needs tuning of topic extraction from review history). LOW for automatic identity resolution (heuristics are unreliable; manual linking is the safe default).
-
-## Complexity Assessment
-
-| Feature | Complexity | LOC Estimate | Test Estimate | Risk |
-|---------|-----------|-------------|--------------|------|
-| Multi-LLM routing + config | Medium | ~400 | ~200 | Low -- Vercel AI SDK well-documented |
-| Cost tracking extension | Low | ~100 | ~50 | Low -- existing schema has columns |
-| HDBSCAN clustering job | High | ~600 | ~300 | Medium -- `hdbscan-ts` needs validation |
-| Cluster labels + injection | Medium | ~400 | ~200 | Medium -- prompt engineering for labels |
-| Wiki staleness scoring | Medium | ~500 | ~250 | Medium -- entity extraction accuracy |
-| Staleness reports | Low | ~200 | ~100 | Low -- existing Slack/GitHub clients |
-| Contributor profile table | Low | ~300 | ~150 | Low -- standard CRUD |
-| Identity linking | Low | ~200 | ~100 | Low -- manual flow |
-| Expertise inference | Medium | ~400 | ~200 | Medium -- topic extraction tuning |
-| Adaptive review behavior | Low | ~200 | ~100 | Low -- prompt variation |
-| **Total** | | **~3,300** | **~1,650** | |
+The closest competitor in sophistication is VS Code's triage system, which uses custom ML models trained monthly on Azure. However, VS Code's system is bespoke (not reusable), requires massive training data (100K+ issues), and operates on a scheduled batch rather than on-demand. Kodiai's LLM-based approach works out of the box without training data.
 
 ## Sources
 
-- [Vercel AI SDK Documentation](https://vercel.com/docs/ai-sdk)
-- [Vercel AI SDK 6 Announcement](https://vercel.com/blog/ai-sdk-6)
-- [Vercel AI Gateway for Multi-Model Integration (InfoQ)](https://www.infoq.com/news/2025/09/vercel-ai-gateway/)
-- [hdbscan-ts npm package](https://www.npmjs.com/package/hdbscan-ts)
-- [HDBSCAN scikit-learn documentation](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.HDBSCAN.html)
-- [hdbscan-js JavaScript implementation](https://github.com/shaileshpandit/hdbscan-js)
-- [Detecting outdated code element references in documentation (Springer)](https://link.springer.com/article/10.1007/s10664-023-10397-6)
-- [Google Code Wiki -- staleness detection approach (Medium)](https://medium.com/@yuwidhgamage/the-end-of-stale-documentation-deep-dive-into-googles-new-code-wiki-f67652aeb4de)
-- [Content Freshness automation patterns (Cobbai)](https://cobbai.com/blog/knowledge-freshness-automation)
-- [GitHub/Slack identity mapping patterns](https://github.com/hmcts/github-slack-user-mappings)
-- [OpenRouter AI SDK Provider](https://github.com/OpenRouterTeam/ai-sdk-provider)
-- Codebase: `src/execution/executor.ts`, `src/telemetry/types.ts`, `src/knowledge/wiki-types.ts`, `src/knowledge/wiki-sync.ts`, `src/knowledge/review-comment-store.ts`, `src/lib/author-classifier.ts`, `src/knowledge/retrieval.ts`
+- [VS Code Automated Issue Triaging Wiki](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging) -- ML-based area classification, feature request lifecycle, needs-more-info automation
+- [VS Code Triage Actions repo](https://github.com/microsoft/vscode-github-triage-actions) -- Implementation of VS Code's triage automation
+- [GitHub Agentic Workflows: Issue Triage](https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows/) -- GitHub's own agentic triage workflow patterns
+- [GitHub Docs: Triaging an issue with AI](https://docs.github.com/en/issues/tracking-your-work-with-issues/administering-issues/triaging-an-issue-with-ai) -- Native GitHub AI triage features
+- [issue-ops/validator](https://github.com/issue-ops/validator) -- YAML form validation with custom rules
+- [The Fancy Triage Bot](https://github.com/marketplace/actions/the-fancy-triage-bot) -- Glob pattern matching for labels and comments
+- [GitHub Docs: Syntax for issue forms](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms) -- YAML form template specification
+- [Kubernetes Issue Triage Guidelines](https://www.kubernetes.dev/docs/guide/issue-triage/) -- Enterprise triage process and labeling taxonomy
+- [simili-bot](https://github.com/similigh/simili-bot) -- AI-powered semantic duplicate detection
+- [ai-duplicate-detector](https://github.com/mackgorski/ai-duplicate-detector) -- Semantic similarity for issue deduplication
+
+---
+*Feature research for: GitHub issue triage automation (v0.21 milestone)*
+*Researched: 2026-02-26*
