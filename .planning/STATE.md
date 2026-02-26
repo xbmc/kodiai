@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 Milestone: v0.20 Multi-Model & Active Intelligence — SHIPPED 2026-02-26
 All 6 phases (97-102), 17 plans complete.
-Last activity: 2026-02-26 - Completed quick task 13: Deploy build, update README, triage GitHub issues
+Last activity: 2026-02-26 - Completed quick task 14: Fix CI test failures in buildAuthorExperienceSection
 
 ## Accumulated Context
 
@@ -69,6 +69,7 @@ None.
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 13 | Deploy build, update README, triage GitHub issues | 2026-02-26 | df7182394f | Verified | [13-deploy-build-update-readme-triage-github](./quick/13-deploy-build-update-readme-triage-github/) |
+| 14 | Fix CI test failures in buildAuthorExperienceSection | 2026-02-26 | 8248d970c6 | | [14-fix-ci-test-failures-in-buildauthorexper](./quick/14-fix-ci-test-failures-in-buildauthorexper/) |
 
 ## Session Continuity
 
