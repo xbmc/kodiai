@@ -22,6 +22,9 @@ import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
 import { createWikiStalenessDetector } from "./knowledge/wiki-staleness-detector.ts";
+import { createClusterScheduler } from "./knowledge/cluster-scheduler.ts";
+import { createClusterStore } from "./knowledge/cluster-store.ts";
+import { matchClusterPatterns } from "./knowledge/cluster-matcher.ts";
 import { createTaskRouter } from "./llm/task-router.ts";
 import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
@@ -94,6 +97,7 @@ const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore 
 // Mutable reference for wiki sync scheduler (set later, stopped on shutdown)
 let _wikiSyncSchedulerRef: { stop: () => void } | null = null;
 let _wikiStalenessDetectorRef: { stop: () => void } | null = null;
+let _clusterSchedulerRef: { stop: () => void; runNow: () => Promise<void> } | null = null;
 
 const shutdownManager = createShutdownManager({
   logger,
@@ -102,6 +106,7 @@ const shutdownManager = createShutdownManager({
     // Stop wiki schedulers before closing DB
     _wikiSyncSchedulerRef?.stop();
     _wikiStalenessDetectorRef?.stop();
+    _clusterSchedulerRef?.stop();
     await closeDb();
   },
 });
@@ -406,6 +411,15 @@ createReviewHandler({
   codeSnippetStore,
   contributorProfileStore,
   slackBotToken: config.slackBotToken,
+  clusterMatcher: async (opts) => {
+    try {
+      const clusterStore = createClusterStore({ sql, logger });
+      return await matchClusterPatterns(opts, clusterStore, sql, logger);
+    } catch (err) {
+      logger.warn({ err }, "Cluster pattern matching failed (fail-open)");
+      return [];
+    }
+  },
   logger,
 });
 createMentionHandler({
@@ -498,6 +512,21 @@ if (wikiStalenessDetector) {
   logger.info("Wiki staleness detector disabled: SLACK_WIKI_CHANNEL_ID not configured");
 }
 
+// Review pattern clustering (Phase 100: weekly scheduled clustering + on-demand)
+const clusterTaskRouter = createTaskRouter({ models: {} }, logger);
+const clusterScheduler = createClusterScheduler({
+  sql,
+  taskRouter: clusterTaskRouter,
+  logger,
+  repos: [config.wikiGithubRepo].filter(Boolean) as string[],
+});
+clusterScheduler.start();
+_clusterSchedulerRef = clusterScheduler;
+logger.info(
+  { intervalDays: 7, startupDelayMs: 120_000 },
+  "Cluster scheduler started (7-day interval, 120s startup delay)",
+);
+
 const app = new Hono();
 
 // Mount routes
@@ -519,6 +548,23 @@ app.route("/webhooks/slack", createSlackEventRoutes({
         })
         .catch((err) => {
           logger.error({ err }, "On-demand wiki-check scan failed");
+        })
+        .finally(() => {
+          untrackJob?.();
+        });
+      return; // Don't route to slackAssistantHandler
+    }
+
+    // On-demand cluster refresh trigger: @kodiai cluster-refresh
+    if (/cluster[-\s]?refresh/i.test(payload.text) && _clusterSchedulerRef) {
+      const untrackJob = requestTracker?.trackJob();
+      Promise.resolve()
+        .then(async () => {
+          logger.info({ channel: payload.channel, user: payload.user }, "On-demand cluster-refresh triggered");
+          await _clusterSchedulerRef!.runNow();
+        })
+        .catch((err) => {
+          logger.error({ err }, "On-demand cluster-refresh failed");
         })
         .finally(() => {
           untrackJob?.();

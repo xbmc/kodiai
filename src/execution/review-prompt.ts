@@ -4,6 +4,7 @@ import type { DiffAnalysis } from "./diff-analysis.ts";
 import type { PriorFinding } from "../knowledge/types.ts";
 import type { ReviewCommentMatch } from "../knowledge/review-comment-retrieval.ts";
 import type { WikiKnowledgeMatch } from "../knowledge/wiki-retrieval.ts";
+import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import type { ConventionalCommitType } from "../lib/pr-intent-parser.ts";
 import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
@@ -959,6 +960,49 @@ export function formatReviewPrecedents(matches: ReviewCommentMatch[]): string {
   ].join("\n");
 }
 
+const MAX_CLUSTER_PATTERNS = 3;
+const MAX_CLUSTER_SAMPLE_CHARS = 150;
+
+/**
+ * Format cluster pattern matches as subtle footnote-style annotations for review comments.
+ * Returns empty string when no matches exist (no section noise).
+ *
+ * Patterns appear as inline footnote annotations. The LLM is instructed to
+ * append these as footnotes to relevant review comments.
+ */
+export function formatClusterPatterns(patterns: ClusterPatternMatch[]): string {
+  if (patterns.length === 0) return "";
+
+  const capped = patterns.slice(0, MAX_CLUSTER_PATTERNS);
+
+  const bullets: string[] = [];
+  for (const p of capped) {
+    const sample = truncateAtWordBoundary(
+      p.representativeSample.replace(/\n/g, " ").trim(),
+      MAX_CLUSTER_SAMPLE_CHARS,
+    );
+    bullets.push(
+      `- **${p.slug}**: ${p.label} (${p.memberCount} occurrences in last 60 days)\n  Example: "${sample}"`,
+    );
+  }
+
+  return [
+    "## Recurring Review Patterns",
+    "",
+    "The following patterns have been identified from historical code reviews on this codebase.",
+    "When your review findings align with one of these patterns, append a subtle footnote:",
+    '`*(Recurring pattern: [slug] — seen N times in last 60 days)*`',
+    "",
+    "Add the footnote at the END of your review comment, not as a separate comment.",
+    "Only add footnotes when there is a strong match. Max 3 pattern footnotes per review.",
+    "Proactively flag code areas matching these patterns even if you would not otherwise comment.",
+    "",
+    "---",
+    ...bullets,
+    "---",
+  ].join("\n");
+}
+
 const MAX_WIKI_KNOWLEDGE = 5;
 const MAX_WIKI_EXCERPT_CHARS = 200;
 
@@ -1452,6 +1496,8 @@ export function buildReviewPrompt(context: {
   // Unified cross-corpus retrieval (KI-13/KI-17)
   unifiedResults?: UnifiedRetrievalChunk[];
   contextWindow?: string;
+  // Review pattern clustering (CLST-03)
+  clusterPatterns?: ClusterPatternMatch[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1562,6 +1608,14 @@ export function buildReviewPrompt(context: {
       const wikiSection = formatWikiKnowledge(context.wikiKnowledge);
       if (wikiSection) {
         lines.push("", wikiSection);
+      }
+    }
+
+    // Review pattern clustering (CLST-03)
+    if (context.clusterPatterns && context.clusterPatterns.length > 0) {
+      const clusterPatternsSection = formatClusterPatterns(context.clusterPatterns);
+      if (clusterPatternsSection) {
+        lines.push("", clusterPatternsSection);
       }
     }
   }

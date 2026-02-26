@@ -18,9 +18,11 @@ import {
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
   buildVerdictLogicSection,
+  formatClusterPatterns,
   formatReviewPrecedents,
   matchPathInstructions,
 } from "./review-prompt.ts";
+import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 
 function baseContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -1469,5 +1471,71 @@ describe("formatReviewPrecedents", () => {
     const section = formatReviewPrecedents(matches);
     const prMatches = section.match(/\*\*PR #\d+\*\*/g);
     expect(prMatches).toHaveLength(5);
+  });
+});
+
+// ── Cluster Pattern Tests (CLST-03) ──────────────────────────────────
+
+function makeClusterPattern(overrides: Partial<ClusterPatternMatch> = {}): ClusterPatternMatch {
+  return {
+    clusterId: 1,
+    slug: "null-check-missing",
+    label: "Missing null/undefined checks before property access",
+    memberCount: 12,
+    similarityScore: 0.85,
+    filePathOverlap: 0.4,
+    combinedScore: 0.62,
+    representativeSample: "Should check for null before accessing .data property",
+    ...overrides,
+  };
+}
+
+describe("formatClusterPatterns", () => {
+  test("empty patterns produces no section", () => {
+    expect(formatClusterPatterns([])).toBe("");
+  });
+
+  test("single pattern formats with slug, label, count, and sample", () => {
+    const section = formatClusterPatterns([makeClusterPattern()]);
+    expect(section).toContain("## Recurring Review Patterns");
+    expect(section).toContain("**null-check-missing**");
+    expect(section).toContain("Missing null/undefined checks");
+    expect(section).toContain("12 occurrences in last 60 days");
+    expect(section).toContain('Example: "Should check for null');
+    expect(section).toContain("append a subtle footnote");
+  });
+
+  test("caps at 3 patterns even with more input", () => {
+    const patterns = Array.from({ length: 5 }, (_, i) =>
+      makeClusterPattern({ clusterId: i + 1, slug: `pattern-${i + 1}` }),
+    );
+    const section = formatClusterPatterns(patterns);
+    const slugMatches = section.match(/\*\*pattern-\d+\*\*/g);
+    expect(slugMatches).toHaveLength(3);
+  });
+
+  test("truncates long representative samples", () => {
+    const longSample = "This is an extremely long representative sample text that goes on and on about " +
+      "various code review issues including null checks, error handling, type safety, performance " +
+      "optimization, and many other topics that reviewers have flagged repeatedly over many months.";
+    const section = formatClusterPatterns([makeClusterPattern({ representativeSample: longSample })]);
+    expect(section).toContain("...");
+    expect(section).not.toContain("flagged repeatedly over many months");
+  });
+
+  test("buildReviewPrompt includes cluster patterns section when provided", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      clusterPatterns: [makeClusterPattern()],
+    }));
+    expect(prompt).toContain("## Recurring Review Patterns");
+    expect(prompt).toContain("**null-check-missing**");
+  });
+
+  test("buildReviewPrompt omits cluster patterns section when empty or undefined", () => {
+    const promptEmpty = buildReviewPrompt(baseContext({ clusterPatterns: [] }));
+    expect(promptEmpty).not.toContain("## Recurring Review Patterns");
+
+    const promptUndef = buildReviewPrompt(baseContext());
+    expect(promptUndef).not.toContain("## Recurring Review Patterns");
   });
 });

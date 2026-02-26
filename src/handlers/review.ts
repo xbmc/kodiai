@@ -12,6 +12,7 @@ import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
+import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
@@ -1316,6 +1317,8 @@ export function createReviewHandler(deps: {
   contributorProfileStore?: ContributorProfileStore;
   /** Optional Slack bot token for identity suggestion DMs. */
   slackBotToken?: string;
+  /** Optional cluster pattern matcher (Phase 100: CLST-03). */
+  clusterMatcher?: (opts: { prEmbedding: Float32Array | null; prFilePaths: string[]; repo: string }) => Promise<ClusterPatternMatch[]>;
   logger: Logger;
 }): void {
   const {
@@ -1336,6 +1339,7 @@ export function createReviewHandler(deps: {
     codeSnippetStore,
     contributorProfileStore,
     slackBotToken,
+    clusterMatcher,
     logger,
   } = deps;
 
@@ -2698,6 +2702,29 @@ export function createReviewHandler(deps: {
         // Extract PR labels for intent scoping (FORMAT-07)
         const prLabels = (pr.labels as Array<{ name: string }> | undefined)?.map((l) => l.name) ?? [];
 
+        // Cluster pattern matching (CLST-03: surface recurring review patterns)
+        let clusterPatternsForPrompt: ClusterPatternMatch[] = [];
+        if (clusterMatcher && embeddingProvider) {
+          try {
+            const prText = [pr.title, pr.body ?? "", ...promptFiles.slice(0, 20)].join("\n");
+            const embedResult = await embeddingProvider.generate(prText, "query");
+            const prEmbedding = embedResult?.embedding ?? null;
+            clusterPatternsForPrompt = await clusterMatcher({
+              prEmbedding,
+              prFilePaths: promptFiles,
+              repo: `${apiOwner}/${apiRepo}`,
+            });
+            if (clusterPatternsForPrompt.length > 0) {
+              logger.info(
+                { ...baseLog, clusterMatches: clusterPatternsForPrompt.length },
+                "Cluster patterns matched for PR review",
+              );
+            }
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, "Cluster pattern matching failed (fail-open)");
+          }
+        }
+
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -2772,6 +2799,8 @@ export function createReviewHandler(deps: {
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
+          // Review pattern clustering (CLST-03)
+          clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
         });
 
         // Execute review via Claude
@@ -3775,6 +3804,8 @@ export function createReviewHandler(deps: {
                       depBumpContext,
                       searchRateLimitDegradation: authorClassification.searchEnrichment,
                       isDraft,
+                      // Review pattern clustering (CLST-03) — reuse from initial review
+                      clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
                     });
 
                     const retryResult = await executor.execute({
