@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.20
-milestone_name: Multi-Model & Active Intelligence
-status: milestone_complete
-stopped_at: v0.20 milestone complete
-last_updated: "2026-02-26T22:45:00.000Z"
+milestone: v0.21
+milestone_name: Issue Triage Foundation
+status: defining_requirements
+stopped_at: null
+last_updated: "2026-02-26T23:30:00.000Z"
 progress:
-  total_phases: 102
-  completed_phases: 102
-  total_plans: 265
-  completed_plans: 265
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,13 +19,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.20 shipped — planning next milestone
+**Current focus:** v0.21 Issue Triage Foundation — defining requirements
 
 ## Current Position
 
-Milestone: v0.20 Multi-Model & Active Intelligence — SHIPPED 2026-02-26
-All 6 phases (97-102), 17 plans complete.
-Last activity: 2026-02-26 - Completed quick task 14: Fix CI test failures in buildAuthorExperienceSection
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-26 — Milestone v0.21 started
 
 ## Accumulated Context
 

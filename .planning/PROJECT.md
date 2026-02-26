@@ -70,6 +70,18 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.21 Issue Triage Foundation
+
+**Goal:** Stand up the issue vector corpus, build GitHub MCP tools for issue interaction, and deliver a `@kodiai`-triggered triage agent that validates issue templates and applies labels when fields are missing.
+
+**Target features:**
+- Issue schema & vector corpus in PostgreSQL (HNSW + tsvector indexes)
+- `github_issue_label` and `github_issue_comment` MCP tools for agent interaction
+- Triage agent wired to `@kodiai` mentions on issues — validates template, comments with guidance, applies labels
+- Config-gated via `.kodiai.yml`
+
+**Source:** [Issue #73](https://github.com/xbmc/kodiai/issues/73)
+
 ## Current State
 
 v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detection, and review pattern clustering added on top of the v0.19 knowledge platform:
@@ -194,7 +206,13 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 
 ### Active
 
-(No active requirements — start next milestone with `/gsd:new-milestone`)
+- [ ] Issue schema & vector corpus with HNSW and tsvector indexes — v0.21
+- [ ] `github_issue_label` MCP tool for applying labels from agent — v0.21
+- [ ] `github_issue_comment` MCP tool for posting comments from agent — v0.21
+- [ ] Issue template parser reads templates and identifies missing fields — v0.21
+- [ ] Triage agent validates issue body against template, comments with guidance — v0.21
+- [ ] Triage agent applies `Ignored rules` label when fields are missing — v0.21
+- [ ] Triage wired to `@kodiai` mention path, gated by `.kodiai.yml` — v0.21
 
 ### Out of Scope
 
@@ -299,4 +317,4 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-26 after v0.20 milestone*
+*Last updated: 2026-02-26 after v0.21 milestone start*
