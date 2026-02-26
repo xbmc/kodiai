@@ -13,6 +13,8 @@ provides:
   - Shutdown cleanup for staleness detector
 affects: []
 
+requirements-completed: [WIKI-01, WIKI-03, WIKI-04, WIKI-05]
+
 tech-stack:
   added: []
   patterns: [conditional-feature-guard, fire-and-forget-with-tracking]

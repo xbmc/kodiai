@@ -14,6 +14,8 @@ provides:
   - WikiStalenessScheduler (start/stop/runScan)
 affects: [99-03, index-wiring, wiki-staleness-scheduling]
 
+requirements-completed: [WIKI-01, WIKI-02, WIKI-05]
+
 tech-stack:
   added: []
   patterns: [two-tier-heuristic-llm-pipeline, recency-first-sorting, cap-and-defer]

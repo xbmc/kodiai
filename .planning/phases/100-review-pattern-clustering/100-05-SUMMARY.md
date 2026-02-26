@@ -1,3 +1,7 @@
+---
+requirements-completed: [CLST-03, CLST-04]
+---
+
 # Plan 100-05 Summary
 
 ## What was built

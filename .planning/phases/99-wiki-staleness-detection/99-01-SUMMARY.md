@@ -13,6 +13,8 @@ provides:
   - SlackClient.postStandaloneMessage() for top-level Slack messages with ts return
 affects: [99-02, 99-03, wiki-staleness-detector, index-wiring]
 
+requirements-completed: [WIKI-01, WIKI-03, WIKI-04]
+
 tech-stack:
   added: []
   patterns: [single-row-table-upsert, standalone-slack-message-threading]

@@ -18,11 +18,11 @@ Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap p
 
 ### Wiki Staleness Detection
 
-- [ ] **WIKI-01**: Scheduled job compares wiki page content references against recent code changes to compute staleness scores
-- [ ] **WIKI-02**: File-path-level evidence linking identifies specific code changes that invalidate wiki content with commit SHAs
-- [ ] **WIKI-03**: Staleness report delivered on schedule (Slack message to `#kodiai` or GitHub issue) listing top-N stale pages with evidence
-- [ ] **WIKI-04**: Staleness threshold configurable via `.kodiai.yml` `wiki.staleness_threshold_days`
-- [ ] **WIKI-05**: Two-tier detection: cheap heuristic pass first, LLM evaluation only on flagged subset (capped at 20 pages/cycle)
+- [x] **WIKI-01**: Scheduled job compares wiki page content references against recent code changes to compute staleness scores
+- [x] **WIKI-02**: File-path-level evidence linking identifies specific code changes that invalidate wiki content with commit SHAs
+- [x] **WIKI-03**: Staleness report delivered on schedule (Slack message to `#kodiai` or GitHub issue) listing top-N stale pages with evidence
+- [x] **WIKI-04**: Staleness threshold configurable via `.kodiai.yml` `wiki.staleness_threshold_days`
+- [x] **WIKI-05**: Two-tier detection: cheap heuristic pass first, LLM evaluation only on flagged subset (capped at 20 pages/cycle)
 
 ### Review Pattern Clustering
 
@@ -34,11 +34,11 @@ Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap p
 
 ### Contributor Profiles
 
-- [ ] **PROF-01**: Contributor profile table stores GitHub username, Slack user ID, display name, expertise topics, and author tier
-- [ ] **PROF-02**: GitHub/Slack identity linking via explicit Slack command with optional heuristic suggestions (never auto-linked)
-- [ ] **PROF-03**: Expertise inference derives per-topic scores from commit history, review comment topics, and language usage
-- [ ] **PROF-04**: Adaptive review depth: lighter review for high-tenure contributors in their expertise areas, more explanation for newcomers
-- [ ] **PROF-05**: Privacy opt-out flag per contributor; no profile built without consent mechanism
+- [x] **PROF-01**: Contributor profile table stores GitHub username, Slack user ID, display name, expertise topics, and author tier
+- [x] **PROF-02**: GitHub/Slack identity linking via explicit Slack command with optional heuristic suggestions (never auto-linked)
+- [x] **PROF-03**: Expertise inference derives per-topic scores from commit history, review comment topics, and language usage
+- [x] **PROF-04**: Adaptive review depth: lighter review for high-tenure contributors in their expertise areas, more explanation for newcomers
+- [x] **PROF-05**: Privacy opt-out flag per contributor; no profile built without consent mechanism
 
 ## Future Requirements
 
@@ -88,21 +88,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LLM-03 | Phase 101 | Complete |
 | LLM-04 | Phase 97 | Complete |
 | LLM-05 | Phase 101 | Complete |
-| WIKI-01 | Phase 99 | Pending |
-| WIKI-02 | Phase 99 | Pending |
-| WIKI-03 | Phase 99 | Pending |
-| WIKI-04 | Phase 99 | Pending |
-| WIKI-05 | Phase 99 | Pending |
-| CLST-01 | Phase 100 | Done |
-| CLST-02 | Phase 100 | Done |
-| CLST-03 | Phase 100 | Done |
-| CLST-04 | Phase 100 | Done |
-| CLST-05 | Phase 100 | Done |
-| PROF-01 | Phase 98 | Pending |
-| PROF-02 | Phase 98 | Pending |
-| PROF-03 | Phase 98 | Pending |
-| PROF-04 | Phase 98 | Pending |
-| PROF-05 | Phase 98 | Pending |
+| WIKI-01 | Phase 99 | Complete |
+| WIKI-02 | Phase 99 | Complete |
+| WIKI-03 | Phase 99 | Complete |
+| WIKI-04 | Phase 99 | Complete |
+| WIKI-05 | Phase 99 | Complete |
+| CLST-01 | Phase 100 | Complete |
+| CLST-02 | Phase 100 | Complete |
+| CLST-03 | Phase 100 | Complete |
+| CLST-04 | Phase 100 | Complete |
+| CLST-05 | Phase 100 | Complete |
+| PROF-01 | Phase 98 | Complete |
+| PROF-02 | Phase 98 | Complete |
+| PROF-03 | Phase 98 | Complete |
+| PROF-04 | Phase 98 | Complete |
+| PROF-05 | Phase 98 | Complete |
 
 **Coverage:**
 - v0.20 requirements: 20 total
