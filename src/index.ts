@@ -21,6 +21,8 @@ import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.t
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
+import { createWikiStalenessDetector } from "./knowledge/wiki-staleness-detector.ts";
+import { createTaskRouter } from "./llm/task-router.ts";
 import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
@@ -91,13 +93,15 @@ const requestTracker = createRequestTracker();
 const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore });
 // Mutable reference for wiki sync scheduler (set later, stopped on shutdown)
 let _wikiSyncSchedulerRef: { stop: () => void } | null = null;
+let _wikiStalenessDetectorRef: { stop: () => void } | null = null;
 
 const shutdownManager = createShutdownManager({
   logger,
   requestTracker,
   closeDb: async () => {
-    // Stop wiki sync scheduler before closing DB
+    // Stop wiki schedulers before closing DB
     _wikiSyncSchedulerRef?.stop();
+    _wikiStalenessDetectorRef?.stop();
     await closeDb();
   },
 });
@@ -461,6 +465,39 @@ if (wikiSyncScheduler) {
   logger.info("Wiki sync scheduler started (24h interval, 60s startup delay)");
 }
 
+// Wiki staleness detector (Phase 99: weekly scheduled scan)
+const stalenessTaskRouter = createTaskRouter({ models: {} }, logger);
+const wikiStalenessDetector = config.slackWikiChannelId
+  ? createWikiStalenessDetector({
+      sql,
+      wikiPageStore,
+      githubApp,
+      slackClient,
+      taskRouter: stalenessTaskRouter,
+      logger,
+      githubOwner: config.wikiGithubOwner,
+      githubRepo: config.wikiGithubRepo,
+      wikiChannelId: config.slackWikiChannelId,
+      stalenessThresholdDays: config.wikiStalenessThresholdDays,
+    })
+  : null;
+if (wikiStalenessDetector) {
+  wikiStalenessDetector.start();
+  _wikiStalenessDetectorRef = wikiStalenessDetector;
+  logger.info(
+    {
+      intervalDays: 7,
+      startupDelayMs: 90_000,
+      channelId: config.slackWikiChannelId,
+      owner: config.wikiGithubOwner,
+      repo: config.wikiGithubRepo,
+    },
+    "Wiki staleness detector started (7-day interval, 90s startup delay)",
+  );
+} else {
+  logger.info("Wiki staleness detector disabled: SLACK_WIKI_CHANNEL_ID not configured");
+}
+
 const app = new Hono();
 
 // Mount routes
@@ -472,6 +509,23 @@ app.route("/webhooks/slack", createSlackEventRoutes({
   webhookQueueStore,
   requestTracker,
   onAllowedBootstrap: async (payload) => {
+    // On-demand wiki staleness check trigger: @kodiai wiki-check
+    if (/wiki[-\s]?check/i.test(payload.text) && wikiStalenessDetector) {
+      const untrackJob = requestTracker?.trackJob();
+      Promise.resolve()
+        .then(async () => {
+          logger.info({ channel: payload.channel, user: payload.user }, "On-demand wiki-check triggered");
+          await wikiStalenessDetector.runScan();
+        })
+        .catch((err) => {
+          logger.error({ err }, "On-demand wiki-check scan failed");
+        })
+        .finally(() => {
+          untrackJob?.();
+        });
+      return; // Don't route to slackAssistantHandler
+    }
+
     await slackAssistantHandler.handle(payload);
   },
 }));
