@@ -10,10 +10,10 @@ Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap p
 
 ### Multi-LLM Routing
 
-- [ ] **LLM-01**: Non-agentic tasks (summaries, labels, scoring) route through Vercel AI SDK `generateText()` while agentic tasks (PR review, mentions, Slack write) remain on Claude Agent SDK `query()`
+- [x] **LLM-01**: Non-agentic tasks (summaries, labels, scoring) route through Vercel AI SDK `generateText()` while agentic tasks (PR review, mentions, Slack write) remain on Claude Agent SDK `query()`
 - [x] **LLM-02**: Task types (`pr-summary`, `cluster-label`, `staleness-evidence`) map to configurable model IDs via a task router
 - [x] **LLM-03**: `.kodiai.yml` `models:` section allows per-repo model overrides per task type
-- [ ] **LLM-04**: Provider fallback: if configured provider is unavailable, fall back to configured default model
+- [x] **LLM-04**: Provider fallback: if configured provider is unavailable, fall back to configured default model
 - [x] **LLM-05**: Each non-agentic LLM invocation logs model, provider, token counts, and estimated cost to Postgres
 
 ### Wiki Staleness Detection
@@ -83,10 +83,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LLM-01 | Phase 97 | Pending |
+| LLM-01 | Phase 97 | Complete |
 | LLM-02 | Phase 97 | Complete |
 | LLM-03 | Phase 97 | Complete |
-| LLM-04 | Phase 97 | Pending |
+| LLM-04 | Phase 97 | Complete |
 | LLM-05 | Phase 97 | Complete |
 | WIKI-01 | Phase 99 | Pending |
 | WIKI-02 | Phase 99 | Pending |

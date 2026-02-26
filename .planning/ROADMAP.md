@@ -162,7 +162,7 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
-- [ ] **Phase 97: Multi-LLM Routing & Cost Tracking** - Vercel AI SDK integration with task-based model routing, provider config, and per-invocation cost logging
+- [x] **Phase 97: Multi-LLM Routing & Cost Tracking** - Vercel AI SDK integration with task-based model routing, provider config, and per-invocation cost logging (completed 2026-02-26)
 - [ ] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior
 - [ ] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub
 - [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews
@@ -222,7 +222,7 @@ Plans:
 | 86-88 | v0.17 | 8/8 | Complete | 2026-02-24 |
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
-| 97 | 2/3 | In Progress|  | - |
+| 97 | 3/3 | Complete   | 2026-02-26 | - |
 | 98 | v0.20 | 0/TBD | Not started | - |
 | 99 | v0.20 | 0/TBD | Not started | - |
 | 100 | v0.20 | 0/TBD | Not started | - |
