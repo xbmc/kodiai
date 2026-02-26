@@ -21,7 +21,7 @@
 - ✅ **v0.17 Infrastructure Foundation** — Phases 86-88 (shipped 2026-02-24)
 - ✅ **v0.18 Knowledge Ingestion** — Phases 89-92 (shipped 2026-02-25)
 - ✅ **v0.19 Intelligent Retrieval Enhancements** — Phases 93-96 (shipped 2026-02-25)
-- 🚧 **v0.20 Multi-Model & Active Intelligence** — Phases 97-100 (in progress)
+- 🚧 **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (in progress)
 
 ## Phases
 
@@ -166,6 +166,8 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 - [x] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior (completed 2026-02-25)
 - [x] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub (not started) (completed 2026-02-26)
 - [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews (not started)
+- [ ] **Phase 101: Wire Executor Dependencies & Fix Cost Tracking** - Wire taskRouter and costTracker to createExecutor, fix wiki-staleness-detector repo field (gap closure)
+- [ ] **Phase 102: Documentation & Verification Closure** - Phase 100 VERIFICATION.md, REQUIREMENTS.md checkbox fixes, SUMMARY frontmatter (gap closure)
 
 ### Phase 97: Multi-LLM Routing & Cost Tracking
 **Goal**: Non-agentic tasks route through configurable models via Vercel AI SDK while agentic tasks remain on Claude Agent SDK, with full cost visibility per invocation
@@ -202,6 +204,18 @@ Plans:
 **Goal**: Kodiai discovers emergent review themes from 18 months of review comment embeddings and surfaces recurring patterns in PR reviews
 **Depends on**: Phase 97 (model router needed for cluster label generation)
 **Requirements**: CLST-01, CLST-02, CLST-03, CLST-04, CLST-05
+
+### Phase 101: Wire Executor Dependencies & Fix Cost Tracking
+**Goal**: Wire taskRouter and costTracker dependencies into createExecutor so agent SDK calls write cost rows and .kodiai.yml model routing is operative for agentic tasks; fix wiki-staleness-detector missing repo field
+**Depends on**: Phase 97 (provides taskRouter and costTracker modules)
+**Requirements**: LLM-02, LLM-03, LLM-05
+**Gap Closure:** Closes integration GAP-1 and GAP-2 from v0.20 audit
+
+### Phase 102: Documentation & Verification Closure
+**Goal**: Create missing Phase 100 VERIFICATION.md, fix REQUIREMENTS.md checkboxes for PROF/WIKI sections, and add requirements_completed frontmatter to Phase 100 SUMMARY files
+**Depends on**: Phase 100, Phase 101
+**Requirements**: CLST-01, CLST-02, CLST-03, CLST-04, CLST-05 (verification), PROF-01-05 (checkbox fix), WIKI-01-05 (checkbox fix)
+**Gap Closure:** Closes verification and documentation gaps from v0.20 audit
 
 ## Progress
 
