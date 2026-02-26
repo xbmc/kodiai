@@ -29,8 +29,14 @@ export interface SlackThreadPublishInput {
   text: string;
 }
 
+export interface SlackStandaloneMessageInput {
+  channel: string;
+  text: string;
+}
+
 export interface SlackClient {
   postThreadMessage(input: SlackThreadPublishInput): Promise<void>;
+  postStandaloneMessage(input: SlackStandaloneMessageInput): Promise<{ ts: string }>;
   addReaction(input: { channel: string; timestamp: string; name: string }): Promise<void>;
   removeReaction(input: { channel: string; timestamp: string; name: string }): Promise<void>;
   getTokenScopes(): Promise<string[]>;
@@ -145,6 +151,47 @@ export function createSlackClient(input: CreateSlackClientInput): SlackClient {
       if (!payload.ok) {
         throw new Error(`Slack API chat.postMessage failed: ${payload.error ?? "unknown_error"}`);
       }
+    },
+
+    async postStandaloneMessage(messageInput: SlackStandaloneMessageInput): Promise<{ ts: string }> {
+      const response = await fetchImpl("https://slack.com/api/chat.postMessage", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${input.botToken}`,
+          "content-type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({
+          channel: messageInput.channel,
+          text: messageInput.text,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Slack API chat.postMessage request failed: ${response.status}`);
+      }
+
+      const raw = await response.text();
+      if (!raw.trim()) {
+        throw new Error("Slack API chat.postMessage returned empty response body");
+      }
+
+      let parsed: SlackApiResponse & { ts?: string };
+      try {
+        parsed = JSON.parse(raw) as SlackApiResponse & { ts?: string };
+      } catch {
+        throw new Error(`Slack API chat.postMessage returned non-JSON response: ${raw.slice(0, 200)}`);
+      }
+
+      if (!parsed.ok) {
+        throw new Error(`Slack API chat.postMessage failed: ${parsed.error ?? "unknown_error"}`);
+      }
+
+      if (!parsed.ts) {
+        throw new Error("Slack API chat.postMessage response missing ts field");
+      }
+
+      return { ts: parsed.ts };
     },
   };
 }

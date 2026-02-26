@@ -128,6 +128,36 @@ describe("createSlackClient", () => {
     );
   });
 
+  test("postStandaloneMessage returns ts from response", async () => {
+    const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+
+    const client = createSlackClient({
+      botToken: "xoxb-test-token",
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), init });
+        return new Response(JSON.stringify({ ok: true, ts: "1234567890.000100" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    });
+
+    const result = await client.postStandaloneMessage({
+      channel: "C12345",
+      text: "Wiki Staleness Report",
+    });
+
+    expect(result.ts).toBe("1234567890.000100");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("https://slack.com/api/chat.postMessage");
+    expect(requests[0]?.init?.method).toBe("POST");
+    // Verify no thread_ts in the body
+    const body = JSON.parse(requests[0]?.init?.body as string);
+    expect(body.channel).toBe("C12345");
+    expect(body.text).toBe("Wiki Staleness Report");
+    expect(body.thread_ts).toBeUndefined();
+  });
+
   test("rejects missing thread target and does not call Slack API", async () => {
     let called = false;
 
