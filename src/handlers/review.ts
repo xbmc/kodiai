@@ -61,6 +61,8 @@ import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
+import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
+import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
   detectDepBump,
@@ -591,6 +593,7 @@ async function resolveAuthorTier(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
   knowledgeStore: KnowledgeStore;
   searchCache?: SearchCache<number>;
+  contributorProfileStore?: ContributorProfileStore;
   logger: Logger;
 }): Promise<{
   tier: AuthorTier;
@@ -598,8 +601,9 @@ async function resolveAuthorTier(params: {
   fromCache: boolean;
   searchCacheHit: boolean;
   searchEnrichment: AuthorTierSearchEnrichment;
+  expertise?: ContributorExpertise[];
 }> {
-  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, logger } = params;
+  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, contributorProfileStore, logger } = params;
   const searchEnrichment: AuthorTierSearchEnrichment = {
     degraded: false,
     retryAttempts: 0,
@@ -607,6 +611,26 @@ async function resolveAuthorTier(params: {
     degradationPath: "none",
   };
   let searchCacheHit = false;
+
+  // Try contributor profile store first (4-tier system)
+  if (contributorProfileStore) {
+    try {
+      const profile = await contributorProfileStore.getByGithubUsername(authorLogin);
+      if (profile) {
+        const expertise = await contributorProfileStore.getExpertise(profile.id);
+        return {
+          tier: profile.overallTier as AuthorTier,
+          prCount: null,
+          fromCache: false,
+          searchCacheHit: false,
+          searchEnrichment,
+          expertise,
+        };
+      }
+    } catch (err) {
+      logger.warn({ err, authorLogin }, "Contributor profile lookup failed (fail-open)");
+    }
+  }
 
   try {
     const cached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
@@ -1287,6 +1311,8 @@ export function createReviewHandler(deps: {
   searchCacheFactory?: () => SearchCache<number>;
   /** Optional code snippet store for hunk embedding. */
   codeSnippetStore?: CodeSnippetStore;
+  /** Optional contributor profile store for 4-tier expertise-based reviews. */
+  contributorProfileStore?: ContributorProfileStore;
   logger: Logger;
 }): void {
   const {
@@ -1305,6 +1331,7 @@ export function createReviewHandler(deps: {
     searchCache: injectedSearchCache,
     searchCacheFactory,
     codeSnippetStore,
+    contributorProfileStore,
     logger,
   } = deps;
 
@@ -1781,6 +1808,7 @@ export function createReviewHandler(deps: {
           fromCache: boolean;
           searchCacheHit: boolean;
           searchEnrichment: AuthorTierSearchEnrichment;
+          expertise?: ContributorExpertise[];
         } = {
           tier: "regular",
           prCount: null,
@@ -1805,6 +1833,7 @@ export function createReviewHandler(deps: {
               octokit: idempotencyOctokit,
               knowledgeStore,
               searchCache: authorPrCountSearchCache,
+              contributorProfileStore,
               logger,
             });
             logger.info(
@@ -2718,6 +2747,11 @@ export function createReviewHandler(deps: {
             totalFiles: tieredFiles.totalFiles,
           } : null,
           authorTier: authorClassification.tier,
+          authorExpertise: authorClassification.expertise?.map(e => ({
+            dimension: e.dimension,
+            topic: e.topic,
+            score: e.score,
+          })),
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
@@ -3308,6 +3342,17 @@ export function createReviewHandler(deps: {
           } catch (err) {
             logger.warn({ ...baseLog, err }, 'Failed to mark run as completed (non-fatal)');
           }
+        }
+
+        // Fire-and-forget incremental expertise update (PROF-04)
+        if (contributorProfileStore) {
+          updateExpertiseIncremental({
+            githubUsername: pr.user.login,
+            filesChanged: reviewFiles,
+            type: "pr_authored",
+            profileStore: contributorProfileStore,
+            logger,
+          }).catch((err) => logger.warn({ err }, "Contributor expertise update failed (non-blocking)"));
         }
 
         // Async learning memory write (LEARN-06)

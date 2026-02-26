@@ -1,4 +1,4 @@
-export type AuthorTier = "first-time" | "regular" | "core";
+export type AuthorTier = "first-time" | "regular" | "core" | "newcomer" | "developing" | "established" | "senior";
 
 export type AuthorClassification = {
   tier: AuthorTier;

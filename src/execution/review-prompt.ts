@@ -262,10 +262,12 @@ export function buildToneGuidelinesSection(): string {
 export function buildAuthorExperienceSection(params: {
   tier: AuthorTier;
   authorLogin: string;
+  areaExpertise?: { dimension: string; topic: string; score: number }[];
 }): string {
-  const { tier, authorLogin } = params;
+  const { tier, authorLogin, areaExpertise } = params;
 
-  if (tier === "first-time") {
+  // Newcomer prompt (first-time and newcomer tiers)
+  if (tier === "first-time" || tier === "newcomer") {
     return [
       "## Author Experience Context",
       "",
@@ -279,14 +281,43 @@ export function buildAuthorExperienceSection(params: {
       "- Acknowledge what was done well before noting issues",
       "- Use phrases like \"A common pattern here is...\" instead of \"You should...\"",
       "- For MINOR findings, prefer a brief explanation over terse labels",
+      "- When suggesting fixes, include a brief code example if the pattern might be unfamiliar",
     ].join("\n");
   }
 
-  if (tier === "core") {
+  // Developing prompt (regular and developing tiers)
+  if (tier === "regular" || tier === "developing") {
     return [
       "## Author Experience Context",
       "",
-      `The PR author (${authorLogin}) is a core contributor (MEMBER/OWNER) of this repository.`,
+      `The PR author (${authorLogin}) is a developing contributor with growing familiarity in this area.`,
+      "",
+      "- Provide moderate explanation — mention WHY for non-obvious issues, skip for basic ones",
+      "- Include doc links for project-specific patterns but not general language features",
+      "- Use a balanced, collaborative tone",
+      "- Comment on both style concerns and substantive issues",
+    ].join("\n");
+  }
+
+  // Established prompt
+  if (tier === "established") {
+    return [
+      "## Author Experience Context",
+      "",
+      `The PR author (${authorLogin}) is an established contributor.`,
+      "",
+      "- Keep explanations brief — one sentence on WHY, then the suggestion",
+      "- Skip style-only nitpicks unless they violate project conventions",
+      "- Focus on correctness and maintainability over pedagogy",
+    ].join("\n");
+  }
+
+  // Senior prompt (core and senior tiers)
+  if (tier === "core" || tier === "senior") {
+    const lines = [
+      "## Author Experience Context",
+      "",
+      `The PR author (${authorLogin}) is a core/senior contributor of this repository.`,
       "",
       "Adapt your review tone accordingly:",
       "- Be concise and assume familiarity with the codebase",
@@ -294,7 +325,22 @@ export function buildAuthorExperienceSection(params: {
       "- Use terse finding descriptions (issue + consequence only)",
       "- Omit links to basic documentation",
       "- For MINOR findings, a one-liner is sufficient",
-    ].join("\n");
+      "- Focus on architecture and design, not syntax or style",
+      "- Use peer-to-peer tone: direct, brief, no hedging",
+    ];
+
+    // Add expertise context if author has deep expertise in relevant areas
+    if (areaExpertise && areaExpertise.length > 0) {
+      const strongAreas = areaExpertise.filter((e) => e.score >= 0.7);
+      if (strongAreas.length > 0) {
+        const topics = strongAreas.map((e) => `${e.topic}`).join(", ");
+        lines.push(
+          `- The author has deep expertise in ${topics}. Only flag issues you're highly confident about.`,
+        );
+      }
+    }
+
+    return lines.join("\n");
   }
 
   return "";
@@ -1394,6 +1440,7 @@ export function buildReviewPrompt(context: {
     totalFiles: number;
   } | null;
   authorTier?: AuthorTier;
+  authorExpertise?: { dimension: string; topic: string; score: number }[];
   depBumpContext?: DepBumpContext | null;
   searchRateLimitDegradation?: {
     degraded: boolean;
@@ -1667,6 +1714,7 @@ export function buildReviewPrompt(context: {
     const authorExpSection = buildAuthorExperienceSection({
       tier: context.authorTier,
       authorLogin: context.prAuthor,
+      areaExpertise: context.authorExpertise,
     });
     if (authorExpSection) lines.push("", authorExpSection);
   }
