@@ -305,6 +305,7 @@ Your confidence in this assessment based on file overlap: ${candidate.heuristicT
       prompt,
       logger,
       costTracker: opts.costTracker,
+      repo: `${opts.githubOwner}/${opts.githubRepo}`,
     });
 
     const text = result.text.trim();
