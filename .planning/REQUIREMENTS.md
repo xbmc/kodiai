@@ -14,7 +14,7 @@ Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap p
 - [x] **LLM-02**: Task types (`pr-summary`, `cluster-label`, `staleness-evidence`) map to configurable model IDs via a task router
 - [x] **LLM-03**: `.kodiai.yml` `models:` section allows per-repo model overrides per task type
 - [ ] **LLM-04**: Provider fallback: if configured provider is unavailable, fall back to configured default model
-- [ ] **LLM-05**: Each non-agentic LLM invocation logs model, provider, token counts, and estimated cost to Postgres
+- [x] **LLM-05**: Each non-agentic LLM invocation logs model, provider, token counts, and estimated cost to Postgres
 
 ### Wiki Staleness Detection
 
@@ -87,7 +87,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LLM-02 | Phase 97 | Complete |
 | LLM-03 | Phase 97 | Complete |
 | LLM-04 | Phase 97 | Pending |
-| LLM-05 | Phase 97 | Pending |
+| LLM-05 | Phase 97 | Complete |
 | WIKI-01 | Phase 99 | Pending |
 | WIKI-02 | Phase 99 | Pending |
 | WIKI-03 | Phase 99 | Pending |

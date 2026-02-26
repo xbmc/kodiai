@@ -222,7 +222,7 @@ Plans:
 | 86-88 | v0.17 | 8/8 | Complete | 2026-02-24 |
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
-| 97 | 1/3 | In Progress|  | - |
+| 97 | 2/3 | In Progress|  | - |
 | 98 | v0.20 | 0/TBD | Not started | - |
 | 99 | v0.20 | 0/TBD | Not started | - |
 | 100 | v0.20 | 0/TBD | Not started | - |
