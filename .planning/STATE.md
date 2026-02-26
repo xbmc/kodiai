@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 Milestone: v0.20 Multi-Model & Active Intelligence — SHIPPED 2026-02-26
 All 6 phases (97-102), 17 plans complete.
-Last activity: 2026-02-26 — Milestone v0.20 archived
+Last activity: 2026-02-26 - Completed quick task 13: Deploy build, update README, triage GitHub issues
 
 ## Accumulated Context
 
@@ -63,6 +63,12 @@ All decisions through v0.20 archived to `.planning/PROJECT.md` Key Decisions tab
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 13 | Deploy build, update README, triage GitHub issues | 2026-02-26 | df7182394f | Verified | [13-deploy-build-update-readme-triage-github](./quick/13-deploy-build-update-readme-triage-github/) |
 
 ## Session Continuity
 
