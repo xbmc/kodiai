@@ -36,3 +36,10 @@ export {
   type ModelPricing,
   type PricingConfig,
 } from "./pricing.ts";
+
+// Cost tracking
+export {
+  createCostTracker,
+  type CostTracker,
+  type LlmCostRecord,
+} from "./cost-tracker.ts";

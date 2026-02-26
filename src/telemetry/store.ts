@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type {
+  LlmCostRecord,
   RateLimitEventRecord,
   RetrievalQualityRecord,
   ResilienceEventRecord,
@@ -176,6 +177,36 @@ export function createTelemetryStore(opts: {
       `;
     },
 
+    async recordLlmCost(entry: LlmCostRecord): Promise<void> {
+      try {
+        await sql`
+          INSERT INTO llm_cost_events (
+            delivery_id, repo, task_type, model, provider, sdk,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            estimated_cost_usd, duration_ms, used_fallback, fallback_reason, error
+          ) VALUES (
+            ${entry.deliveryId ?? null},
+            ${entry.repo},
+            ${entry.taskType},
+            ${entry.model},
+            ${entry.provider},
+            ${entry.sdk},
+            ${entry.inputTokens},
+            ${entry.outputTokens},
+            ${entry.cacheReadTokens ?? 0},
+            ${entry.cacheWriteTokens ?? 0},
+            ${entry.estimatedCostUsd},
+            ${entry.durationMs ?? null},
+            ${entry.usedFallback},
+            ${entry.fallbackReason ?? null},
+            ${entry.error ?? null}
+          )
+        `;
+      } catch (err) {
+        logger.warn({ err, entry }, "Failed to record LLM cost event");
+      }
+    },
+
     async purgeOlderThan(days: number): Promise<number> {
       const interval = `${days} days`;
 
@@ -188,8 +219,11 @@ export function createTelemetryStore(opts: {
       const r3 = await sql`
         DELETE FROM rate_limit_events WHERE created_at < now() - ${interval}::interval
       `;
+      const r4 = await sql`
+        DELETE FROM llm_cost_events WHERE created_at < now() - ${interval}::interval
+      `;
 
-      return r1.count + r2.count + r3.count;
+      return r1.count + r2.count + r3.count + r4.count;
     },
 
     checkpoint(): void {
