@@ -26,11 +26,11 @@ Requirements for v0.20 Multi-Model & Active Intelligence. Each maps to roadmap p
 
 ### Review Pattern Clustering
 
-- [ ] **CLST-01**: HDBSCAN batch clustering job runs on review comment embeddings to discover emergent review themes without predefined categories
-- [ ] **CLST-02**: Cluster labels auto-generated from representative samples using cheap LLM via task router
-- [ ] **CLST-03**: Clusters with 3+ members in the last 60 days surfaced in PR review context as recurring patterns
-- [ ] **CLST-04**: Cluster assignments and labels persisted in Postgres with scheduled refresh (weekly)
-- [ ] **CLST-05**: Dimensionality reduction (UMAP or equivalent) applied before clustering to handle 1024-dim embeddings
+- [x] **CLST-01**: HDBSCAN batch clustering job runs on review comment embeddings to discover emergent review themes without predefined categories
+- [x] **CLST-02**: Cluster labels auto-generated from representative samples using cheap LLM via task router
+- [x] **CLST-03**: Clusters with 3+ members in the last 60 days surfaced in PR review context as recurring patterns
+- [x] **CLST-04**: Cluster assignments and labels persisted in Postgres with scheduled refresh (weekly)
+- [x] **CLST-05**: Dimensionality reduction (UMAP or equivalent) applied before clustering to handle 1024-dim embeddings
 
 ### Contributor Profiles
 
@@ -93,11 +93,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WIKI-03 | Phase 99 | Pending |
 | WIKI-04 | Phase 99 | Pending |
 | WIKI-05 | Phase 99 | Pending |
-| CLST-01 | Phase 100 | Pending |
-| CLST-02 | Phase 100 | Pending |
-| CLST-03 | Phase 100 | Pending |
-| CLST-04 | Phase 100 | Pending |
-| CLST-05 | Phase 100 | Pending |
+| CLST-01 | Phase 100 | Done |
+| CLST-02 | Phase 100 | Done |
+| CLST-03 | Phase 100 | Done |
+| CLST-04 | Phase 100 | Done |
+| CLST-05 | Phase 100 | Done |
 | PROF-01 | Phase 98 | Pending |
 | PROF-02 | Phase 98 | Pending |
 | PROF-03 | Phase 98 | Pending |
