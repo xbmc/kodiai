@@ -9,6 +9,21 @@ Kodiai is an installable GitHub App that provides AI-powered PR auto-reviews, co
 When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback — inline review comments with suggestion blocks, contextual answers to questions, or PR creation from Slack write requests — without requiring any workflow setup in the target repo.
 
 <details>
+<summary>Previous Release: v0.17 Infrastructure Foundation (2026-02-24)</summary>
+
+**Shipped:** 2026-02-24
+**Phases:** 86-88 (3 phases, 8 plans)
+
+**Delivered:**
+- PostgreSQL + pgvector replaces all SQLite storage (HNSW indexes, tsvector columns, single DATABASE_URL)
+- Graceful shutdown with SIGTERM handling, in-flight drain, and webhook queue replay on restart
+- Zero-downtime deploys with health probes, rolling deploy config, and startup webhook replay
+- Unified `src/knowledge/` module with `createRetriever()` factory for both GitHub and Slack retrieval
+- E2E test proving shared retrieval path; `src/learning/` deleted (17 files removed)
+
+</details>
+
+<details>
 <summary>Previous Release: v0.18 Knowledge Ingestion (2026-02-25)</summary>
 
 **Shipped:** 2026-02-25
@@ -21,21 +36,6 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 - Hybrid BM25+vector search per corpus with Reciprocal Rank Fusion merging across all three corpora
 - Unified cross-corpus retrieval pipeline with source-aware re-ranking and cosine deduplication
 - All consumers wired — @mention includes wiki+review citations, review retry preserves context, code gets hybrid search
-
-</details>
-
-<details>
-<summary>Previous Release: v0.17 Infrastructure Foundation (2026-02-24)</summary>
-
-**Shipped:** 2026-02-24
-**Phases:** 86-88 (3 phases, 8 plans)
-
-**Delivered:**
-- PostgreSQL + pgvector replaces all SQLite storage (HNSW indexes, tsvector columns, single DATABASE_URL)
-- Graceful shutdown with SIGTERM handling, in-flight drain, and webhook queue replay on restart
-- Zero-downtime deploys with health probes, rolling deploy config, and startup webhook replay
-- Unified `src/knowledge/` module with `createRetriever()` factory for both GitHub and Slack retrieval
-- E2E test proving shared retrieval path; `src/learning/` deleted (17 files removed)
 
 </details>
 
@@ -54,35 +54,41 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.20 Multi-Model & Active Intelligence
+<details>
+<summary>Previous Release: v0.20 Multi-Model & Active Intelligence (2026-02-26)</summary>
 
-**Goal:** Add task-based model routing via Vercel AI SDK, automated wiki staleness detection, emergent review pattern clustering, and contributor profiles with cross-platform identity linking.
-
+**Shipped:** 2026-02-26
+**Phases:** 97-102 (6 phases, 17 plans)
 **Source:** [Issue #66](https://github.com/xbmc/kodiai/issues/66)
 
-**Target features:**
-- Multi-LLM via Vercel AI SDK — task-based model routing with configurable providers, cost tracking
-- Wiki Staleness Detection — automated stale page identification with code evidence and scheduled reports
-- Review Pattern Clustering — HDBSCAN-based emergent theme discovery surfaced in PR reviews
-- Contributor Profiles + Cross-Platform Identity — GitHub/Slack identity linking with adaptive behavior
+**Delivered:**
+- Multi-LLM task routing via Vercel AI SDK with configurable per-repo model overrides and provider fallback
+- Per-invocation cost tracking logging model, token counts, and estimated USD to Postgres
+- Contributor profiles with GitHub/Slack identity linking, expertise scoring, and 4-tier adaptive review
+- Wiki staleness detection with two-tier evaluation and scheduled Slack reports
+- HDBSCAN-based review pattern clustering with UMAP reduction and footnote injection in PR reviews
+
+</details>
 
 ## Current State
 
-v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snippets) with language-aware boosting, specialized dependency review, and CI failure recognition:
+v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detection, and review pattern clustering added on top of the v0.19 knowledge platform:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Four knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets)
 - Unified retrieval: single `createRetriever()` call fans out to all four corpora with source-aware RRF ranking
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
+- Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
+- Per-invocation cost tracking: model, provider, token counts, estimated USD logged to Postgres for every LLM call
+- Contributor profiles: GitHub/Slack identity linking via slash commands, expertise scoring, 4-tier adaptive review depth
+- Wiki staleness: two-tier detection (heuristic + LLM), file-path evidence, scheduled Slack reports
+- Review pattern clustering: HDBSCAN + UMAP, weekly batch refresh, dual-signal pattern matcher, footnote injection in PR reviews
 - Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
-- Source attribution: every chunk labeled [code], [review], [wiki], or [snippet] with inline citations
 - Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
 - CI failure recognition: base-branch comparison via Checks API with flakiness tracking
-- All consumers wired: @mention, PR review (primary + retry), Slack — all get unified cross-corpus context
-- Incremental sync: webhooks for review comments, scheduled job for wiki pages
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~68,000 lines of TypeScript, 1,494 tests passing
+- ~78,600 lines of TypeScript
 
 ## Requirements
 
@@ -177,17 +183,18 @@ v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snip
 - ✓ `[depends]` PR deep review pipeline with changelog analysis, impact assessment, and hash verification — v0.19
 - ✓ Unrelated CI failure recognition with Checks API base-branch comparison and flakiness tracking — v0.19
 - ✓ Hunk-level code snippet embedding as 4th retrieval corpus with content-hash dedup and configurable caps — v0.19
+- ✓ Task-based model routing via Vercel AI SDK with configurable providers per task type — v0.20
+- ✓ Cost tracking with model, token counts, and estimated cost per task logged to Postgres — v0.20
+- ✓ Automated wiki staleness detection comparing wiki pages against code changes — v0.20
+- ✓ Scheduled staleness reports (Slack message) with evidence snippets — v0.20
+- ✓ HDBSCAN-based review pattern clustering with auto-generated theme labels — v0.20
+- ✓ Recurring review patterns surfaced in PR review context as footnotes — v0.20
+- ✓ Contributor profile table with GitHub/Slack identity linking — v0.20
+- ✓ Adaptive review depth based on contributor expertise tier — v0.20
 
 ### Active
 
-- [ ] Task-based model routing via Vercel AI SDK with configurable providers per task type
-- [ ] Cost tracking with model, token counts, and estimated cost per task logged to Postgres
-- [ ] Automated wiki staleness detection comparing wiki pages against code changes
-- [ ] Scheduled staleness reports (GitHub issue or Slack message) with evidence snippets
-- [ ] HDBSCAN-based review pattern clustering with auto-generated theme labels
-- [ ] Recurring review patterns surfaced in PR review context
-- [ ] Contributor profile table with GitHub/Slack identity linking
-- [ ] Adaptive review and retrieval behavior based on contributor expertise
+(No active requirements — start next milestone with `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -272,6 +279,14 @@ v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snip
 | Checks API over Actions API for CI | External CI systems (Jenkins) visible; not limited to GitHub Actions | ✓ Good — v0.19 |
 | Content-hash dedup for hunk embedding | SHA-256 keyed UPSERT; identical hunks never re-embedded | ✓ Good — v0.19 |
 | Fire-and-forget hunk embedding | Async after review completion with .catch(); never blocks review response | ✓ Good — v0.19 |
+| Vercel AI SDK for non-agentic tasks | Agent SDK for agentic (reviews, mentions); AI SDK for stateless generation (labels, scoring) | ✓ Good — v0.20 |
+| Task-type taxonomy with dot hierarchy | `pr-summary`, `cluster-label`, `staleness-evidence` enable per-task model routing | ✓ Good — v0.20 |
+| Separate taskRouter instances for scheduled jobs | Staleness detector and cluster scheduler get own routers; executor shares one | ✓ Good — v0.20 |
+| Explicit Slack slash commands for identity linking | `/kodiai link` instead of auto-detection prevents false-positive identity merges | ✓ Good — v0.20 |
+| Exponential decay for expertise scoring | Recent activity weighted higher; prevents stale expertise from dominating tier | ✓ Good — v0.20 |
+| Two-tier wiki staleness evaluation | Cheap heuristic pass first, LLM only on flagged subset (capped 20/cycle) | ✓ Good — v0.20 |
+| Pure TypeScript HDBSCAN + umap-js | No Python sidecar; runs in same Bun process | ✓ Good — v0.20 |
+| Dual-signal cluster pattern matching | Embedding similarity + file path overlap; either signal alone may be noise | ✓ Good — v0.20 |
 
 ## Constraints
 
@@ -284,4 +299,4 @@ v0.19 shipped. Four knowledge corpora (code, PR review comments, wiki, code snip
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-25 after v0.20 milestone start*
+*Last updated: 2026-02-26 after v0.20 milestone*

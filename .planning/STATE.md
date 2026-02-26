@@ -1,42 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1
+milestone: v0.20
 milestone_name: Multi-Model & Active Intelligence
-status: unknown
-stopped_at: Phase 102 complete
-last_updated: "2026-02-26T22:34:24.435Z"
+status: milestone_complete
+stopped_at: v0.20 milestone complete
+last_updated: "2026-02-26T22:45:00.000Z"
 progress:
-  total_phases: 85
-  completed_phases: 82
-  total_plans: 203
-  completed_plans: 212
+  total_phases: 102
+  completed_phases: 102
+  total_plans: 265
+  completed_plans: 265
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-25)
+See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Phase 102 complete -- Documentation & Verification Closure
+**Current focus:** v0.20 shipped — planning next milestone
 
 ## Current Position
 
-Phase: 102 (1 of 1) — Documentation & Verification Closure
-Plan: 1/1 complete
-Status: Phase complete
-Last activity: 2026-02-26 — Phase 102 completed (1/1 plans, doc gap closure)
-
-Progress: [████████████████████] 100% (1/1 plans)
+Milestone: v0.20 Multi-Model & Active Intelligence — SHIPPED 2026-02-26
+All 6 phases (97-102), 17 plans complete.
+Last activity: 2026-02-26 — Milestone v0.20 archived
 
 ## Accumulated Context
 
 ### Decisions
 
-All decisions through v0.19 archived to `.planning/PROJECT.md` Key Decisions table.
-
-- **Phase 101:** Kept separate taskRouter instances for scheduled jobs (staleness, clusters); shared taskRouter for executor. costTracker created once from telemetryStore, shared across all LLM consumers.
+All decisions through v0.20 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -47,7 +42,7 @@ All decisions through v0.19 archived to `.planning/PROJECT.md` Key Decisions tab
 - Bun `streamText()` has production build failure (oven-sh/bun#25630) -- use `generateText()` exclusively
 - Agent SDK owns agentic tasks (PR review, mentions, Slack write); Vercel AI SDK owns non-agentic tasks only
 
-### Key Infrastructure (v0.17-v0.19 Foundation)
+### Key Infrastructure (v0.17-v0.20 Foundation)
 
 - PostgreSQL + pgvector with HNSW indexes and tsvector GIN indexes
 - Four knowledge corpora: `learning_memories`, `review_comments`, `wiki_pages`, `code_snippets`
@@ -55,15 +50,10 @@ All decisions through v0.19 archived to `.planning/PROJECT.md` Key Decisions tab
 - Unified cross-corpus retrieval: BM25+vector hybrid per corpus, RRF merge, cosine dedup
 - VoyageAI embeddings: voyage-code-3, 1024 dims, fail-open with null returns
 - Review pattern clustering: HDBSCAN + UMAP, weekly refresh, dual-signal matcher, footnote injection
-
-### Research Flags
-
-- **Phase 99 (Wiki Staleness):** Heuristic for mapping wiki prose to code file paths needs validation against actual Kodi wiki content
-- **Phase 100 (Pattern Clustering):** Resolved -- chose umap-js (TypeScript-native) over Python sidecar
-
-### Pending Todos
-
-None.
+- Multi-LLM: Vercel AI SDK task router + provider factory for non-agentic tasks
+- Cost tracking: per-invocation model/token/cost logging to Postgres
+- Contributor profiles: identity linking, expertise scoring, 4-tier adaptive review
+- Wiki staleness: two-tier detection, scheduled Slack reports
 
 ### Explicit User Policies
 
@@ -76,6 +66,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-26T23:30:00.000Z
-**Stopped At:** Phase 102 complete
-**Resume file:** .planning/phases/102-documentation-verification-closure/102-01-SUMMARY.md
+**Last session:** 2026-02-26
+**Stopped At:** v0.20 milestone complete
+**Resume with:** `/gsd:new-milestone`
