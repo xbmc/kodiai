@@ -450,16 +450,17 @@ test("buildAuthorExperienceSection returns terse directives for core tier", () =
   });
 
   expect(section).toContain("Author Experience Context");
-  expect(section).toContain("core contributor");
+  expect(section).toContain("core/senior contributor");
   expect(section).toContain("concise");
   expect(section).toContain("terse");
   expect(section).toContain("maintainer");
 });
 
-test("buildAuthorExperienceSection returns empty string for regular tier", () => {
-  expect(
-    buildAuthorExperienceSection({ tier: "regular", authorLogin: "someone" }),
-  ).toBe("");
+test("buildAuthorExperienceSection returns developing guidance for regular tier", () => {
+  const section = buildAuthorExperienceSection({ tier: "regular", authorLogin: "someone" });
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("developing contributor");
+  expect(section).toContain("someone");
 });
 
 // ---------------------------------------------------------------------------
