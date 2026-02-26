@@ -187,6 +187,12 @@ Plans:
 **Depends on**: Nothing (independent of Phase 97)
 **Requirements**: PROF-01, PROF-02, PROF-03, PROF-04, PROF-05
 
+Plans:
+- [ ] 98-01: Schema, types, and profile store -- migration 011, contributor types, profile store CRUD with tests
+- [ ] 98-02: Slash command route and handler -- /kodiai link|unlink|profile|opt-out commands with Hono route
+- [ ] 98-03: Expertise scorer, tier calculator, identity matcher -- scoring engine with decay, percentile tiers, heuristic name matching
+- [ ] 98-04: Adaptive review wiring -- 4-tier prompt adaptation, profile-aware author tier resolution, route mounting, identity suggestion DMs
+
 ### Phase 99: Wiki Staleness Detection
 **Goal**: Kodiai automatically identifies wiki pages invalidated by code changes and delivers evidence-backed staleness reports on schedule
 **Depends on**: Phase 97 (model router needed for LLM staleness evaluation)
@@ -223,7 +229,7 @@ Plans:
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97 | v0.20 | 3/3 | Complete | 2026-02-26 |
-| 98 | v0.20 | 0/TBD | Not started | - |
+| 98 | v0.20 | 0/4 | Not started | - |
 | 99 | v0.20 | 0/TBD | Not started | - |
 | 100 | v0.20 | 0/TBD | Not started | - |
 
