@@ -166,7 +166,7 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 - [x] **Phase 98: Contributor Profiles & Identity Linking** - GitHub/Slack identity linking with expertise inference and adaptive review behavior (completed 2026-02-25)
 - [x] **Phase 99: Wiki Staleness Detection** - Two-tier staleness scoring with file-path evidence and scheduled reports to Slack or GitHub (not started) (completed 2026-02-26)
 - [ ] **Phase 100: Review Pattern Clustering** - HDBSCAN-based emergent theme discovery with UMAP reduction and pattern injection into PR reviews (not started)
-- [ ] **Phase 101: Wire Executor Dependencies & Fix Cost Tracking** - Wire taskRouter and costTracker to createExecutor, fix wiki-staleness-detector repo field (gap closure)
+- [x] **Phase 101: Wire Executor Dependencies & Fix Cost Tracking** - Wire taskRouter and costTracker to createExecutor, fix wiki-staleness-detector repo field (gap closure) (completed 2026-02-26)
 - [ ] **Phase 102: Documentation & Verification Closure** - Phase 100 VERIFICATION.md, REQUIREMENTS.md checkbox fixes, SUMMARY frontmatter (gap closure)
 
 ### Phase 97: Multi-LLM Routing & Cost Tracking
