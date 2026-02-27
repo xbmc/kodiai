@@ -18,6 +18,7 @@ import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
 import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-history.ts";
 import { createCIFailureHandler } from "./handlers/ci-failure.ts";
 import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
+import { createIssueOpenedHandler } from "./handlers/issue-opened.ts";
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
@@ -470,6 +471,19 @@ if (reviewCommentStore && embeddingProvider) {
     jobQueue,
     store: reviewCommentStore,
     embeddingProvider,
+    logger,
+  });
+}
+
+if (issueStore && embeddingProvider) {
+  createIssueOpenedHandler({
+    eventRouter,
+    jobQueue,
+    githubApp,
+    workspaceManager,
+    issueStore,
+    embeddingProvider,
+    sql,
     logger,
   });
 }
