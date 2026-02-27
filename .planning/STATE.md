@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.22
+milestone: v0.1
 milestone_name: Issue Intelligence
-status: active
-stopped_at: null
-last_updated: "2026-02-26T00:00:00.000Z"
+status: unknown
+stopped_at: Phase 106 context gathered
+last_updated: "2026-02-27T04:42:30.579Z"
 progress:
-  total_phases: 109
-  completed_phases: 105
-  total_plans: 274
-  completed_plans: 274
+  total_phases: 80
+  completed_phases: 76
+  total_plans: 186
+  completed_plans: 195
 ---
 
 # Project State
@@ -83,6 +83,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-26
-**Stopped At:** Roadmap created for v0.22 Issue Intelligence
+**Last session:** 2026-02-27T04:42:30.577Z
+**Stopped At:** Phase 106 context gathered
 **Resume with:** `/gsd:plan-phase 106`
