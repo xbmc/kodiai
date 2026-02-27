@@ -190,7 +190,7 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 **Milestone Goal:** Populate the issue corpus from historical xbmc/xbmc data, add high-confidence duplicate detection and PR-issue linking, and enable auto-triage on `issues.opened`.
 
 - [x] **Phase 106: Historical Corpus Population** - Backfill xbmc/xbmc issues with embeddings and establish nightly sync
-- [ ] **Phase 107: Duplicate Detection & Auto-Triage** - Detect duplicate issues at high confidence and auto-triage on `issues.opened`
+- [ ] **Phase 107: Duplicate Detection & Auto-Triage** - Detect duplicate issues at high confidence and auto-triage on `issues.opened` (2 plans)
 - [ ] **Phase 108: PR-Issue Linking** - Link PRs to related issues via reference parsing and semantic search
 - [ ] **Phase 109: Issue Corpus Retrieval Integration** - Wire issue corpus into cross-corpus RRF retrieval with citations
 
@@ -221,7 +221,10 @@ Plans:
   3. If embedding or search fails during duplicate detection, triage still completes and the failure is logged
   4. Auto-triage on `issues.opened` is gated behind `triage.autoTriageOnOpen` config flag (default: false)
   5. Webhook redelivery, concurrent processing, and rapid re-opening do not produce duplicate triage comments
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 107-01-PLAN.md -- Migration, config extension, duplicate detector, and triage comment formatter
+- [ ] 107-02-PLAN.md -- Issue-opened handler with idempotency and application bootstrap wiring
 
 ### Phase 108: PR-Issue Linking
 **Goal**: PRs are linked to related issues via explicit references and semantic search, enriching review context
