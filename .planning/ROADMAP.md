@@ -206,7 +206,10 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
   3. The backfill script logs page counts, embedding counts, and rate limit status during execution
   4. After the nightly sync job runs, issues updated since the last sync have fresh data and embeddings in the corpus
   5. The nightly sync job also picks up new and updated issue comments
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 106-01-PLAN.md -- Migration, comment chunker, and core backfill engine
+- [ ] 106-02-PLAN.md -- CLI script with dual-mode backfill/sync and GitHub Actions nightly workflow
 
 ### Phase 107: Duplicate Detection & Auto-Triage
 **Goal**: New issues are automatically triaged with duplicate detection, surfacing high-confidence duplicates to maintainers
@@ -270,11 +273,11 @@ Phases execute in numeric order: 106 -> 107 -> 108 -> 109
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
-| 106. Corpus Population | v0.22 | 0/? | Not started | - |
+| 106. Corpus Population | v0.22 | 0/2 | In progress | - |
 | 107. Duplicate Detection & Auto-Triage | v0.22 | 0/? | Not started | - |
 | 108. PR-Issue Linking | v0.22 | 0/? | Not started | - |
 | 109. Retrieval Integration | v0.22 | 0/? | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-26 -- v0.22 Issue Intelligence roadmap created*
+*Roadmap updated: 2026-02-27 -- Phase 106 plans created*
