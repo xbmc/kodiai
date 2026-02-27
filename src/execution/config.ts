@@ -461,6 +461,14 @@ const triageSchema = z
   .object({
     /** Master switch for triage tools. Default: false (opt-in). */
     enabled: z.boolean().default(false),
+    /** Auto-triage new issues on `issues.opened` webhook. Default: false (opt-in). */
+    autoTriageOnOpen: z.boolean().default(false),
+    /** Similarity percentage cutoff for duplicate detection. 75 = 0.25 cosine distance. */
+    duplicateThreshold: z.number().min(0).max(100).default(75),
+    /** Maximum duplicate candidates to show in triage comment. */
+    maxDuplicateCandidates: z.number().min(1).max(10).default(3),
+    /** Label to apply when duplicate candidates are found. */
+    duplicateLabel: z.string().default("possible-duplicate"),
     label: z
       .object({
         enabled: z.boolean().default(true),
@@ -478,6 +486,10 @@ const triageSchema = z
   })
   .default({
     enabled: false,
+    autoTriageOnOpen: false,
+    duplicateThreshold: 75,
+    maxDuplicateCandidates: 3,
+    duplicateLabel: "possible-duplicate",
     label: { enabled: true },
     comment: { enabled: true },
     labelAllowlist: [],
