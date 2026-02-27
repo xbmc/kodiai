@@ -249,7 +249,7 @@ Plans:
   3. Issue corpus is weighted appropriately per trigger type (lower weight for PR reviews, higher for issue-context queries)
 **Plans**: 1 plan
 Plans:
-- [ ] 109-01-PLAN.md -- Issue retrieval module, pipeline wiring, and application bootstrap
+- [x] 109-01-PLAN.md -- Issue retrieval module, pipeline wiring, and application bootstrap
 
 ## Progress
 
