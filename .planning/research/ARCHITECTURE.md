@@ -1,360 +1,455 @@
-# Architecture Research
+# Architecture: Issue Intelligence Integration
 
-**Domain:** Issue triage agent integration into existing GitHub App
+**Domain:** GitHub App -- issue intelligence features for existing webhook/handler/retrieval architecture
 **Researched:** 2026-02-26
-**Confidence:** HIGH -- all integration points verified against existing source code
 
-## System Overview
+## Executive Summary
 
-The triage feature integrates at four well-defined seams: database schema, MCP tool registry, mention handler routing, and config schema. No new architectural patterns are needed -- the existing patterns (createRetriever factory, in-process MCP servers, event router dispatch, config-gated features) are reused directly.
+The v0.22 features (historical issue ingestion, duplicate detection, PR-issue linking, auto-triage on `issues.opened`) integrate cleanly into the existing architecture because v0.21 already laid the foundation: the `issues` and `issue_comments` tables exist with HNSW indexes and tsvector columns, `IssueStore` provides full CRUD + vector/text search including `findSimilar()`, and the triage agent already runs in the mention handler. The work is primarily: (1) a new backfill module and nightly sync scheduler, (2) a new duplicate detector module consumed by the auto-triage handler, (3) a new PR-issue linker triggered on PR events, and (4) a new `issues.opened` webhook handler that wires triage + duplicate detection together.
 
-```
-Webhook Layer (existing, unchanged)
-  issue_comment.created
-        |
-        v
-Event Router (existing, unchanged)
-  register("issue_comment.created", handleMention)
-        |
-        v
-Mention Handler (MODIFY: add triage branch)
-  normalizeIssueComment() -> MentionEvent
-    surface: "issue_comment", prNumber: undefined
-  isIssueThreadComment = true (line 802)
-        |
-        +-- config.triage.enabled? ---YES---> [NEW] Triage Path
-        |                                      |
-        NO                                     +-> Issue Template Parser [NEW]
-        |                                      +-> Triage Prompt Builder [NEW]
-        v                                      +-> executor.execute() (existing)
-  Existing read/write                                |
-  mention path                                 MCP Servers:
-                                                 github_issue_label [NEW]
-                                                 github_issue_comment [NEW]
-                                                      |
-                                                      v
-                                                GitHub API (label + comment)
+No new architectural patterns are needed. Every new component follows an existing pattern in the codebase.
 
-Data Layer (NEW: issue corpus)
-  issues table (HNSW + tsvector)
-  issue-store.ts (factory)
-```
+## Recommended Architecture
 
-### Component Responsibilities
-
-| Component | Responsibility | Status |
-|-----------|---------------|--------|
-| Event Router (`src/webhook/router.ts`) | Dispatch `issue_comment.created` to handlers | EXISTS -- no changes needed |
-| Mention Types (`src/handlers/mention-types.ts`) | Normalize webhook payload to `MentionEvent` | EXISTS -- already handles `surface: "issue_comment"` |
-| Mention Handler (`src/handlers/mention.ts`) | Route mention to triage or read/write path | MODIFY -- add triage branch before write-intent parsing |
-| Config Parser (`src/execution/config.ts`) | Parse `.kodiai.yml` with triage section | MODIFY -- add `triageSchema` |
-| MCP Index (`src/execution/mcp/index.ts`) | Wire MCP servers into executor | MODIFY -- add issue tool flags |
-| Issue Label Server | `github_issue_label` MCP tool (add/remove labels) | NEW |
-| Issue Comment Server | `github_issue_comment` MCP tool (post comments) | NEW |
-| Issue Template Parser | Read templates from workspace, extract required fields, diff against body | NEW |
-| Triage Prompt Builder | Build triage agent prompt from template diff + issue context | NEW |
-| Issue Store | Issue vector store factory (CRUD, embedding, search) | NEW |
-| Migration 014 | Issue corpus schema (table, indexes, tsvector trigger) | NEW |
-
-## Recommended Project Structure
-
-New files only -- existing structure is unchanged:
+### High-Level Integration Map
 
 ```
-src/
-├── db/
-│   └── migrations/
-│       └── 014-issues.sql                  # Issue corpus schema
-├── knowledge/
-│   └── issue-store.ts                      # Issue vector store (factory + types)
-├── execution/
-│   ├── mcp/
-│   │   ├── issue-label-server.ts           # github_issue_label MCP tool
-│   │   ├── issue-comment-server.ts         # github_issue_comment MCP tool
-│   │   └── index.ts                        # MODIFY: wire issue tools
-│   ├── issue-template-parser.ts            # Template parsing + validation
-│   ├── triage-prompt.ts                    # Triage agent prompt builder
-│   └── config.ts                           # MODIFY: add triage schema
-└── handlers/
-    └── mention.ts                          # MODIFY: add triage routing branch
+                          GitHub Webhooks
+                               |
+                         Event Router
+                        /      |       \
+              issues.opened  PR events  issue_comment.created (existing)
+                   |            |              |
+            [NEW] Auto-      [NEW] PR-    [EXISTING] Mention
+            Triage Handler   Issue Linker  Handler (triage path)
+                   |            |
+            Duplicate       Reference
+            Detector        Search
+                   |            |
+              IssueStore    IssueStore
+              (existing)    (existing)
+                   |
+          MCP Tools: issue_label, issue_comment (existing)
+
+        Scheduled Jobs:
+        +----------------------------------------------+
+        | [NEW] Issue Backfill (one-shot script)       |
+        | [NEW] Issue Sync Scheduler (nightly)         |
+        | [EXISTING] Wiki Sync (nightly)               |
+        | [EXISTING] Cluster Refresh (weekly)          |
+        | [EXISTING] Staleness Detection (weekly)      |
+        +----------------------------------------------+
 ```
 
-### Structure Rationale
+### New Components
 
-- **MCP tools in `execution/mcp/`:** All existing MCP servers live here. New issue tools follow the same pattern.
-- **Template parser in `execution/`:** Part of the execution pipeline (prompt building), not knowledge retrieval. Similar to existing `issue-code-context.ts` which also lives in `execution/`.
-- **Issue store in `knowledge/`:** All corpus stores (review-comment-store, wiki-store, code-snippet-store) live here. Issue store follows the same convention.
+| Component | Location | Responsibility | Depends On |
+|-----------|----------|---------------|------------|
+| Issue Backfill Module | `src/knowledge/issue-backfill.ts` | Paginated historical ingestion of issues + comments with embedding | IssueStore, EmbeddingProvider, Octokit |
+| Issue Backfill Script | `scripts/backfill-issues.ts` | CLI wrapper that runs the backfill | issue-backfill module |
+| Issue Sync Scheduler | `src/knowledge/issue-sync.ts` | Nightly incremental sync of updated/new issues | IssueStore, EmbeddingProvider, GitHubApp |
+| Duplicate Detector | `src/knowledge/issue-duplicate-detector.ts` | High-confidence duplicate detection via vector similarity | IssueStore, EmbeddingProvider |
+| PR-Issue Linker | `src/handlers/pr-issue-linker.ts` | Links PRs to issues via reference parsing + semantic search | IssueStore, EmbeddingProvider, Octokit |
+| Auto-Triage Handler | `src/handlers/issue-opened.ts` | Orchestrates triage + duplicate detection on `issues.opened` | Duplicate Detector, Triage Agent, IssueStore, MCP Tools |
+| Issue Retrieval Helper | `src/knowledge/issue-retrieval.ts` | Hybrid search adapter for cross-corpus RRF | IssueStore |
 
-## Architectural Patterns
+### Modified Components
 
-### Pattern 1: Config-Gated Feature Branch
+| Component | Location | Change |
+|-----------|----------|--------|
+| Event Router registrations | `src/index.ts` | Register `issues.opened` handler and PR-issue linker |
+| Retrieval pipeline | `src/knowledge/retrieval.ts` | Add `issue` source type to cross-corpus RRF fan-out |
+| Cross-corpus RRF | `src/knowledge/cross-corpus-rrf.ts` | Add `"issue"` to `SourceType` union |
+| Triage config schema | `src/execution/config.ts` | Add `autoTriageOnOpen` boolean and `duplicateDetection` sub-schema |
+| Shutdown manager | `src/index.ts` | Stop issue sync scheduler on shutdown |
 
-**What:** Feature disabled by default, enabled via `.kodiai.yml`. Routing decision happens inside existing handler.
-**When to use:** Every new feature that changes behavior.
-**Trade-offs:** Simple on/off gating. No gradual rollout, but appropriate for private-audience app.
+### Components NOT Modified
 
-**Precedent:** `write.enabled` (default false), `review.enabled` (default true), `mention.enabled` (default true)
+| Component | Why Unchanged |
+|-----------|---------------|
+| IssueStore (`knowledge/issue-store.ts`) | Already has `upsert`, `findSimilar`, `searchByEmbedding`, `searchByFullText` -- all needed methods exist |
+| Issue schema (`014-issues.sql`) | Schema is complete; no new columns needed for these features |
+| MCP tools (`issue-label-server.ts`, `issue-comment-server.ts`) | Already built for triage in v0.21; reused as-is |
+| Triage agent core (`triage/triage-agent.ts`) | `validateIssue()`, `generateGuidanceComment()`, `generateLabelRecommendation()` are pure functions; reused directly |
+| Webhook router (`webhook/router.ts`) | Generic event dispatch; just needs new registrations |
+| Job queue (`jobs/queue.ts`) | Existing p-queue with per-installation concurrency; new handlers enqueue jobs the same way |
+| Mention handler (`handlers/mention.ts`) | v0.21 triage-on-mention path stays as-is; auto-triage is a separate handler |
+
+## Component Details
+
+### 1. Issue Backfill Module (`src/knowledge/issue-backfill.ts`)
+
+**Pattern:** Follows `src/knowledge/review-comment-backfill.ts` exactly (paginated API, rate limiting, embedding, upsert).
+
+**Data flow:**
+```
+GitHub Issues API (paginated, state=all, sort=created, direction=asc)
+  -> For each issue:
+     1. Embed "{title}\n\n{body}" via EmbeddingProvider
+     2. Upsert to IssueStore (ON CONFLICT UPDATE handles re-runs)
+     3. Fetch comments via Issues Comments API (paginated)
+     4. Embed each comment body
+     5. Upsert comments to IssueStore
+  -> Adaptive rate limiting (1.5s/3s delays, matching review-comment-backfill)
+```
+
+**Key decisions:**
+- **Include PRs in issue corpus:** Set `is_pull_request: true` for issues that are PRs. The schema already has this column. Enables PR-issue semantic search.
+- **Embedding text:** Concatenate `"{title}\n\n{body}"` for issues, raw body for comments. Matches the semantic chunking approach used elsewhere.
+- **Resumability:** Use `ON CONFLICT DO UPDATE` (existing upsert behavior). Idempotent re-runs update stale data without duplicates.
+- **Bot filtering:** Skip comments from `dependabot`, `renovate`, `kodiai`, `github-actions`, `codecov` (reuse `DEFAULT_BOT_LOGINS` pattern from review-comment-backfill).
+- **Scope control:** Accept `monthsBack` parameter (default: 36 for 3 years). xbmc/xbmc has ~15-20K issues total; 3 years captures the most relevant subset.
+
+**Volume estimate for xbmc/xbmc (3 years):**
+- ~5,000-8,000 issues
+- At 1.5s rate limiting, ~3-4 hours for issues
+- Comments add ~2x API calls; total ~6-8 hours
+- Embedding cost: ~$5-10 (Voyage AI at $0.001/embed)
+
+### 2. Issue Sync Scheduler (`src/knowledge/issue-sync.ts`)
+
+**Pattern:** Follows `src/knowledge/wiki-sync.ts` (nightly setInterval scheduler with startup delay) and `src/knowledge/cluster-scheduler.ts` (same scheduler pattern).
+
+**Data flow:**
+```
+setInterval (24h, 150s startup delay)
+  -> GitHub Issues API with `since` parameter (issues updated since last sync)
+  -> For each updated issue:
+     1. Re-embed title + body
+     2. Upsert to IssueStore (ON CONFLICT UPDATE)
+     3. Fetch new/updated comments
+     4. Embed and upsert comments
+  -> Track last-sync timestamp (use knowledge_store run_state or a dedicated key)
+```
+
+**Integration in `src/index.ts`:**
+```typescript
+// Issue sync scheduler (nightly incremental sync)
+const issueSyncScheduler = embeddingProvider
+  ? createIssueSyncScheduler({
+      store: issueStore,
+      embeddingProvider,
+      githubApp,
+      repo: `${config.wikiGithubOwner}/${config.wikiGithubRepo}`,
+      logger,
+    })
+  : null;
+if (issueSyncScheduler) {
+  issueSyncScheduler.start();
+  _issueSyncSchedulerRef = issueSyncScheduler;
+}
+```
+
+**Startup delay staggering:**
+- Wiki sync: 60s
+- Staleness detector: 90s
+- Cluster scheduler: 120s
+- Issue sync: 150s (new, avoids startup thundering herd)
+
+### 3. Duplicate Detector (`src/knowledge/issue-duplicate-detector.ts`)
+
+**Pure function module -- no state, no side effects beyond IssueStore reads.**
 
 ```typescript
-// In repoConfigSchema (config.ts):
+type DuplicateCandidate = {
+  issueNumber: number;
+  title: string;
+  state: string;       // "open" or "closed"
+  distance: number;    // cosine distance (lower = more similar)
+  confidence: "definite" | "likely" | "possible";
+  url: string;         // GitHub issue URL
+};
+
+type DuplicateResult = {
+  candidates: DuplicateCandidate[];
+  hasHighConfidence: boolean;  // at least one "definite" or "likely"
+};
+
+async function detectDuplicates(params: {
+  issueStore: IssueStore;
+  embeddingProvider: EmbeddingProvider;
+  repo: string;
+  title: string;
+  body: string | null;
+  topK?: number;               // default 5
+  threshold?: number;          // default 0.25 (max distance to consider)
+  highConfidenceThreshold?: number;  // default 0.12 (below = definite)
+  likelyThreshold?: number;         // default 0.18 (below = likely)
+}): Promise<DuplicateResult>
+```
+
+**Algorithm:**
+```
+New issue title + body
+  -> Embed "{title}\n\n{body}" via EmbeddingProvider
+  -> IssueStore.searchByEmbedding(embedding, repo, topK=5)
+  -> Filter results by max distance threshold (0.25)
+  -> Classify: "definite" (< 0.12), "likely" (0.12-0.18), "possible" (0.18-0.25)
+  -> Return ranked candidates
+```
+
+**Why no LLM call:** Vector similarity with tight thresholds is sufficient for high-confidence detection and costs ~$0.001 per check (one embedding call). LLM validation ($0.10-0.50) can be added later for borderline cases.
+
+**Why `searchByEmbedding` over `findSimilar`:** `findSimilar()` requires the issue to already exist in the corpus (looks up the stored embedding). For `issues.opened`, the issue hasn't been ingested yet, so we must embed the new text and query directly.
+
+### 4. PR-Issue Linker (`src/handlers/pr-issue-linker.ts`)
+
+**Triggers on:** `pull_request.opened` (new event router registration)
+
+**Two-signal linking:**
+
+**Signal 1: Reference parsing (deterministic, always runs)**
+```
+PR title + body
+  -> Regex: /(?:fix(?:es|ed)?|clos(?:es|ed)?|resolv(?:es|ed)?)\s+#(\d+)/gi
+  -> Regex: /(?:relates?\s+to|ref(?:s|erences?)?)\s+#(\d+)/gi
+  -> Regex: bare /#(\d+)/ with word boundary
+  -> Extract issue numbers
+  -> Verify each exists via IssueStore.getByNumber (fast DB lookup)
+  -> Confidence: HIGH (explicit close keyword) or MEDIUM (bare reference)
+```
+
+**Signal 2: Semantic search (embedding-based, only if embeddingProvider available)**
+```
+PR title + first 500 chars of body
+  -> Embed via EmbeddingProvider
+  -> IssueStore.searchByEmbedding(embedding, repo, topK=3)
+  -> Filter: distance < 0.25, exclude already-linked issues from Signal 1
+  -> Confidence: LOW (semantic only)
+```
+
+**Output:**
+- Store links in a new `pr_issue_links` table (new migration 015)
+- For HIGH confidence: post informational comment on PR (fire-and-forget, non-blocking)
+- For MEDIUM/LOW: store only, available for retrieval context enrichment
+
+**New migration `015-pr-issue-links.sql`:**
+```sql
+CREATE TABLE IF NOT EXISTS pr_issue_links (
+  id BIGSERIAL PRIMARY KEY,
+  repo TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  issue_number INTEGER NOT NULL,
+  link_type TEXT NOT NULL,     -- 'closes', 'fixes', 'relates', 'semantic'
+  confidence TEXT NOT NULL,    -- 'high', 'medium', 'low'
+  distance REAL,               -- cosine distance for semantic links, NULL for reference links
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(repo, pr_number, issue_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pr_issue_links_repo_pr
+  ON pr_issue_links (repo, pr_number);
+CREATE INDEX IF NOT EXISTS idx_pr_issue_links_repo_issue
+  ON pr_issue_links (repo, issue_number);
+```
+
+### 5. Auto-Triage Handler (`src/handlers/issue-opened.ts`)
+
+**Triggers on:** `issues.opened` (new event router registration -- separate handler, NOT inside mention handler)
+
+**Why a separate handler (not mention handler):** The `issues.opened` event is structurally different from `issue_comment.created`. There is no mention to detect, no comment body to parse, and no `@kodiai` trigger. The mention handler's flow (mention check, write-intent parsing, conversation context) does not apply. A clean, focused handler avoids polluting the already-2000-line mention handler.
+
+**Orchestration flow:**
+```
+issues.opened webhook
+  1. Config gate: load .kodiai.yml, check triage.autoTriageOnOpen (default: false)
+  2. Idempotency: check for existing kodiai comment on the issue (GitHub API search)
+  3. Parallel execution:
+     a. Triage validation (reuse triage-agent.ts validateIssue)
+        - Fetch .github/ISSUE_TEMPLATE/ via GitHub Contents API (no workspace clone)
+        - Run template diff against issue body
+     b. Duplicate detection (new duplicate-detector.ts)
+        - Embed issue title + body
+        - Search IssueStore for similar issues
+     c. Ingest into corpus (IssueStore.upsert with embedding)
+  4. Compose response:
+     - If high-confidence duplicates: "Possible duplicate of #X, #Y"
+     - If triage validation failed: guidance comment (existing generator)
+     - If both: combined comment
+     - If neither: no comment (silent pass)
+  5. Apply labels via MCP tool (if triage recommends)
+  6. Update cooldown map (reuse pattern from mention handler)
+```
+
+**Template fetching without workspace clone:**
+The triage agent currently reads templates from the cloned workspace filesystem. For `issues.opened`, we skip the 30-60s clone and instead fetch templates via GitHub Contents API:
+```typescript
+// Fetch template directory listing
+const { data: entries } = await octokit.rest.repos.getContent({
+  owner, repo, path: ".github/ISSUE_TEMPLATE"
+});
+// Fetch each .md file
+for (const entry of entries.filter(e => e.name.endsWith('.md'))) {
+  const { data } = await octokit.rest.repos.getContent({
+    owner, repo, path: entry.path, mediaType: { format: 'raw' }
+  });
+  // Parse template from raw content
+}
+```
+This requires a small adapter: either modify `validateIssue()` to accept template content directly (instead of a workspace dir), or create a `fetchTemplatesViaApi()` function that produces the same `TemplateDefinition[]` that `validateIssue` internally builds.
+
+**Config schema extension:**
+```typescript
 const triageSchema = z.object({
   enabled: z.boolean().default(false),
-  missingFieldsLabel: z.string().default("Ignored rules"),
-  prompt: z.string().optional(),
-}).default({
-  enabled: false,
-  missingFieldsLabel: "Ignored rules",
+  autoTriageOnOpen: z.boolean().default(false),  // NEW
+  duplicateDetection: z.object({                  // NEW
+    enabled: z.boolean().default(true),
+    threshold: z.number().min(0).max(1).default(0.18),
+    highConfidenceThreshold: z.number().min(0).max(1).default(0.12),
+  }).default({ enabled: true, threshold: 0.18, highConfidenceThreshold: 0.12 }),
+  label: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  comment: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  labelAllowlist: z.array(z.string()).default([]),
+  cooldownMinutes: z.number().min(0).max(1440).default(30),
 });
-
-// Add to repoConfigSchema object:
-triage: triageSchema,
 ```
 
-### Pattern 2: In-Process MCP Server
+### 6. Issue Corpus in Cross-Corpus Retrieval
 
-**What:** Agent tools created via `createSdkMcpServer()`, registered in `buildMcpServers()`.
-**When to use:** Agent needs to interact with external APIs during execution.
-**Trade-offs:** Type-safe, testable, in-process (no IPC overhead). Must follow sanitization conventions.
+**Modified files:** `cross-corpus-rrf.ts`, `retrieval.ts`, new `issue-retrieval.ts`
 
-**Existing examples:** `github_comment`, `github_inline_comment`, `github_ci`, `review_checkpoint`
-
-Key constraints from existing implementations:
-- Sanitize outgoing mentions via `sanitizeOutgoingMentions()` on all publish paths
-- Return `{ content: [{ type: "text" as const, text: JSON.stringify(result) }] }` shape
-- Wrap errors with `isError: true`
-- Accept `getOctokit: () => Promise<Octokit>` (lazy auth)
+Add issue corpus as 5th source in the unified retrieval pipeline:
 
 ```typescript
-export function createIssueLabelServer(
-  getOctokit: () => Promise<Octokit>,
-  owner: string,
-  repo: string,
-) {
-  return createSdkMcpServer({
-    name: "github_issue_label",
-    version: "0.1.0",
-    tools: [
-      tool("add_labels", "Add labels to a GitHub issue", {
-        issueNumber: z.number(),
-        labels: z.array(z.string()),
-      }, async ({ issueNumber, labels }) => {
-        try {
-          const octokit = await getOctokit();
-          await octokit.rest.issues.addLabels({
-            owner, repo, issue_number: issueNumber, labels,
-          });
-          return {
-            content: [{ type: "text" as const, text: JSON.stringify({ success: true }) }],
-          };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          return {
-            content: [{ type: "text" as const, text: `Error: ${message}` }],
-            isError: true,
-          };
-        }
-      }),
-    ],
-  });
-}
+// cross-corpus-rrf.ts -- extend SourceType
+export type SourceType = "code" | "review_comment" | "wiki" | "snippet" | "issue";
+
+// retrieval.ts -- add source weights
+const SOURCE_WEIGHTS: Record<TriggerType, Record<string, number>> = {
+  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0, snippet: 1.1, issue: 0.8 },
+  issue:     { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.3 },
+  question:  { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.0 },
+  slack:     { code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0, issue: 1.0 },
+};
 ```
 
-### Pattern 3: Mention Handler Internal Routing
+**New issue retrieval helper** (`src/knowledge/issue-retrieval.ts`):
+Follows `review-comment-retrieval.ts` and `wiki-retrieval.ts` pattern -- performs hybrid search (embedding + BM25) and returns `RankedSourceList` for RRF merging.
 
-**What:** Adding a routing branch inside the existing `handleMention` function rather than registering a separate handler.
-**When to use:** When the new feature triggers on the same webhook event as an existing feature.
-**Trade-offs:** Avoids double-handler race conditions. Keeps bot-filter, mention-check, config-load in one place. Slightly increases handler complexity but maintains single-responsibility for the `issue_comment.created` event key.
+## Data Flow Changes Summary
 
-**Critical constraint:** The event router runs ALL registered handlers for a key via `Promise.allSettled` (router.ts line 99). Registering a second handler for `issue_comment.created` would cause BOTH to fire, creating duplicate reactions and comments.
-
-```typescript
-// Insert BEFORE parseWriteIntent (~line 803 in mention.ts):
-if (isIssueThreadComment && config.triage?.enabled) {
-  await handleTriageMention({ mention, config, workspace, octokit, ... });
-  return; // Skip the general-purpose mention path
-}
-```
-
-## Data Flow
-
-### Triage Mention Flow (Primary)
+### Before (v0.21)
 
 ```
-1. GitHub sends issue_comment.created webhook
-2. Event router dispatches to handleMention (existing registration)
-3. normalizeIssueComment() produces MentionEvent:
-   - surface: "issue_comment" (NOT "pr_comment" -- issue.pull_request is falsy)
-   - prNumber: undefined
-   - issueNumber: issue.number
-4. isIssueThreadComment = true (line 802: event.name==="issue_comment" && prNumber===undefined)
-5. Bot filter + mention check (existing)
-6. workspaceManager.acquire() -> shallow clone (existing)
-7. loadRepoConfig() from workspace .kodiai.yml (existing)
-8. [NEW] config.triage.enabled check:
-   a. parseIssueTemplates(workspaceDir) -- reads .github/ISSUE_TEMPLATE/*.yml
-   b. validateIssueAgainstTemplate(issueBody, matchedTemplate)
-   c. buildTriagePrompt({ mention, templateDiff, config })
-   d. executor.execute({
-        prompt,
-        mcpServers: { github_issue_label, github_issue_comment },
-        allowedTools: ["mcp__github_issue_label__*", "mcp__github_issue_comment__*"],
-      })
-   e. Agent posts comment with guidance and/or applies "Ignored rules" label
-9. [EXISTING] If NOT config.triage.enabled: falls through to existing read/write path
+Webhook -> Router -> Mention Handler -> [triage if @kodiai mentioned + triage.enabled]
+                                     -> Retrieval: code + review + wiki + snippet (4 corpora)
 ```
 
-### Issue Template Parser Data Flow
+### After (v0.22)
 
 ```
-Workspace clone (.github/ISSUE_TEMPLATE/)
-    |
-    v
-Read *.yml files -> parse YAML frontmatter
-    |
-    v
-Extract: name, description, body[] fields
-  Each field: id, label, type (input|textarea|dropdown|checkboxes), required
-    |
-    v
-Match template to issue by name/title heuristic
-    |
-    v
-Diff issue body against matched template:
-  - Which required fields are present?
-  - Which are missing or empty?
-    |
-    v
-TemplateValidationResult {
-  matchedTemplate, missingRequiredFields[], presentFields[], isValid
-}
+Webhook -> Router -> issues.opened     -> Auto-Triage Handler -> Duplicate Detector
+                                                              -> Triage Validation
+                                                              -> IssueStore upsert
+                  -> PR opened         -> PR-Issue Linker -> Reference Parser
+                                                          -> Semantic Search
+                  -> issue_comment     -> Mention Handler (unchanged)
+                                       -> Retrieval: code + review + wiki + snippet + issue (5 corpora)
+
+Scheduled -> Issue Sync (nightly) -> GitHub Issues API -> IssueStore upserts
+One-shot  -> Backfill script -> GitHub Issues API -> IssueStore bulk upserts
 ```
 
-### Key Data Flows
+## Build Order (Dependency-Driven)
 
-1. **Triage execution:** Webhook -> mention handler -> triage branch -> template parser -> executor with issue MCP tools -> GitHub API (comment + label). One-shot execution, no conversation turns.
-2. **Issue corpus write:** Migration creates tables. Issue store provides CRUD. NOT wired to retriever in v0.21 -- the triage agent reads the issue body from webhook payload, not from vector search.
+### Phase 1: Historical Ingestion + Nightly Sync
 
-## Scaling Considerations
+**Why first:** Everything downstream depends on having issues in the corpus. Duplicate detection needs embeddings to compare against. PR-issue linking needs issue records to verify references. Retrieval integration needs issue data.
 
-Not a concern for v0.21. Triage adds at most 1 LLM call per `@kodiai` mention on issues. Current volume is low (single-digit mentions per day).
+**Deliverables:**
+1. Issue backfill module (`src/knowledge/issue-backfill.ts`) + tests
+2. Backfill CLI script (`scripts/backfill-issues.ts`)
+3. Issue sync scheduler (`src/knowledge/issue-sync.ts`) + tests
+4. Wire sync scheduler into `src/index.ts` (init, shutdown)
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Current (~5 mentions/day) | In-process, synchronous. No concerns. |
-| 100 issues/day | Issue store ingestion becomes relevant. Add webhook handler for `issues.opened` to backfill corpus. |
-| 1000+ issues/day | Consider separating triage into its own worker queue to avoid blocking PR reviews. |
+**Dependencies:** IssueStore (exists), EmbeddingProvider (exists), GitHubApp (exists)
 
-## Anti-Patterns
+### Phase 2: Duplicate Detection + Auto-Triage on issues.opened
 
-### Anti-Pattern 1: Separate Event Handler for Triage
+**Why second:** Core user-facing intelligence feature. Needs populated corpus from Phase 1.
 
-**What people do:** Register a new handler for `issue_comment.created` alongside the mention handler.
-**Why it's wrong:** The event router runs ALL handlers via `Promise.allSettled`. Both handlers fire for every issue comment, creating race conditions -- double eye reactions, double comments, duplicated config loading, duplicated bot-filter checks.
-**Do this instead:** Add a triage routing decision inside the existing `handleMention` function. The `isIssueThreadComment` flag (line 802) already cleanly identifies pure issue mentions.
+**Deliverables:**
+1. Duplicate detector (`src/knowledge/issue-duplicate-detector.ts`) + tests
+2. Config schema extension (autoTriageOnOpen, duplicateDetection)
+3. Template fetching via Contents API (adapter for triage-agent.ts)
+4. Auto-triage handler (`src/handlers/issue-opened.ts`) + tests
+5. Wire into event router in `src/index.ts`
 
-### Anti-Pattern 2: Reusing github_comment MCP Server for Triage
+**Dependencies:** IssueStore (exists), Triage Agent (exists), MCP tools (exist), Duplicate Detector (this phase)
 
-**What people do:** Have the triage agent post comments via the existing `github_comment` server.
-**Why it's wrong:** The existing comment server has review-specific validators: `sanitizeKodiaiReviewSummary()` enforces Five-Section template (What Changed / Strengths / Observations / Suggestions / Verdict), `sanitizeKodiaiDecisionResponse()` enforces APPROVE/NOT APPROVED format, `sanitizeKodiaiReReviewSummary()` enforces delta template. Triage comments would be REJECTED by these validators.
-**Do this instead:** Create a separate `github_issue_comment` MCP server with mention-only sanitization (sanitizeOutgoingMentions, no template validation).
+### Phase 3: PR-Issue Linking
 
-### Anti-Pattern 3: Premature Retrieval Integration
+**Why third:** Builds on populated corpus. Independent of auto-triage.
 
-**What people do:** Immediately wire the issue corpus into `createRetriever()` as a 5th fan-out.
-**Why it's wrong:** v0.21 scope is triage (validate template, apply labels). The triage agent reads the current issue from the webhook payload, not historical issues via vector search. Adding a 5th corpus to the already-complex 7-search fan-out adds latency with zero triage benefit.
-**Do this instead:** Build the schema and store now (tables ready for future ingestion). Wire into retriever in a later milestone when duplicate detection or similar-issue linking is needed.
+**Deliverables:**
+1. Migration `015-pr-issue-links.sql`
+2. Reference parser (regex extraction from PR title/body)
+3. PR-Issue linker handler (`src/handlers/pr-issue-linker.ts`) + tests
+4. Wire into event router (`pull_request.opened`)
 
-### Anti-Pattern 4: Skipping Workspace Clone
+**Dependencies:** IssueStore (exists), EmbeddingProvider (exists), migration 015 (this phase)
 
-**What people do:** Run triage without cloning the repo since "no code changes are needed."
-**Why it's wrong:** The issue template parser needs `.github/ISSUE_TEMPLATE/` files from the repository. Without a clone, templates cannot be parsed.
-**Do this instead:** Use existing `workspaceManager.acquire()` for a shallow clone. The clone is lightweight (depth=50) and template files are tiny YAML.
+### Phase 4: Issue Corpus in Retrieval Pipeline
 
-## Integration Points
+**Why last:** Enhancement to existing pipeline. Lower priority than the three user-facing features. All other phases deliver value without this.
 
-### External Services
+**Deliverables:**
+1. Issue retrieval helper (`src/knowledge/issue-retrieval.ts`) + tests
+2. Update `SourceType` union in `cross-corpus-rrf.ts`
+3. Wire issue search into `retrieval.ts` fan-out
+4. Update source weights per trigger type
+5. Add `[issue: #N]` citation format for mention/review responses
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| GitHub Issues API | `octokit.rest.issues.addLabels()` | Via MCP tool; needs `Issues: Read and write` permission (already granted) |
-| GitHub Issues API | `octokit.rest.issues.createComment()` | Via MCP tool; same permission |
-| GitHub Issues API | `octokit.rest.issues.removeLabel()` | Optional for label cleanup; same permission |
+**Dependencies:** IssueStore (exists), retrieval pipeline (exists), populated corpus (Phase 1)
 
-### Internal Boundaries
+## Anti-Patterns to Avoid
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Mention handler -> Triage path | Direct function call (same file or imported) | Early return prevents fallthrough to read/write path |
-| Triage path -> Executor | `executor.execute()` with triage-specific MCP config | Existing executor interface, no changes |
-| Triage path -> Template parser | Direct import, pure function | No async dependencies beyond filesystem reads |
-| buildMcpServers -> Issue tools | New `enableIssueTools` flag in deps | Follows existing `enableInlineTools` / `enableCommentTools` pattern |
-| Config schema -> Triage section | New `triage` key in `repoConfigSchema` | Section-fallback parsing handles invalid triage config gracefully |
+### Anti-Pattern 1: Agent Loop for Duplicate Detection
+**What:** Running a Claude agent to determine if issues are duplicates.
+**Why bad:** Costs $0.10-0.50 per `issues.opened`. Vector similarity at tight thresholds (cosine distance < 0.12) is sufficient for high-confidence detection and costs ~$0.001 (one embedding call).
+**Instead:** Pure embedding comparison. Reserve LLM validation for a future iteration on borderline cases.
 
-## New vs Modified Summary
+### Anti-Pattern 2: Workspace Clone for Auto-Triage
+**What:** Creating a shallow clone workspace to read issue templates (as the mention handler does for triage-on-mention).
+**Why bad:** Cloning xbmc/xbmc takes 30-60 seconds. Auto-triage on `issues.opened` should respond quickly (<5s for the non-LLM path).
+**Instead:** Fetch `.github/ISSUE_TEMPLATE/` via GitHub Contents API (2-5 REST calls, <2s).
 
-### New Components (6 files + tests)
+### Anti-Pattern 3: Blocking PR Review for Issue Linking
+**What:** Making PR-issue linking a prerequisite step in the review pipeline.
+**Why bad:** Adds latency to the critical PR review path. Issue linking is informational.
+**Instead:** Separate handler registered on `pull_request.opened`. Runs independently via Promise.allSettled in the event router.
 
-| File | Purpose | Dependencies |
-|------|---------|-------------|
-| `src/db/migrations/014-issues.sql` | Issue corpus schema | PostgreSQL, pgvector |
-| `src/knowledge/issue-store.ts` | Issue vector store factory | `src/db/client.ts`, embedding types |
-| `src/execution/mcp/issue-label-server.ts` | Label MCP tool | Agent SDK, Octokit |
-| `src/execution/mcp/issue-comment-server.ts` | Comment MCP tool | Agent SDK, Octokit, sanitizer |
-| `src/execution/issue-template-parser.ts` | Template parsing + validation | Node fs, js-yaml |
-| `src/execution/triage-prompt.ts` | Triage agent prompt builder | Template parser types |
+### Anti-Pattern 4: Re-embedding Entire Corpus on Nightly Sync
+**What:** Re-generating embeddings for all issues every night.
+**Why bad:** Wastes embedding API budget. Only changed issues need re-embedding.
+**Instead:** Use GitHub's `since` parameter to fetch only updated issues. Compare `github_updated_at` to skip unchanged records.
 
-### Modified Components (3 files)
+### Anti-Pattern 5: Adding Triage to Mention Handler for issues.opened
+**What:** Routing `issues.opened` through the mention handler by registering it there.
+**Why bad:** The mention handler assumes a comment exists, checks for `@kodiai` mention, parses write-intent, builds conversation context. None of this applies to `issues.opened` (no comment, no mention, no conversation). The handler is already 2000+ lines.
+**Instead:** Clean, focused `issue-opened.ts` handler (~200 lines) registered separately on the event router.
 
-| File | Change | Scope |
-|------|--------|-------|
-| `src/execution/config.ts` | Add `triageSchema` to `repoConfigSchema` | ~15 lines |
-| `src/execution/mcp/index.ts` | Wire issue tools into `buildMcpServers()` | ~15 lines |
-| `src/handlers/mention.ts` | Add triage routing branch before write-intent parsing | ~30 lines |
+## Scalability Considerations
 
-### Unchanged Components
-
-| File | Why Unchanged |
-|------|--------------|
-| `src/webhook/router.ts` | `issue_comment.created` already dispatched |
-| `src/handlers/mention-types.ts` | `normalizeIssueComment` already handles this surface |
-| `src/knowledge/retrieval.ts` | Issue corpus not wired into retriever in v0.21 |
-| `src/execution/executor.ts` | Already supports arbitrary MCP configs |
-| `src/execution/mention-context.ts` | Not used by triage path |
-| `src/execution/mention-prompt.ts` | Not used by triage path (separate triage prompt) |
-
-## Build Order
-
-```
-Phase 1: Schema + Store (independent, no deps)
-  014-issues.sql -> issue-store.ts + tests
-
-Phase 2: MCP Tools (independent, can run parallel with Phase 1)
-  issue-label-server.ts + tests
-  issue-comment-server.ts + tests
-  Wire into mcp/index.ts
-
-Phase 3: Triage Logic (depends on Phase 1 for store, Phase 2 for tools)
-  issue-template-parser.ts + tests
-  triage-prompt.ts + tests
-  Config schema: add triageSchema
-  Mention handler: add triage routing branch
-  Integration test: end-to-end triage flow
-```
-
-Phases 1 and 2 are independent and can execute in parallel. Phase 3 depends on both.
+| Concern | Current (xbmc/xbmc) | At 10 Repos | At 100 Repos |
+|---------|---------------------|-------------|--------------|
+| Issue corpus size | ~5-8K issues (3yr) | ~50K issues | ~500K issues |
+| HNSW index | Fine (< 100K) | Fine (< 100K) | Consider repo-scoped partitioning |
+| Backfill duration | 6-8 hours one-time | Run per-repo sequentially | Queue-based with priority |
+| Nightly sync API calls | ~50-200 | ~500-2000 | Rate limit coordination |
+| Embedding costs | ~$5-10 backfill | ~$50-100 | Budget alerts needed |
+| Auto-triage latency | <3s (embed + search) | Same (repo-scoped) | Same (repo-scoped) |
+| PR-issue links table | ~5K rows over time | ~50K rows | Indexed, no concern |
 
 ## Sources
 
-- `src/webhook/router.ts` -- event dispatch pattern, handler isolation via Promise.allSettled
-- `src/handlers/mention.ts` -- mention handler, isIssueThreadComment detection (line 802), write-intent parsing
-- `src/handlers/mention-types.ts` -- MentionEvent normalization, surface classification
-- `src/execution/mcp/index.ts` -- buildMcpServers wiring pattern (lines 18-106)
-- `src/execution/mcp/comment-server.ts` -- existing MCP tool pattern with review sanitization
-- `src/execution/config.ts` -- repoConfigSchema, section-fallback parsing (lines 464-488)
-- `src/knowledge/retrieval.ts` -- createRetriever pattern, 7-search fan-out
-- `src/execution/issue-code-context.ts` -- existing issue-aware code context builder
-- GitHub Issue #73 -- v0.21 requirements and phase breakdown
+- Codebase analysis: `review-comment-backfill.ts` (backfill pattern), `wiki-sync.ts` (nightly scheduler), `cluster-scheduler.ts` (setInterval + startup delay), `issue-store.ts` (existing CRUD + search API), `triage-agent.ts` (template validation), `cross-corpus-rrf.ts` (RRF merging), `mention.ts` (triage-on-mention integration, event registration patterns)
+- Existing schema: `014-issues.sql` (issues + issue_comments with HNSW + tsvector)
+- Event router: `webhook/router.ts` (Promise.allSettled dispatch, handler isolation)
+- Scheduled jobs: `wiki-sync.ts` (60s delay), `wiki-staleness-detector.ts` (90s), `cluster-scheduler.ts` (120s)
+- IssueStore API: `upsert`, `findSimilar`, `searchByEmbedding`, `searchByFullText`, `upsertComment`, `getByNumber`, `countByRepo`
 
 ---
-*Architecture research for: Issue triage integration into Kodiai GitHub App*
+*Architecture research for v0.22 Issue Intelligence features*
 *Researched: 2026-02-26*

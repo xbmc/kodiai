@@ -1,232 +1,196 @@
-# Stack Research: v0.21 Issue Triage Foundation
+# Stack Research: v0.22 Issue Intelligence
 
-**Domain:** Issue triage automation for GitHub App (adding to existing codebase)
+**Domain:** Historical issue ingestion, duplicate detection, PR-issue linking, auto-triage for GitHub App
 **Researched:** 2026-02-26
 **Confidence:** HIGH
 
 ## Scope
 
-This research covers ONLY what is needed for the v0.21 milestone: issue corpus, MCP tools for labeling/commenting, template parser, and triage agent. The existing stack (PostgreSQL+pgvector, Bun+Hono, Agent SDK, Octokit, postgres.js, VoyageAI, Vercel AI SDK, etc.) is validated and not re-evaluated.
+This research covers ONLY what is needed for the v0.22 milestone: bulk historical issue ingestion from GitHub API, nightly incremental sync scheduling, vector-similarity duplicate detection, PR-issue linking, and auto-triage on `issues.opened`. The existing stack is validated and not re-evaluated.
 
-## Recommended Stack Additions
+## Recommended Stack Additions: NONE
 
-### New Dependencies: NONE
-
-No new packages are required. Every capability needed for v0.21 is already available in the existing dependency tree.
+No new npm packages are required. Every capability for v0.22 is already available in the existing dependency tree. This milestone is a feature-layer build on validated infrastructure.
 
 | Capability Needed | Provided By | Already Installed | Version |
 |-------------------|-------------|-------------------|---------|
-| Issue label management | `@octokit/rest` | Yes | ^22.0.1 |
-| Issue comment creation | `@octokit/rest` | Yes | ^22.0.1 |
-| MCP tool definition | `@anthropic-ai/claude-agent-sdk` | Yes | 0.2.37 |
-| Schema validation (tool inputs) | `zod` | Yes | ^4.3.6 |
-| Issue template YAML parsing | `js-yaml` | Yes | ^4.1.1 |
-| Vector storage + HNSW indexes | `postgres` + pgvector | Yes | ^3.4.8 |
-| Embedding generation | `voyageai` | Yes | ^0.1.0 |
-| Agent execution | `@anthropic-ai/claude-agent-sdk` | Yes | 0.2.37 |
-| Issue template markdown parsing | Built-in string/regex | N/A | N/A |
+| Paginated issue list (bulk + incremental) | `@octokit/rest` `octokit.paginate.iterator()` | Yes | ^22.0.1 |
+| Issue comment fetching | `@octokit/rest` `issues.listComments()` | Yes | ^22.0.1 |
+| Issue/comment upsert with embeddings | `issue-store.ts` (`IssueStore`) | Yes | Custom |
+| Vector similarity search (duplicate detection) | PostgreSQL pgvector `<=>` operator | Yes | HNSW indexed |
+| Full-text search (duplicate detection BM25 leg) | PostgreSQL `tsvector` + `ts_rank()` | Yes | GIN indexed |
+| Embedding generation | `voyageai` (`voyage-code-3`, 1024d) | Yes | ^0.1.0 |
+| Scheduled nightly job | `setInterval` + startup delay pattern | Yes | Built-in JS |
+| Webhook event dispatch (`issues.opened`) | `createEventRouter` key-based dispatch | Yes | Custom |
+| Config gating (`triage.enabled`) | `.kodiai.yml` + `triageSchema` (Zod) | Yes | Custom |
+| Rate limit awareness | Adaptive delay from `x-ratelimit-remaining` headers | Yes | Pattern in `review-comment-backfill.ts` |
+| Schema migrations | `src/db/migrate.ts` sequential migration runner | Yes | Custom |
+| PR search (for PR-issue linking) | `@octokit/rest` `search.issuesAndPullRequests()` | Yes | ^22.0.1 |
+| JSON body parsing + reference extraction | Built-in string/regex operations | Yes | Runtime |
 
-### Rationale: Why No New Dependencies
+## Integration Points (How New Code Connects)
 
-1. **Octokit already covers label and comment APIs.** `octokit.rest.issues.addLabels()`, `octokit.rest.issues.createComment()`, and `octokit.rest.issues.removeLabel()` are all part of `@octokit/rest` which is already used extensively throughout the codebase (see `src/handlers/mention.ts`, `src/execution/mcp/comment-server.ts`).
+### 1. Historical Issue Backfill
 
-2. **Template parsing is simple string extraction.** xbmc/xbmc uses classic markdown issue templates (`.github/ISSUE_TEMPLATE/bug_report.md`), not GitHub YAML form schemas. Template parsing requires extracting section headers and checking if the issue body contains those sections. This is pure string/regex work -- no parsing library needed.
+**Pattern to follow:** `src/knowledge/review-comment-backfill.ts`
 
-3. **MCP tool pattern is established.** The `createSdkMcpServer` + `tool()` + `z` schema pattern from `@anthropic-ai/claude-agent-sdk` is used in 5 existing MCP servers. Two new tools follow the exact same pattern.
+The review comment backfill is the exact template. It uses:
+- `octokit.paginate.iterator()` for memory-efficient streaming pagination
+- Adaptive rate delay reading `x-ratelimit-remaining` headers
+- Sync state table for cursor-based resume (`backfillComplete` flag, `lastSyncedAt`)
+- Per-page embedding generation with fail-open semantics
+- `ON CONFLICT DO UPDATE` upsert for idempotent re-runs
 
-4. **Issue corpus follows review_comments corpus pattern exactly.** The `review_comments` table with HNSW + tsvector indexes, the `ReviewCommentStore` interface, and the chunking/embedding pipeline provide a direct blueprint. The `issues` table schema, store interface, and retrieval integration are structural copies with different columns.
+The issue backfill should follow this pattern identically, using:
+- `GET /repos/{owner}/{repo}/issues` with `state: "all"`, `sort: "updated"`, `direction: "asc"`, `per_page: 100`
+- Filter out PRs via `pull_request` key presence (GitHub API returns issues+PRs together)
+- For each issue, also fetch comments via `GET /repos/{owner}/{repo}/issues/{issue_number}/comments`
+- Embed `title + "\n\n" + body` as the issue embedding (title carries high signal for duplicates)
+- Use existing `IssueStore.upsert()` and `IssueStore.upsertComment()`
 
-## Integration Points
+**GitHub API consideration:** The `since` parameter on list issues filters by `updated_at`, not `created_at`. This is correct behavior for incremental sync (catches edits, state changes, new comments). For initial backfill, omit `since` and paginate through all issues.
 
-### 1. MCP Server Registration (`src/execution/mcp/index.ts`)
+**Volume estimate for xbmc/xbmc:** ~15,000-20,000 total issues (open + closed). At 100/page, that is 150-200 API pages for issues + additional pages for comments. Well within 5,000 req/hr rate limit with adaptive delays.
 
-Two new MCP servers added to `buildMcpServers()`:
+### 2. Nightly Incremental Sync Scheduler
 
+**Pattern to follow:** `src/knowledge/wiki-sync.ts` (`createWikiSyncScheduler`)
+
+The wiki sync scheduler is the exact template:
+- Factory function returning `{ start(), stop(), syncNow() }`
+- `setInterval` with startup delay (stagger after existing schedulers)
+- Mutex flag (`running`) to prevent overlapping runs
+- Fail-open with try/catch wrapping
+- Wired in `src/index.ts` with `_schedulerRef` for shutdown cleanup
+
+For issue sync:
+- Default interval: `24 * 60 * 60 * 1000` (24 hours, matching wiki sync)
+- Startup delay: `180_000` (3 minutes, staggered after wiki at 60s and cluster at 120s)
+- Uses `since` parameter set to last sync timestamp
+- Updates sync state after each batch
+
+### 3. Duplicate Detection
+
+**Already built:** `IssueStore.findSimilar()` does vector similarity with configurable threshold and excludes the source issue. This is the core primitive.
+
+Additional needs for high-confidence duplicate detection:
+- **Threshold tuning:** The existing default threshold of `0.7` (cosine distance) is a starting point. For "high-confidence" duplicate flagging, use `<= 0.25` cosine distance (equivalent to >= 0.75 cosine similarity). This avoids false positives.
+- **Hybrid signal:** Combine vector similarity with title BM25 overlap for higher precision. Two signals agreeing = higher confidence.
+- **No new dependencies needed.** The `<=>` pgvector operator and `ts_rank()` are both already used.
+
+### 4. PR-Issue Linking
+
+Two linking strategies, both using existing tools:
+
+**Reference-based (deterministic):** Parse issue/PR bodies and comments for patterns like `fixes #123`, `closes #456`, `resolves #789`, `ref #101`. This is pure string/regex work -- no dependencies.
+
+**Semantic search (fuzzy):** Use `octokit.rest.search.issuesAndPullRequests()` to find PRs that reference an issue number, or embed the issue title and search PR titles/bodies via the existing retrieval pipeline. Octokit search is already used elsewhere in the codebase (`ci-failure.ts`, `issue-label-server.ts`).
+
+### 5. Auto-Triage on `issues.opened`
+
+**Pattern to follow:** `src/webhook/router.ts` event registration
+
+The router already supports `"issues.opened"` as a dispatch key. Register a new handler:
 ```typescript
-// New: github_issue_label server
-if (deps.enableIssueLabelTools) {
-  servers.github_issue_label = createIssueLabelServer(
-    deps.getOctokit,
-    deps.owner,
-    deps.repo,
-    deps.botHandles ?? [],
-  );
-}
-
-// New: dedicated github_issue_comment for triage-specific comments
-if (deps.enableIssueCommentTools) {
-  servers.github_issue_comment = createIssueCommentServer(
-    deps.getOctokit,
-    deps.owner,
-    deps.repo,
-    deps.botHandles ?? [],
-    deps.onPublishEvent,
-  );
-}
+router.register("issues.opened", handleIssuesOpened);
 ```
 
-### 2. Config Schema (`src/execution/config.ts`)
+The handler should:
+1. Load repo config, check `triage.enabled` (and a new `triage.autoTriage` boolean)
+2. Check per-issue cooldown (reuse existing `triageCooldowns` map logic from `mention.ts`)
+3. Run the existing triage validation agent
+4. Run duplicate detection
+5. Apply labels and post comment via existing MCP tools
 
-New `triage` section in `repoConfigSchema`:
+**Idempotency:** Use the existing `checkAndClaimRun()` pattern from `KnowledgeStore` keyed on `repo + issueNumber + "triage"` to prevent duplicate processing on webhook redelivery.
+
+## Schema Additions
+
+New migration needed for:
+
+```sql
+-- Issue sync state table (follows review_comment_sync_state pattern)
+CREATE TABLE IF NOT EXISTS issue_sync_state (
+  id SERIAL PRIMARY KEY,
+  repo TEXT NOT NULL UNIQUE,
+  last_synced_at TIMESTAMPTZ,
+  last_page_cursor TEXT,
+  total_issues_synced INTEGER DEFAULT 0,
+  backfill_complete BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- PR-issue links table
+CREATE TABLE IF NOT EXISTS pr_issue_links (
+  id SERIAL PRIMARY KEY,
+  repo TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  issue_number INTEGER NOT NULL,
+  link_type TEXT NOT NULL,  -- 'reference', 'semantic', 'closes'
+  confidence REAL NOT NULL DEFAULT 1.0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(repo, pr_number, issue_number, link_type)
+);
+CREATE INDEX idx_pr_issue_links_issue ON pr_issue_links(repo, issue_number);
+CREATE INDEX idx_pr_issue_links_pr ON pr_issue_links(repo, pr_number);
+```
+
+No changes to existing `issues` or `issue_comments` tables -- the schema from v0.21 already has all needed columns including `embedding`, `state`, `is_pull_request`, `label_names`.
+
+## Config Additions
+
+Extend the existing `triageSchema` in `src/execution/config.ts`:
 
 ```typescript
 const triageSchema = z.object({
   enabled: z.boolean().default(false),
-  labels: z.object({
-    missingFields: z.string().default("Ignored rules"),
-  }).default({ missingFields: "Ignored rules" }),
-}).default({ enabled: false, labels: { missingFields: "Ignored rules" } });
+  // NEW for v0.22:
+  autoTriage: z.boolean().default(false), // fire on issues.opened
+  duplicateDetection: z.object({
+    enabled: z.boolean().default(true),
+    threshold: z.number().min(0).max(1).default(0.25), // cosine distance
+  }).default({ enabled: true, threshold: 0.25 }),
+  // existing fields unchanged...
+  label: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  comment: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  labelAllowlist: z.array(z.string()).default([]),
+  cooldownMinutes: z.number().min(0).max(1440).default(30),
+}).default({});
 ```
-
-Added to `repoConfigSchema` alongside `review`, `mention`, `write`, etc.
-
-### 3. Database Migration
-
-New migration (following existing `src/db/migrate.ts` pattern):
-
-```sql
--- issues table (parallel to review_comments)
-CREATE TABLE IF NOT EXISTS issues (
-  id SERIAL PRIMARY KEY,
-  repo TEXT NOT NULL,
-  owner TEXT NOT NULL,
-  issue_number INTEGER NOT NULL,
-  title TEXT NOT NULL,
-  body TEXT,
-  author_login TEXT NOT NULL,
-  labels JSONB DEFAULT '[]',
-  state TEXT NOT NULL DEFAULT 'open',
-  template_name TEXT,
-  missing_fields JSONB DEFAULT '[]',
-  embedding vector(1024),
-  search_text tsvector GENERATED ALWAYS AS (
-    to_tsvector('english', coalesce(title, '') || ' ' || coalesce(body, ''))
-  ) STORED,
-  github_created_at TIMESTAMPTZ NOT NULL,
-  github_updated_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(repo, issue_number)
-);
-
-CREATE INDEX idx_issues_repo ON issues(repo);
-CREATE INDEX idx_issues_embedding ON issues
-  USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
-CREATE INDEX idx_issues_search_text ON issues USING GIN (search_text);
-```
-
-### 4. Webhook Router (`src/webhook/router.ts`)
-
-Issue mention events already route through the existing `issue_comment.created` handler in `src/handlers/mention.ts`. The triage agent hooks into the existing mention flow with a conditional branch:
-
-```
-issue_comment.created
-  -> containsMention() check
-  -> if issue (not PR) AND triage.enabled
-    -> route to triage agent
-  -> else
-    -> existing mention handler
-```
-
-### 5. Retrieval Integration
-
-Issue corpus integrates into `createRetriever()` as a 5th corpus alongside code, review_comments, wiki_pages, and code_snippets. Follows the same `searchByEmbedding()` + `searchByFullText()` -> `hybridSearchMerge()` -> `crossCorpusRRF()` pipeline.
-
-## Octokit API Surface for Issue Triage
-
-All methods are on `octokit.rest.issues.*` (already authenticated via GitHub App installation tokens):
-
-| Method | Purpose | Used For |
-|--------|---------|----------|
-| `addLabels({ owner, repo, issue_number, labels })` | Apply labels | Triage: apply "Ignored rules" label |
-| `removeLabel({ owner, repo, issue_number, name })` | Remove label | Future: remove label when issue is updated |
-| `createComment({ owner, repo, issue_number, body })` | Post comment | Triage: structured guidance comment |
-| `listLabelsOnIssue({ owner, repo, issue_number })` | Check existing labels | Idempotency: skip if already labeled |
-| `get({ owner, repo, issue_number })` | Fetch issue details | Get current body/labels for triage |
-
-**Required GitHub App permissions:** `issues: write` (already configured for the Kodiai app since it creates comments on issues via mention handling).
-
-## Issue Template Parsing Approach
-
-### Template Format: Classic Markdown (NOT YAML Forms)
-
-xbmc/xbmc uses classic markdown templates at `.github/ISSUE_TEMPLATE/bug_report.md`:
-
-```markdown
----
-name: Problem report
-about: Create an extensive report to help us document a problem
----
-## Bug report
-### Describe the bug
-### Expected Behavior
-### Actual Behavior
-...
-```
-
-### Parser Strategy: Section Header Extraction
-
-1. Read template files from cloned workspace `.github/ISSUE_TEMPLATE/*.md`
-2. Parse YAML frontmatter (`js-yaml` already installed) to get template name/about
-3. Extract `##` and `###` headers as required sections
-4. Compare against issue body: check which sections are present and which have content
-5. Return `{ templateName, requiredSections, missingSections, emptySections }`
-
-No external markdown AST parser needed. Section headers in GitHub issue templates are plain `##`/`###` markers. A regex-based extractor is sufficient and consistent with the codebase's approach (see `sanitizeKodiaiReviewSummary` in `comment-server.ts` which does extensive markdown section validation with regex).
-
-## What NOT to Add
-
-| Do Not Add | Why |
-|------------|-----|
-| `marked` / `remark` / `unified` markdown parser | Overkill for section header extraction from issue templates. Regex is simpler, faster, and consistent with existing codebase patterns. |
-| `gray-matter` YAML frontmatter parser | `js-yaml` already handles this. Just split on `---` delimiters and parse the middle. |
-| GitHub Issue Forms YAML schema validator | xbmc/xbmc uses classic markdown templates, not YAML form schemas. Even if they migrate, the form schema generates the same markdown body. |
-| Separate GitHub REST client for labels | `@octokit/rest` already provides the full issues API surface. |
-| External queue for triage jobs | Triage runs synchronously in the mention handler path, same as all other mention responses. The existing p-queue handles concurrency. |
-| New embedding model/provider | VoyageAI `voyage-code-3` works fine for issue text. Issue bodies are natural language, which voyage-code-3 handles well despite the "code" name. |
-| `@octokit/webhooks-types` additions | Issue comment webhook types are already defined and used in mention handler. |
 
 ## Alternatives Considered
 
-| Recommended | Alternative | Why Not |
-|-------------|-------------|---------|
-| Regex-based template parser | `remark` AST parser | Template sections are simple `##` headers. AST parsing adds 50+ KB dep for no benefit. |
-| Single `issues` table with embedding column | Separate `issues` + `issue_vectors` tables | The issue from #73 mentions `issue_vectors` but the review_comments pattern uses a single table with embedding column. Single table is simpler, proven, and sufficient for the expected issue volume. |
-| Triage as mention handler branch | Standalone triage handler | Triage triggers on `@kodiai` mentions in issues. The mention handler already dispatches issue vs. PR context. A branch in the existing flow avoids duplication. |
-| `voyage-code-3` for issue embeddings | `voyage-3` (general purpose) | `voyage-code-3` is already configured and produces 1024-dim vectors matching all existing HNSW indexes. Switching models would require separate index dimensions or re-embedding everything. |
+| Need | Recommended | Alternative | Why Not |
+|------|-------------|-------------|---------|
+| Pagination | `octokit.paginate.iterator()` | Manual page loop | Iterator handles Link header parsing, memory-efficient streaming |
+| Scheduling | `setInterval` + startup delay | node-cron, bull, BullMQ | Existing pattern works, single-instance deployment, no Redis needed |
+| Duplicate detection | pgvector `<=>` + BM25 hybrid | Dedicated dedup library | Already have both search primitives, just need threshold tuning |
+| Reference parsing | Regex extraction | GitHub timeline API | Timeline API is expensive (1 call/issue); regex is instant and deterministic |
+| PR search | Octokit `search.issuesAndPullRequests` | GraphQL API | REST search is simpler, already used elsewhere, sufficient for this use case |
 
-## Version Compatibility
+## What NOT to Add
 
-All versions are current and compatible -- no changes to `package.json` required.
+| Library | Why Avoid |
+|---------|-----------|
+| `node-cron` / `cron` | `setInterval` pattern is already established for 3 schedulers; adding cron syntax adds complexity for no benefit at single-instance scale |
+| `bull` / `bullmq` | Requires Redis; in-process scheduling is sufficient for nightly jobs on single instance |
+| GraphQL (`@octokit/graphql`) | REST API is sufficient for all v0.22 operations; GraphQL adds query complexity |
+| Dedicated NLP/dedup libraries | pgvector + BM25 already provide the duplicate detection primitives |
+| `p-limit` / `p-throttle` | Adaptive rate delay from headers is already the pattern; no need for generic throttling |
 
-| Package | Current Version | Compatibility Notes |
-|---------|-----------------|---------------------|
-| `@octokit/rest` | ^22.0.1 | `issues.addLabels()` available since v18. Fully supported. |
-| `@anthropic-ai/claude-agent-sdk` | 0.2.37 | `tool()` + `createSdkMcpServer()` pattern used by all existing MCP servers. |
-| `postgres` | ^3.4.8 | Tagged template SQL with pgvector. Same patterns as review_comments schema. |
-| `zod` | ^4.3.6 | Schema validation for MCP tool inputs and config schema extension. |
-| `js-yaml` | ^4.1.1 | Template frontmatter parsing. Already used in `loadRepoConfig()`. |
+## Embedding Strategy
 
-## Confidence Assessment
+**Issue embedding text:** Concatenate `title + "\n\n" + body` (truncated to reasonable length). Title is critical for duplicate detection -- many issues have similar titles but different bodies. The existing `EmbeddingProvider.generate()` interface handles this directly.
 
-| Area | Level | Reason |
-|------|-------|--------|
-| No new deps needed | HIGH | Verified every capability against installed packages and Octokit API surface |
-| Octokit label/comment API | HIGH | Methods confirmed in @octokit/rest docs; same auth pattern as existing comment creation |
-| Template parsing approach | HIGH | Verified xbmc/xbmc uses classic markdown templates; regex approach proven in codebase |
-| Issue corpus schema | HIGH | Direct parallel to review_comments pattern which is battle-tested |
-| MCP tool pattern | HIGH | 5 existing servers use identical pattern; verified SDK version supports it |
-| Config schema extension | HIGH | Zod schema extension follows exact same pattern as review/mention/write sections |
+**Comment embedding text:** Use `body` directly, same as existing `IssueCommentInput.embedding` field.
+
+**Model:** `voyage-code-3` at 1024 dimensions, matching all other corpora. No model change needed.
+
+**Batch embedding consideration:** VoyageAI supports batch embedding (multiple texts per API call). The existing `EmbeddingProvider` interface is single-text. For backfill performance, consider adding a `generateBatch()` method or simply rate-limit sequential calls with adaptive delays (matching the review comment backfill approach). Sequential is simpler and proven.
 
 ## Sources
 
-- xbmc/xbmc `.github/ISSUE_TEMPLATE/bug_report.md` -- verified via GitHub API (classic markdown format)
-- [GitHub Issue Form Schema Docs](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-githubs-form-schema) -- confirmed xbmc uses classic templates, not YAML forms
-- `@octokit/rest` v22 -- `issues.addLabels()`, `issues.createComment()` verified in existing codebase usage
-- `src/execution/mcp/comment-server.ts` -- existing MCP server pattern reference
-- `src/knowledge/review-comment-store.ts` -- existing corpus store pattern reference
-- `src/execution/config.ts` -- existing config schema pattern reference
-- `package.json` + `bun.lock` -- current dependency versions verified
-
----
-*Stack research for: v0.21 Issue Triage Foundation*
-*Researched: 2026-02-26*
+- [GitHub REST API: List Repository Issues](https://docs.github.com/en/rest/issues/issues#list-repository-issues) -- `state`, `since`, `sort`, `direction`, `per_page` parameters; returns issues+PRs together
+- [GitHub REST API: Pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api) -- Link header, per_page max 100
+- Existing codebase patterns: `review-comment-backfill.ts` (backfill), `wiki-sync.ts` (scheduler), `cluster-scheduler.ts` (scheduler), `issue-store.ts` (CRUD + search), `router.ts` (event dispatch)

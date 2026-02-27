@@ -1,182 +1,162 @@
-# Feature Research
+# Feature Landscape
 
-**Domain:** GitHub issue triage automation -- template validation, labeling, commenting, duplicate detection
+**Domain:** GitHub issue intelligence -- historical ingestion, duplicate detection, PR-issue linking, auto-triage
 **Researched:** 2026-02-26
-**Milestone:** v0.21 Issue Triage Foundation
-**Confidence:** HIGH for core triage features, MEDIUM for advanced classification
+**Milestone:** v0.22 Issue Intelligence
+**Confidence:** HIGH for ingestion and auto-triage, MEDIUM for duplicate thresholds, MEDIUM for PR-issue linking
 
 ## Existing Foundation (Already Built)
 
-These features are production and form the base for v0.21:
+These features are production and form the base for v0.22:
 
-| Existing Capability | Module | How v0.21 Extends It |
+| Existing Capability | Module | How v0.22 Extends It |
 |---------------------|--------|---------------------|
-| `@kodiai` mention handling on issue_comment surface | `handlers/mention.ts`, `mention-types.ts` | Triage agent wired as new intent when mention is on an issue (not PR) |
-| `.kodiai.yml` config with feature gating | `execution/config.ts` | Add `triage:` section to enable/disable and configure label sets |
-| MCP tool pattern (github_pr_review, github_pr_comment) | `execution/executor.ts` | Add `github_issue_label` and `github_issue_comment` MCP tools following existing patterns |
-| PostgreSQL with pgvector HNSW + tsvector | Knowledge stores | New `issues` table with same hybrid search pattern for duplicate detection |
-| Voyage AI embeddings with chunking pipeline | `knowledge/` stores | Embed issue bodies for semantic similarity search |
-| Multi-LLM task routing via Vercel AI SDK | `execution/task-router.ts` | Triage classification as non-agentic task routed to fast/cheap model |
-| Contributor profiles with expertise tiers | `knowledge/contributor-profile-store.ts` | Tone adaptation based on whether issue author is first-timer vs core contributor |
-| `normalizeIssueComment()` already distinguishes issue vs PR surface | `handlers/mention-types.ts` | Surface detection already works; triage logic branches on `surface === "issue_comment"` |
+| Issue corpus with `issues`/`issue_comments` tables, HNSW vector indexes | `knowledge/issue-store.ts`, migration 014 | Backfill populates these tables; duplicate detection queries them |
+| `IssueStore.findSimilar()` with cosine distance threshold | `knowledge/issue-store.ts` | Duplicate detection wraps this with high-confidence gating |
+| `IssueStore.searchByEmbedding()` and `searchByFullText()` | `knowledge/issue-store.ts` | PR-issue linking uses these for semantic matching |
+| `IssueStore.upsert()` with ON CONFLICT DO UPDATE | `knowledge/issue-store.ts` | Backfill and nightly sync use idempotent upsert |
+| `IssueStore.upsertComment()` with ON CONFLICT DO UPDATE | `knowledge/issue-store.ts` | Comment backfill uses idempotent upsert |
+| Triage validation agent with template parsing | `triage/triage-agent.ts` | Auto-triage reuses this agent, triggered by webhook instead of @mention |
+| `github_issue_label` and `github_issue_comment` MCP tools | `execution/mcp/issue-*-server.ts` | Auto-triage uses these same tools |
+| 18-month PR review comment backfill pipeline | `knowledge/review-comment-backfill.ts` | Issue backfill follows identical pattern: paginated fetch, embed, store, sync state |
+| Nightly wiki sync job with scheduled interval | `knowledge/wiki-sync.ts` | Nightly issue sync follows same scheduler pattern |
+| Adaptive rate limiting (1.5s/3s delays based on remaining) | `knowledge/review-comment-backfill.ts` | Reuse same `adaptiveRateDelay` pattern for issue API calls |
+| Webhook deduplication via `X-GitHub-Delivery` header | `webhook/dedup.ts` | Auto-triage idempotency builds on existing dedup |
+| Per-issue cooldown with body-hash reset | Triage agent | Prevents duplicate auto-triage comments |
+| `.kodiai.yml` config gating (`triage.enabled`) | `execution/config.ts` | Auto-triage adds `triage.autoTriageOnOpen` config flag |
+| Voyage AI embedding provider | `knowledge/types.ts` | Same provider embeds issue title+body for corpus |
+| Cross-corpus RRF retrieval | `knowledge/cross-corpus-rrf.ts` | Issue corpus wired as 6th source in retrieval fan-out |
 
 ## Table Stakes
 
-Features users expect from any issue triage bot. Missing these makes the feature feel broken or useless.
+Features users expect. Missing = product feels incomplete for the stated v0.22 goals.
 
 | Feature | Why Expected | Complexity | Dependencies on Existing | Notes |
 |---------|--------------|------------|--------------------------|-------|
-| **Template field validation** | Primary stated goal. Issues missing required fields (version, steps to reproduce, logs) are the #1 maintainer pain point. xbmc/xbmc uses markdown templates with `bug_report.md` and `roadmap_item.md` -- bot must parse heading-based sections and detect empty/placeholder content. | MEDIUM | Mention handler (trigger path), config loader | Must handle both YAML form templates and markdown templates. xbmc uses markdown format. Parse `### Section Name` headings and check body below each for "No response" / empty / placeholder text. |
-| **Label application on triage outcome** | Every triage bot applies labels -- "needs more info", "bug", "feature request", type classification. Without labeling the bot is just a commenter. | LOW | New `github_issue_label` MCP tool, Octokit `issues.addLabels()` | Label must exist in repo or be created. Use `issues.addLabels()` (additive, not replacement). Configurable label names in `.kodiai.yml`. |
-| **Guidance comment when fields missing** | Bot must explain what is missing and how to fix it. Comment should be specific ("Missing: Kodi version, Steps to reproduce") not generic ("Please fill out the template"). | LOW | New `github_issue_comment` MCP tool, existing comment posting patterns | Follow existing tracking comment pattern (post once, update on re-triage). Include checklist of missing fields. |
-| **Config gating via .kodiai.yml** | Triage must be opt-in. Auto-triaging issues without consent would anger maintainers. Every serious bot provides config toggle. | LOW | Config schema extension | `triage: { enabled: false }` default. Mirrors existing `write: { enabled: false }` pattern. |
-| **Trigger via @kodiai mention on issues** | Consistent with existing UX -- maintainers already use @kodiai on PRs. Same invocation pattern on issues. | LOW | Mention handler already routes issue_comment surface | Branch in mention handler: if surface is issue_comment and not on a PR, check triage config and dispatch to triage agent. |
-| **Bot self-loop prevention** | Bot must not triage its own comments or react to its own labels. Already solved for PR reviews but must extend to issue surface. | LOW | Existing `botHandles` defense-in-depth sanitization | Same pattern: check comment author against bot handle before processing. |
+| **Historical issue backfill** | Cannot do duplicate detection or PR-issue linking without a populated corpus. Every similar tool (Simili, Similar Issues AI) requires a corpus of existing issues. This is the foundational prerequisite. | MEDIUM | `IssueStore.upsert()`, `IssueStore.upsertComment()`, Voyage AI embeddings, Octokit pagination | Follow review-comment-backfill pattern exactly: paginated `GET /repos/{owner}/{repo}/issues`, filter `is_pull_request: false`, adaptive rate delay, sync state tracking, cursor-based resume. xbmc/xbmc has ~3000+ closed issues -- expect ~30+ pages at 100/page. GitHub Issues API returns PRs too; must filter `pull_request` field. |
+| **Issue embedding on ingest** | Vector similarity search requires embeddings. Every issue needs `title + body` embedded via Voyage AI. Without embeddings, `findSimilar()` and `searchByEmbedding()` return nothing. | LOW | Voyage AI `EmbeddingProvider`, existing `IssueStore.upsert()` accepts `embedding` field | Embed `"${title}\n\n${body}"` as a single document. No chunking needed -- issues are typically 200-2000 tokens, well within Voyage AI's context window. Batch embedding (10-20 at a time) reduces API calls. |
+| **Nightly incremental sync** | Issues get updated (closed, relabeled, edited) constantly. Without sync, the corpus drifts from reality. The wiki sync job is the direct precedent. | LOW | Wiki sync scheduler pattern, `IssueStore.upsert()` idempotent update | Use `since` parameter on Issues API to fetch only recently updated issues. Store `last_synced_at` in sync state table. Process updates and new issues. Also sync comments via `GET /repos/{owner}/{repo}/issues/comments?since=...`. |
+| **High-confidence duplicate detection** | The primary intelligence feature. Users who file a duplicate want to be pointed to the existing issue. Maintainers want duplicates caught before manual triage. Every issue bot in this space (Simili, AI Duplicate Detector, Probot duplicate-issues) offers this. | MEDIUM | `IssueStore.findSimilar()`, embedded corpus, triage agent | Two-phase approach: (1) vector similarity via `findSimilar()` with strict threshold to get candidates, (2) LLM confirmation to reduce false positives. Critical: threshold must be strict enough to avoid false positives -- a wrongly-flagged duplicate erodes trust faster than a missed one. |
+| **Duplicate detection comment** | When a likely duplicate is found, post a comment linking to the candidate issue(s). Users expect to see why their issue was flagged and which issue it duplicates. | LOW | `github_issue_comment` MCP tool, duplicate detection results | Comment should include: similarity score (human-readable), link to candidate issue(s), disclaimer that this is automated and may be wrong. Do NOT auto-close -- that is an anti-feature. |
+| **Auto-triage on `issues.opened`** | Currently triage requires `@kodiai` mention. Auto-fire on open is the natural next step and is how VS Code, Hono, and most mature triage bots operate. Config-gated (default off). | MEDIUM | Webhook event router, triage agent, `.kodiai.yml` config | Wire `issues.opened` event in event router. Must be idempotent (webhook dedup + per-issue cooldown). Gate behind `triage.autoTriageOnOpen: true` in config. Run triage agent with same logic as mention-triggered path. |
+| **Config gate for auto-triage** | Repos must opt in to automatic triage. Default-on would surprise maintainers. Every mature bot (VS Code triage bot, GitHub Agentic Workflows) has explicit configuration. | LOW | `.kodiai.yml` config schema | Add `triage.autoTriageOnOpen: boolean` (default `false`). When `true`, `issues.opened` fires triage. When `false`, only `@kodiai` mention triggers triage. |
 
 ## Differentiators
 
-Features that set Kodiai's triage apart from actions/stale, fancy-triage-bot, and basic GitHub Actions workflows.
+Features that set Kodiai apart. Not expected, but valued.
 
 | Feature | Value Proposition | Complexity | Dependencies on Existing | Notes |
 |---------|-------------------|------------|--------------------------|-------|
-| **Semantic duplicate detection** | Most triage bots use string similarity or keyword matching. Kodiai has an embedding pipeline and pgvector -- can do real semantic similarity against all past issues. Maintainers spend significant time closing duplicates; 30% of triage users want duplicate detection (per GitHub research). | MEDIUM | Issue vector corpus (new), Voyage AI embeddings, pgvector HNSW search | Embed issue title+body, search against existing issues with cosine similarity. Threshold configurable. Comment with "This may be related to #123, #456" with similarity scores. |
-| **Knowledge-informed triage** | Kodiai already has wiki, code, review comment, and snippet corpora. Triage can cross-reference issue content against codebase to identify affected components, relevant wiki pages, and past review patterns. No competing bot has this. | MEDIUM | Cross-corpus retrieval pipeline, RRF merging | Retrieve relevant code files and wiki pages to add context to triage comment: "This appears to affect `xbmc/cores/VideoPlayer/` -- see [wiki: Video Playback Architecture]" |
-| **Contributor-aware tone** | First-time issue reporters get friendlier, more explanatory guidance. Core contributors get terse, actionable feedback. Existing contributor profiles enable this for free. | LOW | Contributor profile store, expertise tiers | Map issue author to contributor profile. Adjust comment verbosity and tone based on tier. Same pattern as adaptive review depth. |
-| **Area/component classification** | LLM reads issue content and classifies into project-specific area labels (e.g., "Component: VideoPlayer", "Component: PVR", "Platform: Android"). VS Code's triage bot does this with ML models on a 30-min cycle; Kodiai can do it inline with LLM on mention trigger. | MEDIUM | Task router (non-agentic task), configurable label taxonomy in .kodiai.yml | Define area labels in config. LLM classifies; agent applies via MCP tool. Non-agentic task routed to fast model. |
-| **Issue corpus for retrieval augmentation** | Storing issues as embeddings creates a 5th retrieval corpus. Future PR reviews can surface "This change may address #789" and mention responses can reference past issues. Compounds value across the whole product. | MEDIUM | New issue store following knowledge store patterns | Schema: `issues(id, repo, number, title, body, state, labels, author, created_at, embedding, tsv)`. HNSW + tsvector indexes matching existing corpus pattern. |
-| **Template-aware smart parsing** | Rather than regex-matching section headers, use LLM to understand what information is present vs missing even when users don't follow the template structure exactly. Handles cases where users provide info but in the wrong section. | LOW | Task router for classification | Parse with LLM rather than rigid regex. "User provided version info in the description body but not in the Version field" -- still mark as satisfied. |
+| **PR-issue linking via reference parsing** | Parse PR body/title/commits for `fixes #123`, `closes #456`, `relates to #789` patterns. GitHub does this natively for closing keywords, but Kodiai can (a) detect non-closing references like "relates to", (b) surface these in PR review context, and (c) validate that referenced issues actually exist. | LOW | PR review handler, Octokit Issues API | Regex: `/(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|relates?\s+to)\s+#(\d+)/gi`. Parse PR body + commit messages. Validate issue numbers exist. Include linked issue context in PR review prompt. |
+| **Semantic PR-issue linking** | When a PR has no explicit issue reference, use semantic search to find related issues. Embed the PR title+description, search the issue corpus. Surface likely related issues in the review. | MEDIUM | `IssueStore.searchByEmbedding()`, PR review pipeline, Voyage AI | Only trigger when no explicit references found. Use strict threshold (distance < 0.3) to avoid noise. Present as "possibly related" not "definitely linked". Value: helps maintainers connect PRs to open issues they forgot to reference. |
+| **Issue corpus in cross-corpus retrieval** | Wire issue corpus as a source in the existing RRF retrieval fan-out. When reviewing a PR or answering a mention, include relevant issues as context. | MEDIUM | `knowledge/cross-corpus-rrf.ts`, `knowledge/retrieval.ts` | Add issue store to `createRetriever()` options. Add `[issue: #N]` citation format. Weight issues slightly lower than code/review/wiki (0.9x) since issues are less authoritative than code patterns. |
+| **Duplicate candidate ranking** | Instead of just showing the top-1 duplicate, show top-3 candidates with similarity scores and status (open/closed). Closed duplicates are still useful -- they tell the user the issue was already resolved. | LOW | `IssueStore.findSimilar()` already returns ranked list | Cap at 3 candidates. Include title, number, state, and human-friendly similarity percentage. Group by open vs closed. |
+| **Area classification labels** | Automatically classify issues into area labels (e.g., `area:video`, `area:music`, `area:pvr`) based on issue content. VS Code does this with ML models at 0.75 confidence threshold. | HIGH | Label taxonomy in `.kodiai.yml`, LLM classification, `github_issue_label` MCP tool | Requires per-repo label taxonomy configuration. Use LLM (non-agentic task via AI SDK) to classify. Only apply label when confidence exceeds configurable threshold (default 0.75). VS Code's two-model approach is worth studying but may be overkill for v0.22 MVP. |
+| **Backfill progress reporting** | Log and report backfill progress with page counts, embedding counts, rate limit status. The review comment backfill already does this -- issue backfill should match. | LOW | Logger, backfill pipeline | Follow exact logging pattern from `review-comment-backfill.ts`: per-batch logs with commentsInBatch, embeddings generated/failed, totalSoFar, rateRemaining. |
 
 ## Anti-Features
 
-Features that seem valuable but create problems. Explicitly avoid these.
+Features to explicitly NOT build.
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Auto-triage on issue.opened event** | "Triage everything automatically!" Seems efficient. | Maintainers lose control. False positives anger users. Auto-commenting on every issue is noisy. xbmc/xbmc gets community contributions from non-technical users who would be confused by bot comments they didn't ask for. VS Code can do this at scale with ML models trained on 100K+ issues; Kodiai cannot. | Trigger only on explicit `@kodiai` mention or configurable `issues.opened` opt-in (default off). Start with mention-only; add auto-triage later if maintainers request it. |
-| **Auto-close issues** | "Close issues that don't follow template." Common in stale bots. | Hostile to contributors. Closes legitimate issues with formatting problems. Creates PR for the bot to get an issue reopened. Even VS Code's bot only auto-closes after 60 days of inactivity, not on template violations. | Comment with guidance and apply "needs more info" label. Let humans close. |
-| **Auto-assign to maintainers** | "Route issues to the right person." | Requires knowing team structure, on-call rotations, expertise areas. Wrong assignment is worse than no assignment -- people ignore mis-routed issues. VS Code trains ML models monthly on Azure for this. | Apply area/component labels. Maintainers can set up GitHub CODEOWNERS or notification filters on labels. |
-| **Priority/severity auto-classification** | "Label P0/P1/P2 automatically." | Priority is a human judgment call requiring business context, user impact assessment, and roadmap awareness. LLM-assigned priority will be wrong often enough to erode trust. | Classify type (bug/feature/question) and area -- these are more objective. Leave priority to maintainers. |
-| **Stale issue management** | "Close issues after 30 days of inactivity." | Well-solved by existing tools (actions/stale). Adding this creates feature overlap and maintenance burden. Not related to triage intelligence. | Recommend actions/stale in docs. Keep Kodiai focused on intelligent triage, not lifecycle management. |
-| **Real-time streaming triage UI** | "Show triage progress in a dashboard." | Out of scope per PROJECT.md constraints. GitHub comments are the interface. | Post triage results as issue comment. |
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| **Auto-close duplicate issues** | Even VS Code only auto-closes after 60 days on low-vote items. False-positive closures destroy trust instantly. The AI Duplicate Detector docs explicitly warn about this. User who filed the issue feels dismissed. | Comment with duplicate candidates and let maintainer decide. Apply a `potential-duplicate` label at most. |
+| **Auto-assign issues to developers** | Requires deep org knowledge, creates social problems when wrong. VS Code's two-model approach has 75% accuracy -- 25% wrong assignments annoy people. Not aligned with v0.22 goals. | Defer to future milestone. Could use contributor profiles + area labels to suggest, but not assign. |
+| **Auto-close for template violations** | Explicitly called out as anti-feature in v0.21 requirements. "Even VS Code only auto-closes after 60 days on low-vote items." Alienates new contributors. | Comment with guidance, apply `needs-info` label, let maintainer decide. |
+| **YAML issue form schema support** | xbmc/xbmc uses `.md` templates. Out of scope per v0.21 decision. No target repo currently needs YAML forms. | Continue with `.md` template parser. Add YAML support when a target repo needs it. |
+| **Full-text search as primary duplicate signal** | BM25 finds keyword matches but misses semantic duplicates ("player crashes" vs "video playback segfault"). Used alone, it produces too many false positives from common keywords. | Use full-text as a secondary signal alongside vector similarity. RRF merge if using both. |
+| **Real-time duplicate detection on every comment** | Scanning for duplicates on every issue comment update is wasteful. Only the initial issue body matters for duplicate detection. | Trigger duplicate detection on `issues.opened` only, not on subsequent edits or comments. |
+| **Cross-repo duplicate detection** | Adds massive complexity. Different repos have different contexts. A "video crash" in xbmc/xbmc is not the same as in xbmc/repo-plugins. | Scope all duplicate detection to same repo. |
+| **Automated issue prioritization/severity** | Subjective, context-dependent, creates false sense of urgency. Maintainers should prioritize based on their roadmap and domain knowledge. | Surface data (reaction count, comment count, duplicate count) but let humans prioritize. |
 
 ## Feature Dependencies
 
 ```
-[Issue Schema & Vector Corpus]
-    |
-    |--required-by--> [Semantic Duplicate Detection]
-    |--required-by--> [Issue Corpus for Retrieval Augmentation]
-    |--required-by--> [Knowledge-Informed Triage] (needs issue history for context)
-    |
-[github_issue_label MCP Tool]
-    |--required-by--> [Label Application]
-    |--required-by--> [Area/Component Classification]
-    |
-[github_issue_comment MCP Tool]
-    |--required-by--> [Guidance Comment]
-    |--required-by--> [Duplicate Detection Comment]
-    |--required-by--> [Knowledge-Informed Triage Comment]
-    |
-[Template Field Validation]
-    |--required-by--> [Guidance Comment] (needs to know what is missing)
-    |
-[Config Gating (.kodiai.yml)]
-    |--required-by--> [All triage features] (nothing fires without opt-in)
-    |
-[Contributor Profile Store] --enhances--> [Contributor-Aware Tone]
-[Cross-Corpus Retrieval] --enhances--> [Knowledge-Informed Triage]
-[Task Router] --enhances--> [Area/Component Classification]
+Historical issue backfill
+  --> Issue embedding on ingest (backfill generates embeddings)
+  --> Nightly incremental sync (sync keeps corpus current after backfill)
+  --> High-confidence duplicate detection (requires populated corpus)
+      --> Duplicate detection comment (requires detection results)
+      --> Duplicate candidate ranking (extends detection output)
+  --> Issue corpus in cross-corpus retrieval (requires populated corpus)
+  --> Semantic PR-issue linking (requires populated corpus)
+
+Auto-triage on issues.opened
+  --> Config gate for auto-triage (must be configurable)
+  (reuses existing triage agent -- no new dependency)
+
+PR-issue linking via reference parsing
+  (standalone -- only needs PR body text parsing)
+  --> Semantic PR-issue linking (fallback when no explicit refs)
+      (requires populated issue corpus)
+
+Area classification labels
+  (requires label taxonomy in config + populated corpus for context)
 ```
 
-### Dependency Notes
+## MVP Recommendation
 
-- **Issue Schema required before Duplicate Detection:** Cannot search for similar issues without the vector corpus. Schema and embedding pipeline must land first.
-- **MCP Tools required before any agent action:** The triage agent uses `github_issue_label` and `github_issue_comment` as its output mechanism. These are prerequisite for all visible triage behavior.
-- **Config gating is Phase 1 work:** Must exist before any triage logic fires, even in dev. Prevents accidental activation.
-- **Template Validation before Guidance Comment:** The comment content depends on knowing which fields are missing. Validation logic is the input; comment is the output.
-- **Contributor profiles enhance but don't block:** Tone adaptation is a nice-to-have that uses existing infrastructure. Triage works without it; just uses default tone.
+**Phase 1 -- Corpus Population (must be first):**
+1. Historical issue backfill with embeddings
+2. Nightly incremental sync
+3. Issue corpus wired into cross-corpus retrieval
 
-## MVP Definition
+**Phase 2 -- Detection and Linking (requires corpus):**
+4. High-confidence duplicate detection with LLM confirmation
+5. Duplicate detection comment with candidate ranking
+6. PR-issue linking via reference parsing
 
-### Launch With (v0.21)
+**Phase 3 -- Auto-Triage (requires detection):**
+7. Auto-triage on `issues.opened` with config gate
+8. Semantic PR-issue linking (enhancement to PR reviews)
 
-Minimum viable triage -- what the milestone issue (#73) explicitly requires.
+**Defer to v0.23+:**
+- Area classification labels (HIGH complexity, needs label taxonomy design)
+- Auto-assign (social complexity, accuracy requirements)
 
-- [ ] **Issue schema & vector corpus** -- PostgreSQL table with HNSW + tsvector indexes following existing knowledge store patterns
-- [ ] **`github_issue_label` MCP tool** -- Additive label application via Octokit, agent-callable
-- [ ] **`github_issue_comment` MCP tool** -- Post or update issue comment, agent-callable
-- [ ] **Template parser** -- Read `.github/ISSUE_TEMPLATE/` files from repo, identify required sections, detect missing/empty/placeholder content in issue body
-- [ ] **Triage agent** -- Wired to @kodiai mention on issues. Validates template fields, comments with specific guidance, applies "Ignored rules" label when fields are missing
-- [ ] **Config gating** -- `triage: { enabled: true/false }` in `.kodiai.yml`, default disabled
+**Rationale:** The dependency chain is strict -- you cannot detect duplicates without a corpus, and you cannot auto-triage effectively without duplicate detection wired in. Backfill first, then detection, then automation.
 
-### Add After Validation (v0.21.x or v0.22)
+## Complexity Estimates
 
-Features to add once core triage is working and maintainers have feedback.
+| Feature | Complexity | Rationale |
+|---------|------------|-----------|
+| Historical issue backfill | MEDIUM | Follows review-comment-backfill pattern closely, but needs issue-specific filtering (exclude PRs), comment pagination, and sync state table. ~300-400 lines. |
+| Issue embedding on ingest | LOW | Built into backfill pipeline. `title + body` -> Voyage AI -> store. ~50 lines. |
+| Nightly incremental sync | LOW | Follows wiki-sync scheduler pattern. `since` parameter on Issues API. ~150 lines. |
+| Duplicate detection | MEDIUM | Vector search + LLM confirmation. Threshold tuning is the hard part -- needs empirical testing. ~200-300 lines. |
+| Duplicate comment | LOW | Format results, call `github_issue_comment`. ~100 lines. |
+| Auto-triage on `issues.opened` | MEDIUM | Webhook routing + idempotency + config gating + existing triage agent. Integration complexity, not algorithmic. ~200 lines. |
+| PR-issue linking (reference) | LOW | Regex parsing of PR body + commit messages. ~100 lines. |
+| Semantic PR-issue linking | MEDIUM | Embedding PR description, searching issue corpus, filtering by threshold. ~200 lines. |
+| Cross-corpus retrieval wiring | MEDIUM | Add issue store to `createRetriever()`, update RRF weights, add `[issue: #N]` citations. Touches multiple files. ~150 lines across files. |
 
-- [ ] **Semantic duplicate detection** -- Trigger: maintainers report duplicate issues are a bigger pain than template violations
-- [ ] **Area/component classification** -- Trigger: label taxonomy defined in `.kodiai.yml` with maintainer-provided area list
-- [ ] **Knowledge-informed triage comments** -- Trigger: cross-corpus retrieval producing useful context for issue content
-- [ ] **Contributor-aware tone** -- Trigger: contributor profiles populated for the target repo
-- [ ] **Auto-triage on issues.opened** -- Trigger: maintainers explicitly request it after using mention-based triage successfully
+## Threshold Guidance (Duplicate Detection)
 
-### Future Consideration (v0.23+)
+Research on cosine similarity thresholds for duplicate detection:
 
-Features to defer until triage product-market fit is established.
+| Threshold (cosine distance) | Behavior | Risk |
+|-----------------------------|----------|------|
+| < 0.15 | Near-identical text. Very high confidence. | Misses semantic duplicates with different wording. |
+| 0.15 - 0.25 | High semantic similarity. Good for "likely duplicate" with LLM confirmation. | Sweet spot for candidate generation. |
+| 0.25 - 0.40 | Related but not necessarily duplicate. | Too noisy for duplicate flagging. Good for "related issues" surfacing. |
+| > 0.40 | Loosely related or unrelated. | Unusable for duplicate detection. |
 
-- [ ] **Issue corpus as 5th retrieval source for PR reviews** -- Requires issue backfill pipeline similar to review comment backfill
-- [ ] **Issue-to-PR linking** -- Detect when a PR addresses an open issue and comment on both
-- [ ] **Batch triage** -- Triage backlog of unlabeled issues in bulk (VS Code does this on a schedule)
-- [ ] **Custom validation rules** -- User-defined validators beyond template field presence (regex, team verification)
+**Recommendation:** Use distance < 0.25 as candidate threshold, then LLM confirmation on top-3 candidates. This matches the existing `findSimilar()` default threshold of 0.7 (which is cosine similarity, not distance -- distance = 1 - similarity, so 0.7 similarity = 0.3 distance). Tighten to 0.25 distance for higher precision.
 
-## Feature Prioritization Matrix
-
-| Feature | User Value | Implementation Cost | Priority | Rationale |
-|---------|------------|---------------------|----------|-----------|
-| Template field validation | HIGH | MEDIUM | P1 | Core ask from issue #73. Primary maintainer pain point. |
-| Label application | HIGH | LOW | P1 | Useless without visible action. Labels are the triage output. |
-| Guidance comment | HIGH | LOW | P1 | Users need to know what to fix. Comment is the communication channel. |
-| Config gating | HIGH | LOW | P1 | Safety requirement. Must exist before anything else fires. |
-| @kodiai mention trigger | HIGH | LOW | P1 | Consistent with existing UX. Reuses proven infrastructure. |
-| Issue schema & corpus | MEDIUM | MEDIUM | P1 | Foundation for duplicate detection and retrieval. Build now even if not fully used in v0.21. |
-| MCP tools (label + comment) | HIGH | LOW | P1 | Agent's hands. Required for any visible output. |
-| Semantic duplicate detection | HIGH | MEDIUM | P2 | High value but needs corpus populated first. Add in follow-up. |
-| Area/component classification | MEDIUM | MEDIUM | P2 | Needs per-repo label taxonomy. More config complexity. |
-| Knowledge-informed triage | MEDIUM | LOW | P2 | Low cost (retrieval pipeline exists) but needs tuning for issue context. |
-| Contributor-aware tone | LOW | LOW | P3 | Polish feature. Profiles may not be populated for issue authors. |
-| Auto-triage on opened | MEDIUM | LOW | P3 | Must prove value with mentions first. Risk of noise. |
-
-## Competitor Feature Analysis
-
-| Feature | actions/stale | fancy-triage-bot | issue-ops/validator | VS Code triage | GitHub AI triage (native) | Kodiai (planned) |
-|---------|--------------|------------------|---------------------|----------------|--------------------------|-----------------|
-| Template validation | No | Glob pattern matching | YAML form validation with custom rules | No (different approach) | No | LLM-based semantic parsing of markdown templates |
-| Label application | Stale label only | Pattern-matched labels | No (validation only) | ML-classified area labels | AI-suggested labels | Agent-applied labels via MCP tool |
-| Guidance comments | Stale warning only | Configurable per-pattern | Validation summary comment | Needs-more-info comment | No | Specific missing-field checklist with contributor-aware tone |
-| Duplicate detection | No | No | No | No | Similarity check (experimental) | Semantic vector similarity via pgvector |
-| Codebase awareness | No | No | No | Feature area ML model | No | Cross-corpus retrieval (code, wiki, reviews, snippets) |
-| Auto-close | After inactivity | No | No | After 60 days low votes | No | Explicitly avoided (anti-feature) |
-| Config approach | Workflow YAML | Workflow YAML | Workflow YAML + config | Workflow YAML + Azure ML | Repository settings | `.kodiai.yml` (consistent with existing Kodiai config) |
-| Trigger mechanism | Scheduled cron | issues.opened event | issues.opened event | 30-min scheduled batch | issues.opened event | @kodiai mention (opt-in, explicit) |
-
-### Key Competitive Insight
-
-Most existing triage tools are GitHub Actions that run on `issues.opened` with pattern matching or simple validation. They lack codebase awareness, semantic understanding, and knowledge retrieval. Kodiai's advantage is the existing knowledge platform (4 corpora + hybrid search + contributor profiles) that no Actions-based tool can replicate. The mention-triggered approach is also unique -- it gives maintainers control over when triage happens rather than auto-firing on every issue.
-
-The closest competitor in sophistication is VS Code's triage system, which uses custom ML models trained monthly on Azure. However, VS Code's system is bespoke (not reusable), requires massive training data (100K+ issues), and operates on a scheduled batch rather than on-demand. Kodiai's LLM-based approach works out of the box without training data.
+The existing `IssueStore.findSimilar()` uses `threshold: number = 0.7` which represents cosine distance (not similarity). This is too permissive for duplicate detection. Override with `threshold: 0.25` when calling for duplicate candidates.
 
 ## Sources
 
-- [VS Code Automated Issue Triaging Wiki](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging) -- ML-based area classification, feature request lifecycle, needs-more-info automation
-- [VS Code Triage Actions repo](https://github.com/microsoft/vscode-github-triage-actions) -- Implementation of VS Code's triage automation
-- [GitHub Agentic Workflows: Issue Triage](https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows/) -- GitHub's own agentic triage workflow patterns
-- [GitHub Docs: Triaging an issue with AI](https://docs.github.com/en/issues/tracking-your-work-with-issues/administering-issues/triaging-an-issue-with-ai) -- Native GitHub AI triage features
-- [issue-ops/validator](https://github.com/issue-ops/validator) -- YAML form validation with custom rules
-- [The Fancy Triage Bot](https://github.com/marketplace/actions/the-fancy-triage-bot) -- Glob pattern matching for labels and comments
-- [GitHub Docs: Syntax for issue forms](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms) -- YAML form template specification
-- [Kubernetes Issue Triage Guidelines](https://www.kubernetes.dev/docs/guide/issue-triage/) -- Enterprise triage process and labeling taxonomy
-- [simili-bot](https://github.com/similigh/simili-bot) -- AI-powered semantic duplicate detection
-- [ai-duplicate-detector](https://github.com/mackgorski/ai-duplicate-detector) -- Semantic similarity for issue deduplication
-
----
-*Feature research for: GitHub issue triage automation (v0.21 milestone)*
-*Researched: 2026-02-26*
+- [Simili Bot - AI-powered semantic duplicate detection](https://github.com/similigh/simili-bot)
+- [AI Duplicate Detector - Relations and duplicates detection](https://github.com/mackgorski/ai-duplicate-detector)
+- [Probot duplicate-issues](https://github.com/probot/duplicate-issues)
+- [Similar Issues AI GitHub App](https://github.com/apps/similar-issues-ai)
+- [VS Code Automated Issue Triaging](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging)
+- [GitHub Agentic Workflows - Issue Triage](https://github.github.io/gh-aw/blog/2026-01-13-meet-the-workflows/)
+- [GitHub REST API - Issues endpoints](https://docs.github.com/en/rest/issues/issues)
+- [GitHub pagination guide](https://docs.github.com/en/rest/guides/traversing-with-pagination)
+- [Linking PRs to issues - GitHub Docs](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)
+- [Zilliz - Embeddings for duplicate detection](https://zilliz.com/ai-faq/how-do-i-use-embeddings-for-duplicate-detection)
+- [Cosine similarity threshold research](https://www.emergentmind.com/topics/cosine-similarity-threshold)
+- [AI-powered GitHub app to link issues in PRs](https://dev.to/gitcommitshow/ai-powered-github-app-to-automatically-link-issues-in-a-pr-4idj)
+- [Potential Duplicates Bot - Damerau-Levenshtein approach](https://github.com/Bartozzz/potential-duplicates-bot)

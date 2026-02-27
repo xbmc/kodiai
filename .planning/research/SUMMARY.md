@@ -1,181 +1,187 @@
 # Project Research Summary
 
-**Project:** Kodiai v0.21 Issue Triage Foundation
-**Domain:** GitHub issue triage automation integrated into existing GitHub App
+**Project:** Kodiai v0.22 Issue Intelligence
+**Domain:** GitHub App — historical issue ingestion, duplicate detection, PR-issue linking, auto-triage
 **Researched:** 2026-02-26
 **Confidence:** HIGH
 
 ## Executive Summary
 
-Kodiai v0.21 adds intelligent issue triage to an existing, production GitHub App. The feature is narrowly scoped: when a maintainer mentions `@kodiai` on an issue, the bot validates the issue body against the repo's issue template, comments with specific guidance on missing fields, and applies a configurable label. The entire implementation reuses existing infrastructure -- no new dependencies are required. The existing Octokit client, Agent SDK MCP tool pattern, pgvector schema conventions, and config-gating approach cover every capability needed. The primary build artifacts are six new files (migration, issue store, two MCP servers, template parser, prompt builder) and three small modifications to existing files.
+v0.22 is a feature-layer build on a solid v0.21 foundation. The core insight from all four research areas is the same: everything needed to deliver Issue Intelligence already exists in the codebase. No new npm packages are required. The issue tables, HNSW vector indexes, tsvector columns, IssueStore CRUD/search primitives, triage agent, MCP tools, webhook router, and scheduler infrastructure are all in place. The work is wiring them together in a dependency-driven sequence: populate the corpus first, then enable detection and linking, then enable automation, then integrate the corpus into retrieval.
 
-The recommended approach is a three-phase build order derived from dependency constraints. Phase 1 (schema and store) and Phase 2 (MCP tools) are independent and can execute in parallel; Phase 3 (triage agent wiring) depends on both. This ordering is non-negotiable: the agent needs both its output mechanism (MCP tools) and its input data (template parser) before it can be wired to the mention handler. The issue corpus schema must also be correct before the agent is built, because adding metadata columns later requires backfilling from the GitHub API at rate-limited cost.
+The recommended approach is four phases mirroring the feature dependency chain. Historical issue backfill (following `review-comment-backfill.ts` exactly) must come first because duplicate detection, PR-issue linking, and semantic retrieval all require a populated corpus. Duplicate detection and auto-triage on `issues.opened` follow as the core user-facing intelligence features. PR-issue linking is independent of auto-triage and can ship alongside it. Cross-corpus retrieval wiring is an enhancement that delivers value last and can be added without risk to the other three phases.
 
-The critical risks are operational, not architectural. Five pitfalls can cause real damage: label 404 errors when applying non-existent labels, triage firing on PR comments due to GitHub's conflation of issue and PR comment events, template parser built for YAML forms failing against xbmc/xbmc's markdown templates, infinite comment loops from bot-self-triggering, and issue corpus schema missing the metadata columns the agent needs. All five are preventable with targeted defenses established in the correct phase. The overall risk profile is LOW given that the foundational patterns (corpus stores, MCP servers, config-gated handlers) are battle-tested in the existing codebase.
+The key risks are precision and trust: a few false-positive duplicate suggestions erode maintainer confidence faster than any missing feature. Embedding strategy (embed problem summary, not raw full body) and threshold calibration (cosine distance with named constants, empirically tuned) are the two technical decisions that most affect outcome quality. Idempotency in the webhook handler (delivery-ID dedup + advisory lock + cooldown) is the operational risk that must be solved before `issues.opened` auto-triage goes live.
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies are required for v0.21. Every capability maps to an already-installed package: `@octokit/rest` for label and comment API calls, `@anthropic-ai/claude-agent-sdk` for MCP tool definition, `zod` for tool input validation, `js-yaml` for issue template frontmatter parsing, `postgres` + pgvector for the issue corpus. The existing `voyage-code-3` model (1024-dim) is reused for issue embeddings -- switching would require re-embedding all existing corpora. See [STACK.md](.planning/research/STACK.md) for full version compatibility table.
+No new dependencies. Every v0.22 capability is served by the existing stack: `@octokit/rest` for paginated GitHub API calls, `voyageai` (`voyage-code-3`, 1024d) for embeddings, PostgreSQL pgvector (`<=>` operator, HNSW indexed) for vector similarity, `tsvector` + `ts_rank()` for BM25 full-text, and the custom `setInterval` + startup-delay pattern for scheduled jobs. See [STACK.md](STACK.md) for the full integration point mapping.
 
 **Core technologies:**
-- `@octokit/rest ^22.0.1`: Issue label and comment APIs -- `issues.addLabels()`, `issues.createComment()` verified against existing auth pattern
-- `@anthropic-ai/claude-agent-sdk 0.2.37`: MCP tool creation via `createSdkMcpServer()` + `tool()` -- 5 existing servers use identical pattern
-- `postgres ^3.4.8` + pgvector: Issue corpus schema with HNSW (cosine, m=16) + tsvector indexes -- direct parallel to review_comments table
-- `zod ^4.3.6`: MCP tool input schemas and config section validation -- already used throughout
-- `js-yaml ^4.1.1`: Issue template YAML frontmatter parsing -- already used in `loadRepoConfig()`
+- `@octokit/rest ^22.0.1` with `paginate.iterator()`: paginated issue/comment ingestion — memory-efficient streaming, already used for review comment backfill
+- `voyageai` `voyage-code-3` (1024d): embedding generation — same model/dimensions as all other corpora, no model change needed
+- PostgreSQL pgvector `<=>` operator: vector similarity for duplicate detection — HNSW indexed, threshold-configurable via `IssueStore.findSimilar()`
+- `setInterval` + startup delay pattern: nightly sync scheduler — matches wiki-sync and cluster-scheduler patterns, no Redis required
+- `createEventRouter` key dispatch: `issues.opened` webhook handler — register like any other event, already supports the dispatch key
+
+Two schema migrations are needed: `015-issue-sync-state.sql` (cursor-based resume for backfill/sync, mirrors `review_comment_sync_state`) and `016-pr-issue-links.sql` (linking table with `link_type`, `confidence`, `distance` columns). No changes to existing `issues` or `issue_comments` tables — the v0.21 schema already has all needed columns.
 
 ### Expected Features
 
-The feature set is well-defined by the milestone issue (#73) and competitor analysis. The competitive advantage over existing tools (actions/stale, fancy-triage-bot, issue-ops/validator, VS Code's ML triage) is Kodiai's knowledge platform: cross-corpus retrieval and contributor profiles are unavailable to any Actions-based competitor. See [FEATURES.md](.planning/research/FEATURES.md) for full competitor analysis.
+**Must have (table stakes):**
+- Historical issue backfill with embeddings — no duplicate detection without a populated corpus; prerequisite for everything else
+- Nightly incremental sync — corpus drifts without it; GitHub's `since` parameter handles updates cheaply
+- High-confidence duplicate detection — the primary intelligence feature; cosine distance < 0.25 with ranked candidates
+- Duplicate detection comment — users expect to see which issue they may be duplicating, with open/closed state context
+- Auto-triage on `issues.opened` — natural next step from mention-triggered triage; config-gated default off
+- Config gate for auto-triage (`triage.autoTriageOnOpen: false`) — repos must explicitly opt in; default-on would surprise maintainers
 
-**Must have (table stakes) -- v0.21:**
-- Template field validation -- primary stated maintainer pain point; xbmc uses markdown templates
-- Label application via `github_issue_label` MCP tool -- visible output without which triage is just a commenter
-- Guidance comment via `github_issue_comment` MCP tool -- specific missing-field checklist, not generic feedback
-- Config gating (`triage: enabled: false` default) -- safety requirement, must exist before any logic fires
-- `@kodiai` mention trigger on issues -- consistent with existing UX; reuses proven mention infrastructure
-- Bot self-loop prevention -- must extend existing BotFilter coverage to issue surface
+**Should have (differentiators):**
+- PR-issue linking via reference parsing — deterministic regex for `fixes/closes/resolves #N`, verified against `is_pull_request` field
+- Semantic PR-issue linking — embedding-based fallback when no explicit references; LOW confidence signal, suggestion only
+- Issue corpus in cross-corpus retrieval — 5th corpus in unified RRF fan-out; weighted lower for PR reviews, higher for issue queries
+- Duplicate candidate ranking — top-3 with open/closed state and human-friendly similarity percentage
 
-**Should have (competitive differentiators) -- v0.21.x or v0.22:**
-- Semantic duplicate detection -- pgvector already capable; needs corpus populated first
-- Area/component classification -- LLM-based inline vs VS Code's monthly ML retraining cycle
-- Knowledge-informed triage comments -- cross-corpus retrieval for affected component identification
-- Contributor-aware tone -- first-timer vs core contributor adaptation via existing profile store
-
-**Defer (v0.23+):**
-- Issue corpus as 5th retrieval source for PR reviews -- needs backfill pipeline
-- Issue-to-PR linking -- detect when PR addresses open issue
-- Batch triage of backlog -- scheduled rather than mention-triggered
-- Auto-triage on `issues.opened` -- must prove mention-based value first; noise risk is high
+**Defer to v0.23+:**
+- Area classification labels — HIGH complexity; requires per-repo label taxonomy design and two-model confidence approach
+- Auto-assign issues to developers — social complexity; accuracy requirements not achievable in v0.22
+- Auto-close for template violations — explicit anti-feature; guidance comment + `needs-info` label is the correct action
+- Cross-repo duplicate detection — massive complexity; scope all detection to same repo
 
 ### Architecture Approach
 
-The triage feature integrates at four well-defined seams inside the existing codebase: the database schema layer, the MCP tool registry, the mention handler routing branch, and the config schema. The event router and webhook layer require zero changes. The critical architectural constraint is that the event router dispatches ALL handlers for a key via `Promise.allSettled` -- registering a second handler for `issue_comment.created` would cause double-firing. Triage must be a routing branch inside the existing `handleMention` function, not a parallel handler. See [ARCHITECTURE.md](.planning/research/ARCHITECTURE.md) for verified integration points and data flow diagrams.
+All seven new components follow existing patterns precisely with no novel architectural invention required. `issue-backfill.ts` mirrors `review-comment-backfill.ts`. `issue-sync.ts` mirrors `wiki-sync.ts`. `issue-duplicate-detector.ts` is a pure function module (no state, no side effects beyond IssueStore reads). `issue-opened.ts` is a clean, focused handler (~200 lines) registered separately on the event router — it must NOT be added to the mention handler, which is already 2000+ lines and assumes a comment trigger exists. See [ARCHITECTURE.md](ARCHITECTURE.md) for full component map, data flows, and anti-patterns.
 
 **Major components:**
-1. **Issue Schema + Store** (`014-issues.sql` + `knowledge/issue-store.ts`) -- PostgreSQL table with HNSW + tsvector indexes, full metadata columns; direct parallel to `review_comments` corpus
-2. **MCP Tools** (`execution/mcp/issue-label-server.ts` + `issue-comment-server.ts`) -- Agent's output mechanism; separate from existing `github_comment` server due to incompatible review-specific validators
-3. **Template Parser** (`execution/issue-template-parser.ts`) -- Handles both markdown (`.md`) and YAML form (`.yml`) template formats; extracts required sections and diffs against issue body
-4. **Triage Prompt Builder** (`execution/triage-prompt.ts`) -- Constructs agent prompt from template diff + issue context
-5. **Mention Handler Branch** (modify `handlers/mention.ts`) -- Routes `isIssueThreadComment && config.triage.enabled` to triage path before write-intent parsing; early return prevents fallthrough
+1. `src/knowledge/issue-backfill.ts` + `scripts/backfill-issues.ts` — paginated bulk ingestion with embeddings, adaptive rate limiting, cursor-based resume; follows `review-comment-backfill.ts` exactly
+2. `src/knowledge/issue-sync.ts` — nightly scheduler with 150s startup delay (staggered after wiki 60s, staleness 90s, cluster 120s), `since`-parameterized incremental fetch
+3. `src/knowledge/issue-duplicate-detector.ts` — pure embedding comparison; cosine distance bands 0.12/0.18/0.25 for definite/likely/possible; returns ranked `DuplicateCandidate[]`
+4. `src/handlers/issue-opened.ts` — orchestrates triage + duplicate detection in parallel; fetches templates via GitHub Contents API (not workspace clone); idempotent via delivery-ID + advisory lock
+5. `src/handlers/pr-issue-linker.ts` — two-signal linking (regex reference parsing + semantic search); stores results in `pr_issue_links`; posts comment only for HIGH confidence
+6. `src/knowledge/issue-retrieval.ts` — hybrid search adapter for cross-corpus RRF; follows `review-comment-retrieval.ts` pattern
+7. Schema migrations 015 (`issue_sync_state`) and 016 (`pr_issue_links`)
+
+**Modified components (minimal surface area):** Event router registrations in `src/index.ts`; `SourceType` union in `cross-corpus-rrf.ts`; retrieval fan-out in `retrieval.ts`; `triageSchema` in `config.ts`; shutdown manager in `src/index.ts`.
 
 ### Critical Pitfalls
 
-Top pitfalls from [PITFALLS.md](.planning/research/PITFALLS.md) with prevention strategy per phase:
+Top pitfalls from [PITFALLS.md](PITFALLS.md):
 
-1. **Label 404 on non-existent labels** -- The `github_issue_label` MCP tool must catch 404 from `addLabels` and return available labels to agent; config must allowlist permitted labels to prevent arbitrary label application. Address in MCP tools phase.
+1. **Embedding full issue body produces weak similarity signals** — Extract `title + description section` only; skip logs, system info, stacktraces. The v0.21 template parser already identifies sections — reuse it. Decide before bulk ingestion: re-embedding 5-8K issues costs real money and time. Address in Phase 1.
 
-2. **Triage fires on PR comments** -- GitHub's `issue_comment.created` fires for both issues and PRs. The triage branch must check `!payload.issue.pull_request` (equivalently, `event.prNumber === undefined`) as its first guard. Add explicit test case: triage does NOT activate when `pull_request` field is set. Address in triage agent wiring phase.
+2. **Cosine distance vs. cosine similarity threshold confusion** — pgvector `<=>` returns distance (0=identical), not similarity (1=identical). Use named constants: `const DUPLICATE_DISTANCE_THRESHOLD = 0.25` with inline comment `// 0.25 distance = 0.75 similarity`. Tune empirically against known xbmc/xbmc duplicate pairs before shipping. Address in Phase 2.
 
-3. **Template parser fails against xbmc's markdown templates** -- xbmc/xbmc uses `.md` markdown templates, not YAML forms. Parser must support both formats from day one: detect by file extension, then parse `## ` / `### ` section headers for markdown vs. `body[].label` fields for YAML forms. This is the primary target repo -- YAML-only parser is a hard blocker. Address in template parsing phase.
+3. **Auto-triage comment spam on webhook redelivery** — GitHub guarantees "at least once" delivery. Three-layer defense required: (1) `X-GitHub-Delivery` dedup at webhook layer, (2) advisory lock in DB (`ON CONFLICT DO NOTHING` returning check), (3) 30-min per-issue cooldown at application layer. Address in Phase 2.
 
-4. **Infinite comment loop** -- Bot posts comment, which fires `issue_comment.created`, which re-triggers triage. Existing BotFilter handles direct self-comment prevention if triage uses the same dispatch path. Add per-issue cooldown (default 30 min) as second defense. Only re-triage on explicit `@kodiai` mention, not on `issues.edited`. Address in triage agent wiring phase.
+4. **Rate limit exhaustion during backfill blocks production webhooks** — Copy `adaptiveRateDelay` from `review-comment-backfill.ts` exactly. Stop backfill when `x-ratelimit-remaining / x-ratelimit-limit < 0.5`. Run as separate script outside main server process. Use cursor-based resume so partial runs are recoverable. Address in Phase 1.
 
-5. **Issue corpus schema missing critical metadata** -- Schema must include `state`, `author_association`, `label_names`, `template_slug`, `comment_count` beyond basic corpus columns. Missing columns require costly GitHub API backfill later. Get schema right before building the agent. Address in schema phase.
+5. **Issue/PR number space collision in backfill** — GitHub Issues API returns PRs in issue lists. Filter `response.pull_request` presence during backfill. Add `AND is_pull_request = false` to all duplicate detection queries. Verify with `SELECT COUNT(*) FROM issues WHERE is_pull_request = true` post-backfill (should be 0). Address in Phase 1.
 
 ## Implications for Roadmap
 
-Based on the dependency graph from FEATURES.md and build order from ARCHITECTURE.md, three phases are required. Phases 1 and 2 are independent and parallelizable; Phase 3 requires both.
+The feature dependency chain is strict and dictates phase order. You cannot detect duplicates without a corpus. You cannot auto-triage effectively without duplicate detection wired in. The only flexibility is that PR-issue linking (Phase 3) and cross-corpus retrieval (Phase 4) are independent of each other and could be reordered if priorities shift.
 
-### Phase 1: Issue Corpus Schema and Store
+### Phase 1: Historical Corpus Population
 
-**Rationale:** The issue store is a dependency for semantic duplicate detection (v0.22+) and creates the metadata foundation the triage agent needs. Schema mistakes are expensive to fix post-deploy (backfill at rate-limited API calls). Build first, independently of MCP tool work.
+**Rationale:** Duplicate detection, PR-issue linking, and retrieval integration all require issues to exist in the corpus with embeddings. This phase unblocks everything else and has no upstream dependencies.
 
-**Delivers:** PostgreSQL `issues` table with HNSW + tsvector indexes; `IssueStore` interface with CRUD, embedding, and hybrid search; migration 014 following existing `migrate.ts` pattern.
+**Delivers:** All xbmc/xbmc issues from the past 3 years ingested with embeddings (5-8K issues, 6-8 hour one-time backfill); nightly sync keeping corpus current; sync state enabling cursor-based resume; two new schema migrations.
 
-**Addresses:** Issue schema + vector corpus (P1 feature), foundation for semantic duplicate detection (P2 feature)
+**Addresses (FEATURES.md):** Historical issue backfill, issue embedding on ingest, nightly incremental sync, backfill progress reporting.
 
-**Avoids:** Pitfall 5 (schema missing metadata) -- include `state`, `author_association`, `label_names`, `template_slug`, `comment_count` from the start
+**Avoids (PITFALLS.md):** Embedding full body (Pitfall 1 — extract description section, skip boilerplate), rate limit exhaustion (Pitfall 4 — adaptive delay + 50% budget reserve), PR/issue number confusion (Pitfall 10 — filter `pull_request` field), Voyage AI rate limits (Pitfall 7 — retry/resume sweep), nightly sync since-parameter gap (Pitfall 11 — use data timestamps not wall clock), IssueStore upsert timestamp guard (INT-1 — add `WHERE github_updated_at < EXCLUDED.github_updated_at`).
 
-**Research flag:** Standard pattern -- direct parallel to review_comments corpus. No additional research needed.
+### Phase 2: Duplicate Detection and Auto-Triage
 
-### Phase 2: MCP Tools (Label + Comment Servers)
+**Rationale:** Core user-facing intelligence feature. Requires populated corpus from Phase 1. Triage agent and MCP tools already exist — this is an orchestration and threshold-tuning problem, not a build-from-scratch problem.
 
-**Rationale:** The triage agent's output mechanism must exist before the agent can be built. These two servers are the agent's only way to take visible action. Independent of Phase 1, can execute in parallel.
+**Delivers:** `issues.opened` fires parallel duplicate detection + triage validation; comment posted when high-confidence duplicates found or triage fails; labels applied; all operations idempotent against webhook redelivery.
 
-**Delivers:** `github_issue_label` MCP server with label validation and 404 handling; `github_issue_comment` MCP server with mention sanitization (no review template validators); wired into `buildMcpServers()` via new feature flags.
+**Addresses (FEATURES.md):** High-confidence duplicate detection, duplicate detection comment, duplicate candidate ranking (top-3 with state), auto-triage on `issues.opened`, config gate (`triage.autoTriageOnOpen`).
 
-**Uses:** Agent SDK `createSdkMcpServer()` + `tool()` pattern (5 existing precedents), Octokit `issues.addLabels()` + `issues.createComment()`
+**Avoids (PITFALLS.md):** Threshold confusion (Pitfall 2 — named constants with comments), comment spam on redelivery (Pitfall 3 — three-layer idempotency), bot-created issue noise (Pitfall 8 — filter `sender.type === "Bot"`), closed-issue duplicate overwhelm (Pitfall 9 — recency weighting, cap at 3, include state/date), missing config gate (Pitfall 13 — default `autoTriageOnOpen: false`), workspace clone latency anti-pattern (use GitHub Contents API for templates, not workspace clone).
 
-**Implements:** In-Process MCP Server pattern (Architecture Pattern 2)
+### Phase 3: PR-Issue Linking
 
-**Avoids:** Pitfall 1 (label 404) -- validate label existence, return available labels on failure; Reuse anti-pattern -- separate server avoids being rejected by review-specific comment validators
+**Rationale:** Independent of auto-triage. Requires populated corpus for semantic linking leg. Regex reference parsing works without corpus but semantic fallback needs it. Lower user-facing urgency than Phase 2 but ships the `pr_issue_links` table used by future retrieval enrichment.
 
-**Research flag:** Standard pattern -- fifth and sixth MCP server following identical blueprint. No additional research needed.
+**Delivers:** PRs linked to issues on `pull_request.opened` via reference parsing and semantic search; links stored in `pr_issue_links` table with confidence levels; HIGH confidence links surface as informational PR comments.
 
-### Phase 3: Triage Agent Wiring
+**Addresses (FEATURES.md):** PR-issue linking via reference parsing, semantic PR-issue linking.
 
-**Rationale:** Depends on both Phase 1 (schema/store for context) and Phase 2 (MCP tools for output). All integration points converge here: config schema, mention handler branch, template parser, prompt builder, and end-to-end integration test.
+**Avoids (PITFALLS.md):** False regex matches and ambiguous references (Pitfall 5 — verify referenced number `is_pull_request = false`; use keyword-close patterns only; Timeline API as ground truth for ambiguous cases), timeline API rate cost (Pitfall 14 — text-match first, Timeline API only for closed issues with no text match; run as background job).
 
-**Delivers:** `triageSchema` in `.kodiai.yml` config (default disabled); triage routing branch in mention handler with PR-filter guard and cooldown; `issue-template-parser.ts` supporting both markdown and YAML form formats; `triage-prompt.ts` building context-aware agent prompt; end-to-end integration test covering the full webhook-to-GitHub-API flow.
+### Phase 4: Issue Corpus in Cross-Corpus Retrieval
 
-**Implements:** Config-Gated Feature Branch pattern (Architecture Pattern 1); Mention Handler Internal Routing (Architecture Pattern 3)
+**Rationale:** Enhancement to the existing retrieval pipeline. All three prior phases deliver standalone user-facing value. This phase makes issues available as context in PR reviews and mention responses, completing the issue intelligence picture.
 
-**Avoids:** Pitfall 2 (PR comment firing) -- `prNumber === undefined` guard as first check; Pitfall 3 (markdown template parsing) -- support both `.md` and `.yml` formats; Pitfall 4 (infinite loop) -- BotFilter + 30-min cooldown
+**Delivers:** Issue results in unified RRF fan-out alongside code, review comments, wiki, and snippets; `[issue: #N]` citations in PR review and mention responses; weighted per trigger type (0.8x for PR reviews, 1.3x for issue queries).
 
-**Research flag:** Template parsing for markdown format needs implementation verification against xbmc/xbmc's actual `bug_report.md` structure before finalizing the parser. A brief spike to read the actual template file and write test cases against its real section headers will eliminate the main implementation risk.
+**Addresses (FEATURES.md):** Issue corpus in cross-corpus retrieval.
+
+**Avoids (PITFALLS.md):** N+1 latency regression (Pitfall 15 — feature-flag the integration initially; measure p95 issue search latency independently before wiring into unified pipeline), cross-corpus dedup threshold mismatch (INT-5 — test dedup threshold interaction between issue text and wiki/code before shipping).
 
 ### Phase Ordering Rationale
 
-- **Phases 1 and 2 are independent** -- no shared dependencies; can be assigned to parallel work streams or executed sequentially in either order
-- **Phase 3 requires both** -- the agent needs MCP tools to act and the template parser (in Phase 3) depends on store types defined in Phase 1
-- **Schema-first discipline** -- all three prior corpus stores (review_comments, wiki, code_snippets) were built schema-first; deviating risks costly migrations
-- **MCP tools before agent** -- an agent built before its tools exist cannot be integration-tested end-to-end; testing blind creates hidden defects in the most user-visible component
-- **Pitfall sequencing** -- most critical pitfalls are addressed in the phase where they are introduced, not retroactively
+- Phases 2-4 all depend on Phase 1 data; Phase 1 must be first.
+- Phase 2 (auto-triage) and Phase 3 (PR linking) are independent of each other; Phase 2 is higher user-facing impact so it goes second.
+- Phase 4 is the lowest-risk, lowest-urgency enhancement; it goes last by design.
+- All four phases use existing patterns — no architectural invention required — so implementation velocity should be high.
 
 ### Research Flags
 
-Phases with standard patterns (skip `/gsd:research-phase`):
-- **Phase 1 (Schema + Store):** Direct structural copy of review_comments corpus. Schema, store interface, and index patterns are fully documented in existing source.
-- **Phase 2 (MCP Tools):** Fifth and sixth MCP servers following an identical, verified blueprint. No novel integration surface.
+Phases with well-documented patterns (standard execution, skip `/gsd:research-phase`):
+- **Phase 1:** Exact template in `review-comment-backfill.ts` (backfill) and `wiki-sync.ts` (nightly scheduler). No implementation ambiguity.
+- **Phase 3:** Reference parsing regex is deterministic. Semantic linking uses existing `IssueStore.searchByEmbedding()`. Timeline API behavior is documented.
 
-Phases that may benefit from a targeted spike:
-- **Phase 3 (Triage Agent Wiring):** The markdown template parser is the highest-uncertainty component. xbmc/xbmc's `bug_report.md` uses markdown section headers, but the exact format (`##`, `###`, HTML comment delimiters) should be verified against the live file before writing the parser. A 30-minute spike reading the actual template files and writing a handful of parser test cases would eliminate the main risk.
+Phases that warrant a calibration spike before committing to implementation:
+- **Phase 2:** Duplicate detection threshold tuning requires empirical validation against xbmc/xbmc data. Recommend a threshold calibration task as the first sub-task: run `findSimilar` against 20 known-duplicate pairs and 20 known-non-duplicate pairs to validate the 0.12/0.18/0.25 distance bands before baking them into config schema.
+- **Phase 4:** Cross-corpus dedup threshold interaction between issue text (conversational) and wiki/code text (technical documentation/code) has not been validated. Measure with real queries before shipping.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Every capability verified against installed packages and Octokit API surface; no new deps required; version compatibility confirmed in package.json |
-| Features | HIGH | Core triage features defined by milestone issue #73; competitor analysis grounded in real tools (VS Code, issue-ops/validator, fancy-triage-bot); anti-features explicitly documented with rationale |
-| Architecture | HIGH | All integration points verified against actual source files with line references; data flow traced through existing codebase; anti-patterns documented from real code constraints (Promise.allSettled, review comment validators) |
-| Pitfalls | MEDIUM-HIGH | GitHub API 404 behavior verified against official docs; template format verified against xbmc/xbmc repo; agent integration pitfalls derived from codebase patterns rather than observed failures in production |
+| Stack | HIGH | All capabilities confirmed present in existing dependency tree; no new packages required; integration points verified against installed versions and actual source files |
+| Features | HIGH for ingestion and auto-triage; MEDIUM for duplicate thresholds | Ingestion and triage patterns are established codebase precedents; threshold values (0.12/0.18/0.25) are research-informed but must be empirically validated against real xbmc/xbmc data |
+| Architecture | HIGH | Every new component follows an existing codebase pattern; file locations, interfaces, and data flows specified precisely with line references; anti-patterns documented from real code constraints |
+| Pitfalls | MEDIUM-HIGH | GitHub API behavior and pgvector distance/similarity confusion verified via official docs and community issues; embedding dilution and idempotency patterns verified against existing codebase implementations; rate limit projections are estimates |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Markdown template exact format:** xbmc/xbmc's `bug_report.md` section header format (whether it uses `##`, `###`, HTML comments, or a mix) should be verified during implementation before finalizing the parser. Research confirms it's a markdown template, but the exact section structure determines the regex approach.
+- **Duplicate detection thresholds (Phase 2):** The 0.12/0.18/0.25 cosine distance bands are research-informed but not validated against xbmc/xbmc data. Build a calibration task into Phase 2 planning: run detection against known duplicate pairs before committing thresholds to config schema.
 
-- **Label allowlist schema shape:** The config schema includes `missingFieldsLabel` as a single string. Research recommends a broader label allowlist to prevent arbitrary label application via prompt injection. The `.kodiai.yml` schema shape (single string vs. array) should be decided during Phase 2 implementation and validated against the expected maintainer UX.
+- **Embedding quality on xbmc/xbmc issues (Phase 1):** xbmc/xbmc issues are template-driven with heavy log/system-info boilerplate. The "extract description section, skip boilerplate" strategy is correct but depends on the v0.21 template parser correctly identifying section boundaries on real issues. Validate on 10-20 real issues before bulk ingestion begins.
 
-- **Cooldown storage mechanism:** Research recommends a per-issue cooldown to prevent comment spam. Storage approach (in-memory map vs. database column) is left open. For v0.21's expected volume (single-digit mentions/day), an in-memory map is sufficient but resets on restart. Decide during Phase 3 based on observed deployment restart frequency.
+- **Voyage AI rate limits at bulk ingestion scale (Phase 1):** 5-8K issues + ~15K comments = ~20K embedding calls. Voyage AI rate limits at this scale are not precisely documented. Budget 6-12 hours for backfill and build retry/resume capability before starting.
+
+- **IssueStore upsert timestamp guard (Phase 1):** The existing `IssueStore.upsert()` uses `ON CONFLICT DO UPDATE SET` without a `WHERE github_updated_at < EXCLUDED.github_updated_at` guard. This is a required fix (INT-1) before nightly sync runs concurrently with webhook updates. Must be addressed in Phase 1.
+
+- **Cross-corpus dedup threshold (Phase 4):** The existing `deduplicateChunks` uses cosine threshold 0.90 for the current four corpora. Issue text is conversational, not technical documentation or code. The threshold may need per-corpus-pair tuning. Test before shipping.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-
-- `src/execution/mcp/comment-server.ts` -- existing MCP tool pattern with review sanitization (direct blueprint for issue-comment-server)
-- `src/knowledge/review-comment-store.ts` -- existing corpus store pattern (direct blueprint for issue-store)
-- `src/execution/config.ts` -- existing config schema with section-fallback parsing (direct blueprint for triageSchema)
-- `src/handlers/mention.ts` + `src/handlers/mention-types.ts` -- existing mention handler and surface normalization
-- `src/webhook/router.ts` -- event dispatch model (Promise.allSettled, handler isolation)
-- `@octokit/rest` v22 -- `issues.addLabels()`, `issues.createComment()` verified in existing codebase usage
-- [GitHub REST API - Labels endpoints](https://docs.github.com/en/rest/issues/labels) -- label 404 behavior confirmed
-- [xbmc/xbmc ISSUE_TEMPLATE/bug_report.md](https://github.com/xbmc/xbmc/blob/master/.github/ISSUE_TEMPLATE/bug_report.md) -- confirmed markdown format, not YAML forms
+- Existing codebase: `src/knowledge/review-comment-backfill.ts` (backfill pattern), `src/knowledge/wiki-sync.ts` (nightly scheduler), `src/knowledge/cluster-scheduler.ts` (setInterval + startup delay), `src/knowledge/issue-store.ts` (CRUD + search API), `src/triage/triage-agent.ts` (template validation), `src/knowledge/cross-corpus-rrf.ts` (RRF merging), `src/webhook/router.ts` (event dispatch), `src/handlers/review-idempotency.ts` (idempotency patterns)
+- [GitHub REST API: List Repository Issues](https://docs.github.com/en/rest/issues/issues#list-repository-issues) — `state`, `since`, `sort`, `direction`, `per_page` parameters
+- [GitHub REST API: Pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api) — Link header, per_page max 100
+- [GitHub REST API: Rate Limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api) — 5,000 req/hr for authenticated apps
+- [pgvector GitHub issue #72](https://github.com/pgvector/pgvector/issues/72) and [Supabase issue #12244](https://github.com/supabase/supabase/issues/12244) — cosine distance vs. similarity operator behavior confirmed
+- [GitHub Timeline Events API](https://docs.github.com/en/rest/issues/timeline) — cross-reference event types
+- [GitHub webhook redelivery behavior](https://github.com/orgs/community/discussions/151676) — at-least-once delivery guarantee
 
 ### Secondary (MEDIUM confidence)
-
-- [VS Code Automated Issue Triaging](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging) -- competitor patterns, cooldown strategies, label taxonomy approach
-- [GitHub Docs: Triaging an issue with AI](https://docs.github.com/en/issues/tracking-your-work-with-issues/administering-issues/triaging-an-issue-with-ai) -- native GitHub AI triage features and gaps
-- [GitHub Issue Forms syntax](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms) -- YAML template field schema for dual-format parser
-- [issue-ops/validator](https://github.com/issue-ops/validator) -- YAML form validation patterns and comment idempotency approaches
+- [Simili Bot](https://github.com/similigh/simili-bot), [AI Duplicate Detector](https://github.com/mackgorski/ai-duplicate-detector), [Probot duplicate-issues](https://github.com/probot/duplicate-issues), [Similar Issues AI](https://github.com/apps/similar-issues-ai) — feature landscape and anti-feature guidance
+- [VS Code Automated Issue Triaging](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging) — threshold approaches, two-model pattern, auto-close timing
+- [GitHub Agentic Workflows: Issue Triage](https://github.github.io/gh-aw/blog/2026-01-13-meet-the-workflows/) — auto-triage patterns
+- [Zilliz: Embeddings for Duplicate Detection](https://zilliz.com/ai-faq/how-do-i-use-embeddings-for-duplicate-detection) and [emergentmind cosine similarity threshold research](https://www.emergentmind.com/topics/cosine-similarity-threshold) — threshold guidance informing the 0.25/0.18/0.12 bands
 
 ### Tertiary (LOW confidence)
-
-- [simili-bot](https://github.com/similigh/simili-bot), [ai-duplicate-detector](https://github.com/mackgorski/ai-duplicate-detector) -- semantic similarity patterns for future duplicate detection (v0.22+ scope; not needed for v0.21)
+- Voyage AI rate limits at 20K+ embedding call scale — not precisely documented at this volume; budget conservatively with retry/resume
 
 ---
 *Research completed: 2026-02-26*
