@@ -14,9 +14,9 @@ Requirements for Issue Triage Foundation. Each maps to roadmap phases.
 
 ### MCP Tools
 
-- [ ] **MCPT-01**: `github_issue_label` MCP tool applies labels to issues with label existence validation and 404 handling
-- [ ] **MCPT-02**: `github_issue_comment` MCP tool posts comments on issues without review-specific validators
-- [ ] **MCPT-03**: Both MCP tools wired into executor MCP server registry with config gating and integration tests
+- [x] **MCPT-01**: `github_issue_label` MCP tool applies labels to issues with label existence validation and 404 handling
+- [x] **MCPT-02**: `github_issue_comment` MCP tool posts comments on issues without review-specific validators
+- [x] **MCPT-03**: Both MCP tools wired into executor MCP server registry with config gating and integration tests
 
 ### Triage Agent
 
@@ -56,9 +56,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | ICORP-01 | Phase 103 | Complete |
 | ICORP-02 | Phase 103 | Complete |
-| MCPT-01 | Phase 104 | Pending |
-| MCPT-02 | Phase 104 | Pending |
-| MCPT-03 | Phase 104 | Pending |
+| MCPT-01 | Phase 104 | Complete |
+| MCPT-02 | Phase 104 | Complete |
+| MCPT-03 | Phase 104 | Complete |
 | TRIA-01 | Phase 105 | Pending |
 | TRIA-02 | Phase 105 | Pending |
 | TRIA-03 | Phase 105 | Pending |

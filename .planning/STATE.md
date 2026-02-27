@@ -4,12 +4,12 @@ milestone: v0.1
 milestone_name: Issue Triage Foundation
 status: unknown
 stopped_at: Phase 104 context gathered
-last_updated: "2026-02-27T01:00:29.134Z"
+last_updated: "2026-02-27T01:12:10.671Z"
 progress:
   total_phases: 81
-  completed_phases: 77
-  total_plans: 189
-  completed_plans: 198
+  completed_phases: 78
+  total_plans: 192
+  completed_plans: 201
 ---
 
 # Project State
@@ -19,14 +19,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.21 Issue Triage Foundation -- Phase 103 ready to plan
+**Current focus:** v0.21 Issue Triage Foundation -- Phase 104 complete, Phase 105 next
 
 ## Current Position
 
-Phase: 103 of 105 (Issue Corpus Schema & Store)
-Plan: --
-Status: Ready to plan
-Last activity: 2026-02-26 -- Roadmap created for v0.21
+Phase: 104 of 105 (Issue MCP Tools)
+Plan: 3/3 complete
+Status: Phase complete
+Last activity: 2026-02-26 -- Phase 104 executed (3 plans, 2 waves)
 
 Progress: [░░░░░░░░░░] 0%
 
