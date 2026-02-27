@@ -98,6 +98,19 @@ export function createExecutor(deps: {
             : (context.enableInlineTools ?? true);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
+        // Enable issue triage tools for issue mentions when triage is configured
+        const isIssueMention =
+          context.eventType === "issue_comment.created" &&
+          context.prNumber === undefined;
+        const enableIssueTools = isIssueMention && config.triage.enabled;
+        const triageConfig = enableIssueTools
+          ? {
+              enabled: config.triage.enabled,
+              label: config.triage.label,
+              comment: config.triage.comment,
+            }
+          : undefined;
+
         const mcpServers = buildMcpServers({
           getOctokit,
           owner: context.owner,
@@ -122,6 +135,8 @@ export function createExecutor(deps: {
           knowledgeStore: context.knowledgeStore,
           totalFiles: context.totalFiles,
           enableCheckpointTool: context.enableCheckpointTool,
+          enableIssueTools,
+          triageConfig,
         });
 
         // Build allowed tools list

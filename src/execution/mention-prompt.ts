@@ -41,6 +41,8 @@ export function buildMentionPrompt(params: {
   unifiedResults?: UnifiedRetrievalChunk[];
   /** Pre-assembled context window from unified pipeline */
   contextWindow?: string;
+  /** Triage validation context for issue mentions */
+  triageContext?: string;
 }): string {
   const {
     mention,
@@ -52,6 +54,7 @@ export function buildMentionPrompt(params: {
     outputLanguage,
     unifiedResults,
     contextWindow,
+    triageContext,
   } = params;
   const lines: string[] = [];
 
@@ -305,6 +308,25 @@ export function buildMentionPrompt(params: {
     lines.push("## Custom Instructions");
     lines.push("");
     lines.push(customInstructions);
+  }
+
+  // Triage context for issue mentions
+  if (triageContext && triageContext.trim().length > 0) {
+    lines.push("");
+    lines.push("## Issue Template Compliance");
+    lines.push("");
+    lines.push(triageContext);
+    lines.push("");
+    lines.push(
+      "When responding, answer the user's question first (this is your PRIMARY goal). " +
+        "Then, if the triage context above indicates missing fields, append a brief one-sentence nudge " +
+        "at the end of your response mentioning what's missing. Keep the nudge concise -- one sentence, not a full breakdown.",
+    );
+    lines.push("");
+    lines.push(
+      "If a label recommendation is provided above, use the github_issue_label tool to apply it. " +
+        "If the label doesn't exist on the repo, skip labeling and mention it briefly.",
+    );
   }
 
   // Output language localization

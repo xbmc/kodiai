@@ -38,6 +38,7 @@ import { classifyFileLanguage } from "../execution/diff-analysis.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import { validateIssue, generateGuidanceComment, generateLabelRecommendation, generateGenericNudge } from "../triage/triage-agent.ts";
 
 export function buildWritePolicyRefusalMessage(
   err: WritePolicyError,
@@ -151,6 +152,28 @@ export function createMentionHandler(deps: {
   const prConversationTouchedAt = new Map<string, number>();
 
   const inFlightWriteKeys = new Set<string>();
+
+  // Per-issue triage cooldown: prevents repeated triage nudges.
+  // Keyed by "{owner}/{repo}#{issueNumber}". Resets when issue body hash changes.
+  const triageCooldowns = new Map<string, { lastTriagedAt: number; bodyHash: string }>();
+
+  function pruneTriageCooldowns(now: number): void {
+    const ttlMs = 24 * 60 * 60 * 1000; // 24h
+    for (const [key, entry] of triageCooldowns.entries()) {
+      if (now - entry.lastTriagedAt > ttlMs) {
+        triageCooldowns.delete(key);
+      }
+    }
+    // Hard cap
+    if (triageCooldowns.size > 1000) {
+      const sortedEntries = [...triageCooldowns.entries()]
+        .sort((a, b) => a[1].lastTriagedAt - b[1].lastTriagedAt);
+      const toDelete = sortedEntries.slice(0, triageCooldowns.size - 1000);
+      for (const [key] of toDelete) {
+        triageCooldowns.delete(key);
+      }
+    }
+  }
 
   function buildWriteOutputKey(input: {
     installationId: number;
@@ -1112,6 +1135,59 @@ export function createMentionHandler(deps: {
           }
         }
 
+        // Triage validation for issue mentions when enabled
+        let triageContext = "";
+        if (isIssueThreadComment && config.triage.enabled) {
+          const cooldownKey = `${mention.owner}/${mention.repo}#${mention.issueNumber}`;
+          const bodyHash = createHash("sha256")
+            .update(mention.issueBody ?? "")
+            .digest("hex")
+            .slice(0, 16);
+          const now = Date.now();
+          pruneTriageCooldowns(now);
+          const cooldownEntry = triageCooldowns.get(cooldownKey);
+          const cooldownMs = (config.triage.cooldownMinutes ?? 30) * 60 * 1000;
+
+          const withinCooldown =
+            cooldownEntry &&
+            cooldownEntry.bodyHash === bodyHash &&
+            now - cooldownEntry.lastTriagedAt < cooldownMs;
+
+          if (!withinCooldown) {
+            try {
+              const validationResult = await validateIssue({
+                workspaceDir: workspace.dir,
+                issueBody: mention.issueBody,
+              });
+
+              if (validationResult === null) {
+                // No template matched
+                triageContext = generateGenericNudge();
+              } else if (!validationResult.valid) {
+                const guidance = generateGuidanceComment(validationResult);
+                const labelRec = generateLabelRecommendation({
+                  result: validationResult,
+                  labelAllowlist: config.triage.labelAllowlist ?? [],
+                });
+
+                triageContext = guidance;
+                if (labelRec) {
+                  triageContext += `\n\nRecommended label: \`${labelRec}\``;
+                }
+              }
+              // If valid, triageContext stays empty -- no nudge needed
+
+              // Update cooldown
+              triageCooldowns.set(cooldownKey, { lastTriagedAt: now, bodyHash });
+            } catch (err) {
+              logger.warn(
+                { err, issueNumber: mention.issueNumber },
+                "Triage validation failed (fail-open)",
+              );
+            }
+          }
+        }
+
         let findingContext:
           | {
               severity: string;
@@ -1298,6 +1374,8 @@ export function createMentionHandler(deps: {
           // Unified cross-corpus context (KI-11/KI-12)
           unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
           contextWindow: contextWindowForPrompt,
+          // Triage context for issue mentions (TRIA-03)
+          triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
         });
 
         // Execute via Claude

@@ -37,6 +37,8 @@ export interface MentionEvent {
   fileLine: number | undefined;
   /** For pr_review_comment: the comment ID this is replying to (thread parent) */
   inReplyToId: number | undefined;
+  /** Issue body text (for triage validation on issue_comment surface) */
+  issueBody: string | null;
 }
 
 /**
@@ -68,6 +70,7 @@ export function normalizeIssueComment(
     filePath: undefined,
     fileLine: undefined,
     inReplyToId: undefined,
+    issueBody: payload.issue.body ?? null,
   };
 }
 
@@ -97,6 +100,7 @@ export function normalizeReviewComment(
     filePath: payload.comment.path,
     fileLine: payload.comment.line ?? payload.comment.original_line ?? undefined,
     inReplyToId: payload.comment.in_reply_to_id ?? undefined,
+    issueBody: null,
   };
 }
 
@@ -127,6 +131,7 @@ export function normalizeReviewBody(
     filePath: undefined,
     fileLine: undefined,
     inReplyToId: undefined,
+    issueBody: null,
   };
 }
 

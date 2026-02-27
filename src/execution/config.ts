@@ -471,11 +471,17 @@ const triageSchema = z
         enabled: z.boolean().default(true),
       })
       .default({ enabled: true }),
+    /** Allowed label patterns for convention-based triage labels. Empty = allow all. */
+    labelAllowlist: z.array(z.string()).default([]),
+    /** Per-issue cooldown in minutes before re-triaging. 0 = no cooldown. Default: 30. */
+    cooldownMinutes: z.number().min(0).max(1440).default(30),
   })
   .default({
     enabled: false,
     label: { enabled: true },
     comment: { enabled: true },
+    labelAllowlist: [],
+    cooldownMinutes: 30,
   });
 
 const modelsSchema = z
