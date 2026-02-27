@@ -277,7 +277,7 @@ Phases execute in numeric order: 106 -> 107 -> 108 -> 109
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106. Corpus Population | v0.22 | 2/2 | Complete | 2026-02-27 |
-| 107. Duplicate Detection & Auto-Triage | 2/2 | Complete   | 2026-02-27 | - |
+| 107. Duplicate Detection & Auto-Triage | 2/2 | Complete    | 2026-02-27 | - |
 | 108. PR-Issue Linking | v0.22 | 0/? | Not started | - |
 | 109. Retrieval Integration | v0.22 | 0/? | Not started | - |
 
