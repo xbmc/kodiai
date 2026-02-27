@@ -34,6 +34,7 @@ export async function searchIssues(opts: {
   repo: string;
   topK: number;
   distanceThreshold?: number;
+  stateFilter?: string;
   logger: Logger;
 }): Promise<IssueKnowledgeMatch[]> {
   const {
@@ -57,6 +58,7 @@ export async function searchIssues(opts: {
     queryEmbedding: embedResult.embedding,
     repo,
     topK,
+    stateFilter: opts.stateFilter,
   });
 
   // Filter by distance threshold and map to IssueKnowledgeMatch

@@ -101,5 +101,23 @@ export type {
   IssueCommentRecord, IssueCommentInput, IssueCommentSearchResult,
 } from "./issue-types.ts";
 
+// Thread assembler
+export {
+  truncateIssueBody,
+  selectTailComments,
+  computeBudgetDistribution,
+  assembleIssueThread,
+  type ThreadAssemblyResult,
+} from "./thread-assembler.ts";
+
+// Troubleshooting retrieval
+export {
+  retrieveTroubleshootingContext,
+  extractKeywords,
+  type TroubleshootingResult,
+  type TroubleshootingConfig,
+  type TroubleshootingMatch,
+} from "./troubleshooting-retrieval.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";

@@ -483,6 +483,18 @@ const triageSchema = z
     labelAllowlist: z.array(z.string()).default([]),
     /** Per-issue cooldown in minutes before re-triaging. 0 = no cooldown. Default: 30. */
     cooldownMinutes: z.number().min(0).max(1440).default(30),
+    /** Troubleshooting retrieval config for resolved-issue guidance. */
+    troubleshooting: z.object({
+      enabled: z.boolean().default(false),
+      similarityThreshold: z.number().min(0).max(1).default(0.65),
+      maxResults: z.number().min(1).max(10).default(3),
+      totalBudgetChars: z.number().min(1000).max(50000).default(12000),
+    }).default({
+      enabled: false,
+      similarityThreshold: 0.65,
+      maxResults: 3,
+      totalBudgetChars: 12000,
+    }),
   })
   .default({
     enabled: false,
@@ -494,6 +506,12 @@ const triageSchema = z
     comment: { enabled: true },
     labelAllowlist: [],
     cooldownMinutes: 30,
+    troubleshooting: {
+      enabled: false,
+      similarityThreshold: 0.65,
+      maxResults: 3,
+      totalBudgetChars: 12000,
+    },
   });
 
 const modelsSchema = z

@@ -191,6 +191,7 @@ export function createIssueStore(opts: {
       queryEmbedding: Float32Array;
       repo: string;
       topK: number;
+      stateFilter?: string;
     }): Promise<IssueSearchResult[]> {
       const queryEmbeddingString = float32ArrayToVectorString(params.queryEmbedding);
 
@@ -200,6 +201,7 @@ export function createIssueStore(opts: {
         FROM issues
         WHERE repo = ${params.repo}
           AND embedding IS NOT NULL
+          ${params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``}
         ORDER BY embedding <=> ${queryEmbeddingString}::vector
         LIMIT ${params.topK}
       `;
@@ -214,6 +216,7 @@ export function createIssueStore(opts: {
       query: string;
       repo: string;
       topK: number;
+      stateFilter?: string;
     }): Promise<IssueSearchResult[]> {
       if (!params.query.trim()) return [];
 
@@ -223,6 +226,7 @@ export function createIssueStore(opts: {
         FROM issues
         WHERE repo = ${params.repo}
           AND search_tsv @@ plainto_tsquery('english', ${params.query})
+          ${params.stateFilter ? sql`AND state = ${params.stateFilter}` : sql``}
         ORDER BY rank DESC
         LIMIT ${params.topK}
       `;

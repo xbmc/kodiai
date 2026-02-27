@@ -110,6 +110,7 @@ export type IssueStore = {
     queryEmbedding: Float32Array;
     repo: string;
     topK: number;
+    stateFilter?: string;
   }): Promise<IssueSearchResult[]>;
 
   /** Full-text search using tsvector GIN index. */
@@ -117,6 +118,7 @@ export type IssueStore = {
     query: string;
     repo: string;
     topK: number;
+    stateFilter?: string;
   }): Promise<IssueSearchResult[]>;
 
   /** Find issues similar to a given issue by its embedding. Excludes the source issue. */
