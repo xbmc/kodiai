@@ -181,7 +181,7 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 
 - [x] **Phase 103: Issue Corpus Schema & Store** - PostgreSQL issue table with HNSW/tsvector indexes and typed store interface (completed 2026-02-27)
 - [x] **Phase 104: Issue MCP Tools** - `github_issue_label` and `github_issue_comment` MCP servers wired into executor registry (completed 2026-02-27)
-- [ ] **Phase 105: Triage Agent Wiring** - Template parser, triage agent, and mention handler integration with config gating
+- [x] **Phase 105: Triage Agent Wiring** - Template parser, triage agent, and mention handler integration with config gating (completed 2026-02-27)
 
 ### Phase 103: Issue Corpus Schema & Store
 **Goal**: Issues have a dedicated vector corpus in PostgreSQL with the same search infrastructure as existing corpora
@@ -226,7 +226,7 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
 | 103 | 3/3 | Complete   | 2026-02-27 | - |
 | 104 | 3/3 | Complete    | 2026-02-27 | - |
-| 105 | v0.21 | 0/TBD | Not started | - |
+| 105 | 3/3 | Complete    | 2026-02-27 | - |
 
 ---
 
