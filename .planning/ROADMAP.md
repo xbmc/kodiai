@@ -23,6 +23,7 @@
 - ✅ **v0.19 Intelligent Retrieval Enhancements** — Phases 93-96 (shipped 2026-02-25)
 - ✅ **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (shipped 2026-02-26)
 - ✅ **v0.21 Issue Triage Foundation** — Phases 103-105 (shipped 2026-02-27)
+- [ ] **v0.22 Issue Intelligence** — Phases 106-109 (in progress)
 
 ## Phases
 
@@ -174,17 +175,75 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 </details>
 
 <details>
-<summary>✅ v0.21 Issue Triage Foundation (Phases 103-105) -- SHIPPED 2026-02-27</summary>
+<summary>v0.21 Issue Triage Foundation (Phases 103-105) -- SHIPPED 2026-02-27</summary>
 
 See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 
-- [x] Phase 103: Issue Corpus Schema & Store (3/3 plans) — completed 2026-02-27
-- [x] Phase 104: Issue MCP Tools (3/3 plans) — completed 2026-02-27
-- [x] Phase 105: Triage Agent Wiring (3/3 plans) — completed 2026-02-27
+- [x] Phase 103: Issue Corpus Schema & Store (3/3 plans) -- completed 2026-02-27
+- [x] Phase 104: Issue MCP Tools (3/3 plans) -- completed 2026-02-27
+- [x] Phase 105: Triage Agent Wiring (3/3 plans) -- completed 2026-02-27
 
 </details>
 
+### v0.22 Issue Intelligence (In Progress)
+
+**Milestone Goal:** Populate the issue corpus from historical xbmc/xbmc data, add high-confidence duplicate detection and PR-issue linking, and enable auto-triage on `issues.opened`.
+
+- [ ] **Phase 106: Historical Corpus Population** - Backfill xbmc/xbmc issues with embeddings and establish nightly sync
+- [ ] **Phase 107: Duplicate Detection & Auto-Triage** - Detect duplicate issues at high confidence and auto-triage on `issues.opened`
+- [ ] **Phase 108: PR-Issue Linking** - Link PRs to related issues via reference parsing and semantic search
+- [ ] **Phase 109: Issue Corpus Retrieval Integration** - Wire issue corpus into cross-corpus RRF retrieval with citations
+
+## Phase Details
+
+### Phase 106: Historical Corpus Population
+**Goal**: The issue corpus contains all xbmc/xbmc issues with embeddings and stays current via nightly sync
+**Depends on**: Phase 105 (issue schema and IssueStore from v0.21)
+**Requirements**: INGEST-01, INGEST-02, INGEST-03, INGEST-04, INGEST-05, INGEST-06, INGEST-07
+**Success Criteria** (what must be TRUE):
+  1. Running the backfill script populates the issues table with historical xbmc/xbmc issues (excluding PRs) and their comment threads, each with Voyage AI embeddings
+  2. The backfill script can be interrupted and resumed from where it left off without re-processing already-ingested issues
+  3. The backfill script logs page counts, embedding counts, and rate limit status during execution
+  4. After the nightly sync job runs, issues updated since the last sync have fresh data and embeddings in the corpus
+  5. The nightly sync job also picks up new and updated issue comments
+**Plans**: TBD
+
+### Phase 107: Duplicate Detection & Auto-Triage
+**Goal**: New issues are automatically triaged with duplicate detection, surfacing high-confidence duplicates to maintainers
+**Depends on**: Phase 106 (populated corpus required for similarity search)
+**Requirements**: DUPL-01, DUPL-02, DUPL-03, DUPL-04, TRIAGE-01, TRIAGE-02, TRIAGE-03, TRIAGE-04
+**Success Criteria** (what must be TRUE):
+  1. When a new issue is opened and auto-triage is enabled, kodiai posts a triage comment that includes top-3 duplicate candidates (if any) with similarity scores, titles, numbers, and open/closed status
+  2. Duplicate detection never auto-closes issues -- it only comments and optionally applies a label
+  3. If embedding or search fails during duplicate detection, triage still completes and the failure is logged
+  4. Auto-triage on `issues.opened` is gated behind `triage.autoTriageOnOpen` config flag (default: false)
+  5. Webhook redelivery, concurrent processing, and rapid re-opening do not produce duplicate triage comments
+**Plans**: TBD
+
+### Phase 108: PR-Issue Linking
+**Goal**: PRs are linked to related issues via explicit references and semantic search, enriching review context
+**Depends on**: Phase 106 (populated corpus required for semantic search)
+**Requirements**: PRLINK-01, PRLINK-02, PRLINK-03
+**Success Criteria** (what must be TRUE):
+  1. When a PR body or commit messages contain `fixes #N`, `closes #N`, or `relates-to #N` patterns, the referenced issues are identified and linked
+  2. When no explicit references exist, semantic search finds related issues from the corpus and surfaces them as suggestions
+  3. Linked issue context (title, status, description summary) is included in PR review prompts, producing more context-aware review feedback
+**Plans**: TBD
+
+### Phase 109: Issue Corpus Retrieval Integration
+**Goal**: Issue corpus participates in cross-corpus retrieval, making issue context available in all bot responses with citations
+**Depends on**: Phase 106 (populated corpus), Phase 108 (PR-issue links inform retrieval weighting)
+**Requirements**: PRLINK-04
+**Success Criteria** (what must be TRUE):
+  1. Issue results appear alongside code, review comment, wiki, and snippet results in unified RRF retrieval
+  2. Issue citations use `[issue: #N]` format in PR review and mention responses
+  3. Issue corpus is weighted appropriately per trigger type (lower weight for PR reviews, higher for issue-context queries)
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 106 -> 107 -> 108 -> 109
 
 **Total shipped:** 21 milestones, 105 phases, 274 plans
 
@@ -211,7 +270,11 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
+| 106. Corpus Population | v0.22 | 0/? | Not started | - |
+| 107. Duplicate Detection & Auto-Triage | v0.22 | 0/? | Not started | - |
+| 108. PR-Issue Linking | v0.22 | 0/? | Not started | - |
+| 109. Retrieval Integration | v0.22 | 0/? | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-27 -- v0.21 shipped (Issue Triage Foundation)*
+*Roadmap updated: 2026-02-26 -- v0.22 Issue Intelligence roadmap created*

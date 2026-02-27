@@ -6,7 +6,7 @@ status: active
 stopped_at: null
 last_updated: "2026-02-26T00:00:00.000Z"
 progress:
-  total_phases: 105
+  total_phases: 109
   completed_phases: 105
   total_plans: 274
   completed_plans: 274
@@ -19,14 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.22 Issue Intelligence
+**Current focus:** v0.22 Issue Intelligence -- Phase 106: Historical Corpus Population
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-26 — Milestone v0.22 started
+Phase: 106 of 109 (Historical Corpus Population)
+Plan: 0 of ? in current phase
+Status: Ready to plan
+Last activity: 2026-02-26 -- Roadmap created for v0.22
+
+Progress: [██████████████████░░] 96% (105/109 phases)
 
 ## Accumulated Context
 
@@ -60,6 +62,14 @@ All decisions through v0.21 archived to `.planning/PROJECT.md` Key Decisions tab
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to.
 
+### Research Notes (v0.22)
+
+- Backfill follows `review-comment-backfill.ts` pattern exactly; nightly sync follows `wiki-sync.ts`
+- Duplicate detection thresholds (0.12/0.18/0.25 cosine distance bands) need empirical calibration
+- Embed problem summary only (title + description section), not full body with logs/system info
+- Three-layer idempotency for auto-triage: delivery-ID dedup + advisory lock + per-issue cooldown
+- `issue-opened.ts` must be a separate handler, not added to the 2000+ line mention handler
+
 ### Blockers/Concerns
 
 None.
@@ -74,5 +84,5 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-26
-**Stopped At:** Defining requirements for v0.22
-**Resume with:** `/gsd:new-milestone` (in progress)
+**Stopped At:** Roadmap created for v0.22 Issue Intelligence
+**Resume with:** `/gsd:plan-phase 106`

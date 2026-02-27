@@ -71,31 +71,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INGEST-01 | — | Pending |
-| INGEST-02 | — | Pending |
-| INGEST-03 | — | Pending |
-| INGEST-04 | — | Pending |
-| INGEST-05 | — | Pending |
-| INGEST-06 | — | Pending |
-| INGEST-07 | — | Pending |
-| DUPL-01 | — | Pending |
-| DUPL-02 | — | Pending |
-| DUPL-03 | — | Pending |
-| DUPL-04 | — | Pending |
-| PRLINK-01 | — | Pending |
-| PRLINK-02 | — | Pending |
-| PRLINK-03 | — | Pending |
-| PRLINK-04 | — | Pending |
-| TRIAGE-01 | — | Pending |
-| TRIAGE-02 | — | Pending |
-| TRIAGE-03 | — | Pending |
-| TRIAGE-04 | — | Pending |
+| INGEST-01 | Phase 106 | Pending |
+| INGEST-02 | Phase 106 | Pending |
+| INGEST-03 | Phase 106 | Pending |
+| INGEST-04 | Phase 106 | Pending |
+| INGEST-05 | Phase 106 | Pending |
+| INGEST-06 | Phase 106 | Pending |
+| INGEST-07 | Phase 106 | Pending |
+| DUPL-01 | Phase 107 | Pending |
+| DUPL-02 | Phase 107 | Pending |
+| DUPL-03 | Phase 107 | Pending |
+| DUPL-04 | Phase 107 | Pending |
+| PRLINK-01 | Phase 108 | Pending |
+| PRLINK-02 | Phase 108 | Pending |
+| PRLINK-03 | Phase 108 | Pending |
+| PRLINK-04 | Phase 109 | Pending |
+| TRIAGE-01 | Phase 107 | Pending |
+| TRIAGE-02 | Phase 107 | Pending |
+| TRIAGE-03 | Phase 107 | Pending |
+| TRIAGE-04 | Phase 107 | Pending |
 
 **Coverage:**
 - v0.22 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19
+- Mapped to phases: 19
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-26*
-*Last updated: 2026-02-26 after initial definition*
+*Last updated: 2026-02-26 after roadmap creation*
