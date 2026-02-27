@@ -2,10 +2,11 @@
  * Handler for issues.opened webhook events.
  *
  * Triggers auto-triage with duplicate detection when autoTriageOnOpen is enabled.
- * Uses three-layer idempotency:
+ * Uses four-layer idempotency:
  *   Layer 1: Delivery ID dedup (handled by webhook route's Deduplicator)
- *   Layer 2: Atomic DB INSERT ... ON CONFLICT DO NOTHING
+ *   Layer 2: Atomic DB INSERT ... ON CONFLICT with cooldown window
  *   Layer 3: Comment marker scan fallback
+ *   Layer 4: Per-issue cooldown via triage.cooldownMinutes config (default: 30min)
  *
  * This is a SEPARATE handler file per project constraint:
  * "issue-opened.ts must be a separate handler, not added to the 2000+ line mention handler"
@@ -144,10 +145,11 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err }, "Comment scan failed (fail-open, continuing to DB claim)");
       }
 
-      // Layer 2 idempotency: Atomic DB claim
-      const claimed = await claimIssueTriage(sql, repo, issueNumber, event.id);
+      // Layer 2 idempotency: Atomic DB claim with cooldown window
+      const cooldownMinutes = config.triage.cooldownMinutes ?? 30;
+      const claimed = await claimIssueTriage(sql, repo, issueNumber, event.id, cooldownMinutes);
       if (!claimed) {
-        handlerLogger.info("Issue already triaged (DB claim failed), skipping");
+        handlerLogger.info("Issue already triaged within cooldown window (DB claim failed), skipping");
         return;
       }
 
@@ -223,19 +225,28 @@ export function createIssueOpenedHandler(deps: {
 }
 
 /**
- * Atomically claim an issue for triage.
- * Returns true if claimed (we should process), false if already claimed by another handler.
+ * Atomically claim an issue for triage with cooldown enforcement.
+ * Returns true if claimed (we should process), false if already claimed within cooldown window.
+ *
+ * Uses INSERT ... ON CONFLICT DO UPDATE with a WHERE clause that only updates
+ * if the previous triage is older than cooldownMinutes. This is atomic and
+ * prevents re-triage within the cooldown window even under concurrent delivery.
  */
 async function claimIssueTriage(
   sql: Sql,
   repo: string,
   issueNumber: number,
   deliveryId: string,
+  cooldownMinutes: number,
 ): Promise<boolean> {
   const result = await sql`
     INSERT INTO issue_triage_state (repo, issue_number, delivery_id)
     VALUES (${repo}, ${issueNumber}, ${deliveryId})
-    ON CONFLICT (repo, issue_number) DO NOTHING
+    ON CONFLICT (repo, issue_number) DO UPDATE
+      SET delivery_id = ${deliveryId},
+          triaged_at = now(),
+          duplicate_count = 0
+      WHERE issue_triage_state.triaged_at < now() - ${cooldownMinutes + ' minutes'}::interval
     RETURNING id
   `;
   return result.length > 0;
