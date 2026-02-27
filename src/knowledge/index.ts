@@ -89,6 +89,9 @@ export type {
 // Code snippet retrieval
 export { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
 
+// Issue retrieval
+export { searchIssues, type IssueKnowledgeMatch } from "./issue-retrieval.ts";
+
 // Issue store
 export { createIssueStore } from "./issue-store.ts";
 

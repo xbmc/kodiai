@@ -14,6 +14,8 @@ import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-
 import { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
 import { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
+import { searchIssues, type IssueKnowledgeMatch } from "./issue-retrieval.ts";
+import type { IssueStore } from "./issue-types.ts";
 import { hybridSearchMerge } from "./hybrid-search.ts";
 import {
   crossCorpusRRF,
@@ -69,6 +71,7 @@ export type RetrieveResult = {
     reviewCommentCount: number;
     wikiPageCount: number;
     snippetCount: number;
+    issueCount: number;
     unifiedResultCount: number;
     hybridSearchUsed: boolean;
     rrfK: number;
@@ -96,10 +99,10 @@ const DEDUP_THRESHOLD = 0.9;
 
 /** Source weight multipliers for context-dependent re-ranking. */
 const SOURCE_WEIGHTS: Record<TriggerType, Record<string, number>> = {
-  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0, snippet: 1.1 },
-  issue: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8 },
-  question: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8 },
-  slack: { code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0 },
+  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0, snippet: 1.1, issue: 0.8 },
+  issue: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.5 },
+  question: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.2 },
+  slack: { code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0, issue: 1.0 },
 };
 
 /** How much to boost exact-language matches in the unified pipeline. */
@@ -254,6 +257,28 @@ function snippetToUnified(match: CodeSnippetMatch, repo: string): UnifiedRetriev
 }
 
 /**
+ * Normalize an issue match to UnifiedRetrievalChunk.
+ */
+function issueMatchToUnified(match: IssueKnowledgeMatch, repo: string): UnifiedRetrievalChunk {
+  return {
+    id: `issue:${repo}:${match.issueNumber}:${match.distance}`,
+    text: match.chunkText,
+    source: "issue",
+    sourceLabel: `[issue: #${match.issueNumber}] ${match.title} (${match.state})`,
+    sourceUrl: `https://github.com/${repo}/issues/${match.issueNumber}`,
+    vectorDistance: match.distance,
+    rrfScore: 0,
+    createdAt: match.githubCreatedAt,
+    metadata: {
+      issueNumber: match.issueNumber,
+      title: match.title,
+      state: match.state,
+      authorLogin: match.authorLogin,
+    },
+  };
+}
+
+/**
  * Normalize a learning memory result to UnifiedRetrievalChunk.
  */
 function memoryToUnified(result: MergedRetrievalResult): UnifiedRetrievalChunk {
@@ -332,6 +357,7 @@ export function createRetriever(deps: {
   wikiPageStore?: WikiPageStore;
   memoryStore?: LearningMemoryStore;
   codeSnippetStore?: CodeSnippetStore;
+  issueStore?: IssueStore;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
 
@@ -374,6 +400,8 @@ export function createRetriever(deps: {
         reviewFullTextResult,
         wikiFullTextResult,
         snippetVectorResult,
+        issueVectorResult,
+        issueFullTextResult,
       ] = await Promise.allSettled([
         // (a) Learning memory vector search (multi-variant)
         executeRetrievalVariants({
@@ -452,6 +480,25 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as CodeSnippetMatch[]),
+        // (h) Issue vector search
+        deps.issueStore
+          ? searchIssues({
+              store: deps.issueStore,
+              embeddingProvider: deps.embeddingProvider,
+              query: intentQuery,
+              repo: opts.repo,
+              topK: 5,
+              logger: opts.logger,
+            })
+          : Promise.resolve([] as IssueKnowledgeMatch[]),
+        // (i) Issue BM25 full-text search
+        deps.issueStore?.searchByFullText
+          ? deps.issueStore.searchByFullText({
+              query: intentQuery,
+              repo: opts.repo,
+              topK: 5,
+            })
+          : Promise.resolve([]),
       ]);
 
       // Extract settled results (fail-open)
@@ -476,6 +523,15 @@ export function createRetriever(deps: {
       }
       if (snippetVectorResult.status === "rejected") {
         logger.warn({ err: snippetVectorResult.reason }, "Code snippet vector search failed (fail-open)");
+      }
+
+      const issueResults =
+        issueVectorResult.status === "fulfilled" ? issueVectorResult.value : [];
+      if (issueVectorResult.status === "rejected") {
+        logger.warn({ err: issueVectorResult.reason }, "Issue vector search failed (fail-open)");
+      }
+      if (issueFullTextResult.status === "rejected") {
+        logger.warn({ err: issueFullTextResult.reason }, "Issue BM25 full-text search failed (fail-open)");
       }
 
       // Log variant-level failures
@@ -546,6 +602,7 @@ export function createRetriever(deps: {
       const reviewChunks = reviewPrecedents.map((m) => reviewMatchToUnified(m, opts.repo));
       const wikiChunks = wikiKnowledge.map(wikiMatchToUnified);
       const snippetChunks = snippetResults.map((m) => snippetToUnified(m, opts.repo));
+      const issueChunks = issueResults.map((m) => issueMatchToUnified(m, opts.repo));
 
       // 6b: Per-corpus hybrid merge (vector + BM25 via RRF)
       // Review comments: merge vector + BM25
@@ -617,6 +674,39 @@ export function createRetriever(deps: {
         k: RRF_K,
       });
 
+      // Issue: merge vector + BM25
+      const issueBm25 =
+        issueFullTextResult.status === "fulfilled"
+          ? issueFullTextResult.value.map((r) => {
+              const record = (r as { record?: unknown }).record;
+              if (record && typeof record === "object" && "issueNumber" in record) {
+                const rec = record as { issueNumber: number; title: string; body?: string | null; repo: string; state: string; authorLogin: string; githubCreatedAt: string };
+                return issueMatchToUnified(
+                  {
+                    chunkText: `#${rec.issueNumber} ${rec.title}\n\n${(rec.body ?? "").slice(0, 2000)}`,
+                    distance: 1 - Number((r as { distance?: number }).distance ?? 0),
+                    repo: rec.repo,
+                    issueNumber: rec.issueNumber,
+                    title: rec.title,
+                    state: rec.state,
+                    authorLogin: rec.authorLogin,
+                    githubCreatedAt: rec.githubCreatedAt,
+                    source: "issue",
+                  },
+                  opts.repo,
+                );
+              }
+              return null;
+            }).filter((x): x is UnifiedRetrievalChunk => x !== null)
+          : [];
+
+      const hybridIssue = hybridSearchMerge({
+        vectorResults: issueChunks,
+        bm25Results: issueBm25,
+        getKey: (c) => c.id,
+        k: RRF_K,
+      });
+
       // Code: for now, use vector-only (learning memories have BM25 but the
       // multi-variant pipeline already provides good coverage)
       const hybridCode = codeChunks;
@@ -642,6 +732,11 @@ export function createRetriever(deps: {
         similarityThreshold: DEDUP_THRESHOLD,
         mode: "within-corpus",
       });
+      const dedupedIssues = deduplicateChunks({
+        chunks: hybridIssue.map((h) => h.item),
+        similarityThreshold: DEDUP_THRESHOLD,
+        mode: "within-corpus",
+      });
 
       // 6d: Cross-corpus RRF
       const sourceLists: RankedSourceList[] = [];
@@ -656,6 +751,9 @@ export function createRetriever(deps: {
       }
       if (dedupedSnippets.length > 0) {
         sourceLists.push({ source: "snippet", items: dedupedSnippets });
+      }
+      if (dedupedIssues.length > 0) {
+        sourceLists.push({ source: "issue", items: dedupedIssues });
       }
 
       let unifiedResults = crossCorpusRRF({
@@ -735,6 +833,7 @@ export function createRetriever(deps: {
           reviewCommentCount: reviewPrecedents.length,
           wikiPageCount: wikiKnowledge.length,
           snippetCount: snippetResults.length,
+          issueCount: issueResults.length,
           unifiedResultCount: unifiedResults.length,
           hybridSearchUsed: true,
           rrfK: RRF_K,

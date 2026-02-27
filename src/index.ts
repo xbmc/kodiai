@@ -232,6 +232,7 @@ const retriever = isolationLayer && embeddingProvider
       wikiPageStore,
       memoryStore: learningMemoryStore,
       codeSnippetStore,
+      issueStore,
     })
   : undefined;
 

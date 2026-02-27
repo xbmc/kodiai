@@ -6,7 +6,7 @@
  * RRF scoring: sum of 1/(k + rank) across all source lists an item appears in.
  */
 
-export type SourceType = "code" | "review_comment" | "wiki" | "snippet";
+export type SourceType = "code" | "review_comment" | "wiki" | "snippet" | "issue";
 
 export type UnifiedRetrievalChunk = {
   /** Unique key for dedup across sources. */
