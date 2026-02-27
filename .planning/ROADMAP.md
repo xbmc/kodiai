@@ -191,8 +191,8 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 
 - [x] **Phase 106: Historical Corpus Population** - Backfill xbmc/xbmc issues with embeddings and establish nightly sync
 - [x] **Phase 107: Duplicate Detection & Auto-Triage** - Detect duplicate issues at high confidence and auto-triage on `issues.opened` (2 plans) (completed 2026-02-27)
-- [ ] **Phase 108: PR-Issue Linking** - Link PRs to related issues via reference parsing and semantic search
-- [ ] **Phase 109: Issue Corpus Retrieval Integration** - Wire issue corpus into cross-corpus RRF retrieval with citations
+- [x] **Phase 108: PR-Issue Linking** - Link PRs to related issues via reference parsing and semantic search (completed 2026-02-27)
+- [x] **Phase 109: Issue Corpus Retrieval Integration** - Wire issue corpus into cross-corpus RRF retrieval with citations (completed 2026-02-27)
 
 ## Phase Details
 
