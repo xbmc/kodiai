@@ -457,6 +457,27 @@ const feedbackSchema = z
     },
   });
 
+const triageSchema = z
+  .object({
+    /** Master switch for triage tools. Default: false (opt-in). */
+    enabled: z.boolean().default(false),
+    label: z
+      .object({
+        enabled: z.boolean().default(true),
+      })
+      .default({ enabled: true }),
+    comment: z
+      .object({
+        enabled: z.boolean().default(true),
+      })
+      .default({ enabled: true }),
+  })
+  .default({
+    enabled: false,
+    label: { enabled: true },
+    comment: { enabled: true },
+  });
+
 const modelsSchema = z
   .record(z.string(), z.string())
   .default({});
@@ -485,6 +506,7 @@ const repoConfigSchema = z.object({
   largePR: largePRSchema,
   feedback: feedbackSchema,
   timeout: timeoutSchema,
+  triage: triageSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -742,6 +764,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // triage
+  const triageResult = triageSchema.safeParse(obj.triage);
+  let triage: z.infer<typeof triageSchema>;
+  if (triageResult.success) {
+    triage = triageResult.data;
+  } else {
+    triage = triageSchema.parse({});
+    warnings.push({
+      section: "triage",
+      issues: triageResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   // models
   const modelsResult = modelsSchema.safeParse(obj.models);
   let models: z.infer<typeof modelsSchema>;
@@ -808,6 +845,7 @@ export async function loadRepoConfig(
     largePR,
     feedback,
     timeout,
+    triage,
   };
 
   return { config, warnings };

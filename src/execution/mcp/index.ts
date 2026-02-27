@@ -6,6 +6,8 @@ import { createInlineReviewServer } from "./inline-review-server.ts";
 import { createCIStatusServer } from "./ci-status-server.ts";
 import { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 import { createCheckpointServer } from "./checkpoint-server.ts";
+import { createIssueLabelServer } from "./issue-label-server.ts";
+import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 
@@ -14,6 +16,14 @@ export { createInlineReviewServer } from "./inline-review-server.ts";
 export { createCIStatusServer } from "./ci-status-server.ts";
 export { createReviewCommentThreadServer } from "./review-comment-thread-server.ts";
 export { createCheckpointServer } from "./checkpoint-server.ts";
+export { createIssueLabelServer } from "./issue-label-server.ts";
+export { createIssueCommentServer } from "./issue-comment-server.ts";
+
+export interface TriageConfig {
+  enabled: boolean;
+  label: { enabled: boolean };
+  comment: { enabled: boolean };
+}
 
 export function buildMcpServers(deps: {
   getOctokit: () => Promise<Octokit>;
@@ -32,6 +42,8 @@ export function buildMcpServers(deps: {
   knowledgeStore?: KnowledgeStore;
   totalFiles?: number;
   enableCheckpointTool?: boolean;
+  enableIssueTools?: boolean;
+  triageConfig?: TriageConfig;
 }): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
 
@@ -95,6 +107,26 @@ export function buildMcpServers(deps: {
       deps.prNumber,
       deps.totalFiles ?? 0,
       deps.logger,
+    );
+  }
+
+  // Issue triage tools -- opt-in via enableIssueTools + triageConfig
+  const enableIssueTools = deps.enableIssueTools ?? false;
+  if (enableIssueTools && deps.triageConfig) {
+    const getTriageConfig = () => deps.triageConfig!;
+
+    servers.github_issue_label = createIssueLabelServer(
+      deps.getOctokit,
+      deps.owner,
+      deps.repo,
+      () => ({ enabled: getTriageConfig().enabled, label: getTriageConfig().label }),
+    );
+
+    servers.github_issue_comment = createIssueCommentServer(
+      deps.getOctokit,
+      deps.owner,
+      deps.repo,
+      () => ({ enabled: getTriageConfig().enabled, comment: getTriageConfig().comment }),
     );
   }
 
