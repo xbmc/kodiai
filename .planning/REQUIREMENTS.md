@@ -9,8 +9,8 @@ Requirements for Issue Triage Foundation. Each maps to roadmap phases.
 
 ### Issue Corpus
 
-- [ ] **ICORP-01**: Issue schema migration adds `issues` table with HNSW and tsvector indexes to PostgreSQL
-- [ ] **ICORP-02**: IssueVectorStore factory provides typed CRUD and vector search interface matching existing store patterns
+- [x] **ICORP-01**: Issue schema migration adds `issues` table with HNSW and tsvector indexes to PostgreSQL
+- [x] **ICORP-02**: IssueVectorStore factory provides typed CRUD and vector search interface matching existing store patterns
 
 ### MCP Tools
 
@@ -54,8 +54,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ICORP-01 | Phase 103 | Pending |
-| ICORP-02 | Phase 103 | Pending |
+| ICORP-01 | Phase 103 | Complete |
+| ICORP-02 | Phase 103 | Complete |
 | MCPT-01 | Phase 104 | Pending |
 | MCPT-02 | Phase 104 | Pending |
 | MCPT-03 | Phase 104 | Pending |
