@@ -183,6 +183,21 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 - [ ] **Phase 104: Issue MCP Tools** - `github_issue_label` and `github_issue_comment` MCP servers wired into executor registry
 - [ ] **Phase 105: Triage Agent Wiring** - Template parser, triage agent, and mention handler integration with config gating
 
+### Phase 103: Issue Corpus Schema & Store
+**Goal**: Issues have a dedicated vector corpus in PostgreSQL with the same search infrastructure as existing corpora
+**Depends on**: Nothing (independent of Phase 104)
+**Requirements**: ICORP-01, ICORP-02
+
+### Phase 104: Issue MCP Tools
+**Goal**: The triage agent has MCP tools to apply labels and post comments on GitHub issues
+**Depends on**: Nothing (independent of Phase 103)
+**Requirements**: MCPT-01, MCPT-02, MCPT-03
+
+### Phase 105: Triage Agent Wiring
+**Goal**: When a maintainer mentions `@kodiai` on an issue, the bot validates the issue body against the repo's template, comments with specific missing-field guidance, and applies a label
+**Depends on**: Phase 103, Phase 104
+**Requirements**: TRIA-01, TRIA-02, TRIA-03
+
 ## Progress
 
 **Total shipped:** 20 milestones, 102 phases, 265 plans
