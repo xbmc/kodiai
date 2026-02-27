@@ -86,6 +86,48 @@
 
 ---
 
+## Milestone: v0.21 — Issue Triage Foundation
+
+**Shipped:** 2026-02-27
+**Phases:** 3 | **Plans:** 9
+
+### What Was Built
+- Issue corpus with PostgreSQL tables, HNSW vector indexes, and weighted tsvector GIN indexes
+- IssueStore factory with full CRUD and vector/text search interface (15 tests)
+- `github_issue_label` and `github_issue_comment` MCP tools with validation, rate limiting, and config gating
+- Issue template parser reading `.md` templates with YAML frontmatter extraction and section diffing
+- Triage validation agent with missing-section guidance, label recommendations, and per-issue cooldown
+- Triage wired to `@kodiai` mention path, gated by `.kodiai.yml` `triage.enabled`
+
+### What Worked
+- Corpus addition recipe (types/migration/store/wiring) from v0.19 applied seamlessly to 5th corpus
+- Independent phases (103, 104) enabled parallel development; Phase 105 cleanly composed both
+- TDD-first for template parser (21 tests) and triage agent (20 tests) caught edge cases early
+- Config gating pattern (`triage.enabled`) consistent with existing `review`/`mention` toggles
+- Per-issue cooldown with body-hash reset prevents spam while allowing re-triage after edits
+
+### What Was Inefficient
+- REQUIREMENTS.md traceability table left TRIA-01/02/03 as "Pending" despite Phase 105 having all summaries
+- No milestone audit run before completion — requirements gap not caught automatically
+- STATE.md had stale progress numbers (82 phases / 195 plans) from earlier milestone context
+
+### Patterns Established
+- MCP tool pattern: factory function with config gating, error codes, rate limit retry, and closed-entity warnings
+- Template validation pattern: parse template -> extract sections -> diff against body -> generate guidance
+- Mention-triggered agent pattern: config gate -> cooldown check -> validate -> build context -> inject into prompt
+
+### Key Lessons
+1. Update REQUIREMENTS.md traceability as part of phase execution, not just at milestone completion
+2. The MCP tool factory pattern (config gate + validation + structured errors) should be the template for future tools
+3. Mention-triggered is the right default for new agent capabilities — gives repos explicit control before auto-fire
+
+### Cost Observations
+- Model mix: quality profile (opus for planning/execution)
+- All 3 phases completed in a single day (~2.5 hours wall time)
+- Notable: Compact milestone — 9 plans delivered triage foundation without scope creep
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -94,6 +136,7 @@
 |-----------|--------|-------|------------|
 | v0.19 | 4 | 14 | 4th corpus addition pattern established; TDD-first for parsers |
 | v0.20 | 6 | 17 | Gap closure pattern established; TypeScript-native ML; multi-model routing |
+| v0.21 | 3 | 9 | MCP tool factory pattern; mention-triggered agent pattern; 5th corpus |
 
 ### Cumulative Quality
 
@@ -101,6 +144,7 @@
 |-----------|-------|-------------|
 | v0.19 | 1,494 | +37 snippet tests, +72 review handler tests stable |
 | v0.20 | ~1,650 | +165 clustering/profile/wiki tests |
+| v0.21 | ~1,750 | +98 issue store/MCP tool/template parser/triage agent tests |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -109,3 +153,5 @@
 3. Content-hash dedup is the right default for idempotent writes (ON CONFLICT DO NOTHING)
 4. Milestone audit after all phases complete catches integration gaps that phase-level verification misses
 5. Gap closure phases are a clean pattern for addressing audit findings without scope creep
+6. MCP tool factory pattern (config gate + validation + structured errors) is the right template for agent tools
+7. Mention-triggered is the safe default for new agent capabilities — auto-fire can be added later
