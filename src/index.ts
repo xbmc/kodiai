@@ -28,6 +28,7 @@ import { matchClusterPatterns } from "./knowledge/cluster-matcher.ts";
 import { createTaskRouter } from "./llm/task-router.ts";
 import { createCostTracker } from "./llm/cost-tracker.ts";
 import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
+import { createIssueStore } from "./knowledge/issue-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
@@ -197,6 +198,10 @@ logger.info("Wiki page store initialized (PostgreSQL + pgvector)");
 // Code snippet store (v0.19 SNIP-01)
 const codeSnippetStore = createCodeSnippetStore({ sql, logger });
 logger.info("Code snippet store initialized (PostgreSQL + pgvector)");
+
+// Issue store (v0.21 ICORP-02)
+const issueStore = createIssueStore({ sql, logger });
+logger.info("Issue store initialized (PostgreSQL + pgvector)");
 
 // Learning memory isolation layer (LEARN-07)
 let isolationLayer: IsolationLayer | undefined;

@@ -89,5 +89,14 @@ export type {
 // Code snippet retrieval
 export { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
 
+// Issue store
+export { createIssueStore } from "./issue-store.ts";
+
+// Issue types
+export type {
+  IssueStore, IssueRecord, IssueInput, IssueSearchResult,
+  IssueCommentRecord, IssueCommentInput, IssueCommentSearchResult,
+} from "./issue-types.ts";
+
 // Confidence
 export { computeConfidence, matchesSuppression } from "./confidence.ts";
