@@ -22,7 +22,7 @@
 - ✅ **v0.18 Knowledge Ingestion** — Phases 89-92 (shipped 2026-02-25)
 - ✅ **v0.19 Intelligent Retrieval Enhancements** — Phases 93-96 (shipped 2026-02-25)
 - ✅ **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (shipped 2026-02-26)
-- **v0.21 Issue Triage Foundation** — Phases 103-105 (in progress)
+- ✅ **v0.21 Issue Triage Foundation** — Phases 103-105 (shipped 2026-02-27)
 
 ## Phases
 
@@ -173,34 +173,20 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
 </details>
 
-### v0.21 Issue Triage Foundation (In Progress)
-
-**Milestone Goal:** Stand up the issue vector corpus, build GitHub MCP tools for issue interaction, and deliver a `@kodiai`-triggered triage agent that validates issue templates and applies labels when fields are missing.
+<details>
+<summary>✅ v0.21 Issue Triage Foundation (Phases 103-105) -- SHIPPED 2026-02-27</summary>
 
 See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 
-- [x] **Phase 103: Issue Corpus Schema & Store** - PostgreSQL issue table with HNSW/tsvector indexes and typed store interface (completed 2026-02-27)
-- [x] **Phase 104: Issue MCP Tools** - `github_issue_label` and `github_issue_comment` MCP servers wired into executor registry (completed 2026-02-27)
-- [x] **Phase 105: Triage Agent Wiring** - Template parser, triage agent, and mention handler integration with config gating (completed 2026-02-27)
+- [x] Phase 103: Issue Corpus Schema & Store (3/3 plans) — completed 2026-02-27
+- [x] Phase 104: Issue MCP Tools (3/3 plans) — completed 2026-02-27
+- [x] Phase 105: Triage Agent Wiring (3/3 plans) — completed 2026-02-27
 
-### Phase 103: Issue Corpus Schema & Store
-**Goal**: Issues have a dedicated vector corpus in PostgreSQL with the same search infrastructure as existing corpora
-**Depends on**: Nothing (independent of Phase 104)
-**Requirements**: ICORP-01, ICORP-02
-
-### Phase 104: Issue MCP Tools
-**Goal**: The triage agent has MCP tools to apply labels and post comments on GitHub issues
-**Depends on**: Nothing (independent of Phase 103)
-**Requirements**: MCPT-01, MCPT-02, MCPT-03
-
-### Phase 105: Triage Agent Wiring
-**Goal**: When a maintainer mentions `@kodiai` on an issue, the bot validates the issue body against the repo's template, comments with specific missing-field guidance, and applies a label
-**Depends on**: Phase 103, Phase 104
-**Requirements**: TRIA-01, TRIA-02, TRIA-03
+</details>
 
 ## Progress
 
-**Total shipped:** 20 milestones, 102 phases, 265 plans
+**Total shipped:** 21 milestones, 105 phases, 274 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -224,10 +210,8 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
-| 103 | 3/3 | Complete   | 2026-02-27 | - |
-| 104 | 3/3 | Complete    | 2026-02-27 | - |
-| 105 | 3/3 | Complete    | 2026-02-27 | - |
+| 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 
 ---
 
-*Roadmap updated: 2026-02-26 -- v0.21 roadmap created (Issue Triage Foundation)*
+*Roadmap updated: 2026-02-27 -- v0.21 shipped (Issue Triage Foundation)*

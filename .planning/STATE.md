@@ -1,40 +1,39 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1
+milestone: v0.21
 milestone_name: Issue Triage Foundation
-status: unknown
-stopped_at: Phase 105 context gathered
-last_updated: "2026-02-27T01:43:23.535Z"
+status: complete
+stopped_at: Milestone v0.21 complete
+last_updated: "2026-02-27T02:00:00.000Z"
 progress:
-  total_phases: 82
-  completed_phases: 79
-  total_plans: 195
-  completed_plans: 204
+  total_phases: 105
+  completed_phases: 105
+  total_plans: 274
+  completed_plans: 274
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-26)
+See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.21 Issue Triage Foundation -- Phase 104 complete, Phase 105 next
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 104 of 105 (Issue MCP Tools)
-Plan: 3/3 complete
-Status: Phase complete
-Last activity: 2026-02-26 -- Phase 104 executed (3 plans, 2 waves)
+Milestone: v0.21 Issue Triage Foundation -- SHIPPED 2026-02-27
+Status: Complete
+Last activity: 2026-02-27 -- Milestone v0.21 archived
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
 ### Decisions
 
-All decisions through v0.20 archived to `.planning/PROJECT.md` Key Decisions table.
+All decisions through v0.21 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -45,30 +44,22 @@ All decisions through v0.20 archived to `.planning/PROJECT.md` Key Decisions tab
 - Bun `streamText()` has production build failure (oven-sh/bun#25630) -- use `generateText()` exclusively
 - Agent SDK owns agentic tasks (PR review, mentions, Slack write); Vercel AI SDK owns non-agentic tasks only
 
-### Key Infrastructure (v0.17-v0.20 Foundation)
+### Key Infrastructure (v0.17-v0.21 Foundation)
 
 - PostgreSQL + pgvector with HNSW indexes and tsvector GIN indexes
-- Four knowledge corpora: `learning_memories`, `review_comments`, `wiki_pages`, `code_snippets`
+- Five knowledge corpora: `learning_memories`, `review_comments`, `wiki_pages`, `code_snippets`, `issues`
 - `createRetriever()` factory: single dep injection point for all retrieval
 - Unified cross-corpus retrieval: BM25+vector hybrid per corpus, RRF merge, cosine dedup
 - VoyageAI embeddings: voyage-code-3, 1024 dims, fail-open with null returns
 - Multi-LLM: Vercel AI SDK task router + provider factory for non-agentic tasks
 - Cost tracking: per-invocation model/token/cost logging to Postgres
 - Contributor profiles: identity linking, expertise scoring, 4-tier adaptive review
+- Issue triage: template parser, validation agent, MCP tools, per-issue cooldown, config-gated
 
 ### Explicit User Policies
 
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to.
-
-### Research Notes (v0.21)
-
-- Phases 103 and 104 are independent -- can execute in either order
-- Phase 105 depends on both 103 and 104
-- xbmc/xbmc uses `.md` markdown templates (not YAML forms) -- parser must handle section headers
-- Label 404 handling critical: MCP tool must validate label existence before applying
-- Per-issue cooldown (default 30 min) prevents comment spam loops
-- Issue corpus schema must include `state`, `author_association`, `label_names`, `template_slug`, `comment_count`
 
 ### Blockers/Concerns
 
@@ -83,6 +74,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-27T01:29:12.345Z
-**Stopped At:** Phase 105 context gathered
-**Resume with:** `/gsd:plan-phase 103`
+**Last session:** 2026-02-27
+**Stopped At:** Milestone v0.21 complete
+**Resume with:** `/gsd:new-milestone`

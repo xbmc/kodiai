@@ -70,37 +70,43 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.21 Issue Triage Foundation
+<details>
+<summary>Previous Release: v0.21 Issue Triage Foundation (2026-02-27)</summary>
 
-**Goal:** Stand up the issue vector corpus, build GitHub MCP tools for issue interaction, and deliver a `@kodiai`-triggered triage agent that validates issue templates and applies labels when fields are missing.
-
-**Target features:**
-- Issue schema & vector corpus in PostgreSQL (HNSW + tsvector indexes)
-- `github_issue_label` and `github_issue_comment` MCP tools for agent interaction
-- Triage agent wired to `@kodiai` mentions on issues — validates template, comments with guidance, applies labels
-- Config-gated via `.kodiai.yml`
-
+**Shipped:** 2026-02-27
+**Phases:** 103-105 (3 phases, 9 plans)
 **Source:** [Issue #73](https://github.com/xbmc/kodiai/issues/73)
+
+**Delivered:**
+- Issue corpus with PostgreSQL `issues`/`issue_comments` tables, HNSW vector indexes, and weighted tsvector GIN indexes
+- IssueStore factory with full CRUD and vector/text search interface (15 tests)
+- `github_issue_label` and `github_issue_comment` MCP tools with validation, rate limit retry, and config gating
+- Issue template parser reading `.md` templates with YAML frontmatter extraction and section diffing
+- Triage validation agent with missing-section guidance, label recommendations, allowlist gating, and per-issue cooldown
+- Triage wired to `@kodiai` mention path for issues, gated by `.kodiai.yml` `triage.enabled`
+
+</details>
 
 ## Current State
 
-v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detection, and review pattern clustering added on top of the v0.19 knowledge platform:
+v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence platform:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
-- Four knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets)
-- Unified retrieval: single `createRetriever()` call fans out to all four corpora with source-aware RRF ranking
+- Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
+- Unified retrieval: single `createRetriever()` call fans out to four corpora with source-aware RRF ranking (issue corpus deferred to v0.22)
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
 - Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
 - Per-invocation cost tracking: model, provider, token counts, estimated USD logged to Postgres for every LLM call
 - Contributor profiles: GitHub/Slack identity linking via slash commands, expertise scoring, 4-tier adaptive review depth
 - Wiki staleness: two-tier detection (heuristic + LLM), file-path evidence, scheduled Slack reports
 - Review pattern clustering: HDBSCAN + UMAP, weekly batch refresh, dual-signal pattern matcher, footnote injection in PR reviews
+- Issue triage: template validation, guidance comments, label application via MCP tools, per-issue cooldown, config-gated
 - Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
 - Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
 - CI failure recognition: base-branch comparison via Checks API with flakiness tracking
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
-- Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support
+- Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support and issue triage
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~78,600 lines of TypeScript
+- ~77,100 lines of TypeScript
 
 ## Requirements
 
@@ -203,16 +209,17 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 - ✓ Recurring review patterns surfaced in PR review context as footnotes — v0.20
 - ✓ Contributor profile table with GitHub/Slack identity linking — v0.20
 - ✓ Adaptive review depth based on contributor expertise tier — v0.20
+- ✓ Issue schema & vector corpus with HNSW and tsvector indexes — v0.21
+- ✓ `github_issue_label` MCP tool for applying labels from agent — v0.21
+- ✓ `github_issue_comment` MCP tool for posting comments from agent — v0.21
+- ✓ Issue template parser reads `.md` templates and identifies missing fields — v0.21
+- ✓ Triage agent validates issue body against template, comments with guidance — v0.21
+- ✓ Triage agent applies `needs-info` labels when fields are missing — v0.21
+- ✓ Triage wired to `@kodiai` mention path, gated by `.kodiai.yml` — v0.21
 
 ### Active
 
-- [ ] Issue schema & vector corpus with HNSW and tsvector indexes — v0.21
-- [ ] `github_issue_label` MCP tool for applying labels from agent — v0.21
-- [ ] `github_issue_comment` MCP tool for posting comments from agent — v0.21
-- [ ] Issue template parser reads templates and identifies missing fields — v0.21
-- [ ] Triage agent validates issue body against template, comments with guidance — v0.21
-- [ ] Triage agent applies `Ignored rules` label when fields are missing — v0.21
-- [ ] Triage wired to `@kodiai` mention path, gated by `.kodiai.yml` — v0.21
+(None — next milestone requirements TBD via `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -224,6 +231,9 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 - Slack DM support — v1 is intentionally channel-scoped
 - Multi-workspace Slack support — single workspace for now
 - Slack interactive controls (buttons/modals) — text-based for v1
+- Auto-triage on `issues.opened` — mention-triggered for now; v0.22 candidate
+- YAML issue form schema support — `.md` templates sufficient for current repos
+- Issue corpus in cross-corpus retrieval — schema built, wiring deferred to v0.22
 
 ## Context
 
@@ -305,6 +315,11 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 | Two-tier wiki staleness evaluation | Cheap heuristic pass first, LLM only on flagged subset (capped 20/cycle) | ✓ Good — v0.20 |
 | Pure TypeScript HDBSCAN + umap-js | No Python sidecar; runs in same Bun process | ✓ Good — v0.20 |
 | Dual-signal cluster pattern matching | Embedding similarity + file path overlap; either signal alone may be noise | ✓ Good — v0.20 |
+| `.md` template parser over YAML forms | xbmc/xbmc uses markdown templates; defer YAML form support until needed | ✓ Good — v0.21 |
+| Mention-triggered triage (not auto-fire) | Gives repos explicit control via `@kodiai`; auto-fire on `issues.opened` deferred to v0.22 | ✓ Good — v0.21 |
+| `needs-info:{slug}` label convention | Convention-based labels with allowlist gating; labels must pre-exist in repo | ✓ Good — v0.21 |
+| Per-issue cooldown with body-hash reset | Default 30 min prevents comment spam; resets when issue body changes | ✓ Good — v0.21 |
+| Issue corpus deferred from retrieval | Schema built now; wiring into cross-corpus search deferred to v0.22 | ✓ Good — v0.21 |
 
 ## Constraints
 
@@ -317,4 +332,4 @@ v0.20 shipped. Multi-model routing, contributor profiles, wiki staleness detecti
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-26 after v0.21 milestone start*
+*Last updated: 2026-02-27 after v0.21 milestone*
