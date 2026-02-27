@@ -22,6 +22,7 @@
 - ✅ **v0.18 Knowledge Ingestion** — Phases 89-92 (shipped 2026-02-25)
 - ✅ **v0.19 Intelligent Retrieval Enhancements** — Phases 93-96 (shipped 2026-02-25)
 - ✅ **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (shipped 2026-02-26)
+- **v0.21 Issue Triage Foundation** — Phases 103-105 (in progress)
 
 ## Phases
 
@@ -159,18 +160,28 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 </details>
 
 <details>
-<summary>✅ v0.20 Multi-Model & Active Intelligence (Phases 97-102) -- SHIPPED 2026-02-26</summary>
+<summary>v0.20 Multi-Model & Active Intelligence (Phases 97-102) -- SHIPPED 2026-02-26</summary>
 
 See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
-- [x] Phase 97: Multi-LLM Routing & Cost Tracking (3/3 plans) — completed 2026-02-26
-- [x] Phase 98: Contributor Profiles & Identity Linking (4/4 plans) — completed 2026-02-25
-- [x] Phase 99: Wiki Staleness Detection (3/3 plans) — completed 2026-02-26
-- [x] Phase 100: Review Pattern Clustering (5/5 plans) — completed 2026-02-26
-- [x] Phase 101: Wire Executor Dependencies & Fix Cost Tracking (1/1 plan) — completed 2026-02-26
-- [x] Phase 102: Documentation & Verification Closure (1/1 plan) — completed 2026-02-26
+- [x] Phase 97: Multi-LLM Routing & Cost Tracking (3/3 plans) -- completed 2026-02-26
+- [x] Phase 98: Contributor Profiles & Identity Linking (4/4 plans) -- completed 2026-02-25
+- [x] Phase 99: Wiki Staleness Detection (3/3 plans) -- completed 2026-02-26
+- [x] Phase 100: Review Pattern Clustering (5/5 plans) -- completed 2026-02-26
+- [x] Phase 101: Wire Executor Dependencies & Fix Cost Tracking (1/1 plan) -- completed 2026-02-26
+- [x] Phase 102: Documentation & Verification Closure (1/1 plan) -- completed 2026-02-26
 
 </details>
+
+### v0.21 Issue Triage Foundation (In Progress)
+
+**Milestone Goal:** Stand up the issue vector corpus, build GitHub MCP tools for issue interaction, and deliver a `@kodiai`-triggered triage agent that validates issue templates and applies labels when fields are missing.
+
+See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
+
+- [ ] **Phase 103: Issue Corpus Schema & Store** - PostgreSQL issue table with HNSW/tsvector indexes and typed store interface
+- [ ] **Phase 104: Issue MCP Tools** - `github_issue_label` and `github_issue_comment` MCP servers wired into executor registry
+- [ ] **Phase 105: Triage Agent Wiring** - Template parser, triage agent, and mention handler integration with config gating
 
 ## Progress
 
@@ -198,7 +209,10 @@ See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 | 89-92 | v0.18 | 15/15 | Complete | 2026-02-25 |
 | 93-96 | v0.19 | 14/14 | Complete | 2026-02-25 |
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
+| 103 | v0.21 | 0/TBD | Not started | - |
+| 104 | v0.21 | 0/TBD | Not started | - |
+| 105 | v0.21 | 0/TBD | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-02-26 -- v0.20 shipped (Multi-Model & Active Intelligence)*
+*Roadmap updated: 2026-02-26 -- v0.21 roadmap created (Issue Triage Foundation)*

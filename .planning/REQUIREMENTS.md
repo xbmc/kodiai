@@ -42,7 +42,7 @@ Requirements for Issue Triage Foundation. Each maps to roadmap phases.
 
 | Feature | Reason |
 |---------|--------|
-| Auto-close on template violations | Anti-feature — even VS Code only auto-closes after 60 days on low-vote items |
+| Auto-close on template violations | Anti-feature -- even VS Code only auto-closes after 60 days on low-vote items |
 | Auto-fire on `issues.opened` | Deferred to v0.22; mention-triggered gives repos explicit control |
 | YAML issue form schema support | xbmc/xbmc uses `.md` templates; defer YAML forms until a target repo needs them |
 | Issue corpus wired into retrieval | Build schema now, wire into cross-corpus search in v0.22 |
@@ -54,20 +54,20 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| ICORP-01 | — | Pending |
-| ICORP-02 | — | Pending |
-| MCPT-01 | — | Pending |
-| MCPT-02 | — | Pending |
-| MCPT-03 | — | Pending |
-| TRIA-01 | — | Pending |
-| TRIA-02 | — | Pending |
-| TRIA-03 | — | Pending |
+| ICORP-01 | Phase 103 | Pending |
+| ICORP-02 | Phase 103 | Pending |
+| MCPT-01 | Phase 104 | Pending |
+| MCPT-02 | Phase 104 | Pending |
+| MCPT-03 | Phase 104 | Pending |
+| TRIA-01 | Phase 105 | Pending |
+| TRIA-02 | Phase 105 | Pending |
+| TRIA-03 | Phase 105 | Pending |
 
 **Coverage:**
 - v0.21 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 8
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-26*
-*Last updated: 2026-02-26 after initial definition*
+*Last updated: 2026-02-26 after roadmap creation*

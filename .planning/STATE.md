@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v0.21
 milestone_name: Issue Triage Foundation
-status: defining_requirements
+status: ready_to_plan
 stopped_at: null
-last_updated: "2026-02-26T23:30:00.000Z"
+last_updated: "2026-02-26T23:45:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.21 Issue Triage Foundation — defining requirements
+**Current focus:** v0.21 Issue Triage Foundation -- Phase 103 ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-02-26 — Milestone v0.21 started
+Phase: 103 of 105 (Issue Corpus Schema & Store)
+Plan: --
+Status: Ready to plan
+Last activity: 2026-02-26 -- Roadmap created for v0.21
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
@@ -50,16 +52,23 @@ All decisions through v0.20 archived to `.planning/PROJECT.md` Key Decisions tab
 - `createRetriever()` factory: single dep injection point for all retrieval
 - Unified cross-corpus retrieval: BM25+vector hybrid per corpus, RRF merge, cosine dedup
 - VoyageAI embeddings: voyage-code-3, 1024 dims, fail-open with null returns
-- Review pattern clustering: HDBSCAN + UMAP, weekly refresh, dual-signal matcher, footnote injection
 - Multi-LLM: Vercel AI SDK task router + provider factory for non-agentic tasks
 - Cost tracking: per-invocation model/token/cost logging to Postgres
 - Contributor profiles: identity linking, expertise scoring, 4-tier adaptive review
-- Wiki staleness: two-tier detection, scheduled Slack reports
 
 ### Explicit User Policies
 
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to.
+
+### Research Notes (v0.21)
+
+- Phases 103 and 104 are independent -- can execute in either order
+- Phase 105 depends on both 103 and 104
+- xbmc/xbmc uses `.md` markdown templates (not YAML forms) -- parser must handle section headers
+- Label 404 handling critical: MCP tool must validate label existence before applying
+- Per-issue cooldown (default 30 min) prevents comment spam loops
+- Issue corpus schema must include `state`, `author_association`, `label_names`, `template_slug`, `comment_count`
 
 ### Blockers/Concerns
 
@@ -75,5 +84,5 @@ None.
 ## Session Continuity
 
 **Last session:** 2026-02-26
-**Stopped At:** v0.20 milestone complete
-**Resume with:** `/gsd:new-milestone`
+**Stopped At:** v0.21 roadmap created
+**Resume with:** `/gsd:plan-phase 103`
