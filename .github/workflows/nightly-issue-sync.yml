@@ -1,0 +1,24 @@
+name: nightly-issue-sync
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 3 AM UTC daily
+  workflow_dispatch:       # Manual trigger for testing
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Run issue sync
+        run: bun scripts/backfill-issues.ts --sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.GITHUB_PRIVATE_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
