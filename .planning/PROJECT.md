@@ -87,6 +87,18 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.22 Issue Intelligence
+
+**Goal:** Populate the issue corpus from historical xbmc/xbmc data, add high-confidence duplicate detection and PR-issue linking, and enable auto-triage on `issues.opened`.
+
+**Source:** [Issue #74](https://github.com/xbmc/kodiai/issues/74)
+
+**Target features:**
+- Historical issue ingestion and nightly incremental sync
+- Vector-similarity duplicate detection with high-confidence thresholds
+- PR-issue linking via reference search and semantic PR search
+- Auto-triage on `issues.opened` with config gate and idempotency
+
 ## Current State
 
 v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence platform:
@@ -219,7 +231,11 @@ v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence pl
 
 ### Active
 
-(None — next milestone requirements TBD via `/gsd:new-milestone`)
+- [ ] Historical issue ingestion from xbmc/xbmc with comment threads and embeddings
+- [ ] Nightly incremental sync job for ongoing issue updates
+- [ ] High-confidence duplicate detection via vector similarity
+- [ ] PR-issue linking via reference search and semantic PR search
+- [ ] Auto-triage on `issues.opened` with config gate and idempotency
 
 ### Out of Scope
 
@@ -231,9 +247,7 @@ v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence pl
 - Slack DM support — v1 is intentionally channel-scoped
 - Multi-workspace Slack support — single workspace for now
 - Slack interactive controls (buttons/modals) — text-based for v1
-- Auto-triage on `issues.opened` — mention-triggered for now; v0.22 candidate
 - YAML issue form schema support — `.md` templates sufficient for current repos
-- Issue corpus in cross-corpus retrieval — schema built, wiring deferred to v0.22
 
 ## Context
 
@@ -332,4 +346,4 @@ v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence pl
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-27 after v0.21 milestone*
+*Last updated: 2026-02-26 after v0.22 milestone start*

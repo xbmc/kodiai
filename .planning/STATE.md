@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.21
-milestone_name: Issue Triage Foundation
-status: complete
-stopped_at: Milestone v0.21 complete
-last_updated: "2026-02-27T02:00:00.000Z"
+milestone: v0.22
+milestone_name: Issue Intelligence
+status: active
+stopped_at: null
+last_updated: "2026-02-26T00:00:00.000Z"
 progress:
   total_phases: 105
   completed_phases: 105
@@ -16,18 +16,17 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-27)
+See: `.planning/PROJECT.md` (updated 2026-02-26)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.22 Issue Intelligence
 
 ## Current Position
 
-Milestone: v0.21 Issue Triage Foundation -- SHIPPED 2026-02-27
-Status: Complete
-Last activity: 2026-02-27 -- Milestone v0.21 archived
-
-Progress: [██████████] 100%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-26 — Milestone v0.22 started
 
 ## Accumulated Context
 
@@ -74,6 +73,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-27
-**Stopped At:** Milestone v0.21 complete
-**Resume with:** `/gsd:new-milestone`
+**Last session:** 2026-02-26
+**Stopped At:** Defining requirements for v0.22
+**Resume with:** `/gsd:new-milestone` (in progress)
