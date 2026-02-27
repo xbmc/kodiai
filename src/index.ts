@@ -431,6 +431,7 @@ createReviewHandler({
       return [];
     }
   },
+  issueStore,
   logger,
 });
 createMentionHandler({

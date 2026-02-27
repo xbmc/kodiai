@@ -95,6 +95,8 @@ import {
   computeDependsVerdict,
   type DependsReviewData,
 } from "../lib/depends-review-builder.ts";
+import { linkPRToIssues, type LinkResult } from "../knowledge/issue-linker.ts";
+import type { IssueStore } from "../knowledge/issue-types.ts";
 
 type ReviewArea = "security" | "correctness" | "performance" | "style" | "documentation";
 
@@ -1319,6 +1321,8 @@ export function createReviewHandler(deps: {
   slackBotToken?: string;
   /** Optional cluster pattern matcher (Phase 100: CLST-03). */
   clusterMatcher?: (opts: { prEmbedding: Float32Array | null; prFilePaths: string[]; repo: string }) => Promise<ClusterPatternMatch[]>;
+  /** Optional issue store for PR-issue linking (Phase 108: PRLINK). */
+  issueStore?: IssueStore;
   logger: Logger;
 }): void {
   const {
@@ -1340,6 +1344,7 @@ export function createReviewHandler(deps: {
     contributorProfileStore,
     slackBotToken,
     clusterMatcher,
+    issueStore,
     logger,
   } = deps;
 
@@ -1754,6 +1759,7 @@ export function createReviewHandler(deps: {
         );
 
         let parsedIntent: ParsedPRIntent = DEFAULT_EMPTY_INTENT;
+        let commitMessagesForLinking: string[] = [];
         try {
           const commitMessages = await fetchCommitMessages(
             idempotencyOctokit,
@@ -1762,6 +1768,7 @@ export function createReviewHandler(deps: {
             pr.number,
             pr.commits,
           );
+          commitMessagesForLinking = commitMessages.map(c => c.message);
           parsedIntent = parsePRIntent(pr.title, pr.body ?? null, commitMessages);
           logger.info(
             {
@@ -2725,6 +2732,46 @@ export function createReviewHandler(deps: {
           }
         }
 
+        // PR-issue linking (PRLINK-01, PRLINK-02, PRLINK-03)
+        let linkedIssueResult: LinkResult | undefined;
+        if (issueStore && embeddingProvider) {
+          try {
+            const diffSummaryParts: string[] = [];
+            if (diffAnalysis?.changedFiles) {
+              diffSummaryParts.push(
+                diffAnalysis.changedFiles.map((f: { path: string }) => f.path).join(", "),
+              );
+            }
+
+            linkedIssueResult = await linkPRToIssues({
+              prBody: pr.body ?? "",
+              prTitle: pr.title,
+              commitMessages: commitMessagesForLinking,
+              diffSummary: diffSummaryParts.join("\n"),
+              repo: `${apiOwner}/${apiRepo}`,
+              issueStore,
+              embeddingProvider,
+              logger,
+            });
+
+            if (
+              linkedIssueResult.referencedIssues.length > 0 ||
+              linkedIssueResult.semanticMatches.length > 0
+            ) {
+              logger.info(
+                {
+                  ...baseLog,
+                  referencedCount: linkedIssueResult.referencedIssues.length,
+                  semanticCount: linkedIssueResult.semanticMatches.length,
+                },
+                "PR-issue linking completed",
+              );
+            }
+          } catch (err) {
+            logger.warn({ ...baseLog, err }, "PR-issue linking failed (fail-open)");
+          }
+        }
+
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -2801,6 +2848,8 @@ export function createReviewHandler(deps: {
           isDraft,
           // Review pattern clustering (CLST-03)
           clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
+          // PR-issue linking (PRLINK-03)
+          linkedIssues: linkedIssueResult,
         });
 
         // Execute review via Claude
@@ -3806,6 +3855,8 @@ export function createReviewHandler(deps: {
                       isDraft,
                       // Review pattern clustering (CLST-03) — reuse from initial review
                       clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
+                      // PR-issue linking (PRLINK-03) — reuse from initial review
+                      linkedIssues: linkedIssueResult,
                     });
 
                     const retryResult = await executor.execute({

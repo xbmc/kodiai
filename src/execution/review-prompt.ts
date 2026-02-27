@@ -10,6 +10,7 @@ import type { AuthorTier } from "../lib/author-classifier.ts";
 import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
 import type { SecurityContext, ChangelogContext } from "../lib/dep-bump-enrichment.ts";
 import type { MergeConfidenceLevel } from "../lib/merge-confidence.ts";
+import type { LinkResult } from "../knowledge/issue-linker.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1006,6 +1007,50 @@ export function formatClusterPatterns(patterns: ClusterPatternMatch[]): string {
 const MAX_WIKI_KNOWLEDGE = 5;
 const MAX_WIKI_EXCERPT_CHARS = 200;
 
+// ---------------------------------------------------------------------------
+// Helper: Linked issue context formatting (PRLINK-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Format linked issues as a review prompt section.
+ * Returns empty string when no linked issues exist (zero noise).
+ */
+export function buildLinkedIssuesSection(linkedIssues: LinkResult): string {
+  const lines: string[] = [];
+
+  if (linkedIssues.referencedIssues.length > 0) {
+    lines.push("## Referenced Issues");
+    lines.push("This PR addresses these issues:");
+    lines.push("");
+    for (const issue of linkedIssues.referencedIssues) {
+      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${issue.title}"`);
+      if (issue.descriptionSummary) {
+        lines.push(`  Summary: ${issue.descriptionSummary}`);
+      }
+    }
+  }
+
+  if (linkedIssues.semanticMatches.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push("## Possibly Related Issues");
+    lines.push("");
+    for (const issue of linkedIssues.semanticMatches) {
+      const pct = issue.similarity != null ? `${Math.round(issue.similarity * 100)}% match` : "semantic match";
+      lines.push(`- #${issue.issueNumber} (${issue.state}) -- "${issue.title}" (${pct})`);
+      if (issue.descriptionSummary) {
+        lines.push(`  Summary: ${issue.descriptionSummary}`);
+      }
+    }
+  }
+
+  if (lines.length > 0) {
+    lines.push("");
+    lines.push("Assess whether the PR changes adequately address the referenced issues. Note any issues that appear only partially addressed or unrelated to the actual changes.");
+  }
+
+  return lines.join("\n");
+}
+
 /**
  * Format wiki knowledge matches as a prompt section with inline citation instructions.
  * Returns empty string when no matches exist (no section noise).
@@ -1498,6 +1543,8 @@ export function buildReviewPrompt(context: {
   contextWindow?: string;
   // Review pattern clustering (CLST-03)
   clusterPatterns?: ClusterPatternMatch[];
+  // PR-issue linking (PRLINK-03)
+  linkedIssues?: LinkResult;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1617,6 +1664,14 @@ export function buildReviewPrompt(context: {
       if (clusterPatternsSection) {
         lines.push("", clusterPatternsSection);
       }
+    }
+  }
+
+  // --- Linked issue context (PRLINK-03) ---
+  if (context.linkedIssues) {
+    const linkedSection = buildLinkedIssuesSection(context.linkedIssues);
+    if (linkedSection) {
+      lines.push("", linkedSection);
     }
   }
 
