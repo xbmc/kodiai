@@ -108,7 +108,7 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 ## Current State
 
-v0.22 shipped. Issue intelligence fully operational:
+v0.23 in progress. Interactive Troubleshooting milestone started. Issue intelligence fully operational:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
@@ -245,7 +245,28 @@ v0.22 shipped. Issue intelligence fully operational:
 
 ### Active
 
-(No active milestone — run `/gsd:new-milestone` to start next version)
+v0.23 Interactive Troubleshooting — [Issue #75](https://github.com/xbmc/kodiai/issues/75)
+
+- [ ] **TSHOOT-01**: State-filtered vector search retrieves similar resolved issues
+- [ ] **TSHOOT-02**: Resolution-focused thread assembly with tail+semantic priority and per-issue character budget
+- [ ] **TSHOOT-03**: Fallback to wiki search then transparent "no match" response when no similar resolved issues exist
+- [ ] **TSHOOT-04**: `@kodiai` mention on open issue with troubleshooting intent synthesizes guidance from resolved issues
+- [ ] **TSHOOT-05**: Troubleshooting responses cite source resolved issues with provenance disclosure
+- [ ] **TSHOOT-06**: Lightweight keyword heuristic intent classification (no LLM call)
+- [ ] **TSHOOT-07**: Gated behind `triage.troubleshooting.enabled` config flag (default: false)
+- [ ] **TSHOOT-08**: Comment-scoped marker dedup keyed by trigger comment ID
+- [ ] **OUTCOME-01**: `issues.closed` events captured with resolution outcome
+- [ ] **OUTCOME-02**: Confirmed duplicate from `state_reason` or `duplicate` label (not Kodiai's label)
+- [ ] **OUTCOME-03**: Outcome records link to original triage record
+- [ ] **OUTCOME-04**: Handler filters out pull requests
+- [ ] **OUTCOME-05**: Idempotent via delivery-ID dedup
+- [ ] **LEARN-01**: Beta-Binomial Bayesian threshold auto-tuning per repo
+- [ ] **LEARN-02**: Minimum 20-outcome sample gate before applying auto-tuned threshold
+- [ ] **LEARN-03**: Threshold clamped to [50, 95] range
+- [ ] **LEARN-04**: Duplicate detector reads effective threshold (auto-tuned or config fallback)
+- [ ] **REACT-01**: Triage comment GitHub ID captured and stored
+- [ ] **REACT-02**: Periodic sync job polls reactions on recent triage comments
+- [ ] **REACT-03**: Reaction data feeds into outcome feedback as secondary signal
 
 ### Out of Scope
 
@@ -361,4 +382,4 @@ v0.22 shipped. Issue intelligence fully operational:
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-26 after v0.22 milestone start*
+*Last updated: 2026-02-27 after v0.23 milestone start*

@@ -24,6 +24,7 @@
 - ✅ **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (shipped 2026-02-26)
 - ✅ **v0.21 Issue Triage Foundation** — Phases 103-105 (shipped 2026-02-27)
 - ✅ **v0.22 Issue Intelligence** — Phases 106-109 (shipped 2026-02-27)
+- **v0.23 Interactive Troubleshooting** — Phases 110-114
 
 ## Phases
 
@@ -197,9 +198,20 @@ See `.planning/milestones/v0.22-ROADMAP.md` for full phase details.
 
 </details>
 
+### v0.23 Interactive Troubleshooting (Phases 110-114)
+
+See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
+
+- [ ] Phase 110: Troubleshooting Retrieval Foundation (TSHOOT-01, 02, 03)
+- [ ] Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08)
+- [ ] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
+- [ ] Phase 113: Threshold Learning (LEARN-01..04)
+- [ ] Phase 114: Reaction Tracking (REACT-02, 03)
+
 ## Progress
 
 **Total shipped:** 22 milestones, 109 phases, 283 plans
+**In progress:** v0.23 Interactive Troubleshooting — 5 phases, 9 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -226,6 +238,8 @@ See `.planning/milestones/v0.22-ROADMAP.md` for full phase details.
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 
+| 110-114 | v0.23 | 0/9 | In Progress | — |
+
 ---
 
-*Roadmap updated: 2026-02-27 -- v0.22 Issue Intelligence shipped*
+*Roadmap updated: 2026-02-27 -- v0.23 Interactive Troubleshooting phases added*

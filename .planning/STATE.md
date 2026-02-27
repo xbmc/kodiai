@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.22
-milestone_name: Issue Intelligence
-status: new_milestone_in_progress
-stopped_at: v0.23 requirements written, roadmap not yet added
-last_updated: "2026-02-27T20:00:00Z"
+milestone: v0.23
+milestone_name: Interactive Troubleshooting
+status: planning_complete
+stopped_at: Roadmap phases 110-114 added, ready for planning
+last_updated: "2026-02-27T21:00:00Z"
 progress:
-  total_phases: 109
+  total_phases: 114
   completed_phases: 109
-  total_plans: 283
+  total_plans: 292
   completed_plans: 283
 ---
 
@@ -19,16 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — new-milestone in progress
+**Current focus:** v0.23 Interactive Troubleshooting — phases 110-114 ready for planning
 
 ## Current Position
 
-Milestone: v0.22 Issue Intelligence — SHIPPED
-Phases: 109 of 109 (all complete)
-Status: Milestone archived, tag created
-Last activity: 2026-02-27 -- v0.22 milestone completed
+Milestone: v0.23 Interactive Troubleshooting — IN PROGRESS
+Phases: 109 of 114 (5 phases remaining)
+Status: Roadmap complete, ready for phase planning
+Last activity: 2026-02-27 -- roadmap phases added
 
-Progress: [████████████████████] 100% (22 milestones shipped)
+Progress: [████████████████████] 95% (109/114 phases, 283/292 plans)
 
 ## Accumulated Context
 
@@ -75,17 +75,14 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-27T20:00:00Z
-**Stopped At:** v0.23 new-milestone — REQUIREMENTS.md written, research complete, roadmap phases not yet added
-**Resume with:** Continue `/gsd:new-milestone` — add phases 110-114 to ROADMAP.md, update PROJECT.md, commit
+**Last session:** 2026-02-27T21:00:00Z
+**Stopped At:** v0.23 new-milestone complete — roadmap phases 110-114 added
+**Resume with:** `/gsd:plan-phase 110` to start executing the troubleshooting retrieval foundation
 
 ### Resume Context
 - v0.23 source: Issue #75 (Interactive Troubleshooting)
-- Research done: `.planning/research/TROUBLESHOOTING.md` and `.planning/research/OUTCOME-LEARNING.md`
-- REQUIREMENTS.md created with 20 requirements (TSHOOT-01..08, OUTCOME-01..05, LEARN-01..04, REACT-01..03)
-- Phases planned (not yet in ROADMAP.md):
-  - Phase 110: Troubleshooting Retrieval Foundation (TSHOOT-01, 02, 03) — IssueStore stateFilter, thread assembler, fallback
-  - Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08) — handler, intent classifier, mention wiring, config
-  - Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01) — issues.closed handler, outcome table, comment_github_id capture
-  - Phase 113: Threshold Learning (LEARN-01..04) — Beta-Binomial update, threshold state table, duplicate detector integration
-  - Phase 114: Reaction Tracking (REACT-02, 03) — nightly sync job for triage comment reactions
+- Research: `.planning/research/TROUBLESHOOTING.md` and `.planning/research/OUTCOME-LEARNING.md`
+- REQUIREMENTS.md: 20 requirements (TSHOOT-01..08, OUTCOME-01..05, LEARN-01..04, REACT-01..03)
+- ROADMAP.md: Phases 110-114 added
+- Phase dependency: 110→111 (retrieval→agent), 112→113 (outcome→threshold), 112→114 (outcome→reactions)
+- Tracks are independent: troubleshooting (110-111) and outcome learning (112-114) can execute in either order
