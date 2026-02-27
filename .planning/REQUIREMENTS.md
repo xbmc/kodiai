@@ -26,9 +26,9 @@ Requirements for v0.22 Issue Intelligence. Each maps to roadmap phases.
 
 ### PR Linking
 
-- [ ] **PRLINK-01**: PR body and commit messages are parsed for explicit issue references (fixes, closes, relates-to patterns)
-- [ ] **PRLINK-02**: When no explicit references are found, semantic search finds related issues from the corpus
-- [ ] **PRLINK-03**: Linked issue context is included in PR review prompts for richer review feedback
+- [x] **PRLINK-01**: PR body and commit messages are parsed for explicit issue references (fixes, closes, relates-to patterns)
+- [x] **PRLINK-02**: When no explicit references are found, semantic search finds related issues from the corpus
+- [x] **PRLINK-03**: Linked issue context is included in PR review prompts for richer review feedback
 - [ ] **PRLINK-04**: Issue corpus is wired as a source in cross-corpus RRF retrieval with `[issue: #N]` citations
 
 ### Auto-Triage
@@ -82,9 +82,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DUPL-02 | Phase 107 | Pending |
 | DUPL-03 | Phase 107 | Pending |
 | DUPL-04 | Phase 107 | Pending |
-| PRLINK-01 | Phase 108 | Pending |
-| PRLINK-02 | Phase 108 | Pending |
-| PRLINK-03 | Phase 108 | Pending |
+| PRLINK-01 | Phase 108 | Complete |
+| PRLINK-02 | Phase 108 | Complete |
+| PRLINK-03 | Phase 108 | Complete |
 | PRLINK-04 | Phase 109 | Pending |
 | TRIAGE-01 | Phase 107 | Pending |
 | TRIAGE-02 | Phase 107 | Pending |

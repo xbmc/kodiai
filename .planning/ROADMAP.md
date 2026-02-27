@@ -234,10 +234,10 @@ Plans:
   1. When a PR body or commit messages contain `fixes #N`, `closes #N`, or `relates-to #N` patterns, the referenced issues are identified and linked
   2. When no explicit references exist, semantic search finds related issues from the corpus and surfaces them as suggestions
   3. Linked issue context (title, status, description summary) is included in PR review prompts, producing more context-aware review feedback
-**Plans**: 2 plans
+**Plans**: 2/2 plans complete
 Plans:
-- [ ] 108-01-PLAN.md -- Issue reference parser (pure regex) and issue linker orchestrator (parse + fetch + semantic fallback)
-- [ ] 108-02-PLAN.md -- Wire into review pipeline: extend buildReviewPrompt, inject issueStore dep, call linker in review handler
+- [x] 108-01-PLAN.md -- Issue reference parser (pure regex) and issue linker orchestrator (parse + fetch + semantic fallback)
+- [x] 108-02-PLAN.md -- Wire into review pipeline: extend buildReviewPrompt, inject issueStore dep, call linker in review handler
 
 ### Phase 109: Issue Corpus Retrieval Integration
 **Goal**: Issue corpus participates in cross-corpus retrieval, making issue context available in all bot responses with citations
@@ -281,7 +281,7 @@ Phases execute in numeric order: 106 -> 107 -> 108 -> 109
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106. Corpus Population | v0.22 | 2/2 | Complete | 2026-02-27 |
 | 107. Duplicate Detection & Auto-Triage | 2/2 | Complete    | 2026-02-27 | - |
-| 108. PR-Issue Linking | v0.22 | 0/? | Not started | - |
+| 108. PR-Issue Linking | v0.22 | 2/2 | Complete | 2026-02-27 |
 | 109. Retrieval Integration | v0.22 | 0/? | Not started | - |
 
 ---
