@@ -247,7 +247,9 @@ Plans:
   1. Issue results appear alongside code, review comment, wiki, and snippet results in unified RRF retrieval
   2. Issue citations use `[issue: #N]` format in PR review and mention responses
   3. Issue corpus is weighted appropriately per trigger type (lower weight for PR reviews, higher for issue-context queries)
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 109-01-PLAN.md -- Issue retrieval module, pipeline wiring, and application bootstrap
 
 ## Progress
 
@@ -282,7 +284,7 @@ Phases execute in numeric order: 106 -> 107 -> 108 -> 109
 | 106. Corpus Population | v0.22 | 2/2 | Complete | 2026-02-27 |
 | 107. Duplicate Detection & Auto-Triage | 2/2 | Complete    | 2026-02-27 | - |
 | 108. PR-Issue Linking | v0.22 | 2/2 | Complete | 2026-02-27 |
-| 109. Retrieval Integration | v0.22 | 0/? | Not started | - |
+| 109. Retrieval Integration | v0.22 | 0/1 | Planned | - |
 
 ---
 
