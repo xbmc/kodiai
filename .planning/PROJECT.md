@@ -87,38 +87,45 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.22 Issue Intelligence
+<details>
+<summary>Previous Release: v0.22 Issue Intelligence (2026-02-27)</summary>
 
-**Goal:** Populate the issue corpus from historical xbmc/xbmc data, add high-confidence duplicate detection and PR-issue linking, and enable auto-triage on `issues.opened`.
-
+**Shipped:** 2026-02-27
+**Phases:** 106-109 (4 phases, 7 plans)
 **Source:** [Issue #74](https://github.com/xbmc/kodiai/issues/74)
 
-**Target features:**
-- Historical issue ingestion and nightly incremental sync
-- Vector-similarity duplicate detection with high-confidence thresholds
-- PR-issue linking via reference search and semantic PR search
-- Auto-triage on `issues.opened` with config gate and idempotency
+**Delivered:**
+- Historical issue corpus population via backfill script (xbmc/xbmc) with Voyage AI embeddings, HNSW indexes, and cursor-based resume
+- Nightly incremental sync via GitHub Actions cron for issues and comments
+- High-confidence duplicate detection with top-3 candidate formatting, similarity scores, and fail-open design
+- Auto-triage on `issues.opened` with config gate, four-layer idempotency (delivery dedup, DB claim with cooldown, comment marker scan)
+- PR-issue linking via explicit reference parsing (fixes/closes/relates-to) and semantic search fallback
+- Linked issue context injected into PR review prompts for richer feedback
+- Issue corpus wired as 5th source in unified cross-corpus RRF retrieval with `[issue: #N] Title (status)` citations
+- Per-trigger issue weight tuning: pr_review=0.8, issue=1.5, question=1.2, slack=1.0
+
+</details>
 
 ## Current State
 
-v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence platform:
+v0.22 shipped. Issue intelligence fully operational:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
-- Unified retrieval: single `createRetriever()` call fans out to four corpora with source-aware RRF ranking (issue corpus deferred to v0.22)
+- Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
 - Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
 - Per-invocation cost tracking: model, provider, token counts, estimated USD logged to Postgres for every LLM call
 - Contributor profiles: GitHub/Slack identity linking via slash commands, expertise scoring, 4-tier adaptive review depth
 - Wiki staleness: two-tier detection (heuristic + LLM), file-path evidence, scheduled Slack reports
 - Review pattern clustering: HDBSCAN + UMAP, weekly batch refresh, dual-signal pattern matcher, footnote injection in PR reviews
-- Issue triage: template validation, guidance comments, label application via MCP tools, per-issue cooldown, config-gated
+- Issue intelligence: historical corpus, nightly sync, duplicate detection, auto-triage on issues.opened, PR-issue linking, retrieval integration
 - Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
 - Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
 - CI failure recognition: base-branch comparison via Checks API with flakiness tracking
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support and issue triage
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~77,100 lines of TypeScript
+- ~86,000 lines of TypeScript
 
 ## Requirements
 
@@ -228,14 +235,17 @@ v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence pl
 - ✓ Triage agent validates issue body against template, comments with guidance — v0.21
 - ✓ Triage agent applies `needs-info` labels when fields are missing — v0.21
 - ✓ Triage wired to `@kodiai` mention path, gated by `.kodiai.yml` — v0.21
+- ✓ Historical issue ingestion from xbmc/xbmc with comment threads, embeddings, and cursor-based resume — v0.22
+- ✓ Nightly incremental sync via GitHub Actions for issues and comments — v0.22
+- ✓ High-confidence duplicate detection with top-3 candidates and fail-open design — v0.22
+- ✓ Auto-triage on `issues.opened` with config gate and four-layer idempotency — v0.22
+- ✓ PR-issue linking via explicit reference parsing and semantic search fallback — v0.22
+- ✓ Issue corpus as 5th source in cross-corpus retrieval with `[issue: #N]` citations — v0.22
+- ✓ Per-trigger issue weight tuning in SOURCE_WEIGHTS — v0.22
 
 ### Active
 
-- [ ] Historical issue ingestion from xbmc/xbmc with comment threads and embeddings
-- [ ] Nightly incremental sync job for ongoing issue updates
-- [ ] High-confidence duplicate detection via vector similarity
-- [ ] PR-issue linking via reference search and semantic PR search
-- [ ] Auto-triage on `issues.opened` with config gate and idempotency
+(No active milestone — run `/gsd:new-milestone` to start next version)
 
 ### Out of Scope
 
@@ -334,6 +344,11 @@ v0.21 shipped. Issue triage foundation added on top of the v0.20 intelligence pl
 | `needs-info:{slug}` label convention | Convention-based labels with allowlist gating; labels must pre-exist in repo | ✓ Good — v0.21 |
 | Per-issue cooldown with body-hash reset | Default 30 min prevents comment spam; resets when issue body changes | ✓ Good — v0.21 |
 | Issue corpus deferred from retrieval | Schema built now; wiring into cross-corpus search deferred to v0.22 | ✓ Good — v0.21 |
+| Embed title+body only (not full body with logs) | Problem summary captures intent; system info/logs add noise to embeddings | ✓ Good — v0.22 |
+| ON CONFLICT DO UPDATE with cooldown WHERE clause | Atomic cooldown enforcement in single SQL statement; no in-memory state | ✓ Good — v0.22 |
+| Four-layer idempotency for auto-triage | Delivery-ID dedup + DB claim with cooldown + comment marker scan; defense in depth | ✓ Good — v0.22 |
+| Per-trigger issue weight tuning | pr_review=0.8 (supplementary), issue=1.5 (primary), question=1.2, slack=1.0 | ✓ Good — v0.22 |
+| Separate issue-opened.ts handler | Avoids adding to 2000+ line mention handler; clean separation of concerns | ✓ Good — v0.22 |
 
 ## Constraints
 
