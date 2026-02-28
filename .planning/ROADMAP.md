@@ -205,7 +205,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 - [ ] Phase 110: Troubleshooting Retrieval Foundation (TSHOOT-01, 02, 03)
 - [ ] Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08)
 - [x] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
-- [ ] Phase 113: Threshold Learning (LEARN-01..04) -- 1/2 plans done
+- [x] Phase 113: Threshold Learning (LEARN-01..04) -- 2/2 plans done
 - [ ] Phase 114: Reaction Tracking (REACT-02, 03)
 
 ## Progress
@@ -238,7 +238,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 
-| 110-114 | v0.23 | 1/9 | In Progress | — |
+| 110-114 | v0.23 | 2/9 | In Progress | — |
 
 ---
 

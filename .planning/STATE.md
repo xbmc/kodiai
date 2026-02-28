@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.23
 milestone_name: Interactive Troubleshooting
 status: unknown
-stopped_at: Completed 113-01-PLAN.md (threshold learner foundation)
-last_updated: "2026-02-28T08:40:02Z"
+stopped_at: Completed 113-02-PLAN.md (threshold learning handler wiring)
+last_updated: "2026-02-28T08:45:29Z"
 progress:
   total_phases: 84
   completed_phases: 79
@@ -19,16 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — phases 110-112 complete, 113 plan 01 done, 113-02 and 114 remaining
+**Current focus:** v0.23 Interactive Troubleshooting — phases 110-113 complete, 114 remaining
 
 ## Current Position
 
 Milestone: v0.23 Interactive Troubleshooting — IN PROGRESS
-Phases: 112 of 114 (2 phases remaining)
-Status: Phase 113 threshold learning in progress (1 of 2 plans done)
-Last activity: 2026-02-28 -- threshold learner foundation complete
+Phases: 113 of 114 (1 phase remaining)
+Status: Phase 113 threshold learning complete (2 of 2 plans done), phase 114 remaining
+Last activity: 2026-02-28 -- threshold learning handler wiring complete
 
-Progress: [████████████████████] 98% (112/114 phases, 287/292 plans)
+Progress: [████████████████████] 99% (113/114 phases, 288/292 plans)
 
 ## Accumulated Context
 
@@ -43,6 +43,8 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 - **Non-fatal warn on comment_github_id failure:** Fail-open philosophy -- reaction tracking is supplementary, not critical path (Phase 112)
 - **Skip TN observations:** Avoid drowning alpha with non-duplicate-detection signal (Phase 113)
 - **Atomic SQL-side increment:** UPSERT with SQL-side alpha/beta increment prevents read-then-write race conditions (Phase 113)
+- **Module defaults for threshold resolution:** getEffectiveThreshold called with module defaults (minSamples=20, floor=50, ceiling=95), no config surface needed yet (Phase 113)
+- **Triage gate for observations:** recordObservation gated on triageId !== null to only learn from Kodiai-triaged issues (Phase 113)
 
 ### Key Constraints (Carry-Forward)
 
@@ -83,9 +85,9 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-28T08:40:02Z
-**Stopped At:** Completed 113-01-PLAN.md (threshold learner foundation)
-**Resume with:** `/gsd:execute-phase 113` to continue with threshold learning plan 02
+**Last session:** 2026-02-28T08:45:29Z
+**Stopped At:** Completed 113-02-PLAN.md (threshold learning handler wiring)
+**Resume with:** `/gsd:execute-phase 114` to continue with reaction tracking
 
 ### Resume Context
 - v0.23 source: Issue #75 (Interactive Troubleshooting)

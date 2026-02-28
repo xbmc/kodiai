@@ -34,7 +34,7 @@ Requirements for v0.23 Interactive Troubleshooting. Each maps to roadmap phases.
 - [x] **LEARN-01**: Duplicate detection threshold is auto-tuned per repo using Beta-Binomial Bayesian updating from confirmed outcomes
 - [x] **LEARN-02**: Auto-tuned threshold is not applied until at least 20 outcomes have been recorded (minimum sample gate)
 - [x] **LEARN-03**: Auto-tuned threshold is clamped to [50, 95] range to prevent extreme values
-- [ ] **LEARN-04**: The duplicate detector reads the effective threshold: auto-tuned if available and sample size is sufficient, otherwise falls back to config value
+- [x] **LEARN-04**: The duplicate detector reads the effective threshold: auto-tuned if available and sample size is sufficient, otherwise falls back to config value
 
 ### Reaction Tracking
 
@@ -95,7 +95,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LEARN-01 | Phase 113 | Complete |
 | LEARN-02 | Phase 113 | Complete |
 | LEARN-03 | Phase 113 | Complete |
-| LEARN-04 | Phase 113 | Pending |
+| LEARN-04 | Phase 113 | Complete |
 | REACT-01 | Phase 112 | Complete |
 | REACT-02 | Phase 114 | Pending |
 | REACT-03 | Phase 114 | Pending |
