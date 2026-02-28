@@ -22,6 +22,7 @@ import type { JobQueue } from "../jobs/types.ts";
 import type { RepoConfig } from "../execution/config.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { findDuplicateCandidates } from "../triage/duplicate-detector.ts";
+import { getEffectiveThreshold } from "../triage/threshold-learner.ts";
 import {
   formatTriageComment,
   buildTriageMarker,
@@ -153,7 +154,35 @@ export function createIssueOpenedHandler(deps: {
         return;
       }
 
-      // 5. Run duplicate detection
+      // 5. Resolve effective threshold (Bayesian learned or config fallback)
+      let effectiveThreshold: number;
+      try {
+        const thresholdResult = await getEffectiveThreshold({
+          sql,
+          repo,
+          configThreshold: config.triage.duplicateThreshold ?? 75,
+          logger: handlerLogger,
+        });
+        effectiveThreshold = thresholdResult.threshold;
+
+        // Structured logging on threshold resolution (LEARN-04)
+        handlerLogger.info({
+          thresholdSource: thresholdResult.source,
+          effectiveThreshold: thresholdResult.threshold,
+          configThreshold: config.triage.duplicateThreshold ?? 75,
+          ...(thresholdResult.source === "learned" ? {
+            alpha: thresholdResult.alpha,
+            beta: thresholdResult.beta,
+            sampleCount: thresholdResult.sampleCount,
+          } : {}),
+        }, "Duplicate detection threshold resolved");
+      } catch (err) {
+        // Fail-open: if threshold learning fails, use config value
+        effectiveThreshold = config.triage.duplicateThreshold ?? 75;
+        handlerLogger.warn({ err }, "Threshold learning failed, using config fallback");
+      }
+
+      // 6. Run duplicate detection
       const candidates = await findDuplicateCandidates({
         issueStore,
         embeddingProvider,
@@ -161,22 +190,22 @@ export function createIssueOpenedHandler(deps: {
         body: issue.body,
         repo,
         excludeIssueNumber: issueNumber,
-        threshold: config.triage.duplicateThreshold ?? 75,
+        threshold: effectiveThreshold,
         maxCandidates: config.triage.maxDuplicateCandidates ?? 3,
         logger: handlerLogger,
       });
 
-      // 6. Check results: if no candidates, no comment (zero noise)
+      // 7. Check results: if no candidates, no comment (zero noise)
       if (candidates.length === 0) {
         handlerLogger.info("No duplicate candidates found, skipping comment");
         return;
       }
 
-      // 7. Format comment
+      // 8. Format comment
       const marker = buildTriageMarker(repo, issueNumber);
       const commentBody = formatTriageComment(candidates, marker);
 
-      // 8. Post comment
+      // 9. Post comment
       const commentResponse = await octokit.rest.issues.createComment({
         owner,
         repo: repoName,
@@ -184,7 +213,7 @@ export function createIssueOpenedHandler(deps: {
         body: commentBody,
       });
 
-      // 8b. Store the comment GitHub ID for future reaction tracking (REACT-01)
+      // 9b. Store the comment GitHub ID for future reaction tracking (REACT-01)
       try {
         await sql`
           UPDATE issue_triage_state
@@ -195,7 +224,7 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err, commentGithubId: commentResponse.data.id }, "Failed to store comment GitHub ID (non-fatal)");
       }
 
-      // 9. Apply label (fail-open)
+      // 10. Apply label (fail-open)
       const duplicateLabel = config.triage.duplicateLabel ?? "possible-duplicate";
       try {
         await octokit.rest.issues.addLabels({
@@ -208,7 +237,7 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err, label: duplicateLabel }, "Failed to apply duplicate label (continuing)");
       }
 
-      // 10. Update triage state with duplicate count
+      // 11. Update triage state with duplicate count
       try {
         await sql`
           UPDATE issue_triage_state
@@ -219,7 +248,7 @@ export function createIssueOpenedHandler(deps: {
         handlerLogger.warn({ err }, "Failed to update triage state duplicate count");
       }
 
-      // 11. Log completion
+      // 12. Log completion
       handlerLogger.info(
         { candidateCount: candidates.length },
         "Issue triage complete",

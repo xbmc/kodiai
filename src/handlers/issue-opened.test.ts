@@ -93,7 +93,15 @@ function createMockEmbeddingProvider(
 }
 
 function createMockSql(claimSuccess: boolean = true): Sql {
-  const fn = async (..._args: any[]) => {
+  const fn = async (...args: any[]) => {
+    // Handle tagged template literals: inspect SQL string
+    if (Array.isArray(args[0])) {
+      const joined = Array.from(args[0]).join("");
+      // triage_threshold_state SELECT: return no rows (config fallback)
+      if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
+        return [];
+      }
+    }
     return claimSuccess ? [{ id: 1 }] : [];
   };
   // postgres.js tagged template literal interface
@@ -605,6 +613,146 @@ describe("createIssueOpenedHandler", () => {
     // Verify the comment ID value was passed
     const allValues = sqlCalls.flatMap((c) => c.values);
     expect(allValues).toContain(COMMENT_ID);
+  });
+
+  it("uses learned threshold when available", async () => {
+    let commentPosted = false;
+    const searchResults = [
+      makeSearchResult(50, "Similar crash issue", "open", 0.1), // 90% similarity
+    ];
+
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => {
+              commentPosted = true;
+              return { data: { id: 1 } };
+            },
+            addLabels: async () => ({ data: [] }),
+          },
+        },
+      }),
+    } as unknown as GitHubApp;
+
+    // Track SQL calls to verify triage_threshold_state is queried
+    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
+    let callCount = 0;
+    const mockSqlFn = (...args: any[]) => {
+      callCount++;
+      if (Array.isArray(args[0])) {
+        const strings = Array.from(args[0]) as string[];
+        const joined = strings.join("");
+        sqlCalls.push({ strings, values: args.slice(1) });
+
+        // INSERT claim
+        if (joined.includes("INSERT") && joined.includes("issue_triage_state")) {
+          return Promise.resolve([{ id: 1 }]);
+        }
+        // SELECT triage_threshold_state -- return enough samples for learned threshold
+        if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
+          return Promise.resolve([{ alpha: 18, beta_: 4, sample_count: 25 }]);
+        }
+      }
+      return Promise.resolve([]);
+    };
+    const mockSql = new Proxy(mockSqlFn, {
+      apply: (_target, _thisArg, args) => mockSqlFn(...args),
+    }) as unknown as Sql;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      jobQueue: createMockJobQueue(),
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore(searchResults),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0].handler(makeEvent());
+
+    // Verify triage_threshold_state was queried
+    const thresholdCall = sqlCalls.find((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdCall).toBeDefined();
+
+    // Comment should be posted (duplicates found with learned threshold)
+    expect(commentPosted).toBe(true);
+  });
+
+  it("falls back to config threshold when getEffectiveThreshold query returns no rows", async () => {
+    let commentPosted = false;
+    const searchResults = [
+      makeSearchResult(50, "Similar crash issue", "open", 0.1), // 90% similarity
+    ];
+
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => {
+              commentPosted = true;
+              return { data: { id: 1 } };
+            },
+            addLabels: async () => ({ data: [] }),
+          },
+        },
+      }),
+    } as unknown as GitHubApp;
+
+    // Track SQL calls
+    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
+    const mockSqlFn = (...args: any[]) => {
+      if (Array.isArray(args[0])) {
+        const strings = Array.from(args[0]) as string[];
+        const joined = strings.join("");
+        sqlCalls.push({ strings, values: args.slice(1) });
+
+        // INSERT claim
+        if (joined.includes("INSERT") && joined.includes("issue_triage_state")) {
+          return Promise.resolve([{ id: 1 }]);
+        }
+        // SELECT triage_threshold_state -- no rows (no Bayesian state)
+        if (joined.includes("SELECT") && joined.includes("triage_threshold_state")) {
+          return Promise.resolve([]);
+        }
+      }
+      return Promise.resolve([]);
+    };
+    const mockSql = new Proxy(mockSqlFn, {
+      apply: (_target, _thisArg, args) => mockSqlFn(...args),
+    }) as unknown as Sql;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      jobQueue: createMockJobQueue(),
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore(searchResults),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0].handler(makeEvent());
+
+    // Verify triage_threshold_state was queried but returned no rows
+    const thresholdCall = sqlCalls.find((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdCall).toBeDefined();
+
+    // Comment should still be posted (config fallback threshold used, duplicates above it)
+    expect(commentPosted).toBe(true);
   });
 
   it("continues when comment GitHub ID storage fails (fail-open)", async () => {
