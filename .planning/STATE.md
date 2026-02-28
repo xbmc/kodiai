@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.23
 milestone_name: Interactive Troubleshooting
 status: unknown
-stopped_at: Completed 112-02-PLAN.md (comment GitHub ID capture)
-last_updated: "2026-02-28T02:35:27.065Z"
+stopped_at: Completed 113-01-PLAN.md (threshold learner foundation)
+last_updated: "2026-02-28T08:40:02Z"
 progress:
   total_phases: 84
   completed_phases: 79
   total_plans: 194
-  completed_plans: 201
+  completed_plans: 202
 ---
 
 # Project State
@@ -19,14 +19,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — phases 110-112 complete, 113-114 remaining
+**Current focus:** v0.23 Interactive Troubleshooting — phases 110-112 complete, 113 plan 01 done, 113-02 and 114 remaining
 
 ## Current Position
 
 Milestone: v0.23 Interactive Troubleshooting — IN PROGRESS
 Phases: 112 of 114 (2 phases remaining)
-Status: Phase 112 outcome capture complete (2 of 2 plans done)
-Last activity: 2026-02-28 -- comment GitHub ID capture complete
+Status: Phase 113 threshold learning in progress (1 of 2 plans done)
+Last activity: 2026-02-28 -- threshold learner foundation complete
 
 Progress: [████████████████████] 98% (112/114 phases, 287/292 plans)
 
@@ -41,6 +41,8 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 - **Minimal handler deps for outcome capture:** issue-closed handler uses only eventRouter, sql, logger -- no GitHub API needed (Phase 112)
 - **Logical gate placement:** issue-closed handler inside issueStore && embeddingProvider block (outcome only meaningful when auto-triage active) (Phase 112)
 - **Non-fatal warn on comment_github_id failure:** Fail-open philosophy -- reaction tracking is supplementary, not critical path (Phase 112)
+- **Skip TN observations:** Avoid drowning alpha with non-duplicate-detection signal (Phase 113)
+- **Atomic SQL-side increment:** UPSERT with SQL-side alpha/beta increment prevents read-then-write race conditions (Phase 113)
 
 ### Key Constraints (Carry-Forward)
 
@@ -81,9 +83,9 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-28T02:31:00Z
-**Stopped At:** Completed 112-02-PLAN.md (comment GitHub ID capture)
-**Resume with:** `/gsd:execute-phase 113` to continue with threshold learning
+**Last session:** 2026-02-28T08:40:02Z
+**Stopped At:** Completed 113-01-PLAN.md (threshold learner foundation)
+**Resume with:** `/gsd:execute-phase 113` to continue with threshold learning plan 02
 
 ### Resume Context
 - v0.23 source: Issue #75 (Interactive Troubleshooting)
