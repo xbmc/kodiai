@@ -23,11 +23,11 @@ Requirements for v0.23 Interactive Troubleshooting. Each maps to roadmap phases.
 
 ### Outcome Capture
 
-- [ ] **OUTCOME-01**: `issues.closed` webhook events are captured with resolution outcome (`state_reason`: completed, not_planned, duplicate, unknown)
-- [ ] **OUTCOME-02**: Confirmed duplicate status is determined from `state_reason` or `duplicate` label (not Kodiai's `possible-duplicate` label)
-- [ ] **OUTCOME-03**: Outcome records link back to the original triage record in `issue_triage_state` when one exists
-- [ ] **OUTCOME-04**: The `issues.closed` handler filters out pull requests (GitHub fires this event for PRs too)
-- [ ] **OUTCOME-05**: Outcome capture is idempotent via delivery-ID dedup on the outcome table
+- [x] **OUTCOME-01**: `issues.closed` webhook events are captured with resolution outcome (`state_reason`: completed, not_planned, duplicate, unknown)
+- [x] **OUTCOME-02**: Confirmed duplicate status is determined from `state_reason` or `duplicate` label (not Kodiai's `possible-duplicate` label)
+- [x] **OUTCOME-03**: Outcome records link back to the original triage record in `issue_triage_state` when one exists
+- [x] **OUTCOME-04**: The `issues.closed` handler filters out pull requests (GitHub fires this event for PRs too)
+- [x] **OUTCOME-05**: Outcome capture is idempotent via delivery-ID dedup on the outcome table
 
 ### Threshold Learning
 
@@ -87,11 +87,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TSHOOT-06 | Phase 111 | Pending |
 | TSHOOT-07 | Phase 111 | Pending |
 | TSHOOT-08 | Phase 111 | Pending |
-| OUTCOME-01 | Phase 112 | Pending |
-| OUTCOME-02 | Phase 112 | Pending |
-| OUTCOME-03 | Phase 112 | Pending |
-| OUTCOME-04 | Phase 112 | Pending |
-| OUTCOME-05 | Phase 112 | Pending |
+| OUTCOME-01 | Phase 112 | Complete |
+| OUTCOME-02 | Phase 112 | Complete |
+| OUTCOME-03 | Phase 112 | Complete |
+| OUTCOME-04 | Phase 112 | Complete |
+| OUTCOME-05 | Phase 112 | Complete |
 | LEARN-01 | Phase 113 | Pending |
 | LEARN-02 | Phase 113 | Pending |
 | LEARN-03 | Phase 113 | Pending |

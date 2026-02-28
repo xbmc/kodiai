@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.23
 milestone_name: Interactive Troubleshooting
 status: executing
-stopped_at: Completed 111-02-PLAN.md (troubleshooting agent handler)
-last_updated: "2026-02-27T22:00:00Z"
+stopped_at: Completed 112-01-PLAN.md (outcome capture migration, handler, wiring)
+last_updated: "2026-02-28T02:27:00Z"
 progress:
   total_phases: 114
   completed_phases: 111
   total_plans: 292
-  completed_plans: 285
+  completed_plans: 286
 ---
 
 # Project State
@@ -19,16 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — phases 110-111 complete, 112-114 remaining
+**Current focus:** v0.23 Interactive Troubleshooting — phases 110-111 complete, 112-01 done, 112-02 and 113-114 remaining
 
 ## Current Position
 
 Milestone: v0.23 Interactive Troubleshooting — IN PROGRESS
 Phases: 111 of 114 (3 phases remaining)
-Status: Troubleshooting track (110-111) complete, outcome learning track (112-114) next
-Last activity: 2026-02-27 -- troubleshooting agent handler complete
+Status: Outcome capture phase 112 in progress (plan 01 of 02 complete)
+Last activity: 2026-02-28 -- outcome capture migration, handler, wiring complete
 
-Progress: [████████████████████] 97% (111/114 phases, 285/292 plans)
+Progress: [████████████████████] 98% (111/114 phases, 286/292 plans)
 
 ## Accumulated Context
 
@@ -38,6 +38,8 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 
 - **Independent parallel handler (Option A):** Troubleshooting handler registers on `issue_comment.created` alongside mention handler; both run concurrently via `Promise.allSettled` (Phase 111)
 - **WikiKnowledgeMatch field mapping:** Uses `rawText`/`pageTitle`/`pageUrl` (not research example's `content`/`title`/`url`) (Phase 111)
+- **Minimal handler deps for outcome capture:** issue-closed handler uses only eventRouter, sql, logger -- no GitHub API needed (Phase 112)
+- **Logical gate placement:** issue-closed handler inside issueStore && embeddingProvider block (outcome only meaningful when auto-triage active) (Phase 112)
 
 ### Key Constraints (Carry-Forward)
 
@@ -78,9 +80,9 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-27T22:00:00Z
-**Stopped At:** Completed 111-02-PLAN.md (troubleshooting agent handler with synthesis and citations)
-**Resume with:** `/gsd:plan-phase 112` to start outcome capture phase
+**Last session:** 2026-02-28T02:27:00Z
+**Stopped At:** Completed 112-01-PLAN.md (outcome capture migration, handler, wiring)
+**Resume with:** `/gsd:execute-phase 112` to continue with 112-02 (comment_github_id backfill)
 
 ### Resume Context
 - v0.23 source: Issue #75 (Interactive Troubleshooting)
