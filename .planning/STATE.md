@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.23
 milestone_name: Interactive Troubleshooting
-status: executing
+status: unknown
 stopped_at: Completed 112-02-PLAN.md (comment GitHub ID capture)
-last_updated: "2026-02-28T02:31:00Z"
+last_updated: "2026-02-28T02:35:27.065Z"
 progress:
-  total_phases: 114
-  completed_phases: 112
-  total_plans: 292
-  completed_plans: 287
+  total_phases: 84
+  completed_phases: 79
+  total_plans: 194
+  completed_plans: 201
 ---
 
 # Project State
