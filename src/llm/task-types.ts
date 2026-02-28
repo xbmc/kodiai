@@ -19,6 +19,8 @@ export const TASK_TYPES = {
   CLUSTER_LABEL: "cluster.label",
   /** Wiki staleness evaluation (non-agentic, future Phase 99). */
   STALENESS_EVIDENCE: "staleness.evidence",
+  /** Troubleshooting guidance synthesis (non-agentic, Phase 111). */
+  TROUBLESHOOTING_SYNTHESIS: "troubleshooting.synthesis",
 } as const;
 
 /** Union type of all valid task type strings. */
