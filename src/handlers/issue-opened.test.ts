@@ -544,4 +544,125 @@ describe("createIssueOpenedHandler", () => {
     // Should continue despite comment scan failure and post comment
     expect(commentPosted).toBe(true);
   });
+
+  it("stores comment GitHub ID after posting triage comment", async () => {
+    const COMMENT_ID = 99887766;
+    const searchResults = [
+      makeSearchResult(50, "Similar issue", "open", 0.1),
+    ];
+
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => ({ data: { id: COMMENT_ID } }),
+            addLabels: async () => ({ data: [] }),
+          },
+        },
+      }),
+    } as unknown as GitHubApp;
+
+    // Track SQL calls beyond the initial INSERT claim
+    const sqlCalls: Array<{ strings: string[]; values: unknown[] }> = [];
+    let callCount = 0;
+    const mockSqlFn = (...args: any[]) => {
+      callCount++;
+      if (callCount === 1) {
+        // First call is the INSERT claim
+        return Promise.resolve([{ id: 1 }]);
+      }
+      // Subsequent calls: track and return empty
+      if (Array.isArray(args[0])) {
+        const strings = Array.from(args[0]) as string[];
+        sqlCalls.push({ strings, values: args.slice(1) });
+      }
+      return Promise.resolve([]);
+    };
+    const mockSql = new Proxy(mockSqlFn, {
+      apply: (_target, _thisArg, args) => mockSqlFn(...args),
+    }) as unknown as Sql;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      jobQueue: createMockJobQueue(),
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore(searchResults),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    await router.captured[0].handler(makeEvent());
+
+    const commentIdCall = sqlCalls.find((c) =>
+      c.strings.some((s) => s.includes("comment_github_id")),
+    );
+    expect(commentIdCall).toBeDefined();
+    // Verify the comment ID value was passed
+    const allValues = sqlCalls.flatMap((c) => c.values);
+    expect(allValues).toContain(COMMENT_ID);
+  });
+
+  it("continues when comment GitHub ID storage fails (fail-open)", async () => {
+    const searchResults = [
+      makeSearchResult(50, "Similar issue", "open", 0.1),
+    ];
+
+    let labelApplied = false;
+    const githubApp = {
+      getInstallationOctokit: async () => ({
+        rest: {
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => ({ data: { id: 99887766 } }),
+            addLabels: async () => {
+              labelApplied = true;
+              return { data: [] };
+            },
+          },
+        },
+      }),
+    } as unknown as GitHubApp;
+
+    // SQL mock: claim succeeds, comment_github_id UPDATE throws
+    let callCount = 0;
+    const mockSqlFn = (...args: any[]) => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve([{ id: 1 }]);
+      }
+      // Check if this is the comment_github_id call
+      if (Array.isArray(args[0])) {
+        const joined = Array.from(args[0]).join("");
+        if (joined.includes("comment_github_id")) {
+          return Promise.reject(new Error("DB connection lost"));
+        }
+      }
+      return Promise.resolve([]);
+    };
+    const mockSql = new Proxy(mockSqlFn, {
+      apply: (_target, _thisArg, args) => mockSqlFn(...args),
+    }) as unknown as Sql;
+
+    createIssueOpenedHandler({
+      eventRouter: router,
+      jobQueue: createMockJobQueue(),
+      githubApp,
+      workspaceManager: createMockWorkspaceManager({
+        triage: { enabled: true, autoTriageOnOpen: true } as any,
+      }),
+      issueStore: createMockIssueStore(searchResults),
+      embeddingProvider: createMockEmbeddingProvider(),
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    // Should not throw -- handler continues to apply labels
+    await router.captured[0].handler(makeEvent());
+    expect(labelApplied).toBe(true);
+  });
 });
