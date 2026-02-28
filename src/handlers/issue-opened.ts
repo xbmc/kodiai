@@ -177,12 +177,23 @@ export function createIssueOpenedHandler(deps: {
       const commentBody = formatTriageComment(candidates, marker);
 
       // 8. Post comment
-      await octokit.rest.issues.createComment({
+      const commentResponse = await octokit.rest.issues.createComment({
         owner,
         repo: repoName,
         issue_number: issueNumber,
         body: commentBody,
       });
+
+      // 8b. Store the comment GitHub ID for future reaction tracking (REACT-01)
+      try {
+        await sql`
+          UPDATE issue_triage_state
+          SET comment_github_id = ${commentResponse.data.id}
+          WHERE repo = ${repo} AND issue_number = ${issueNumber}
+        `;
+      } catch (err) {
+        handlerLogger.warn({ err, commentGithubId: commentResponse.data.id }, "Failed to store comment GitHub ID (non-fatal)");
+      }
 
       // 9. Apply label (fail-open)
       const duplicateLabel = config.triage.duplicateLabel ?? "possible-duplicate";
