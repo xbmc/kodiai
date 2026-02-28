@@ -13,6 +13,7 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
+import { recordObservation } from "../triage/threshold-learner.ts";
 
 export function createIssueClosedHandler(deps: {
   eventRouter: EventRouter;
@@ -127,6 +128,22 @@ export function createIssueClosedHandler(deps: {
       if (result.length === 0) {
         handlerLogger.info("Outcome already recorded (delivery-ID dedup), skipping");
         return;
+      }
+
+      // Update threshold learning state (LEARN-01)
+      // Only when triage_id exists -- means Kodiai actually triaged this issue
+      if (triageId !== null) {
+        try {
+          await recordObservation({
+            sql,
+            repo,
+            kodiaiPredictedDuplicate,
+            confirmedDuplicate,
+            logger: handlerLogger,
+          });
+        } catch (err) {
+          handlerLogger.warn({ err, repo }, "Threshold learning observation failed (non-fatal)");
+        }
       }
 
       handlerLogger.info(

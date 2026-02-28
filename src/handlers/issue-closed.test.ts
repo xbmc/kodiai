@@ -370,6 +370,174 @@ describe("createIssueClosedHandler", () => {
     await router.captured[0].handler(makeEvent());
   });
 
+  it("calls recordObservation after outcome insert when triage_id is not null", async () => {
+    const mockSql = createMockSql({
+      triageRows: [{ id: 42, duplicate_count: 2 }],
+      insertResult: [{ id: 1 }],
+    });
+
+    createIssueClosedHandler({
+      eventRouter: router,
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    const event = makeEvent({
+      issue: {
+        number: 42,
+        title: "Dup issue",
+        body: null,
+        state: "closed",
+        state_reason: "duplicate",
+        labels: [],
+        user: { login: "testuser" },
+        closed_at: "2026-02-28T00:00:00Z",
+      },
+    });
+
+    await router.captured[0].handler(event);
+
+    // Verify a SQL call for triage_threshold_state exists (from recordObservation)
+    const thresholdCall = mockSql.calls.find((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdCall).toBeDefined();
+
+    // Verify it comes after the outcome INSERT
+    const insertIdx = mockSql.calls.findIndex((c) =>
+      c.strings.some((s) => s.includes("issue_outcome_feedback")),
+    );
+    const thresholdIdx = mockSql.calls.findIndex((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdIdx).toBeGreaterThan(insertIdx);
+  });
+
+  it("does NOT call recordObservation when triage_id is null", async () => {
+    const mockSql = createMockSql({
+      triageRows: [], // no triage record -> triageId = null
+      insertResult: [{ id: 1 }],
+    });
+
+    createIssueClosedHandler({
+      eventRouter: router,
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    const event = makeEvent({
+      issue: {
+        number: 42,
+        title: "Completed issue",
+        body: null,
+        state: "closed",
+        state_reason: "completed",
+        labels: [],
+        user: { login: "testuser" },
+        closed_at: "2026-02-28T00:00:00Z",
+      },
+    });
+
+    await router.captured[0].handler(event);
+
+    // Verify NO SQL call for triage_threshold_state
+    const thresholdCall = mockSql.calls.find((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdCall).toBeUndefined();
+  });
+
+  it("does NOT call recordObservation on delivery-ID dedup", async () => {
+    const mockSql = createMockSql({
+      triageRows: [{ id: 42, duplicate_count: 2 }],
+      insertResult: [], // ON CONFLICT DO NOTHING -> empty result (dedup)
+    });
+
+    createIssueClosedHandler({
+      eventRouter: router,
+      sql: mockSql,
+      logger: createMockLogger(),
+    });
+
+    const event = makeEvent({
+      issue: {
+        number: 42,
+        title: "Dup issue",
+        body: null,
+        state: "closed",
+        state_reason: "duplicate",
+        labels: [],
+        user: { login: "testuser" },
+        closed_at: "2026-02-28T00:00:00Z",
+      },
+    });
+
+    await router.captured[0].handler(event);
+
+    // Verify NO SQL call for triage_threshold_state (handler returned early)
+    const thresholdCall = mockSql.calls.find((c) =>
+      c.strings.some((s) => s.includes("triage_threshold_state")),
+    );
+    expect(thresholdCall).toBeUndefined();
+  });
+
+  it("continues when recordObservation fails (fail-open)", async () => {
+    // Custom SQL mock that throws on triage_threshold_state calls
+    const calls: SqlCall[] = [];
+    const fn = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const call: SqlCall = { strings: Array.from(strings), values };
+      calls.push(call);
+
+      const joined = strings.join("");
+      if (joined.includes("triage_threshold_state")) {
+        return Promise.reject(new Error("DB connection lost"));
+      }
+      if (joined.includes("SELECT") && joined.includes("issue_triage_state")) {
+        return Promise.resolve([{ id: 42, duplicate_count: 2 }]);
+      }
+      if (joined.includes("INSERT") && joined.includes("issue_outcome_feedback")) {
+        return Promise.resolve([{ id: 1 }]);
+      }
+      return Promise.resolve([]);
+    };
+
+    const throwingSql = new Proxy(fn, {
+      apply: (_target, _thisArg, args) => fn(args[0], ...args.slice(1)),
+      get: (_target, prop) => {
+        if (prop === "calls") return calls;
+        return undefined;
+      },
+    }) as unknown as Sql & { calls: SqlCall[] };
+
+    createIssueClosedHandler({
+      eventRouter: router,
+      sql: throwingSql,
+      logger: createMockLogger(),
+    });
+
+    const event = makeEvent({
+      issue: {
+        number: 42,
+        title: "Dup issue",
+        body: null,
+        state: "closed",
+        state_reason: "duplicate",
+        labels: [],
+        user: { login: "testuser" },
+        closed_at: "2026-02-28T00:00:00Z",
+      },
+    });
+
+    // Should not throw -- recordObservation failure is caught
+    await router.captured[0].handler(event);
+
+    // Verify outcome INSERT still happened
+    const insertCall = calls.find((c) =>
+      c.strings.some((s) => s.includes("issue_outcome_feedback")),
+    );
+    expect(insertCall).toBeDefined();
+  });
+
   it("skips events with missing payload fields", async () => {
     const mockSql = createMockSql();
 
