@@ -19,6 +19,7 @@ import { createDepBumpMergeHistoryHandler } from "./handlers/dep-bump-merge-hist
 import { createCIFailureHandler } from "./handlers/ci-failure.ts";
 import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
 import { createIssueOpenedHandler } from "./handlers/issue-opened.ts";
+import { createTroubleshootingHandler } from "./handlers/troubleshooting-agent.ts";
 import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
 import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
@@ -485,6 +486,20 @@ if (issueStore && embeddingProvider) {
     workspaceManager,
     issueStore,
     embeddingProvider,
+    sql,
+    logger,
+  });
+
+  createTroubleshootingHandler({
+    eventRouter,
+    jobQueue,
+    githubApp,
+    workspaceManager,
+    issueStore,
+    wikiPageStore,
+    embeddingProvider,
+    taskRouter,
+    costTracker,
     sql,
     logger,
   });
