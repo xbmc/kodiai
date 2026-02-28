@@ -204,7 +204,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
 - [ ] Phase 110: Troubleshooting Retrieval Foundation (TSHOOT-01, 02, 03)
 - [ ] Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08)
-- [ ] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
+- [x] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
 - [ ] Phase 113: Threshold Learning (LEARN-01..04)
 - [ ] Phase 114: Reaction Tracking (REACT-02, 03)
 
