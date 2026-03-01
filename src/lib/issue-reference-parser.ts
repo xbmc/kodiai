@@ -69,7 +69,7 @@ function extractFromText(
     if (seen.has(key)) continue;
     seen.add(key);
 
-    const keyword = normalizeKeyword(groups.keyword);
+    const keyword = normalizeKeyword(groups.keyword ?? "");
     const isClosing = keyword !== "relates-to";
 
     refs.push({ issueNumber, keyword, isClosing, crossRepo, source });
