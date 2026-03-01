@@ -106,9 +106,25 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+<details>
+<summary>Previous Release: v0.23 Interactive Troubleshooting (2026-03-01)</summary>
+
+**Shipped:** 2026-03-01
+**Phases:** 110-114 (5 phases, 9 plans)
+**Source:** [Issue #75](https://github.com/xbmc/kodiai/issues/75)
+
+**Delivered:**
+- State-filtered vector search and resolution-focused thread assembler for troubleshooting retrieval from closed issues
+- Troubleshooting agent with LLM synthesis, provenance citations, and keyword-based intent classification
+- Issue outcome capture via `issues.closed` webhook with resolution classification and delivery-ID dedup
+- Beta-Binomial Bayesian duplicate threshold auto-tuning per repo with sample gate and [50,95] clamping
+- Nightly reaction sync polling thumbs up/down on triage comments as secondary feedback signal for threshold learning
+
+</details>
+
 ## Current State
 
-v0.23 in progress. Interactive Troubleshooting milestone started. Issue intelligence fully operational:
+v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pipeline operational:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
@@ -119,13 +135,15 @@ v0.23 in progress. Interactive Troubleshooting milestone started. Issue intellig
 - Wiki staleness: two-tier detection (heuristic + LLM), file-path evidence, scheduled Slack reports
 - Review pattern clustering: HDBSCAN + UMAP, weekly batch refresh, dual-signal pattern matcher, footnote injection in PR reviews
 - Issue intelligence: historical corpus, nightly sync, duplicate detection, auto-triage on issues.opened, PR-issue linking, retrieval integration
+- Troubleshooting agent: state-filtered resolved-issue retrieval, thread assembly, LLM synthesis with provenance citations, config-gated
+- Outcome feedback loop: issue-closed capture, Beta-Binomial Bayesian threshold auto-tuning, nightly reaction sync
 - Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
 - Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
 - CI failure recognition: base-branch comparison via Checks API with flakiness tracking
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support and issue triage
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~86,000 lines of TypeScript
+- ~89,000 lines of TypeScript
 
 ## Requirements
 
@@ -242,31 +260,30 @@ v0.23 in progress. Interactive Troubleshooting milestone started. Issue intellig
 - ✓ PR-issue linking via explicit reference parsing and semantic search fallback — v0.22
 - ✓ Issue corpus as 5th source in cross-corpus retrieval with `[issue: #N]` citations — v0.22
 - ✓ Per-trigger issue weight tuning in SOURCE_WEIGHTS — v0.22
+- ✓ State-filtered vector search retrieves similar resolved issues — v0.23
+- ✓ Resolution-focused thread assembly with tail+semantic priority and per-issue character budget — v0.23
+- ✓ Wiki fallback and transparent "no match" response when no similar resolved issues exist — v0.23
+- ✓ `@kodiai` mention on open issue with troubleshooting intent synthesizes guidance from resolved issues — v0.23
+- ✓ Troubleshooting responses cite source resolved issues with provenance disclosure — v0.23
+- ✓ Lightweight keyword heuristic intent classification (no LLM call) — v0.23
+- ✓ Gated behind `triage.troubleshooting.enabled` config flag (default: false) — v0.23
+- ✓ Comment-scoped marker dedup keyed by trigger comment ID — v0.23
+- ✓ `issues.closed` events captured with resolution outcome — v0.23
+- ✓ Confirmed duplicate from `state_reason` or `duplicate` label (not Kodiai's label) — v0.23
+- ✓ Outcome records link to original triage record — v0.23
+- ✓ Handler filters out pull requests — v0.23
+- ✓ Idempotent via delivery-ID dedup — v0.23
+- ✓ Beta-Binomial Bayesian threshold auto-tuning per repo — v0.23
+- ✓ Minimum 20-outcome sample gate before applying auto-tuned threshold — v0.23
+- ✓ Threshold clamped to [50, 95] range — v0.23
+- ✓ Duplicate detector reads effective threshold (auto-tuned or config fallback) — v0.23
+- ✓ Triage comment GitHub ID captured and stored — v0.23
+- ✓ Periodic sync job polls reactions on recent triage comments — v0.23
+- ✓ Reaction data feeds into outcome feedback as secondary signal — v0.23
 
 ### Active
 
-v0.23 Interactive Troubleshooting — [Issue #75](https://github.com/xbmc/kodiai/issues/75)
-
-- [ ] **TSHOOT-01**: State-filtered vector search retrieves similar resolved issues
-- [ ] **TSHOOT-02**: Resolution-focused thread assembly with tail+semantic priority and per-issue character budget
-- [ ] **TSHOOT-03**: Fallback to wiki search then transparent "no match" response when no similar resolved issues exist
-- [ ] **TSHOOT-04**: `@kodiai` mention on open issue with troubleshooting intent synthesizes guidance from resolved issues
-- [ ] **TSHOOT-05**: Troubleshooting responses cite source resolved issues with provenance disclosure
-- [ ] **TSHOOT-06**: Lightweight keyword heuristic intent classification (no LLM call)
-- [ ] **TSHOOT-07**: Gated behind `triage.troubleshooting.enabled` config flag (default: false)
-- [ ] **TSHOOT-08**: Comment-scoped marker dedup keyed by trigger comment ID
-- [ ] **OUTCOME-01**: `issues.closed` events captured with resolution outcome
-- [ ] **OUTCOME-02**: Confirmed duplicate from `state_reason` or `duplicate` label (not Kodiai's label)
-- [ ] **OUTCOME-03**: Outcome records link to original triage record
-- [ ] **OUTCOME-04**: Handler filters out pull requests
-- [ ] **OUTCOME-05**: Idempotent via delivery-ID dedup
-- [ ] **LEARN-01**: Beta-Binomial Bayesian threshold auto-tuning per repo
-- [ ] **LEARN-02**: Minimum 20-outcome sample gate before applying auto-tuned threshold
-- [ ] **LEARN-03**: Threshold clamped to [50, 95] range
-- [ ] **LEARN-04**: Duplicate detector reads effective threshold (auto-tuned or config fallback)
-- [ ] **REACT-01**: Triage comment GitHub ID captured and stored
-- [ ] **REACT-02**: Periodic sync job polls reactions on recent triage comments
-- [ ] **REACT-03**: Reaction data feeds into outcome feedback as secondary signal
+(No active requirements — next milestone not yet defined)
 
 ### Out of Scope
 
@@ -293,7 +310,7 @@ v0.23 Interactive Troubleshooting — [Issue #75](https://github.com/xbmc/kodiai
 - **Storage:** Azure PostgreSQL Flexible Server with pgvector extension (HNSW indexes, tsvector columns)
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
 - **Slack:** Bot token with `chat:write`, `reactions:write` scopes; signing secret for ingress verification
-- **Codebase:** ~68,000 lines of TypeScript, 1,494 tests passing
+- **Codebase:** ~89,000 lines of TypeScript
 
 ## Key Decisions
 
@@ -370,6 +387,15 @@ v0.23 Interactive Troubleshooting — [Issue #75](https://github.com/xbmc/kodiai
 | Four-layer idempotency for auto-triage | Delivery-ID dedup + DB claim with cooldown + comment marker scan; defense in depth | ✓ Good — v0.22 |
 | Per-trigger issue weight tuning | pr_review=0.8 (supplementary), issue=1.5 (primary), question=1.2, slack=1.0 | ✓ Good — v0.22 |
 | Separate issue-opened.ts handler | Avoids adding to 2000+ line mention handler; clean separation of concerns | ✓ Good — v0.22 |
+| Compound keyword heuristic for troubleshooting intent | Requires BOTH problem-in-context AND help-in-mention; avoids false triggers | ✓ Good — v0.23 |
+| Independent parallel troubleshooting handler | Coexists with mention handler on issue_comment.created via Promise.allSettled | ✓ Good — v0.23 |
+| Minimal handler deps for outcome capture | issue-closed handler uses only eventRouter, sql, logger — no GitHub API needed | ✓ Good — v0.23 |
+| Non-fatal warn on comment_github_id failure | Fail-open philosophy — reaction tracking is supplementary, not critical path | ✓ Good — v0.23 |
+| Beta-Binomial Bayesian threshold updating | Atomic SQL-side UPSERT with alpha/beta increment prevents read-then-write races | ✓ Good — v0.23 |
+| Module defaults for threshold resolution | getEffectiveThreshold called with defaults (minSamples=20, floor=50, ceiling=95) | ✓ Good — v0.23 |
+| Triage gate for observations | recordObservation gated on triageId !== null to only learn from Kodiai-triaged issues | ✓ Good — v0.23 |
+| Observation dedup via direction tracking | observation_recorded + observation_direction columns re-record only if direction flips | ✓ Good — v0.23 |
+| Closure signal precedence over reactions | Reaction observations skipped when issue_outcome_feedback record exists | ✓ Good — v0.23 |
 
 ## Constraints
 
@@ -382,4 +408,4 @@ v0.23 Interactive Troubleshooting — [Issue #75](https://github.com/xbmc/kodiai
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-02-27 after v0.23 milestone start*
+*Last updated: 2026-03-01 after v0.23 milestone*

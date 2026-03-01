@@ -1,32 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.23
-milestone_name: Interactive Troubleshooting
-status: unknown
-stopped_at: Completed 114-01-PLAN.md (reaction tracking infrastructure)
-last_updated: "2026-03-01T16:32:37.566Z"
+milestone: null
+milestone_name: null
+status: idle
+stopped_at: v0.23 milestone completed and archived
+last_updated: "2026-03-01T20:00:00.000Z"
 progress:
-  total_phases: 86
-  completed_phases: 81
-  total_plans: 197
-  completed_plans: 204
+  total_phases: 114
+  completed_phases: 114
+  total_plans: 292
+  completed_plans: 292
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-02-27)
+See: `.planning/PROJECT.md` (updated 2026-03-01)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — all phases (110-114) complete
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Milestone: v0.23 Interactive Troubleshooting — COMPLETE
+Milestone: v0.23 Interactive Troubleshooting — SHIPPED 2026-03-01
 Phases: 114 of 114 (0 phases remaining)
-Status: Phase 114 reaction tracking complete (1 of 1 plan done), v0.23 milestone complete
-Last activity: 2026-03-01 -- reaction tracking infrastructure complete
+Status: All milestones through v0.23 shipped
+Last activity: 2026-03-01 -- v0.23 milestone archived
 
 Progress: [████████████████████] 100% (114/114 phases, 292/292 plans)
 
@@ -34,21 +34,7 @@ Progress: [████████████████████] 100% (1
 
 ### Decisions
 
-All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions table.
-
-- **Independent parallel handler (Option A):** Troubleshooting handler registers on `issue_comment.created` alongside mention handler; both run concurrently via `Promise.allSettled` (Phase 111)
-- **WikiKnowledgeMatch field mapping:** Uses `rawText`/`pageTitle`/`pageUrl` (not research example's `content`/`title`/`url`) (Phase 111)
-- **Minimal handler deps for outcome capture:** issue-closed handler uses only eventRouter, sql, logger -- no GitHub API needed (Phase 112)
-- **Logical gate placement:** issue-closed handler inside issueStore && embeddingProvider block (outcome only meaningful when auto-triage active) (Phase 112)
-- **Non-fatal warn on comment_github_id failure:** Fail-open philosophy -- reaction tracking is supplementary, not critical path (Phase 112)
-- **Skip TN observations:** Avoid drowning alpha with non-duplicate-detection signal (Phase 113)
-- **Atomic SQL-side increment:** UPSERT with SQL-side alpha/beta increment prevents read-then-write race conditions (Phase 113)
-- **Module defaults for threshold resolution:** getEffectiveThreshold called with module defaults (minSamples=20, floor=50, ceiling=95), no config surface needed yet (Phase 113)
-- **Triage gate for observations:** recordObservation gated on triageId !== null to only learn from Kodiai-triaged issues (Phase 113)
-- **Observation dedup via direction tracking:** observation_recorded + observation_direction columns re-record only if direction flips (Phase 114)
-- **Closure signal precedence:** Reaction observations skipped when issue_outcome_feedback record exists (Phase 114)
-- **kodiaiPredictedDuplicate always true for reactions:** Triage comments only exist when duplicates were predicted (Phase 114)
-- [Phase 114]: Observation dedup via direction tracking: observation_recorded + observation_direction columns re-record only if direction flips
+All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions table.
 
 ### Key Constraints (Carry-Forward)
 
@@ -59,7 +45,7 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 - Bun `streamText()` has production build failure (oven-sh/bun#25630) -- use `generateText()` exclusively
 - Agent SDK owns agentic tasks (PR review, mentions, Slack write); Vercel AI SDK owns non-agentic tasks only
 
-### Key Infrastructure (v0.17-v0.22 Foundation)
+### Key Infrastructure (v0.17-v0.23 Foundation)
 
 - PostgreSQL + pgvector with HNSW indexes and tsvector GIN indexes
 - Five knowledge corpora: `learning_memories`, `review_comments`, `wiki_pages`, `code_snippets`, `issues`
@@ -70,6 +56,8 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 - Cost tracking: per-invocation model/token/cost logging to Postgres
 - Contributor profiles: identity linking, expertise scoring, 4-tier adaptive review
 - Issue intelligence: historical corpus, nightly sync, duplicate detection, auto-triage, PR-issue linking, retrieval integration
+- Troubleshooting: resolved-issue retrieval, thread assembly, LLM synthesis with citations, config-gated
+- Outcome feedback loop: issue-closed capture, Beta-Binomial Bayesian threshold auto-tuning, nightly reaction sync
 
 ### Explicit User Policies
 
@@ -89,14 +77,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-01T16:30:09.114Z
-**Stopped At:** Completed 114-01-PLAN.md (reaction tracking infrastructure)
-**Resume with:** v0.23 milestone complete -- proceed to UAT or next milestone
-
-### Resume Context
-- v0.23 source: Issue #75 (Interactive Troubleshooting)
-- Research: `.planning/research/TROUBLESHOOTING.md` and `.planning/research/OUTCOME-LEARNING.md`
-- REQUIREMENTS.md: 20 requirements (TSHOOT-01..08, OUTCOME-01..05, LEARN-01..04, REACT-01..03)
-- ROADMAP.md: Phases 110-114 added
-- Phase dependency: 110→111 (retrieval→agent), 112→113 (outcome→threshold), 112→114 (outcome→reactions)
-- Tracks are independent: troubleshooting (110-111) and outcome learning (112-114) can execute in either order
+**Last session:** 2026-03-01
+**Stopped At:** v0.23 milestone completed and archived
+**Resume with:** `/gsd:new-milestone` to start next milestone

@@ -24,7 +24,7 @@
 - ✅ **v0.20 Multi-Model & Active Intelligence** — Phases 97-102 (shipped 2026-02-26)
 - ✅ **v0.21 Issue Triage Foundation** — Phases 103-105 (shipped 2026-02-27)
 - ✅ **v0.22 Issue Intelligence** — Phases 106-109 (shipped 2026-02-27)
-- **v0.23 Interactive Troubleshooting** — Phases 110-114
+- ✅ **v0.23 Interactive Troubleshooting** — Phases 110-114 (shipped 2026-03-01)
 
 ## Phases
 
@@ -198,20 +198,22 @@ See `.planning/milestones/v0.22-ROADMAP.md` for full phase details.
 
 </details>
 
-### v0.23 Interactive Troubleshooting (Phases 110-114)
+<details>
+<summary>v0.23 Interactive Troubleshooting (Phases 110-114) -- SHIPPED 2026-03-01</summary>
 
 See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
-- [ ] Phase 110: Troubleshooting Retrieval Foundation (TSHOOT-01, 02, 03)
-- [ ] Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08)
-- [x] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
-- [x] Phase 113: Threshold Learning (LEARN-01..04) -- 2/2 plans done
-- [x] Phase 114: Reaction Tracking (REACT-02, 03) (completed 2026-03-01)
+- [x] Phase 110: Troubleshooting Retrieval Foundation (2/2 plans) -- completed 2026-02-27
+- [x] Phase 111: Troubleshooting Agent (2/2 plans) -- completed 2026-02-27
+- [x] Phase 112: Outcome Capture (2/2 plans) -- completed 2026-02-28
+- [x] Phase 113: Threshold Learning (2/2 plans) -- completed 2026-02-28
+- [x] Phase 114: Reaction Tracking (1/1 plan) -- completed 2026-03-01
+
+</details>
 
 ## Progress
 
-**Total shipped:** 22 milestones, 109 phases, 283 plans
-**In progress:** v0.23 Interactive Troubleshooting — 5 phases, 9 plans
+**Total shipped:** 23 milestones, 114 phases, 292 plans
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -238,8 +240,8 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 
-| 110-114 | v0.23 | 2/9 | In Progress | — |
+| 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 
 ---
 
-*Roadmap updated: 2026-02-27 -- v0.23 Interactive Troubleshooting phases added*
+*Roadmap updated: 2026-03-01 -- v0.23 Interactive Troubleshooting shipped*

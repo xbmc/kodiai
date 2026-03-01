@@ -128,6 +128,88 @@
 
 ---
 
+## Milestone: v0.22 — Issue Intelligence
+
+**Shipped:** 2026-02-27
+**Phases:** 4 | **Plans:** 7
+
+### What Was Built
+- Historical issue corpus population via backfill script with Voyage AI embeddings, HNSW indexes, and cursor-based resume
+- Nightly incremental sync via GitHub Actions cron for issues and comments
+- High-confidence duplicate detection with top-3 candidate formatting and fail-open design
+- Auto-triage on `issues.opened` with config gate and four-layer idempotency
+- PR-issue linking via explicit reference parsing and semantic search fallback
+- Issue corpus wired as 5th source in unified cross-corpus RRF retrieval
+
+### What Worked
+- Four-layer idempotency (delivery dedup + DB claim with cooldown + comment marker scan) prevents duplicate triage comments
+- Atomic cooldown enforcement in single SQL statement (ON CONFLICT DO UPDATE with WHERE clause) eliminates in-memory state
+- Per-trigger issue weight tuning enables issue corpus to be primary for issue triggers but supplementary for PR reviews
+- Separate issue-opened.ts handler kept mention handler clean at 2000+ lines
+
+### What Was Inefficient
+- REQUIREMENTS.md traceability was left as "Pending" for completed requirements
+- Phase 110-111 directories ended up at `.planning/` root instead of `.planning/phases/`, confusing the audit tool
+
+### Patterns Established
+- Auto-fire webhook handler pattern: delivery dedup -> DB claim with cooldown -> idempotency marker scan -> agent action
+- Explicit reference parser for cross-entity linking (fixes/closes/relates-to keywords)
+- Per-trigger weight tuning in SOURCE_WEIGHTS for context-appropriate retrieval emphasis
+
+### Key Lessons
+1. Four-layer idempotency is the right level for webhook-triggered agent actions
+2. Separate handler files for distinct webhook events prevent monolithic handler growth
+3. Phase directories should consistently go to `.planning/phases/` to avoid audit false positives
+
+### Cost Observations
+- Model mix: quality profile (opus for planning/execution)
+- All 4 phases completed in a single day
+- Notable: Compact milestone — 7 plans delivered full duplicate detection and auto-triage
+
+---
+
+## Milestone: v0.23 — Interactive Troubleshooting
+
+**Shipped:** 2026-03-01
+**Phases:** 5 | **Plans:** 9
+
+### What Was Built
+- State-filtered vector search and resolution-focused thread assembler for troubleshooting retrieval from closed issues
+- Troubleshooting agent with LLM synthesis, provenance citations, and keyword-based intent classification
+- Issue outcome capture via `issues.closed` webhook with resolution classification and delivery-ID dedup
+- Beta-Binomial Bayesian duplicate threshold auto-tuning per repo with sample gate and [50,95] clamping
+- Nightly reaction sync polling thumbs up/down on triage comments as secondary feedback signal
+
+### What Worked
+- Two independent tracks (troubleshooting: 110-111, outcome learning: 112-114) enabled flexible execution order
+- Compound keyword heuristic (problem-in-context AND help-in-mention) avoids false troubleshooting triggers without LLM cost
+- Beta-Binomial Bayesian updating with atomic SQL-side increment prevents read-then-write race conditions
+- Observation dedup via direction tracking avoids re-recording unless the signal actually changes
+- Closure signal precedence over reactions prevents conflicting threshold updates
+
+### What Was Inefficient
+- Milestone audit reported phases 110-111 as "NOT STARTED" because directories were at `.planning/` root instead of `.planning/phases/` — false positive
+- SUMMARY files across all v0.23 phases lacked standardized `one_liner` frontmatter field, making accomplishment extraction harder
+- SUMMARY frontmatter `requirements_completed` not populated for phases 112-01, 112-02, 113-01, 113-02
+
+### Patterns Established
+- Bayesian threshold learning pattern: outcome observation -> confusion matrix classification -> Beta-Binomial update -> effective threshold query
+- Independent parallel handler pattern: multiple handlers registered on same webhook event via Promise.allSettled
+- Reaction polling pattern: nightly cron -> poll GitHub API for reactions -> derive secondary feedback signal -> feed into threshold learning
+
+### Key Lessons
+1. Ensure phase directories consistently reside in `.planning/phases/` to avoid audit tool blind spots
+2. Populate `one_liner` and `requirements_completed` in SUMMARY frontmatter during phase execution, not after
+3. Bayesian updating with atomic SQL operations is robust for learning from noisy signals
+4. Direction-based dedup is better than simple boolean flags for reaction signals that can change over time
+
+### Cost Observations
+- Model mix: quality profile (opus for planning/execution)
+- 5 phases completed across 3 days (2026-02-27 to 2026-03-01)
+- Notable: Troubleshooting phases (110-111) completed in a single session; outcome phases (112-114) across separate sessions
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -137,6 +219,8 @@
 | v0.19 | 4 | 14 | 4th corpus addition pattern established; TDD-first for parsers |
 | v0.20 | 6 | 17 | Gap closure pattern established; TypeScript-native ML; multi-model routing |
 | v0.21 | 3 | 9 | MCP tool factory pattern; mention-triggered agent pattern; 5th corpus |
+| v0.22 | 4 | 7 | Auto-fire webhook pattern; four-layer idempotency; per-trigger weight tuning |
+| v0.23 | 5 | 9 | Bayesian threshold learning; parallel handler pattern; reaction polling |
 
 ### Cumulative Quality
 
@@ -145,6 +229,8 @@
 | v0.19 | 1,494 | +37 snippet tests, +72 review handler tests stable |
 | v0.20 | ~1,650 | +165 clustering/profile/wiki tests |
 | v0.21 | ~1,750 | +98 issue store/MCP tool/template parser/triage agent tests |
+| v0.22 | ~1,800 | +50 duplicate detection/auto-triage/PR-issue linking tests |
+| v0.23 | ~1,900 | +100 thread assembler/troubleshooting/threshold/outcome tests |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -155,3 +241,6 @@
 5. Gap closure phases are a clean pattern for addressing audit findings without scope creep
 6. MCP tool factory pattern (config gate + validation + structured errors) is the right template for agent tools
 7. Mention-triggered is the safe default for new agent capabilities — auto-fire can be added later
+8. Four-layer idempotency is the right depth for webhook-triggered agent actions
+9. Atomic SQL-side operations (UPSERT with increment) prevent race conditions in concurrent threshold updates
+10. Phase directories must consistently go to `.planning/phases/` — inconsistent placement causes audit tool blind spots
