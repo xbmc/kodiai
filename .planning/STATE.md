@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: null
-milestone_name: null
-status: idle
-stopped_at: v0.23 milestone completed and archived
-last_updated: "2026-03-01T20:00:00.000Z"
+milestone: v0.1
+milestone_name: milestone
+status: unknown
+stopped_at: Phase 1 context gathered
+last_updated: "2026-03-01T21:28:51.734Z"
 progress:
-  total_phases: 114
-  completed_phases: 114
-  total_plans: 292
-  completed_plans: 292
+  total_phases: 83
+  completed_phases: 78
+  total_plans: 192
+  completed_plans: 199
 ---
 
 # Project State
@@ -64,6 +64,10 @@ All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions tab
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to.
 
+### Roadmap Evolution
+
+- Phase 1 added: Review comment backfill reliability
+
 ### Blockers/Concerns
 
 None.
@@ -78,6 +82,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-01
-**Stopped At:** v0.23 milestone completed and archived
+**Last session:** 2026-03-01T21:28:51.731Z
+**Stopped At:** Phase 1 context gathered
 **Resume with:** `/gsd:new-milestone` to start next milestone
