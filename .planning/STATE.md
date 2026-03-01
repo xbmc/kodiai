@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.23
 milestone_name: Interactive Troubleshooting
 status: unknown
-stopped_at: Completed 113-02-PLAN.md (threshold learning handler wiring)
-last_updated: "2026-02-28T08:49:51.063Z"
+stopped_at: Completed 114-01-PLAN.md (reaction tracking infrastructure)
+last_updated: "2026-03-01T16:30:12.658Z"
 progress:
-  total_phases: 85
-  completed_phases: 80
-  total_plans: 196
-  completed_plans: 203
+  total_phases: 86
+  completed_phases: 81
+  total_plans: 197
+  completed_plans: 204
 ---
 
 # Project State
@@ -19,16 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-02-27)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.23 Interactive Troubleshooting — phases 110-113 complete, 114 remaining
+**Current focus:** v0.23 Interactive Troubleshooting — all phases (110-114) complete
 
 ## Current Position
 
-Milestone: v0.23 Interactive Troubleshooting — IN PROGRESS
-Phases: 113 of 114 (1 phase remaining)
-Status: Phase 113 threshold learning complete (2 of 2 plans done), phase 114 remaining
-Last activity: 2026-02-28 -- threshold learning handler wiring complete
+Milestone: v0.23 Interactive Troubleshooting — COMPLETE
+Phases: 114 of 114 (0 phases remaining)
+Status: Phase 114 reaction tracking complete (1 of 1 plan done), v0.23 milestone complete
+Last activity: 2026-03-01 -- reaction tracking infrastructure complete
 
-Progress: [████████████████████] 99% (113/114 phases, 288/292 plans)
+Progress: [████████████████████] 100% (114/114 phases, 292/292 plans)
 
 ## Accumulated Context
 
@@ -45,6 +45,10 @@ All decisions through v0.22 archived to `.planning/PROJECT.md` Key Decisions tab
 - **Atomic SQL-side increment:** UPSERT with SQL-side alpha/beta increment prevents read-then-write race conditions (Phase 113)
 - **Module defaults for threshold resolution:** getEffectiveThreshold called with module defaults (minSamples=20, floor=50, ceiling=95), no config surface needed yet (Phase 113)
 - **Triage gate for observations:** recordObservation gated on triageId !== null to only learn from Kodiai-triaged issues (Phase 113)
+- **Observation dedup via direction tracking:** observation_recorded + observation_direction columns re-record only if direction flips (Phase 114)
+- **Closure signal precedence:** Reaction observations skipped when issue_outcome_feedback record exists (Phase 114)
+- **kodiaiPredictedDuplicate always true for reactions:** Triage comments only exist when duplicates were predicted (Phase 114)
+- [Phase 114]: Observation dedup via direction tracking: observation_recorded + observation_direction columns re-record only if direction flips
 
 ### Key Constraints (Carry-Forward)
 
@@ -85,9 +89,9 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-02-28T08:45:29Z
-**Stopped At:** Completed 113-02-PLAN.md (threshold learning handler wiring)
-**Resume with:** `/gsd:execute-phase 114` to continue with reaction tracking
+**Last session:** 2026-03-01T16:30:09.114Z
+**Stopped At:** Completed 114-01-PLAN.md (reaction tracking infrastructure)
+**Resume with:** v0.23 milestone complete -- proceed to UAT or next milestone
 
 ### Resume Context
 - v0.23 source: Issue #75 (Interactive Troubleshooting)

@@ -39,8 +39,8 @@ Requirements for v0.23 Interactive Troubleshooting. Each maps to roadmap phases.
 ### Reaction Tracking
 
 - [x] **REACT-01**: Triage comment GitHub ID is captured and stored when the triage comment is posted
-- [ ] **REACT-02**: A periodic sync job polls thumbs up/down reactions on recent triage comments
-- [ ] **REACT-03**: Reaction data feeds into the outcome feedback record as a secondary signal
+- [x] **REACT-02**: A periodic sync job polls thumbs up/down reactions on recent triage comments
+- [x] **REACT-03**: Reaction data feeds into the outcome feedback record as a secondary signal
 
 ## Future Requirements
 
@@ -97,8 +97,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LEARN-03 | Phase 113 | Complete |
 | LEARN-04 | Phase 113 | Complete |
 | REACT-01 | Phase 112 | Complete |
-| REACT-02 | Phase 114 | Pending |
-| REACT-03 | Phase 114 | Pending |
+| REACT-02 | Phase 114 | Complete |
+| REACT-03 | Phase 114 | Complete |
 
 **Coverage:**
 - v0.23 requirements: 20 total

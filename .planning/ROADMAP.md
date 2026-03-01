@@ -206,7 +206,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 - [ ] Phase 111: Troubleshooting Agent (TSHOOT-04, 05, 06, 07, 08)
 - [x] Phase 112: Outcome Capture (OUTCOME-01..05, REACT-01)
 - [x] Phase 113: Threshold Learning (LEARN-01..04) -- 2/2 plans done
-- [ ] Phase 114: Reaction Tracking (REACT-02, 03)
+- [x] Phase 114: Reaction Tracking (REACT-02, 03) (completed 2026-03-01)
 
 ## Progress
 
