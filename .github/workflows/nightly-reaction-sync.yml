@@ -1,0 +1,23 @@
+name: nightly-reaction-sync
+
+on:
+  schedule:
+    - cron: '30 3 * * *'  # 3:30 AM UTC daily (30 min after issue sync)
+  workflow_dispatch:       # Manual trigger for testing
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Sync triage comment reactions
+        run: bun scripts/sync-triage-reactions.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
+          GITHUB_PRIVATE_KEY: ${{ secrets.GITHUB_PRIVATE_KEY }}
