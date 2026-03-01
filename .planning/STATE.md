@@ -26,7 +26,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-01)
 Milestone: v0.23 Interactive Troubleshooting — SHIPPED 2026-03-01
 Phases: 114 of 114 (0 phases remaining)
 Status: All milestones through v0.23 shipped
-Last activity: 2026-03-01 -- v0.23 milestone archived
+Last activity: 2026-03-01 -- Completed quick task 15: close v0.23 issue
 
 Progress: [████████████████████] 100% (114/114 phases, 292/292 plans)
 
@@ -74,6 +74,7 @@ None.
 |---|-------------|------|--------|--------|-----------|
 | 13 | Deploy build, update README, triage GitHub issues | 2026-02-26 | df7182394f | Verified | [13-deploy-build-update-readme-triage-github](./quick/13-deploy-build-update-readme-triage-github/) |
 | 14 | Fix CI test failures in buildAuthorExperienceSection | 2026-02-26 | 8248d970c6 | | [14-fix-ci-test-failures-in-buildauthorexper](./quick/14-fix-ci-test-failures-in-buildauthorexper/) |
+| 15 | Read thru issues, comment/close on completed | 2026-03-01 | | | [15-read-thru-issues-comment-close-on-comple](./quick/15-read-thru-issues-comment-close-on-comple/) |
 
 ## Session Continuity
 
