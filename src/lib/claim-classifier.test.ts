@@ -4,6 +4,10 @@ import {
   classifyClaimHeuristic,
   computeSummaryLabel,
   classifyClaims,
+  parseDiffForClassifier,
+  buildFileDiffsMap,
+  isAmbiguous,
+  buildClassificationPrompt,
   type ClaimClassification,
   type ClaimLabel,
   type DiffContext,
@@ -310,5 +314,128 @@ describe("classifyClaims", () => {
     for (const claim of result[0]!.claimClassification.claims) {
       expect(typeof claim.evidence).toBe("string");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseDiffForClassifier
+// ---------------------------------------------------------------------------
+
+describe("parseDiffForClassifier", () => {
+  test("extracts added, removed, and context lines from unified diff", () => {
+    const rawPatch = [
+      "--- a/src/app.ts",
+      "+++ b/src/app.ts",
+      "@@ -10,5 +10,5 @@",
+      " function process() {",
+      "-  if (value === null) return;",
+      "+  if (value == null) return;",
+      "   return value;",
+      " }",
+    ].join("\n");
+
+    const result = parseDiffForClassifier(rawPatch);
+    expect(result.rawPatch).toBe(rawPatch);
+    expect(result.addedLines).toContain("  if (value == null) return;");
+    expect(result.removedLines).toContain("  if (value === null) return;");
+    expect(result.contextLines.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("handles empty patch", () => {
+    const result = parseDiffForClassifier("");
+    expect(result.addedLines).toHaveLength(0);
+    expect(result.removedLines).toHaveLength(0);
+    expect(result.contextLines).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildFileDiffsMap
+// ---------------------------------------------------------------------------
+
+describe("buildFileDiffsMap", () => {
+  test("constructs map from file array", () => {
+    const files = [
+      { filename: "src/a.ts", patch: "+added line\n-removed line\n context line" },
+      { filename: "src/b.ts", patch: "+new code" },
+    ];
+
+    const map = buildFileDiffsMap(files);
+    expect(map.size).toBe(2);
+    expect(map.has("src/a.ts")).toBe(true);
+    expect(map.has("src/b.ts")).toBe(true);
+    expect(map.get("src/a.ts")!.addedLines).toContain("added line");
+  });
+
+  test("skips files without patch", () => {
+    const files = [
+      { filename: "src/a.ts" },
+      { filename: "src/b.ts", patch: "+code" },
+    ];
+
+    const map = buildFileDiffsMap(files);
+    expect(map.size).toBe(1);
+    expect(map.has("src/b.ts")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isAmbiguous
+// ---------------------------------------------------------------------------
+
+describe("isAmbiguous", () => {
+  test("returns true when confidence is below 0.6", () => {
+    const classification: ClaimClassification = {
+      text: "some claim",
+      label: "diff-grounded",
+      confidence: 0.5,
+    };
+    expect(isAmbiguous(classification)).toBe(true);
+  });
+
+  test("returns false when confidence is 0.6 or above", () => {
+    const classification: ClaimClassification = {
+      text: "some claim",
+      label: "external-knowledge",
+      confidence: 0.9,
+    };
+    expect(isAmbiguous(classification)).toBe(false);
+  });
+
+  test("returns false at exactly 0.6", () => {
+    const classification: ClaimClassification = {
+      text: "some claim",
+      label: "diff-grounded",
+      confidence: 0.6,
+    };
+    expect(isAmbiguous(classification)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildClassificationPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildClassificationPrompt", () => {
+  test("includes claim text in prompt", () => {
+    const prompt = buildClassificationPrompt("This API always throws on null", undefined);
+    expect(prompt).toContain("This API always throws on null");
+  });
+
+  test("includes diff context when provided", () => {
+    const diff = makeDiffContext({
+      addedLines: ["const x = 42;"],
+      removedLines: ["const x = 0;"],
+    });
+    const prompt = buildClassificationPrompt("Changed default value", diff);
+    expect(prompt).toContain("const x = 42");
+    expect(prompt).toContain("DIFF CONTEXT");
+  });
+
+  test("includes classification labels in prompt", () => {
+    const prompt = buildClassificationPrompt("some claim", undefined);
+    expect(prompt).toContain("diff-grounded");
+    expect(prompt).toContain("external-knowledge");
+    expect(prompt).toContain("inferential");
   });
 });

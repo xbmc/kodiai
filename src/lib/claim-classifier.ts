@@ -375,6 +375,107 @@ export function computeSummaryLabel(claims: ClaimClassification[]): SummaryLabel
 // Main entry point
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Diff parsing utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a raw unified diff patch into structured DiffContext.
+ * Lines starting with `+` (not `+++`) -> addedLines
+ * Lines starting with `-` (not `---`) -> removedLines
+ * Lines starting with ` ` -> contextLines
+ */
+export function parseDiffForClassifier(rawPatch: string): DiffContext {
+  if (!rawPatch) {
+    return { rawPatch: rawPatch ?? "", addedLines: [], removedLines: [], contextLines: [] };
+  }
+
+  const lines = rawPatch.split("\n");
+  const addedLines: string[] = [];
+  const removedLines: string[] = [];
+  const contextLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith("+++") || line.startsWith("---")) {
+      continue; // Skip file header lines
+    }
+    if (line.startsWith("+")) {
+      addedLines.push(line.slice(1));
+    } else if (line.startsWith("-")) {
+      removedLines.push(line.slice(1));
+    } else if (line.startsWith(" ")) {
+      contextLines.push(line.slice(1));
+    }
+  }
+
+  return { rawPatch, addedLines, removedLines, contextLines };
+}
+
+/**
+ * Build a Map<string, DiffContext> from an array of file diffs.
+ * Files without a patch field are skipped.
+ */
+export function buildFileDiffsMap(
+  files: Array<{ filename: string; patch?: string }>,
+): Map<string, DiffContext> {
+  const map = new Map<string, DiffContext>();
+  for (const file of files) {
+    if (file.patch) {
+      map.set(file.filename, parseDiffForClassifier(file.patch));
+    }
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// LLM second-pass utilities
+// ---------------------------------------------------------------------------
+
+/** Ambiguity threshold: claims below this confidence get LLM second-pass. */
+const AMBIGUITY_THRESHOLD = 0.6;
+
+/**
+ * Check if a claim classification is ambiguous enough to warrant LLM second-pass.
+ */
+export function isAmbiguous(classification: ClaimClassification): boolean {
+  return classification.confidence < AMBIGUITY_THRESHOLD;
+}
+
+/**
+ * Build a focused prompt for LLM-based claim classification.
+ */
+export function buildClassificationPrompt(
+  claim: string,
+  diffContext: DiffContext | undefined,
+): string {
+  const diffSection = diffContext
+    ? [
+        "DIFF CONTEXT (what is visible in the code change):",
+        ...diffContext.addedLines.slice(0, 250).map((l) => `+ ${l}`),
+        ...diffContext.removedLines.slice(0, 250).map((l) => `- ${l}`),
+      ].join("\n")
+    : "DIFF CONTEXT: No diff available for this file.";
+
+  return [
+    "Classify this claim from a code review finding.",
+    "",
+    `CLAIM: "${claim}"`,
+    "",
+    diffSection,
+    "",
+    "Classify as exactly one of:",
+    '- "diff-grounded": claim is directly supported by what\'s visible in the diff',
+    '- "external-knowledge": claim asserts facts not visible in the diff (versions, dates, API behavior)',
+    '- "inferential": logical deduction from visible diff content',
+    "",
+    'Respond with JSON: {"label": "...", "confidence": 0.0-1.0, "evidence": "..."}',
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
+
 /**
  * Classify claims in each finding. Fail-open: on any error, returns findings
  * with default classification (primarily-diff-grounded, empty claims).

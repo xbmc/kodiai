@@ -16,6 +16,7 @@ import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
 import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incremental-diff.ts";
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
+import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
@@ -119,6 +120,7 @@ type ProcessedFinding = ExtractedFinding & {
   confidence: number;
   suppressionPattern?: string;
   deprioritized?: boolean;
+  claimClassification?: FindingClaimClassification;
 };
 
 type RetrievalContextForPrompt = {
@@ -2952,6 +2954,34 @@ export function createReviewHandler(deps: {
           ? new Set(tieredFiles.abbreviated.map(f => f.filePath))
           : new Set<string>();
 
+        // Post-LLM claim classification (CLAIM-01 through CLAIM-03)
+        // Classifies each finding's claims as diff-grounded, external-knowledge, or inferential.
+        // Fail-open: errors log warning and return findings unchanged.
+        const fileDiffs = diffContext.diffContent
+          ? buildFileDiffsMap(splitDiffByFile(diffContext.diffContent))
+          : new Map();
+        const classifiedFindings = classifyClaims({
+          findings: enforcedFindings as unknown as Array<ExtractedFinding & Record<string, unknown>>,
+          fileDiffs,
+          prDescription: pr.body ?? null,
+          commitMessages: commitMessagesForLinking,
+        });
+        const claimClassificationMap = new Map(
+          classifiedFindings.map((f) => [f.commentId, f.claimClassification]),
+        );
+        const externalClaimCount = classifiedFindings.filter(
+          (f) => f.claimClassification?.summaryLabel === "primarily-external",
+        ).length;
+        const mixedClaimCount = classifiedFindings.filter(
+          (f) => f.claimClassification?.summaryLabel === "mixed",
+        ).length;
+        if (externalClaimCount > 0 || mixedClaimCount > 0) {
+          logger.info(
+            { ...baseLog, externalClaimFindings: externalClaimCount, mixedClaimFindings: mixedClaimCount },
+            "Claim classification applied",
+          );
+        }
+
         const suppressionMatchCounts = new Map<string, number>();
         // Enforcement preserves all ExtractedFinding fields; cast back to the
         // intersection so downstream code can access commentId, startLine, etc.
@@ -3017,6 +3047,7 @@ export function createReviewHandler(deps: {
             suppressed,
             confidence,
             suppressionPattern,
+            claimClassification: claimClassificationMap.get(finding.commentId),
           };
         });
 
