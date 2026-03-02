@@ -571,6 +571,59 @@ describe("createSlackAssistantHandler", () => {
     );
   });
 
+  test("slack assistant prompt includes epistemic boundaries section", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Test answer." };
+      },
+      publishInThread: async () => undefined,
+      defaultRepo: "xbmc/xbmc",
+    });
+
+    await handler.handle(createAddressedPayload("Explain the retry behavior."));
+
+    expect(executionInputs).toHaveLength(1);
+    const prompt = executionInputs[0]!.prompt;
+    // PROMPT-04: Epistemic boundaries section is present
+    expect(prompt).toContain("## Epistemic Boundaries");
+    expect(prompt).toContain("Diff-visible");
+    expect(prompt).toContain("External knowledge");
+    expect(prompt).toContain("System-provided enrichment");
+  });
+
+  test("slack prompt reconciles never-hedge with epistemic silently-omit rule", async () => {
+    const executionInputs: SlackAssistantExecutorInput[] = [];
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async (input) => {
+        executionInputs.push(input);
+        return { answerText: "Test answer." };
+      },
+      publishInThread: async () => undefined,
+      defaultRepo: "xbmc/xbmc",
+    });
+
+    await handler.handle(createAddressedPayload("Explain the retry behavior."));
+
+    expect(executionInputs).toHaveLength(1);
+    const prompt = executionInputs[0]!.prompt;
+    // Should NOT have the old blanket "Never hedge" rule that contradicts epistemic omission
+    expect(prompt).not.toContain("Never hedge — state things definitively");
+    // Should have the scoped version for visible context only
+    expect(prompt).toContain("For things you can see in the codebase: state definitively");
+  });
+
   test("publishes exactly one clarifying question for ambiguous context and skips execution", async () => {
     const published: string[] = [];
     let workspaceCalls = 0;

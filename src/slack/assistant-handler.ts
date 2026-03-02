@@ -1,6 +1,7 @@
 import type { Workspace } from "../jobs/types.ts";
 import type { createRetriever, RetrieveResult } from "../knowledge/retrieval.ts";
 import type { Logger } from "pino";
+import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
 import { resolveSlackRepoContext } from "./repo-context.ts";
 import {
   resolveSlackWriteIntent,
@@ -125,7 +126,7 @@ function buildSlackAssistantPrompt(input: { repoContext: string; messageText: st
     "Tone and formatting:",
     "- Casual tone, like a friend who knows the codebase. Contractions OK, informal phrasing OK.",
     '- Avoid first person — "that file doesn\'t exist" not "I don\'t see that file."',
-    '- Never hedge — state things definitively or say "not sure." No "I think..." or "it looks like..."',
+    '- For things you can see in the codebase: state definitively. No "I think..." or "it looks like..."',
     "- Simple questions: plain text with inline backticks for file paths/function names. No headers, no bullet lists.",
     "- Complex questions: bullets OK for lists, but never section headers (##). Keep it flat.",
     "- Code snippets: inline backticks for names, triple-backtick blocks OK for 1-5 line snippets.",
@@ -133,6 +134,8 @@ function buildSlackAssistantPrompt(input: { repoContext: string; messageText: st
     '- Never use AI-isms ("As an AI...", "Based on my analysis...") or filler ("Absolutely!", "Of course!").',
     "",
     ...modeInstructions,
+    buildEpistemicBoundarySection(),
+    "",
     "Slack message:",
     input.messageText,
   ];
