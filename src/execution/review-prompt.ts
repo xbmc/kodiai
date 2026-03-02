@@ -239,7 +239,7 @@ export function buildEpistemicBoundarySection(): string {
   return [
     "## Epistemic Boundaries",
     "",
-    "Every assertion in this review must be grounded in verifiable evidence. Classify your knowledge into three tiers:",
+    "Every assertion in your response must be grounded in verifiable evidence. Classify your knowledge into three tiers:",
     "",
     "### What you CAN assert as fact",
     "",
@@ -290,7 +290,7 @@ export function buildToneGuidelinesSection(): string {
   return [
     "## Finding Language Guidelines",
     "",
-    "**Epistemic principle:** Assert what you can verify from the diff and system-provided enrichment. Silently omit what you cannot verify. Never speculate about external facts.",
+    "**Epistemic principle:** Assert what you can verify from visible context and system-provided enrichment. Silently omit what you cannot verify. Never speculate about external facts.",
     "",
     "Every finding must be specific about WHAT happens, WHEN it happens, and WHY it matters — grounded in what the diff shows.",
     "",

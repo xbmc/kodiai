@@ -1579,6 +1579,17 @@ describe("buildEpistemicBoundarySection", () => {
     const section = buildEpistemicBoundarySection();
     expect(section).toMatch(/no URL.*no assertion|cannot.*assert.*without.*URL/i);
   });
+
+  // Phase 116: Surface-neutral language (PROMPT-04)
+  test("uses surface-neutral language — does NOT contain 'this review'", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).not.toContain("this review");
+  });
+
+  test("uses 'your response' instead of review-specific language", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toContain("your response");
+  });
 });
 
 describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () => {
