@@ -214,7 +214,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 115-01-PLAN.md — Epistemic boundary section, tone rewrite, dep-bump diff-grounding, footnote citations, conventional commit cleanup
+- [x] 115-01-PLAN.md — Epistemic boundary section, tone rewrite, dep-bump diff-grounding, footnote citations, conventional commit cleanup
 
 ### Phase 116: Cross-Surface Epistemic Guardrails
 **Goal**: Epistemic guardrails apply consistently across all bot response surfaces, not just PR reviews
@@ -297,7 +297,7 @@ Plans:
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
-| 115 | v0.24 | 0/1 | Not started | - |
+| 115 | v0.24 | 1/1 | Executing | 2026-03-02 |
 | 116 | v0.24 | 0/1 | Not started | - |
 | 117 | v0.24 | 0/1 | Not started | - |
 | 118 | v0.24 | 0/1 | Not started | - |
