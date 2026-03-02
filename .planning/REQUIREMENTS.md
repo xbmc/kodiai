@@ -9,9 +9,9 @@ Requirements for Hallucination Prevention & Fact Verification milestone. Each ma
 
 ### Prompt Guardrails
 
-- [ ] **PROMPT-01**: Review prompt distinguishes diff-visible facts from external knowledge claims with explicit epistemic boundaries
-- [ ] **PROMPT-02**: LLM is instructed to never assert specific version numbers, API release dates, or library behavior unless visible in the PR diff
-- [ ] **PROMPT-03**: Findings about external dependencies must reference only what the diff shows (e.g., "this code uses X" not "X was introduced in version Y")
+- [x] **PROMPT-01**: Review prompt distinguishes diff-visible facts from external knowledge claims with explicit epistemic boundaries
+- [x] **PROMPT-02**: LLM is instructed to never assert specific version numbers, API release dates, or library behavior unless visible in the PR diff
+- [x] **PROMPT-03**: Findings about external dependencies must reference only what the diff shows (e.g., "this code uses X" not "X was introduced in version Y")
 - [ ] **PROMPT-04**: Epistemic guardrails apply across all surfaces (PR reviews, @mention responses, Slack answers)
 
 ### Claim Classification
@@ -53,9 +53,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | Phase 115 | Pending |
-| PROMPT-02 | Phase 115 | Pending |
-| PROMPT-03 | Phase 115 | Pending |
+| PROMPT-01 | Phase 115 | Complete |
+| PROMPT-02 | Phase 115 | Complete |
+| PROMPT-03 | Phase 115 | Complete |
 | PROMPT-04 | Phase 116 | Pending |
 | CLAIM-01 | Phase 117 | Pending |
 | CLAIM-02 | Phase 117 | Pending |

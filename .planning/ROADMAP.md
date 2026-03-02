@@ -194,7 +194,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Eliminate fabricated claims in PR reviews by adding epistemic guardrails, post-generation claim classification, severity demotion for unverified external knowledge, and output filtering that suppresses or rewrites unverifiable assertions before publishing.
 
-- [ ] **Phase 115: PR Review Epistemic Guardrails** - Add epistemic boundaries to review prompt distinguishing diff-visible facts from external knowledge claims
+- [x] **Phase 115: PR Review Epistemic Guardrails** - Add epistemic boundaries to review prompt distinguishing diff-visible facts from external knowledge claims (completed 2026-03-02)
 - [ ] **Phase 116: Cross-Surface Epistemic Guardrails** - Propagate epistemic guardrails to mention and Slack response surfaces
 - [ ] **Phase 117: Claim Classification** - Post-LLM pass that classifies each finding's claims as diff-grounded vs external-knowledge
 - [ ] **Phase 118: Severity Demotion** - Cap severity of findings whose core claims depend on unverified external knowledge
@@ -297,7 +297,7 @@ Plans:
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
-| 115 | v0.24 | 1/1 | Executing | 2026-03-02 |
+| 115 | v0.24 | Complete    | 2026-03-02 | 2026-03-02 |
 | 116 | v0.24 | 0/1 | Not started | - |
 | 117 | v0.24 | 0/1 | Not started | - |
 | 118 | v0.24 | 0/1 | Not started | - |
