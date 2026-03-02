@@ -16,9 +16,9 @@ Requirements for Hallucination Prevention & Fact Verification milestone. Each ma
 
 ### Claim Classification
 
-- [ ] **CLAIM-01**: Post-LLM pass classifies each finding's claims as diff-grounded vs external-knowledge
-- [ ] **CLAIM-02**: Claims referencing specific version numbers, release dates, or API behavior not visible in the diff are flagged as external-knowledge
-- [ ] **CLAIM-03**: Classification results are attached to findings for downstream processing (severity demotion, filtering)
+- [x] **CLAIM-01**: Post-LLM pass classifies each finding's claims as diff-grounded vs external-knowledge
+- [x] **CLAIM-02**: Claims referencing specific version numbers, release dates, or API behavior not visible in the diff are flagged as external-knowledge
+- [x] **CLAIM-03**: Classification results are attached to findings for downstream processing (severity demotion, filtering)
 
 ### Severity Demotion
 
@@ -57,9 +57,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROMPT-02 | Phase 115 | Complete |
 | PROMPT-03 | Phase 115 | Complete |
 | PROMPT-04 | Phase 116 | Pending |
-| CLAIM-01 | Phase 117 | Pending |
-| CLAIM-02 | Phase 117 | Pending |
-| CLAIM-03 | Phase 117 | Pending |
+| CLAIM-01 | Phase 117 | Complete |
+| CLAIM-02 | Phase 117 | Complete |
+| CLAIM-03 | Phase 117 | Complete |
 | SEV-01 | Phase 118 | Pending |
 | SEV-02 | Phase 118 | Pending |
 | SEV-03 | Phase 118 | Pending |

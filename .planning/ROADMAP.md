@@ -196,7 +196,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
 - [x] **Phase 115: PR Review Epistemic Guardrails** - Add epistemic boundaries to review prompt distinguishing diff-visible facts from external knowledge claims (completed 2026-03-02)
 - [x] **Phase 116: Cross-Surface Epistemic Guardrails** - Propagate epistemic guardrails to mention and Slack response surfaces (completed 2026-03-02)
-- [ ] **Phase 117: Claim Classification** - Post-LLM pass that classifies each finding's claims as diff-grounded vs external-knowledge
+- [x] **Phase 117: Claim Classification** - Post-LLM pass that classifies each finding's claims as diff-grounded vs external-knowledge (completed 2026-03-02)
 - [ ] **Phase 118: Severity Demotion** - Cap severity of findings whose core claims depend on unverified external knowledge
 - [ ] **Phase 119: Output Filtering** - Rewrite or suppress findings with unverifiable external claims before publishing
 
@@ -299,7 +299,7 @@ Plans:
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 | 115 | v0.24 | Complete    | 2026-03-02 | 2026-03-02 |
 | 116 | 1/1 | Complete    | 2026-03-02 | - |
-| 117 | v0.24 | 0/1 | Not started | - |
+| 117 | 1/1 | Complete   | 2026-03-02 | - |
 | 118 | v0.24 | 0/1 | Not started | - |
 | 119 | v0.24 | 0/1 | Not started | - |
 
