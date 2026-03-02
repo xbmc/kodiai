@@ -509,10 +509,15 @@ describe("catchUpReviewComments", () => {
       getByGithubId: mock(async () => null),
     });
 
+    // Generate 100 comments for page 1 so pagination continues
+    const page1 = Array.from({ length: 100 }, (_, i) =>
+      makeGitHubComment({ id: 7000 + i, body: `Page 1 comment ${i}`, path: `src/p1-${i}.ts` }),
+    );
+    const page2 = [makeGitHubComment({ id: 7200, body: "Page 2 comment", path: "src/other.ts" })];
+
     const octokit = createMockOctokit({
-      1: [makeGitHubComment({ id: 7001, body: "Page 1 comment" })],
-      2: [makeGitHubComment({ id: 7002, body: "Page 2 comment", path: "src/other.ts" })],
-      3: [], // Empty page signals end
+      1: page1,
+      2: page2,
     });
 
     const result = await catchUpReviewComments({
@@ -523,8 +528,8 @@ describe("catchUpReviewComments", () => {
       logger,
     });
 
-    expect(result.pagesProcessed).toBe(3); // pages 1, 2, and 3 (empty)
-    expect(result.newComments).toBe(2);
+    expect(result.pagesProcessed).toBe(2); // page 1 (100 items, continues) + page 2 (< 100 items, stops)
+    expect(result.newComments).toBe(101);
   });
 
   it("uses 24 hours ago as default when lastSyncedAt is null", async () => {

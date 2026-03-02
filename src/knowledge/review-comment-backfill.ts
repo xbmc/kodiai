@@ -235,7 +235,7 @@ export function groupCommentsIntoThreads(
 
 // ── Embedding helper ────────────────────────────────────────────────────────
 
-async function embedChunks(
+export async function embedChunks(
   chunks: ReviewCommentChunk[],
   embeddingProvider: EmbeddingProvider,
   store: ReviewCommentStore,
