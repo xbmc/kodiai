@@ -242,6 +242,18 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 
+### Phase 1: Review comment backfill reliability
+
+**Goal:** Harden the review comment backfill pipeline with retry logic, per-thread error isolation, catch-up sync for missed webhooks, and embedding recovery sweep
+**Requirements**: [RETRY-BACKOFF, THREAD-ISOLATION, STORE-METHODS, CATCHUP-SYNC, EDIT-DETECTION, EMBEDDING-SWEEP, NULL-EMBEDDING-RECOVERY]
+**Depends on:** None (standalone reliability improvement)
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md -- Retry logic, per-thread error isolation, new store methods
+- [ ] 01-02-PLAN.md -- Catch-up sync with edit detection
+- [ ] 01-03-PLAN.md -- Embedding sweep for null embedding recovery
+
 ---
 
-*Roadmap updated: 2026-03-01 -- v0.23 Interactive Troubleshooting shipped*
+*Roadmap updated: 2026-03-01 -- Phase 1 planned*
