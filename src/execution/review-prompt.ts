@@ -233,6 +233,13 @@ export function buildPrIntentScopingSection(
 }
 
 // ---------------------------------------------------------------------------
+// Helper: Epistemic boundary section (PROMPT-01)
+// ---------------------------------------------------------------------------
+export function buildEpistemicBoundarySection(): string {
+  return "";
+}
+
+// ---------------------------------------------------------------------------
 // Helper: Tone and language guidelines section (FORMAT-08, FORMAT-17, FORMAT-18)
 // ---------------------------------------------------------------------------
 export function buildToneGuidelinesSection(): string {

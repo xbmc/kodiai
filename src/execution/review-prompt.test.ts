@@ -17,6 +17,7 @@ import {
   buildReviewPrompt,
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
+  buildEpistemicBoundarySection,
   buildVerdictLogicSection,
   formatClusterPatterns,
   formatReviewPrecedents,
@@ -991,17 +992,11 @@ describe("Phase 35: Findings organization and tone", () => {
     expect(section).toContain("Branch: feat/new-ui");
   });
 
-  // 14. buildToneGuidelinesSection returns complete guidelines
+  // 14. buildToneGuidelinesSection returns complete guidelines (rewritten Phase 115)
   test("buildToneGuidelinesSection returns complete guidelines content", () => {
     const section = buildToneGuidelinesSection();
     expect(section).toContain("## Finding Language Guidelines");
-    expect(section).toContain("WHAT happens");
-    expect(section).toContain("WHEN it happens");
-    expect(section).toContain("WHY it matters");
-    expect(section).toContain("causes [specific issue] when [specific condition]");
     expect(section).toContain("Optional:");
-    expect(section).toContain("consider refactoring");
-    expect(section).toContain("this might have problems");
   });
 
   // 15. Enhanced mode is NOT changed
@@ -1235,7 +1230,7 @@ describe("depBumpContext", () => {
     expect(prompt).toContain("15.2.0");
     expect(prompt).toContain("16.0.0");
     expect(prompt).toContain("npm");
-    expect(prompt).toContain("Breaking API changes");
+    expect(prompt).toContain("MAJOR version bump");
   });
 
   test("includes dependency bump section for minor/patch bump", () => {
@@ -1249,7 +1244,6 @@ describe("depBumpContext", () => {
     expect(prompt).toContain("Dependency Bump Context");
     expect(prompt).toContain("minor/patch dependency update");
     expect(prompt).not.toContain("MAJOR version bump");
-    expect(prompt).toContain("routine maintenance");
   });
 
   test("includes group bump note", () => {
@@ -1538,5 +1532,252 @@ describe("formatClusterPatterns", () => {
 
     const promptUndef = buildReviewPrompt(baseContext());
     expect(promptUndef).not.toContain("## Recurring Review Patterns");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 115: Epistemic Boundary Section (PROMPT-01, PROMPT-02, PROMPT-03)
+// ---------------------------------------------------------------------------
+describe("buildEpistemicBoundarySection", () => {
+  test("returns string containing Epistemic Boundaries heading", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toContain("## Epistemic Boundaries");
+  });
+
+  test("contains allowlist categories (diff-visible, system-provided enrichment)", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toContain("Diff-visible");
+    expect(section).toContain("System-provided enrichment");
+  });
+
+  test("contains denylist (version numbers, API release dates, library behavior not in diff)", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toContain("version numbers");
+    expect(section).toMatch(/API.*(release|date|change)/i);
+    expect(section).toMatch(/library.*(behavior|behaviour)/i);
+  });
+
+  test("states external knowledge claims must be silently omitted", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toMatch(/silently omit/i);
+  });
+
+  test("allows general programming knowledge (null deref, SQL injection)", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toMatch(/null.*deref|null pointer/i);
+    expect(section).toMatch(/SQL injection/i);
+  });
+
+  test("defines universal citation rule — diff-visible cites file:line, enrichment cites footnote URL", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toContain("file:line");
+    expect(section).toMatch(/footnote/i);
+    expect(section).toMatch(/\[.*\d.*\]/);
+  });
+
+  test("states no URL = no assertion rule", () => {
+    const section = buildEpistemicBoundarySection();
+    expect(section).toMatch(/no URL.*no assertion|cannot.*assert.*without.*URL/i);
+  });
+});
+
+describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () => {
+  test("does NOT contain blanket anti-hedging rule", () => {
+    const section = buildToneGuidelinesSection();
+    expect(section).not.toContain("Do NOT use hedged or vague language");
+  });
+
+  test("contains epistemic principle (assert what verifiable from diff, omit what can't)", () => {
+    const section = buildToneGuidelinesSection();
+    expect(section).toMatch(/assert.*verif|verify.*assert|verifiable.*diff/i);
+  });
+
+  test("still contains Prefix Preference findings with Optional:", () => {
+    const section = buildToneGuidelinesSection();
+    expect(section).toContain("Optional:");
+  });
+});
+
+describe("epistemic section placement in buildReviewPrompt", () => {
+  test("epistemic section appears BEFORE conventional commit context", () => {
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    const epistemicIdx = prompt.indexOf("## Epistemic Boundaries");
+    const conventionalIdx = prompt.indexOf("## Conventional Commit Context");
+    expect(epistemicIdx).toBeGreaterThan(-1);
+    expect(conventionalIdx).toBeGreaterThan(-1);
+    expect(epistemicIdx).toBeLessThan(conventionalIdx);
+  });
+
+  test("epistemic section appears after focus hints", () => {
+    const prompt = buildReviewPrompt(baseContext({ focusHints: ["auth"] }));
+    const focusIdx = prompt.indexOf("## Focus Hints");
+    const epistemicIdx = prompt.indexOf("## Epistemic Boundaries");
+    expect(focusIdx).toBeGreaterThan(-1);
+    expect(epistemicIdx).toBeGreaterThan(-1);
+    expect(epistemicIdx).toBeGreaterThan(focusIdx);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 115: Dep-bump rewrites, footnote citations, conventional commit
+// ---------------------------------------------------------------------------
+describe("dep-bump epistemic rewrites", () => {
+  function makeDepBumpCtx(overrides: Record<string, unknown> = {}) {
+    return {
+      detection: {
+        source: "dependabot" as const,
+        signals: ["title", "sender"],
+      },
+      details: {
+        packageName: "lodash",
+        oldVersion: "4.17.20",
+        newVersion: "4.17.21",
+        ecosystem: "npm",
+        isGroup: false,
+      },
+      classification: {
+        bumpType: "patch" as const,
+        isBreaking: false,
+      },
+      ...overrides,
+    };
+  }
+
+  test("major-bump focus list does NOT contain 'Breaking API changes in the updated dependency'", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx({
+        details: { packageName: "@angular/core", oldVersion: "15.2.0", newVersion: "16.0.0", ecosystem: "npm", isGroup: false },
+        classification: { bumpType: "major", isBreaking: true },
+      }),
+    }));
+    expect(prompt).not.toContain("Breaking API changes in the updated dependency");
+  });
+
+  test("major-bump focus list does NOT contain 'Deprecated features that may have been removed'", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx({
+        details: { packageName: "@angular/core", oldVersion: "15.2.0", newVersion: "16.0.0", ecosystem: "npm", isGroup: false },
+        classification: { bumpType: "major", isBreaking: true },
+      }),
+    }));
+    expect(prompt).not.toContain("Deprecated features that may have been removed");
+  });
+
+  test("major-bump focus list references diff-visible items (lockfile, imports, tests)", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx({
+        details: { packageName: "@angular/core", oldVersion: "15.2.0", newVersion: "16.0.0", ecosystem: "npm", isGroup: false },
+        classification: { bumpType: "major", isBreaking: true },
+      }),
+    }));
+    expect(prompt).toMatch(/lockfile/i);
+    expect(prompt).toMatch(/import/i);
+    expect(prompt).toMatch(/test/i);
+  });
+
+  test("major-bump keeps MAJOR version bump label", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx({
+        details: { packageName: "@angular/core", oldVersion: "15.2.0", newVersion: "16.0.0", ecosystem: "npm", isGroup: false },
+        classification: { bumpType: "major", isBreaking: true },
+      }),
+    }));
+    expect(prompt).toContain("MAJOR version bump");
+  });
+
+  test("minor/patch focus list references lockfile consistency, dependency tree, imports", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx(),
+    }));
+    expect(prompt).toMatch(/lockfile/i);
+    expect(prompt).toMatch(/import/i);
+  });
+
+  test("dep-bump section includes epistemic reinforcement text", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx(),
+    }));
+    expect(prompt).toContain("Do not assert what this version");
+  });
+
+  test("dep-bump with no security and no changelog includes unenriched note", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      depBumpContext: makeDepBumpCtx(),
+    }));
+    expect(prompt).toContain("No changelog or advisory data available for this update");
+  });
+});
+
+describe("security section footnote citations", () => {
+  function makeDepBumpWithSecurity() {
+    return {
+      detection: { source: "dependabot" as const, signals: ["title", "sender"] },
+      details: { packageName: "express", oldVersion: "4.17.0", newVersion: "4.18.0", ecosystem: "npm", isGroup: false },
+      classification: { bumpType: "minor" as const, isBreaking: false },
+      security: {
+        advisories: [{
+          ghsaId: "GHSA-test-1234",
+          cveId: "CVE-2024-0001",
+          severity: "high" as const,
+          summary: "Remote code execution vulnerability",
+          vulnerableVersionRange: "< 4.18.0",
+          firstPatchedVersion: "4.18.0",
+          affectsOld: true,
+          affectsNew: false,
+          url: "https://github.com/advisories/GHSA-test-1234",
+        }],
+        isSecurityBump: true,
+      },
+    };
+  }
+
+  test("advisory entries include footnote reference format using adv.url", () => {
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext: makeDepBumpWithSecurity() }));
+    expect(prompt).toMatch(/\[\d+\]/);
+    expect(prompt).toContain("https://github.com/advisories/GHSA-test-1234");
+  });
+});
+
+describe("changelog section footnote citations", () => {
+  function makeDepBumpWithChangelog() {
+    return {
+      detection: { source: "dependabot" as const, signals: ["title", "sender"] },
+      details: { packageName: "react", oldVersion: "18.2.0", newVersion: "18.3.0", ecosystem: "npm", isGroup: false },
+      classification: { bumpType: "minor" as const, isBreaking: false },
+      changelog: {
+        releaseNotes: [{ tag: "v18.3.0", body: "New features and improvements" }],
+        breakingChanges: [],
+        compareUrl: "https://github.com/facebook/react/compare/v18.2.0...v18.3.0",
+        source: "releases" as const,
+      },
+    };
+  }
+
+  test("release notes include footnote reference using compareUrl", () => {
+    const prompt = buildReviewPrompt(baseContext({ depBumpContext: makeDepBumpWithChangelog() }));
+    expect(prompt).toMatch(/\[\d+\]/);
+    expect(prompt).toContain("https://github.com/facebook/react/compare/v18.2.0...v18.3.0");
+  });
+});
+
+describe("conventional commit type guidance (diff-grounded)", () => {
+  test("typeGuidance for feat does NOT contain 'breaking changes in public APIs'", () => {
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    expect(prompt).not.toContain("breaking changes in public APIs");
+  });
+
+  test("typeGuidance values are diff-grounded (reference code changes, test files, imports)", () => {
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
+    expect(prompt).toMatch(/code path|import|export|test/i);
+  });
+
+  test("typeGuidance for fix references root cause visible in diff", () => {
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "fix", isBreaking: false } }));
+    expect(prompt).toMatch(/code change|diff|fixed code path/i);
+  });
+
+  test("BREAKING CHANGE text is diff-grounded", () => {
+    const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: true } }));
+    expect(prompt).toMatch(/removed.*export|renamed.*export|changed.*signature|modified.*default/i);
   });
 });
