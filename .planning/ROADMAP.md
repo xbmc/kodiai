@@ -211,10 +211,10 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
   2. When reviewing a dependency bump PR, the bot does not assert specific version numbers, API release dates, or library behavior unless those values appear in the diff
   3. Findings about external dependencies reference only what the diff shows (e.g., "this PR updates X from version A to B" based on diff content, not "X version B introduced feature Y")
   4. The "Do NOT use hedged or vague language" instruction is scoped to diff-visible facts only, allowing appropriate hedging for external claims
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 115-01: PR review epistemic guardrails
+- [ ] 115-01-PLAN.md — Epistemic boundary section, tone rewrite, dep-bump diff-grounding, footnote citations, conventional commit cleanup
 
 ### Phase 116: Cross-Surface Epistemic Guardrails
 **Goal**: Epistemic guardrails apply consistently across all bot response surfaces, not just PR reviews
