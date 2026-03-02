@@ -1,47 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.1
-milestone_name: milestone
-status: unknown
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-03-02T03:04:26.788Z"
+milestone: v0.24
+milestone_name: Hallucination Prevention & Fact Verification
+status: defining_requirements
+last_updated: "2026-03-02"
 progress:
-  total_phases: 83
-  completed_phases: 79
-  total_plans: 195
-  completed_plans: 202
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-03-01)
+See: `.planning/PROJECT.md` (updated 2026-03-02)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.24 Hallucination Prevention & Fact Verification
 
 ## Current Position
 
-Milestone: v0.23 Interactive Troubleshooting — SHIPPED 2026-03-01
-Phases: 114 of 114 (0 phases remaining)
-Status: All milestones through v0.23 shipped
-Last activity: 2026-03-01 -- Completed quick task 15: close v0.23 issue
-
-Progress: [████████████████████] 100% (114/114 phases, 292/292 plans)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-02 — Milestone v0.24 started
 
 ## Accumulated Context
 
 ### Decisions
 
 All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions table.
-- [Phase 01]: withRetry uses exponential backoff with configurable maxRetries and baseDelayMs
-- [Phase 01]: Thread failures logged with structured context and continue processing remaining threads
-- [Phase 01]: Embedding sweep uses EmbeddingResult type (not raw Float32Array) matching actual EmbeddingProvider interface
-- [Phase 01]: batchDelayMs=1 in tests since bun:test lacks fake timers
-- [Phase 01]: Catch-up sync uses per-comment getByGithubId for edit detection (simplicity over batch query)
-- [Phase 01]: Thread-level edit classification: any edited comment triggers full thread re-chunk via updateChunks
-- [Phase 01]: 24-hour default fallback when lastSyncedAt is null but backfill complete
 
 ### Key Constraints (Carry-Forward)
 
@@ -71,9 +61,13 @@ All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions tab
 - **No auto re-review on push.** Kodiai must NOT automatically re-review when new commits are pushed.
 - **No unsolicited responses.** Kodiai must NOT respond unless explicitly spoken to.
 
-### Roadmap Evolution
+### Hallucination Context (v0.24 Motivation)
 
-- Phase 1 added: Review comment backfill reliability
+- PR #27932: bot fabricated libxkbcommon version numbers (1.13.0, 1.11.0, 1.12.x) as [CRITICAL]
+- Root cause 1: Prompt says "Do NOT use hedged or vague language" — encourages assertiveness over accuracy for external facts
+- Root cause 2: No post-generation fact-verification layer — confidence scoring is mathematical, not semantic
+- Root cause 3: CRITICAL findings bypass all suppression — hallucinated CRITICALs are worst-case
+- Key files: src/execution/review-prompt.ts (line 238, 1697, 1740), src/knowledge/confidence.ts, src/feedback/safety-guard.ts, src/enforcement/severity-floors.ts
 
 ### Blockers/Concerns
 
@@ -89,6 +83,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-02T02:59:55.249Z
-**Stopped At:** Completed 01-02-PLAN.md
-**Resume with:** Continue with remaining plans or `/gsd:new-milestone`
+**Last session:** 2026-03-02
+**Stopped At:** Milestone v0.24 setup in progress
+**Resume with:** `/gsd:new-milestone` or continue requirements definition

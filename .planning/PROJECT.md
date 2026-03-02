@@ -122,6 +122,17 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.24 Hallucination Prevention & Fact Verification
+
+**Goal:** Eliminate fabricated claims in PR reviews by adding epistemic guardrails, reworking confidence scoring for external knowledge claims, and introducing a post-generation fact-check pass that flags unverifiable assertions before publishing.
+
+**Target features:**
+- Epistemic guardrails in review prompt (distinguish diff-visible facts vs external knowledge claims)
+- Confidence scoring rework (penalize unverified external claims, especially CRITICALs)
+- Post-generation fact-check pass (flag unverifiable claims before publishing)
+
+**Motivation:** PR #27932 — bot fabricated specific libxkbcommon version numbers (1.13.0, 1.11.0, 1.12.x) as a [CRITICAL] observation. Maintainer called it out: "Is AI hallucinating?" CRITICALs bypass all suppression, making hallucinated CRITICALs the worst-case scenario.
+
 ## Current State
 
 v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pipeline operational:
@@ -283,7 +294,10 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 
 ### Active
 
-(No active requirements — next milestone not yet defined)
+- [ ] Epistemic guardrails distinguish diff-visible facts from external knowledge claims
+- [ ] Confidence scoring penalizes unverified external claims
+- [ ] Post-generation fact-check flags unverifiable assertions before publishing
+- [ ] CRITICAL findings with external knowledge claims get additional scrutiny
 
 ### Out of Scope
 
@@ -408,4 +422,4 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-01 after v0.23 milestone*
+*Last updated: 2026-03-02 after v0.24 milestone start*
