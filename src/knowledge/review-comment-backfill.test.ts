@@ -63,6 +63,11 @@ function createMockStore(overrides?: Partial<ReviewCommentStore>): ReviewComment
     }),
     getLatestCommentDate: mock(async () => null),
     countByRepo: mock(async () => 0),
+    searchByFullText: mock(async () => []),
+    getNullEmbeddingChunks: mock(async () => []),
+    updateEmbedding: mock(async () => {}),
+    countNullEmbeddings: mock(async () => 0),
+    getByGithubId: mock(async () => null),
     ...overrides,
   };
 }
@@ -566,7 +571,7 @@ describe("backfill thread isolation", () => {
 
     // Should log error with structured context
     expect(logger.error).toHaveBeenCalled();
-    const errorCall = (logger.error as ReturnType<typeof mock>).mock.calls[0];
+    const errorCall = (logger.error as ReturnType<typeof mock>).mock.calls[0]!;
     const errorContext = errorCall[0] as Record<string, unknown>;
     expect(errorContext).toHaveProperty("repo");
     expect(errorContext).toHaveProperty("threadRootId");

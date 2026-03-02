@@ -57,6 +57,19 @@ function createMockStore(): ReviewCommentStore & {
     async countByRepo() {
       return 0;
     },
+    async searchByFullText() {
+      return [];
+    },
+    async getNullEmbeddingChunks() {
+      return [];
+    },
+    async updateEmbedding() {},
+    async countNullEmbeddings() {
+      return 0;
+    },
+    async getByGithubId() {
+      return null;
+    },
   };
 }
 

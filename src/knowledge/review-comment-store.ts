@@ -95,8 +95,9 @@ export function createReviewCommentStore(opts: {
 
       for (const chunk of chunks) {
         try {
-          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
+          const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
+          const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
+          const embeddingModel = hasEmbedding ? "voyage-code-3" : null;
           await sql`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
@@ -149,8 +150,9 @@ export function createReviewCommentStore(opts: {
 
         // Insert new chunks
         for (const chunk of chunks) {
-          const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
+          const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
+          const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
+          const embeddingModel = hasEmbedding ? "voyage-code-3" : null;
           await tx`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
@@ -284,6 +286,45 @@ export function createReviewCommentStore(opts: {
         WHERE repo = ${repo} AND deleted = false
       `;
       return rows[0]!.cnt as number;
+    },
+
+    async getNullEmbeddingChunks(repo: string, limit: number): Promise<ReviewCommentRecord[]> {
+      const rows = await sql`
+        SELECT * FROM review_comments
+        WHERE repo = ${repo} AND embedding IS NULL AND deleted = false
+        ORDER BY github_created_at ASC
+        LIMIT ${limit}
+      `;
+      return rows.map((row) => rowToRecord(row as unknown as CommentRow));
+    },
+
+    async updateEmbedding(id: number, embedding: Float32Array, model: string): Promise<void> {
+      const embeddingStr = float32ArrayToVectorString(embedding);
+      await sql`
+        UPDATE review_comments
+        SET embedding = ${embeddingStr}::vector, embedding_model = ${model}
+        WHERE id = ${id}
+      `;
+    },
+
+    async countNullEmbeddings(repo: string): Promise<number> {
+      const rows = await sql`
+        SELECT COUNT(*)::int AS cnt
+        FROM review_comments
+        WHERE repo = ${repo} AND embedding IS NULL AND deleted = false
+      `;
+      return rows[0]!.cnt as number;
+    },
+
+    async getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null> {
+      const rows = await sql`
+        SELECT * FROM review_comments
+        WHERE repo = ${repo} AND comment_github_id = ${commentGithubId} AND deleted = false
+        ORDER BY chunk_index ASC
+        LIMIT 1
+      `;
+      if (rows.length === 0) return null;
+      return rowToRecord(rows[0] as unknown as CommentRow);
     },
   };
 

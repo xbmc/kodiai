@@ -89,6 +89,11 @@ function makeMockStore(results: ReviewCommentSearchResult[] = []): ReviewComment
     async updateSyncState() {},
     async getLatestCommentDate() { return null; },
     async countByRepo() { return 0; },
+    async searchByFullText() { return []; },
+    async getNullEmbeddingChunks() { return []; },
+    async updateEmbedding() {},
+    async countNullEmbeddings() { return 0; },
+    async getByGithubId() { return null; },
   };
 }
 
