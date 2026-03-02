@@ -236,7 +236,51 @@ export function buildPrIntentScopingSection(
 // Helper: Epistemic boundary section (PROMPT-01)
 // ---------------------------------------------------------------------------
 export function buildEpistemicBoundarySection(): string {
-  return "";
+  return [
+    "## Epistemic Boundaries",
+    "",
+    "Every assertion in this review must be grounded in verifiable evidence. Classify your knowledge into three tiers:",
+    "",
+    "### What you CAN assert as fact",
+    "",
+    "**Diff-visible** — code changes, file paths, variable names, function signatures, version strings in lockfiles/manifests, test assertions, import/export statements, and configuration values visible in the diff.",
+    "- Cite with `file:line` (e.g., `src/auth.ts:42`).",
+    "",
+    "**System-provided enrichment** — security advisories, changelog data from APIs, prior PR comments, wiki knowledge, and cluster patterns included in this prompt.",
+    "- MUST cite source URL using footnote format: `per changelog data[1]` with `[1]: https://source-url` collected at the end of the finding or section.",
+    "- If no URL is available for a piece of enrichment data, you cannot assert it — no URL means no assertion.",
+    "",
+    "### What you MUST NOT assert",
+    "",
+    "**External knowledge** — library behavior not visible in the diff, API changes between versions, release dates, CVE details not from advisory data, what a version update \"introduced\" or \"deprecated.\"",
+    "- Do NOT hedge these claims. Do NOT acknowledge the limitation. Silently omit them entirely.",
+    "",
+    "**Common hallucination patterns (DO NOT assert):**",
+    "- Specific version numbers not present in the diff or enrichment data",
+    "- \"Version X introduced feature Y\" or \"feature Z was added in version N\"",
+    "- \"This was deprecated in version Z\" (unless the deprecation warning is visible in the diff)",
+    "- Release dates for any software",
+    "- CVE severity or details not sourced from advisory data in this prompt",
+    "",
+    "### Exception: General programming knowledge",
+    "",
+    "You MAY apply general programming knowledge that does not depend on specific library versions or external facts:",
+    "- Null pointer dereference causes a crash",
+    "- SQL injection risk from unsanitized input",
+    "- Race conditions in concurrent code",
+    "- Resource leaks from unclosed handles",
+    "- Off-by-one errors in loop bounds",
+    "",
+    "These are universal truths, not external claims about specific libraries, versions, APIs, or dates.",
+    "",
+    "### Universal citation rule",
+    "",
+    "Everything you assert must be cited:",
+    "- Diff-visible → cite `file:line`",
+    "- System enrichment → cite footnote URL `[N]: url`",
+    "- No URL available → claim cannot be asserted",
+    "- No evidence → silently omit the claim",
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -246,25 +290,25 @@ export function buildToneGuidelinesSection(): string {
   return [
     "## Finding Language Guidelines",
     "",
-    "Every finding must be specific about WHAT happens, WHEN it happens, and WHY it matters.",
+    "**Epistemic principle:** Assert what you can verify from the diff and system-provided enrichment. Silently omit what you cannot verify. Never speculate about external facts.",
     "",
-    "Use concrete language:",
-    "- \"causes [specific issue] when [specific condition]\"",
-    "- \"[CRITICAL] Null pointer dereference when `user` is undefined\"",
-    "- \"Optional: Extract `retryWithBackoff()` to reduce duplication\"",
+    "Every finding must be specific about WHAT happens, WHEN it happens, and WHY it matters — grounded in what the diff shows.",
     "",
-    "Do NOT use hedged or vague language:",
-    "- \"could potentially cause issues\"",
-    "- \"consider refactoring\"",
-    "- \"this might have problems\"",
-    "- \"there may be an issue here\"",
+    "Use concrete, evidence-based language:",
+    "- \"causes [specific issue] when [specific condition]\" (cite file:line)",
+    "- \"[CRITICAL] Null pointer dereference when `user` is undefined at `src/auth.ts:42`\"",
+    "- \"Optional: Extract `retryWithBackoff()` to reduce duplication in `src/retry.ts`\"",
     "",
-    "For low-risk changes, use stabilizing language:",
-    "- \"preserves existing behavior\" -- for refactors that don't change output",
-    "- \"backward compatible\" -- for API changes that don't break callers",
-    "- \"minimal impact\" -- for changes with small blast radius",
+    "For assertions about enrichment data (changelogs, advisories), always cite the source:",
+    "- \"This update addresses a known vulnerability per advisory data[1]\"",
+    "",
+    "For low-risk changes, ground stabilizing language in diff evidence:",
+    "- \"Test assertions are unchanged, indicating preserved behavior\" -- cite the test file",
+    "- \"Existing callers in the diff continue to use the same function signatures\"",
     "",
     "Prefix Preference findings with \"Optional:\" to signal they are non-blocking.",
+    "",
+    "These language rules apply equally to all severity levels, including Preference/Optional findings.",
   ].join("\n");
 }
 
@@ -1282,15 +1326,22 @@ function buildSecuritySection(security: SecurityContext): string {
   }
 
   const advisoriesToShow = security.advisories.slice(0, 3);
-  for (const adv of advisoriesToShow) {
-    lines.push(`- **${adv.ghsaId}** (${adv.severity}): ${adv.summary}`);
+  const footnotes: string[] = [];
+  for (let i = 0; i < advisoriesToShow.length; i++) {
+    const adv = advisoriesToShow[i];
+    const footnoteIdx = footnotes.length + 1;
+    lines.push(`- **${adv.ghsaId}** (${adv.severity}): ${adv.summary}[${footnoteIdx}]`);
+    footnotes.push(`[${footnoteIdx}]: ${adv.url}`);
     if (adv.cveId) {
       lines.push(`  CVE: ${adv.cveId}`);
     }
     if (adv.firstPatchedVersion) {
       lines.push(`  Patched in: ${adv.firstPatchedVersion}`);
     }
-    lines.push(`  Details: ${adv.url}`);
+  }
+
+  if (footnotes.length > 0) {
+    lines.push("", ...footnotes);
   }
 
   return truncateToCharBudget(lines.join("\n"), MAX_ADVISORY_SECTION_CHARS);
@@ -1301,9 +1352,20 @@ function buildSecuritySection(security: SecurityContext): string {
 // ---------------------------------------------------------------------------
 function buildChangelogSection(changelog: ChangelogContext): string {
   const lines: string[] = [];
+  const footnotes: string[] = [];
+
+  // Add a footnote for the compareUrl if available (used as citation source)
+  let compareFootnoteIdx: number | null = null;
+  if (changelog.compareUrl) {
+    compareFootnoteIdx = footnotes.length + 1;
+    footnotes.push(`[${compareFootnoteIdx}]: ${changelog.compareUrl}`);
+  }
 
   if (changelog.source === "releases" && changelog.releaseNotes.length > 0) {
-    lines.push("### Release Notes", "");
+    const heading = compareFootnoteIdx
+      ? `### Release Notes[${compareFootnoteIdx}]`
+      : "### Release Notes";
+    lines.push(heading, "");
     for (const note of changelog.releaseNotes) {
       const body = note.body.length > 500 ? note.body.slice(0, 500) + "..." : note.body;
       lines.push(`**${note.tag}:**`, body, "");
@@ -1330,6 +1392,10 @@ function buildChangelogSection(changelog: ChangelogContext): string {
     } else {
       lines.push(`[View full diff](${changelog.compareUrl})`);
     }
+  }
+
+  if (footnotes.length > 0) {
+    lines.push("", ...footnotes);
   }
 
   if (lines.length === 0) return "";
@@ -1391,12 +1457,13 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
 
   if (ctx.classification.isBreaking) {
     lines.push(
-      "**⚠ MAJOR version bump — potential breaking changes.**",
+      "**⚠ MAJOR version bump — review with care.**",
       "Focus your review on:",
-      "- Breaking API changes in the updated dependency",
-      "- Deprecated features that may have been removed",
-      "- Migration requirements or compatibility issues",
-      "- Whether test coverage exercises the dependency's changed API surface",
+      "- Lockfile changes and whether transitive dependencies shifted",
+      "- Import/export changes in consuming code visible in the diff",
+      "- Test file changes — whether test coverage exercises the affected API surface",
+      "- Configuration changes related to the updated package",
+      "- Cite specific changes from system-provided enrichment (security advisories, changelogs) with footnote URLs",
     );
   } else {
     lines.push(
@@ -1404,22 +1471,38 @@ function buildDepBumpSection(ctx: DepBumpContext): string {
       "Focus your review on:",
       "- Verify lockfile changes are consistent with the manifest change",
       "- Check for unexpected additions to the dependency tree",
-      "- Keep review concise — minor/patch bumps are routine maintenance",
+      "- Check for import changes in consuming code visible in the diff",
+      "- Keep review concise — base findings on diff contents only",
     );
   }
 
+  lines.push(
+    "",
+    "Do not assert what this version update contains, fixes, or changes. Only describe what you observe in the diff and cite system-provided data.",
+  );
+
   // Append enrichment sections if available
+  let hasEnrichment = false;
   if (ctx.security) {
     const secSection = buildSecuritySection(ctx.security);
     if (secSection) {
       lines.push("", secSection);
+      hasEnrichment = true;
     }
   }
   if (ctx.changelog) {
     const clogSection = buildChangelogSection(ctx.changelog);
     if (clogSection) {
       lines.push("", clogSection);
+      hasEnrichment = true;
     }
+  }
+
+  if (!hasEnrichment) {
+    lines.push(
+      "",
+      "No changelog or advisory data available for this update. Review based on diff contents only.",
+    );
   }
 
   // ── Workspace usage evidence (DEP-04) ──
@@ -1800,13 +1883,16 @@ export function buildReviewPrompt(context: {
     }
   }
 
+  // --- Epistemic boundaries (PROMPT-01) ---
+  lines.push("", buildEpistemicBoundarySection());
+
   if (context.conventionalType) {
     const typeGuidance: Record<string, string> = {
-      feat: "This is a feature PR. Pay extra attention to: breaking changes in public APIs, missing test coverage for new behavior, documentation for new functionality.",
-      fix: "This is a bug fix PR. Pay extra attention to: whether the fix addresses the root cause, test coverage for the fixed scenario, potential regression in related code paths.",
+      feat: "This is a feature PR. Focus on: new code paths visible in the diff, test coverage for added behavior, import/export changes, and whether new public API surface is documented in the diff.",
+      fix: "This is a bug fix PR. Focus on: whether the code change addresses the issue described in the PR, test coverage for the fixed code path, and whether related code paths in the diff are affected.",
       docs: "This is a documentation PR. Apply lighter review: focus on accuracy of technical content, broken links, and code example correctness. Minimize style findings.",
-      refactor: "This is a refactoring PR. Pay extra attention to: behavior preservation (no functional changes), test coverage continuity, and import/export consistency.",
-      perf: "This is a performance PR. Pay extra attention to: benchmark methodology, potential correctness trade-offs, and algorithmic complexity changes.",
+      refactor: "This is a refactoring PR. Focus on: behavior preservation visible through unchanged test assertions, import/export consistency in changed files, and no unintended functional changes in the diff.",
+      perf: "This is a performance PR. Focus on: algorithmic changes visible in the diff, whether benchmarks are included, and correctness of the changed code paths.",
       test: "This is a test PR. Focus on: test reliability, assertion specificity, edge case coverage. Minimize style findings on production code.",
       ci: "This is a CI/build PR. Focus on: pipeline correctness, security of new dependencies or scripts, and configuration accuracy. Minimize code style findings.",
       chore: "This is a maintenance PR. Apply lighter review: focus on correctness and potential breakage. Minimize style findings.",
@@ -1818,7 +1904,7 @@ export function buildReviewPrompt(context: {
     if (context.conventionalType.isBreaking) {
       lines.push(
         "",
-        "**BREAKING CHANGE indicated.** Verify: backward compatibility impact is documented, migration path exists if applicable, and all affected consumers are addressed.",
+        "**BREAKING CHANGE indicated.** Review the diff for: removed or renamed exports, changed function signatures, modified default behavior, and migration guidance in the PR description.",
       );
     }
   }

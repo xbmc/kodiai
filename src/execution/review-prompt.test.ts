@@ -958,18 +958,18 @@ describe("Phase 35: Findings organization and tone", () => {
     expect(prompt).toContain("## Finding Language Guidelines");
   });
 
-  // 10. Tone guidelines contain stabilizing language
-  test("tone guidelines include stabilizing language phrases", () => {
+  // 10. Tone guidelines contain diff-grounded stabilizing language (Phase 115 rewrite)
+  test("tone guidelines include diff-grounded stabilizing language", () => {
     const prompt = buildReviewPrompt(baseContext());
-    expect(prompt).toContain("preserves existing behavior");
-    expect(prompt).toContain("backward compatible");
-    expect(prompt).toContain("minimal impact");
+    expect(prompt).toContain("preserved behavior");
+    expect(prompt).toContain("same function signatures");
   });
 
-  // 11. Tone guidelines contain anti-patterns
-  test("tone guidelines include hedged language anti-patterns", () => {
+  // 11. Tone guidelines contain epistemic principle instead of anti-patterns (Phase 115 rewrite)
+  test("tone guidelines include epistemic principle", () => {
     const prompt = buildReviewPrompt(baseContext());
-    expect(prompt).toContain("could potentially");
+    expect(prompt).toContain("Epistemic principle");
+    expect(prompt).toContain("Silently omit what you cannot verify");
   });
 
   // 12. buildPrIntentScopingSection helper includes branch and scoping rules
