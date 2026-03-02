@@ -465,3 +465,63 @@ describe("buildMentionPrompt", () => {
     expect(retrievalMatch![0].length).toBeLessThanOrEqual(240);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 116: Cross-surface epistemic guardrails (PROMPT-04)
+// ---------------------------------------------------------------------------
+describe("epistemic guardrails on mention surfaces (PROMPT-04)", () => {
+  test("PR mention prompt includes Epistemic Boundaries section", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Review this please.",
+    });
+    expect(prompt).toContain("## Epistemic Boundaries");
+    expect(prompt).toContain("Diff-visible");
+    expect(prompt).toContain("External knowledge");
+  });
+
+  test("issue mention prompt includes Epistemic Boundaries section", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "What version was this fixed in?",
+    });
+    expect(prompt).toContain("## Epistemic Boundaries");
+    expect(prompt).toContain("Diff-visible");
+  });
+
+  test("issue mention prompt includes context-visible tier for issue surface", () => {
+    const prompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "What version was this fixed in?",
+    });
+    expect(prompt).toContain("Context-Visible Tier");
+    expect(prompt).toContain("issue body");
+  });
+
+  test("PR mention prompt does NOT include context-visible tier (uses diff-grounding)", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Review this please.",
+    });
+    expect(prompt).not.toContain("Context-Visible Tier");
+  });
+
+  test("mention prompt does NOT contain old Factual Accuracy section", () => {
+    const prPrompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Review this.",
+    });
+    const issuePrompt = buildMentionPrompt({
+      mention: issueMention(),
+      mentionContext: "",
+      userQuestion: "Help me.",
+    });
+    expect(prPrompt).not.toContain("## Factual Accuracy");
+    expect(issuePrompt).not.toContain("## Factual Accuracy");
+  });
+});

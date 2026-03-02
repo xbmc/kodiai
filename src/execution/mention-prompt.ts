@@ -1,7 +1,7 @@
 import type { MentionEvent } from "../handlers/mention-types.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { sanitizeContent } from "../lib/sanitizer.ts";
-import { formatUnifiedContext } from "./review-prompt.ts";
+import { buildEpistemicBoundarySection, formatUnifiedContext } from "./review-prompt.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -284,23 +284,19 @@ export function buildMentionPrompt(params: {
     "  - End with: 'If you want, I can implement this next.'",
   );
 
-  // Factual accuracy guardrail
+  // Epistemic guardrails (PROMPT-04)
   lines.push("");
-  lines.push("## Factual Accuracy — CRITICAL");
-  lines.push("");
-  lines.push(
-    "NEVER generate changelogs, CVE details, release notes, version histories, security advisories, or any other factual claims about external projects from memory.",
-    "This information changes constantly and your training data WILL be wrong or outdated.",
-    "",
-    "When a user asks about external information (changelogs, CVEs, release notes, API docs, etc.):",
-    "- You MUST use WebSearch and/or WebFetch to look up the actual source of truth",
-    "- If WebSearch/WebFetch are unavailable or fail, say so explicitly — do NOT fall back to generating from memory",
-    "- NEVER present unverified information as fact",
-    "- NEVER invent CVE numbers, version numbers, or changelog entries",
-    "",
-    "This applies to ALL external factual claims, not just security-related ones.",
-    "If you cannot verify something, say: \"I wasn't able to look this up — here's what I'd suggest checking: [links/sources]\"",
-  );
+  lines.push(buildEpistemicBoundarySection());
+
+  // Issue mentions: context-visible tier adaptation
+  if (mention.prNumber === undefined) {
+    lines.push("");
+    lines.push("### Context-Visible Tier (Issue Mentions)");
+    lines.push("");
+    lines.push(
+      "For issue mentions, your \"visible context\" includes: the issue body, comment thread, any linked code snippets, and repository information provided in this prompt. Apply the same epistemic rules — assert what you can see, cite accordingly, silently omit what you cannot verify.",
+    );
+  }
 
   // Custom instructions
   if (customInstructions) {
