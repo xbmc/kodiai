@@ -44,7 +44,7 @@ Requirements for Hallucination Prevention & Fact Verification milestone. Each ma
 | Feature | Reason |
 |---------|--------|
 | Real-time external API verification (e.g., hitting PyPI/npm for version info) | Network calls add latency and failure modes; epistemic guardrails are more robust |
-| Training data freshness tracking | Not actionable — model knowledge cutoff is fixed per deployment |
+| Training data freshness tracking | Not actionable -- model knowledge cutoff is fixed per deployment |
 | User-configurable hallucination sensitivity | Keep simple for v0.24; single policy that works for all repos |
 
 ## Traceability
@@ -53,25 +53,25 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROMPT-01 | Pending | Pending |
-| PROMPT-02 | Pending | Pending |
-| PROMPT-03 | Pending | Pending |
-| PROMPT-04 | Pending | Pending |
-| CLAIM-01 | Pending | Pending |
-| CLAIM-02 | Pending | Pending |
-| CLAIM-03 | Pending | Pending |
-| SEV-01 | Pending | Pending |
-| SEV-02 | Pending | Pending |
-| SEV-03 | Pending | Pending |
-| FILT-01 | Pending | Pending |
-| FILT-02 | Pending | Pending |
-| FILT-03 | Pending | Pending |
+| PROMPT-01 | Phase 115 | Pending |
+| PROMPT-02 | Phase 115 | Pending |
+| PROMPT-03 | Phase 115 | Pending |
+| PROMPT-04 | Phase 116 | Pending |
+| CLAIM-01 | Phase 117 | Pending |
+| CLAIM-02 | Phase 117 | Pending |
+| CLAIM-03 | Phase 117 | Pending |
+| SEV-01 | Phase 118 | Pending |
+| SEV-02 | Phase 118 | Pending |
+| SEV-03 | Phase 118 | Pending |
+| FILT-01 | Phase 119 | Pending |
+| FILT-02 | Phase 119 | Pending |
+| FILT-03 | Phase 119 | Pending |
 
 **Coverage:**
 - v0.24 requirements: 13 total
-- Mapped to phases: 0
-- Unmapped: 13
+- Mapped to phases: 13
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-02*
-*Last updated: 2026-03-02 after initial definition*
+*Last updated: 2026-03-02 after roadmap creation*

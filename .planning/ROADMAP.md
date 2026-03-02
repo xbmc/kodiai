@@ -25,6 +25,7 @@
 - ✅ **v0.21 Issue Triage Foundation** — Phases 103-105 (shipped 2026-02-27)
 - ✅ **v0.22 Issue Intelligence** — Phases 106-109 (shipped 2026-02-27)
 - ✅ **v0.23 Interactive Troubleshooting** — Phases 110-114 (shipped 2026-03-01)
+- [ ] **v0.24 Hallucination Prevention & Fact Verification** — Phases 115-119 (in progress)
 
 ## Phases
 
@@ -166,23 +167,12 @@ See `.planning/milestones/v0.19-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.20-ROADMAP.md` for full phase details.
 
-- [x] Phase 97: Multi-LLM Routing & Cost Tracking (3/3 plans) -- completed 2026-02-26
-- [x] Phase 98: Contributor Profiles & Identity Linking (4/4 plans) -- completed 2026-02-25
-- [x] Phase 99: Wiki Staleness Detection (3/3 plans) -- completed 2026-02-26
-- [x] Phase 100: Review Pattern Clustering (5/5 plans) -- completed 2026-02-26
-- [x] Phase 101: Wire Executor Dependencies & Fix Cost Tracking (1/1 plan) -- completed 2026-02-26
-- [x] Phase 102: Documentation & Verification Closure (1/1 plan) -- completed 2026-02-26
-
 </details>
 
 <details>
 <summary>v0.21 Issue Triage Foundation (Phases 103-105) -- SHIPPED 2026-02-27</summary>
 
 See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
-
-- [x] Phase 103: Issue Corpus Schema & Store (3/3 plans) -- completed 2026-02-27
-- [x] Phase 104: Issue MCP Tools (3/3 plans) -- completed 2026-02-27
-- [x] Phase 105: Triage Agent Wiring (3/3 plans) -- completed 2026-02-27
 
 </details>
 
@@ -191,11 +181,6 @@ See `.planning/milestones/v0.21-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.22-ROADMAP.md` for full phase details.
 
-- [x] Phase 106: Historical Corpus Population (2/2 plans) -- completed 2026-02-27
-- [x] Phase 107: Duplicate Detection & Auto-Triage (2/2 plans) -- completed 2026-02-27
-- [x] Phase 108: PR-Issue Linking (2/2 plans) -- completed 2026-02-27
-- [x] Phase 109: Issue Corpus Retrieval Integration (1/1 plan) -- completed 2026-02-27
-
 </details>
 
 <details>
@@ -203,13 +188,85 @@ See `.planning/milestones/v0.22-ROADMAP.md` for full phase details.
 
 See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 
-- [x] Phase 110: Troubleshooting Retrieval Foundation (2/2 plans) -- completed 2026-02-27
-- [x] Phase 111: Troubleshooting Agent (2/2 plans) -- completed 2026-02-27
-- [x] Phase 112: Outcome Capture (2/2 plans) -- completed 2026-02-28
-- [x] Phase 113: Threshold Learning (2/2 plans) -- completed 2026-02-28
-- [x] Phase 114: Reaction Tracking (1/1 plan) -- completed 2026-03-01
-
 </details>
+
+### v0.24 Hallucination Prevention & Fact Verification (In Progress)
+
+**Milestone Goal:** Eliminate fabricated claims in PR reviews by adding epistemic guardrails, post-generation claim classification, severity demotion for unverified external knowledge, and output filtering that suppresses or rewrites unverifiable assertions before publishing.
+
+- [ ] **Phase 115: PR Review Epistemic Guardrails** - Add epistemic boundaries to review prompt distinguishing diff-visible facts from external knowledge claims
+- [ ] **Phase 116: Cross-Surface Epistemic Guardrails** - Propagate epistemic guardrails to mention and Slack response surfaces
+- [ ] **Phase 117: Claim Classification** - Post-LLM pass that classifies each finding's claims as diff-grounded vs external-knowledge
+- [ ] **Phase 118: Severity Demotion** - Cap severity of findings whose core claims depend on unverified external knowledge
+- [ ] **Phase 119: Output Filtering** - Rewrite or suppress findings with unverifiable external claims before publishing
+
+## Phase Details
+
+### Phase 115: PR Review Epistemic Guardrails
+**Goal**: PR review prompt explicitly teaches the LLM to distinguish what it can see in the diff from what it would need external knowledge to assert
+**Depends on**: Nothing (first phase -- prompt changes are the first line of defense)
+**Requirements**: PROMPT-01, PROMPT-02, PROMPT-03
+**Success Criteria** (what must be TRUE):
+  1. Review prompt contains explicit epistemic boundary rules separating diff-visible facts from external knowledge claims
+  2. When reviewing a dependency bump PR, the bot does not assert specific version numbers, API release dates, or library behavior unless those values appear in the diff
+  3. Findings about external dependencies reference only what the diff shows (e.g., "this PR updates X from version A to B" based on diff content, not "X version B introduced feature Y")
+  4. The "Do NOT use hedged or vague language" instruction is scoped to diff-visible facts only, allowing appropriate hedging for external claims
+**Plans**: TBD
+
+Plans:
+- [ ] 115-01: PR review epistemic guardrails
+
+### Phase 116: Cross-Surface Epistemic Guardrails
+**Goal**: Epistemic guardrails apply consistently across all bot response surfaces, not just PR reviews
+**Depends on**: Phase 115
+**Requirements**: PROMPT-04
+**Success Criteria** (what must be TRUE):
+  1. @kodiai mention responses on issues and PRs apply the same epistemic boundary rules as PR reviews
+  2. Slack assistant responses apply the same epistemic boundary rules as PR reviews
+  3. All surfaces refuse to assert external facts (version numbers, API dates, library behavior) unless grounded in retrieved context or visible diff content
+**Plans**: TBD
+
+Plans:
+- [ ] 116-01: Cross-surface epistemic guardrails
+
+### Phase 117: Claim Classification
+**Goal**: Every finding produced by the LLM gets its claims classified as diff-grounded or external-knowledge so downstream processing can act on them
+**Depends on**: Phase 115 (prompt changes improve LLM output quality, making classification more reliable)
+**Requirements**: CLAIM-01, CLAIM-02, CLAIM-03
+**Success Criteria** (what must be TRUE):
+  1. After LLM generates review findings, a classification pass labels each finding's claims as diff-grounded or external-knowledge
+  2. Claims referencing specific version numbers, release dates, or API behavior not visible in the diff are classified as external-knowledge
+  3. Classification results are attached to finding objects and available to downstream severity demotion and output filtering
+**Plans**: TBD
+
+Plans:
+- [ ] 117-01: Post-LLM claim classifier
+
+### Phase 118: Severity Demotion
+**Goal**: Findings with unverified external knowledge claims cannot retain high severity, preventing hallucinated CRITICALs from bypassing suppression
+**Depends on**: Phase 117 (needs claim classification results)
+**Requirements**: SEV-01, SEV-02, SEV-03
+**Success Criteria** (what must be TRUE):
+  1. A finding whose core claim depends on unverified external knowledge gets its severity capped at medium (CRITICAL -> medium, MAJOR -> medium)
+  2. The existing CRITICAL suppression protection (`isFeedbackSuppressionProtected`) does not shield findings flagged with unverified external claims
+  3. Every severity demotion is logged with the finding title, original severity, new severity, and reason for demotion
+**Plans**: TBD
+
+Plans:
+- [ ] 118-01: Severity demotion for external knowledge claims
+
+### Phase 119: Output Filtering
+**Goal**: Findings with external knowledge claims are either cleaned up (claim removed, diff-grounded core preserved) or suppressed entirely before the bot publishes
+**Depends on**: Phase 117 (needs claim classification), Phase 118 (severity already adjusted)
+**Requirements**: FILT-01, FILT-02, FILT-03
+**Success Criteria** (what must be TRUE):
+  1. A finding with a valid diff-grounded core but also containing external knowledge claims is rewritten to remove the external claims before publishing
+  2. A finding whose entire substance depends on external knowledge (no diff-grounded core) is suppressed entirely and never published
+  3. All suppressed and rewritten findings are logged for observability with the original content, action taken, and reason
+**Plans**: TBD
+
+Plans:
+- [ ] 119-01: Output filtering for external knowledge claims
 
 ## Progress
 
@@ -239,21 +296,13 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 | 97-102 | v0.20 | 17/17 | Complete | 2026-02-26 |
 | 103-105 | v0.21 | 9/9 | Complete | 2026-02-27 |
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
-
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
-
-### Phase 1: Review comment backfill reliability
-
-**Goal:** Harden the review comment backfill pipeline with retry logic, per-thread error isolation, catch-up sync for missed webhooks, and embedding recovery sweep
-**Requirements**: [RETRY-BACKOFF, THREAD-ISOLATION, STORE-METHODS, CATCHUP-SYNC, EDIT-DETECTION, EMBEDDING-SWEEP, NULL-EMBEDDING-RECOVERY]
-**Depends on:** None (standalone reliability improvement)
-**Plans:** 3 plans
-
-Plans:
-- [ ] 01-01-PLAN.md -- Retry logic, per-thread error isolation, new store methods
-- [ ] 01-02-PLAN.md -- Catch-up sync with edit detection
-- [ ] 01-03-PLAN.md -- Embedding sweep for null embedding recovery
+| 115 | v0.24 | 0/1 | Not started | - |
+| 116 | v0.24 | 0/1 | Not started | - |
+| 117 | v0.24 | 0/1 | Not started | - |
+| 118 | v0.24 | 0/1 | Not started | - |
+| 119 | v0.24 | 0/1 | Not started | - |
 
 ---
 
-*Roadmap updated: 2026-03-01 -- Phase 1 planned*
+*Roadmap updated: 2026-03-02 -- v0.24 Hallucination Prevention & Fact Verification roadmap created*
