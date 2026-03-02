@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-03-02T02:58:00Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-03-02T02:59:55.252Z"
 progress:
   total_phases: 83
-  completed_phases: 78
+  completed_phases: 79
   total_plans: 195
-  completed_plans: 200
+  completed_plans: 202
 ---
 
 # Project State
@@ -39,6 +39,9 @@ All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 01]: Thread failures logged with structured context and continue processing remaining threads
 - [Phase 01]: Embedding sweep uses EmbeddingResult type (not raw Float32Array) matching actual EmbeddingProvider interface
 - [Phase 01]: batchDelayMs=1 in tests since bun:test lacks fake timers
+- [Phase 01]: Catch-up sync uses per-comment getByGithubId for edit detection (simplicity over batch query)
+- [Phase 01]: Thread-level edit classification: any edited comment triggers full thread re-chunk via updateChunks
+- [Phase 01]: 24-hour default fallback when lastSyncedAt is null but backfill complete
 
 ### Key Constraints (Carry-Forward)
 
@@ -86,6 +89,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-02T02:58:00Z
-**Stopped At:** Completed 01-03-PLAN.md
+**Last session:** 2026-03-02T02:59:55.249Z
+**Stopped At:** Completed 01-02-PLAN.md
 **Resume with:** Continue with remaining plans or `/gsd:new-milestone`
