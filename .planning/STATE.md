@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-02T02:54:06.284Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-03-02T02:58:00Z"
 progress:
   total_phases: 83
   completed_phases: 78
@@ -37,6 +37,8 @@ Progress: [████████████████████] 100% (1
 All decisions through v0.23 archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 01]: withRetry uses exponential backoff with configurable maxRetries and baseDelayMs
 - [Phase 01]: Thread failures logged with structured context and continue processing remaining threads
+- [Phase 01]: Embedding sweep uses EmbeddingResult type (not raw Float32Array) matching actual EmbeddingProvider interface
+- [Phase 01]: batchDelayMs=1 in tests since bun:test lacks fake timers
 
 ### Key Constraints (Carry-Forward)
 
@@ -84,6 +86,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-02T02:54:06.281Z
-**Stopped At:** Completed 01-01-PLAN.md
-**Resume with:** `/gsd:new-milestone` to start next milestone
+**Last session:** 2026-03-02T02:58:00Z
+**Stopped At:** Completed 01-03-PLAN.md
+**Resume with:** Continue with remaining plans or `/gsd:new-milestone`
