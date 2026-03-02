@@ -79,6 +79,48 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ── Retry utility ────────────────────────────────────────────────────────────
+
+/**
+ * Retry an async function with exponential backoff.
+ * Logs warn on each retry, logs error on exhaustion, then re-throws.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: {
+    maxRetries: number;
+    baseDelayMs: number;
+    logger: Logger;
+    context: Record<string, unknown>;
+  },
+): Promise<T> {
+  const { maxRetries, baseDelayMs, logger, context } = opts;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt < maxRetries) {
+        const delayMs = baseDelayMs * Math.pow(2, attempt);
+        logger.warn(
+          { ...context, attempt: attempt + 1, maxRetries, delayMs, err: err instanceof Error ? err.message : String(err) },
+          "Retrying after failure",
+        );
+        await sleep(delayMs);
+      } else {
+        logger.error(
+          { ...context, attempts: attempt + 1, err: err instanceof Error ? err.message : String(err) },
+          "All retries exhausted",
+        );
+        throw err;
+      }
+    }
+  }
+
+  // TypeScript: unreachable but satisfies return type
+  throw new Error("withRetry: unreachable");
+}
+
 async function adaptiveRateDelay(
   headers: Record<string, string | undefined> | undefined,
   logger: Logger,
@@ -294,15 +336,18 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
   let lastCommentDate: Date | null = null;
 
   while (true) {
-    const response = await octokit.rest.pulls.listReviewCommentsForRepo({
-      owner,
-      repo: repoName,
-      sort: "created",
-      direction: "asc",
-      since: sinceDate.toISOString(),
-      per_page: 100,
-      page,
-    });
+    const response = await withRetry(
+      () => octokit.rest.pulls.listReviewCommentsForRepo({
+        owner,
+        repo: repoName,
+        sort: "created",
+        direction: "asc",
+        since: sinceDate.toISOString(),
+        per_page: 100,
+        page,
+      }),
+      { maxRetries: 3, baseDelayMs: 1000, logger, context: { repo, page } },
+    );
 
     const comments = response.data as unknown as GitHubPullComment[];
     pagesProcessed++;
@@ -325,29 +370,45 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
     let batchChunks = 0;
     let batchEmbeddings = 0;
     let batchEmbeddingsFailed = 0;
+    let threadFailures = 0;
     const humanCommentCount = threads.reduce((sum, t) => sum + t.length, 0);
 
     for (const thread of threads) {
-      const chunks = chunkReviewThread(thread, { botLogins });
+      try {
+        const chunks = chunkReviewThread(thread, { botLogins });
 
-      if (chunks.length === 0) continue;
+        if (chunks.length === 0) continue;
 
-      // Generate embeddings (fail-open: store chunk even without embedding)
-      const { embeddingsGenerated, embeddingsFailed } = await embedChunks(
-        chunks,
-        embeddingProvider,
-        store,
-        logger,
-        dryRun,
-      );
+        // Generate embeddings (fail-open: store chunk even without embedding)
+        const { embeddingsGenerated, embeddingsFailed } = await embedChunks(
+          chunks,
+          embeddingProvider,
+          store,
+          logger,
+          dryRun,
+        );
 
-      if (!dryRun) {
-        await store.writeChunks(chunks);
+        if (!dryRun) {
+          await store.writeChunks(chunks);
+        }
+
+        batchChunks += chunks.length;
+        batchEmbeddings += embeddingsGenerated;
+        batchEmbeddingsFailed += embeddingsFailed;
+      } catch (err) {
+        threadFailures++;
+        logger.error(
+          {
+            err: err instanceof Error ? err.message : String(err),
+            repo,
+            threadRootId: thread[0]?.commentGithubId,
+            prNumber: thread[0]?.prNumber,
+            filePath: thread[0]?.filePath,
+            threadSize: thread.length,
+          },
+          "Thread processing failed -- continuing with remaining threads",
+        );
       }
-
-      batchChunks += chunks.length;
-      batchEmbeddings += embeddingsGenerated;
-      batchEmbeddingsFailed += embeddingsFailed;
     }
 
     totalComments += humanCommentCount;
@@ -368,6 +429,7 @@ export async function backfillReviewComments(opts: BackfillOptions): Promise<Bac
         chunksProduced: batchChunks,
         embeddingsGenerated: batchEmbeddings,
         embeddingsFailed: batchEmbeddingsFailed,
+        threadFailures,
         totalSoFar: totalComments,
         rateRemaining: response.headers?.["x-ratelimit-remaining"] ?? "unknown",
       },
