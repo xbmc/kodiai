@@ -3,6 +3,7 @@ import {
   backfillReviewComments,
   syncSinglePR,
   groupCommentsIntoThreads,
+  withRetry,
   type BackfillOptions,
 } from "./review-comment-backfill.ts";
 import type { ReviewCommentChunk, ReviewCommentStore, SyncState } from "./review-comment-types.ts";
@@ -430,5 +431,178 @@ describe("syncSinglePR", () => {
     });
 
     expect(result.chunksWritten).toBe(0);
+  });
+});
+
+// ── withRetry tests ──────────────────────────────────────────────────────────
+
+describe("withRetry", () => {
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = createMockLogger();
+  });
+
+  it("succeeds on first try without retries", async () => {
+    let callCount = 0;
+    const result = await withRetry(
+      async () => {
+        callCount++;
+        return "ok";
+      },
+      { maxRetries: 3, baseDelayMs: 1, logger, context: { test: true } },
+    );
+
+    expect(result).toBe("ok");
+    expect(callCount).toBe(1);
+    // Should not log any warnings (no retries needed)
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("retries on failure and succeeds after 2 attempts", async () => {
+    let callCount = 0;
+    const result = await withRetry(
+      async () => {
+        callCount++;
+        if (callCount < 3) throw new Error("API failure");
+        return "recovered";
+      },
+      { maxRetries: 3, baseDelayMs: 1, logger, context: { repo: "test" } },
+    );
+
+    expect(result).toBe("recovered");
+    expect(callCount).toBe(3); // 1 initial + 2 retries
+    // Should log warn for each retry
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws after exhausting all retries", async () => {
+    const error = new Error("Persistent failure");
+    let callCount = 0;
+
+    await expect(
+      withRetry(
+        async () => {
+          callCount++;
+          throw error;
+        },
+        { maxRetries: 3, baseDelayMs: 1, logger, context: { repo: "test" } },
+      ),
+    ).rejects.toThrow("Persistent failure");
+
+    expect(callCount).toBe(4); // 1 initial + 3 retries
+    expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+// ── Thread isolation tests ───────────────────────────────────────────────────
+
+describe("backfill thread isolation", () => {
+  let logger: Logger;
+  let embeddingProvider: EmbeddingProvider;
+
+  beforeEach(() => {
+    logger = createMockLogger();
+    embeddingProvider = createMockEmbeddingProvider();
+  });
+
+  it("continues processing remaining threads when one thread throws during writeChunks", async () => {
+    let writeCallCount = 0;
+    const store = createMockStore({
+      writeChunks: mock(async () => {
+        writeCallCount++;
+        if (writeCallCount === 1) throw new Error("DB connection lost");
+      }),
+    });
+
+    // Two standalone comments = two separate threads
+    const octokit = createMockOctokit({
+      1: [
+        makeGitHubComment({ id: 1, body: "First thread comment", login: "alice", path: "src/a.ts" }),
+        makeGitHubComment({ id: 2, body: "Second thread comment", login: "bob", path: "src/b.ts" }),
+      ],
+    });
+
+    const result = await backfillReviewComments({
+      octokit: octokit as any,
+      store,
+      embeddingProvider,
+      repo: "xbmc/xbmc",
+      logger,
+    });
+
+    // Both threads should be attempted (writeChunks called twice)
+    expect(writeCallCount).toBe(2);
+    // totalComments should include ALL comments (even from failed threads)
+    expect(result.totalComments).toBe(2);
+  });
+
+  it("logs thread failure with structured context", async () => {
+    const store = createMockStore({
+      writeChunks: mock(async () => {
+        throw new Error("Write failed");
+      }),
+    });
+
+    const octokit = createMockOctokit({
+      1: [
+        makeGitHubComment({
+          id: 100,
+          body: "Review comment",
+          login: "alice",
+          path: "src/handler.ts",
+          pullRequestUrl: "https://api.github.com/repos/xbmc/xbmc/pulls/42",
+        }),
+      ],
+    });
+
+    await backfillReviewComments({
+      octokit: octokit as any,
+      store,
+      embeddingProvider,
+      repo: "xbmc/xbmc",
+      logger,
+    });
+
+    // Should log error with structured context
+    expect(logger.error).toHaveBeenCalled();
+    const errorCall = (logger.error as ReturnType<typeof mock>).mock.calls[0];
+    const errorContext = errorCall[0] as Record<string, unknown>;
+    expect(errorContext).toHaveProperty("repo");
+    expect(errorContext).toHaveProperty("threadRootId");
+    expect(errorContext).toHaveProperty("prNumber");
+    expect(errorContext).toHaveProperty("filePath");
+    expect(errorContext).toHaveProperty("threadSize");
+  });
+
+  it("excludes failed threads from chunk/embedding counts but includes them in comment count", async () => {
+    let writeCallCount = 0;
+    const store = createMockStore({
+      writeChunks: mock(async () => {
+        writeCallCount++;
+        if (writeCallCount === 1) throw new Error("Write failed");
+      }),
+    });
+
+    const octokit = createMockOctokit({
+      1: [
+        makeGitHubComment({ id: 1, body: "Failing thread", login: "alice", path: "src/a.ts" }),
+        makeGitHubComment({ id: 2, body: "Succeeding thread", login: "bob", path: "src/b.ts" }),
+      ],
+    });
+
+    const result = await backfillReviewComments({
+      octokit: octokit as any,
+      store,
+      embeddingProvider,
+      repo: "xbmc/xbmc",
+      logger,
+    });
+
+    // Both comments counted
+    expect(result.totalComments).toBe(2);
+    // Only the successful thread's chunks/embeddings counted
+    expect(result.totalChunks).toBe(1);
+    expect(result.totalEmbeddings).toBe(1);
   });
 });
