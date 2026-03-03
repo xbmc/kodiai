@@ -219,11 +219,11 @@ See `.planning/milestones/v0.24-ROADMAP.md` for full phase details.
   2. Wiki retrieval queries use voyage-context-3 for query embedding while all other corpora (code, reviews, issues, snippets) continue using voyage-code-3
   3. wiki-store.ts accepts embedding model as a parameter instead of hardcoding "voyage-code-3"
   4. Future wiki page ingestion (sync) automatically uses voyage-context-3 via the contextualized embedding API
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 120-01: TBD
-- [ ] 120-02: TBD
+- [ ] 120-01-PLAN.md — Contextualized embedding provider, wiki-store parameterization, and per-corpus routing
+- [ ] 120-02-PLAN.md — Wiki embedding backfill script and comparison benchmark
 
 ### Phase 121: Page Popularity
 **Goal**: Every wiki page has a composite popularity score combining inbound links, citation frequency, and edit recency, enabling principled top-N page selection
