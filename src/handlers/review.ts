@@ -87,6 +87,7 @@ import {
 import { detectDependsBump, type DependsBumpInfo } from "../lib/depends-bump-detector.ts";
 import {
   parseVersionFileDiff,
+  parsePackageListDiff,
   fetchDependsChangelog,
   verifyHash,
   detectPatchChanges,
@@ -2006,6 +2007,28 @@ export function createReviewHandler(deps: {
                 newVersion: vFileDiff?.newVersion ?? pkg.newVersion,
                 versionFileDiff: vFileDiff,
               });
+            }
+
+            // 2b. Fallback: parse .list files for packages missing version info
+            for (const vd of versionDiffs) {
+              if (vd.oldVersion || vd.newVersion) continue; // already have version data
+              const listFiles = prFilesForDepends.filter(f =>
+                f.filename.toLowerCase().includes("0_package.target") &&
+                f.patch
+              );
+              for (const listFile of listFiles) {
+                const entries = parsePackageListDiff(listFile.patch!);
+                const match = entries.find(e =>
+                  e.name.toLowerCase() === vd.packageName.toLowerCase()
+                );
+                if (match) {
+                  vd.oldVersion = match.oldVersion;
+                  vd.newVersion = match.newVersion;
+                  // Leave versionFileDiff as null -- no VERSION file exists
+                  logger.info({ ...baseLog, gate: "depends-list-fallback", packageName: vd.packageName }, "[depends] extracted version from .list file for " + vd.packageName);
+                  break;
+                }
+              }
             }
 
             // 3. Fetch changelogs (parallel)
