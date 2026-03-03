@@ -74,6 +74,7 @@ function rowToRecord(row: WikiRow): WikiPageRecord {
 export function createWikiPageStore(opts: {
   sql: Sql;
   logger: Logger;
+  embeddingModel?: string;
 }): WikiPageStore {
   const { sql, logger } = opts;
 
@@ -84,7 +85,7 @@ export function createWikiPageStore(opts: {
       for (const chunk of chunks) {
         try {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
+          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-code-3") : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
           const languageTags = chunk.languageTags ?? ["general"];
           await sql`
@@ -128,7 +129,7 @@ export function createWikiPageStore(opts: {
 
         for (const chunk of chunks) {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? "voyage-code-3" : null;
+          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-code-3") : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
           const languageTags = chunk.languageTags ?? ["general"];
           await tx`
