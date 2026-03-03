@@ -90,6 +90,7 @@ export async function retrieveTroubleshootingContext(params: {
   issueStore: IssueStore;
   wikiPageStore?: WikiPageStore;
   embeddingProvider: EmbeddingProvider;
+  wikiEmbeddingProvider?: EmbeddingProvider;
   repo: string;
   queryTitle: string;
   queryBody: string | null;
@@ -97,6 +98,7 @@ export async function retrieveTroubleshootingContext(params: {
   logger: Logger;
 }): Promise<TroubleshootingResult | null> {
   const { issueStore, wikiPageStore, embeddingProvider, repo, queryTitle, queryBody, config, logger } = params;
+  const wikiProvider = params.wikiEmbeddingProvider ?? embeddingProvider;
 
   // 1. Generate query embedding
   const queryText = queryTitle + "\n\n" + (queryBody ?? "");
@@ -218,8 +220,8 @@ export async function retrieveTroubleshootingContext(params: {
   const keywordQuery = extractKeywords(queryTitle, queryBody);
 
   const [wikiOriginal, wikiKeywords] = await Promise.allSettled([
-    searchWikiPages({ store: wikiPageStore, embeddingProvider, query: originalQuery, topK: 2, logger }),
-    searchWikiPages({ store: wikiPageStore, embeddingProvider, query: keywordQuery, topK: 2, logger }),
+    searchWikiPages({ store: wikiPageStore, embeddingProvider: wikiProvider, query: originalQuery, topK: 2, logger }),
+    searchWikiPages({ store: wikiPageStore, embeddingProvider: wikiProvider, query: keywordQuery, topK: 2, logger }),
   ]);
 
   const wikiResults1 = wikiOriginal.status === "fulfilled" ? wikiOriginal.value : [];

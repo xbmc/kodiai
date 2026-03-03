@@ -43,6 +43,7 @@ export function createTroubleshootingHandler(deps: {
   issueStore: IssueStore;
   wikiPageStore?: WikiPageStore;
   embeddingProvider: EmbeddingProvider;
+  wikiEmbeddingProvider?: EmbeddingProvider;
   taskRouter: TaskRouter;
   costTracker?: CostTracker;
   sql: Sql;
@@ -55,6 +56,7 @@ export function createTroubleshootingHandler(deps: {
     issueStore,
     wikiPageStore,
     embeddingProvider,
+    wikiEmbeddingProvider,
     taskRouter,
     costTracker,
     logger,
@@ -160,6 +162,7 @@ export function createTroubleshootingHandler(deps: {
           issueStore,
           wikiPageStore,
           embeddingProvider,
+          wikiEmbeddingProvider,
           repo: fullRepo,
           queryTitle: issue.title,
           queryBody: issue.body ?? null,

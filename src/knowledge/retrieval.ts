@@ -351,6 +351,7 @@ function assembleContextWindow(
  */
 export function createRetriever(deps: {
   embeddingProvider: EmbeddingProvider;
+  wikiEmbeddingProvider?: EmbeddingProvider;
   isolationLayer: IsolationLayer;
   config: RetrieverConfig;
   reviewCommentStore?: ReviewCommentStore;
@@ -360,6 +361,7 @@ export function createRetriever(deps: {
   issueStore?: IssueStore;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
+  const wikiProvider = deps.wikiEmbeddingProvider ?? deps.embeddingProvider;
 
   async function retrieve(opts: RetrieveOptions): Promise<RetrieveResult | null> {
     if (!config.retrieval.enabled) {
@@ -436,11 +438,11 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as ReviewCommentMatch[]),
-        // (c) Wiki vector search
+        // (c) Wiki vector search (uses wiki-specific provider for voyage-context-3)
         deps.wikiPageStore
           ? searchWikiPages({
               store: deps.wikiPageStore,
-              embeddingProvider: deps.embeddingProvider,
+              embeddingProvider: wikiProvider,
               query: intentQuery,
               topK: 5,
               logger: opts.logger,

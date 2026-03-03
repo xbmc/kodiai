@@ -35,7 +35,7 @@ import { createIssueStore } from "./knowledge/issue-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
 import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
-import { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./knowledge/embeddings.ts";
+import { createEmbeddingProvider, createNoOpEmbeddingProvider, createContextualizedEmbeddingProvider } from "./knowledge/embeddings.ts";
 import type { LearningMemoryStore, EmbeddingProvider } from "./knowledge/types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./knowledge/isolation.ts";
 import { createRetriever } from "./knowledge/retrieval.ts";
@@ -158,6 +158,19 @@ if (voyageApiKey && learningMemoryStore) {
   }
 }
 
+// Wiki-specific embedding provider (voyage-context-3 via contextualizedEmbed API)
+const wikiEmbeddingProvider: EmbeddingProvider = voyageApiKey
+  ? createContextualizedEmbeddingProvider({
+      apiKey: voyageApiKey,
+      model: "voyage-context-3",
+      dimensions: 1024,
+      logger,
+    })
+  : embeddingProvider; // fallback to shared (which may be no-op)
+if (voyageApiKey) {
+  logger.info({ model: "voyage-context-3", dimensions: 1024 }, "Wiki embedding provider initialized (contextualized)");
+}
+
 // Embeddings smoke test -- runs concurrently, does NOT block server startup
 void Promise.resolve()
   .then(async () => {
@@ -195,7 +208,7 @@ const reviewCommentStore = createReviewCommentStore({ sql, logger });
 logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 
 // Wiki page store (v0.18 KI-10)
-const wikiPageStore = createWikiPageStore({ sql, logger });
+const wikiPageStore = createWikiPageStore({ sql, logger, embeddingModel: "voyage-context-3" });
 logger.info("Wiki page store initialized (PostgreSQL + pgvector)");
 
 // Code snippet store (v0.19 SNIP-01)
@@ -217,6 +230,7 @@ if (learningMemoryStore) {
 const retriever = isolationLayer && embeddingProvider
   ? createRetriever({
       embeddingProvider,
+      wikiEmbeddingProvider,
       isolationLayer,
       config: {
         retrieval: {
@@ -505,6 +519,7 @@ if (issueStore && embeddingProvider) {
     issueStore,
     wikiPageStore,
     embeddingProvider,
+    wikiEmbeddingProvider,
     taskRouter,
     costTracker,
     sql,
@@ -516,7 +531,7 @@ if (issueStore && embeddingProvider) {
 const wikiSyncScheduler = embeddingProvider
   ? createWikiSyncScheduler({
       store: wikiPageStore,
-      embeddingProvider,
+      embeddingProvider: wikiEmbeddingProvider,
       source: "kodi.wiki",
       logger,
     })
