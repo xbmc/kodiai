@@ -32,6 +32,10 @@ Progress: [##########] 100%
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 125 added: Voice-preserving updates — preserve existing formatting, voice, tone, and style when generating wiki page update suggestions
+
 ### Decisions
 
 All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions table.
