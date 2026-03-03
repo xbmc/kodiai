@@ -198,7 +198,7 @@ See `.planning/milestones/v0.23-ROADMAP.md` for full phase details.
 - [x] **Phase 116: Cross-Surface Epistemic Guardrails** - Propagate epistemic guardrails to mention and Slack response surfaces (completed 2026-03-02)
 - [x] **Phase 117: Claim Classification** - Post-LLM pass that classifies each finding's claims as diff-grounded vs external-knowledge (completed 2026-03-02)
 - [x] **Phase 118: Severity Demotion** - Cap severity of findings whose core claims depend on unverified external knowledge (completed 2026-03-03)
-- [ ] **Phase 119: Output Filtering** - Rewrite or suppress findings with unverifiable external claims before publishing
+- [x] **Phase 119: Output Filtering** - Rewrite or suppress findings with unverifiable external claims before publishing (completed 2026-03-03)
 
 ## Phase Details
 
@@ -301,7 +301,7 @@ Plans:
 | 116 | 1/1 | Complete    | 2026-03-02 | - |
 | 117 | 1/1 | Complete    | 2026-03-02 | - |
 | 118 | 1/1 | Complete    | 2026-03-03 | - |
-| 119 | v0.24 | 0/1 | Not started | - |
+| 119 | 1/1 | Complete   | 2026-03-03 | - |
 
 ---
 

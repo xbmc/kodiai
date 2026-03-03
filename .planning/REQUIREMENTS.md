@@ -28,9 +28,9 @@ Requirements for Hallucination Prevention & Fact Verification milestone. Each ma
 
 ### Output Filtering
 
-- [ ] **FILT-01**: Findings with a valid diff-grounded core are rewritten to remove external knowledge claims before publishing
-- [ ] **FILT-02**: Findings whose entire substance depends on external knowledge are suppressed entirely
-- [ ] **FILT-03**: Suppressed/rewritten findings are logged for observability and feedback learning
+- [x] **FILT-01**: Findings with a valid diff-grounded core are rewritten to remove external knowledge claims before publishing
+- [x] **FILT-02**: Findings whose entire substance depends on external knowledge are suppressed entirely
+- [x] **FILT-03**: Suppressed/rewritten findings are logged for observability and feedback learning
 
 ## Future Requirements
 
@@ -63,9 +63,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEV-01 | Phase 118 | Complete |
 | SEV-02 | Phase 118 | Complete |
 | SEV-03 | Phase 118 | Complete |
-| FILT-01 | Phase 119 | Pending |
-| FILT-02 | Phase 119 | Pending |
-| FILT-03 | Phase 119 | Pending |
+| FILT-01 | Phase 119 | Complete |
+| FILT-02 | Phase 119 | Complete |
+| FILT-03 | Phase 119 | Complete |
 
 **Coverage:**
 - v0.24 requirements: 13 total
