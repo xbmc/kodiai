@@ -18,6 +18,7 @@ import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingConte
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
+import { filterExternalClaims, formatSuppressedFindingsSection, type FilterableFinding, type FilteredFindingRecord } from "../lib/output-filter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
@@ -125,6 +126,8 @@ type ProcessedFinding = ExtractedFinding & {
   preDemotionSeverity?: FindingSeverity;
   severityDemoted?: boolean;
   demotionReason?: string;
+  filterAction?: "rewritten" | "suppressed";
+  originalTitle?: string;
 };
 
 type RetrievalContextForPrompt = {
@@ -3088,6 +3091,52 @@ export function createReviewHandler(deps: {
           };
         });
 
+        // Output filtering: rewrite mixed findings, suppress primarily-external findings (FILT-01, FILT-02)
+        const filterResult = filterExternalClaims(
+          processedFindings as FilterableFinding[],
+          logger,
+        );
+
+        if (filterResult.suppressionCount > 0 || filterResult.rewriteCount > 0) {
+          const suppressedIds = new Set(
+            filterResult.filtered
+              .filter(r => r.action === "suppressed")
+              .map(r => r.commentId),
+          );
+          const rewriteMap = new Map(
+            filterResult.filtered
+              .filter(r => r.action === "rewritten")
+              .map(r => [r.commentId, r.rewrittenTitle!]),
+          );
+
+          processedFindings = processedFindings.map(f => {
+            if (suppressedIds.has(f.commentId)) {
+              return { ...f, suppressed: true, filterAction: "suppressed" as const, originalTitle: f.title };
+            }
+            const rewrittenTitle = rewriteMap.get(f.commentId);
+            if (rewrittenTitle) {
+              return { ...f, title: rewrittenTitle, filterAction: "rewritten" as const, originalTitle: f.title };
+            }
+            return f;
+          });
+
+          // Log filter summary (FILT-03)
+          logger.info(
+            {
+              ...baseLog,
+              rewriteCount: filterResult.rewriteCount,
+              suppressionCount: filterResult.suppressionCount,
+              filteredFindings: filterResult.filtered.map(r => ({
+                commentId: r.commentId,
+                action: r.action,
+                originalTitle: r.originalTitle.slice(0, 100),
+                reason: r.reason,
+              })),
+            },
+            "Output filter applied: external knowledge claims filtered",
+          );
+        }
+
         const recurrenceCounts = new Map<string, number>();
         for (const finding of processedFindings) {
           if (finding.suppressed || finding.confidence < config.review.minConfidence) {
@@ -3248,6 +3297,12 @@ export function createReviewHandler(deps: {
               prioritization: prioritizationStats,
             });
 
+            // Append suppressed-findings section if any findings were filtered (FILT-02)
+            const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
+            const fullDetailsBody = suppressedSection
+              ? `${reviewDetailsBody}\n\n${suppressedSection}`
+              : reviewDetailsBody;
+
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
               try {
@@ -3257,7 +3312,7 @@ export function createReviewHandler(deps: {
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey,
-                  reviewDetailsBlock: reviewDetailsBody,
+                  reviewDetailsBlock: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
                   requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                 });
@@ -3273,7 +3328,7 @@ export function createReviewHandler(deps: {
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey,
-                  body: reviewDetailsBody,
+                  body: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
                 });
               }
@@ -3286,7 +3341,7 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 prNumber: pr.number,
                 reviewOutputKey,
-                body: reviewDetailsBody,
+                body: fullDetailsBody,
                 botHandles: [githubApp.getAppSlug(), "claude"],
               });
             }
