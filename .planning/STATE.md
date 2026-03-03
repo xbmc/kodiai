@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 Milestone: v0.24 Hallucination Prevention & Fact Verification — SHIPPED 2026-03-03
 Status: Complete (5 phases, 5 plans)
-Last activity: 2026-03-03 — Milestone v0.24 archived
+Last activity: 2026-03-03 - Completed quick task 16: Parse Windows package lists and harden pipeline against all-null enrichment
 
 ## Accumulated Context
 
@@ -50,6 +50,12 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 ### Blockers/Concerns
 
 None.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 16 | Parse Windows package lists and harden pipeline against all-null enrichment | 2026-03-03 | cd571d7945 | [16-parse-windows-package-lists-and-harden-p](./quick/16-parse-windows-package-lists-and-harden-p/) |
 
 ## Session Continuity
 
