@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: active
-stopped_at: Defining requirements
-last_updated: "2026-03-03T04:30:00.000Z"
+stopped_at: Roadmap created
+last_updated: "2026-03-02T12:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,16 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.25 Wiki Content Updates
+**Current focus:** v0.25 Wiki Content Updates -- Phase 120: Embedding Migration
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-03-03 — Milestone v0.25 started
+Phase: 120 of 124 (Embedding Migration)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-03-02 -- Roadmap created with 5 phases (120-124), 20 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
@@ -38,10 +40,15 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 
 - Schema migrations must be additive-only (new tables, nullable columns)
 - Slack v1: single workspace, single channel (#kodiai), in-process session state
-- All corpora use voyage-code-3 (1024 dims) -- consistent model
+- Wiki corpus migrating from voyage-code-3 to voyage-context-3; all other corpora stay on voyage-code-3
+- voyage-context-3 uses different API: `contextualizedEmbed()` with `inputs: string[][]`, not `/v1/embeddings`
+- wiki-store.ts hardcodes "voyage-code-3" at lines 87 and 131 -- must parameterize
+- kodi.wiki has NO PageViewInfo extension -- use inbound links + citation frequency + edit recency instead
+- GitHub secondary rate limit caps at ~80 req/min for content creation -- need 3s delays between comments
+- Must verify GitHub App installation on xbmc/wiki before publishing phase
 - Fail-open philosophy: embedding/retrieval failures logged but never block critical path
 - Bun `streamText()` has production build failure (oven-sh/bun#25630) -- use `generateText()` exclusively
-- Agent SDK owns agentic tasks (PR review, mentions, Slack write); Vercel AI SDK owns non-agentic tasks only
+- Agent SDK owns agentic tasks; Vercel AI SDK owns non-agentic tasks only
 
 ### Explicit User Policies
 
@@ -61,6 +68,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03
-**Stopped At:** Completed quick task 17
-**Resume with:** `/gsd:new-milestone`
+**Last session:** 2026-03-02
+**Stopped At:** Roadmap created for v0.25 Wiki Content Updates (5 phases, 20 requirements)
+**Resume with:** `/gsd:plan-phase 120`

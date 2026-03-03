@@ -72,32 +72,32 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EMBED-01 | — | Pending |
-| EMBED-02 | — | Pending |
-| EMBED-03 | — | Pending |
-| EMBED-04 | — | Pending |
-| POP-01 | — | Pending |
-| POP-02 | — | Pending |
-| POP-03 | — | Pending |
-| POP-04 | — | Pending |
-| STALE-01 | — | Pending |
-| STALE-02 | — | Pending |
-| STALE-03 | — | Pending |
-| STALE-04 | — | Pending |
-| UPDATE-01 | — | Pending |
-| UPDATE-02 | — | Pending |
-| UPDATE-03 | — | Pending |
-| UPDATE-04 | — | Pending |
-| PUB-01 | — | Pending |
-| PUB-02 | — | Pending |
-| PUB-03 | — | Pending |
-| PUB-04 | — | Pending |
+| EMBED-01 | Phase 120 | Pending |
+| EMBED-02 | Phase 120 | Pending |
+| EMBED-03 | Phase 120 | Pending |
+| EMBED-04 | Phase 120 | Pending |
+| POP-01 | Phase 121 | Pending |
+| POP-02 | Phase 121 | Pending |
+| POP-03 | Phase 121 | Pending |
+| POP-04 | Phase 121 | Pending |
+| STALE-01 | Phase 122 | Pending |
+| STALE-02 | Phase 122 | Pending |
+| STALE-03 | Phase 122 | Pending |
+| STALE-04 | Phase 122 | Pending |
+| UPDATE-01 | Phase 123 | Pending |
+| UPDATE-02 | Phase 123 | Pending |
+| UPDATE-03 | Phase 123 | Pending |
+| UPDATE-04 | Phase 123 | Pending |
+| PUB-01 | Phase 124 | Pending |
+| PUB-02 | Phase 124 | Pending |
+| PUB-03 | Phase 124 | Pending |
+| PUB-04 | Phase 124 | Pending |
 
 **Coverage:**
 - v0.25 requirements: 20 total
-- Mapped to phases: 0
-- Unmapped: 20 ⚠️
+- Mapped to phases: 20
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-03 after initial definition*
+*Last updated: 2026-03-02 after roadmap creation*
