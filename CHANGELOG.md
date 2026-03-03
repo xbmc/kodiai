@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.24 (2026-03-03)
+
+Hallucination Prevention & Fact Verification.
+
+### Added
+
+- Epistemic boundary system with 3-tier knowledge classification (diff-visible, context-visible, external) in review prompts
+- Cross-surface guardrails applied consistently to PR reviews, @mention responses, and Slack assistant
+- Heuristic claim classifier labeling each finding's claims as diff-grounded, external-knowledge, or inferential
+- Severity demotion capping external-knowledge findings at medium severity (CRITICAL/MAJOR demoted)
+- Output filter rewriting findings to remove external claims or suppressing entirely when no diff-grounded core remains
+- Collapsed `<details>` block in review summary for transparency on suppressed findings
+
 ## v0.23 (2026-03-01)
 
 Interactive Troubleshooting.

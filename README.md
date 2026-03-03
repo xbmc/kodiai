@@ -1,6 +1,6 @@
 # Kodiai
 
-Kodiai is an installable GitHub App that delivers knowledge-backed code review, conversational assistance, issue workflows, and Slack integration -- all powered by multi-LLM routing, 4-corpus hybrid retrieval, contributor intelligence, and review pattern clustering. One app installation replaces per-repo workflow YAML with optional `.kodiai.yml` configuration.
+Kodiai is an installable GitHub App that delivers knowledge-backed code review, conversational assistance, issue intelligence, and Slack integration -- all powered by multi-LLM routing, 5-corpus hybrid retrieval, epistemic guardrails, contributor intelligence, and review pattern clustering. One app installation replaces per-repo workflow YAML with optional `.kodiai.yml` configuration.
 
 ## What It Does
 
@@ -26,12 +26,17 @@ Triggers on `issue_comment.created`, `pull_request_review_comment.created`, and 
 - Conversational follow-ups on review findings with thread context and rate limiting
 - Cross-surface support with unified UX and one targeted clarifying-question fallback
 
-### Issue Workflows
+### Issue Intelligence
 
+- Auto-triage on `issues.opened` with template validation, label recommendations, and duplicate detection
+- Historical issue corpus with nightly incremental sync and vector/text search
+- High-confidence duplicate detection with top-3 candidates, similarity scores, and fail-open design
+- Troubleshooting agent synthesizing guidance from resolved issues with provenance citations
+- Beta-Binomial Bayesian threshold auto-tuning per repo with reaction feedback
+- PR-issue linking via explicit reference parsing and semantic search fallback
 - In-thread issue Q&A with code-aware file-path pointers
 - `apply:` / `change:` PR creation from issues against the default branch
 - Write-mode guardrails: allow/deny path rules, secret-scan refusals, idempotent replay, in-flight de-dupe
-- Permission remediation guidance with `.kodiai.yml` enablement and same-command retry
 
 ### Slack Integration
 
@@ -40,16 +45,25 @@ Triggers on `issue_comment.created`, `pull_request_review_comment.created`, and 
 - High-impact confirmation gating for destructive/migration/security requests (15-minute timeout)
 - Answer-first concise responses with banned preamble/closing phrases
 
+### Epistemic Guardrails
+
+- 3-tier knowledge classification: diff-visible, context-visible, external
+- Heuristic claim classifier labels findings as diff-grounded, external-knowledge, or inferential
+- Severity demotion caps external-knowledge findings at medium (CRITICAL/MAJOR demoted)
+- Output filter rewrites or suppresses findings with unverifiable external claims
+- Applied consistently across PR reviews, @mention responses, and Slack assistant
+
 ### Knowledge System
 
-4-corpus hybrid retrieval with BM25+vector search per corpus and Reciprocal Rank Fusion merging:
+5-corpus hybrid retrieval with BM25+vector search per corpus and Reciprocal Rank Fusion merging:
 
 - **Code** -- repository search with language-aware boosting (61-extension classification map)
 - **Review comments** -- 18 months of PR review history with thread-aware chunking
 - **Wiki** -- MediaWiki export with section-based chunking and incremental sync
 - **Code snippets** -- hunk-level embeddings with content-hash SHA-256 deduplication
+- **Issues** -- historical issue corpus with duplicate detection, auto-triage, and PR-issue linking
 
-Cross-corpus citations appear as `[code]`, `[review: PR #]`, `[wiki: Page]`, `[snippet]` labels in responses.
+Cross-corpus citations appear as `[code]`, `[review: PR #]`, `[wiki: Page]`, `[snippet]`, `[issue: #N]` labels in responses.
 
 ### Multi-LLM Routing
 
@@ -199,6 +213,6 @@ Runbook for diagnosing manual re-request issues: `docs/runbooks/review-requested
 
 ## Milestones
 
-22 milestones shipped (v0.1 through v0.23). Per-version release notes are in [MILESTONES.md](.planning/MILESTONES.md).
+24 milestones shipped (v0.1 through v0.24). Per-version release notes are in [MILESTONES.md](.planning/MILESTONES.md).
 
 Archived planning artifacts live in `.planning/milestones/`.
