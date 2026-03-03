@@ -1,162 +1,365 @@
-# Feature Landscape
+# Feature Landscape: Wiki Content Update Pipeline
 
-**Domain:** GitHub issue intelligence -- historical ingestion, duplicate detection, PR-issue linking, auto-triage
-**Researched:** 2026-02-26
-**Milestone:** v0.22 Issue Intelligence
-**Confidence:** HIGH for ingestion and auto-triage, MEDIUM for duplicate thresholds, MEDIUM for PR-issue linking
+**Domain:** Wiki content maintenance automation for AI-powered code review bot
+**Researched:** 2026-03-02
+**Milestone:** v0.25 Wiki Content Updates
 
-## Existing Foundation (Already Built)
+## Scope
 
-These features are production and form the base for v0.22:
+This document covers ONLY the five new features for v0.25. It does not cover existing capabilities (wiki export/chunking/embedding, two-tier staleness detection, scheduled Slack reports, 5-corpus hybrid retrieval, issue intelligence).
 
-| Existing Capability | Module | How v0.22 Extends It |
-|---------------------|--------|---------------------|
-| Issue corpus with `issues`/`issue_comments` tables, HNSW vector indexes | `knowledge/issue-store.ts`, migration 014 | Backfill populates these tables; duplicate detection queries them |
-| `IssueStore.findSimilar()` with cosine distance threshold | `knowledge/issue-store.ts` | Duplicate detection wraps this with high-confidence gating |
-| `IssueStore.searchByEmbedding()` and `searchByFullText()` | `knowledge/issue-store.ts` | PR-issue linking uses these for semantic matching |
-| `IssueStore.upsert()` with ON CONFLICT DO UPDATE | `knowledge/issue-store.ts` | Backfill and nightly sync use idempotent upsert |
-| `IssueStore.upsertComment()` with ON CONFLICT DO UPDATE | `knowledge/issue-store.ts` | Comment backfill uses idempotent upsert |
-| Triage validation agent with template parsing | `triage/triage-agent.ts` | Auto-triage reuses this agent, triggered by webhook instead of @mention |
-| `github_issue_label` and `github_issue_comment` MCP tools | `execution/mcp/issue-*-server.ts` | Auto-triage uses these same tools |
-| 18-month PR review comment backfill pipeline | `knowledge/review-comment-backfill.ts` | Issue backfill follows identical pattern: paginated fetch, embed, store, sync state |
-| Nightly wiki sync job with scheduled interval | `knowledge/wiki-sync.ts` | Nightly issue sync follows same scheduler pattern |
-| Adaptive rate limiting (1.5s/3s delays based on remaining) | `knowledge/review-comment-backfill.ts` | Reuse same `adaptiveRateDelay` pattern for issue API calls |
-| Webhook deduplication via `X-GitHub-Delivery` header | `webhook/dedup.ts` | Auto-triage idempotency builds on existing dedup |
-| Per-issue cooldown with body-hash reset | Triage agent | Prevents duplicate auto-triage comments |
-| `.kodiai.yml` config gating (`triage.enabled`) | `execution/config.ts` | Auto-triage adds `triage.autoTriageOnOpen` config flag |
-| Voyage AI embedding provider | `knowledge/types.ts` | Same provider embeds issue title+body for corpus |
-| Cross-corpus RRF retrieval | `knowledge/cross-corpus-rrf.ts` | Issue corpus wired as 6th source in retrieval fan-out |
+---
 
 ## Table Stakes
 
-Features users expect. Missing = product feels incomplete for the stated v0.22 goals.
+Features that are essential for the pipeline to deliver value. Without these, the milestone is incomplete.
 
-| Feature | Why Expected | Complexity | Dependencies on Existing | Notes |
-|---------|--------------|------------|--------------------------|-------|
-| **Historical issue backfill** | Cannot do duplicate detection or PR-issue linking without a populated corpus. Every similar tool (Simili, Similar Issues AI) requires a corpus of existing issues. This is the foundational prerequisite. | MEDIUM | `IssueStore.upsert()`, `IssueStore.upsertComment()`, Voyage AI embeddings, Octokit pagination | Follow review-comment-backfill pattern exactly: paginated `GET /repos/{owner}/{repo}/issues`, filter `is_pull_request: false`, adaptive rate delay, sync state tracking, cursor-based resume. xbmc/xbmc has ~3000+ closed issues -- expect ~30+ pages at 100/page. GitHub Issues API returns PRs too; must filter `pull_request` field. |
-| **Issue embedding on ingest** | Vector similarity search requires embeddings. Every issue needs `title + body` embedded via Voyage AI. Without embeddings, `findSimilar()` and `searchByEmbedding()` return nothing. | LOW | Voyage AI `EmbeddingProvider`, existing `IssueStore.upsert()` accepts `embedding` field | Embed `"${title}\n\n${body}"` as a single document. No chunking needed -- issues are typically 200-2000 tokens, well within Voyage AI's context window. Batch embedding (10-20 at a time) reduces API calls. |
-| **Nightly incremental sync** | Issues get updated (closed, relabeled, edited) constantly. Without sync, the corpus drifts from reality. The wiki sync job is the direct precedent. | LOW | Wiki sync scheduler pattern, `IssueStore.upsert()` idempotent update | Use `since` parameter on Issues API to fetch only recently updated issues. Store `last_synced_at` in sync state table. Process updates and new issues. Also sync comments via `GET /repos/{owner}/{repo}/issues/comments?since=...`. |
-| **High-confidence duplicate detection** | The primary intelligence feature. Users who file a duplicate want to be pointed to the existing issue. Maintainers want duplicates caught before manual triage. Every issue bot in this space (Simili, AI Duplicate Detector, Probot duplicate-issues) offers this. | MEDIUM | `IssueStore.findSimilar()`, embedded corpus, triage agent | Two-phase approach: (1) vector similarity via `findSimilar()` with strict threshold to get candidates, (2) LLM confirmation to reduce false positives. Critical: threshold must be strict enough to avoid false positives -- a wrongly-flagged duplicate erodes trust faster than a missed one. |
-| **Duplicate detection comment** | When a likely duplicate is found, post a comment linking to the candidate issue(s). Users expect to see why their issue was flagged and which issue it duplicates. | LOW | `github_issue_comment` MCP tool, duplicate detection results | Comment should include: similarity score (human-readable), link to candidate issue(s), disclaimer that this is automated and may be wrong. Do NOT auto-close -- that is an anti-feature. |
-| **Auto-triage on `issues.opened`** | Currently triage requires `@kodiai` mention. Auto-fire on open is the natural next step and is how VS Code, Hono, and most mature triage bots operate. Config-gated (default off). | MEDIUM | Webhook event router, triage agent, `.kodiai.yml` config | Wire `issues.opened` event in event router. Must be idempotent (webhook dedup + per-issue cooldown). Gate behind `triage.autoTriageOnOpen: true` in config. Run triage agent with same logic as mention-triggered path. |
-| **Config gate for auto-triage** | Repos must opt in to automatic triage. Default-on would surprise maintainers. Every mature bot (VS Code triage bot, GitHub Agentic Workflows) has explicit configuration. | LOW | `.kodiai.yml` config schema | Add `triage.autoTriageOnOpen: boolean` (default `false`). When `true`, `issues.opened` fires triage. When `false`, only `@kodiai` mention triggers triage. |
+| Feature | Why Essential | Complexity | Dependencies on Existing |
+|---------|--------------|------------|--------------------------|
+| Embedding model migration (wiki corpus only) | Wiki content is prose, not code. voyage-code-3 is optimized for code retrieval; wiki search quality will improve with a prose-optimized model. Without migration, the entire pipeline operates on suboptimal embeddings for its primary content type. | Medium | `wiki-store.ts` (embedding column, embedding_model column), `embeddings.ts` (provider factory), `wiki-sync.ts` (embeds on ingest), `retrieval.ts` (query embedding must match) |
+| Code-grounded staleness detection | Current heuristic uses token overlap between wiki text and changed file paths -- too noisy. Ground truth from actual code diffs (what functions/APIs/configs changed) dramatically reduces false positives and enables actionable rewrite suggestions. | Medium-High | `wiki-staleness-detector.ts` (heuristic + LLM pipeline), GitHub commits API (already used), `wiki-store.ts` (chunk retrieval) |
+| LLM-generated section-level rewrite suggestions | The core deliverable. Without concrete "change X to Y" suggestions, the pipeline only identifies problems without solving them. Section-level granularity matches existing wiki chunking. | High | Staleness detection output (stale pages + evidence), `wiki-store.ts` (full page content retrieval), `generateWithFallback` (LLM generation), task router (model selection) |
+| Batch publishing to GitHub issues | Output channel. Without this, rewrite suggestions have no destination. GitHub issues in xbmc/wiki is the agreed-upon delivery mechanism per PROJECT.md scope. | Medium | `github_issue_comment` MCP tool (exists but for single comments), Octokit (issue creation), GitHub API rate limits |
 
 ## Differentiators
 
-Features that set Kodiai apart. Not expected, but valued.
+Features that enhance quality but could be deferred without blocking the core pipeline.
 
-| Feature | Value Proposition | Complexity | Dependencies on Existing | Notes |
-|---------|-------------------|------------|--------------------------|-------|
-| **PR-issue linking via reference parsing** | Parse PR body/title/commits for `fixes #123`, `closes #456`, `relates to #789` patterns. GitHub does this natively for closing keywords, but Kodiai can (a) detect non-closing references like "relates to", (b) surface these in PR review context, and (c) validate that referenced issues actually exist. | LOW | PR review handler, Octokit Issues API | Regex: `/(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?|relates?\s+to)\s+#(\d+)/gi`. Parse PR body + commit messages. Validate issue numbers exist. Include linked issue context in PR review prompt. |
-| **Semantic PR-issue linking** | When a PR has no explicit issue reference, use semantic search to find related issues. Embed the PR title+description, search the issue corpus. Surface likely related issues in the review. | MEDIUM | `IssueStore.searchByEmbedding()`, PR review pipeline, Voyage AI | Only trigger when no explicit references found. Use strict threshold (distance < 0.3) to avoid noise. Present as "possibly related" not "definitely linked". Value: helps maintainers connect PRs to open issues they forgot to reference. |
-| **Issue corpus in cross-corpus retrieval** | Wire issue corpus as a source in the existing RRF retrieval fan-out. When reviewing a PR or answering a mention, include relevant issues as context. | MEDIUM | `knowledge/cross-corpus-rrf.ts`, `knowledge/retrieval.ts` | Add issue store to `createRetriever()` options. Add `[issue: #N]` citation format. Weight issues slightly lower than code/review/wiki (0.9x) since issues are less authoritative than code patterns. |
-| **Duplicate candidate ranking** | Instead of just showing the top-1 duplicate, show top-3 candidates with similarity scores and status (open/closed). Closed duplicates are still useful -- they tell the user the issue was already resolved. | LOW | `IssueStore.findSimilar()` already returns ranked list | Cap at 3 candidates. Include title, number, state, and human-friendly similarity percentage. Group by open vs closed. |
-| **Area classification labels** | Automatically classify issues into area labels (e.g., `area:video`, `area:music`, `area:pvr`) based on issue content. VS Code does this with ML models at 0.75 confidence threshold. | HIGH | Label taxonomy in `.kodiai.yml`, LLM classification, `github_issue_label` MCP tool | Requires per-repo label taxonomy configuration. Use LLM (non-agentic task via AI SDK) to classify. Only apply label when confidence exceeds configurable threshold (default 0.75). VS Code's two-model approach is worth studying but may be overkill for v0.22 MVP. |
-| **Backfill progress reporting** | Log and report backfill progress with page counts, embedding counts, rate limit status. The review comment backfill already does this -- issue backfill should match. | LOW | Logger, backfill pipeline | Follow exact logging pattern from `review-comment-backfill.ts`: per-batch logs with commentsInBatch, embeddings generated/failed, totalSoFar, rateRemaining. |
+| Feature | Value Proposition | Complexity | Dependencies on Existing |
+|---------|-------------------|------------|--------------------------|
+| Page popularity scoring | Prioritizes the top 20 pages by actual importance rather than arbitrary selection. Ensures effort is spent on pages that matter most. Two signals: MediaWiki link graph + retrieval citation frequency. | Medium | `wiki-store.ts` (page metadata), MediaWiki API (link counts -- see caveat below), retrieval pipeline (citation tracking does NOT exist yet) |
+| Per-corpus embedding model selection in retrieval | Enables wiki corpus to use voyage-context-3 while code/review/issue corpora keep voyage-code-3. Prevents forcing a single model on heterogeneous content types. | Low-Medium | `embeddings.ts` (single provider currently), `retrieval.ts` (single embeddingProvider passed to all search functions), `cross-corpus-rrf.ts` (merges results) |
+
+---
+
+## Feature Deep Dives
+
+### 1. Embedding Model Migration (Wiki Corpus)
+
+**Goal:** Re-embed all wiki_pages rows from voyage-code-3 to voyage-context-3.
+
+**Why voyage-context-3:** HIGH confidence (official Voyage AI blog, Dec 2025)
+- Contextual chunk embeddings: each chunk vector encodes awareness of surrounding document context, not just the chunk in isolation. This is exactly what wiki section chunks need.
+- 14.24% retrieval improvement over OpenAI-v3-large on chunk-level tasks.
+- Same dimensions (1024 default) and same quantization options as voyage-code-3 -- drop-in compatible at the vector level.
+- First 200M tokens free -- wiki corpus is small enough to fall within this tier.
+- Matryoshka support (2048/1024/512/256) matches existing dimension flexibility.
+
+**Migration strategy:** Atomic batch re-embed, not dual-index.
+- The wiki corpus is small enough (under 5000 chunks per PROJECT.md) to re-embed in a single batch run.
+- The `embedding_model` column already exists in the schema -- currently hardcoded to "voyage-code-3" in `wiki-store.ts` writeChunks/replacePageChunks.
+- Batch re-embed script: SELECT rows WHERE embedding_model = 'voyage-code-3' OR embedding_model IS NULL, generate new embedding via voyage-context-3, UPDATE embedding and embedding_model columns.
+- HNSW indexes work across embedding models if dimensions match (1024), but vectors from different models are NOT comparable in the same vector space. Must re-embed ALL wiki rows atomically before any queries use the new model.
+- Query-time embedding must use the same model. This drives the per-corpus model selection requirement.
+
+**Key constraint:** Voyage-context-3 embeddings and voyage-code-3 embeddings occupy different vector spaces even at the same dimensionality. You CANNOT mix them in the same HNSW index for meaningful retrieval. All wiki chunks must be migrated before switching the query model.
+
+**Implementation notes:**
+- The `createEmbeddingProvider()` in `embeddings.ts` accepts a `model` parameter. Create a second provider instance for wiki-specific embedding.
+- The wiki-sync job (`wiki-sync.ts`) must be updated to use the new provider for future ingest.
+- Batch size: 10-20 texts per API call to balance throughput and error handling. Voyage AI supports batch embedding.
+- Error handling: if any embedding fails, skip that chunk and log. Re-run script to catch stragglers.
+
+**Complexity:** Medium. The batch re-embed is straightforward; the hard part is ensuring retrieval queries use the correct model per corpus.
+
+### 2. Per-Corpus Embedding Model Selection
+
+**Goal:** Allow different embedding models per corpus in the retrieval pipeline.
+
+**Current state:** A single `EmbeddingProvider` instance is created in `src/index.ts` with model "voyage-code-3" and passed to `createRetriever()`. All corpus search functions (`searchWikiPages`, `searchReviewComments`, `searchCodeSnippets`, `searchIssues`) receive the same provider.
+
+**Required change:** The retriever factory needs a map of corpus-to-provider instead of a single provider:
+```typescript
+type CorpusProviders = {
+  code: EmbeddingProvider;       // voyage-code-3
+  reviewComments: EmbeddingProvider; // voyage-code-3
+  wiki: EmbeddingProvider;       // voyage-context-3
+  codeSnippets: EmbeddingProvider;   // voyage-code-3
+  issues: EmbeddingProvider;     // voyage-code-3
+};
+```
+
+**Key design points:**
+- Most corpora continue using voyage-code-3 (code-optimized content).
+- Only the wiki corpus switches to voyage-context-3 (prose-optimized).
+- Query embedding must use the SAME model as the corpus being searched. Each search function generates its own query embedding using its assigned provider.
+- The cross-corpus RRF merge operates on normalized scores, so mixing results from different embedding models is fine at the ranking level.
+
+**Complexity:** Low-Medium. Mostly plumbing changes to thread the right provider to each search function.
+
+### 3. Page Popularity Scoring
+
+**Goal:** Rank wiki pages by importance to prioritize the top 20 for update suggestions.
+
+**Two signals:**
+
+**Signal A: MediaWiki link graph (inbound link count)**
+- VERIFIED: The Kodi wiki (kodi.wiki) does NOT have the PageViewInfo extension installed. The API call `?action=query&prop=pageviews` returns "Unrecognized value for parameter 'prop': pageviews". View counts are NOT available.
+- Use MediaWiki `action=query&prop=linkshere` to count inbound links per page. Pages with more inbound links are structurally more important in the wiki graph. This is the same signal Google's PageRank uses.
+- Alternative: `action=query&list=backlinks&bltitle=PAGE` counts pages that link to a given page.
+- This signal is static and does not require historical tracking -- fetch once per pipeline run.
+
+**Signal B: Retrieval citation frequency**
+- This signal does NOT currently exist in the codebase. No citation counting or frequency tracking is implemented.
+- Requires: adding a counter/log when wiki chunks appear in retrieval results that get published (PR reviews, mention responses, Slack answers).
+- Implementation: lightweight `wiki_page_citations` table with `(page_id, cited_at, trigger_type)` rows, or a simpler `citation_count` column on a new `wiki_page_stats` table incremented atomically in the publish path.
+- Cold start problem: until enough retrieval events accumulate, this signal will be sparse.
+
+**Recommendation for v0.25:** Use inbound link count as the primary popularity signal. Defer citation frequency tracking to a follow-up. The cold start problem means citation data will not be meaningful for the first pipeline run anyway.
+
+**Composite score (v0.25):**
+```
+popularity = (normalized_inbound_links * 0.6) + (normalized_edit_recency * 0.4)
+```
+Edit recency is available from the existing `last_modified` column on wiki_pages.
+
+**Complexity:** Medium. MediaWiki API for inbound links is straightforward. The main work is building the scoring/ranking layer and selecting top 20.
+
+### 4. Code-Grounded Staleness Detection
+
+**Goal:** Replace/enhance the token-overlap heuristic with actual code change analysis.
+
+**Current state:** The existing `wiki-staleness-detector.ts` uses a two-tier pipeline:
+1. Heuristic pass: tokenizes wiki chunk text and changed file paths, counts overlapping tokens (score >= 1 = candidate).
+2. LLM pass: top 20 candidates evaluated by LLM with wiki excerpt + changed file list.
+
+**Problem:** The heuristic is path-based only. It knows FILE X changed but not WHAT changed in file X. The LLM gets file paths but not diffs, so it guesses at relevance.
+
+**Enhancement approach:**
+- Fetch actual diff content for affecting commits. The existing `fetchChangedFiles()` in `wiki-staleness-detector.ts` calls `octokit.repos.getCommit()` which already returns `patch` data per file via `detail.data.files[].patch`.
+- Extract semantic signals from diffs: function/method signatures added/removed/renamed, API endpoint changes, configuration key changes, class renames.
+- Feed diff excerpts (budget-limited) into the LLM evaluation prompt alongside wiki content.
+- The LLM can then make grounded assessments: "The wiki says `callX()` but the diff shows `callX` was renamed to `callY`."
+
+**Diff excerpt budget:** Cap at approximately 2000 tokens of diff content per candidate page. Prioritize hunks that contain keyword overlap with the wiki chunk content.
+
+**What to extract from diffs:**
+- Function/method signature changes (regex patterns for C++/Python/JS)
+- API endpoint string changes
+- Configuration key/value changes
+- Class/struct renames
+- Removed/added includes/imports
+- Build system changes (CMakeLists.txt, Makefile changes)
+
+**Enhanced LLM prompt structure:**
+```
+Wiki page: "{title}"
+Wiki content (excerpts): {chunk texts}
+Changed files: {file paths}
+Relevant code changes:
+--- {file path}
+{diff excerpt with keyword-overlapping hunks}
+---
+
+Based on the ACTUAL CODE CHANGES shown above, is this wiki page outdated?
+If yes, identify SPECIFIC statements in the wiki that contradict the code changes.
+```
+
+**Key improvement:** The LLM now has evidence to ground its assessment rather than speculating from file paths alone. This directly aligns with the epistemic guardrails established in v0.24 -- the staleness assessment is grounded in observable diff content, not inferred from file names.
+
+**Complexity:** Medium-High. Fetching commit details is already done; the new work is extracting relevant diff hunks, budget-limiting them, and integrating into the LLM prompt.
+
+### 5. LLM-Generated Section-by-Section Rewrite Suggestions
+
+**Goal:** For each stale page, generate concrete update text for each affected section.
+
+**Architecture:**
+```
+Stale page (from enhanced detector)
+  + Full page content (all chunks ordered by chunk_index from wiki-store)
+  + Code evidence (diff excerpts from grounded detection)
+  --> LLM generates section-level rewrites
+  --> Structured output: [{ sectionHeading, suggestedText, rationale }]
+```
+
+**Section granularity:** Use existing section-based chunking from `wiki-chunker.ts`. Each wiki page is already split at heading boundaries with `sectionHeading` and `sectionAnchor` metadata. Generate one rewrite suggestion per affected section, not per chunk.
+
+**Prompt structure:** The LLM receives:
+1. The full current section text (reassembled from chunks for that section)
+2. The specific code changes that affect this section (diff excerpts from grounded detection)
+3. The staleness explanation from the detector
+4. The existing page's wiki markup format (MediaWiki wikitext or HTML-derived markdown)
+5. Instructions to output structured JSON
+
+**Output format:**
+```typescript
+type SectionRewrite = {
+  sectionHeading: string;
+  sectionAnchor: string;
+  currentExcerpt: string;      // first ~200 chars of current text
+  suggestedText: string;       // full replacement text for the section
+  changeRationale: string;     // one-sentence explanation grounded in diff evidence
+  confidence: "high" | "medium" | "low";
+};
+```
+
+**LLM task type:** New task type `wiki-rewrite` in the task router. Route to a capable generation model (Claude Sonnet or equivalent via Vercel AI SDK). This is a generation task requiring accuracy, not a classification task.
+
+**Guardrails:**
+- Apply v0.24 epistemic boundaries: the LLM should only suggest changes grounded in the diff evidence, not inject external knowledge.
+- If the LLM cannot determine what the correct new content should be from the diff, it should flag the section as "needs manual review" with the evidence, rather than hallucinating replacement text.
+- Cap rewrites at the section level -- never suggest restructuring the entire page.
+- Include the raw diff as evidence in the output so humans can verify the suggestion.
+
+**Token budget per page:** Approximately 4000 tokens input (wiki content + diff excerpts + prompt) and 2000 tokens output (rewrite suggestions). For 20 pages, this is roughly 120K tokens total -- well within model limits and cost-acceptable.
+
+**Complexity:** High. This is the most complex feature. Prompt engineering for accurate wiki rewrites, structured output parsing, quality filtering, and handling edge cases (pages where diffs don't clearly indicate what changed) all require careful implementation.
+
+### 6. Batch Publishing to GitHub Issues
+
+**Goal:** Create a tracking issue in xbmc/wiki repo, post per-page update suggestions as comments.
+
+**Architecture:**
+```
+Pipeline output (top 20 pages with rewrites)
+  --> Create one tracking issue in xbmc/wiki
+  --> Post one comment per page with section-level suggestions
+  --> Rate-limit comment creation
+```
+
+**Issue structure:**
+- Title: `Wiki Content Update Suggestions - {YYYY-MM-DD}`
+- Body: Summary table listing all pages with staleness confidence, section count, and links
+- Labels: `bot-generated`, `wiki-update` (create if not exist)
+
+**Comment format per page:**
+```markdown
+## {Page Title}
+
+**Staleness confidence:** {High/Medium}
+**Evidence:** {one-line from grounded detector}
+**Page URL:** {wiki URL}
+
+### Section: {heading}
+
+**What changed in code:** {changeRationale from rewrite}
+
+<details>
+<summary>Current text (excerpt)</summary>
+
+{currentExcerpt}
+
+</details>
+
+<details>
+<summary>Suggested update</summary>
+
+{suggestedText}
+
+</details>
+
+---
+```
+
+**Rate limiting:** GitHub REST API allows 5000 requests/hour for authenticated apps. Creating 20+ comments sequentially with 1.5-second delays (matching existing backfill pattern) is safe. Total time: approximately 30 seconds.
+
+**Idempotency:** Search for existing issue with matching title before creating. Use `octokit.issues.listForRepo({ creator: 'kodiai[bot]', state: 'open' })` filtered by title prefix. If found, append new comments rather than creating duplicate issues.
+
+**Error handling:** If comment creation fails for one page, log the error and continue with remaining pages. Post a summary comment at the end noting any failures.
+
+**Complexity:** Medium. Straightforward GitHub API usage. The formatting of structured rewrite suggestions into readable markdown comments is the main effort.
+
+---
 
 ## Anti-Features
 
-Features to explicitly NOT build.
+Features to explicitly NOT build for v0.25.
 
 | Anti-Feature | Why Avoid | What to Do Instead |
 |--------------|-----------|-------------------|
-| **Auto-close duplicate issues** | Even VS Code only auto-closes after 60 days on low-vote items. False-positive closures destroy trust instantly. The AI Duplicate Detector docs explicitly warn about this. User who filed the issue feels dismissed. | Comment with duplicate candidates and let maintainer decide. Apply a `potential-duplicate` label at most. |
-| **Auto-assign issues to developers** | Requires deep org knowledge, creates social problems when wrong. VS Code's two-model approach has 75% accuracy -- 25% wrong assignments annoy people. Not aligned with v0.22 goals. | Defer to future milestone. Could use contributor profiles + area labels to suggest, but not assign. |
-| **Auto-close for template violations** | Explicitly called out as anti-feature in v0.21 requirements. "Even VS Code only auto-closes after 60 days on low-vote items." Alienates new contributors. | Comment with guidance, apply `needs-info` label, let maintainer decide. |
-| **YAML issue form schema support** | xbmc/xbmc uses `.md` templates. Out of scope per v0.21 decision. No target repo currently needs YAML forms. | Continue with `.md` template parser. Add YAML support when a target repo needs it. |
-| **Full-text search as primary duplicate signal** | BM25 finds keyword matches but misses semantic duplicates ("player crashes" vs "video playback segfault"). Used alone, it produces too many false positives from common keywords. | Use full-text as a secondary signal alongside vector similarity. RRF merge if using both. |
-| **Real-time duplicate detection on every comment** | Scanning for duplicates on every issue comment update is wasteful. Only the initial issue body matters for duplicate detection. | Trigger duplicate detection on `issues.opened` only, not on subsequent edits or comments. |
-| **Cross-repo duplicate detection** | Adds massive complexity. Different repos have different contexts. A "video crash" in xbmc/xbmc is not the same as in xbmc/repo-plugins. | Scope all duplicate detection to same repo. |
-| **Automated issue prioritization/severity** | Subjective, context-dependent, creates false sense of urgency. Maintainers should prioritize based on their roadmap and domain knowledge. | Surface data (reaction count, comment count, duplicate count) but let humans prioritize. |
+| Auto-editing wiki pages | Far too risky. LLM rewrites may contain errors, and direct wiki edits bypass human review. PROJECT.md scope explicitly says "suggestions posted as GitHub issue comments." | Post suggestions as issue comments for human review and manual application. |
+| Real-time staleness detection on every commit | Excessive API usage, noisy alerts. The existing weekly scheduled scan is the right cadence for this use case. | Keep weekly scheduled scan. The enhanced grounded detection makes each scan more valuable. |
+| Multi-wiki support | Over-engineering for v0.25. Only kodi.wiki is in scope. | Hardcode kodi.wiki patterns; parameterize later if needed. |
+| Interactive approval workflow | Slack buttons/modals or GitHub check-run approvals for applying rewrites. Adds significant UI complexity for a one-shot manual trigger. | One-shot generation, human reviews suggestions in the GitHub issue. |
+| Citation frequency tracking (full implementation) | Building real-time citation counting requires instrumentation across all publish paths (review, mention, Slack). Over-scoped for v0.25 where the primary need is just ranking 20 pages. | Use inbound link count + edit recency as popularity proxy for v0.25. Add citation tracking as a follow-up. |
+| Dual-index embedding migration | The wiki corpus is small (under 5000 chunks). Running parallel old/new indexes adds operational complexity for no benefit at this scale. | Atomic batch re-embed: re-embed all wiki chunks, then switch query model. Brief retrieval downtime is acceptable for a manual trigger. |
+| PR-based wiki updates | Creating PRs against a wiki repo adds Git workflow complexity. MediaWiki wikis are not Git-backed. | GitHub issues with structured suggestion comments. |
+| Full page rewrites | Rewriting entire pages risks introducing errors in sections that are NOT stale. Section-level granularity limits blast radius. | Section-by-section suggestions only for sections identified as stale. |
+
+---
 
 ## Feature Dependencies
 
 ```
-Historical issue backfill
-  --> Issue embedding on ingest (backfill generates embeddings)
-  --> Nightly incremental sync (sync keeps corpus current after backfill)
-  --> High-confidence duplicate detection (requires populated corpus)
-      --> Duplicate detection comment (requires detection results)
-      --> Duplicate candidate ranking (extends detection output)
-  --> Issue corpus in cross-corpus retrieval (requires populated corpus)
-  --> Semantic PR-issue linking (requires populated corpus)
-
-Auto-triage on issues.opened
-  --> Config gate for auto-triage (must be configurable)
-  (reuses existing triage agent -- no new dependency)
-
-PR-issue linking via reference parsing
-  (standalone -- only needs PR body text parsing)
-  --> Semantic PR-issue linking (fallback when no explicit refs)
-      (requires populated issue corpus)
-
-Area classification labels
-  (requires label taxonomy in config + populated corpus for context)
+Per-corpus model selection ─┐
+                            ├──> Embedding migration (wiki corpus)
+voyage-context-3 research ──┘
+                                    |
+                                    v
+Page popularity scoring ──────> Top 20 page selection
+                                    |
+                                    v
+Code-grounded staleness ──────> Enhanced staleness pipeline
+                                    |
+                                    v
+                           LLM rewrite generation
+                                    |
+                                    v
+                           Batch publish to GitHub issues
 ```
+
+**Critical path:** Embedding migration and per-corpus model selection must happen first because they affect retrieval quality for the entire pipeline. Page popularity scoring and code-grounded staleness can be developed in parallel after migration. Rewrite generation depends on both (needs to know WHICH pages and WHY they are stale). Publishing is the final step.
+
+**Parallel opportunities:**
+- Per-corpus model selection + embedding migration can be one phase (tightly coupled).
+- Page popularity scoring and code-grounded staleness enhancement are independent and can be developed in parallel.
+- Rewrite generation + publishing are sequential but could be one phase.
+
+---
 
 ## MVP Recommendation
 
-**Phase 1 -- Corpus Population (must be first):**
-1. Historical issue backfill with embeddings
-2. Nightly incremental sync
-3. Issue corpus wired into cross-corpus retrieval
+**Phase 1 -- Foundation:**
+1. Per-corpus embedding model selection in retrieval
+2. Wiki corpus embedding migration to voyage-context-3 (batch script + wiki-sync update)
 
-**Phase 2 -- Detection and Linking (requires corpus):**
-4. High-confidence duplicate detection with LLM confirmation
-5. Duplicate detection comment with candidate ranking
-6. PR-issue linking via reference parsing
+**Phase 2 -- Intelligence (parallelizable internally):**
+3. Page popularity scoring (inbound links + edit recency)
+4. Code-grounded staleness detection (diff excerpt extraction + enhanced LLM prompt)
 
-**Phase 3 -- Auto-Triage (requires detection):**
-7. Auto-triage on `issues.opened` with config gate
-8. Semantic PR-issue linking (enhancement to PR reviews)
+**Phase 3 -- Generation and Delivery:**
+5. LLM-generated section-by-section rewrite suggestions
+6. Batch publishing to GitHub issues with structured comments
 
-**Defer to v0.23+:**
-- Area classification labels (HIGH complexity, needs label taxonomy design)
-- Auto-assign (social complexity, accuracy requirements)
+**Defer from v0.25:**
+- Retrieval citation frequency tracking: requires broad instrumentation across publish paths. Use link count as proxy.
+- View count integration: blocked by kodi.wiki lacking PageViewInfo extension. Revisit if extension is installed later.
 
-**Rationale:** The dependency chain is strict -- you cannot detect duplicates without a corpus, and you cannot auto-triage effectively without duplicate detection wired in. Backfill first, then detection, then automation.
+---
 
 ## Complexity Estimates
 
 | Feature | Complexity | Rationale |
 |---------|------------|-----------|
-| Historical issue backfill | MEDIUM | Follows review-comment-backfill pattern closely, but needs issue-specific filtering (exclude PRs), comment pagination, and sync state table. ~300-400 lines. |
-| Issue embedding on ingest | LOW | Built into backfill pipeline. `title + body` -> Voyage AI -> store. ~50 lines. |
-| Nightly incremental sync | LOW | Follows wiki-sync scheduler pattern. `since` parameter on Issues API. ~150 lines. |
-| Duplicate detection | MEDIUM | Vector search + LLM confirmation. Threshold tuning is the hard part -- needs empirical testing. ~200-300 lines. |
-| Duplicate comment | LOW | Format results, call `github_issue_comment`. ~100 lines. |
-| Auto-triage on `issues.opened` | MEDIUM | Webhook routing + idempotency + config gating + existing triage agent. Integration complexity, not algorithmic. ~200 lines. |
-| PR-issue linking (reference) | LOW | Regex parsing of PR body + commit messages. ~100 lines. |
-| Semantic PR-issue linking | MEDIUM | Embedding PR description, searching issue corpus, filtering by threshold. ~200 lines. |
-| Cross-corpus retrieval wiring | MEDIUM | Add issue store to `createRetriever()`, update RRF weights, add `[issue: #N]` citations. Touches multiple files. ~150 lines across files. |
+| Per-corpus model selection | Low-Medium | Plumbing change: thread corpus-specific providers through retriever factory. ~100-150 lines across 3-4 files. |
+| Embedding migration | Medium | Batch re-embed script + wiki-sync update + provider wiring. Script ~150 lines, sync changes ~30 lines. |
+| Page popularity scoring | Medium | MediaWiki API for inbound links (~100 lines), scoring/ranking logic (~100 lines), top-20 selection. |
+| Code-grounded staleness | Medium-High | Diff extraction from existing commit data (~100 lines), hunk filtering/budgeting (~80 lines), enhanced LLM prompt (~50 lines), integration (~50 lines). |
+| LLM rewrite generation | High | Prompt engineering, structured output parsing, quality filtering, per-section processing. ~300-400 lines. |
+| Batch publishing | Medium | Issue creation, comment formatting, rate limiting, idempotency. ~200-250 lines. |
 
-## Threshold Guidance (Duplicate Detection)
+---
 
-Research on cosine similarity thresholds for duplicate detection:
+## Risk Assessment
 
-| Threshold (cosine distance) | Behavior | Risk |
-|-----------------------------|----------|------|
-| < 0.15 | Near-identical text. Very high confidence. | Misses semantic duplicates with different wording. |
-| 0.15 - 0.25 | High semantic similarity. Good for "likely duplicate" with LLM confirmation. | Sweet spot for candidate generation. |
-| 0.25 - 0.40 | Related but not necessarily duplicate. | Too noisy for duplicate flagging. Good for "related issues" surfacing. |
-| > 0.40 | Loosely related or unrelated. | Unusable for duplicate detection. |
+| Feature | Risk | Mitigation |
+|---------|------|------------|
+| Embedding migration | Voyage-context-3 API availability or breaking changes | First 200M tokens free; wiki corpus is tiny. Verify API access in Phase 1 before committing. |
+| Page popularity | No view count API on kodi.wiki | Fall back to inbound link count + edit recency. Both available via standard MediaWiki API (`prop=linkshere`, existing `last_modified`). |
+| Code-grounded staleness | Diff excerpts may exceed LLM context budget | Budget diff content per page (~2000 tokens). Prioritize hunks with wiki keyword overlap. Truncate gracefully. |
+| LLM rewrites | Generated text may not match wiki formatting conventions | Include wiki markup examples in prompt. Post-process to validate basic structure. Human review catches formatting issues. |
+| LLM rewrites | Hallucinated content in suggestions | Apply epistemic guardrails from v0.24. Only suggest changes grounded in diff evidence. Flag uncertain sections as "needs manual review." |
+| Batch publishing | GitHub API rate limits | 20 comments with 1.5s delays = ~30 seconds total. Well within 5000 req/hr limit. |
+| Batch publishing | xbmc/wiki repo may not have issues enabled | Verify issues are enabled on xbmc/wiki before Phase 3. Fall back to xbmc/xbmc if needed. |
 
-**Recommendation:** Use distance < 0.25 as candidate threshold, then LLM confirmation on top-3 candidates. This matches the existing `findSimilar()` default threshold of 0.7 (which is cosine similarity, not distance -- distance = 1 - similarity, so 0.7 similarity = 0.3 distance). Tighten to 0.25 distance for higher precision.
-
-The existing `IssueStore.findSimilar()` uses `threshold: number = 0.7` which represents cosine distance (not similarity). This is too permissive for duplicate detection. Override with `threshold: 0.25` when calling for duplicate candidates.
+---
 
 ## Sources
 
-- [Simili Bot - AI-powered semantic duplicate detection](https://github.com/similigh/simili-bot)
-- [AI Duplicate Detector - Relations and duplicates detection](https://github.com/mackgorski/ai-duplicate-detector)
-- [Probot duplicate-issues](https://github.com/probot/duplicate-issues)
-- [Similar Issues AI GitHub App](https://github.com/apps/similar-issues-ai)
-- [VS Code Automated Issue Triaging](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging)
-- [GitHub Agentic Workflows - Issue Triage](https://github.github.io/gh-aw/blog/2026-01-13-meet-the-workflows/)
-- [GitHub REST API - Issues endpoints](https://docs.github.com/en/rest/issues/issues)
-- [GitHub pagination guide](https://docs.github.com/en/rest/guides/traversing-with-pagination)
-- [Linking PRs to issues - GitHub Docs](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)
-- [Zilliz - Embeddings for duplicate detection](https://zilliz.com/ai-faq/how-do-i-use-embeddings-for-duplicate-detection)
-- [Cosine similarity threshold research](https://www.emergentmind.com/topics/cosine-similarity-threshold)
-- [AI-powered GitHub app to link issues in PRs](https://dev.to/gitcommitshow/ai-powered-github-app-to-automatically-link-issues-in-a-pr-4idj)
-- [Potential Duplicates Bot - Damerau-Levenshtein approach](https://github.com/Bartozzz/potential-duplicates-bot)
+- Voyage AI embeddings documentation: https://docs.voyageai.com/docs/embeddings (HIGH confidence)
+- Voyage-context-3 announcement: https://blog.voyageai.com/2025/07/23/voyage-context-3/ (HIGH confidence)
+- MediaWiki PageViewInfo extension: https://www.mediawiki.org/wiki/Extension:PageViewInfo (HIGH confidence)
+- Kodi wiki API verification: kodi.wiki/api.php?action=query&prop=pageviews -- returns "Unrecognized value" confirming PageViewInfo is not installed (HIGH confidence, directly verified)
+- Embedding migration patterns: https://medium.com/data-science-collective/different-embedding-models-different-spaces (MEDIUM confidence)
+- Zero-downtime embedding migration: https://dev.to/humzakt/zero-downtime-embedding-migration (MEDIUM confidence)
+- Existing codebase analysis: wiki-staleness-detector.ts, wiki-store.ts, embeddings.ts, wiki-retrieval.ts, retrieval.ts, wiki-types.ts, wiki-sync.ts, config.ts, index.ts (HIGH confidence, directly read)

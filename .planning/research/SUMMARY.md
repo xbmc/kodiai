@@ -1,188 +1,241 @@
 # Project Research Summary
 
-**Project:** Kodiai v0.22 Issue Intelligence
-**Domain:** GitHub App — historical issue ingestion, duplicate detection, PR-issue linking, auto-triage
-**Researched:** 2026-02-26
+**Project:** Kodiai v0.25 — Wiki Content Updates
+**Domain:** Wiki content maintenance automation (embedding migration, page popularity, staleness detection, LLM rewrite suggestions, GitHub issue publishing)
+**Researched:** 2026-03-02
 **Confidence:** HIGH
 
 ## Executive Summary
 
-v0.22 is a feature-layer build on a solid v0.21 foundation. The core insight from all four research areas is the same: everything needed to deliver Issue Intelligence already exists in the codebase. No new npm packages are required. The issue tables, HNSW vector indexes, tsvector columns, IssueStore CRUD/search primitives, triage agent, MCP tools, webhook router, and scheduler infrastructure are all in place. The work is wiring them together in a dependency-driven sequence: populate the corpus first, then enable detection and linking, then enable automation, then integrate the corpus into retrieval.
+v0.25 extends an existing AI-powered code review bot with a wiki content update pipeline. The pipeline identifies stale Kodi wiki pages via enhanced staleness detection grounded in real code diffs, generates section-level rewrite suggestions using an LLM with evidence citations, and publishes those suggestions as comments on a tracking issue in the xbmc/wiki GitHub repository. The recommended approach builds entirely on already-installed dependencies — no new packages are needed. The single most important architectural change is migrating wiki embeddings from voyage-code-3 to voyage-context-3 (a prose-optimized contextualized embedding model), which must happen atomically before any retrieval queries use the new model. The `voyageai@0.1.0` SDK already exposes `contextualizedEmbed()` and all Octokit patterns needed for GitHub publishing are proven in the existing codebase.
 
-The recommended approach is four phases mirroring the feature dependency chain. Historical issue backfill (following `review-comment-backfill.ts` exactly) must come first because duplicate detection, PR-issue linking, and semantic retrieval all require a populated corpus. Duplicate detection and auto-triage on `issues.opened` follow as the core user-facing intelligence features. PR-issue linking is independent of auto-triage and can ship alongside it. Cross-corpus retrieval wiring is an enhancement that delivers value last and can be added without risk to the other three phases.
+The work maps to five sequential phases that follow a hard dependency chain: embedding migration must come first because all wiki retrieval in later phases depends on consistent vector spaces; page popularity scoring comes second to drive the top-20 page selection that focuses the staleness detector; enhanced staleness detection provides the diff-grounded evidence that the LLM rewrite generator requires; and publishing is the final delivery step. Two significant constraints were confirmed through direct API testing: kodi.wiki does NOT have the PageViewInfo extension installed (MediaWiki pageview counts are unavailable and must be replaced with inbound link counts plus retrieval citation frequency), and voyage-context-3 uses a fundamentally different batched API format that requires a new `ContextualizedEmbeddingProvider` interface rather than a drop-in model name change.
 
-The key risks are precision and trust: a few false-positive duplicate suggestions erode maintainer confidence faster than any missing feature. Embedding strategy (embed problem summary, not raw full body) and threshold calibration (cosine distance with named constants, empirically tuned) are the two technical decisions that most affect outcome quality. Idempotency in the webhook handler (delivery-ID dedup + advisory lock + cooldown) is the operational risk that must be solved before `issues.opened` auto-triage goes live.
+The primary risks are LLM hallucination in rewrite suggestions and GitHub secondary rate limit violations during batch comment posting. Both have clear mitigations rooted in existing codebase patterns: grounding every suggestion in verified diff content with explicit commit citations (extending v0.24 epistemic guardrails), and enforcing minimum 3-second delays between comment posts with exponential backoff on 403 responses. The existing staleness heuristic's high false positive rate (common Kodi tokens like "player" and "video" match most wiki pages and source files) must also be addressed before feeding heuristic results into automated publishing.
+
+---
 
 ## Key Findings
 
 ### Recommended Stack
 
-No new dependencies. Every v0.22 capability is served by the existing stack: `@octokit/rest` for paginated GitHub API calls, `voyageai` (`voyage-code-3`, 1024d) for embeddings, PostgreSQL pgvector (`<=>` operator, HNSW indexed) for vector similarity, `tsvector` + `ts_rank()` for BM25 full-text, and the custom `setInterval` + startup-delay pattern for scheduled jobs. See [STACK.md](STACK.md) for the full integration point mapping.
+All dependencies required for v0.25 are already installed. The `voyageai@0.1.0` package already exposes `client.contextualizedEmbed()` with full TypeScript types (verified in `node_modules/voyageai/Client.d.ts`). Octokit's `rest.issues.create` and `rest.issues.createComment` are already used throughout the codebase. The Vercel AI SDK's `generateWithFallback()` handles LLM generation. No `npm install` commands are needed. See [STACK.md](STACK.md) for full API specifications and verified type definitions.
+
+The key integration subtlety: voyage-context-3 uses `POST /v1/contextualizedembeddings` (not `/v1/embeddings`) with `inputs: string[][]` (all chunks for one document as one inner array) and returns nested responses (`response.data[i].data[j].embedding`). This incompatibility with the current `EmbeddingProvider.generate(text, inputType)` interface requires a new `ContextualizedEmbeddingProvider` that takes all chunks for a page at once. The existing single-text provider is retained for all four non-wiki corpora and for wiki query embeddings.
 
 **Core technologies:**
-- `@octokit/rest ^22.0.1` with `paginate.iterator()`: paginated issue/comment ingestion — memory-efficient streaming, already used for review comment backfill
-- `voyageai` `voyage-code-3` (1024d): embedding generation — same model/dimensions as all other corpora, no model change needed
-- PostgreSQL pgvector `<=>` operator: vector similarity for duplicate detection — HNSW indexed, threshold-configurable via `IssueStore.findSimilar()`
-- `setInterval` + startup delay pattern: nightly sync scheduler — matches wiki-sync and cluster-scheduler patterns, no Redis required
-- `createEventRouter` key dispatch: `issues.opened` webhook handler — register like any other event, already supports the dispatch key
+- `voyageai@0.1.0` (`contextualizedEmbed()`): wiki document embedding — already installed, SDK types verified, no upgrade needed
+- `@octokit/rest` (`issues.create`, `issues.createComment`): GitHub publishing — same auth and retry patterns as existing issue-comment-server.ts
+- Vercel AI SDK (`generateWithFallback()`): LLM rewrite generation — new `WIKI_UPDATE_SUGGESTION` task type needed in task-types.ts
+- `postgres.js`: popularity aggregation queries — no new tables except `wiki_page_popularity`
+- MediaWiki HTTP API (`fetch()`): inbound link counts via `prop=linkshere` — no pageview extension available on kodi.wiki
 
-Two schema migrations are needed: `015-issue-sync-state.sql` (cursor-based resume for backfill/sync, mirrors `review_comment_sync_state`) and `016-pr-issue-links.sql` (linking table with `link_type`, `confidence`, `distance` columns). No changes to existing `issues` or `issue_comments` tables — the v0.21 schema already has all needed columns.
+**Critical version note:** voyage-context-3 and voyage-code-3 both produce 1024-dimensional vectors. pgvector accepts them in the same column without schema errors. However, vectors from different models occupy different semantic spaces — cosine similarity across model boundaries is meaningless. Migration must be fully atomic.
 
 ### Expected Features
 
 **Must have (table stakes):**
-- Historical issue backfill with embeddings — no duplicate detection without a populated corpus; prerequisite for everything else
-- Nightly incremental sync — corpus drifts without it; GitHub's `since` parameter handles updates cheaply
-- High-confidence duplicate detection — the primary intelligence feature; cosine distance < 0.25 with ranked candidates
-- Duplicate detection comment — users expect to see which issue they may be duplicating, with open/closed state context
-- Auto-triage on `issues.opened` — natural next step from mention-triggered triage; config-gated default off
-- Config gate for auto-triage (`triage.autoTriageOnOpen: false`) — repos must explicitly opt in; default-on would surprise maintainers
+- **Embedding migration to voyage-context-3** — wiki is prose content; voyage-code-3 is code-optimized. Without migration, the entire pipeline operates on suboptimal embeddings. All wiki chunks must be migrated before switching the query model.
+- **Code-grounded staleness detection** — current heuristic (file-path token overlap) produces too many false positives to feed into automated publishing. Real diff content from already-available `commit.files[].patch` must be included in the LLM evaluation prompt.
+- **LLM-generated section-level rewrite suggestions** — the core deliverable. Section granularity aligns with existing wiki chunking from `wiki-chunker.ts`. Full-page rewrites are explicitly an anti-feature (higher hallucination risk, harder to verify).
+- **Batch publishing to GitHub issues** — xbmc/wiki repo confirmed private with issues enabled (4 existing issues); one tracking issue per run, one comment per stale page.
 
 **Should have (differentiators):**
-- PR-issue linking via reference parsing — deterministic regex for `fixes/closes/resolves #N`, verified against `is_pull_request` field
-- Semantic PR-issue linking — embedding-based fallback when no explicit references; LOW confidence signal, suggestion only
-- Issue corpus in cross-corpus retrieval — 5th corpus in unified RRF fan-out; weighted lower for PR reviews, higher for issue queries
-- Duplicate candidate ranking — top-3 with open/closed state and human-friendly similarity percentage
+- **Page popularity scoring** — ensures effort focuses on the most-used pages. Inbound link count (MediaWiki `prop=linkshere`) weighted 0.3 plus retrieval citation frequency weighted 0.7, stored in new `wiki_page_popularity` table.
+- **Per-corpus embedding model selection** — wiki uses voyage-context-3; code, review comments, issues, and snippets keep voyage-code-3. Requires threading a second `EmbeddingProvider` through `createRetriever()`.
 
-**Defer to v0.23+:**
-- Area classification labels — HIGH complexity; requires per-repo label taxonomy design and two-model confidence approach
-- Auto-assign issues to developers — social complexity; accuracy requirements not achievable in v0.22
-- Auto-close for template violations — explicit anti-feature; guidance comment + `needs-info` label is the correct action
-- Cross-repo duplicate detection — massive complexity; scope all detection to same repo
+**Defer to post-v0.25:**
+- Retrieval citation frequency tracking: cold-start problem makes it meaningless for the first pipeline run; use inbound link count as proxy.
+- MediaWiki pageview counts: PageViewInfo extension is not installed on kodi.wiki; confirmed via direct API probe.
+- Auto-editing wiki pages: out of scope per PROJECT.md — suggestions only, human applies them.
+- Interactive approval workflow: over-scoped; one-shot manual trigger with GitHub issue review is sufficient.
+- Dual-index embedding migration: wiki corpus is under 5000 chunks; atomic batch re-embed is simpler and sufficient.
 
 ### Architecture Approach
 
-All seven new components follow existing patterns precisely with no novel architectural invention required. `issue-backfill.ts` mirrors `review-comment-backfill.ts`. `issue-sync.ts` mirrors `wiki-sync.ts`. `issue-duplicate-detector.ts` is a pure function module (no state, no side effects beyond IssueStore reads). `issue-opened.ts` is a clean, focused handler (~200 lines) registered separately on the event router — it must NOT be added to the mention handler, which is already 2000+ lines and assumes a comment trigger exists. See [ARCHITECTURE.md](ARCHITECTURE.md) for full component map, data flows, and anti-patterns.
+The pipeline extends four existing components (EmbeddingProvider, WikiPageStore, WikiStalenessDetector, TASK_TYPES) and adds four new modules (wiki-embedding-migrator.ts, wiki-popularity.ts, wiki-update-generator.ts, wiki-issue-publisher.ts). The entire pipeline runs as a single orchestrated function with a manual trigger. Data flows sequentially: popularity scoring selects top-20 pages, enhanced staleness detection evaluates them with diff evidence, the update generator produces section-level suggestions, and the publisher posts them to xbmc/wiki. One new DB migration is required (`020-wiki-page-popularity.sql`). No schema changes to `wiki_pages` — the `embedding_model` column already exists. See [ARCHITECTURE.md](ARCHITECTURE.md) for full component diagram, data flows, and anti-patterns.
 
 **Major components:**
-1. `src/knowledge/issue-backfill.ts` + `scripts/backfill-issues.ts` — paginated bulk ingestion with embeddings, adaptive rate limiting, cursor-based resume; follows `review-comment-backfill.ts` exactly
-2. `src/knowledge/issue-sync.ts` — nightly scheduler with 150s startup delay (staggered after wiki 60s, staleness 90s, cluster 120s), `since`-parameterized incremental fetch
-3. `src/knowledge/issue-duplicate-detector.ts` — pure embedding comparison; cosine distance bands 0.12/0.18/0.25 for definite/likely/possible; returns ranked `DuplicateCandidate[]`
-4. `src/handlers/issue-opened.ts` — orchestrates triage + duplicate detection in parallel; fetches templates via GitHub Contents API (not workspace clone); idempotent via delivery-ID + advisory lock
-5. `src/handlers/pr-issue-linker.ts` — two-signal linking (regex reference parsing + semantic search); stores results in `pr_issue_links`; posts comment only for HIGH confidence
-6. `src/knowledge/issue-retrieval.ts` — hybrid search adapter for cross-corpus RRF; follows `review-comment-retrieval.ts` pattern
-7. Schema migrations 015 (`issue_sync_state`) and 016 (`pr_issue_links`)
+1. **ContextualizedEmbeddingProvider** — new interface wrapping `contextualizedEmbed()` for batch document re-embedding; existing single-text `EmbeddingProvider` retained for all non-wiki corpora and wiki query embedding
+2. **wiki-popularity.ts** — computes `(citation_count * 0.7) + (link_in_count * 0.3)` per page, stored in `wiki_page_popularity` table; citation tracking is fire-and-forget after retrieval, following hunk-embedding pattern in code-snippet-chunker.ts
+3. **wiki-update-generator.ts** — new `WIKI_UPDATE_SUGGESTION` task type; outputs `SectionRewrite[]` with commit citations; applies diff-grounded vs inferred classification for epistemic guardrails
+4. **wiki-issue-publisher.ts** — creates one tracking issue in xbmc/wiki, posts one comment per page, enforces 3-second delays between posts, implements idempotency via title-based dedup
 
-**Modified components (minimal surface area):** Event router registrations in `src/index.ts`; `SourceType` union in `cross-corpus-rrf.ts`; retrieval fan-out in `retrieval.ts`; `triageSchema` in `config.ts`; shutdown manager in `src/index.ts`.
+**Key architectural pattern — per-corpus provider injection:**
+```typescript
+export function createRetriever(deps: {
+  embeddingProvider: EmbeddingProvider;       // voyage-code-3 (default)
+  wikiEmbeddingProvider?: EmbeddingProvider;  // voyage-context-3 (wiki)
+  // ...
+})
+```
 
 ### Critical Pitfalls
 
 Top pitfalls from [PITFALLS.md](PITFALLS.md):
 
-1. **Embedding full issue body produces weak similarity signals** — Extract `title + description section` only; skip logs, system info, stacktraces. The v0.21 template parser already identifies sections — reuse it. Decide before bulk ingestion: re-embedding 5-8K issues costs real money and time. Address in Phase 1.
+1. **Mixed embedding models break retrieval silently** — Both models produce 1024-dim vectors, so pgvector accepts them in the same column without error. But cosine similarity across model boundaries is meaningless. Migration must null out all wiki embeddings, re-embed completely, then switch query model. Verify: `SELECT COUNT(DISTINCT embedding_model) FROM wiki_pages WHERE deleted = false` must equal 1. Address in Phase 1.
 
-2. **Cosine distance vs. cosine similarity threshold confusion** — pgvector `<=>` returns distance (0=identical), not similarity (1=identical). Use named constants: `const DUPLICATE_DISTANCE_THRESHOLD = 0.25` with inline comment `// 0.25 distance = 0.75 similarity`. Tune empirically against known xbmc/xbmc duplicate pairs before shipping. Address in Phase 2.
+2. **kodi.wiki has no PageViewInfo extension** — The Wikimedia REST pageview API is inapplicable to self-hosted MediaWiki instances. Confirmed via direct API probe: `?action=query&prop=pageviews` returns "Unrecognized value." Must use `prop=linkshere` plus edit recency as popularity proxy. Address in Phase 2.
 
-3. **Auto-triage comment spam on webhook redelivery** — GitHub guarantees "at least once" delivery. Three-layer defense required: (1) `X-GitHub-Delivery` dedup at webhook layer, (2) advisory lock in DB (`ON CONFLICT DO NOTHING` returning check), (3) 30-min per-issue cooldown at application layer. Address in Phase 2.
+3. **LLM hallucination in rewrite suggestions** — Without actual diff content, the LLM fabricates version numbers, API names, and config keys with high confidence. Every suggestion must be grounded in a specific commit SHA and file change. Classify suggestions as "diff-grounded" vs "inferred" and only publish diff-grounded ones. Address in Phase 4.
 
-4. **Rate limit exhaustion during backfill blocks production webhooks** — Copy `adaptiveRateDelay` from `review-comment-backfill.ts` exactly. Stop backfill when `x-ratelimit-remaining / x-ratelimit-limit < 0.5`. Run as separate script outside main server process. Use cursor-based resume so partial runs are recoverable. Address in Phase 1.
+4. **GitHub secondary rate limit on batch comment posting** — Posting 20 comments rapidly to a single issue triggers GitHub's abuse detection (distinct from primary rate limit). Requires minimum 3-second delays, exponential backoff on 403s, and a circuit breaker after 2 consecutive secondary-limit failures. Address in Phase 5.
 
-5. **Issue/PR number space collision in backfill** — GitHub Issues API returns PRs in issue lists. Filter `response.pull_request` presence during backfill. Add `AND is_pull_request = false` to all duplicate detection queries. Verify with `SELECT COUNT(*) FROM issues WHERE is_pull_request = true` post-backfill (should be 0). Address in Phase 1.
+5. **Staleness false positives from token-overlap heuristic** — Common Kodi tokens ("player", "video", "audio", "addon", "skin") appear in most wiki pages and most source file paths. Current threshold (score >= 1) is too permissive. Must raise to score >= 3 and add a domain stopword list before feeding results into the LLM pipeline. Address in Phase 3.
+
+---
 
 ## Implications for Roadmap
 
-The feature dependency chain is strict and dictates phase order. You cannot detect duplicates without a corpus. You cannot auto-triage effectively without duplicate detection wired in. The only flexibility is that PR-issue linking (Phase 3) and cross-corpus retrieval (Phase 4) are independent of each other and could be reordered if priorities shift.
+The confirmed feature dependency chain maps directly to a five-phase structure. Each phase has a hard dependency on the previous:
 
-### Phase 1: Historical Corpus Population
+```
+Phase 1 (Embedding Migration)       — wiki corpus uses voyage-context-3
+    ↓
+Phase 2 (Page Popularity)           — top-20 page list
+    ↓
+Phase 3 (Enhanced Staleness)        — stale pages with diff evidence
+    ↓
+Phase 4 (LLM Rewrite Generation)    — section-level suggestions with citations
+    ↓
+Phase 5 (GitHub Issue Publishing)   — tracking issue + per-page comments
+```
 
-**Rationale:** Duplicate detection, PR-issue linking, and retrieval integration all require issues to exist in the corpus with embeddings. This phase unblocks everything else and has no upstream dependencies.
+### Phase 1: Embedding Migration and Per-Corpus Routing
 
-**Delivers:** All xbmc/xbmc issues from the past 3 years ingested with embeddings (5-8K issues, 6-8 hour one-time backfill); nightly sync keeping corpus current; sync state enabling cursor-based resume; two new schema migrations.
+**Rationale:** Must come first. All wiki retrieval in later phases depends on consistent vector spaces. Mixed-model vectors in pgvector is the highest-severity silent failure mode (Pitfall 1 — critical). Retrieval quality improvement from voyage-context-3 benefits all phases from Phase 2 onward.
 
-**Addresses (FEATURES.md):** Historical issue backfill, issue embedding on ingest, nightly incremental sync, backfill progress reporting.
+**Delivers:** Wiki corpus re-embedded with voyage-context-3; retrieval pipeline routes wiki queries to the correct model; all other corpora (code, review comments, issues, snippets) unchanged; wiki-sync.ts updated to use contextualized embedding for future ingest.
 
-**Avoids (PITFALLS.md):** Embedding full body (Pitfall 1 — extract description section, skip boilerplate), rate limit exhaustion (Pitfall 4 — adaptive delay + 50% budget reserve), PR/issue number confusion (Pitfall 10 — filter `pull_request` field), Voyage AI rate limits (Pitfall 7 — retry/resume sweep), nightly sync since-parameter gap (Pitfall 11 — use data timestamps not wall clock), IssueStore upsert timestamp guard (INT-1 — add `WHERE github_updated_at < EXCLUDED.github_updated_at`).
+**Addresses (FEATURES.md):** Embedding migration (table stakes), per-corpus model selection (differentiator).
 
-### Phase 2: Duplicate Detection and Auto-Triage
+**Avoids (PITFALLS.md):** Mixed-model vector search (Pitfall 1 — null out all wiki embeddings first, complete re-embed batch atomically, then enable retrieval); implicit dimension assumption (always specify `outputDimension: 1024` explicitly in API calls).
 
-**Rationale:** Core user-facing intelligence feature. Requires populated corpus from Phase 1. Triage agent and MCP tools already exist — this is an orchestration and threshold-tuning problem, not a build-from-scratch problem.
+**Stack:** `voyageai@0.1.0` `contextualizedEmbed()` with `inputs: string[][]`; new `ContextualizedEmbeddingProvider` interface; migration script `wiki-embedding-migrator.ts` batching chunks by page; update `createRetriever()` to accept `wikiEmbeddingProvider` parameter.
 
-**Delivers:** `issues.opened` fires parallel duplicate detection + triage validation; comment posted when high-confidence duplicates found or triage fails; labels applied; all operations idempotent against webhook redelivery.
+### Phase 2: Page Popularity Ranking
 
-**Addresses (FEATURES.md):** High-confidence duplicate detection, duplicate detection comment, duplicate candidate ranking (top-3 with state), auto-triage on `issues.opened`, config gate (`triage.autoTriageOnOpen`).
+**Rationale:** Must come before staleness detection to drive top-20 page selection. Without principled ranking, the staleness detector defaults to recency-sorted pages dominated by common-token noise, and LLM evaluation budget is wasted on low-signal pages.
 
-**Avoids (PITFALLS.md):** Threshold confusion (Pitfall 2 — named constants with comments), comment spam on redelivery (Pitfall 3 — three-layer idempotency), bot-created issue noise (Pitfall 8 — filter `sender.type === "Bot"`), closed-issue duplicate overwhelm (Pitfall 9 — recency weighting, cap at 3, include state/date), missing config gate (Pitfall 13 — default `autoTriageOnOpen: false`), workspace clone latency anti-pattern (use GitHub Contents API for templates, not workspace clone).
+**Delivers:** `wiki_page_popularity` table with computed scores; top-N ranked page list as input to staleness detection; DB migration 020.
 
-### Phase 3: PR-Issue Linking
+**Addresses (FEATURES.md):** Page popularity scoring (differentiator).
 
-**Rationale:** Independent of auto-triage. Requires populated corpus for semantic linking leg. Regex reference parsing works without corpus but semantic fallback needs it. Lower user-facing urgency than Phase 2 but ships the `pr_issue_links` table used by future retrieval enrichment.
+**Avoids (PITFALLS.md):** Wikimedia REST API misuse (Pitfall 2 — use `prop=linkshere` for inbound links, not Wikimedia pageview endpoint); all-zero popularity scores on cold start (combine link count with edit recency from existing `last_modified` column to ensure non-trivial ranking from day one).
 
-**Delivers:** PRs linked to issues on `pull_request.opened` via reference parsing and semantic search; links stored in `pr_issue_links` table with confidence levels; HIGH confidence links surface as informational PR comments.
+**Stack:** MediaWiki HTTP API `prop=linkshere` (available on all MediaWiki instances, no extensions required); fire-and-forget citation increment after `createRetriever()` returns results; new `wiki_page_popularity` table.
 
-**Addresses (FEATURES.md):** PR-issue linking via reference parsing, semantic PR-issue linking.
+**Research flag:** Citation tracking integration requires identifying the correct hook point in the retrieval pipeline. The fire-and-forget pattern is established (code-snippet-chunker.ts precedent), but the specific location in `cross-corpus-rrf.ts` or `createRetriever()` output needs a careful read to avoid blocking the response path.
 
-**Avoids (PITFALLS.md):** False regex matches and ambiguous references (Pitfall 5 — verify referenced number `is_pull_request = false`; use keyword-close patterns only; Timeline API as ground truth for ambiguous cases), timeline API rate cost (Pitfall 14 — text-match first, Timeline API only for closed issues with no text match; run as background job).
+### Phase 3: Enhanced Staleness Detection
 
-### Phase 4: Issue Corpus in Cross-Corpus Retrieval
+**Rationale:** The existing token-overlap heuristic produces too many false positives when its output feeds automated publishing rather than a human-reviewed Slack report (Pitfall 5). Must improve precision before LLM generation, or the update generator wastes tokens on non-stale pages.
 
-**Rationale:** Enhancement to the existing retrieval pipeline. All three prior phases deliver standalone user-facing value. This phase makes issues available as context in PR reviews and mention responses, completing the issue intelligence picture.
+**Delivers:** Enhanced `StalePage[]` with diff excerpts and PR context; heuristic threshold raised to score >= 3 with domain stopwords; LLM evaluation grounded in actual code changes from already-available `commit.files[].patch`.
 
-**Delivers:** Issue results in unified RRF fan-out alongside code, review comments, wiki, and snippets; `[issue: #N]` citations in PR review and mention responses; weighted per trigger type (0.8x for PR reviews, 1.3x for issue queries).
+**Addresses (FEATURES.md):** Code-grounded staleness detection (table stakes).
 
-**Addresses (FEATURES.md):** Issue corpus in cross-corpus retrieval.
+**Avoids (PITFALLS.md):** Fetching full diffs for all commits (anti-pattern — fetch diff details only for commits that pass the heuristic filter; budget diff content at ~2000 tokens per candidate); heuristic false positives (Pitfall 5 — raise threshold, add stopwords, weight section-heading matches higher than body text matches).
 
-**Avoids (PITFALLS.md):** N+1 latency regression (Pitfall 15 — feature-flag the integration initially; measure p95 issue search latency independently before wiring into unified pipeline), cross-corpus dedup threshold mismatch (INT-5 — test dedup threshold interaction between issue text and wiki/code before shipping).
+**Stack:** Existing `octokit.repos.getCommit()` already returns `patch` per file but currently discards it; extend `CommitWithFiles` type to include `patch_summary`; add `octokit.repos.listPullRequestsAssociatedWithCommit()` for PR title/description context.
+
+**Research flag:** Standard patterns — no additional research needed. The enhancement is additive to well-understood code. However, Phase 3 should include a calibration run against 30 days of historical commits to validate that >=50% of top-20 candidates are confirmed stale by the LLM before connecting to Phase 4.
+
+### Phase 4: LLM Rewrite Generation
+
+**Rationale:** Depends on Phase 3's diff-grounded staleness output. The most complex phase. Prompt engineering for accurate wiki rewrites requires careful design and a dry-run validation step before connecting to the publishing pipeline.
+
+**Delivers:** `UpdateSuggestion[]` per stale page, each with per-section `SectionRewrite` entries; every suggestion includes a commit SHA and file path citation; suggestions classified as "diff-grounded" vs "inferred"; only diff-grounded suggestions are marked for publishing.
+
+**Addresses (FEATURES.md):** LLM-generated section-level rewrite suggestions (table stakes).
+
+**Avoids (PITFALLS.md):** Hallucinated technical details (Pitfall 3 — provide actual diff content not just file paths; frame output as "suggested changes with evidence" not "rewritten content"; apply v0.24 epistemic guardrails adapted for prose); full-page rewrites (anti-feature — cap suggestions at section level).
+
+**Stack:** New `WIKI_UPDATE_SUGGESTION` task type in `src/llm/task-types.ts`; `generateWithFallback()` with structured JSON output; prompt includes diff excerpts from Phase 3 output.
+
+**Research flag:** Prompt engineering for diff-grounded suggestions is novel territory for this codebase. The v0.24 output filter and claim classification patterns are the closest precedent but were designed for PR review findings. Recommend implementing a dry-run mode (generate suggestions, log them, do NOT pass to publisher) and manually reviewing 10+ suggestions before enabling end-to-end pipeline.
+
+### Phase 5: GitHub Issue Publishing
+
+**Rationale:** Final delivery step. Pure integration work — no new LLM or retrieval logic. Depends entirely on Phase 4 output.
+
+**Delivers:** One tracking issue per pipeline run in xbmc/wiki, one comment per stale page, idempotent (title-based dedup prevents duplicate issues on re-runs).
+
+**Addresses (FEATURES.md):** Batch publishing to GitHub issues (table stakes).
+
+**Avoids (PITFALLS.md):** GitHub secondary rate limit (Pitfall 4 — minimum 3-second delays, exponential backoff on 403, circuit breaker after 2 consecutive failures); single mega-comment for all pages (anti-pattern — one comment per page, check 65K char limit before posting); GitHub App not installed on xbmc/wiki (pre-flight check `GET /repos/xbmc/wiki/installation` before any publishing attempt).
+
+**Stack:** New `wiki-issue-publisher.ts` using existing Octokit patterns from issue-comment-server.ts; reuse `enforceMaxLength()` and retry logic; `getInstallationOctokit()` from `src/auth/github-app.ts` with xbmc/wiki installation ID.
+
+**Research flag:** Standard patterns (rate-limit-aware Octokit calls are well-established in the codebase). No additional research needed, but requires E2E test against a real test repo before running against xbmc/wiki to confirm GitHub App installation and comment rendering.
 
 ### Phase Ordering Rationale
 
-- Phases 2-4 all depend on Phase 1 data; Phase 1 must be first.
-- Phase 2 (auto-triage) and Phase 3 (PR linking) are independent of each other; Phase 2 is higher user-facing impact so it goes second.
-- Phase 4 is the lowest-risk, lowest-urgency enhancement; it goes last by design.
-- All four phases use existing patterns — no architectural invention required — so implementation velocity should be high.
+- **Embedding migration must be Phase 1** because all wiki retrieval in later phases depends on consistent vector spaces. Running popularity scan or staleness detection with mismatched query/document models produces silent garbage with no visible errors.
+- **Popularity before staleness** because the staleness detector's 20-page LLM evaluation cap should be spent on the most important pages, not the most-recently-touched ones.
+- **Staleness before generation** because the generator's quality depends entirely on having diff excerpts and PR context from the staleness pipeline as grounding evidence.
+- **Generation before publishing** because publishing is pure output formatting — it has no logic of its own beyond formatting and rate-limiting.
+- **Parallel opportunity within phases:** Per-corpus embedding routing wiring and the migration script itself are largely independent and can be developed in parallel within Phase 1. Page popularity MediaWiki API calls and citation tracking fire-and-forget logic can be developed in parallel within Phase 2.
 
 ### Research Flags
 
-Phases with well-documented patterns (standard execution, skip `/gsd:research-phase`):
-- **Phase 1:** Exact template in `review-comment-backfill.ts` (backfill) and `wiki-sync.ts` (nightly scheduler). No implementation ambiguity.
-- **Phase 3:** Reference parsing regex is deterministic. Semantic linking uses existing `IssueStore.searchByEmbedding()`. Timeline API behavior is documented.
+Phases needing deeper design work before implementation:
+- **Phase 1:** The `ContextualizedEmbeddingProvider` interface design needs a careful read of all existing `EmbeddingProvider` consumers to ensure the two-provider wiring in `createRetriever()` doesn't silently pass the wrong provider to any corpus search function.
+- **Phase 4:** LLM prompt engineering for diff-grounded wiki section rewrites is novel for this codebase. Recommend implementing dry-run mode and manually reviewing output before enabling end-to-end pipeline. The diff-grounded vs inferred classification schema needs explicit design before writing any generation code.
 
-Phases that warrant a calibration spike before committing to implementation:
-- **Phase 2:** Duplicate detection threshold tuning requires empirical validation against xbmc/xbmc data. Recommend a threshold calibration task as the first sub-task: run `findSimilar` against 20 known-duplicate pairs and 20 known-non-duplicate pairs to validate the 0.12/0.18/0.25 distance bands before baking them into config schema.
-- **Phase 4:** Cross-corpus dedup threshold interaction between issue text (conversational) and wiki/code text (technical documentation/code) has not been validated. Measure with real queries before shipping.
+Phases with standard patterns (skip research-phase):
+- **Phase 2:** MediaWiki `prop=linkshere` is well-documented and simple. Fire-and-forget citation tracking follows the exact pattern in code-snippet-chunker.ts.
+- **Phase 3:** Extending `CommitWithFiles` with patch summaries and adding PR association lookups are additive changes to well-understood code with clear precedents.
+- **Phase 5:** Octokit issue creation and comment posting patterns are used throughout the codebase. Rate-limit handling follows GitHub's documented secondary limit behavior.
+
+---
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All capabilities confirmed present in existing dependency tree; no new packages required; integration points verified against installed versions and actual source files |
-| Features | HIGH for ingestion and auto-triage; MEDIUM for duplicate thresholds | Ingestion and triage patterns are established codebase precedents; threshold values (0.12/0.18/0.25) are research-informed but must be empirically validated against real xbmc/xbmc data |
-| Architecture | HIGH | Every new component follows an existing codebase pattern; file locations, interfaces, and data flows specified precisely with line references; anti-patterns documented from real code constraints |
-| Pitfalls | MEDIUM-HIGH | GitHub API behavior and pgvector distance/similarity confusion verified via official docs and community issues; embedding dilution and idempotency patterns verified against existing codebase implementations; rate limit projections are estimates |
+| Stack | HIGH | No new packages needed; all SDK types verified in node_modules; voyage-context-3 API format confirmed against installed TypeScript definitions; xbmc/wiki repo confirmed via `gh api`; STACK.md includes verified code samples |
+| Features | HIGH | Feature set verified against existing codebase; kodi.wiki PageViewInfo absence confirmed via direct API probe; dependency graph derived from direct code analysis of wiki-store.ts, embeddings.ts, retrieval.ts, wiki-staleness-detector.ts |
+| Architecture | HIGH | Architectural decisions derived from reading actual source files; two-provider approach follows existing retriever factory pattern; DB schema verified (embedding_model column already exists); new wiki_page_popularity table schema is straightforward |
+| Pitfalls | HIGH | Pitfalls 1 and 2 verified directly (pgvector behavior with same-dimension different-model vectors; kodi.wiki API response confirming no pageview extension); Pitfalls 3-5 derived from v0.24 incident record, GitHub API official docs, and existing codebase rate-limit handling |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **Duplicate detection thresholds (Phase 2):** The 0.12/0.18/0.25 cosine distance bands are research-informed but not validated against xbmc/xbmc data. Build a calibration task into Phase 2 planning: run detection against known duplicate pairs before committing thresholds to config schema.
+- **GitHub App installation on xbmc/wiki:** Unverified whether the Kodiai GitHub App is installed on xbmc/wiki (as opposed to just xbmc/xbmc). Must verify before Phase 5 implementation begins. Low-effort fix if missing (one-click in GitHub App settings), but must not be discovered at publishing time. Add pre-flight check as first task in Phase 5.
 
-- **Embedding quality on xbmc/xbmc issues (Phase 1):** xbmc/xbmc issues are template-driven with heavy log/system-info boilerplate. The "extract description section, skip boilerplate" strategy is correct but depends on the v0.21 template parser correctly identifying section boundaries on real issues. Validate on 10-20 real issues before bulk ingestion begins.
+- **voyage-context-3 free tier token budget:** Research confirms 200M free tokens and wiki corpus under 5000 chunks, but the precise token count for the migration batch is unknown. Measure during Phase 1 before committing to the full re-embed — unexpected token usage could exhaust the free tier.
 
-- **Voyage AI rate limits at bulk ingestion scale (Phase 1):** 5-8K issues + ~15K comments = ~20K embedding calls. Voyage AI rate limits at this scale are not precisely documented. Budget 6-12 hours for backfill and build retry/resume capability before starting.
+- **Staleness heuristic threshold tuning:** The recommendation to raise threshold from score >= 1 to score >= 3 is based on vocabulary analysis, not empirical testing against actual Kodi commit history. Phase 3 must include a calibration run before connecting to the LLM pipeline.
 
-- **IssueStore upsert timestamp guard (Phase 1):** The existing `IssueStore.upsert()` uses `ON CONFLICT DO UPDATE SET` without a `WHERE github_updated_at < EXCLUDED.github_updated_at` guard. This is a required fix (INT-1) before nightly sync runs concurrently with webhook updates. Must be addressed in Phase 1.
+- **PR association API coverage:** `octokit.repos.listPullRequestsAssociatedWithCommit()` depends on GitHub having indexed the PR-commit association. For commits older than 30 days, associations may be absent. Phase 3 must handle gracefully when no associated PR is found (use diff excerpts only, omit PR title/description from prompt).
 
-- **Cross-corpus dedup threshold (Phase 4):** The existing `deduplicateChunks` uses cosine threshold 0.90 for the current four corpora. Issue text is conversational, not technical documentation or code. The threshold may need per-corpus-pair tuning. Test before shipping.
+---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Existing codebase: `src/knowledge/review-comment-backfill.ts` (backfill pattern), `src/knowledge/wiki-sync.ts` (nightly scheduler), `src/knowledge/cluster-scheduler.ts` (setInterval + startup delay), `src/knowledge/issue-store.ts` (CRUD + search API), `src/triage/triage-agent.ts` (template validation), `src/knowledge/cross-corpus-rrf.ts` (RRF merging), `src/webhook/router.ts` (event dispatch), `src/handlers/review-idempotency.ts` (idempotency patterns)
-- [GitHub REST API: List Repository Issues](https://docs.github.com/en/rest/issues/issues#list-repository-issues) — `state`, `since`, `sort`, `direction`, `per_page` parameters
-- [GitHub REST API: Pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api) — Link header, per_page max 100
-- [GitHub REST API: Rate Limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api) — 5,000 req/hr for authenticated apps
-- [pgvector GitHub issue #72](https://github.com/pgvector/pgvector/issues/72) and [Supabase issue #12244](https://github.com/supabase/supabase/issues/12244) — cosine distance vs. similarity operator behavior confirmed
-- [GitHub Timeline Events API](https://docs.github.com/en/rest/issues/timeline) — cross-reference event types
-- [GitHub webhook redelivery behavior](https://github.com/orgs/community/discussions/151676) — at-least-once delivery guarantee
+- Voyage AI Contextualized Embeddings Docs: https://docs.voyageai.com/docs/contextualized-chunk-embeddings — API format, batch structure, limits
+- Voyage AI Pricing: https://docs.voyageai.com/docs/pricing — $0.18/1M for both models; 200M free tier
+- `node_modules/voyageai/Client.d.ts` — `contextualizedEmbed()` SDK method verified in repo
+- `gh api repos/xbmc/wiki` — confirmed private, issues enabled, 4 existing issues
+- `kodi.wiki/api.php?action=query&prop=pageviews` — confirmed "Unrecognized value" response (PageViewInfo absent)
+- `kodi.wiki/api.php?action=query&meta=siteinfo&siprop=extensions` — confirmed Google Analytics Integration v3.0.1 installed, no PageViewInfo or HitCounters
+- Existing codebase (wiki-store.ts, wiki-staleness-detector.ts, embeddings.ts, retrieval.ts, cross-corpus-rrf.ts, issue-comment-server.ts, wiki-sync.ts, code-snippet-chunker.ts, index.ts) — all patterns verified by direct read
+- GitHub REST API Rate Limits: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 
 ### Secondary (MEDIUM confidence)
-- [Simili Bot](https://github.com/similigh/simili-bot), [AI Duplicate Detector](https://github.com/mackgorski/ai-duplicate-detector), [Probot duplicate-issues](https://github.com/probot/duplicate-issues), [Similar Issues AI](https://github.com/apps/similar-issues-ai) — feature landscape and anti-feature guidance
-- [VS Code Automated Issue Triaging](https://github.com/microsoft/vscode/wiki/Automated-Issue-Triaging) — threshold approaches, two-model pattern, auto-close timing
-- [GitHub Agentic Workflows: Issue Triage](https://github.github.io/gh-aw/blog/2026-01-13-meet-the-workflows/) — auto-triage patterns
-- [Zilliz: Embeddings for Duplicate Detection](https://zilliz.com/ai-faq/how-do-i-use-embeddings-for-duplicate-detection) and [emergentmind cosine similarity threshold research](https://www.emergentmind.com/topics/cosine-similarity-threshold) — threshold guidance informing the 0.25/0.18/0.12 bands
+- voyage-context-3 Blog Post: https://blog.voyageai.com/2025/07/23/voyage-context-3/ — 14.24% retrieval improvement on chunk-level tasks
+- MediaWiki Extension:PageViewInfo — confirmed Wikimedia-infrastructure dependency; inapplicable to self-hosted instances
+- MediaWiki Extension:HitCounters — alternative for self-hosted wikis; no API endpoint, only Special:PopularPages HTML
+- Zero-downtime embedding migration patterns — atomic batch approach for small corpora
 
-### Tertiary (LOW confidence)
-- Voyage AI rate limits at 20K+ embedding call scale — not precisely documented at this volume; budget conservatively with retry/resume
+### Tertiary (LOW confidence / needs validation during execution)
+- GitHub secondary rate limit behavior for batch comment posting — 3-second delay recommendation from community experience, not official documentation; must validate with E2E test before production use
+- Staleness heuristic threshold recommendation (score >= 3) — derived from Kodi vocabulary analysis, not empirical testing against real commit history
 
 ---
-*Research completed: 2026-02-26*
+*Research completed: 2026-03-02*
 *Ready for roadmap: yes*
