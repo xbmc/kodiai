@@ -22,9 +22,9 @@ Requirements for Hallucination Prevention & Fact Verification milestone. Each ma
 
 ### Severity Demotion
 
-- [ ] **SEV-01**: Findings whose core claim depends on unverified external knowledge get severity capped (CRITICAL -> medium max)
-- [ ] **SEV-02**: CRITICAL suppression protection (`isFeedbackSuppressionProtected`) does not protect findings with unverified external claims
-- [ ] **SEV-03**: Severity demotion is logged for observability (finding title, original severity, new severity, reason)
+- [x] **SEV-01**: Findings whose core claim depends on unverified external knowledge get severity capped (CRITICAL -> medium max)
+- [x] **SEV-02**: CRITICAL suppression protection (`isFeedbackSuppressionProtected`) does not protect findings with unverified external claims
+- [x] **SEV-03**: Severity demotion is logged for observability (finding title, original severity, new severity, reason)
 
 ### Output Filtering
 
@@ -60,9 +60,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CLAIM-01 | Phase 117 | Complete |
 | CLAIM-02 | Phase 117 | Complete |
 | CLAIM-03 | Phase 117 | Complete |
-| SEV-01 | Phase 118 | Pending |
-| SEV-02 | Phase 118 | Pending |
-| SEV-03 | Phase 118 | Pending |
+| SEV-01 | Phase 118 | Complete |
+| SEV-02 | Phase 118 | Complete |
+| SEV-03 | Phase 118 | Complete |
 | FILT-01 | Phase 119 | Pending |
 | FILT-02 | Phase 119 | Pending |
 | FILT-03 | Phase 119 | Pending |
