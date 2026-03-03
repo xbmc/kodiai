@@ -359,6 +359,7 @@ export function createRetriever(deps: {
   memoryStore?: LearningMemoryStore;
   codeSnippetStore?: CodeSnippetStore;
   issueStore?: IssueStore;
+  wikiCitationLogger?: { logCitations(pageIds: number[]): Promise<void> };
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
   const wikiProvider = deps.wikiEmbeddingProvider ?? deps.embeddingProvider;
@@ -806,6 +807,19 @@ export function createRetriever(deps: {
         similarityThreshold: DEDUP_THRESHOLD,
         mode: "cross-corpus",
       });
+
+      // Citation tracking: log wiki pages that appeared in retrieval results (POP-02)
+      const wikiPageIds = unifiedResults
+        .filter((c) => c.source === "wiki")
+        .map((c) => c.metadata?.pageId as number)
+        .filter((id): id is number => typeof id === "number" && id > 0);
+
+      if (wikiPageIds.length > 0 && deps.wikiCitationLogger) {
+        // Fire-and-forget -- NEVER block retrieval pipeline on citation logging
+        void deps.wikiCitationLogger.logCitations(wikiPageIds).catch((err) => {
+          logger.warn({ err, count: wikiPageIds.length }, "Wiki citation logging failed (fail-open)");
+        });
+      }
 
       // 6g: Context assembly
       const contextWindow = assembleContextWindow(unifiedResults, maxContextChars);
