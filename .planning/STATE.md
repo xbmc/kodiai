@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Completed 120-01-PLAN.md
-last_updated: "2026-03-03T08:06:13.148Z"
+stopped_at: Completed 120-02-PLAN.md
+last_updated: "2026-03-03T08:10:16.199Z"
 progress:
   total_phases: 84
-  completed_phases: 79
+  completed_phases: 80
   total_plans: 197
-  completed_plans: 203
+  completed_plans: 204
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 ## Current Position
 
 Phase: 120 of 124 (Embedding Migration)
-Plan: 1 of 2 in current phase
-Status: Executing
-Last activity: 2026-03-03 -- Completed 120-01: embedding provider and pipeline wiring
+Plan: 2 of 2 in current phase
+Status: Phase 120 Complete
+Last activity: 2026-03-03 -- Completed 120-02: wiki embedding backfill and comparison scripts
 
-Progress: [#####-----] 50%
+Progress: [##########] 100%
 
 ## Accumulated Context
 
@@ -39,6 +39,9 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - Wiki store uses parameterized embeddingModel with voyage-code-3 default for backward compat (120-01)
 - Wiki sync scheduler uses wikiEmbeddingProvider so new pages get voyage-context-3 embeddings (120-01)
 - contextualizedEmbedChunks batch helper uses 30s timeout for larger payloads (120-01)
+- Backfill script uses batch page-level embedding with per-chunk fallback on token limit errors (120-02)
+- Comparison benchmark generates query embeddings on the fly for both models against existing DB vectors (120-02)
+- [Phase 120]: Backfill script uses batch page-level embedding with per-chunk fallback on token limit errors (120-02)
 
 ### Key Constraints (Carry-Forward)
 
@@ -72,6 +75,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03T08:06:13.144Z
-**Stopped At:** Completed 120-01-PLAN.md
-**Resume with:** `/gsd:execute-phase 120` (plan 120-02 next)
+**Last session:** 2026-03-03T08:10:12.129Z
+**Stopped At:** Completed 120-02-PLAN.md
+**Resume with:** `/gsd:execute-phase 121` (phase 120 complete)

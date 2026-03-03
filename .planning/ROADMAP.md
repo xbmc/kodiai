@@ -202,7 +202,7 @@ See `.planning/milestones/v0.24-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Identify the most popular stale wiki pages and generate concrete update suggestions posted as GitHub issue comments in xbmc/wiki.
 
-- [ ] **Phase 120: Embedding Migration** - Migrate wiki corpus to voyage-context-3 with per-corpus model routing in retrieval
+- [x] **Phase 120: Embedding Migration** - Migrate wiki corpus to voyage-context-3 with per-corpus model routing in retrieval (completed 2026-03-03)
 - [ ] **Phase 121: Page Popularity** - Rank wiki pages by inbound links, citation frequency, and edit recency
 - [ ] **Phase 122: Enhanced Staleness** - Ground staleness detection in actual PR/commit diffs from last 90 days
 - [ ] **Phase 123: Update Generation** - LLM-generated section-level rewrite suggestions with diff evidence and commit citations
@@ -315,7 +315,7 @@ Plans:
 | 106-109 | v0.22 | 7/7 | Complete | 2026-02-27 |
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 | 115-119 | v0.24 | 5/5 | Complete | 2026-03-03 |
-| 120 | 1/2 | In Progress|  | - |
+| 120 | 2/2 | Complete   | 2026-03-03 | - |
 | 121 | v0.25 | 0/0 | Not started | - |
 | 122 | v0.25 | 0/0 | Not started | - |
 | 123 | v0.25 | 0/0 | Not started | - |
