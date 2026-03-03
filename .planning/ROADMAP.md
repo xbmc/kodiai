@@ -316,7 +316,7 @@ Plans:
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 | 115-119 | v0.24 | 5/5 | Complete | 2026-03-03 |
 | 120 | 2/2 | Complete    | 2026-03-03 | - |
-| 121 | v0.25 | 0/0 | Not started | - |
+| 121 | 1/2 | In Progress|  | - |
 | 122 | v0.25 | 0/0 | Not started | - |
 | 123 | v0.25 | 0/0 | Not started | - |
 | 124 | v0.25 | 0/0 | Not started | - |

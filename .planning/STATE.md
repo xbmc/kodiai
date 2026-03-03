@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
-status: unknown
-stopped_at: Phase 121 context gathered
-last_updated: "2026-03-03T17:01:37.645Z"
+status: in-progress
+stopped_at: Completed 121-01-PLAN.md
+last_updated: "2026-03-03T17:22:00.000Z"
 progress:
   total_phases: 85
   completed_phases: 80
   total_plans: 197
-  completed_plans: 204
+  completed_plans: 205
 ---
 
 # Project State
@@ -19,14 +19,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.25 Wiki Content Updates -- Phase 120: Embedding Migration
+**Current focus:** v0.25 Wiki Content Updates -- Phase 121: Page Popularity
 
 ## Current Position
 
-Phase: 120 of 124 (Embedding Migration)
-Plan: 2 of 2 in current phase
-Status: Phase 120 Complete
-Last activity: 2026-03-03 -- Completed 120-02: wiki embedding backfill and comparison scripts
+Phase: 121 of 124 (Page Popularity)
+Plan: 1 of 2 in current phase
+Status: Executing Phase 121
+Last activity: 2026-03-03 -- Completed 121-01: wiki popularity schema, config, store, and citation tracking
 
 Progress: [##########] 100%
 
@@ -42,6 +42,9 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - Backfill script uses batch page-level embedding with per-chunk fallback on token limit errors (120-02)
 - Comparison benchmark generates query embeddings on the fly for both models against existing DB vectors (120-02)
 - [Phase 120]: Backfill script uses batch page-level embedding with per-chunk fallback on token limit errors (120-02)
+- Min-max normalization with zero-division guard for wiki popularity composite scoring (121-01)
+- Fire-and-forget citation logging via void + .catch() pattern in retrieval pipeline (121-01)
+- Deduplicate page_ids within single retrieval call before citation INSERT (121-01)
 
 ### Key Constraints (Carry-Forward)
 
@@ -75,6 +78,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03T17:01:37.642Z
-**Stopped At:** Phase 121 context gathered
-**Resume with:** `/gsd:execute-phase 121` (phase 120 complete)
+**Last session:** 2026-03-03T17:22:00.000Z
+**Stopped At:** Completed 121-01-PLAN.md
+**Resume with:** Continue with 121-02-PLAN.md

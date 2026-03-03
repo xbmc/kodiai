@@ -17,8 +17,8 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 ### Page Popularity
 
 - [ ] **POP-01**: MediaWiki inbound link counts fetched via `linkshere` API for all wiki pages
-- [ ] **POP-02**: Retrieval citation frequency tracked — counts how often each wiki page appears in retrieval results
-- [ ] **POP-03**: Edit recency captured as a popularity signal (more recently edited = more active)
+- [x] **POP-02**: Retrieval citation frequency tracked — counts how often each wiki page appears in retrieval results
+- [x] **POP-03**: Edit recency captured as a popularity signal (more recently edited = more active)
 - [ ] **POP-04**: Composite popularity score combining inbound links, citation frequency, and edit recency
 
 ### Staleness Detection
@@ -77,8 +77,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EMBED-03 | Phase 120 | Complete |
 | EMBED-04 | Phase 120 | Complete |
 | POP-01 | Phase 121 | Pending |
-| POP-02 | Phase 121 | Pending |
-| POP-03 | Phase 121 | Pending |
+| POP-02 | Phase 121 | Complete |
+| POP-03 | Phase 121 | Complete |
 | POP-04 | Phase 121 | Pending |
 | STALE-01 | Phase 122 | Pending |
 | STALE-02 | Phase 122 | Pending |
