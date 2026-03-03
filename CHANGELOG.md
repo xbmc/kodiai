@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.24.1 (2026-03-03)
+
+Post-milestone fixes.
+
+### Added
+
+- Windows package list parser for dependency bump enrichment — extracts old/new versions from `0_package.target-*.list` diffs (e.g. `zlib-1.3.1-x64` → `zlib-1.3.2-x64`)
+- `.list` file fallback in depends review pipeline — populates version diffs when no VERSION file exists
+- PR-surface patch intent detection — when a user asks to "create a patch" for an earlier suggestion, Kodiai triggers write mode to open a PR with the changes applied
+
 ## v0.24 (2026-03-03)
 
 Hallucination Prevention & Fact Verification.
