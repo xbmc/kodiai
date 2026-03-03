@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Phase 120 context gathered
-last_updated: "2026-03-03T07:28:21.459Z"
+stopped_at: Completed 120-01-PLAN.md
+last_updated: "2026-03-03T08:06:13.148Z"
 progress:
   total_phases: 84
   completed_phases: 79
-  total_plans: 195
-  completed_plans: 202
+  total_plans: 197
+  completed_plans: 203
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 ## Current Position
 
 Phase: 120 of 124 (Embedding Migration)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-03-02 -- Roadmap created with 5 phases (120-124), 20 requirements mapped
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-03-03 -- Completed 120-01: embedding provider and pipeline wiring
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [#####-----] 50%
 
 ## Accumulated Context
 
@@ -36,13 +36,17 @@ Progress: [░░░░░░░░░░] 0%
 
 All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions table.
 
+- Wiki store uses parameterized embeddingModel with voyage-code-3 default for backward compat (120-01)
+- Wiki sync scheduler uses wikiEmbeddingProvider so new pages get voyage-context-3 embeddings (120-01)
+- contextualizedEmbedChunks batch helper uses 30s timeout for larger payloads (120-01)
+
 ### Key Constraints (Carry-Forward)
 
 - Schema migrations must be additive-only (new tables, nullable columns)
 - Slack v1: single workspace, single channel (#kodiai), in-process session state
 - Wiki corpus migrating from voyage-code-3 to voyage-context-3; all other corpora stay on voyage-code-3
 - voyage-context-3 uses different API: `contextualizedEmbed()` with `inputs: string[][]`, not `/v1/embeddings`
-- wiki-store.ts hardcodes "voyage-code-3" at lines 87 and 131 -- must parameterize
+- wiki-store.ts now parameterized (no longer hardcodes voyage-code-3) -- RESOLVED in 120-01
 - kodi.wiki has NO PageViewInfo extension -- use inbound links + citation frequency + edit recency instead
 - GitHub secondary rate limit caps at ~80 req/min for content creation -- need 3s delays between comments
 - Must verify GitHub App installation on xbmc/wiki before publishing phase
@@ -68,6 +72,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03T07:28:21.455Z
-**Stopped At:** Phase 120 context gathered
-**Resume with:** `/gsd:plan-phase 120`
+**Last session:** 2026-03-03T08:06:13.144Z
+**Stopped At:** Completed 120-01-PLAN.md
+**Resume with:** `/gsd:execute-phase 120` (plan 120-02 next)

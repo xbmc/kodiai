@@ -10,9 +10,9 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 ### Embedding Migration
 
 - [ ] **EMBED-01**: Wiki corpus re-embedded atomically with voyage-context-3 (all pages, not incremental)
-- [ ] **EMBED-02**: Per-corpus embedding model selection — wiki uses voyage-context-3, all other corpora stay on voyage-code-3
-- [ ] **EMBED-03**: Wiki store parameterized to accept embedding model name instead of hardcoding voyage-code-3
-- [ ] **EMBED-04**: Retrieval pipeline uses correct model per corpus for query embedding
+- [x] **EMBED-02**: Per-corpus embedding model selection — wiki uses voyage-context-3, all other corpora stay on voyage-code-3
+- [x] **EMBED-03**: Wiki store parameterized to accept embedding model name instead of hardcoding voyage-code-3
+- [x] **EMBED-04**: Retrieval pipeline uses correct model per corpus for query embedding
 
 ### Page Popularity
 
@@ -73,9 +73,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | EMBED-01 | Phase 120 | Pending |
-| EMBED-02 | Phase 120 | Pending |
-| EMBED-03 | Phase 120 | Pending |
-| EMBED-04 | Phase 120 | Pending |
+| EMBED-02 | Phase 120 | Complete |
+| EMBED-03 | Phase 120 | Complete |
+| EMBED-04 | Phase 120 | Complete |
 | POP-01 | Phase 121 | Pending |
 | POP-02 | Phase 121 | Pending |
 | POP-03 | Phase 121 | Pending |
