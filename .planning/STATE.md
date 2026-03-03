@@ -25,7 +25,7 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 Milestone: v0.24 Hallucination Prevention & Fact Verification — SHIPPED 2026-03-03
 Status: Complete (5 phases, 5 plans)
-Last activity: 2026-03-03 - Completed quick task 16: Parse Windows package lists and harden pipeline against all-null enrichment
+Last activity: 2026-03-03 - Completed quick task 17: Add patch-to-PR feature for write intent on PR surfaces
 
 ## Accumulated Context
 
@@ -56,9 +56,10 @@ None.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 16 | Parse Windows package lists and harden pipeline against all-null enrichment | 2026-03-03 | cd571d7945 | [16-parse-windows-package-lists-and-harden-p](./quick/16-parse-windows-package-lists-and-harden-p/) |
+| 17 | Add patch-to-PR feature: detect "create a patch" as write intent on PR surfaces | 2026-03-03 | b0d41ac420 | [17-add-patch-to-pr-feature-when-asked-to-cr](./quick/17-add-patch-to-pr-feature-when-asked-to-cr/) |
 
 ## Session Continuity
 
 **Last session:** 2026-03-03
-**Stopped At:** Milestone v0.24 complete
+**Stopped At:** Completed quick task 17
 **Resume with:** `/gsd:new-milestone`
