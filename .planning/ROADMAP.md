@@ -234,11 +234,11 @@ Plans:
   2. Retrieval citation frequency is tracked -- how often each wiki page appears in retrieval results is counted and persisted
   3. A composite popularity score exists per page combining inbound links, citation frequency, and edit recency into a single ranked list
   4. The pipeline can request the top-N pages by popularity score and receive a deterministic ordered result
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 121-01: TBD
-- [ ] 121-02: TBD
+- [ ] 121-01-PLAN.md — Schema, store, config, and retrieval pipeline citation instrumentation
+- [ ] 121-02-PLAN.md — Linkshere fetcher, composite scorer with scheduler, and backfill script
 
 ### Phase 122: Enhanced Staleness
 **Goal**: Staleness detection is grounded in actual code changes from recent merged PRs, with diff content preserved as evidence for the update generator
