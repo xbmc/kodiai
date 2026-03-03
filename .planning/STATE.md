@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: in-progress
-stopped_at: Completed 121-02-PLAN.md
-last_updated: "2026-03-03T17:22:00.000Z"
+stopped_at: Completed 121-03-PLAN.md
+last_updated: "2026-03-03T18:20:00.000Z"
 progress:
   total_phases: 85
   completed_phases: 80
-  total_plans: 197
-  completed_plans: 205
+  total_plans: 198
+  completed_plans: 206
 ---
 
 # Project State
@@ -24,9 +24,9 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 ## Current Position
 
 Phase: 121 of 124 (Page Popularity)
-Plan: 2 of 2 in current phase
+Plan: 3 of 3 in current phase
 Status: Phase 121 Complete
-Last activity: 2026-03-03 -- Completed 121-02: linkshere fetcher, popularity scorer, and backfill script
+Last activity: 2026-03-03 -- Completed 121-03: application bootstrap wiring for popularity store and scorer
 
 Progress: [##########] 100%
 
@@ -51,6 +51,8 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - Deduplicate page_ids within single retrieval call before citation INSERT (121-01)
 - Default to 365 days since edit when last_modified is null for popularity scoring (121-02)
 - Direct SQL DISTINCT ON query for page dedup in scorer rather than WikiPageStore methods (121-02)
+- Popularity store declared unconditionally so both retriever and scorer can access it (121-03)
+- Scorer starts unconditionally (not gated on Slack config) since popularity scoring is independent (121-03)
 
 ### Key Constraints (Carry-Forward)
 
@@ -84,6 +86,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03T17:22:00.000Z
-**Stopped At:** Completed 121-02-PLAN.md
+**Last session:** 2026-03-03T18:20:00.000Z
+**Stopped At:** Completed 121-03-PLAN.md
 **Resume with:** Continue with next phase (122)

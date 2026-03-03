@@ -316,7 +316,7 @@ Plans:
 | 110-114 | v0.23 | 9/9 | Complete | 2026-03-01 |
 | 115-119 | v0.24 | 5/5 | Complete | 2026-03-03 |
 | 120 | 2/2 | Complete    | 2026-03-03 | - |
-| 121 | 2/2 | Complete   | 2026-03-03 | - |
+| 121 | 3/3 | Complete   | 2026-03-03 | - |
 | 122 | v0.25 | 0/0 | Not started | - |
 | 123 | v0.25 | 0/0 | Not started | - |
 | 124 | v0.25 | 0/0 | Not started | - |
@@ -326,7 +326,7 @@ Plans:
 **Goal**: When generating wiki page update suggestions, preserve the existing page's formatting conventions, writing voice, tone, and style so edits read as natural continuations rather than AI-generated insertions
 **Requirements**: TBD
 **Depends on:** Phase 124
-**Plans:** 0 plans
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 125 to break down)
