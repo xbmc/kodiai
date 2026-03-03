@@ -210,6 +210,51 @@
 
 ---
 
+## Milestone: v0.24 — Hallucination Prevention & Fact Verification
+
+**Shipped:** 2026-03-03
+**Phases:** 5 | **Plans:** 5
+
+### What Was Built
+- Epistemic boundary system with 3-tier knowledge classification (diff-visible, context-visible, external) in review prompts
+- Cross-surface guardrails propagated to PR reviews, @mention responses, and Slack assistant
+- Heuristic claim classifier with 8 external-knowledge signal patterns and diff cross-referencing
+- Severity demotion capping primarily-external CRITICAL/MAJOR findings at medium
+- Output filter rewriting mixed findings and suppressing entirely-external findings before publishing
+
+### What Worked
+- Layered pipeline approach: prompt guardrails (115) -> cross-surface (116) -> classification (117) -> demotion (118) -> filtering (119) — each phase builds cleanly on prior
+- Immutable transform pattern used consistently across claim-classifier, severity-demoter, and output-filter
+- Heuristic-first classification (no LLM call needed) keeps latency near-zero for claim labeling
+- Shared buildEpistemicBoundarySection() import prevented copy-paste drift across surfaces
+- Fail-open design: classification errors return findings as diff-grounded — never blocks publishing
+- All 5 phases had zero deviations from plan (only 1 minor regex bugfix across entire milestone)
+
+### What Was Inefficient
+- PROMPT-04 checkbox in REQUIREMENTS.md left unchecked despite Phase 116 completing its implementation
+- SUMMARY frontmatter `one_liner` field returned null for all 5 phases — summary-extract tool couldn't extract accomplishments automatically
+- No milestone audit run before completion (acceptable for a 5-phase prompt/pipeline milestone)
+
+### Patterns Established
+- Epistemic boundary pattern: shared prompt section with 3-tier classification imported across surfaces
+- Claim classification pipeline: extract claims -> heuristic classify -> compute summary label -> attach to finding
+- Immutable finding transform: all pipeline stages return new objects, never mutate inputs
+- Collapsed suppressed-findings section pattern for review summary transparency
+
+### Key Lessons
+1. Layered pipeline (prompt -> classify -> demote -> filter) is the right architecture for content quality guardrails
+2. Heuristic classification (regex patterns) is surprisingly effective for claim labeling — LLM second-pass may never be needed
+3. The `preDemotionSeverity` naming convention shows the importance of checking existing field names before adding audit fields
+4. 10-word minimum threshold for stub detection prevents publishing near-empty rewritten findings
+5. Populate REQUIREMENTS.md checkboxes and SUMMARY `one_liner` during phase execution, not at milestone completion
+
+### Cost Observations
+- Model mix: quality profile (opus for planning/execution)
+- All 5 phases completed in 2 days (2026-03-02 to 2026-03-03)
+- Notable: Fastest 5-phase milestone — total execution ~32 minutes across all plans
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -221,6 +266,7 @@
 | v0.21 | 3 | 9 | MCP tool factory pattern; mention-triggered agent pattern; 5th corpus |
 | v0.22 | 4 | 7 | Auto-fire webhook pattern; four-layer idempotency; per-trigger weight tuning |
 | v0.23 | 5 | 9 | Bayesian threshold learning; parallel handler pattern; reaction polling |
+| v0.24 | 5 | 5 | Epistemic guardrails; claim classification pipeline; immutable transform pattern |
 
 ### Cumulative Quality
 
@@ -231,6 +277,7 @@
 | v0.21 | ~1,750 | +98 issue store/MCP tool/template parser/triage agent tests |
 | v0.22 | ~1,800 | +50 duplicate detection/auto-triage/PR-issue linking tests |
 | v0.23 | ~1,900 | +100 thread assembler/troubleshooting/threshold/outcome tests |
+| v0.24 | ~1,986 | +86 claim-classifier/severity-demoter/output-filter/prompt tests |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -244,3 +291,5 @@
 8. Four-layer idempotency is the right depth for webhook-triggered agent actions
 9. Atomic SQL-side operations (UPSERT with increment) prevent race conditions in concurrent threshold updates
 10. Phase directories must consistently go to `.planning/phases/` — inconsistent placement causes audit tool blind spots
+11. Layered pipeline (prompt -> classify -> demote -> filter) is the right architecture for content quality guardrails
+12. Heuristic classification with regex patterns can be surprisingly effective — defer LLM classification until data proves it necessary

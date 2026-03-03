@@ -122,20 +122,25 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.24 Hallucination Prevention & Fact Verification
+<details>
+<summary>Previous Release: v0.24 Hallucination Prevention & Fact Verification (2026-03-03)</summary>
 
-**Goal:** Eliminate fabricated claims in PR reviews by adding epistemic guardrails, reworking confidence scoring for external knowledge claims, and introducing a post-generation fact-check pass that flags unverifiable assertions before publishing.
+**Shipped:** 2026-03-03
+**Phases:** 115-119 (5 phases, 5 plans)
+**Motivation:** [PR #27932](https://github.com/xbmc/xbmc/pull/27932) — bot fabricated libxkbcommon version numbers as a [CRITICAL] finding
 
-**Target features:**
-- Epistemic guardrails in review prompt (distinguish diff-visible facts vs external knowledge claims)
-- Confidence scoring rework (penalize unverified external claims, especially CRITICALs)
-- Post-generation fact-check pass (flag unverifiable claims before publishing)
+**Delivered:**
+- Epistemic boundary system with 3-tier knowledge classification (diff-visible, context-visible, external) in review prompts
+- Cross-surface guardrails applied consistently to PR reviews, @mention responses, and Slack assistant
+- Heuristic claim classifier labeling each finding's claims as diff-grounded, external-knowledge, or inferential
+- Severity demotion capping external-knowledge findings at medium severity (CRITICAL/MAJOR -> medium)
+- Output filter rewriting findings to remove external claims or suppressing entirely when no diff-grounded core remains
 
-**Motivation:** PR #27932 — bot fabricated specific libxkbcommon version numbers (1.13.0, 1.11.0, 1.12.x) as a [CRITICAL] observation. Maintainer called it out: "Is AI hallucinating?" CRITICALs bypass all suppression, making hallucinated CRITICALs the worst-case scenario.
+</details>
 
 ## Current State
 
-v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pipeline operational:
+v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardrails operational:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
@@ -154,7 +159,11 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support and issue triage
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
-- ~89,000 lines of TypeScript
+- Epistemic guardrails: 3-tier knowledge classification (diff-visible, context-visible, external) across all bot surfaces
+- Claim classification: heuristic engine labels findings as diff-grounded, external-knowledge, or inferential
+- Severity demotion: external-knowledge CRITICALs/MAJORs capped at medium, bypassing suppression protection
+- Output filtering: findings rewritten to strip external claims or suppressed entirely before publishing
+- ~93,000 lines of TypeScript
 
 ## Requirements
 
@@ -291,13 +300,14 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 - ✓ Triage comment GitHub ID captured and stored — v0.23
 - ✓ Periodic sync job polls reactions on recent triage comments — v0.23
 - ✓ Reaction data feeds into outcome feedback as secondary signal — v0.23
+- ✓ Epistemic guardrails distinguish diff-visible facts from external knowledge claims — v0.24
+- ✓ Post-generation claim classification flags external knowledge assertions — v0.24
+- ✓ Severity demotion penalizes unverified external claims (CRITICAL/MAJOR -> medium) — v0.24
+- ✓ Output filter rewrites or suppresses findings with unverifiable external claims — v0.24
 
 ### Active
 
-- [ ] Epistemic guardrails distinguish diff-visible facts from external knowledge claims
-- [ ] Confidence scoring penalizes unverified external claims
-- [ ] Post-generation fact-check flags unverifiable assertions before publishing
-- [ ] CRITICAL findings with external knowledge claims get additional scrutiny
+(No active requirements — next milestone not yet planned)
 
 ### Out of Scope
 
@@ -324,7 +334,7 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 - **Storage:** Azure PostgreSQL Flexible Server with pgvector extension (HNSW indexes, tsvector columns)
 - **Embedding provider:** Voyage AI (optional, VOYAGE_API_KEY required for semantic retrieval)
 - **Slack:** Bot token with `chat:write`, `reactions:write` scopes; signing secret for ingress verification
-- **Codebase:** ~89,000 lines of TypeScript
+- **Codebase:** ~93,000 lines of TypeScript
 
 ## Key Decisions
 
@@ -410,6 +420,14 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 | Triage gate for observations | recordObservation gated on triageId !== null to only learn from Kodiai-triaged issues | ✓ Good — v0.23 |
 | Observation dedup via direction tracking | observation_recorded + observation_direction columns re-record only if direction flips | ✓ Good — v0.23 |
 | Closure signal precedence over reactions | Reaction observations skipped when issue_outcome_feedback record exists | ✓ Good — v0.23 |
+| Three-tier epistemic knowledge classification | diff-visible, system-enrichment, external-knowledge; external silently omitted | ✓ Good — v0.24 |
+| Shared epistemic section across all surfaces | buildEpistemicBoundarySection() imported by review, mention, and Slack prompts | ✓ Good — v0.24 |
+| Sentence-boundary claim extraction | Simple splitting effective for review finding decomposition; no NLP dep | ✓ Good — v0.24 |
+| Heuristic-first claim classification | 8 regex patterns for fast classification; LLM second-pass scaffolded for future | ✓ Good — v0.24 |
+| preDemotionSeverity field naming | Avoids collision with enforcement's existing originalSeverity field | ✓ Good — v0.24 |
+| Immutable transform pattern for demoter/filter | Returns new objects, inputs never mutated; consistent with claim-classifier | ✓ Good — v0.24 |
+| 10-word minimum stub detection | Prevents publishing near-empty findings after external claim rewriting | ✓ Good — v0.24 |
+| Collapsed suppressed findings section | `<details>` block in review summary for transparency without noise | ✓ Good — v0.24 |
 
 ## Constraints
 
@@ -422,4 +440,4 @@ v0.23 shipped. Interactive Troubleshooting complete. Full issue intelligence pip
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-02 after v0.24 milestone start*
+*Last updated: 2026-03-03 after v0.24 milestone*
