@@ -26,6 +26,8 @@ import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
 import { createWikiStalenessDetector } from "./knowledge/wiki-staleness-detector.ts";
 import { createClusterScheduler } from "./knowledge/cluster-scheduler.ts";
+import { createWikiPopularityStore } from "./knowledge/wiki-popularity-store.ts";
+import { createWikiPopularityScorer } from "./knowledge/wiki-popularity-scorer.ts";
 import { createClusterStore } from "./knowledge/cluster-store.ts";
 import { matchClusterPatterns } from "./knowledge/cluster-matcher.ts";
 import { createTaskRouter } from "./llm/task-router.ts";
@@ -106,6 +108,7 @@ const webhookQueueStore = createWebhookQueueStore({ sql, logger, telemetryStore 
 let _wikiSyncSchedulerRef: { stop: () => void } | null = null;
 let _wikiStalenessDetectorRef: { stop: () => void } | null = null;
 let _clusterSchedulerRef: { stop: () => void; runNow: () => Promise<void> } | null = null;
+let _wikiPopularityScorerRef: { stop: () => void } | null = null;
 
 const shutdownManager = createShutdownManager({
   logger,
@@ -115,6 +118,7 @@ const shutdownManager = createShutdownManager({
     _wikiSyncSchedulerRef?.stop();
     _wikiStalenessDetectorRef?.stop();
     _clusterSchedulerRef?.stop();
+    _wikiPopularityScorerRef?.stop();
     await closeDb();
   },
 });
@@ -226,6 +230,9 @@ if (learningMemoryStore) {
   logger.info("Learning memory isolation layer initialized");
 }
 
+// Wiki popularity store (Phase 121: citation logging + popularity scoring)
+const popularityStore = createWikiPopularityStore({ sql, logger });
+
 // Knowledge retrieval (unified pipeline)
 const retriever = isolationLayer && embeddingProvider
   ? createRetriever({
@@ -249,6 +256,7 @@ const retriever = isolationLayer && embeddingProvider
       memoryStore: learningMemoryStore,
       codeSnippetStore,
       issueStore,
+      wikiCitationLogger: popularityStore,
     })
   : undefined;
 
@@ -575,6 +583,21 @@ if (wikiStalenessDetector) {
 } else {
   logger.info("Wiki staleness detector disabled: SLACK_WIKI_CHANNEL_ID not configured");
 }
+
+// Wiki popularity scorer (Phase 121: weekly scheduled scoring)
+const wikiPopularityScorer = createWikiPopularityScorer({
+  sql,
+  logger,
+  wikiPageStore,
+  popularityStore,
+  wikiBaseUrl: process.env.WIKI_BASE_URL ?? "https://kodi.wiki",
+});
+wikiPopularityScorer.start();
+_wikiPopularityScorerRef = wikiPopularityScorer;
+logger.info(
+  { intervalDays: 7, startupDelayMs: 300_000 },
+  "Wiki popularity scorer started (7-day interval, 5min startup delay)",
+);
 
 // Review pattern clustering (Phase 100: weekly scheduled clustering + on-demand)
 const clusterTaskRouter = createTaskRouter({ models: {} }, logger);
