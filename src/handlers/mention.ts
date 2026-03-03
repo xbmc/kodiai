@@ -296,6 +296,34 @@ export function createMentionHandler(deps: {
     return undefined;
   }
 
+  function detectImplicitPrPatchIntent(userQuestion: string): "apply" | undefined {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase();
+    if (normalized.length === 0) return undefined;
+
+    // Direct: "create a patch", "make a patch", "open a patch PR", "submit a patch"
+    const patchDirect = /^(?:please\s+)?(?:create|make|open|submit)\s+(?:a\s+)?patch\b/;
+    // Direct: "patch this", "patch the earlier change"
+    const patchThis = /^(?:please\s+)?patch\s+(?:this|the|that)\b/;
+    // Polite: "can/could/would you create a patch"
+    const patchAsk = /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:create|make|open|submit)\s+(?:a\s+)?patch\b/;
+    // Polite: "can you patch this/the/that"
+    const patchThisAsk = /^(?:can|could|would|will)\s+you\s+(?:please\s+)?patch\s+(?:this|the|that)\b/;
+    // Contextual: "apply the earlier suggestion as a patch PR"
+    const patchContextual = /(?:apply|implement)\s+(?:the\s+)?(?:earlier|previous|above|suggested)\s+(?:change|suggestion|fix).*(?:as\s+)?(?:a\s+)?(?:patch|pr)\b/;
+
+    if (
+      patchDirect.test(normalized) ||
+      patchThis.test(normalized) ||
+      patchAsk.test(normalized) ||
+      patchThisAsk.test(normalized) ||
+      patchContextual.test(normalized)
+    ) {
+      return "apply";
+    }
+
+    return undefined;
+  }
+
   function summarizeWriteRequest(request: string): string {
     const condensed = request
       .replace(/\s+/g, " ")
@@ -823,16 +851,28 @@ export function createMentionHandler(deps: {
         }
 
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
+        const isPrSurface = mention.prNumber !== undefined;
         const parsedWriteIntent = parseWriteIntent(userQuestion);
+
+        // Issue surfaces: broad implicit intent detection (existing behavior)
         const implicitIntent =
           isIssueThreadComment && !parsedWriteIntent.writeIntent
             ? detectImplicitIssueIntent(parsedWriteIntent.request)
             : undefined;
+
+        // PR surfaces: narrow patch-specific intent detection (new behavior)
+        const prPatchIntent =
+          isPrSurface && !isIssueThreadComment && !parsedWriteIntent.writeIntent
+            ? detectImplicitPrPatchIntent(parsedWriteIntent.request)
+            : undefined;
+
+        const effectiveImplicit = implicitIntent ?? prPatchIntent;
+
         const writeIntent =
-          isIssueThreadComment && implicitIntent !== undefined && !parsedWriteIntent.writeIntent
+          effectiveImplicit !== undefined && !parsedWriteIntent.writeIntent
             ? {
                 writeIntent: true,
-                keyword: implicitIntent,
+                keyword: effectiveImplicit,
                 request: parsedWriteIntent.request,
               }
             : parsedWriteIntent;
