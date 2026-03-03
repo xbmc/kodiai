@@ -6,6 +6,7 @@ import {
   fetchDependsChangelog,
   verifyHash,
   detectPatchChanges,
+  parsePackageListDiff,
   KODI_LIB_REPO_MAP,
 } from "./depends-bump-enrichment.ts";
 import type {
@@ -14,6 +15,7 @@ import type {
   HashVerificationResult,
   DependsChangelogContext,
   PatchChange,
+  PackageListEntry,
 } from "./depends-bump-enrichment.ts";
 
 // ─── Mock Helpers ────────────────────────────────────────────────────────────
@@ -497,6 +499,122 @@ describe("detectPatchChanges", () => {
     expect(result.some(p => p.action === "added")).toBe(true);
     expect(result.some(p => p.action === "removed")).toBe(true);
     expect(result.some(p => p.action === "modified")).toBe(true);
+  });
+});
+
+// ─── parsePackageListDiff ────────────────────────────────────────────────────
+
+describe("parsePackageListDiff", () => {
+  // Lazy import to allow TDD red phase
+  let parsePackageListDiff: typeof import("./depends-bump-enrichment.ts").parsePackageListDiff;
+
+  beforeEach(async () => {
+    const mod = await import("./depends-bump-enrichment.ts");
+    parsePackageListDiff = mod.parsePackageListDiff;
+  });
+
+  test("single package version bump (zlib 1.3.1 -> 1.3.2)", () => {
+    const patch = `--- a/tools/depends/target/zlib/0_package.target-x64-v143.list
++++ b/tools/depends/target/zlib/0_package.target-x64-v143.list
+@@ -1 +1 @@
+-zlib-1.3.1-x64-v143-20260216.7z
++zlib-1.3.2-x64-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("zlib");
+    expect(result[0]!.oldVersion).toBe("1.3.1");
+    expect(result[0]!.newVersion).toBe("1.3.2");
+  });
+
+  test("multi-package list diff (zlib + openssl)", () => {
+    const patch = `--- a/tools/depends/target/0_package.target-x64-v143.list
++++ b/tools/depends/target/0_package.target-x64-v143.list
+@@ -1,4 +1,4 @@
+-zlib-1.3.1-x64-v143-20260216.7z
++zlib-1.3.2-x64-v143-20260301.7z
+-openssl-3.0.18-x64-v143-20260210.7z
++openssl-3.0.19-x64-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(2);
+
+    const zlib = result.find(r => r.name === "zlib");
+    expect(zlib).toBeDefined();
+    expect(zlib!.oldVersion).toBe("1.3.1");
+    expect(zlib!.newVersion).toBe("1.3.2");
+
+    const openssl = result.find(r => r.name === "openssl");
+    expect(openssl).toBeDefined();
+    expect(openssl!.oldVersion).toBe("3.0.18");
+    expect(openssl!.newVersion).toBe("3.0.19");
+  });
+
+  test("package with hyphenated name (libjpeg-turbo)", () => {
+    const patch = `--- a/tools/depends/target/0_package.target-x64-v143.list
++++ b/tools/depends/target/0_package.target-x64-v143.list
+@@ -1 +1 @@
+-libjpeg-turbo-3.0.0-x64-v143-20260101.7z
++libjpeg-turbo-3.1.0-x64-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("libjpeg-turbo");
+    expect(result[0]!.oldVersion).toBe("3.0.0");
+    expect(result[0]!.newVersion).toBe("3.1.0");
+  });
+
+  test("added-only package (new line with no corresponding removal)", () => {
+    const patch = `--- a/tools/depends/target/0_package.target-x64-v143.list
++++ b/tools/depends/target/0_package.target-x64-v143.list
+@@ -1 +1,2 @@
+ zlib-1.3.2-x64-v143-20260301.7z
++dav1d-1.5.0-x64-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("dav1d");
+    expect(result[0]!.oldVersion).toBeNull();
+    expect(result[0]!.newVersion).toBe("1.5.0");
+  });
+
+  test("removed-only package", () => {
+    const patch = `--- a/tools/depends/target/0_package.target-x64-v143.list
++++ b/tools/depends/target/0_package.target-x64-v143.list
+@@ -1,2 +1 @@
+-dav1d-1.5.0-x64-v143-20260301.7z
+ zlib-1.3.2-x64-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("dav1d");
+    expect(result[0]!.oldVersion).toBe("1.5.0");
+    expect(result[0]!.newVersion).toBeNull();
+  });
+
+  test("empty/irrelevant diff returns empty array", () => {
+    const patch = `--- a/README.md
++++ b/README.md
+@@ -1 +1 @@
+-old text
++new text`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(0);
+  });
+
+  test("real-world format with date suffix", () => {
+    const patch = `--- a/tools/depends/target/zlib/0_package.target-x86-v143.list
++++ b/tools/depends/target/zlib/0_package.target-x86-v143.list
+@@ -1 +1 @@
+-zlib-1.3.2-x86-v143-20260216.7z
++zlib-1.3.2.1-x86-v143-20260301.7z`;
+
+    const result = parsePackageListDiff(patch);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.name).toBe("zlib");
+    expect(result[0]!.oldVersion).toBe("1.3.2");
+    expect(result[0]!.newVersion).toBe("1.3.2.1");
   });
 });
 

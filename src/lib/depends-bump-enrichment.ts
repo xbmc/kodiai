@@ -99,6 +99,112 @@ for (const [key, value] of Object.entries(KODI_LIB_REPO_MAP)) {
   REPO_MAP_LOWER[key.toLowerCase()] = value;
 }
 
+// ─── Package List Entry Type ─────────────────────────────────────────────────
+
+export type PackageListEntry = {
+  name: string;
+  oldVersion: string | null;
+  newVersion: string | null;
+};
+
+// ─── Package List Diff Parsing ──────────────────────────────────────────────
+
+/**
+ * Parse a unified diff of a Windows `0_package.target-*.list` file to extract
+ * old/new versions from package archive names.
+ *
+ * Archive names follow the pattern: `{name}-{version}-{arch}-{compiler}-{date}.{ext}`
+ * where name may contain hyphens (e.g., `libjpeg-turbo`).
+ *
+ * @returns Array of PackageListEntry with name, oldVersion, newVersion.
+ */
+export function parsePackageListDiff(patch: string): PackageListEntry[] {
+  // Regex: version is first segment starting with a digit, followed by arch-compiler-date.ext
+  // We split on `-` and find the first segment matching a version pattern (digits and dots).
+  const archiveRe = /^(.+?)-(\d[\d.]*)-([a-z0-9]+)-([a-z0-9]+)-(\d+)\.\w+$/i;
+
+  const oldEntries = new Map<string, string>(); // lowercase name -> version
+  const newEntries = new Map<string, string>(); // lowercase name -> version
+  const nameMap = new Map<string, string>(); // lowercase name -> original-case name
+
+  for (const line of patch.split("\n")) {
+    // Skip diff headers
+    if (line.startsWith("---") || line.startsWith("+++") || line.startsWith("@@")) continue;
+
+    const isOld = line.startsWith("-");
+    const isNew = line.startsWith("+");
+    if (!isOld && !isNew) continue;
+
+    const content = line.slice(1).trim();
+    if (!content) continue;
+
+    // Parse the archive filename
+    const parsed = parseArchiveName(content);
+    if (!parsed) continue;
+
+    const lowerName = parsed.name.toLowerCase();
+    nameMap.set(lowerName, parsed.name);
+
+    if (isOld) {
+      oldEntries.set(lowerName, parsed.version);
+    } else {
+      newEntries.set(lowerName, parsed.version);
+    }
+  }
+
+  // Merge old/new by package name
+  const allNames = new Set([...oldEntries.keys(), ...newEntries.keys()]);
+  const results: PackageListEntry[] = [];
+
+  for (const lowerName of allNames) {
+    const oldVer = oldEntries.get(lowerName) ?? null;
+    const newVer = newEntries.get(lowerName) ?? null;
+    // Skip if versions are identical (context line noise)
+    if (oldVer && newVer && oldVer === newVer) continue;
+    results.push({
+      name: nameMap.get(lowerName) ?? lowerName,
+      oldVersion: oldVer,
+      newVersion: newVer,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Parse a Windows package archive filename like `zlib-1.3.2-x64-v143-20260301.7z`.
+ *
+ * Strategy: split on `-`, find the first segment that looks like a version
+ * (starts with a digit), everything before is name, the version is that segment.
+ */
+function parseArchiveName(filename: string): { name: string; version: string } | null {
+  // Strip extension
+  const dotIdx = filename.lastIndexOf(".");
+  const base = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
+
+  const segments = base.split("-");
+  if (segments.length < 4) return null; // need at least name-version-arch-compiler (date may be part of compiler segment)
+
+  // Find first segment that starts with a digit (that's the version)
+  let versionIdx = -1;
+  for (let i = 1; i < segments.length; i++) {
+    if (/^\d/.test(segments[i]!)) {
+      versionIdx = i;
+      break;
+    }
+  }
+
+  if (versionIdx < 1) return null;
+
+  const name = segments.slice(0, versionIdx).join("-");
+  const version = segments[versionIdx]!;
+
+  // Validate: after version there should be arch/compiler/date segments
+  if (segments.length - versionIdx < 2) return null;
+
+  return { name, version };
+}
+
 // ─── VERSION File Diff Parsing ──────────────────────────────────────────────
 
 /**
