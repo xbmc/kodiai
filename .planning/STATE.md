@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
-status: active
-stopped_at: Roadmap created
-last_updated: "2026-03-02T12:00:00.000Z"
+status: unknown
+stopped_at: Phase 120 context gathered
+last_updated: "2026-03-03T07:28:21.459Z"
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 84
+  completed_phases: 79
+  total_plans: 195
+  completed_plans: 202
 ---
 
 # Project State
@@ -68,6 +68,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-02
-**Stopped At:** Roadmap created for v0.25 Wiki Content Updates (5 phases, 20 requirements)
+**Last session:** 2026-03-03T07:28:21.455Z
+**Stopped At:** Phase 120 context gathered
 **Resume with:** `/gsd:plan-phase 120`
