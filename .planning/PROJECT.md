@@ -317,11 +317,11 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - ✓ Post-generation claim classification flags external knowledge assertions — v0.24
 - ✓ Severity demotion penalizes unverified external claims (CRITICAL/MAJOR -> medium) — v0.24
 - ✓ Output filter rewrites or suppresses findings with unverifiable external claims — v0.24
+- ✓ Wiki page popularity scoring combining inbound links, citation frequency, and edit recency — v0.25
 
 ### Active
 
 - [ ] Migrate wiki corpus embeddings from voyage-code-3 to voyage-context-3
-- [ ] Page popularity ranking combining MediaWiki view counts and retrieval citation frequency
 - [ ] Enhanced staleness analysis grounded in recent PRs/commits as source of truth
 - [ ] LLM-generated section-by-section update suggestions for stale wiki pages
 - [ ] Publish update suggestions as comments on a tracking issue in xbmc/wiki
@@ -445,6 +445,11 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 | Immutable transform pattern for demoter/filter | Returns new objects, inputs never mutated; consistent with claim-classifier | ✓ Good — v0.24 |
 | 10-word minimum stub detection | Prevents publishing near-empty findings after external claim rewriting | ✓ Good — v0.24 |
 | Collapsed suppressed findings section | `<details>` block in review summary for transparency without noise | ✓ Good — v0.24 |
+| Fire-and-forget citation logging | void promise.catch() for non-blocking side effects in retrieval hot path | ✓ Good — v0.25 |
+| Min-max normalization with zero-division guard | Return 0 when max === min for composite popularity scoring | ✓ Good — v0.25 |
+| Batch upsert popularity records (groups of 100) | Avoids overly large queries during bulk scoring updates | ✓ Good — v0.25 |
+| Linkshere batched fetch with fail-open | 50-page batches, lhcontinue pagination, 500ms rate limit, per-page 5000 cap | ✓ Good — v0.25 |
+| Unconditional popularity store creation | Lightweight (no connections); available to both retriever and scorer | ✓ Good — v0.25 |
 
 ## Constraints
 
@@ -457,4 +462,4 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-03 after v0.25 milestone start*
+*Last updated: 2026-03-03 after Phase 121*

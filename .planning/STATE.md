@@ -19,7 +19,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.25 Wiki Content Updates -- Phase 121: Page Popularity
+**Current focus:** v0.25 Wiki Content Updates -- Phase 125: Voice-Preserving Updates
 
 ## Current Position
 
@@ -28,7 +28,7 @@ Plan: 3 of 3 in current phase
 Status: Phase 121 Complete
 Last activity: 2026-03-03 -- Completed 121-03: application bootstrap wiring for popularity store and scorer
 
-Progress: [##########] 100%
+Progress: [████████████████████] 207/200 plans (100%)
 
 ## Accumulated Context
 
@@ -86,6 +86,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03T18:20:00.000Z
-**Stopped At:** Completed 121-03-PLAN.md
-**Resume with:** Continue with next phase (122)
+**Last session:** 2026-03-03
+**Stopped At:** Phase 121 complete, ready to plan Phase 125
+**Resume file:** None
