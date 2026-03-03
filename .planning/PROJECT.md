@@ -138,6 +138,19 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
+## Current Milestone: v0.25 Wiki Content Updates
+
+**Goal:** Identify the most popular stale wiki pages and generate concrete update suggestions posted as GitHub issue comments.
+
+**Target features:**
+- Wiki embedding migration to voyage-context-3 (prose-optimized) with per-corpus model selection in retrieval
+- Page popularity ranking combining MediaWiki API view counts with retrieval citation frequency
+- Enhanced staleness analysis using recent PRs/commits as ground truth for what changed
+- LLM-generated section-by-section rewrite suggestions for top 20 stale pages
+- Publishing workflow: create tracking issue in xbmc/wiki, post per-page update suggestions as comments
+
+**Scope:** Top 20 pages by combined popularity score. One-shot manual trigger.
+
 ## Current State
 
 v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardrails operational:
@@ -307,7 +320,11 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 
 ### Active
 
-(No active requirements — next milestone not yet planned)
+- [ ] Migrate wiki corpus embeddings from voyage-code-3 to voyage-context-3
+- [ ] Page popularity ranking combining MediaWiki view counts and retrieval citation frequency
+- [ ] Enhanced staleness analysis grounded in recent PRs/commits as source of truth
+- [ ] LLM-generated section-by-section update suggestions for stale wiki pages
+- [ ] Publish update suggestions as comments on a tracking issue in xbmc/wiki
 
 ### Out of Scope
 
@@ -440,4 +457,4 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-03 after v0.24 milestone*
+*Last updated: 2026-03-03 after v0.25 milestone start*

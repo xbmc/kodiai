@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.24
-milestone_name: Hallucination Prevention & Fact Verification
-status: completed
-stopped_at: Milestone v0.24 complete
-last_updated: "2026-03-03T02:00:00.000Z"
+milestone: v0.25
+milestone_name: Wiki Content Updates
+status: active
+stopped_at: Defining requirements
+last_updated: "2026-03-03T04:30:00.000Z"
 progress:
-  total_phases: 119
-  completed_phases: 119
-  total_plans: 297
-  completed_plans: 297
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -19,13 +19,14 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** Planning next milestone
+**Current focus:** v0.25 Wiki Content Updates
 
 ## Current Position
 
-Milestone: v0.24 Hallucination Prevention & Fact Verification — SHIPPED 2026-03-03
-Status: Complete (5 phases, 5 plans)
-Last activity: 2026-03-03 - Completed quick task 17: Add patch-to-PR feature for write intent on PR surfaces
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-03 — Milestone v0.25 started
 
 ## Accumulated Context
 
