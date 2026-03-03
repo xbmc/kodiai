@@ -17,6 +17,7 @@ import { computeIncrementalDiff, type IncrementalDiffResult } from "../lib/incre
 import { buildPriorFindingContext, shouldSuppressFinding, type PriorFindingContext } from "../lib/finding-dedup.ts";
 import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-classifier.ts";
 import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } from "../lib/claim-classifier.ts";
+import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
@@ -121,6 +122,9 @@ type ProcessedFinding = ExtractedFinding & {
   suppressionPattern?: string;
   deprioritized?: boolean;
   claimClassification?: FindingClaimClassification;
+  preDemotionSeverity?: FindingSeverity;
+  severityDemoted?: boolean;
+  demotionReason?: string;
 };
 
 type RetrievalContextForPrompt = {
@@ -2982,6 +2986,31 @@ export function createReviewHandler(deps: {
           );
         }
 
+        // Severity demotion: cap primarily-external findings at medium (SEV-01, SEV-02)
+        const demotedFindings = demoteExternalClaimSeverities(
+          (enforcedFindings as unknown as DemotableFinding[]).map((f) => ({
+            ...f,
+            claimClassification: claimClassificationMap.get((f as unknown as { commentId: number }).commentId),
+          })),
+          logger,
+        );
+        const demotionMap = new Map(
+          demotedFindings
+            .filter((f) => f.severityDemoted)
+            .map((f) => [f.commentId, {
+              severity: f.severity as FindingSeverity,
+              preDemotionSeverity: f.preDemotionSeverity!,
+              demotionReason: f.demotionReason!,
+            }]),
+        );
+        const demotionCount = demotedFindings.filter((f) => f.severityDemoted).length;
+        if (demotionCount > 0) {
+          logger.info(
+            { ...baseLog, demotedFindings: demotionCount },
+            "Severity demotion applied to external-claim findings",
+          );
+        }
+
         const suppressionMatchCounts = new Map<string, number>();
         // Enforcement preserves all ExtractedFinding fields; cast back to the
         // intersection so downstream code can access commentId, startLine, etc.
@@ -3041,13 +3070,21 @@ export function createReviewHandler(deps: {
               })
             : baseConfidence;
 
+          // Apply severity demotion for primarily-external findings (SEV-01, SEV-02)
+          const demotion = demotionMap.get(finding.commentId);
+          const effectiveSeverity = demotion ? demotion.severity : finding.severity;
+
           return {
             ...finding,
+            severity: effectiveSeverity,
             category,
             suppressed,
             confidence,
             suppressionPattern,
             claimClassification: claimClassificationMap.get(finding.commentId),
+            preDemotionSeverity: demotion?.preDemotionSeverity,
+            severityDemoted: demotion ? true : undefined,
+            demotionReason: demotion?.demotionReason,
           };
         });
 
