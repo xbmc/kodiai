@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Completed 121-03-PLAN.md
-last_updated: "2026-03-03T18:23:40.127Z"
+stopped_at: Phase 125 context gathered
+last_updated: "2026-03-04T01:01:14.837Z"
 progress:
   total_phases: 86
   completed_phases: 81
@@ -86,6 +86,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-03
-**Stopped At:** Phase 121 complete, ready to plan Phase 125
-**Resume file:** None
+**Last session:** 2026-03-04T01:01:14.817Z
+**Stopped At:** Phase 125 context gathered
+**Resume file:** .planning/phases/125-voice-preserving-updates/125-CONTEXT.md
