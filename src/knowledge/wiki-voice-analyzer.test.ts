@@ -1,7 +1,8 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { selectExemplarSections, extractPageStyle } from "./wiki-voice-analyzer.ts";
+import { selectExemplarSections, extractPageStyle, buildVoicePreservingPrompt } from "./wiki-voice-analyzer.ts";
 import type { WikiPageRecord } from "./wiki-types.ts";
-import type { VoiceAnalyzerOptions } from "./wiki-voice-types.ts";
+import type { VoiceAnalyzerOptions, PageStyleDescription } from "./wiki-voice-types.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
 
 function makeChunk(overrides: Partial<WikiPageRecord> = {}): WikiPageRecord {
   return {
@@ -177,6 +178,101 @@ describe("extractPageStyle", () => {
     }
 
     // Verify taskRouter.resolve was called with voice.extract
-    expect(opts.taskRouter.resolve).toHaveBeenCalledWith("voice.extract");
+    expect(opts.taskRouter.resolve).toHaveBeenCalledWith(TASK_TYPES.VOICE_EXTRACT);
+  });
+});
+
+describe("buildVoicePreservingPrompt", () => {
+  const styleDescription: PageStyleDescription = {
+    pageTitle: "Test Page",
+    styleText: "Informal tone, uses second person ('you'). Bullet lists preferred.",
+    formattingElements: ["bullet lists", "bold emphasis"],
+    mediaWikiMarkup: ["{{Note|...}}"],
+    tokenCount: 100,
+  };
+
+  it("includes style description text in the prompt", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Original content here.",
+      sectionHeading: "Setup",
+      diffEvidence: "API renamed from v1 to v2.",
+    });
+    expect(prompt).toContain("Informal tone");
+    expect(prompt).toContain("## Page Style");
+  });
+
+  it("includes exemplar section content as few-shot examples", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [
+        { sectionHeading: "Example Section", chunkText: "Example content here.", chunkIndex: 0 },
+      ],
+      originalSection: "Original content.",
+      sectionHeading: "Setup",
+      diffEvidence: "Changed API.",
+    });
+    expect(prompt).toContain("## Style Examples");
+    expect(prompt).toContain("Example Section");
+    expect(prompt).toContain("Example content here.");
+  });
+
+  it("includes the original section content", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "The original section text to update.",
+      sectionHeading: "Configuration",
+      diffEvidence: "Changed config format.",
+    });
+    expect(prompt).toContain("## Section to Update");
+    expect(prompt).toContain("The original section text to update.");
+  });
+
+  it("includes explicit MediaWiki preservation instruction", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: null,
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("PRESERVE all MediaWiki templates");
+    expect(prompt).toContain("{{Note|...}}");
+  });
+
+  it("includes constraint about only using existing formatting elements", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("ONLY use formatting elements listed in the style description");
+  });
+
+  it("includes constraint to stay within existing section boundaries", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("Do NOT add, remove, or reorder sections");
+  });
+
+  it("includes diff evidence in the prompt", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "The API endpoint was renamed from /v1/users to /v2/users.",
+    });
+    expect(prompt).toContain("## What Changed");
+    expect(prompt).toContain("renamed from /v1/users to /v2/users");
   });
 });

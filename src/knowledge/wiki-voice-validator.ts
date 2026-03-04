@@ -13,6 +13,7 @@ import type {
   VoiceMatchScores,
 } from "./wiki-voice-types.ts";
 import { generateWithFallback } from "../llm/generate.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
 
 /** Default threshold: average score must be >= 3.5 to pass voice validation. */
 export const VOICE_MATCH_THRESHOLD = 3.5;
@@ -153,11 +154,10 @@ export async function validateVoiceMatch(
     styleDescription: opts.styleDescription,
   });
 
-  // Use voice.validate task type — registered in task-types.ts by Plan 03
-  const resolved = opts.taskRouter.resolve("voice.validate");
+  const resolved = opts.taskRouter.resolve(TASK_TYPES.VOICE_VALIDATE);
 
   const result = await generateWithFallback({
-    taskType: "voice.validate",
+    taskType: TASK_TYPES.VOICE_VALIDATE,
     resolved,
     prompt,
     logger,

@@ -7,13 +7,17 @@
  */
 
 import type { Logger } from "pino";
-import type { WikiPageRecord } from "./wiki-types.ts";
+import type { WikiPageRecord, WikiPageStore } from "./wiki-types.ts";
 import type {
   PageStyleDescription,
   StyleExemplar,
   VoiceAnalyzerOptions,
 } from "./wiki-voice-types.ts";
+import type { VoiceValidationResult } from "./wiki-voice-types.ts";
 import { generateWithFallback } from "../llm/generate.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
+import { generateWithVoicePreservation } from "./wiki-voice-validator.ts";
+import type { VoicePreservedSuggestion } from "./wiki-voice-validator.ts";
 
 /** Maximum token budget for style extraction input. */
 const STYLE_EXTRACTION_TOKEN_BUDGET = 3000;
@@ -209,11 +213,10 @@ export async function extractPageStyle(
   const contentText = contentParts.join("\n\n---\n\n");
   const prompt = buildStyleExtractionPrompt(pageTitle, contentText);
 
-  // Use voice.extract task type — registered in task-types.ts by Plan 03
-  const resolved = opts.taskRouter.resolve("voice.extract");
+  const resolved = opts.taskRouter.resolve(TASK_TYPES.VOICE_EXTRACT);
 
   const result = await generateWithFallback({
-    taskType: "voice.extract",
+    taskType: TASK_TYPES.VOICE_EXTRACT,
     resolved,
     prompt,
     logger,
@@ -242,5 +245,167 @@ export async function extractPageStyle(
     formattingElements,
     mediaWikiMarkup,
     tokenCount,
+  };
+}
+
+// ── Voice-Preserving Generation Pipeline ──────────────────────────────
+
+/** Section input for the voice-preserving pipeline. */
+export type SectionInput = {
+  sectionHeading: string | null;
+  chunkText: string;
+  diffEvidence: string;
+};
+
+/**
+ * Build a voice-preserving generation prompt that combines style description,
+ * exemplar sections, original content, and diff evidence.
+ *
+ * The prompt enforces all CONTEXT.md constraints:
+ * - Only use formatting elements the page already uses
+ * - Preserve MediaWiki templates verbatim
+ * - Stay within existing section boundaries
+ * - Output complete section rewrite (not diff)
+ */
+export function buildVoicePreservingPrompt(opts: {
+  styleDescription: PageStyleDescription;
+  exemplarSections: StyleExemplar[];
+  originalSection: string;
+  sectionHeading: string | null;
+  diffEvidence: string;
+}): string {
+  const exemplarText = opts.exemplarSections
+    .map((s) => {
+      const heading = s.sectionHeading ? `### ${s.sectionHeading}` : "### (Lead section)";
+      return `${heading}\n${s.chunkText}`;
+    })
+    .join("\n\n");
+
+  const mediaWikiNote =
+    opts.styleDescription.mediaWikiMarkup.length > 0
+      ? `\nMediaWiki templates found on this page: ${opts.styleDescription.mediaWikiMarkup.join(", ")}\nThese MUST be preserved exactly as-is.`
+      : "";
+
+  return `You are updating a wiki page section. Your output MUST match the existing page's voice, tone, and formatting.
+
+## Page Style
+${opts.styleDescription.styleText}
+${mediaWikiNote}
+
+## Style Examples (from this page)
+${exemplarText}
+
+## Section to Update
+${opts.sectionHeading ? `### ${opts.sectionHeading}` : "### (Lead section)"}
+${opts.originalSection}
+
+## What Changed (evidence)
+${opts.diffEvidence}
+
+## Constraints
+- ONLY use formatting elements listed in the style description
+- PRESERVE all MediaWiki templates ({{...}}) and markup EXACTLY as they appear
+- Do NOT add code blocks, tables, or other formatting not present in the original
+- Do NOT add, remove, or reorder sections — update content within the existing section only
+- Match the specific section's conventions (list style, heading level, emphasis patterns)
+- Update factual content: fix version numbers, API names, deprecated references to current values
+- Gently normalize obvious formatting inconsistencies (capitalization, spacing) while keeping overall voice
+- Output the COMPLETE updated section, not a diff`;
+}
+
+/**
+ * Create a voice-preserving pipeline that processes stale wiki pages.
+ *
+ * The pipeline:
+ * 1. Extracts page style once per page (LLM call)
+ * 2. Selects exemplar sections once per page (deterministic)
+ * 3. For each section: builds prompt -> generates -> validates -> retries if needed
+ *
+ * Returns a processPage function that Phase 123 (Update Generation) calls.
+ */
+export function createVoicePreservingPipeline(opts: {
+  taskRouter: import("../llm/task-router.ts").TaskRouter;
+  costTracker?: import("../llm/cost-tracker.ts").CostTracker;
+  logger: Logger;
+  repo?: string;
+  wikiPageStore: import("./wiki-types.ts").WikiPageStore;
+  generateSectionUpdate: (prompt: string) => Promise<string>;
+}): {
+  processPage: (
+    pageId: number,
+    sections: SectionInput[],
+  ) => Promise<import("./wiki-voice-types.ts").VoicePreservedUpdate[]>;
+} {
+  const logger = opts.logger.child({ module: "wiki-voice-pipeline" });
+
+  return {
+    async processPage(pageId, sections) {
+      // Step 1: Fetch all page chunks
+      const pageChunks = await opts.wikiPageStore.getPageChunks(pageId);
+      if (pageChunks.length === 0) {
+        logger.warn({ pageId }, "No chunks found for page, skipping voice preservation");
+        return [];
+      }
+
+      const pageTitle = pageChunks[0]!.pageTitle;
+
+      // Step 2: Extract style once per page
+      const styleDescription = await extractPageStyle(pageChunks, {
+        taskRouter: opts.taskRouter,
+        costTracker: opts.costTracker,
+        logger: opts.logger,
+        repo: opts.repo,
+      });
+
+      // Step 3: Select exemplar sections once per page
+      const exemplarSections = selectExemplarSections(pageChunks);
+
+      // Step 4: Process each section
+      const results: import("./wiki-voice-types.ts").VoicePreservedUpdate[] = [];
+      let voiceMismatches = 0;
+
+      for (const section of sections) {
+        const prompt = buildVoicePreservingPrompt({
+          styleDescription,
+          exemplarSections,
+          originalSection: section.chunkText,
+          sectionHeading: section.sectionHeading,
+          diffEvidence: section.diffEvidence,
+        });
+
+        const preserved = await generateWithVoicePreservation({
+          generateFn: () => opts.generateSectionUpdate(prompt),
+          originalSection: section.chunkText,
+          styleDescription,
+          buildPromptWithFeedback: async (feedback: string) => {
+            const feedbackPrompt = `${prompt}\n\n## Voice Match Feedback (from previous attempt)\n${feedback}\n\nPlease regenerate the section update, paying special attention to the feedback above.`;
+            return opts.generateSectionUpdate(feedbackPrompt);
+          },
+          taskRouter: opts.taskRouter,
+          costTracker: opts.costTracker,
+          logger: opts.logger,
+          repo: opts.repo,
+        });
+
+        if (preserved.voiceMismatchWarning) voiceMismatches++;
+
+        results.push({
+          pageId,
+          pageTitle,
+          sectionHeading: section.sectionHeading,
+          originalContent: section.chunkText,
+          suggestion: preserved.suggestion,
+          voiceMismatchWarning: preserved.voiceMismatchWarning,
+          validationScores: preserved.validationResult,
+        });
+      }
+
+      logger.info(
+        { pageId, pageTitle, sectionsProcessed: sections.length, voiceMismatches },
+        "Voice-preserving page processing complete",
+      );
+
+      return results;
+    },
   };
 }

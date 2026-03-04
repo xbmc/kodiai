@@ -21,6 +21,10 @@ export const TASK_TYPES = {
   STALENESS_EVIDENCE: "staleness.evidence",
   /** Troubleshooting guidance synthesis (non-agentic, Phase 111). */
   TROUBLESHOOTING_SYNTHESIS: "troubleshooting.synthesis",
+  /** Voice/style extraction from wiki page (non-agentic, Phase 125). */
+  VOICE_EXTRACT: "voice.extract",
+  /** Voice match validation for generated suggestions (non-agentic, Phase 125). */
+  VOICE_VALIDATE: "voice.validate",
 } as const;
 
 /** Union type of all valid task type strings. */
