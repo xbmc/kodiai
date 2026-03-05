@@ -227,8 +227,24 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
 
         const branchName = buildDeterministicBranchName(input);
         const requestSummary = summarizeWriteRequest(input.request);
+        // Derive prefix from request content (same heuristic as mention handler)
+        const lower = requestSummary.toLowerCase();
+        let prefix: string;
+        if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
+          prefix = "fix";
+        } else if (/\brefactor\b/.test(lower)) {
+          prefix = "refactor";
+        } else {
+          prefix = "feat";
+        }
+        const commitSubject = `${prefix}: ${requestSummary}`;
+        const maxSubjectLen = 72;
+        const truncatedSubject = commitSubject.length <= maxSubjectLen
+          ? commitSubject
+          : `${commitSubject.slice(0, maxSubjectLen - 3).trimEnd()}...`;
+
         const commitMessage = [
-          `kodiai: apply slack write request`,
+          truncatedSubject,
           "",
           `source: slack channel ${input.channel} thread ${input.threadTs}`,
           `request: ${requestSummary}`,
