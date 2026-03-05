@@ -4,6 +4,10 @@ import {
   VOICE_MATCH_THRESHOLD,
   validateVoiceMatch,
   generateWithVoicePreservation,
+  checkTemplatePreservation,
+  checkHeadingLevels,
+  checkFormattingNovelty,
+  checkSectionLength,
 } from "./wiki-voice-validator.ts";
 import type { PageStyleDescription, VoiceAnalyzerOptions } from "./wiki-voice-types.ts";
 
@@ -191,5 +195,104 @@ describe("generateWithVoicePreservation", () => {
 
     // generateFn should have been called
     expect(generateFn).toHaveBeenCalled();
+  });
+});
+
+describe("checkTemplatePreservation", () => {
+  it("returns passed=true when all templates are preserved", () => {
+    const original = "Use {{Note|This is important}} and {{Warning|Be careful}}.";
+    const suggestion = "Use {{Note|Updated text}} and {{Warning|Be more careful}}.";
+    const result = checkTemplatePreservation(original, suggestion);
+    expect(result.passed).toBe(true);
+    expect(result.missingTemplates).toEqual([]);
+  });
+
+  it("returns passed=false with missing templates listed", () => {
+    const original = "Use {{Note|This is important}} and {{Warning|Be careful}}.";
+    const suggestion = "Use {{Note|Updated text}} but warning was removed.";
+    const result = checkTemplatePreservation(original, suggestion);
+    expect(result.passed).toBe(false);
+    expect(result.missingTemplates).toContain("{{Warning}}");
+  });
+
+  it("ignores template parameter differences", () => {
+    const original = "{{Note|old text with details}}";
+    const suggestion = "{{Note|completely new text}}";
+    const result = checkTemplatePreservation(original, suggestion);
+    expect(result.passed).toBe(true);
+  });
+
+  it("handles text with no templates", () => {
+    const original = "Plain text with no templates.";
+    const suggestion = "Updated plain text.";
+    const result = checkTemplatePreservation(original, suggestion);
+    expect(result.passed).toBe(true);
+    expect(result.missingTemplates).toEqual([]);
+  });
+});
+
+describe("checkHeadingLevels", () => {
+  it("returns passed=true when heading levels match", () => {
+    const original = "== Overview ==\nContent\n=== Details ===\nMore content";
+    const suggestion = "== Overview ==\nUpdated content\n=== Details ===\nUpdated more";
+    const result = checkHeadingLevels(original, suggestion);
+    expect(result.passed).toBe(true);
+    expect(result.mismatches).toEqual([]);
+  });
+
+  it("returns passed=false when heading levels differ", () => {
+    const original = "== Overview ==\nContent";
+    const suggestion = "### Overview\nContent";
+    const result = checkHeadingLevels(original, suggestion);
+    expect(result.passed).toBe(false);
+    expect(result.mismatches.length).toBeGreaterThan(0);
+  });
+
+  it("handles markdown headings", () => {
+    const original = "## Overview\nContent\n### Details\nMore";
+    const suggestion = "## Overview\nUpdated\n### Details\nUpdated more";
+    const result = checkHeadingLevels(original, suggestion);
+    expect(result.passed).toBe(true);
+  });
+});
+
+describe("checkFormattingNovelty", () => {
+  it("detects novel code blocks when original has none", () => {
+    const original = "Plain text content.";
+    const suggestion = "Content with ```code blocks``` added.";
+    const result = checkFormattingNovelty(original, suggestion);
+    expect(result.novelElements.length).toBeGreaterThan(0);
+    expect(result.novelElements.some(e => /code block/i.test(e))).toBe(true);
+  });
+
+  it("detects novel tables when original has none", () => {
+    const original = "Plain text content.";
+    const suggestion = "Content with\n| Column | Column |\n| --- | --- |";
+    const result = checkFormattingNovelty(original, suggestion);
+    expect(result.novelElements.some(e => /table/i.test(e))).toBe(true);
+  });
+
+  it("returns empty when no novel formatting is added", () => {
+    const original = "Text with **bold** and ```code```.";
+    const suggestion = "Updated text with **bold** and ```code```.";
+    const result = checkFormattingNovelty(original, suggestion);
+    expect(result.novelElements).toEqual([]);
+  });
+});
+
+describe("checkSectionLength", () => {
+  it("returns advisory when suggestion exceeds 150% of original", () => {
+    const original = "Short content."; // 14 chars
+    const suggestion = "This is a much longer version of the content that exceeds the original by more than 150%."; // >21 chars
+    const result = checkSectionLength(original, suggestion);
+    expect(result.advisory).not.toBeNull();
+    expect(result.advisory).toContain("splitting");
+  });
+
+  it("returns null advisory when within 150%", () => {
+    const original = "Some content here that is reasonable in length.";
+    const suggestion = "Some updated content here that is reasonable.";
+    const result = checkSectionLength(original, suggestion);
+    expect(result.advisory).toBeNull();
   });
 });
