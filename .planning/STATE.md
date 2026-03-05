@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: planning
-stopped_at: Phase 124 context gathered
-last_updated: "2026-03-05T16:29:54.227Z"
+stopped_at: Phase 125 context updated
+last_updated: "2026-03-05T20:22:15.781Z"
 last_activity: 2026-03-05 -- Completed Phase 122 (Enhanced Staleness)
 progress:
   total_phases: 6
@@ -93,6 +93,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T16:13:28.108Z
-**Stopped At:** Phase 124 context gathered
-**Resume file:** .planning/phases/124-publishing/124-CONTEXT.md
+**Last session:** 2026-03-05T20:22:15.774Z
+**Stopped At:** Phase 125 context updated
+**Resume file:** .planning/phases/125-voice-preserving-updates/125-CONTEXT.md
