@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Completed 122-02-PLAN.md
-last_updated: "2026-03-05T02:31:19.105Z"
+stopped_at: Phase 123 context gathered
+last_updated: "2026-03-05T02:46:20.422Z"
 progress:
-  total_phases: 87
+  total_phases: 88
   completed_phases: 83
   total_plans: 205
   completed_plans: 212
@@ -91,6 +91,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05
-**Stopped At:** Phase 122 complete, ready to plan Phase 123
-**Resume file:** None
+**Last session:** 2026-03-05T02:46:20.419Z
+**Stopped At:** Phase 123 context gathered
+**Resume file:** .planning/phases/123-update-generation/123-CONTEXT.md
