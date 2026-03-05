@@ -18,7 +18,9 @@ import type {
   WikiPageCandidate,
   StalePage,
   WikiStalenessRunState,
+  MergedPR,
 } from "./wiki-staleness-types.ts";
+import { parseIssueReferences } from "../lib/issue-reference-parser.ts";
 
 const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 90_000; // 90 seconds
@@ -171,6 +173,136 @@ export function heuristicScore(chunkTexts: string[], changedFilePaths: string[])
     }
   }
   return score;
+}
+
+// ── PR fetching & evidence storage ───────────────────────────────────
+
+const MAX_PR_PAGES = 10;
+
+/**
+ * Fetch merged PRs from GitHub with file details (including patch hunks).
+ * Paginates pulls.list (state:closed) filtered by merged_at >= since.
+ * Enriches each PR with file details via pulls.listFiles.
+ */
+async function fetchMergedPRs(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  since: Date,
+  logger: Logger,
+): Promise<MergedPR[]> {
+  const merged: MergedPR[] = [];
+
+  for (let page = 1; page <= MAX_PR_PAGES; page++) {
+    let prs;
+    try {
+      const response = await octokit.rest.pulls.list({
+        owner,
+        repo,
+        state: "closed",
+        sort: "updated",
+        direction: "desc",
+        per_page: 100,
+        page,
+      });
+      prs = response.data;
+    } catch (err) {
+      logger.error({ err, owner, repo, page }, "Failed to list PRs for staleness scan");
+      break;
+    }
+
+    if (prs.length === 0) break;
+
+    // Filter to merged PRs within the since window
+    const relevantPRs = prs.filter(
+      (pr) => pr.merged_at && new Date(pr.merged_at) >= since,
+    );
+
+    for (const pr of relevantPRs) {
+      try {
+        const filesResponse = await octokit.rest.pulls.listFiles({
+          owner,
+          repo,
+          pull_number: pr.number,
+          per_page: 100,
+        });
+
+        merged.push({
+          number: pr.number,
+          title: pr.title,
+          body: pr.body ?? null,
+          author: pr.user?.login ?? "unknown",
+          mergedAt: new Date(pr.merged_at!),
+          files: filesResponse.data.map((f) => ({
+            filename: f.filename,
+            patch: f.patch,
+            additions: f.additions,
+            deletions: f.deletions,
+          })),
+        });
+      } catch (err) {
+        // Fail-open: skip PRs where file details can't be fetched
+        logger.warn({ err, prNumber: pr.number }, "Failed to get PR file details (skipping)");
+      }
+    }
+
+    // Stop pagination early when oldest PR on page has updated_at before since
+    const oldestPR = prs[prs.length - 1];
+    if (oldestPR && new Date(oldestPR.updated_at) < since) break;
+  }
+
+  logger.debug({ prCount: merged.length, since: since.toISOString() }, "Fetched merged PRs");
+  return merged;
+}
+
+/**
+ * Store PR evidence rows for wiki staleness grounding.
+ * Uses ON CONFLICT upsert for idempotent inserts per (pr_number, file_path, matched_page_id).
+ */
+async function storePREvidence(
+  sql: Sql,
+  pr: MergedPR,
+  matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }>,
+  logger: Logger,
+): Promise<void> {
+  // Extract issue references from PR body
+  const refs = parseIssueReferences({
+    prBody: pr.body ?? "",
+    commitMessages: [],
+  });
+  const issueRefsJson = JSON.stringify(
+    refs.map((r) => ({
+      issueNumber: r.issueNumber,
+      keyword: r.keyword,
+      crossRepo: r.crossRepo,
+    })),
+  );
+
+  for (const match of matches) {
+    try {
+      await sql`
+        INSERT INTO wiki_pr_evidence (
+          pr_number, pr_title, pr_description, pr_author, merged_at,
+          file_path, patch, issue_references,
+          matched_page_id, matched_page_title, heuristic_score
+        ) VALUES (
+          ${pr.number}, ${pr.title}, ${pr.body}, ${pr.author}, ${pr.mergedAt},
+          ${match.filePath}, ${match.patch}, ${issueRefsJson}::jsonb,
+          ${match.pageId}, ${match.pageTitle}, ${match.score}
+        )
+        ON CONFLICT (pr_number, file_path, matched_page_id) DO UPDATE SET
+          patch = EXCLUDED.patch,
+          heuristic_score = EXCLUDED.heuristic_score,
+          issue_references = EXCLUDED.issue_references
+      `;
+    } catch (err) {
+      // Fail-open: log error but don't throw (non-critical storage)
+      logger.error(
+        { err, prNumber: pr.number, filePath: match.filePath, pageId: match.pageId },
+        "Failed to store PR evidence row (non-fatal)",
+      );
+    }
+  }
 }
 
 // ── Heuristic pass ───────────────────────────────────────────────────
