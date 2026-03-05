@@ -96,3 +96,38 @@ export type WikiStalenessScheduler = {
   stop(): void;
   runScan(): Promise<WikiStalenessScanResult>;
 };
+
+/** A merged PR with enriched file details including patches. */
+export type MergedPR = {
+  number: number;
+  title: string;
+  body: string | null;
+  author: string;
+  mergedAt: Date;
+  files: Array<{
+    filename: string;
+    patch: string | undefined;
+    additions: number;
+    deletions: number;
+  }>;
+};
+
+/** A stored PR evidence row for wiki staleness grounding. */
+export type PREvidence = {
+  id?: number;
+  prNumber: number;
+  prTitle: string;
+  prDescription: string | null;
+  prAuthor: string;
+  mergedAt: Date;
+  filePath: string;
+  patch: string;
+  issueReferences: Array<{
+    issueNumber: number;
+    keyword: string;
+    crossRepo: string | null;
+  }>;
+  matchedPageId: number | null;
+  matchedPageTitle: string | null;
+  heuristicScore: number;
+};
