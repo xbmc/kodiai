@@ -5,7 +5,7 @@ milestone_name: Wiki Content Updates
 status: completed
 stopped_at: Completed quick-20
 last_updated: "2026-03-05T22:31:14.000Z"
-last_activity: 2026-03-05 - Completed quick task 20: improve commit message quality with conventional-commit format
+last_activity: 2026-03-05 - Completed quick task 20: Improve commit message quality guidelines to write descriptive, accurate messages
 progress:
   total_phases: 6
   completed_phases: 6
