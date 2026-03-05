@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Completed 125-01-PLAN.md
-last_updated: "2026-03-05T20:48:23.643Z"
+stopped_at: Completed quick-18
+last_updated: "2026-03-05T22:19:36.902Z"
 last_activity: 2026-03-05 -- Completed 125-02 (Formatting Freedom & Post-Generation Validation)
 progress:
   total_phases: 6
@@ -64,6 +64,7 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 125]: Formatting novelty is advisory-only: novel formatting encouraged, flagged but never blocks
 - [Phase 125]: Generation prompt reversed from "restrict to existing formatting" to "improve formatting freely"
 - [Phase 125]: Bun.hash for content-hash cache invalidation; spread sampling first/middle/last 2 chunks; extractWikiConventions scans all chunks
+- [Phase quick-18]: PR title prefix detection uses keyword matching on issue title content (feat/fix/refactor)
 
 ### Key Constraints (Carry-Forward)
 
@@ -94,9 +95,10 @@ None.
 |---|-------------|------|--------|-----------|
 | 16 | Parse Windows package lists and harden pipeline against all-null enrichment | 2026-03-03 | cd571d7945 | [16-parse-windows-package-lists-and-harden-p](./quick/16-parse-windows-package-lists-and-harden-p/) |
 | 17 | Add patch-to-PR feature: detect "create a patch" as write intent on PR surfaces | 2026-03-03 | b0d41ac420 | [17-add-patch-to-pr-feature-when-asked-to-cr](./quick/17-add-patch-to-pr-feature-when-asked-to-cr/) |
+| 18 | Improve PR title and description generation for write-mode PRs | 2026-03-05 | c470d79a89 | [18-improve-pr-title-and-description-generat](./quick/18-improve-pr-title-and-description-generat/) |
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T20:48:23.640Z
-**Stopped At:** Completed 125-01-PLAN.md
+**Last session:** 2026-03-05T22:19:36.900Z
+**Stopped At:** Completed quick-18
 **Resume file:** None
