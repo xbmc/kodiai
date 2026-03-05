@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Completed quick-19
+stopped_at: Completed quick-20
 last_updated: "2026-03-05T22:31:14.000Z"
-last_activity: 2026-03-05 - Completed quick task 19: add anti-hallucination guardrails to write-mode prompt and diff scanner
+last_activity: 2026-03-05 - Completed quick task 20: improve commit message quality with conventional-commit format
 progress:
   total_phases: 6
   completed_phases: 6
@@ -37,6 +37,7 @@ Progress: [████████████████████] 212/209
 ### Roadmap Evolution
 
 - Phase 125 added: Voice-preserving updates — preserve existing formatting, voice, tone, and style when generating wiki page update suggestions
+- Phase 126 added: Global Anti-Hallucination Guardrails — system-wide framework for detecting and preventing fabricated content across all output surfaces
 
 ### Decisions
 
@@ -97,9 +98,10 @@ None.
 | 17 | Add patch-to-PR feature: detect "create a patch" as write intent on PR surfaces | 2026-03-03 | b0d41ac420 | [17-add-patch-to-pr-feature-when-asked-to-cr](./quick/17-add-patch-to-pr-feature-when-asked-to-cr/) |
 | 18 | Improve PR title and description generation for write-mode PRs | 2026-03-05 | c470d79a89 | [18-improve-pr-title-and-description-generat](./quick/18-improve-pr-title-and-description-generat/) |
 | 19 | Add anti-hallucination guardrails to write-mode prompt and diff scanner | 2026-03-05 | e4b9f22d7b | [19-add-anti-hallucination-guardrails-to-wri](./quick/19-add-anti-hallucination-guardrails-to-wri/) |
+| 20 | Improve commit message quality with conventional-commit format | 2026-03-05 | e9e63be6f6 | [20-improve-commit-message-quality-guideline](./quick/20-improve-commit-message-quality-guideline/) |
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T22:31:14.000Z
-**Stopped At:** Completed quick-19
+**Last session:** 2026-03-05T22:56:12.000Z
+**Stopped At:** Completed quick-20
 **Resume file:** None
