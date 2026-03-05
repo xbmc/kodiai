@@ -4,12 +4,12 @@ milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
 stopped_at: Phase 123 context gathered
-last_updated: "2026-03-05T02:46:20.422Z"
+last_updated: "2026-03-05T03:02:49.562Z"
 progress:
   total_phases: 88
-  completed_phases: 83
-  total_plans: 205
-  completed_plans: 212
+  completed_phases: 84
+  total_plans: 208
+  completed_plans: 215
 ---
 
 # Project State
