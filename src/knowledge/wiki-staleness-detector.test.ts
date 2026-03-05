@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { heuristicScore, createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
+import { heuristicScore, DOMAIN_STOPWORDS, createWikiStalenessDetector } from "./wiki-staleness-detector.ts";
 import type { WikiStalenessDetectorOptions } from "./wiki-staleness-types.ts";
 
 describe("heuristicScore", () => {
@@ -9,7 +9,8 @@ describe("heuristicScore", () => {
   });
 
   it("scores positively when file path tokens appear in chunk text", () => {
-    const score = heuristicScore(["audio playback settings"], ["src/audio/player.ts"]);
+    // "playback" and "settings" are non-stopword tokens that overlap
+    const score = heuristicScore(["playback settings configuration"], ["src/playback/settings.ts"]);
     expect(score).toBeGreaterThan(0);
   });
 
@@ -20,16 +21,58 @@ describe("heuristicScore", () => {
 
   it("scores multiple overlapping tokens", () => {
     const score = heuristicScore(
-      ["video player rendering pipeline"],
-      ["src/video/player/rendering.ts"],
+      ["rendering pipeline codec transformation"],
+      ["src/rendering/pipeline/codec.ts"],
     );
-    expect(score).toBeGreaterThanOrEqual(2); // "video", "player", "rendering" all match
+    expect(score).toBeGreaterThanOrEqual(2); // "rendering", "pipeline", "codec" all match
   });
 
   it("handles empty inputs gracefully", () => {
     expect(heuristicScore([], ["src/foo.ts"])).toBe(0);
     expect(heuristicScore(["some text"], [])).toBe(0);
     expect(heuristicScore([], [])).toBe(0);
+  });
+
+  it("filters domain stopwords from scoring", () => {
+    // "player", "video", "kodi" are all stopwords -- should NOT contribute to score
+    const score = heuristicScore(
+      ["player video kodi addon configuration"],
+      ["src/player/video/kodi.ts"],
+    );
+    expect(score).toBe(0);
+  });
+
+  it("gives heading tokens 3x weight", () => {
+    // "playercorefactory" in heading should score 3, in body text would score 1
+    const headingScore = heuristicScore(
+      ["== PlayerCoreFactory ==\nSome body text about internals"],
+      ["src/playercorefactory.ts"],
+    );
+    const bodyScore = heuristicScore(
+      ["playercorefactory is used for internal init"],
+      ["src/playercorefactory.ts"],
+    );
+    expect(headingScore).toBe(3); // heading weight
+    expect(bodyScore).toBe(1);   // regular weight
+  });
+
+  it("handles mixed headings and body with stopwords", () => {
+    // "codec" in heading gets 3x, "player" in heading is stopword (filtered)
+    const score = heuristicScore(
+      ["== Player Codec Settings ==\nDetails about codec configuration"],
+      ["src/player/codec/settings.ts"],
+    );
+    // "player" -> stopword, "codec" -> heading token (3x), "settings" -> heading token (3x)
+    expect(score).toBe(6);
+  });
+
+  it("exports DOMAIN_STOPWORDS set", () => {
+    expect(DOMAIN_STOPWORDS).toBeInstanceOf(Set);
+    expect(DOMAIN_STOPWORDS.has("player")).toBe(true);
+    expect(DOMAIN_STOPWORDS.has("video")).toBe(true);
+    expect(DOMAIN_STOPWORDS.has("kodi")).toBe(true);
+    expect(DOMAIN_STOPWORDS.has("addon")).toBe(true);
+    expect(DOMAIN_STOPWORDS.has("tests")).toBe(true);
   });
 });
 
