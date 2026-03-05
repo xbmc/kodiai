@@ -99,10 +99,11 @@ describe("createWikiStalenessDetector", () => {
           defaultBranch: "master",
         })),
         getInstallationOctokit: mock(async () => ({
-          paginate: mock(async () => []),
-          repos: {
-            listCommits: {},
-            getCommit: mock(async () => ({ data: { files: [] } })),
+          rest: {
+            pulls: {
+              list: mock(async () => ({ data: [] })),
+              listFiles: mock(async () => ({ data: [] })),
+            },
           },
         })),
         getAppSlug: mock(() => "test-app"),
@@ -154,7 +155,7 @@ describe("createWikiStalenessDetector", () => {
     expect(result.skipReason).toBe("empty_wiki_store");
   });
 
-  it("does not post to Slack when no commits found in window", async () => {
+  it("does not post to Slack when no merged PRs found in window", async () => {
     const mockSql = mock(() => Promise.resolve([])) as any;
     const opts = makeMockOpts({
       sql: mockSql,
