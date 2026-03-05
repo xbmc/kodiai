@@ -128,6 +128,14 @@ export function scanLinesForFabricatedContent(addedLines: string[]): string[] {
     let match: RegExpExecArray | null;
     while ((match = hexPattern.exec(line)) !== null) {
       const hex = match[0];
+      // Check for all-same-character hex strings (e.g. "aaaaaa...") first
+      // since these are a subset of repeating patterns
+      if (hex.length >= 32 && new Set(hex.toLowerCase()).size <= 2) {
+        warnings.push(
+          `Suspicious low-entropy hex pattern in added line: \`${hex.substring(0, 40)}...\``,
+        );
+        break;
+      }
       // Check for 16-char substring repetition
       if (hex.length >= 32) {
         const half = hex.substring(0, 16);
@@ -137,13 +145,6 @@ export function scanLinesForFabricatedContent(addedLines: string[]): string[] {
           );
           break;
         }
-      }
-      // Check for all-same-character hex strings (e.g. "aaaaaa...")
-      if (hex.length >= 32 && new Set(hex.toLowerCase()).size <= 2) {
-        warnings.push(
-          `Suspicious low-entropy hex pattern in added line: \`${hex.substring(0, 40)}...\``,
-        );
-        break;
       }
     }
     // Reset lastIndex for next line

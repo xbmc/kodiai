@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { createMentionHandler } from "./mention.ts";
+import { createMentionHandler, scanLinesForFabricatedContent } from "./mention.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -7033,5 +7033,38 @@ describe("createMentionHandler cost warning (CONFIG-11)", () => {
     await workspaceFixture.cleanup();
     expect(recordCalls).toBe(0);
     expect(createCommentCalled).toBe(false);
+  });
+});
+
+describe("scanLinesForFabricatedContent", () => {
+  test("detects repeating hex pattern", () => {
+    const repeating = "d1e5de5edf8d6addd1e5de5edf8d6addd1e5de5edf8d6addd1e5de5edf8d6add";
+    const warnings = scanLinesForFabricatedContent([`+SHA512=${repeating}`]);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0]).toContain("repeating hex");
+  });
+
+  test("detects all-same-char hex", () => {
+    const allA = "a".repeat(64);
+    const warnings = scanLinesForFabricatedContent([`+hash=${allA}`]);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings[0]).toContain("low-entropy");
+  });
+
+  test("ignores legitimate hex strings", () => {
+    const legit = "3a7b9c2e1f4d8a6b5c0e7f2d9a4b8c1e6f3d7a0b5c9e2f8d1a4b7c0e3f6d9a";
+    const warnings = scanLinesForFabricatedContent([`+SHA512=${legit}`]);
+    expect(warnings).toEqual([]);
+  });
+
+  test("ignores short hex strings", () => {
+    const short = "abcdef1234567890";
+    const warnings = scanLinesForFabricatedContent([`+hash=${short}`]);
+    expect(warnings).toEqual([]);
+  });
+
+  test("returns empty for lines without hex", () => {
+    const warnings = scanLinesForFabricatedContent(["+const x = 42;", "+// comment"]);
+    expect(warnings).toEqual([]);
   });
 });
