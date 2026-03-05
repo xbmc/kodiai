@@ -417,6 +417,60 @@ export function createMentionHandler(deps: {
     return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
   }
 
+  function generateCommitSubject(params: {
+    issueTitle: string | null | undefined;
+    requestSummary: string;
+    isFromPr: boolean;
+    ref?: string; // e.g. "#27954" or "PR #42"
+  }): string {
+    const maxLen = 72;
+    const { issueTitle, requestSummary, isFromPr, ref } = params;
+
+    let subject: string;
+
+    if (issueTitle && issueTitle.trim().length > 0) {
+      const cleaned = issueTitle
+        .replace(/^\[.*?\]\s*/g, "")
+        .replace(/\s*#\d+\s*$/, "")
+        .trim();
+
+      const lower = cleaned.toLowerCase();
+      let prefix: string;
+      if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
+        prefix = "fix";
+      } else if (/\brefactor\b/.test(lower)) {
+        prefix = "refactor";
+      } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
+        prefix = "feat";
+      } else {
+        prefix = isFromPr ? "fix" : "feat";
+      }
+      subject = `${prefix}: ${cleaned}`;
+    } else {
+      const defaultPrefix = isFromPr ? "fix" : "feat";
+      subject = `${defaultPrefix}: ${requestSummary}`;
+    }
+
+    // Append ref if provided
+    if (ref) {
+      const withRef = `${subject} (${ref})`;
+      if (withRef.length <= maxLen) {
+        subject = withRef;
+      }
+      // If adding ref would exceed maxLen, truncate subject part to fit
+      else {
+        const refSuffix = ` (${ref})`;
+        const available = maxLen - refSuffix.length - 3; // 3 for "..."
+        if (available > 10) {
+          subject = `${subject.slice(0, available).trimEnd()}...${refSuffix}`;
+        }
+        // else just truncate without ref
+      }
+    }
+
+    return subject.length <= maxLen ? subject : `${subject.slice(0, maxLen - 3).trimEnd()}...`;
+  }
+
   function generatePrBody(params: {
     summary: string;
     issueTitle: string | null;
@@ -1811,8 +1865,15 @@ export function createMentionHandler(deps: {
             try {
               await $`git -C ${workspace.dir} checkout -B pr-head refs/remotes/origin/${headRef}`.quiet();
 
+              const requestSummary = summarizeWriteRequest(writeIntent.request);
+              const commitSubject = generateCommitSubject({
+                issueTitle: mention.issueTitle,
+                requestSummary,
+                isFromPr: true,
+                ref: `PR #${mention.prNumber}`,
+              });
               const commitMessage = [
-                `kodiai: apply requested changes (pr #${mention.prNumber})`,
+                commitSubject,
                 "",
                 idempotencyMarker,
                 `deliveryId: ${event.id}`,
@@ -1940,12 +2001,18 @@ export function createMentionHandler(deps: {
           }
 
           const branchName = writeBranchName;
-          const sourceLabel =
-            mention.prNumber !== undefined
-              ? `PR #${mention.prNumber}`
-              : `issue #${mention.issueNumber}`;
+          const sourceRef = mention.prNumber !== undefined
+            ? `PR #${mention.prNumber}`
+            : `#${mention.issueNumber}`;
+          const commitRequestSummary = summarizeWriteRequest(writeIntent.request);
+          const commitSubject = generateCommitSubject({
+            issueTitle: mention.issueTitle,
+            requestSummary: commitRequestSummary,
+            isFromPr: mention.prNumber !== undefined,
+            ref: sourceRef,
+          });
           const commitMessage = [
-            `kodiai: apply requested changes (${sourceLabel})`,
+            commitSubject,
             "",
             `kodiai-write-output-key: ${writeOutputKey}`,
             `deliveryId: ${event.id}`,
