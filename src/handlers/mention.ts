@@ -116,6 +116,45 @@ const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
 
 /**
+ * Pure function that scans added diff lines for fabricated content patterns.
+ * Detects repeating hex patterns and low-entropy hex strings that are
+ * classic hallucination signatures from LLMs.
+ */
+export function scanLinesForFabricatedContent(addedLines: string[]): string[] {
+  const warnings: string[] = [];
+  const hexPattern = /[0-9a-fA-F]{32,}/g;
+
+  for (const line of addedLines) {
+    let match: RegExpExecArray | null;
+    while ((match = hexPattern.exec(line)) !== null) {
+      const hex = match[0];
+      // Check for 16-char substring repetition
+      if (hex.length >= 32) {
+        const half = hex.substring(0, 16);
+        if (hex.includes(half, 16)) {
+          warnings.push(
+            `Suspicious repeating hex pattern in added line: \`${hex.substring(0, 40)}...\``,
+          );
+          break;
+        }
+      }
+      // Check for all-same-character hex strings (e.g. "aaaaaa...")
+      if (hex.length >= 32 && new Set(hex.toLowerCase()).size <= 2) {
+        warnings.push(
+          `Suspicious low-entropy hex pattern in added line: \`${hex.substring(0, 40)}...\``,
+        );
+        break;
+      }
+    }
+    // Reset lastIndex for next line
+    hexPattern.lastIndex = 0;
+  }
+
+  return warnings;
+}
+
+
+/**
  * Create the mention handler and register it with the event router.
  *
  * Handles @kodiai mentions across all four comment surfaces:
@@ -388,6 +427,7 @@ export function createMentionHandler(deps: {
     issueNumber: number;
     prNumber: number | undefined;
     diffStat: string;
+    warnings?: string[];
   }): string {
     const {
       summary, issueTitle, sourceUrl, triggerCommentUrl,
@@ -412,6 +452,15 @@ export function createMentionHandler(deps: {
       lines.push("## Changes", "", diffStat, "");
     }
 
+    if (params.warnings && params.warnings.length > 0) {
+      lines.push(
+        "## Automated warnings",
+        "",
+        ...params.warnings.map((w) => `- ${w}`),
+        "",
+      );
+    }
+
     lines.push(
       "---",
       "",
@@ -429,6 +478,21 @@ export function createMentionHandler(deps: {
     );
 
     return lines.join("\n");
+  }
+
+  async function scanDiffForFabricatedContent(dir: string): Promise<string[]> {
+    let diffText: string;
+    try {
+      diffText = (await $`git -C ${dir} diff HEAD~1 HEAD`.quiet()).text();
+    } catch {
+      return []; // no diff available, skip scan
+    }
+
+    const addedLines = diffText
+      .split("\n")
+      .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
+
+    return scanLinesForFabricatedContent(addedLines);
   }
 
   function toErrorSignalText(value: unknown): string {
@@ -1504,6 +1568,9 @@ export function createMentionHandler(deps: {
               "- Do NOT run git commands (no branch/commit/push).",
               "- Do NOT publish any GitHub comments/reviews; publish tools are disabled.",
               "- Keep changes minimal and focused on the request.",
+              "- NEVER fabricate checksums, hashes, version numbers, download URLs, or any verifiable data. If you need a real value (e.g. a SHA512 of a download), leave a clearly-marked TODO placeholder like `SHA512=TODO_REPLACE_WITH_REAL_HASH` instead of generating a fake one.",
+              "- NEVER invent API endpoints, package names, or configuration values that you have not verified exist in the codebase.",
+              "- Verify completeness: if you add a new module/component, trace it through the build system and make sure it is actually wired in (e.g., find_package calls, CMakeLists.txt, imports, etc.).",
             ].join("\n")
             : isWriteRequest
               ? [
@@ -1953,6 +2020,13 @@ export function createMentionHandler(deps: {
             // diff stat is best-effort
           }
 
+          let fabricationWarnings: string[] = [];
+          try {
+            fabricationWarnings = await scanDiffForFabricatedContent(workspace.dir);
+          } catch {
+            // best-effort scan, do not block PR creation
+          }
+
           const requestSummary = summarizeWriteRequest(writeIntent.request);
           const prTitle = generatePrTitle(mention.issueTitle, requestSummary, mention.prNumber !== undefined);
           const sourceUrl =
@@ -1970,6 +2044,7 @@ export function createMentionHandler(deps: {
             issueNumber: mention.issueNumber,
             prNumber: mention.prNumber,
             diffStat,
+            warnings: fabricationWarnings,
           });
 
           const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
