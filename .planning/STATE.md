@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Completed quick-18
-last_updated: "2026-03-05T22:19:36.902Z"
-last_activity: 2026-03-05 - Completed quick task 18: improve PR title and description generation and fix PR 27956
+stopped_at: Completed quick-19
+last_updated: "2026-03-05T22:31:14.000Z"
+last_activity: 2026-03-05 - Completed quick task 19: add anti-hallucination guardrails to write-mode prompt and diff scanner
 progress:
   total_phases: 6
   completed_phases: 6
@@ -96,9 +96,10 @@ None.
 | 16 | Parse Windows package lists and harden pipeline against all-null enrichment | 2026-03-03 | cd571d7945 | [16-parse-windows-package-lists-and-harden-p](./quick/16-parse-windows-package-lists-and-harden-p/) |
 | 17 | Add patch-to-PR feature: detect "create a patch" as write intent on PR surfaces | 2026-03-03 | b0d41ac420 | [17-add-patch-to-pr-feature-when-asked-to-cr](./quick/17-add-patch-to-pr-feature-when-asked-to-cr/) |
 | 18 | Improve PR title and description generation for write-mode PRs | 2026-03-05 | c470d79a89 | [18-improve-pr-title-and-description-generat](./quick/18-improve-pr-title-and-description-generat/) |
+| 19 | Add anti-hallucination guardrails to write-mode prompt and diff scanner | 2026-03-05 | e4b9f22d7b | [19-add-anti-hallucination-guardrails-to-wri](./quick/19-add-anti-hallucination-guardrails-to-wri/) |
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T22:19:36.900Z
-**Stopped At:** Completed quick-18
+**Last session:** 2026-03-05T22:31:14.000Z
+**Stopped At:** Completed quick-19
 **Resume file:** None
