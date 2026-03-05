@@ -16,19 +16,19 @@ progress:
 
 ## Project Reference
 
-See: `.planning/PROJECT.md` (updated 2026-03-03)
+See: `.planning/PROJECT.md` (updated 2026-03-05)
 
 **Core value:** When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed in Slack, the bot responds with accurate, actionable code feedback without requiring workflow setup in the target repo.
-**Current focus:** v0.25 Wiki Content Updates -- Phase 125: Voice-Preserving Updates
+**Current focus:** v0.25 Wiki Content Updates -- Phase 123: Update Generation
 
 ## Current Position
 
-Phase: 122 of 124 (Enhanced Staleness)
-Plan: 2 of 2 in current phase
-Status: Phase 122 Complete
-Last activity: 2026-03-05 -- Completed 122-02: PR pipeline integration with diff-grounded LLM evaluation
+Phase: 123 of 125 (Update Generation)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-03-05 -- Completed Phase 122 (Enhanced Staleness)
 
-Progress: [████████████████████] 208/200 plans (100%)
+Progress: [████████████████████] 210/207 plans (100%)
 
 ## Accumulated Context
 
@@ -91,6 +91,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T02:28:12.567Z
-**Stopped At:** Completed 122-02-PLAN.md
+**Last session:** 2026-03-05
+**Stopped At:** Phase 122 complete, ready to plan Phase 123
 **Resume file:** None

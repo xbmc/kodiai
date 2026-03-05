@@ -322,7 +322,7 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 ### Active
 
 - [ ] Migrate wiki corpus embeddings from voyage-code-3 to voyage-context-3
-- [ ] Enhanced staleness analysis grounded in recent PRs/commits as source of truth
+- ✓ Enhanced staleness analysis grounded in recent PRs/commits as source of truth — Phase 122
 - [ ] LLM-generated section-by-section update suggestions for stale wiki pages
 - [ ] Publish update suggestions as comments on a tracking issue in xbmc/wiki
 
@@ -450,6 +450,10 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 | Batch upsert popularity records (groups of 100) | Avoids overly large queries during bulk scoring updates | ✓ Good — v0.25 |
 | Linkshere batched fetch with fail-open | 50-page batches, lhcontinue pagination, 500ms rate limit, per-page 5000 cap | ✓ Good — v0.25 |
 | Unconditional popularity store creation | Lightweight (no connections); available to both retriever and scorer | ✓ Good — v0.25 |
+| Domain stopword filtering for wiki-code matching | 20 ubiquitous terms (video, audio, player, etc.) removed from both sides of heuristic score | ✓ Good — v0.25 |
+| MediaWiki heading 3x weight in heuristic scoring | Section headings carry more semantic intent than body text for matching code files | ✓ Good — v0.25 |
+| PR-based staleness over commit-based | Merged PRs with file lists + patches provide richer evidence than raw commit diffs | ✓ Good — v0.25 |
+| Diff patch content in LLM prompt (3000 char cap) | Grounds LLM evaluation in actual code changes without token bloat | ✓ Good — v0.25 |
 
 ## Constraints
 
@@ -462,4 +466,4 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-03 after Phase 121*
+*Last updated: 2026-03-05 after Phase 122*
