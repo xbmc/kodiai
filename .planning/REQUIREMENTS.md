@@ -40,10 +40,10 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 - [ ] **VOICE-01**: Style extraction samples content from beginning, middle, and end of the page (spread sampling, not just first N tokens)
 - [ ] **VOICE-02**: Style extraction explicitly catalogs wiki conventions — categories, interwiki links, navboxes, and templates
 - [ ] **VOICE-03**: Style descriptions cached in DB with TTL and content-hash invalidation to avoid redundant LLM calls
-- [ ] **VOICE-04**: Generation prompt encourages formatting improvements (code blocks, tables, bold) for clarity instead of restricting to existing formatting elements
-- [ ] **VOICE-05**: Post-generation template check verifies all original {{...}} templates are preserved; retry once then drop on failure
-- [ ] **VOICE-06**: Heading level validation ensures generated output matches original section heading levels
-- [ ] **VOICE-07**: Generation prompt instructs normalization of inconsistencies and replacement of deprecated content with current equivalents
+- [x] **VOICE-04**: Generation prompt encourages formatting improvements (code blocks, tables, bold) for clarity instead of restricting to existing formatting elements
+- [x] **VOICE-05**: Post-generation template check verifies all original {{...}} templates are preserved; retry once then drop on failure
+- [x] **VOICE-06**: Heading level validation ensures generated output matches original section heading levels
+- [x] **VOICE-07**: Generation prompt instructs normalization of inconsistencies and replacement of deprecated content with current equivalents
 
 ### Publishing
 
@@ -101,10 +101,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VOICE-01 | Phase 125 | Pending |
 | VOICE-02 | Phase 125 | Pending |
 | VOICE-03 | Phase 125 | Pending |
-| VOICE-04 | Phase 125 | Pending |
-| VOICE-05 | Phase 125 | Pending |
-| VOICE-06 | Phase 125 | Pending |
-| VOICE-07 | Phase 125 | Pending |
+| VOICE-04 | Phase 125 | Complete |
+| VOICE-05 | Phase 125 | Complete |
+| VOICE-06 | Phase 125 | Complete |
+| VOICE-07 | Phase 125 | Complete |
 | PUB-01 | Phase 124 | Pending |
 | PUB-02 | Phase 124 | Pending |
 | PUB-03 | Phase 124 | Pending |

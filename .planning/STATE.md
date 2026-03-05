@@ -25,12 +25,12 @@ See: `.planning/PROJECT.md` (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 123 of 125 (Update Generation)
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-03-05 -- Completed Phase 122 (Enhanced Staleness)
+Phase: 125 of 125 (Voice-Preserving Updates)
+Plan: 2 of 2 complete
+Status: Plan 125-02 complete
+Last activity: 2026-03-05 -- Completed 125-02 (Formatting Freedom & Post-Generation Validation)
 
-Progress: [████████████████████] 210/207 plans (100%)
+Progress: [████████████████████] 212/209 plans (100%)
 
 ## Accumulated Context
 
@@ -60,6 +60,9 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 122]: Heading tokens take priority: if a token appears in both heading and body, heading weight (3x) applies
 - [Phase 122]: affectingCommitShas kept as empty array for backward compat during PR pipeline transition
 - [Phase 122]: Patch content capped at 3000 chars in LLM prompt to prevent token bloat
+- [Phase 125]: Template check uses retry-once-then-drop: regenerate once on missing templates, drop suggestion entirely on second failure
+- [Phase 125]: Formatting novelty is advisory-only: novel formatting encouraged, flagged but never blocks
+- [Phase 125]: Generation prompt reversed from "restrict to existing formatting" to "improve formatting freely"
 
 ### Key Constraints (Carry-Forward)
 
@@ -93,6 +96,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T20:22:15.774Z
-**Stopped At:** Phase 125 context updated
-**Resume file:** .planning/phases/125-voice-preserving-updates/125-CONTEXT.md
+**Last session:** 2026-03-05T20:51:00Z
+**Stopped At:** Completed 125-02-PLAN.md
+**Resume file:** .planning/phases/125-voice-preserving-updates/125-02-SUMMARY.md
