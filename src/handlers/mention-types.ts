@@ -39,6 +39,8 @@ export interface MentionEvent {
   inReplyToId: number | undefined;
   /** Issue body text (for triage validation on issue_comment surface) */
   issueBody: string | null;
+  /** Issue or PR title (for generating descriptive PR titles in write mode) */
+  issueTitle: string | null;
 }
 
 /**
@@ -71,6 +73,7 @@ export function normalizeIssueComment(
     fileLine: undefined,
     inReplyToId: undefined,
     issueBody: payload.issue.body ?? null,
+    issueTitle: payload.issue.title ?? null,
   };
 }
 
@@ -101,6 +104,7 @@ export function normalizeReviewComment(
     fileLine: payload.comment.line ?? payload.comment.original_line ?? undefined,
     inReplyToId: payload.comment.in_reply_to_id ?? undefined,
     issueBody: null,
+    issueTitle: payload.pull_request.title ?? null,
   };
 }
 
@@ -132,6 +136,7 @@ export function normalizeReviewBody(
     fileLine: undefined,
     inReplyToId: undefined,
     issueBody: null,
+    issueTitle: payload.pull_request.title ?? null,
   };
 }
 

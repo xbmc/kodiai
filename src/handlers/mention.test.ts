@@ -125,6 +125,7 @@ function buildIssueCommentMentionEvent(params: {
       },
       issue: {
         number: params.issueNumber,
+        title: "Update the README heading",
       },
       comment: {
         id: params.commentId ?? 777,
@@ -3199,13 +3200,13 @@ describe("createMentionHandler write intent gating", () => {
       .trim();
     expect(pushedHeadSha.length).toBeGreaterThan(0);
     expect(createdPrBase).toBe("feature");
-    expect(createdPrTitle).toContain("chore(issue-77):");
-    expect(createdPrBody).toContain("Summary: update the README");
-    expect(createdPrBody).toContain("Source issue: https://github.com/acme/repo/issues/77");
+    expect(createdPrTitle).toMatch(/^feat: /);
+    expect(createdPrBody).toContain("Update the README heading");
+    expect(createdPrBody).toContain("Resolves #77");
     expect(createdPrBody).toContain(
-      "Trigger comment: https://github.com/acme/repo/issues/77#issuecomment-777",
+      "Trigger: https://github.com/acme/repo/issues/77#issuecomment-777",
     );
-    expect(createdPrBody).toContain("Request: update the README");
+    expect(createdPrBody).toContain("<details>");
     expect(createdPrBody).toContain("Delivery: delivery-issue-mention-123");
     expect(issueReplies).toHaveLength(1);
     expect(issueReplies[0]).toContain("status: success");

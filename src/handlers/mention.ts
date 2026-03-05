@@ -344,6 +344,93 @@ export function createMentionHandler(deps: {
     return normalized.length <= maxLen ? normalized : `${normalized.slice(0, maxLen - 3).trimEnd()}...`;
   }
 
+  function generatePrTitle(issueTitle: string | null, requestSummary: string, isFromPr: boolean): string {
+    const maxLen = 72;
+
+    if (issueTitle && issueTitle.trim().length > 0) {
+      // Clean the issue title: remove leading [tags], trailing issue refs
+      const cleaned = issueTitle
+        .replace(/^\[.*?\]\s*/g, "")
+        .replace(/\s*#\d+\s*$/, "")
+        .trim();
+
+      // Detect prefix from content
+      const lower = cleaned.toLowerCase();
+      let prefix: string;
+      if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
+        prefix = "fix";
+      } else if (/\brefactor\b/.test(lower)) {
+        prefix = "refactor";
+      } else if (/\b(?:add|support|implement|feature|new)\b/.test(lower)) {
+        prefix = "feat";
+      } else {
+        prefix = isFromPr ? "fix" : "feat";
+      }
+
+      const full = `${prefix}: ${cleaned}`;
+      return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
+    }
+
+    // Fallback: no issue title available
+    const defaultPrefix = isFromPr ? "fix" : "feat";
+    const full = `${defaultPrefix}: ${requestSummary}`;
+    return full.length <= maxLen ? full : `${full.slice(0, maxLen - 3).trimEnd()}...`;
+  }
+
+  function generatePrBody(params: {
+    summary: string;
+    issueTitle: string | null;
+    sourceUrl: string;
+    triggerCommentUrl: string;
+    deliveryId: string;
+    headSha: string;
+    isFromPr: boolean;
+    issueNumber: number;
+    prNumber: number | undefined;
+    diffStat: string;
+  }): string {
+    const {
+      summary, issueTitle, sourceUrl, triggerCommentUrl,
+      deliveryId, headSha, isFromPr, issueNumber, prNumber, diffStat,
+    } = params;
+
+    // Summary paragraph: prefer issue title context, fall back to request summary
+    const summaryParagraph = issueTitle && issueTitle.trim().length > 0
+      ? issueTitle.trim()
+      : summary;
+
+    const resolveOrRelate = isFromPr
+      ? `Related to #${prNumber}`
+      : `Resolves #${issueNumber}`;
+
+    const lines: string[] = [
+      summaryParagraph,
+      "",
+    ];
+
+    if (diffStat) {
+      lines.push("## Changes", "", diffStat, "");
+    }
+
+    lines.push(
+      "---",
+      "",
+      resolveOrRelate,
+      "",
+      "<details>",
+      "<summary>Metadata</summary>",
+      "",
+      `- Source: ${sourceUrl}`,
+      `- Trigger: ${triggerCommentUrl}`,
+      `- Delivery: ${deliveryId}`,
+      `- Commit: ${headSha}`,
+      "",
+      "</details>",
+    );
+
+    return lines.join("\n");
+  }
+
   function toErrorSignalText(value: unknown): string {
     if (typeof value === "string") {
       return value;
@@ -1859,31 +1946,31 @@ export function createMentionHandler(deps: {
             return;
           }
 
+          let diffStat = "";
+          try {
+            diffStat = (await $`git -C ${workspace.dir} diff --stat HEAD~1 HEAD`.quiet()).text().trim();
+          } catch {
+            // diff stat is best-effort
+          }
+
           const requestSummary = summarizeWriteRequest(writeIntent.request);
-          const prTitle =
-            mention.prNumber !== undefined
-              ? `chore(pr-${mention.prNumber}): ${requestSummary}`
-              : `chore(issue-${mention.issueNumber}): ${requestSummary}`;
+          const prTitle = generatePrTitle(mention.issueTitle, requestSummary, mention.prNumber !== undefined);
           const sourceUrl =
             mention.prNumber !== undefined
               ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
               : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
-          const prBody = [
-            "Requested via @kodiai mention write intent.",
-            "",
-            `Keyword: ${writeIntent.keyword ?? "apply/change"}`,
-            "",
-            `Summary: ${requestSummary}`,
-            "",
-            `Request: ${writeIntent.request}`,
-            "",
-            mention.prNumber !== undefined
-              ? `Source PR: ${sourceUrl}`
-              : `Source issue: ${sourceUrl}`,
-            `Trigger comment: ${triggerCommentUrl}`,
-            `Delivery: ${event.id}`,
-            `Commit: ${pushed.headSha}`,
-          ].join("\n");
+          const prBody = generatePrBody({
+            summary: requestSummary,
+            issueTitle: mention.issueTitle,
+            sourceUrl,
+            triggerCommentUrl,
+            deliveryId: event.id,
+            headSha: pushed.headSha,
+            isFromPr: mention.prNumber !== undefined,
+            issueNumber: mention.issueNumber,
+            prNumber: mention.prNumber,
+            diffStat,
+          });
 
           const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
 
