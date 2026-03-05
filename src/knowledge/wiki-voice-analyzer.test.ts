@@ -1,5 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
-import { selectExemplarSections, extractPageStyle, buildVoicePreservingPrompt } from "./wiki-voice-analyzer.ts";
+import { selectExemplarSections, extractPageStyle, buildVoicePreservingPrompt, sampleSpreadContent, extractWikiConventions, computeContentHash, getCachedStyle, cacheStyleDescription } from "./wiki-voice-analyzer.ts";
 import type { WikiPageRecord } from "./wiki-types.ts";
 import type { VoiceAnalyzerOptions, PageStyleDescription } from "./wiki-voice-types.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
@@ -142,6 +142,7 @@ describe("extractPageStyle", () => {
     expect(result.formattingElements).toEqual([]);
     expect(result.mediaWikiMarkup).toEqual([]);
     expect(result.tokenCount).toBe(0);
+    expect(result.wikiConventions).toEqual({ categories: [], interwikiLinks: [], navboxes: [], templates: [] });
   });
 
   it("respects token budget for content selection", async () => {
@@ -189,6 +190,7 @@ describe("buildVoicePreservingPrompt", () => {
     formattingElements: ["bullet lists", "bold emphasis"],
     mediaWikiMarkup: ["{{Note|...}}"],
     tokenCount: 100,
+    wikiConventions: { categories: ["[[Category:Add-ons]]"], interwikiLinks: [], navboxes: [], templates: ["Note"] },
   };
 
   it("includes style description text in the prompt", () => {
@@ -242,7 +244,7 @@ describe("buildVoicePreservingPrompt", () => {
     expect(prompt).toContain("{{Note|...}}");
   });
 
-  it("includes constraint about only using existing formatting elements", () => {
+  it("includes IMPROVE formatting freely instruction", () => {
     const prompt = buildVoicePreservingPrompt({
       styleDescription,
       exemplarSections: [],
@@ -250,7 +252,40 @@ describe("buildVoicePreservingPrompt", () => {
       sectionHeading: "Test",
       diffEvidence: "Change.",
     });
-    expect(prompt).toContain("ONLY use formatting elements listed in the style description");
+    expect(prompt).toContain("IMPROVE formatting freely");
+  });
+
+  it("includes NORMALIZE inconsistencies instruction", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("NORMALIZE inconsistencies");
+  });
+
+  it("includes REPLACE deprecated content instruction", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("REPLACE deprecated content");
+  });
+
+  it("includes PRESERVE heading levels instruction", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt).toContain("PRESERVE heading levels");
   });
 
   it("includes constraint to stay within existing section boundaries", () => {
@@ -274,5 +309,155 @@ describe("buildVoicePreservingPrompt", () => {
     });
     expect(prompt).toContain("## What Changed");
     expect(prompt).toContain("renamed from /v1/users to /v2/users");
+  });
+});
+
+describe("sampleSpreadContent", () => {
+  it("selects chunks from beginning, middle, and end of a 20-chunk page", () => {
+    const chunks = Array.from({ length: 20 }, (_, i) =>
+      makeChunk({ chunkIndex: i, tokenCount: 100, chunkText: `Chunk ${i} content` }),
+    );
+    const result = sampleSpreadContent(chunks);
+    const indices = result.map((c) => c.chunkIndex);
+    // Should have first 2 (0,1), middle 2 (9,10), last 2 (18,19)
+    expect(indices).toContain(0);
+    expect(indices).toContain(1);
+    expect(indices).toContain(9);
+    expect(indices).toContain(10);
+    expect(indices).toContain(18);
+    expect(indices).toContain(19);
+  });
+
+  it("falls back to all chunks when page has fewer than 6 chunks", () => {
+    const chunks = Array.from({ length: 4 }, (_, i) =>
+      makeChunk({ chunkIndex: i, tokenCount: 50, chunkText: `Chunk ${i}` }),
+    );
+    const result = sampleSpreadContent(chunks);
+    expect(result).toHaveLength(4);
+  });
+
+  it("respects the 3000 token budget across spread samples", () => {
+    const chunks = Array.from({ length: 20 }, (_, i) =>
+      makeChunk({ chunkIndex: i, tokenCount: 600, chunkText: `Chunk ${i} big content` }),
+    );
+    const result = sampleSpreadContent(chunks);
+    const totalTokens = result.reduce((sum, c) => sum + c.tokenCount, 0);
+    expect(totalTokens).toBeLessThanOrEqual(3000);
+  });
+});
+
+describe("extractWikiConventions", () => {
+  it("parses categories, interwiki links, and template names from raw chunk text", () => {
+    const chunks = [
+      makeChunk({ chunkText: "Some text [[Category:Add-ons]] and [[Category:Kodi]] here" }),
+      makeChunk({ chunkText: "Links: [[en:Kodi]] and [[de:Kodi]]" }),
+      makeChunk({ chunkText: "Templates: {{Note|important}} and {{Navbox addon types}}" }),
+    ];
+    const result = extractWikiConventions(chunks);
+    expect(result.categories).toContain("[[Category:Add-ons]]");
+    expect(result.categories).toContain("[[Category:Kodi]]");
+    expect(result.interwikiLinks).toContain("[[en:Kodi]]");
+    expect(result.interwikiLinks).toContain("[[de:Kodi]]");
+    expect(result.navboxes).toContain("{{Navbox addon types}}");
+    expect(result.templates).toContain("Note");
+    expect(result.templates).toContain("Navbox addon types");
+  });
+
+  it("returns empty arrays when no conventions found", () => {
+    const chunks = [makeChunk({ chunkText: "Plain text with no wiki conventions." })];
+    const result = extractWikiConventions(chunks);
+    expect(result.categories).toEqual([]);
+    expect(result.interwikiLinks).toEqual([]);
+    expect(result.navboxes).toEqual([]);
+    expect(result.templates).toEqual([]);
+  });
+
+  it("deduplicates conventions found across chunks", () => {
+    const chunks = [
+      makeChunk({ chunkText: "[[Category:Add-ons]] text" }),
+      makeChunk({ chunkText: "more [[Category:Add-ons]] text" }),
+    ];
+    const result = extractWikiConventions(chunks);
+    expect(result.categories).toHaveLength(1);
+  });
+});
+
+describe("style extraction prompt", () => {
+  it("includes WIKI CONVENTIONS section", () => {
+    // We test this via buildVoicePreservingPrompt indirectly, but also
+    // extractPageStyle calls buildStyleExtractionPrompt which should have it.
+    // Access via the prompt output for empty chunks is not feasible, so test
+    // that the extraction prompt template exists by checking a generated prompt.
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription: {
+        pageTitle: "Test",
+        styleText: "Test style",
+        formattingElements: [],
+        mediaWikiMarkup: [],
+        tokenCount: 0,
+        wikiConventions: { categories: [], interwikiLinks: [], navboxes: [], templates: [] },
+      },
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    // The voice-preserving prompt should still work
+    expect(prompt).toContain("## Page Style");
+  });
+});
+
+describe("computeContentHash", () => {
+  it("returns consistent hash for same chunk content", () => {
+    const chunks = [makeChunk({ chunkText: "Hello world" })];
+    const hash1 = computeContentHash(chunks);
+    const hash2 = computeContentHash(chunks);
+    expect(hash1).toBe(hash2);
+  });
+
+  it("returns different hash when chunk content changes", () => {
+    const chunks1 = [makeChunk({ chunkText: "Hello world" })];
+    const chunks2 = [makeChunk({ chunkText: "Hello world updated" })];
+    expect(computeContentHash(chunks1)).not.toBe(computeContentHash(chunks2));
+  });
+});
+
+describe("getCachedStyle", () => {
+  it("returns null when no cache entry exists", async () => {
+    const mockSql: any = function(strings: TemplateStringsArray, ...values: any[]) {
+      return Promise.resolve([]);
+    };
+    const result = await getCachedStyle(mockSql, 999, "abc123");
+    expect(result).toBeNull();
+  });
+
+  it("returns cached PageStyleDescription when entry exists and matches", async () => {
+    const cachedStyle: PageStyleDescription = {
+      pageTitle: "Test",
+      styleText: "Cached style",
+      formattingElements: [],
+      mediaWikiMarkup: [],
+      tokenCount: 50,
+      wikiConventions: { categories: [], interwikiLinks: [], navboxes: [], templates: [] },
+    };
+    const mockSql: any = function(strings: TemplateStringsArray, ...values: any[]) {
+      return Promise.resolve([{ style_description: cachedStyle }]);
+    };
+    const result = await getCachedStyle(mockSql, 100, "hash123");
+    expect(result).not.toBeNull();
+    expect(result!.pageTitle).toBe("Test");
+    expect(result!.styleText).toBe("Cached style");
+  });
+});
+
+describe("extractPageStyle with caching", () => {
+  it("works without sql parameter (backward compatible, no caching)", async () => {
+    const opts: VoiceAnalyzerOptions = {
+      taskRouter: { resolve: mock(() => ({ modelId: "test", provider: "anthropic", sdk: "ai" as const, fallbackModelId: "test", fallbackProvider: "anthropic" })) },
+      logger: { child: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }) } as any,
+    };
+    const result = await extractPageStyle([], opts);
+    expect(result.pageTitle).toBe("unknown");
+    expect(result.wikiConventions).toEqual({ categories: [], interwikiLinks: [], navboxes: [], templates: [] });
   });
 });

@@ -12,6 +12,7 @@ import type {
   PageStyleDescription,
   StyleExemplar,
   VoiceAnalyzerOptions,
+  StyleCacheEntry,
 } from "./wiki-voice-types.ts";
 import type { VoiceValidationResult } from "./wiki-voice-types.ts";
 import { generateWithFallback } from "../llm/generate.ts";
@@ -135,6 +136,12 @@ Produce a style description covering:
    - Emphasis patterns (bold, italic, when used)
    - MediaWiki-specific markup found: templates, infoboxes, magic words (list each with exact syntax)
 6. STRUCTURAL PATTERNS: How sections begin/end, transition phrases, paragraph length
+7. WIKI CONVENTIONS:
+   - Categories used on this page (list exact [[Category:...]] entries)
+   - Interwiki links found (list exact [[xx:...]] entries)
+   - Navigation templates/navboxes (list exact {{Navbox...}} entries)
+   - Other templates used (list each {{TemplateName}} with its purpose)
+   These MUST be preserved verbatim in any generated output.
 
 Output as plain text description, not JSON.`;
 }
@@ -174,6 +181,143 @@ function extractMediaWikiMarkup(text: string): string[] {
 }
 
 /**
+ * Sample content from beginning, middle, and end of a page for spread style analysis.
+ * Selects first 2, middle 2, and last 2 chunks (deduplicating overlaps for short pages).
+ * Caps total at tokenBudget.
+ */
+export function sampleSpreadContent(
+  chunks: WikiPageRecord[],
+  tokenBudget: number = STYLE_EXTRACTION_TOKEN_BUDGET,
+): WikiPageRecord[] {
+  if (chunks.length === 0) return [];
+  if (chunks.length <= 6) return chunks;
+
+  const mid = Math.floor(chunks.length / 2);
+  const indices = new Set<number>();
+  // Beginning
+  indices.add(0);
+  indices.add(1);
+  // Middle
+  indices.add(mid - 1);
+  indices.add(mid);
+  // End
+  indices.add(chunks.length - 2);
+  indices.add(chunks.length - 1);
+
+  const selected: WikiPageRecord[] = [];
+  let tokenCount = 0;
+  for (const idx of Array.from(indices).sort((a, b) => a - b)) {
+    const chunk = chunks[idx]!;
+    if (tokenCount + chunk.tokenCount > tokenBudget) break;
+    selected.push(chunk);
+    tokenCount += chunk.tokenCount;
+  }
+  return selected;
+}
+
+/**
+ * Extract wiki-specific conventions from ALL page chunks.
+ * Scans for categories, interwiki links, navboxes, and templates.
+ */
+export function extractWikiConventions(chunks: WikiPageRecord[]): {
+  categories: string[];
+  interwikiLinks: string[];
+  navboxes: string[];
+  templates: string[];
+} {
+  const categories = new Set<string>();
+  const interwikiLinks = new Set<string>();
+  const navboxes = new Set<string>();
+  const templates = new Set<string>();
+
+  for (const chunk of chunks) {
+    const text = chunk.chunkText;
+
+    // Categories: [[Category:...]]
+    const catMatches = text.match(/\[\[Category:[^\]]+\]\]/g);
+    if (catMatches) catMatches.forEach((m) => categories.add(m));
+
+    // Interwiki links: [[xx:...]] (2-3 letter language codes)
+    const iwMatches = text.match(/\[\[[a-z]{2,3}:[^\]]+\]\]/g);
+    if (iwMatches) iwMatches.forEach((m) => interwikiLinks.add(m));
+
+    // Navboxes: {{Navbox...}}
+    const navMatches = text.match(/\{\{Navbox[^}]*\}\}/g);
+    if (navMatches) navMatches.forEach((m) => navboxes.add(m));
+
+    // Templates: {{TemplateName...}} - extract name only
+    const tmplMatches = text.match(/\{\{([^}|]+)/g);
+    if (tmplMatches) {
+      for (const m of tmplMatches) {
+        const name = m.slice(2).trim();
+        if (name && !name.startsWith("#") && !name.startsWith("!")) {
+          templates.add(name);
+        }
+      }
+    }
+  }
+
+  return {
+    categories: Array.from(categories),
+    interwikiLinks: Array.from(interwikiLinks),
+    navboxes: Array.from(navboxes),
+    templates: Array.from(templates),
+  };
+}
+
+/**
+ * Compute a content hash for cache invalidation.
+ * Uses Bun.hash for speed.
+ */
+export function computeContentHash(chunks: WikiPageRecord[]): string {
+  const content = chunks.map((c) => c.chunkText).join("\n");
+  return String(Bun.hash(content));
+}
+
+/**
+ * Look up a cached style description.
+ * Returns null on miss, hash mismatch, or expiry.
+ */
+export async function getCachedStyle(
+  sql: any,
+  pageId: number,
+  contentHash: string,
+): Promise<PageStyleDescription | null> {
+  const rows = await sql`
+    SELECT style_description FROM wiki_style_cache
+    WHERE page_id = ${pageId}
+      AND content_hash = ${contentHash}
+      AND expires_at > now()
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  return rows[0].style_description as PageStyleDescription;
+}
+
+/**
+ * Upsert a style description into the cache.
+ */
+export async function cacheStyleDescription(
+  sql: any,
+  pageId: number,
+  pageTitle: string,
+  contentHash: string,
+  style: PageStyleDescription,
+  ttlDays: number = 7,
+): Promise<void> {
+  await sql`
+    INSERT INTO wiki_style_cache (page_id, page_title, content_hash, style_description, expires_at)
+    VALUES (${pageId}, ${pageTitle}, ${contentHash}, ${sql.json(style)}, now() + ${ttlDays + ' days'}::interval)
+    ON CONFLICT (page_id) DO UPDATE SET
+      page_title = EXCLUDED.page_title,
+      content_hash = EXCLUDED.content_hash,
+      style_description = EXCLUDED.style_description,
+      expires_at = EXCLUDED.expires_at,
+      created_at = now()
+  `;
+}
+
+/**
  * Extract a page's writing style via LLM analysis.
  *
  * Produces a PageStyleDescription containing the LLM's assessment of
@@ -185,9 +329,11 @@ function extractMediaWikiMarkup(text: string): string[] {
  */
 export async function extractPageStyle(
   pageChunks: WikiPageRecord[],
-  opts: VoiceAnalyzerOptions,
+  opts: VoiceAnalyzerOptions & { sql?: any; cacheTtlDays?: number },
 ): Promise<PageStyleDescription> {
   const logger = opts.logger.child({ module: "wiki-voice-analyzer" });
+
+  const emptyConventions = { categories: [], interwikiLinks: [], navboxes: [], templates: [] };
 
   if (pageChunks.length === 0) {
     return {
@@ -196,16 +342,48 @@ export async function extractPageStyle(
       formattingElements: [],
       mediaWikiMarkup: [],
       tokenCount: 0,
+      wikiConventions: emptyConventions,
     };
   }
 
   const pageTitle = pageChunks[0]!.pageTitle;
+  const pageId = pageChunks[0]!.pageId;
 
-  // Select content within token budget
+  // Check cache if sql provided
+  if (opts.sql) {
+    const contentHash = computeContentHash(pageChunks);
+    const cached = await getCachedStyle(opts.sql, pageId, contentHash);
+    if (cached) {
+      logger.debug({ pageTitle, pageId }, "Style cache hit");
+      return cached;
+    }
+
+    // Cache miss - extract via LLM, then cache
+    const result = await extractPageStyleLLM(pageChunks, opts, logger);
+
+    await cacheStyleDescription(
+      opts.sql, pageId, pageTitle, contentHash, result, opts.cacheTtlDays ?? 7,
+    );
+    return result;
+  }
+
+  // No sql - backward compatible, no caching
+  return extractPageStyleLLM(pageChunks, opts, logger);
+}
+
+/** Internal: run LLM style extraction (called on cache miss or when no sql). */
+async function extractPageStyleLLM(
+  pageChunks: WikiPageRecord[],
+  opts: VoiceAnalyzerOptions,
+  logger: ReturnType<Logger["child"]>,
+): Promise<PageStyleDescription> {
+  const pageTitle = pageChunks[0]!.pageTitle;
+
+  // Use spread sampling instead of sequential
+  const sampled = sampleSpreadContent(pageChunks);
   let tokenCount = 0;
   const contentParts: string[] = [];
-  for (const chunk of pageChunks) {
-    if (tokenCount + chunk.tokenCount > STYLE_EXTRACTION_TOKEN_BUDGET) break;
+  for (const chunk of sampled) {
     contentParts.push(chunk.chunkText);
     tokenCount += chunk.tokenCount;
   }
@@ -219,7 +397,7 @@ export async function extractPageStyle(
     taskType: TASK_TYPES.VOICE_EXTRACT,
     resolved,
     prompt,
-    logger,
+    logger: logger as any,
     costTracker: opts.costTracker,
     repo: opts.repo,
   });
@@ -227,6 +405,7 @@ export async function extractPageStyle(
   const styleText = result.text.trim();
   const formattingElements = extractFormattingElements(styleText);
   const mediaWikiMarkup = extractMediaWikiMarkup(styleText);
+  const wikiConventions = extractWikiConventions(pageChunks);
 
   logger.debug(
     {
@@ -234,6 +413,7 @@ export async function extractPageStyle(
       tokenCount,
       formattingElementCount: formattingElements.length,
       mediaWikiMarkupCount: mediaWikiMarkup.length,
+      wikiConventionCount: wikiConventions.categories.length + wikiConventions.templates.length,
       durationMs: result.durationMs,
     },
     "Page style extracted",
@@ -245,6 +425,7 @@ export async function extractPageStyle(
     formattingElements,
     mediaWikiMarkup,
     tokenCount,
+    wikiConventions,
   };
 }
 
@@ -261,11 +442,11 @@ export type SectionInput = {
  * Build a voice-preserving generation prompt that combines style description,
  * exemplar sections, original content, and diff evidence.
  *
- * The prompt enforces all CONTEXT.md constraints:
- * - Only use formatting elements the page already uses
- * - Preserve MediaWiki templates verbatim
- * - Stay within existing section boundaries
- * - Output complete section rewrite (not diff)
+ * The prompt encourages formatting improvements per CONTEXT.md:
+ * - Improve formatting freely (code blocks, tables, bold)
+ * - Normalize inconsistencies
+ * - Replace deprecated content
+ * - Hard constraints: preserve templates, heading levels, section boundaries
  */
 export function buildVoicePreservingPrompt(opts: {
   styleDescription: PageStyleDescription;
@@ -302,14 +483,17 @@ ${opts.originalSection}
 ## What Changed (evidence)
 ${opts.diffEvidence}
 
-## Constraints
-- ONLY use formatting elements listed in the style description
-- PRESERVE all MediaWiki templates ({{...}}) and markup EXACTLY as they appear
-- Do NOT add code blocks, tables, or other formatting not present in the original
+## Formatting & Modernization
+- IMPROVE formatting freely: add code blocks for code/commands, tables for structured data, bold for emphasis, inline code for API names — wherever it makes the content clearer for readers
+- NORMALIZE inconsistencies: standardize list markers (mixed * and - to one style), code formatting, link style, heading capitalization within the section
+- REPLACE deprecated content: if old API X is now API Y based on the evidence, use the current name — don't leave dead references
+- If the section seems too long or unwieldy after your update, add a note: "<!-- Consider splitting this section into subsections -->" but don't do the split yourself
+
+## Hard Constraints
+- PRESERVE all MediaWiki templates ({{...}}) and wiki markup EXACTLY as they appear — do not modify, remove, or invent templates
+- PRESERVE heading levels: if the section uses == Heading ==, keep that exact level
 - Do NOT add, remove, or reorder sections — update content within the existing section only
-- Match the specific section's conventions (list style, heading level, emphasis patterns)
-- Update factual content: fix version numbers, API names, deprecated references to current values
-- Gently normalize obvious formatting inconsistencies (capitalization, spacing) while keeping overall voice
+- Match the section's writing voice: tone, perspective (you/imperative/third person), terminology
 - Output the COMPLETE updated section, not a diff`;
 }
 
@@ -328,6 +512,7 @@ export function createVoicePreservingPipeline(opts: {
   costTracker?: import("../llm/cost-tracker.ts").CostTracker;
   logger: Logger;
   repo?: string;
+  sql?: unknown;
   wikiPageStore: import("./wiki-types.ts").WikiPageStore;
   generateSectionUpdate: (prompt: string) => Promise<string>;
 }): {
@@ -349,12 +534,13 @@ export function createVoicePreservingPipeline(opts: {
 
       const pageTitle = pageChunks[0]!.pageTitle;
 
-      // Step 2: Extract style once per page
+      // Step 2: Extract style once per page (with optional caching)
       const styleDescription = await extractPageStyle(pageChunks, {
         taskRouter: opts.taskRouter,
         costTracker: opts.costTracker,
         logger: opts.logger,
         repo: opts.repo,
+        sql: opts.sql,
       });
 
       // Step 3: Select exemplar sections once per page
@@ -389,6 +575,15 @@ export function createVoicePreservingPipeline(opts: {
 
         if (preserved.voiceMismatchWarning) voiceMismatches++;
 
+        // Drop suggestions that failed template check twice (empty suggestion signals failure)
+        if (preserved.suggestion === "" && !preserved.templateCheckPassed) {
+          logger.warn(
+            { pageId, pageTitle, sectionHeading: section.sectionHeading },
+            "Dropping section: template preservation failed after retry",
+          );
+          continue;
+        }
+
         results.push({
           pageId,
           pageTitle,
@@ -397,6 +592,10 @@ export function createVoicePreservingPipeline(opts: {
           suggestion: preserved.suggestion,
           voiceMismatchWarning: preserved.voiceMismatchWarning,
           validationScores: preserved.validationResult,
+          templateCheckPassed: preserved.templateCheckPassed,
+          headingCheckPassed: preserved.headingCheckPassed,
+          formattingAdvisory: preserved.formattingAdvisory,
+          sectionLengthAdvisory: preserved.sectionLengthAdvisory,
         });
       }
 

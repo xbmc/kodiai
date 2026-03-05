@@ -20,6 +20,21 @@ export type PageStyleDescription = {
   mediaWikiMarkup: string[];
   /** Approximate token count of the content used for extraction. */
   tokenCount: number;
+  /** Wiki-specific structural conventions found on the page. */
+  wikiConventions: {
+    categories: string[];
+    interwikiLinks: string[];
+    navboxes: string[];
+    templates: string[];
+  };
+};
+
+/** Cached style description entry for a wiki page. */
+export type StyleCacheEntry = {
+  pageId: number;
+  styleDescription: PageStyleDescription;
+  contentHash: string;
+  cachedAt: Date;
 };
 
 /** A representative section selected as a few-shot exemplar for voice matching. */
@@ -68,6 +83,8 @@ export type VoicePreservingPipelineOptions = VoiceAnalyzerOptions & {
   wikiPageStore: WikiPageStore;
   /** Function that generates a section update from a prompt (provided by Phase 123). */
   generateSectionUpdate: (prompt: string) => Promise<string>;
+  /** Optional DB connection for style description caching. */
+  sql?: unknown;
 };
 
 /** A single voice-preserved section update. */
@@ -86,4 +103,12 @@ export type VoicePreservedUpdate = {
   voiceMismatchWarning: boolean;
   /** Full validation scores for internal tracking. */
   validationScores: VoiceValidationResult;
+  /** Whether all original {{...}} templates were preserved. */
+  templateCheckPassed: boolean;
+  /** Whether heading levels match original. */
+  headingCheckPassed: boolean;
+  /** Advisory list of novel formatting elements (not blocking). */
+  formattingAdvisory: string[];
+  /** Advisory note if section grew significantly. */
+  sectionLengthAdvisory: string | null;
 };
