@@ -1438,7 +1438,7 @@ export function createMentionHandler(deps: {
         let contextWindowForPrompt: string | undefined;
         let reviewPrecedentsForPrompt: import("../knowledge/review-comment-retrieval.ts").ReviewCommentMatch[] = [];
         let wikiKnowledgeForPrompt: import("../knowledge/wiki-retrieval.ts").WikiKnowledgeMatch[] = [];
-        if (retriever && config.knowledge.retrieval.enabled) {
+        if (retriever && config.knowledge?.retrieval?.enabled) {
           try {
             let filePaths: string[] = [];
             if (mention.prNumber !== undefined && mention.baseRef) {
@@ -1476,7 +1476,7 @@ export function createMentionHandler(deps: {
                     .replace("f#", "fsharp")),
               ),
             );
-            const retrievalTopK = Math.max(1, Math.min(config.knowledge.retrieval.topK, 3));
+            const retrievalTopK = Math.max(1, Math.min(config.knowledge?.retrieval?.topK ?? 5, 3));
             const variants = buildRetrievalVariants({
               title: writeIntent.request,
               body: mentionContext,
