@@ -295,7 +295,7 @@ Plans:
   3. Generation prompt encourages formatting improvements while preserving voice and MediaWiki templates
   4. Post-generation template check verifies {{...}} preservation with retry-once-then-drop logic
   5. Heading levels validated, formatting novelty advisory, section length advisory
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 125-01-PLAN.md — Spread sampling, wiki convention analysis, and style description caching
@@ -336,7 +336,7 @@ Plans:
 | 122 | 2/2 | Complete    | 2026-03-05 | - |
 | 123 | 3/3 | Complete    | 2026-03-05 | - |
 | 124 | 2/2 | Complete    | 2026-03-05 | - |
-| 125 | 1/2 | In Progress|  | - |
+| 125 | 2/2 | Complete   | 2026-03-05 | - |
 
 ---
 

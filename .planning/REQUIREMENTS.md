@@ -37,9 +37,9 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 
 ### Voice-Preserving Updates
 
-- [ ] **VOICE-01**: Style extraction samples content from beginning, middle, and end of the page (spread sampling, not just first N tokens)
-- [ ] **VOICE-02**: Style extraction explicitly catalogs wiki conventions — categories, interwiki links, navboxes, and templates
-- [ ] **VOICE-03**: Style descriptions cached in DB with TTL and content-hash invalidation to avoid redundant LLM calls
+- [x] **VOICE-01**: Style extraction samples content from beginning, middle, and end of the page (spread sampling, not just first N tokens)
+- [x] **VOICE-02**: Style extraction explicitly catalogs wiki conventions — categories, interwiki links, navboxes, and templates
+- [x] **VOICE-03**: Style descriptions cached in DB with TTL and content-hash invalidation to avoid redundant LLM calls
 - [x] **VOICE-04**: Generation prompt encourages formatting improvements (code blocks, tables, bold) for clarity instead of restricting to existing formatting elements
 - [x] **VOICE-05**: Post-generation template check verifies all original {{...}} templates are preserved; retry once then drop on failure
 - [x] **VOICE-06**: Heading level validation ensures generated output matches original section heading levels
@@ -98,9 +98,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UPDATE-02 | Phase 123 | Pending |
 | UPDATE-03 | Phase 123 | Pending |
 | UPDATE-04 | Phase 123 | Pending |
-| VOICE-01 | Phase 125 | Pending |
-| VOICE-02 | Phase 125 | Pending |
-| VOICE-03 | Phase 125 | Pending |
+| VOICE-01 | Phase 125 | Complete |
+| VOICE-02 | Phase 125 | Complete |
+| VOICE-03 | Phase 125 | Complete |
 | VOICE-04 | Phase 125 | Complete |
 | VOICE-05 | Phase 125 | Complete |
 | VOICE-06 | Phase 125 | Complete |

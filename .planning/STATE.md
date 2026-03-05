@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
-status: planning
-stopped_at: Phase 125 context updated
-last_updated: "2026-03-05T20:22:15.781Z"
-last_activity: 2026-03-05 -- Completed Phase 122 (Enhanced Staleness)
+status: completed
+stopped_at: Completed 125-01-PLAN.md
+last_updated: "2026-03-05T20:48:23.643Z"
+last_activity: 2026-03-05 -- Completed 125-02 (Formatting Freedom & Post-Generation Validation)
 progress:
   total_phases: 6
   completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 14
+  completed_plans: 14
   percent: 100
 ---
 
@@ -63,6 +63,7 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 125]: Template check uses retry-once-then-drop: regenerate once on missing templates, drop suggestion entirely on second failure
 - [Phase 125]: Formatting novelty is advisory-only: novel formatting encouraged, flagged but never blocks
 - [Phase 125]: Generation prompt reversed from "restrict to existing formatting" to "improve formatting freely"
+- [Phase 125]: Bun.hash for content-hash cache invalidation; spread sampling first/middle/last 2 chunks; extractWikiConventions scans all chunks
 
 ### Key Constraints (Carry-Forward)
 
@@ -96,6 +97,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T20:51:00Z
-**Stopped At:** Completed 125-02-PLAN.md
-**Resume file:** .planning/phases/125-voice-preserving-updates/125-02-SUMMARY.md
+**Last session:** 2026-03-05T20:48:23.640Z
+**Stopped At:** Completed 125-01-PLAN.md
+**Resume file:** None
