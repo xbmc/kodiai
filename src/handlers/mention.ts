@@ -365,6 +365,14 @@ export function createMentionHandler(deps: {
       return "apply";
     }
 
+    if (isImplementationRequestWithoutPrefix(normalized)) {
+      return "apply";
+    }
+
+    if (isConversationalConfirmation(normalized)) {
+      return "apply";
+    }
+
     return undefined;
   }
 
@@ -1093,13 +1101,13 @@ export function createMentionHandler(deps: {
             ? detectImplicitIssueIntent(parsedWriteIntent.request)
             : undefined;
 
-        // PR surfaces: narrow patch-specific intent detection (new behavior)
-        const prPatchIntent =
+        // PR surfaces: broad write intent detection (implementation verbs, confirmations, patches)
+        const prWriteIntent =
           isPrSurface && !isIssueThreadComment && !parsedWriteIntent.writeIntent
             ? detectImplicitPrPatchIntent(parsedWriteIntent.request)
             : undefined;
 
-        const effectiveImplicit = implicitIntent ?? prPatchIntent;
+        const effectiveImplicit = implicitIntent ?? prWriteIntent;
 
         const writeIntent =
           effectiveImplicit !== undefined && !parsedWriteIntent.writeIntent

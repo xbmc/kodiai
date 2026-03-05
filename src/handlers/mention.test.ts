@@ -721,12 +721,11 @@ describe("createMentionHandler conversational review wiring", () => {
       }),
     );
 
+    // With expanded PR write intent detection, "fix this" is recognized as write intent.
+    // Since write mode is disabled in the config, the response tells the user to enable it.
     expect(issueReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("I can answer this, but I need one detail first.");
-    expect(issueReplies[0]).toContain("Could you share the exact outcome you want");
-    expect(issueReplies[0]).not.toContain("Can you clarify what you want me to do?");
+    expect(issueReplies[0]).toContain("Write mode is disabled for this repo");
     expect(pullCreateCalls).toBe(0);
-    expect(capturedWriteMode).toBe(false);
 
     await workspaceFixture.cleanup();
   });
@@ -835,7 +834,7 @@ describe("createMentionHandler conversational review wiring", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("non-patch implementation verbs on PR/review surfaces never auto-promote to write mode", async () => {
+  test("implementation verbs on PR/review surfaces auto-promote to write mode", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -846,10 +845,7 @@ describe("createMentionHandler conversational review wiring", () => {
       .trim();
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
-    const issueReplies: string[] = [];
-    const threadReplies: string[] = [];
     const writeModes: Array<boolean | undefined> = [];
-    let pullCreateCalls = 0;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -880,10 +876,7 @@ describe("createMentionHandler conversational review wiring", () => {
         },
         issues: {
           listComments: async () => ({ data: [] }),
-          createComment: async (params: { body: string }) => {
-            issueReplies.push(params.body);
-            return { data: {} };
-          },
+          createComment: async () => ({ data: {} }),
         },
         pulls: {
           list: async () => ({ data: [] }),
@@ -903,14 +896,8 @@ describe("createMentionHandler conversational review wiring", () => {
               base: { ref: "main" },
             },
           }),
-          createReplyForReviewComment: async (params: { body: string }) => {
-            threadReplies.push(params.body);
-            return { data: {} };
-          },
-          create: async () => {
-            pullCreateCalls++;
-            return { data: { html_url: "https://example.com/pr/should-not-open" } };
-          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+          create: async () => ({ data: { html_url: "https://example.com/pr/write-intent" } }),
         },
       },
     };
@@ -928,7 +915,7 @@ describe("createMentionHandler conversational review wiring", () => {
           writeModes.push(ctx.writeMode);
           return {
             conclusion: "success",
-            published: false,
+            published: true,
             writeMode: ctx.writeMode,
             costUsd: 0,
             numTurns: 1,
@@ -965,12 +952,7 @@ describe("createMentionHandler conversational review wiring", () => {
     );
 
     expect(writeModes).toHaveLength(2);
-    expect(writeModes.every((writeMode) => writeMode === false)).toBe(true);
-    expect(pullCreateCalls).toBe(0);
-    expect(issueReplies).toHaveLength(1);
-    expect(threadReplies).toHaveLength(1);
-    expect(issueReplies[0]).toContain("Could you share the exact outcome you want");
-    expect(threadReplies[0]).toContain("Could you share the exact outcome you want");
+    expect(writeModes.every((writeMode) => writeMode === true)).toBe(true);
 
     await workspaceFixture.cleanup();
   });
@@ -1132,7 +1114,7 @@ describe("createMentionHandler conversational review wiring", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("non-patch verbs on PR surfaces still do not trigger write mode even with patch feature", async () => {
+  test("implementation verbs on PR surfaces trigger write mode with expanded detection", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
       "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
@@ -1235,7 +1217,7 @@ describe("createMentionHandler conversational review wiring", () => {
     const issueHandler = handlers.get("issue_comment.created");
     expect(issueHandler).toBeDefined();
 
-    // "fix the login bug" -- broad verb, should NOT trigger write mode
+    // "fix the login bug" -- implementation verb, should trigger write mode
     await issueHandler!(
       buildPrIssueCommentMentionEvent({
         prNumber,
@@ -1244,7 +1226,7 @@ describe("createMentionHandler conversational review wiring", () => {
     );
 
     expect(writeModes).toHaveLength(1);
-    expect(writeModes[0]).toBe(false);
+    expect(writeModes[0]).toBe(true);
 
     await workspaceFixture.cleanup();
   });
