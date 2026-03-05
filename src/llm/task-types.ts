@@ -25,6 +25,8 @@ export const TASK_TYPES = {
   VOICE_EXTRACT: "voice.extract",
   /** Voice match validation for generated suggestions (non-agentic, Phase 125). */
   VOICE_VALIDATE: "voice.validate",
+  /** Section-level update generation for wiki pages (non-agentic, Phase 123). */
+  SECTION_UPDATE: "section.update",
 } as const;
 
 /** Union type of all valid task type strings. */
