@@ -293,6 +293,10 @@ export function createMentionHandler(deps: {
       return "apply";
     }
 
+    if (isConversationalConfirmation(normalized)) {
+      return "apply";
+    }
+
     return undefined;
   }
 
@@ -520,7 +524,7 @@ export function createMentionHandler(deps: {
     if (normalized.length === 0) return false;
 
     const implementationVerb =
-      "(?:fix|update|change|refactor|add|remove|implement|create|rename|rewrite|patch)";
+      "(?:fix|update|change|refactor|add|remove|implement|create|rename|rewrite|patch|write|open|submit|send)";
     const rewriteVerb = "(?:improve|tweak|clean\\s*up|cleanup|clarify)";
     const codeTarget =
       "(?:code|logic|behavior|copy|text|wording|message|handler|prompt|response|implementation|flow|gating|function|test(?:s)?|readme|docs?|config|types?)";
@@ -553,6 +557,29 @@ export function createMentionHandler(deps: {
       makeStyleCommand.test(normalized) ||
       makeStyleAsk.test(normalized)
     );
+  }
+
+  function isConversationalConfirmation(text: string): boolean {
+    const normalized = stripIssueIntentWrappers(text).toLowerCase();
+    if (normalized.length === 0) return false;
+
+    const actionSignal =
+      /(?:\bwrite\b|\bdo\s+it\b|\bgo\s+ahead\b|\bproceed\b|\bpr\b|\bimplement\b|\bfix\b|\bopen\b|\bsubmit\b|\bsend\b|\bmake\b|\bcreate\b)/;
+
+    // Confirmation + action: "yes, please write the PR", "yes do it", "yes go ahead"
+    const confirmationAction = /^(?:yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely|please)\b/;
+    // Sentiment + action: "sounds good, go ahead", "looks good, make the PR"
+    const sentimentAction =
+      /^(?:sounds?\s+good|looks?\s+good|that(?:'s|\s+is)\s+(?:good|great|perfect|fine)|perfect|great)\b/;
+    // Standalone action: "go ahead", "do it", "please proceed"
+    const standaloneAction =
+      /^(?:(?:please\s+)?go\s+ahead|(?:please\s+)?do\s+it|(?:please\s+)?proceed)\b/;
+
+    if (standaloneAction.test(normalized)) return true;
+    if ((confirmationAction.test(normalized) || sentimentAction.test(normalized)) && actionSignal.test(normalized))
+      return true;
+
+    return false;
   }
 
   async function handleMention(event: WebhookEvent): Promise<void> {

@@ -2518,6 +2518,207 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test.each([
+    "yes, please write the PR for this",
+    "go ahead and write the PR",
+    "write the PR",
+    "open a PR for this",
+    "yes do it",
+    "sounds good, go ahead",
+    "please proceed",
+    "yes go ahead",
+    "looks good, make the PR",
+    "sure, please create a PR",
+    "submit the PR please",
+  ])(
+    "conversational confirmation '%s' is treated as write intent and refused when write mode is disabled",
+    async (commentBody) => {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+      let executorCalled = false;
+      const issueReplies: string[] = [];
+
+      const eventRouter: EventRouter = {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      };
+
+      const jobQueue: JobQueue = {
+        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+      };
+
+      const workspaceManager: WorkspaceManager = {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      };
+
+      const octokit = {
+        rest: {
+          reactions: {
+            createForPullRequestReviewComment: async () => ({ data: {} }),
+            createForIssueComment: async () => ({ data: {} }),
+          },
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async (params: { body: string }) => {
+              issueReplies.push(params.body);
+              return { data: {} };
+            },
+          },
+          pulls: {
+            list: async () => ({ data: [] }),
+            get: async () => ({ data: {} }),
+            createReplyForReviewComment: async () => ({ data: {} }),
+          },
+        },
+      };
+
+      createMentionHandler({
+        eventRouter,
+        jobQueue,
+        workspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => octokit as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async () => {
+            executorCalled = true;
+            return {
+              conclusion: "success",
+              published: true,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-mention",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        logger: createNoopLogger(),
+      });
+
+      const handler = handlers.get("issue_comment.created");
+      expect(handler).toBeDefined();
+
+      await handler!(
+        buildIssueCommentMentionEvent({
+          issueNumber: 77,
+          commentBody: `@kodiai ${commentBody}`,
+        }),
+      );
+
+      expect(executorCalled).toBe(false);
+      expect(issueReplies).toHaveLength(1);
+      expect(issueReplies[0]).toContain("Write mode is disabled for this repo.");
+
+      await workspaceFixture.cleanup();
+    },
+  );
+
+  test.each([
+    "yes",
+    "yes that's interesting",
+    "what does this code do?",
+    "sounds good",
+    "looks good, thanks",
+  ])(
+    "non-actionable message '%s' is NOT treated as write intent",
+    async (commentBody) => {
+      const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+      const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+      let executorCalled = false;
+
+      const eventRouter: EventRouter = {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      };
+
+      const jobQueue: JobQueue = {
+        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+      };
+
+      const workspaceManager: WorkspaceManager = {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      };
+
+      const octokit = {
+        rest: {
+          reactions: {
+            createForPullRequestReviewComment: async () => ({ data: {} }),
+            createForIssueComment: async () => ({ data: {} }),
+          },
+          issues: {
+            listComments: async () => ({ data: [] }),
+            createComment: async () => ({ data: {} }),
+          },
+          pulls: {
+            list: async () => ({ data: [] }),
+            get: async () => ({ data: {} }),
+            createReplyForReviewComment: async () => ({ data: {} }),
+          },
+        },
+      };
+
+      createMentionHandler({
+        eventRouter,
+        jobQueue,
+        workspaceManager,
+        githubApp: {
+          getAppSlug: () => "kodiai",
+          getInstallationOctokit: async () => octokit as never,
+        } as unknown as GitHubApp,
+        executor: {
+          execute: async () => {
+            executorCalled = true;
+            return {
+              conclusion: "success",
+              published: true,
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-mention",
+            };
+          },
+        } as never,
+        telemetryStore: noopTelemetryStore,
+        logger: createNoopLogger(),
+      });
+
+      const handler = handlers.get("issue_comment.created");
+      expect(handler).toBeDefined();
+
+      await handler!(
+        buildIssueCommentMentionEvent({
+          issueNumber: 77,
+          commentBody: `@kodiai ${commentBody}`,
+        }),
+      );
+
+      // Should run as a normal mention, not trigger write intent refusal
+      expect(executorCalled).toBe(true);
+
+      await workspaceFixture.cleanup();
+    },
+  );
+
   test("issue 'fix this so you can open up a PR' wording is refused when write.enabled is false", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
