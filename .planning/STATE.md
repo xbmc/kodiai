@@ -4,13 +4,13 @@ milestone: v0.25
 milestone_name: Wiki Content Updates
 status: planning
 stopped_at: Phase 124 context gathered
-last_updated: "2026-03-05T16:13:28.111Z"
+last_updated: "2026-03-05T16:29:54.227Z"
 last_activity: 2026-03-05 -- Completed Phase 122 (Enhanced Staleness)
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  completed_phases: 6
+  total_plans: 15
+  completed_plans: 15
   percent: 100
 ---
 

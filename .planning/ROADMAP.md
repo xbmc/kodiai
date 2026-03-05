@@ -319,7 +319,7 @@ Plans:
 | 121 | 3/3 | Complete    | 2026-03-03 | - |
 | 122 | 2/2 | Complete    | 2026-03-05 | - |
 | 123 | 3/3 | Complete    | 2026-03-05 | - |
-| 124 | 2/2 | Complete   | 2026-03-05 | - |
+| 124 | 2/2 | Complete    | 2026-03-05 | - |
 | 125 | 3/3 | Complete    | 2026-03-04 | - |
 
 ### Phase 125: Voice-Preserving Updates
