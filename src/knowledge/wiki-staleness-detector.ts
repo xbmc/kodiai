@@ -2,7 +2,7 @@
  * Wiki staleness detector: two-tier pipeline (heuristic + LLM) that identifies
  * wiki pages potentially outdated by recent code changes.
  *
- * Flow: GitHub commits -> heuristic token-overlap scoring -> LLM evaluation (cap 20) -> Slack report.
+ * Flow: GitHub merged PRs -> heuristic token-overlap scoring -> LLM evaluation (cap 20) -> Slack report.
  */
 
 import type { Logger } from "pino";
@@ -26,7 +26,6 @@ const DEFAULT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_STARTUP_DELAY_MS = 90_000; // 90 seconds
 const LLM_CAP = 20; // max pages to LLM-evaluate per cycle
 const MAX_SCAN_WINDOW_DAYS = 7; // cap on commit scan window regardless of threshold
-const MAX_COMMITS = 200; // cap total commits fetched to prevent runaway API calls
 
 // ── Run state persistence ────────────────────────────────────────────
 
@@ -36,6 +35,7 @@ async function loadRunState(sql: Sql): Promise<WikiStalenessRunState> {
     return {
       lastRunAt: null,
       lastCommitSha: null,
+      lastMergedAt: null,
       pagesFlagged: 0,
       pagesEvaluated: 0,
       status: "pending",
@@ -47,6 +47,7 @@ async function loadRunState(sql: Sql): Promise<WikiStalenessRunState> {
     id: row.id as number,
     lastRunAt: row.last_run_at ? new Date(row.last_run_at as string) : null,
     lastCommitSha: (row.last_commit_sha as string) ?? null,
+    lastMergedAt: row.last_run_at ? new Date(row.last_run_at as string) : null,
     pagesFlagged: row.pages_flagged as number,
     pagesEvaluated: row.pages_evaluated as number,
     status: row.status as WikiStalenessRunState["status"],
@@ -68,55 +69,6 @@ async function saveRunState(sql: Sql, state: WikiStalenessRunState): Promise<voi
       error_message = EXCLUDED.error_message,
       updated_at = now()
   `;
-}
-
-// ── GitHub commit fetching ───────────────────────────────────────────
-
-type CommitWithFiles = { sha: string; files: string[]; date: Date };
-
-async function fetchChangedFiles(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  since: Date,
-  logger: Logger,
-): Promise<CommitWithFiles[]> {
-  let commits: Array<{ sha: string; date: Date }>;
-  try {
-    const allCommits = await octokit.paginate(octokit.repos.listCommits, {
-      owner,
-      repo,
-      since: since.toISOString(),
-      per_page: 100,
-    });
-
-    // Cap at MAX_COMMITS
-    commits = allCommits.slice(0, MAX_COMMITS).map((c) => ({
-      sha: c.sha,
-      date: c.commit.author?.date ? new Date(c.commit.author.date) : new Date(),
-    }));
-  } catch (err) {
-    logger.error({ err, owner, repo }, "Failed to list commits for staleness scan");
-    return [];
-  }
-
-  if (commits.length === 0) return [];
-
-  logger.debug({ commitCount: commits.length, since: since.toISOString() }, "Fetching commit file details");
-
-  const results: CommitWithFiles[] = [];
-  for (const commit of commits) {
-    try {
-      const detail = await octokit.repos.getCommit({ owner, repo, ref: commit.sha });
-      const files = (detail.data.files ?? []).map((f) => f.filename);
-      results.push({ sha: commit.sha, files, date: commit.date });
-    } catch (err) {
-      // Fail-open: skip individual commits that can't be fetched
-      logger.warn({ err, sha: commit.sha }, "Failed to get commit detail (skipping)");
-    }
-  }
-
-  return results;
 }
 
 // ── Heuristic scoring ────────────────────────────────────────────────
@@ -309,7 +261,7 @@ async function storePREvidence(
 
 async function heuristicPass(
   sql: Sql,
-  changedCommits: CommitWithFiles[],
+  mergedPRs: MergedPR[],
   logger: Logger,
 ): Promise<WikiPageCandidate[]> {
   // Fetch all active wiki page chunks (limit 5000 for reasonable memory usage)
@@ -342,25 +294,28 @@ async function heuristicPass(
     }
   }
 
-  // Build flat list of all changed file paths and sha->date map
+  // Build flat list of all changed file paths from merged PRs
   const allChangedFiles: string[] = [];
-  const shaDateMap = new Map<string, number>();
-  for (const commit of changedCommits) {
-    const dateMs = commit.date.getTime();
-    shaDateMap.set(commit.sha, dateMs);
-    for (const file of commit.files) {
-      allChangedFiles.push(file);
+  for (const pr of mergedPRs) {
+    for (const file of pr.files) {
+      allChangedFiles.push(file.filename);
     }
   }
 
-  // Build file->sha mapping for tracking which commits affect which pages
-  const fileToShas = new Map<string, string[]>();
-  for (const commit of changedCommits) {
-    for (const file of commit.files) {
-      const key = file.toLowerCase();
-      if (!fileToShas.has(key)) fileToShas.set(key, []);
-      fileToShas.get(key)!.push(commit.sha);
+  // Build file->PRs mapping for tracking which PRs affect which pages
+  const fileToPRs = new Map<string, number[]>();
+  for (const pr of mergedPRs) {
+    for (const file of pr.files) {
+      const key = file.filename.toLowerCase();
+      if (!fileToPRs.has(key)) fileToPRs.set(key, []);
+      fileToPRs.get(key)!.push(pr.number);
     }
+  }
+
+  // Build PR mergedAt map for recency sorting
+  const prDateMap = new Map<number, number>();
+  for (const pr of mergedPRs) {
+    prDateMap.set(pr.number, pr.mergedAt.getTime());
   }
 
   // Score each page
@@ -370,9 +325,9 @@ async function heuristicPass(
     const score = heuristicScore(page.chunkTexts, allChangedFiles);
     if (score === 0) continue;
 
-    // Determine which files and commits affected this page
+    // Determine which files and PRs affected this page
     const affectingFilePaths: string[] = [];
-    const affectingShaSet = new Set<string>();
+    const affectingPRSet = new Set<number>();
 
     // Re-check which specific files had token overlap
     const chunkTokens = new Set<string>();
@@ -390,17 +345,18 @@ async function heuristicPass(
       const hasOverlap = pathTokens.some((token) => chunkTokens.has(token));
       if (hasOverlap) {
         affectingFilePaths.push(filePath);
-        const shas = fileToShas.get(filePath.toLowerCase());
-        if (shas) shas.forEach((sha) => affectingShaSet.add(sha));
+        const prNums = fileToPRs.get(filePath.toLowerCase());
+        if (prNums) prNums.forEach((n) => affectingPRSet.add(n));
       }
     }
 
-    const affectingCommitShas = Array.from(affectingShaSet);
+    const affectingPRNumbers = Array.from(affectingPRSet);
+    const dedupedFilePaths = [...new Set(affectingFilePaths)];
 
-    // sortableRecencyMs: max commit timestamp among affecting commits
+    // sortableRecencyMs: max mergedAt timestamp among affecting PRs
     let sortableRecencyMs = 0;
-    for (const sha of affectingCommitShas) {
-      const dateMs = shaDateMap.get(sha);
+    for (const prNum of affectingPRNumbers) {
+      const dateMs = prDateMap.get(prNum);
       if (dateMs && dateMs > sortableRecencyMs) sortableRecencyMs = dateMs;
     }
 
@@ -413,10 +369,30 @@ async function heuristicPass(
       chunkTexts: page.chunkTexts,
       heuristicScore: score,
       heuristicTier,
-      affectingCommitShas,
-      affectingFilePaths: [...new Set(affectingFilePaths)], // deduplicate
+      affectingCommitShas: [], // no longer used but kept for backward compat
+      affectingPRNumbers,
+      affectingFilePaths: dedupedFilePaths,
       sortableRecencyMs,
     });
+
+    // Store PR evidence for each matched PR+file+page combination
+    for (const pr of mergedPRs) {
+      const matches: Array<{ filePath: string; patch: string; pageId: number | null; pageTitle: string | null; score: number }> = [];
+      for (const file of pr.files) {
+        if (!file.patch) continue; // skip binary/too-large files
+        if (!dedupedFilePaths.includes(file.filename)) continue;
+        matches.push({
+          filePath: file.filename,
+          patch: file.patch,
+          pageId,
+          pageTitle: page.pageTitle,
+          score,
+        });
+      }
+      if (matches.length > 0) {
+        await storePREvidence(sql, pr, matches, logger);
+      }
+    }
   }
 
   // Sort: PRIMARY by sortableRecencyMs DESC, SECONDARY by heuristicScore DESC
@@ -442,7 +418,41 @@ async function evaluateWithLlm(
   const changedFilesList = candidate.affectingFilePaths.slice(0, 10).join("\n");
   const chunkContent = candidate.chunkTexts.join("\n\n---\n\n");
 
-  const prompt = `You are evaluating whether a wiki page is outdated due to recent code changes.
+  // Fetch stored patch evidence for this page
+  let patchContent = "";
+  try {
+    const evidenceRows = await opts.sql`
+      SELECT patch, pr_title, pr_number
+      FROM wiki_pr_evidence
+      WHERE matched_page_id = ${candidate.pageId}
+      ORDER BY merged_at DESC
+      LIMIT 5
+    `;
+    const patches: string[] = [];
+    let totalLen = 0;
+    const PATCH_CAP = 3000;
+    for (const row of evidenceRows) {
+      const entry = `--- PR #${row.pr_number}: ${row.pr_title} ---\n${row.patch}`;
+      if (totalLen + entry.length > PATCH_CAP) {
+        // Add truncated portion if we have room
+        const remaining = PATCH_CAP - totalLen;
+        if (remaining > 100) patches.push(entry.slice(0, remaining) + "\n[truncated]");
+        break;
+      }
+      patches.push(entry);
+      totalLen += entry.length;
+    }
+    patchContent = patches.join("\n\n");
+  } catch (err) {
+    // Fail-open: proceed without patch content
+    logger.warn({ err, pageId: candidate.pageId }, "Failed to fetch PR evidence patches (proceeding without)");
+  }
+
+  const patchSection = patchContent
+    ? `\n\nRelevant code changes (diff patches from recent merged PRs):\n${patchContent}`
+    : "";
+
+  const prompt = `You are evaluating whether a wiki page is outdated due to recent merged PRs.
 
 Wiki page: "${candidate.pageTitle}"
 URL: ${candidate.pageUrl}
@@ -450,8 +460,8 @@ URL: ${candidate.pageUrl}
 Wiki content (excerpts):
 ${chunkContent}
 
-Recently changed code files:
-${changedFilesList}
+Recently changed code files (from merged PRs):
+${changedFilesList}${patchSection}
 
 Is this wiki page likely outdated due to these code changes?
 - If YES: respond with "STALE: " followed by a single sentence explaining what specifically changed and why the wiki page needs updating (e.g., "STALE: The API endpoint was renamed from /users to /accounts but the wiki still references /users").
@@ -485,6 +495,7 @@ Your confidence in this assessment based on file overlap: ${candidate.heuristicT
       confidence,
       explanation,
       commitSha: candidate.affectingCommitShas[0] ?? "",
+      prNumber: candidate.affectingPRNumbers[0] ?? null,
       changedFilePath: candidate.affectingFilePaths[0] ?? "",
     };
   } catch (err) {
@@ -604,8 +615,8 @@ export function createWikiStalenessDetector(
         installationContext.installationId,
       );
 
-      // Fetch changed files from commits
-      const changedCommits = await fetchChangedFiles(
+      // Fetch merged PRs
+      const mergedPRs = await fetchMergedPRs(
         octokit,
         opts.githubOwner,
         opts.githubRepo,
@@ -613,11 +624,13 @@ export function createWikiStalenessDetector(
         logger,
       );
 
-      if (changedCommits.length === 0) {
-        logger.info({ since }, "Wiki staleness scan: no commits found in window");
+      if (mergedPRs.length === 0) {
+        logger.info({ since }, "Wiki staleness scan: no merged PRs found in window");
         await saveRunState(opts.sql, {
           ...runState,
           lastRunAt: new Date(),
+          lastCommitSha: null,
+          lastMergedAt: null,
           pagesFlagged: 0,
           pagesEvaluated: 0,
           status: "success",
@@ -634,7 +647,7 @@ export function createWikiStalenessDetector(
       }
 
       // Heuristic pass
-      const candidates = await heuristicPass(opts.sql, changedCommits, logger);
+      const candidates = await heuristicPass(opts.sql, mergedPRs, logger);
       const pagesFlagged = candidates.length;
 
       // Cap at LLM_CAP (20). Candidates already sorted by recency DESC primary,
@@ -648,12 +661,16 @@ export function createWikiStalenessDetector(
         if (result) stalePages.push(result);
       }
 
-      // Determine newest commit SHA for scan window anchor
-      const newestCommitSha = changedCommits[0]?.sha ?? runState.lastCommitSha;
+      // Determine newest merged_at timestamp for scan window anchor
+      const newestMergedAt = mergedPRs.reduce<Date | null>(
+        (max, pr) => (!max || pr.mergedAt > max ? pr.mergedAt : max),
+        null,
+      );
 
       await saveRunState(opts.sql, {
         lastRunAt: new Date(),
-        lastCommitSha: newestCommitSha ?? null,
+        lastCommitSha: null, // no longer used but column exists
+        lastMergedAt: newestMergedAt,
         pagesFlagged,
         pagesEvaluated: toEvaluate.length,
         status: "success",
