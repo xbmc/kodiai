@@ -285,6 +285,22 @@ Plans:
 - [ ] 124-01: TBD
 - [ ] 124-02: TBD
 
+### Phase 125: Voice-Preserving Updates (RE-PLAN)
+**Goal**: Preserve existing page voice while freely improving formatting, caching style descriptions, and validating template/heading preservation in generated suggestions
+**Depends on:** Phase 124
+**Requirements**: VOICE-01, VOICE-02, VOICE-03, VOICE-04, VOICE-05, VOICE-06, VOICE-07
+**Success Criteria** (what must be TRUE):
+  1. Style extraction samples content from across the page (beginning, middle, end) and catalogs wiki conventions
+  2. Style descriptions are cached in DB with TTL and content-hash invalidation
+  3. Generation prompt encourages formatting improvements while preserving voice and MediaWiki templates
+  4. Post-generation template check verifies {{...}} preservation with retry-once-then-drop logic
+  5. Heading levels validated, formatting novelty advisory, section length advisory
+**Plans:** 2 plans
+
+Plans:
+- [ ] 125-01-PLAN.md — Spread sampling, wiki convention analysis, and style description caching
+- [ ] 125-02-PLAN.md — Formatting freedom prompt, post-generation template/heading/formatting checks
+
 ## Progress
 
 **Total shipped:** 24 milestones, 119 phases, 297 plans
@@ -320,17 +336,8 @@ Plans:
 | 122 | 2/2 | Complete    | 2026-03-05 | - |
 | 123 | 3/3 | Complete    | 2026-03-05 | - |
 | 124 | 2/2 | Complete    | 2026-03-05 | - |
-| 125 | 3/3 | Complete    | 2026-03-04 | - |
-
-### Phase 125: Voice-Preserving Updates
-**Goal**: When generating wiki page update suggestions, preserve the existing page's formatting conventions, writing voice, tone, and style so edits read as natural continuations rather than AI-generated insertions
-**Requirements**: TBD
-**Depends on:** Phase 124
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] TBD (run /gsd:plan-phase 125 to break down) (completed 2026-03-04)
+| 125 | 0/2 | Planning    | - | - |
 
 ---
 
-*Roadmap updated: 2026-03-02 -- v0.25 Wiki Content Updates roadmap created*
+*Roadmap updated: 2026-03-05 -- Phase 125 re-planned with updated CONTEXT.md decisions*
