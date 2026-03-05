@@ -204,7 +204,7 @@ See `.planning/milestones/v0.24-ROADMAP.md` for full phase details.
 
 - [x] **Phase 120: Embedding Migration** - Migrate wiki corpus to voyage-context-3 with per-corpus model routing in retrieval (completed 2026-03-03)
 - [x] **Phase 121: Page Popularity** - Rank wiki pages by inbound links, citation frequency, and edit recency (completed 2026-03-03)
-- [ ] **Phase 122: Enhanced Staleness** - Ground staleness detection in actual PR/commit diffs from last 90 days
+- [x] **Phase 122: Enhanced Staleness** - Ground staleness detection in actual PR/commit diffs from last 90 days (completed 2026-03-05)
 - [ ] **Phase 123: Update Generation** - LLM-generated section-level rewrite suggestions with diff evidence and commit citations
 - [ ] **Phase 124: Publishing** - Post update suggestions as comments on a tracking issue in xbmc/wiki
 
@@ -317,7 +317,7 @@ Plans:
 | 115-119 | v0.24 | 5/5 | Complete | 2026-03-03 |
 | 120 | 2/2 | Complete    | 2026-03-03 | - |
 | 121 | 3/3 | Complete    | 2026-03-03 | - |
-| 122 | 1/2 | In Progress|  | - |
+| 122 | 2/2 | Complete   | 2026-03-05 | - |
 | 123 | v0.25 | 0/0 | Not started | - |
 | 124 | v0.25 | 0/0 | Not started | - |
 | 125 | 3/3 | Complete    | 2026-03-04 | - |
@@ -326,7 +326,7 @@ Plans:
 **Goal**: When generating wiki page update suggestions, preserve the existing page's formatting conventions, writing voice, tone, and style so edits read as natural continuations rather than AI-generated insertions
 **Requirements**: TBD
 **Depends on:** Phase 124
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] TBD (run /gsd:plan-phase 125 to break down) (completed 2026-03-04)

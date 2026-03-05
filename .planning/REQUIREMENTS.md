@@ -24,7 +24,7 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 ### Staleness Detection
 
 - [x] **STALE-01**: Recent merged PRs (last 90 days) scanned to identify code areas with significant changes
-- [ ] **STALE-02**: Changed code areas matched to related wiki pages via retrieval pipeline
+- [x] **STALE-02**: Changed code areas matched to related wiki pages via retrieval pipeline
 - [x] **STALE-03**: Diff content from PRs/commits preserved and fed to staleness analysis (not discarded)
 - [x] **STALE-04**: Improved staleness precision with domain stopwords and section-heading weighting to reduce false positives
 
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | POP-03 | Phase 121 | Complete |
 | POP-04 | Phase 121 | Complete |
 | STALE-01 | Phase 122 | Complete |
-| STALE-02 | Phase 122 | Pending |
+| STALE-02 | Phase 122 | Complete |
 | STALE-03 | Phase 122 | Complete |
 | STALE-04 | Phase 122 | Complete |
 | UPDATE-01 | Phase 123 | Pending |

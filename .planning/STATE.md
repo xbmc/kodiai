@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Completed 122-01-PLAN.md
-last_updated: "2026-03-05T02:21:47.420Z"
+stopped_at: Completed 122-02-PLAN.md
+last_updated: "2026-03-05T02:28:12.570Z"
 progress:
   total_phases: 87
-  completed_phases: 82
+  completed_phases: 83
   total_plans: 205
-  completed_plans: 211
+  completed_plans: 212
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 ## Current Position
 
 Phase: 122 of 124 (Enhanced Staleness)
-Plan: 1 of 2 in current phase
-Status: Executing Phase 122
-Last activity: 2026-03-05 -- Completed 122-01: PR evidence data layer and enhanced heuristic scoring
+Plan: 2 of 2 in current phase
+Status: Phase 122 Complete
+Last activity: 2026-03-05 -- Completed 122-02: PR pipeline integration with diff-grounded LLM evaluation
 
-Progress: [████████████████████] 207/200 plans (100%)
+Progress: [████████████████████] 208/200 plans (100%)
 
 ## Accumulated Context
 
@@ -56,6 +56,8 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 122]: parseIssueReferences called with {prBody, commitMessages} object signature (actual API) not (text, source) as plan assumed
 - [Phase 122]: Stopwords filtered from both chunk tokens AND path tokens to prevent any contribution from ubiquitous domain terms
 - [Phase 122]: Heading tokens take priority: if a token appears in both heading and body, heading weight (3x) applies
+- [Phase 122]: affectingCommitShas kept as empty array for backward compat during PR pipeline transition
+- [Phase 122]: Patch content capped at 3000 chars in LLM prompt to prevent token bloat
 
 ### Key Constraints (Carry-Forward)
 
@@ -89,6 +91,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T02:21:47.415Z
-**Stopped At:** Completed 122-01-PLAN.md
+**Last session:** 2026-03-05T02:28:12.567Z
+**Stopped At:** Completed 122-02-PLAN.md
 **Resume file:** None
