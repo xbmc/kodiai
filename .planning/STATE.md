@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: unknown
-stopped_at: Phase 122 context gathered
-last_updated: "2026-03-05T01:58:45.856Z"
+stopped_at: Completed 122-01-PLAN.md
+last_updated: "2026-03-05T02:21:47.420Z"
 progress:
   total_phases: 87
   completed_phases: 82
-  total_plans: 203
-  completed_plans: 210
+  total_plans: 205
+  completed_plans: 211
 ---
 
 # Project State
@@ -23,10 +23,10 @@ See: `.planning/PROJECT.md` (updated 2026-03-03)
 
 ## Current Position
 
-Phase: 121 of 124 (Page Popularity)
-Plan: 3 of 3 in current phase
-Status: Phase 121 Complete
-Last activity: 2026-03-03 -- Completed 121-03: application bootstrap wiring for popularity store and scorer
+Phase: 122 of 124 (Enhanced Staleness)
+Plan: 1 of 2 in current phase
+Status: Executing Phase 122
+Last activity: 2026-03-05 -- Completed 122-01: PR evidence data layer and enhanced heuristic scoring
 
 Progress: [████████████████████] 207/200 plans (100%)
 
@@ -53,6 +53,9 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - Direct SQL DISTINCT ON query for page dedup in scorer rather than WikiPageStore methods (121-02)
 - Popularity store declared unconditionally so both retriever and scorer can access it (121-03)
 - Scorer starts unconditionally (not gated on Slack config) since popularity scoring is independent (121-03)
+- [Phase 122]: parseIssueReferences called with {prBody, commitMessages} object signature (actual API) not (text, source) as plan assumed
+- [Phase 122]: Stopwords filtered from both chunk tokens AND path tokens to prevent any contribution from ubiquitous domain terms
+- [Phase 122]: Heading tokens take priority: if a token appears in both heading and body, heading weight (3x) applies
 
 ### Key Constraints (Carry-Forward)
 
@@ -86,6 +89,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-05T01:58:45.853Z
-**Stopped At:** Phase 122 context gathered
-**Resume file:** .planning/phases/122-enhanced-staleness/122-CONTEXT.md
+**Last session:** 2026-03-05T02:21:47.415Z
+**Stopped At:** Completed 122-01-PLAN.md
+**Resume file:** None
