@@ -52,6 +52,14 @@ import { createRequestTracker } from "./lifecycle/request-tracker.ts";
 import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
 
+// Global error handlers — log and keep running instead of silently crashing
+process.on("uncaughtException", (err) => {
+  console.error("FATAL: uncaughtException", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("FATAL: unhandledRejection", reason);
+});
+
 // Fail fast on missing or invalid config
 const config = await loadConfig();
 const logger = createLogger();
@@ -241,14 +249,14 @@ const retriever = isolationLayer && embeddingProvider
       isolationLayer,
       config: {
         retrieval: {
-          enabled: config.knowledge.retrieval.enabled,
-          topK: config.knowledge.retrieval.topK,
-          distanceThreshold: config.knowledge.retrieval.distanceThreshold,
-          adaptive: config.knowledge.retrieval.adaptive,
-          maxContextChars: config.knowledge.retrieval.maxContextChars,
+          enabled: true,
+          topK: 5,
+          distanceThreshold: 0.3,
+          adaptive: true,
+          maxContextChars: 2000,
         },
         sharing: {
-          enabled: config.knowledge.sharing.enabled,
+          enabled: false,
         },
       },
       reviewCommentStore,
