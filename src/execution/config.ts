@@ -514,6 +514,12 @@ const triageSchema = z
     },
   });
 
+const guardrailsSchema = z
+  .object({
+    strictness: z.enum(["strict", "standard", "lenient"]).default("standard"),
+  })
+  .default({ strictness: "standard" });
+
 const modelsSchema = z
   .record(z.string(), z.string())
   .default({});
@@ -543,6 +549,7 @@ const repoConfigSchema = z.object({
   feedback: feedbackSchema,
   timeout: timeoutSchema,
   triage: triageSchema,
+  guardrails: guardrailsSchema,
 });
 
 export type RepoConfig = z.infer<typeof repoConfigSchema>;
@@ -815,6 +822,21 @@ export async function loadRepoConfig(
     });
   }
 
+  // guardrails
+  const guardrailsResult = guardrailsSchema.safeParse(obj.guardrails);
+  let guardrails: z.infer<typeof guardrailsSchema>;
+  if (guardrailsResult.success) {
+    guardrails = guardrailsResult.data;
+  } else {
+    guardrails = guardrailsSchema.parse({});
+    warnings.push({
+      section: "guardrails",
+      issues: guardrailsResult.error.issues.map(
+        (i) => `${i.path.join(".")}: ${i.message}`,
+      ),
+    });
+  }
+
   // models
   const modelsResult = modelsSchema.safeParse(obj.models);
   let models: z.infer<typeof modelsSchema>;
@@ -882,6 +904,7 @@ export async function loadRepoConfig(
     feedback,
     timeout,
     triage,
+    guardrails,
   };
 
   return { config, warnings };
