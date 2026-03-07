@@ -237,6 +237,18 @@ See `.planning/milestones/v0.25-ROADMAP.md` for full phase details.
 | 115-119 | v0.24 | 5/5 | Complete | 2026-03-03 |
 | 120-126 | v0.25 | 19/19 | Complete | 2026-03-07 |
 
+### Phase 127: Fork-based write mode with gist patches
+
+**Goal:** Configure write-mode to use forked repositories instead of creating branches in main, implement gist creation for patch requests, and add explicit instructions preventing the bot from creating branches directly
+**Requirements**: [FORK-01, FORK-02, FORK-03, FORK-04, FORK-05, FORK-06, FORK-07, FORK-08, FORK-09, FORK-10]
+**Depends on:** Phase 126
+**Plans:** 3 plans
+
+Plans:
+- [ ] 127-01-PLAN.md -- Bot user auth client, fork manager, and gist publisher foundation
+- [ ] 127-02-PLAN.md -- Fork-aware workspace creation and write-mode consumer wiring
+- [ ] 127-03-PLAN.md -- Agent system prompt fork instructions and legacy branch cleanup
+
 ---
 
-*Roadmap updated: 2026-03-07 -- v0.25 Wiki Content Updates shipped*
+*Roadmap updated: 2026-03-07 -- Phase 127 planned*
