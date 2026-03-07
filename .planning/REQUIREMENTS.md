@@ -62,7 +62,7 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 - [x] **GUARD-06**: Guardrail audit logging to Postgres — surface, strictness, claim counts, removed claims, pipeline duration
 - [x] **GUARD-07**: Surface adapters for mention, Slack, troubleshooting, triage, and wiki with per-surface thresholds
 - [x] **GUARD-08**: All surfaces fail-open on guardrail errors — classifier crashes or timeouts never block publishing
-- [ ] **GUARD-09**: Troubleshooting agent uses buildEpistemicBoundarySection; wiki generator uses unified pipeline instead of checkGrounding()
+- [x] **GUARD-09**: Troubleshooting agent uses buildEpistemicBoundarySection; wiki generator uses unified pipeline instead of checkGrounding()
 
 ## Future Requirements
 
@@ -129,7 +129,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GUARD-06 | Phase 126 | Complete |
 | GUARD-07 | Phase 126 | Complete |
 | GUARD-08 | Phase 126 | Complete |
-| GUARD-09 | Phase 126 | Pending |
+| GUARD-09 | Phase 126 | Complete |
 
 **Coverage:**
 - v0.25 requirements: 36 total

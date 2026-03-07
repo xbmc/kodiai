@@ -26,9 +26,9 @@ See: `.planning/PROJECT.md` (updated 2026-03-05)
 ## Current Position
 
 Phase: 126 of 126 (Global Anti-Hallucination Guardrails)
-Plan: 3 of 4 complete
-Status: Plan 126-03 complete
-Last activity: 2026-03-07 -- Completed 126-03 (Non-Review Surface Adapters)
+Plan: 4 of 4 complete
+Status: Phase 126 complete
+Last activity: 2026-03-07 -- Completed 126-04 (Surface Handler Wiring)
 
 Progress: [██████████] 100%
 
@@ -73,6 +73,10 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 126]: LLM classifier batches up to 10 claims per Haiku call to minimize overhead
 - [Phase 126]: Pipeline collects all ambiguous claims first, then makes single batched LLM call instead of per-claim calls
 - [Phase 126]: Wiki adapter preserves {{template}} markers regardless of classification and grounds via PR patch content
+- [Phase 126]: Review handler runs guardrail alongside existing classify/filter flow (audit logging, not replacing)
+- [Phase 126]: Mention/Slack handlers skip guardrail for short template messages to avoid false-positive filtering
+- [Phase 126]: Wiki handler falls back to legacy checkGrounding on pipeline error (dual-path safety)
+- [Phase 126]: Triage excluded from wiring -- confirmed template-only output with zero LLM prose
 
 ### Key Constraints (Carry-Forward)
 
@@ -110,6 +114,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07T09:18:12.638Z
-**Stopped At:** Completed 126-02-PLAN.md
+**Last session:** 2026-03-07T09:30:01Z
+**Stopped At:** Completed 126-04-PLAN.md (phase 126 complete)
 **Resume file:** None
