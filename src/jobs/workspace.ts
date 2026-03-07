@@ -1,5 +1,5 @@
 import { mkdtemp, rm, readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
 import picomatch from "picomatch";
@@ -528,7 +528,7 @@ export function createWorkspaceManager(
       installationId: number,
       options: CloneOptions,
     ): Promise<Workspace> {
-      const { owner, repo, ref, depth = 1 } = options;
+      const { owner, repo, ref, depth = 1, forkContext } = options;
 
       // Validate branch name before creating any resources
       validateBranchName(ref);
@@ -538,14 +538,22 @@ export function createWorkspaceManager(
 
       let token: string | undefined;
       try {
-        // Get installation token for clone auth
+        // Get installation token (always needed for upstream remote)
         token = await githubApp.getInstallationToken(installationId);
 
-        // Build authenticated clone URL -- NEVER log this
-        const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+        if (forkContext) {
+          // Fork-aware clone: clone from the bot-owned fork using bot PAT
+          const forkCloneUrl = `https://x-access-token:${forkContext.botPat}@github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git`;
+          await $`git clone --depth=${depth} --single-branch --branch ${ref} ${forkCloneUrl} ${dir}`.quiet();
 
-        // Shallow clone the specific branch
-        await $`git clone --depth=${depth} --single-branch --branch ${ref} ${cloneUrl} ${dir}`.quiet();
+          // Add upstream remote pointing at the original repo (using installation token)
+          const upstreamUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+          await $`git -C ${dir} remote add upstream ${upstreamUrl}`.quiet();
+        } else {
+          // Standard clone from target repo using installation token
+          const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+          await $`git clone --depth=${depth} --single-branch --branch ${ref} ${cloneUrl} ${dir}`.quiet();
+        }
 
         // Configure git identity as kodiai[bot]
         await $`git -C ${dir} config user.name "kodiai[bot]"`;
@@ -559,7 +567,7 @@ export function createWorkspaceManager(
         throw error;
       }
 
-      logger.info({ owner, repo, ref, dir }, "Workspace created");
+      logger.info({ owner, repo, ref, dir, fork: !!forkContext }, "Workspace created");
 
       const cleanup = async (): Promise<void> => {
         await rm(dir, { recursive: true, force: true });
@@ -605,4 +613,41 @@ export function createWorkspaceManager(
       }
     },
   };
+}
+
+/**
+ * Verify that origin points to the expected fork, not the upstream repo.
+ * Throws if mismatch -- prevents accidental direct pushes to target repos.
+ */
+export async function assertOriginIsFork(dir: string, expectedForkOwner: string): Promise<void> {
+  const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
+  if (!url.toLowerCase().includes(`github.com/${expectedForkOwner.toLowerCase()}/`)) {
+    throw new Error(
+      `Push guard: origin remote points to "${url}" which does not belong to fork owner "${expectedForkOwner}". ` +
+      `Direct pushes to target repos are prevented. Clone from the fork instead.`,
+    );
+  }
+}
+
+/**
+ * Determine whether to output a gist (patch) vs a PR based on user intent and change scope.
+ *
+ * Routing logic:
+ * - Explicit "patch" keyword -> gist
+ * - Explicit "pr" keyword -> PR
+ * - Single file change -> gist
+ * - More than 3 files -> PR
+ * - 2-3 files in same directory -> gist, else PR
+ */
+export function shouldUseGist(intent: { keyword?: string }, changedFiles: string[]): boolean {
+  if (intent.keyword === "patch") return true;
+  if (intent.keyword === "pr") return false;
+
+  if (changedFiles.length === 0) return true; // no changes = gist (empty patch)
+  if (changedFiles.length === 1) return true;
+  if (changedFiles.length > 3) return false;
+
+  // 2-3 files: check if all in same directory
+  const dirs = new Set(changedFiles.map((f) => dirname(f)));
+  return dirs.size === 1;
 }

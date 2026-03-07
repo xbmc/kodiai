@@ -6,6 +6,12 @@ export interface CloneOptions {
   repo: string;
   ref: string;         // branch name to checkout
   depth?: number;      // shallow clone depth (default: 1)
+  /** If provided, clone from the fork instead of the target repo. */
+  forkContext?: {
+    forkOwner: string;
+    forkRepo: string;
+    botPat: string;
+  };
 }
 
 /** An ephemeral workspace with a cloned repo */
