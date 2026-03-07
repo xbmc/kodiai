@@ -336,8 +336,31 @@ Plans:
 | 122 | 2/2 | Complete    | 2026-03-05 | - |
 | 123 | 3/3 | Complete    | 2026-03-05 | - |
 | 124 | 2/2 | Complete    | 2026-03-05 | - |
-| 125 | 2/2 | Complete   | 2026-03-05 | - |
+| 125 | 2/2 | Complete    | 2026-03-05 | - |
+
+### Phase 126: Global Anti-Hallucination Guardrails
+
+**Goal:** Unified classify-then-filter pipeline with surface adapters for all output surfaces, context-grounded classification for non-diff surfaces, LLM fallback for ambiguous claims, audit logging, and configurable strictness
+**Requirements**: GUARD-01, GUARD-02, GUARD-03, GUARD-04, GUARD-05, GUARD-06, GUARD-07, GUARD-08, GUARD-09
+**Depends on:** Phase 125
+**Success Criteria** (what must be TRUE):
+  1. All output surfaces (PR reviews, @mentions, Slack, triage, troubleshooting, wiki) run through a unified guardrail pipeline before publishing
+  2. Non-diff surfaces use context-grounded classification against provided context (issue body, wiki chunks, retrieval results)
+  3. General programming knowledge is allowlisted and never flagged as external-knowledge
+  4. PR review pipeline produces identical results when routed through the guardrail pipeline (zero regression)
+  5. Ambiguous claims (low confidence from rule-based classifier) get LLM fallback classification via Haiku
+  6. All guardrail actions logged to Postgres for analysis
+  7. Strictness toggle (strict/standard/lenient) configurable in .kodiai.yml
+  8. All surfaces fail-open on guardrail errors -- never block publishing
+  9. Troubleshooting agent uses buildEpistemicBoundarySection and wiki generator uses unified pipeline instead of checkGrounding
+**Plans:** 4 plans
+
+Plans:
+- [ ] 126-01-PLAN.md — Core types, context classifier, allowlist, pipeline, audit store, migration, config schema
+- [ ] 126-02-PLAN.md — Review adapter wrapping existing classifier+filter, LLM fallback classifier
+- [ ] 126-03-PLAN.md — Surface adapters for mention, slack, troubleshooting, triage, wiki
+- [ ] 126-04-PLAN.md — Wire all handlers through guardrail pipeline, epistemic prompt unification
 
 ---
 
-*Roadmap updated: 2026-03-05 -- Phase 125 re-planned with updated CONTEXT.md decisions*
+*Roadmap updated: 2026-03-07 -- Phase 126 planned with 4 plans across 3 waves*

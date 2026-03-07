@@ -52,6 +52,18 @@ Requirements for Wiki Content Updates milestone. Each maps to roadmap phases.
 - [ ] **PUB-03**: Rate-limit-aware posting with minimum delays between comments
 - [ ] **PUB-04**: GitHub App installation on xbmc/wiki verified before publishing
 
+### Global Anti-Hallucination Guardrails
+
+- [ ] **GUARD-01**: Unified classify-then-filter pipeline with surface adapters — all output surfaces run through a single guardrail pipeline before publishing
+- [ ] **GUARD-02**: Context-grounded classification for non-diff surfaces — claims verified against provided context (issue body, wiki chunks, retrieval results)
+- [ ] **GUARD-03**: General programming knowledge allowlisted — common patterns (null safety, injection, error handling) never flagged as external-knowledge
+- [ ] **GUARD-04**: PR review adapter wraps existing claim-classifier + output-filter with zero behavior change
+- [ ] **GUARD-05**: LLM fallback via Haiku for ambiguous claims (confidence < 0.6 from rule-based classifier)
+- [ ] **GUARD-06**: Guardrail audit logging to Postgres — surface, strictness, claim counts, removed claims, pipeline duration
+- [ ] **GUARD-07**: Surface adapters for mention, Slack, troubleshooting, triage, and wiki with per-surface thresholds
+- [ ] **GUARD-08**: All surfaces fail-open on guardrail errors — classifier crashes or timeouts never block publishing
+- [ ] **GUARD-09**: Troubleshooting agent uses buildEpistemicBoundarySection; wiki generator uses unified pipeline instead of checkGrounding()
+
 ## Future Requirements
 
 ### Automation
@@ -109,12 +121,21 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PUB-02 | Phase 124 | Pending |
 | PUB-03 | Phase 124 | Pending |
 | PUB-04 | Phase 124 | Pending |
+| GUARD-01 | Phase 126 | Pending |
+| GUARD-02 | Phase 126 | Pending |
+| GUARD-03 | Phase 126 | Pending |
+| GUARD-04 | Phase 126 | Pending |
+| GUARD-05 | Phase 126 | Pending |
+| GUARD-06 | Phase 126 | Pending |
+| GUARD-07 | Phase 126 | Pending |
+| GUARD-08 | Phase 126 | Pending |
+| GUARD-09 | Phase 126 | Pending |
 
 **Coverage:**
-- v0.25 requirements: 27 total
-- Mapped to phases: 27
+- v0.25 requirements: 36 total
+- Mapped to phases: 36
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-03*
-*Last updated: 2026-03-05 after Phase 125 voice-preserving requirements added*
+*Last updated: 2026-03-07 after Phase 126 guardrail requirements added*
