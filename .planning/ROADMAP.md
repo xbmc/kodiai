@@ -353,7 +353,7 @@ Plans:
   7. Strictness toggle (strict/standard/lenient) configurable in .kodiai.yml
   8. All surfaces fail-open on guardrail errors -- never block publishing
   9. Troubleshooting agent uses buildEpistemicBoundarySection and wiki generator uses unified pipeline instead of checkGrounding
-**Plans:** 1/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [ ] 126-01-PLAN.md — Core types, context classifier, allowlist, pipeline, audit store, migration, config schema

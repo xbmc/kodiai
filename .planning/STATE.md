@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Completed 126-01-PLAN.md
-last_updated: "2026-03-07T09:11:47.707Z"
-last_activity: 2026-03-07 -- Completed 126-01 (Core Guardrail Pipeline Foundation)
+stopped_at: Completed 126-02-PLAN.md
+last_updated: "2026-03-07T09:18:12.640Z"
+last_activity: 2026-03-07 -- Completed 126-03 (Non-Review Surface Adapters)
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 18
-  completed_plans: 15
+  completed_plans: 17
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: `.planning/PROJECT.md` (updated 2026-03-05)
 ## Current Position
 
 Phase: 126 of 126 (Global Anti-Hallucination Guardrails)
-Plan: 1 of 1 complete
-Status: Plan 126-01 complete
-Last activity: 2026-03-07 -- Completed 126-01 (Core Guardrail Pipeline Foundation)
+Plan: 3 of 4 complete
+Status: Plan 126-03 complete
+Last activity: 2026-03-07 -- Completed 126-03 (Non-Review Surface Adapters)
 
 Progress: [██████████] 100%
 
@@ -69,6 +69,10 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 126]: Allowlist uses substring matching on lowercase claim text for simplicity and performance
 - [Phase 126]: Context classifier checks allowlist first, then external-knowledge patterns, then diff delegation, then word overlap
 - [Phase 126]: Fire-and-forget audit logging via void + .catch() pattern consistent with citation logging (121-01)
+- [Phase 126]: Review adapter wraps existing claim-classifier.ts and output-filter.ts rather than reimplementing -- zero behavior change
+- [Phase 126]: LLM classifier batches up to 10 claims per Haiku call to minimize overhead
+- [Phase 126]: Pipeline collects all ambiguous claims first, then makes single batched LLM call instead of per-claim calls
+- [Phase 126]: Wiki adapter preserves {{template}} markers regardless of classification and grounds via PR patch content
 
 ### Key Constraints (Carry-Forward)
 
@@ -106,6 +110,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07T09:11:47.705Z
-**Stopped At:** Completed 126-01-PLAN.md
+**Last session:** 2026-03-07T09:18:12.638Z
+**Stopped At:** Completed 126-02-PLAN.md
 **Resume file:** None
