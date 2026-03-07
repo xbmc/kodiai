@@ -36,6 +36,7 @@ import { TASK_TYPES } from "../llm/task-types.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { troubleshootAdapter } from "../lib/guardrail/adapters/troubleshoot-adapter.ts";
 
 export function createTroubleshootingHandler(deps: {
@@ -62,8 +63,11 @@ export function createTroubleshootingHandler(deps: {
     wikiEmbeddingProvider,
     taskRouter,
     costTracker,
+    sql,
     logger,
   } = deps;
+
+  const guardrailAuditStore = createGuardrailAuditStore(sql);
 
   async function handleTroubleshootingMention(event: WebhookEvent): Promise<void> {
     try {
@@ -208,6 +212,7 @@ export function createTroubleshootingHandler(deps: {
             output: genResult.text,
             config: { strictness: config.guardrails?.strictness ?? "standard" },
             repo: fullRepo,
+            auditStore: guardrailAuditStore,
           });
           if (guardResult.suppressed) {
             handlerLogger.info("Troubleshooting guidance suppressed by guardrail, skipping comment");

@@ -436,6 +436,7 @@ const slackAssistantHandler = createSlackAssistantHandler({
     }
   },
   retriever,
+  sql,
   logger,
   defaultRepo: config.slackDefaultRepo,
 });
@@ -465,6 +466,7 @@ createReviewHandler({
     }
   },
   issueStore,
+  sql,
   logger,
 });
 createMentionHandler({
@@ -476,6 +478,7 @@ createMentionHandler({
   telemetryStore,
   knowledgeStore,
   retriever,
+  sql,
   logger,
 });
 createFeedbackSyncHandler({

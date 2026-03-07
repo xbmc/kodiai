@@ -20,6 +20,7 @@ import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } fr
 import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
 import { filterExternalClaims, formatSuppressedFindingsSection, type FilterableFinding, type FilteredFindingRecord } from "../lib/output-filter.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
@@ -1335,6 +1336,8 @@ export function createReviewHandler(deps: {
   clusterMatcher?: (opts: { prEmbedding: Float32Array | null; prFilePaths: string[]; repo: string }) => Promise<ClusterPatternMatch[]>;
   /** Optional issue store for PR-issue linking (Phase 108: PRLINK). */
   issueStore?: IssueStore;
+  /** Optional SQL client for guardrail audit logging (GUARD-06). */
+  sql?: import("../db/client.ts").Sql;
   logger: Logger;
 }): void {
   const {
@@ -1357,8 +1360,11 @@ export function createReviewHandler(deps: {
     slackBotToken,
     clusterMatcher,
     issueStore,
+    sql,
     logger,
   } = deps;
+
+  const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
 
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
@@ -3179,6 +3185,7 @@ export function createReviewHandler(deps: {
             },
             config: { strictness: config.guardrails?.strictness ?? "standard" },
             repo: `${apiOwner}/${apiRepo}`,
+            auditStore: guardrailAuditStore,
           });
           if (guardResult.claimsRemoved > 0) {
             logger.info(

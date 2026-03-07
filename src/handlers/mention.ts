@@ -40,6 +40,7 @@ import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import { validateIssue, generateGuidanceComment, generateLabelRecommendation, generateGenericNudge } from "../triage/triage-agent.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 
 export function buildWritePolicyRefusalMessage(
@@ -174,6 +175,8 @@ export function createMentionHandler(deps: {
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
   retriever?: ReturnType<typeof createRetriever>;
+  /** Optional SQL client for guardrail audit logging (GUARD-06). */
+  sql?: import("../db/client.ts").Sql;
   logger: Logger;
 }): void {
   const {
@@ -184,8 +187,11 @@ export function createMentionHandler(deps: {
     executor,
     telemetryStore,
     retriever,
+    sql,
     logger,
   } = deps;
+
+  const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -886,6 +892,7 @@ export function createMentionHandler(deps: {
                 output: sanitizedBody,
                 config: { strictness: "standard" },
                 repo: `${mention.owner}/${mention.repo}`,
+                auditStore: guardrailAuditStore,
               });
               if (guardResult.output !== null && !guardResult.suppressed) {
                 sanitizedBody = guardResult.output;

@@ -14,6 +14,7 @@ import {
   type SlackWriteConfirmationStore,
 } from "./write-confirmation-store.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { slackAdapter } from "../lib/guardrail/adapters/slack-adapter.ts";
 
 export interface SlackAssistantAddressedPayload {
@@ -64,6 +65,8 @@ interface SlackAssistantHandlerDeps {
   removeWorkingReaction?: (input: { channel: string; messageTs: string }) => Promise<void> | void;
   confirmationStore?: SlackWriteConfirmationStore;
   retriever?: ReturnType<typeof createRetriever>;
+  /** Optional SQL client for guardrail audit logging (GUARD-06). */
+  sql?: (strings: TemplateStringsArray, ...values: any[]) => Promise<any>;
   logger?: Logger;
   defaultRepo: string;
 }
@@ -257,6 +260,8 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
     logger: depsLogger,
     defaultRepo,
   } = deps;
+
+  const guardrailAuditStore = deps.sql ? createGuardrailAuditStore(deps.sql) : undefined;
 
   async function runAndPublishWrite(input: {
     owner: string;
@@ -457,6 +462,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                       overrides: { slack: { strictness: "lenient" } },
                     },
                     repo: `${pending.owner}/${pending.repo}`,
+                    auditStore: guardrailAuditStore,
                   });
                   if (guardResult.output !== null && !guardResult.suppressed) {
                     confirmedReplyText = guardResult.output;
@@ -619,6 +625,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                   overrides: { slack: { strictness: "lenient" } },
                 },
                 repo: resolution.repo,
+                auditStore: guardrailAuditStore,
               });
               if (guardResult.output !== null && !guardResult.suppressed) {
                 replyText = guardResult.output;

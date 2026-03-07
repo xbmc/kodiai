@@ -25,6 +25,7 @@ import type { SectionInput } from "./wiki-voice-analyzer.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { wikiAdapter } from "../lib/guardrail/adapters/wiki-adapter.ts";
 
 /** Maximum patches to include per section. */
@@ -342,6 +343,7 @@ export function createUpdateGenerator(opts: UpdateGeneratorOptions): {
   }): Promise<UpdateGeneratorResult>;
 } {
   const logger = opts.logger.child({ module: "wiki-update-generator" });
+  const guardrailAuditStore = createGuardrailAuditStore(opts.sql);
 
   return {
     async run(runOpts) {
@@ -594,6 +596,7 @@ async function processPage(
         output: parsed.suggestion,
         config: { strictness: "strict" },
         repo: page.pageTitle,
+        auditStore: guardrailAuditStore,
       });
       if (guardResult.suppressed) {
         isGrounded = false;
