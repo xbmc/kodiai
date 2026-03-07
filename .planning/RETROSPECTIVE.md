@@ -255,6 +255,53 @@
 
 ---
 
+## Milestone: v0.25 — Wiki Content Updates
+
+**Shipped:** 2026-03-07
+**Phases:** 7 | **Plans:** 19
+
+### What Was Built
+- Wiki embeddings migrated to voyage-context-3 with per-corpus model routing
+- Page popularity scoring combining inbound links, citation frequency, and edit recency
+- Enhanced staleness detection grounded in actual PR/commit diffs with domain stopwords
+- LLM-generated section-level update suggestions with PR/commit citations
+- Update suggestions published as tracking issue comments on xbmc/wiki
+- Voice-preserving generation with style caching and template/heading validation
+- Unified anti-hallucination guardrail pipeline across all output surfaces
+
+### What Worked
+- Corpus addition recipe (types/migration/store/pipeline) proved repeatable again for popularity and staleness
+- Fire-and-forget citation logging pattern reused cleanly from v0.18
+- Surface adapter pattern for guardrails allowed each surface to be wired independently without cross-surface coupling
+- Phase 126 gap closure pattern (identified by UAT, fixed in 126-05) caught real integration issues before shipping
+- Voice-preserving approach of "encourage formatting improvements" vs "restrict to existing" produced better output
+- Domain stopword filtering dramatically reduced false-positive wiki-code matching
+
+### What Was Inefficient
+- REQUIREMENTS.md UPDATE-01-04 and PUB-01-04 checkboxes weren't updated despite phases completing — traceability table update should be part of phase verification
+- Phase 125 required a RE-PLAN after initial plan proved too restrictive (restricting formatting vs encouraging improvements)
+- Milestone scope grew from 5 phases (120-124) to 7 phases (120-126) with added voice-preserving and guardrail phases
+
+### Patterns Established
+- Surface adapter pattern: unified pipeline with per-surface customization via adapter interface
+- Voice analysis pipeline: spread sampling -> convention extraction -> style caching -> generation -> validation
+- Retry-once-then-drop: regenerate once on validation failure, drop entirely on second failure
+- Batched LLM fallback: collect all ambiguous items first, single batched call instead of per-item
+
+### Key Lessons
+1. RE-PLAN is a healthy pattern — initial restrictive approaches can be reversed to "encourage" instead of "restrict"
+2. Requirements traceability must be updated during phase verification, not just at milestone completion
+3. Guardrail pipeline architecture (classify -> filter -> audit) composes well across very different surface types
+4. LLM classification should be deferred to batch fallback — heuristics handle the vast majority of cases
+5. Template preservation in generated content needs explicit validation — LLMs drop MediaWiki templates silently
+
+### Cost Observations
+- Model mix: quality profile (opus for planning/execution, sonnet for verification)
+- 7 phases completed in 5 days (2026-03-02 to 2026-03-07)
+- Notable: Largest v0.25 milestone by phase count; Phase 126 alone had 5 plans
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -278,6 +325,7 @@
 | v0.22 | ~1,800 | +50 duplicate detection/auto-triage/PR-issue linking tests |
 | v0.23 | ~1,900 | +100 thread assembler/troubleshooting/threshold/outcome tests |
 | v0.24 | ~1,986 | +86 claim-classifier/severity-demoter/output-filter/prompt tests |
+| v0.25 | ~2,100 | +guardrail pipeline/context-classifier/surface-adapter/wiki-publisher tests |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -293,3 +341,4 @@
 10. Phase directories must consistently go to `.planning/phases/` — inconsistent placement causes audit tool blind spots
 11. Layered pipeline (prompt -> classify -> demote -> filter) is the right architecture for content quality guardrails
 12. Heuristic classification with regex patterns can be surprisingly effective — defer LLM classification until data proves it necessary
+13. Surface adapter pattern enables unified pipelines across heterogeneous output surfaces without cross-surface coupling

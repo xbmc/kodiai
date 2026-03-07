@@ -123,6 +123,23 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 </details>
 
 <details>
+<summary>Previous Release: v0.25 Wiki Content Updates (2026-03-07)</summary>
+
+**Shipped:** 2026-03-07
+**Phases:** 120-126 (7 phases, 19 plans)
+
+**Delivered:**
+- Wiki embeddings migrated to voyage-context-3 with per-corpus model routing in retrieval pipeline
+- Page popularity scoring combining MediaWiki inbound links, retrieval citation frequency, and edit recency
+- Enhanced staleness detection grounded in actual PR/commit diffs from last 90 days
+- LLM-generated section-level update suggestions with PR/commit citations and grounding verification
+- Update suggestions published as tracking issue comments on xbmc/wiki with rate-limit safety
+- Voice-preserving generation with spread sampling, style caching, template/heading validation
+- Unified anti-hallucination guardrail pipeline across all output surfaces with context-grounded classification, LLM fallback, and audit logging
+
+</details>
+
+<details>
 <summary>Previous Release: v0.24 Hallucination Prevention & Fact Verification (2026-03-03)</summary>
 
 **Shipped:** 2026-03-03
@@ -138,22 +155,11 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: v0.25 Wiki Content Updates
-
-**Goal:** Identify the most popular stale wiki pages and generate concrete update suggestions posted as GitHub issue comments.
-
-**Target features:**
-- Wiki embedding migration to voyage-context-3 (prose-optimized) with per-corpus model selection in retrieval
-- Page popularity ranking combining MediaWiki API view counts with retrieval citation frequency
-- Enhanced staleness analysis using recent PRs/commits as ground truth for what changed
-- LLM-generated section-by-section rewrite suggestions for top 20 stale pages
-- Publishing workflow: create tracking issue in xbmc/wiki, post per-page update suggestions as comments
-
-**Scope:** Top 20 pages by combined popularity score. One-shot manual trigger.
+## Current Milestone: None (v0.25 shipped, planning next)
 
 ## Current State
 
-v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardrails operational:
+v0.25 shipped. Wiki content update pipeline and global anti-hallucination guardrails complete:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
@@ -176,7 +182,9 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - Claim classification: heuristic engine labels findings as diff-grounded, external-knowledge, or inferential
 - Severity demotion: external-knowledge CRITICALs/MAJORs capped at medium, bypassing suppression protection
 - Output filtering: findings rewritten to strip external claims or suppressed entirely before publishing
-- ~93,000 lines of TypeScript
+- Wiki content updates: voyage-context-3 embeddings, page popularity scoring, PR-grounded staleness detection, section-level update generation, voice-preserving output, tracking issue publishing
+- Global guardrail pipeline: unified classify-then-filter across all surfaces, context-grounded classification, LLM fallback, audit logging, configurable strictness
+- ~95,500 lines of TypeScript
 
 ## Requirements
 
@@ -318,13 +326,20 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - ✓ Severity demotion penalizes unverified external claims (CRITICAL/MAJOR -> medium) — v0.24
 - ✓ Output filter rewrites or suppresses findings with unverifiable external claims — v0.24
 - ✓ Wiki page popularity scoring combining inbound links, citation frequency, and edit recency — v0.25
+- ✓ Wiki corpus embeddings migrated from voyage-code-3 to voyage-context-3 — v0.25
+- ✓ Enhanced staleness analysis grounded in recent PRs/commits as source of truth — v0.25
+- ✓ LLM-generated section-level update suggestions for stale wiki pages — v0.25
+- ✓ Update suggestions published as comments on tracking issue in xbmc/wiki — v0.25
+- ✓ Voice-preserving generation with style caching and template/heading validation — v0.25
+- ✓ Unified anti-hallucination guardrail pipeline across all output surfaces — v0.25
+- ✓ Context-grounded claim classification for non-diff surfaces — v0.25
+- ✓ LLM fallback via Haiku for ambiguous claim classification — v0.25
+- ✓ Guardrail audit logging to Postgres — v0.25
+- ✓ Configurable strictness levels (strict/standard/lenient) in .kodiai.yml — v0.25
 
 ### Active
 
-- [ ] Migrate wiki corpus embeddings from voyage-code-3 to voyage-context-3
-- ✓ Enhanced staleness analysis grounded in recent PRs/commits as source of truth — Phase 122
-- [ ] LLM-generated section-by-section update suggestions for stale wiki pages
-- [ ] Publish update suggestions as comments on a tracking issue in xbmc/wiki
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -402,6 +417,15 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 | Optional learningMemoryStore in createRetriever | Backward-compatible; code corpus gets hybrid search when store is available | ✓ Good — v0.18 |
 | Inline citations [wiki: Page] / [review: PR #] | Differentiated source types in mention responses for user clarity | ✓ Good — v0.18 |
 | Boost-only language policy (no penalty) | Non-matching language results keep original score; avoids false negatives from language mismatch | ✓ Good — v0.19 |
+| Contextualized embedding for wiki corpus | voyage-context-3 with surrounding content improves prose retrieval quality vs code-optimized model | ✓ Good — v0.25 |
+| Composite popularity scoring | Min-max normalization combining inbound links, citation frequency, edit recency into single rank | ✓ Good — v0.25 |
+| PR-based staleness over commit-based | Merged PRs with file lists + patches provide richer evidence than raw commit diffs | ✓ Good — v0.25 |
+| Domain stopword filtering for wiki-code matching | 20 ubiquitous terms removed from both sides of heuristic score to reduce false positives | ✓ Good — v0.25 |
+| Section-level update suggestions | Per-section rewrites with diff citations vs full-page rewrites; more actionable and verifiable | ✓ Good — v0.25 |
+| Retry-once-then-drop template preservation | Regenerate once on missing MediaWiki templates, drop suggestion entirely on second failure | ✓ Good — v0.25 |
+| Surface adapter pattern for guardrails | Each surface (review, mention, slack, wiki, etc.) adapts to unified pipeline via adapter interface | ✓ Good — v0.25 |
+| Context-grounded classification for non-diff surfaces | Claims verified against provided context instead of diff; enables guardrails beyond PR reviews | ✓ Good — v0.25 |
+| Batched LLM fallback classification | Collect ambiguous claims first, single Haiku call for batch instead of per-claim calls | ✓ Good — v0.25 |
 | Proportional multi-language boosting | PR language distribution (80% C++ / 20% Python) drives boost weights; reflects actual change volume | ✓ Good — v0.19 |
 | Related language affinity at 50% boost | C/C++, TS/JS get partial boost via RELATED_LANGUAGES map; captures ecosystem proximity | ✓ Good — v0.19 |
 | Page-level wiki language tagging | All chunks from a page share same tags; avoids per-chunk detection overhead | ✓ Good — v0.19 |
@@ -466,4 +490,4 @@ v0.24 shipped. Hallucination prevention pipeline complete. Full epistemic guardr
 - **Slack:** Single workspace, single channel (`#kodiai`), bot token auth
 
 ---
-*Last updated: 2026-03-05 after Phase 122*
+*Last updated: 2026-03-07 after v0.25 milestone*
