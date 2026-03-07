@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Phase 126 context gathered
-last_updated: "2026-03-07T08:40:42.351Z"
-last_activity: 2026-03-05 -- Completed 125-02 (Formatting Freedom & Post-Generation Validation)
+stopped_at: Completed 126-01-PLAN.md
+last_updated: "2026-03-07T09:11:47.707Z"
+last_activity: 2026-03-07 -- Completed 126-01 (Core Guardrail Pipeline Foundation)
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 18
+  completed_plans: 15
   percent: 100
 ---
 
@@ -25,12 +25,12 @@ See: `.planning/PROJECT.md` (updated 2026-03-05)
 
 ## Current Position
 
-Phase: 125 of 125 (Voice-Preserving Updates)
-Plan: 2 of 2 complete
-Status: Plan 125-02 complete
-Last activity: 2026-03-05 -- Completed 125-02 (Formatting Freedom & Post-Generation Validation)
+Phase: 126 of 126 (Global Anti-Hallucination Guardrails)
+Plan: 1 of 1 complete
+Status: Plan 126-01 complete
+Last activity: 2026-03-07 -- Completed 126-01 (Core Guardrail Pipeline Foundation)
 
-Progress: [████████████████████] 212/209 plans (100%)
+Progress: [██████████] 100%
 
 ## Accumulated Context
 
@@ -66,6 +66,9 @@ All decisions through v0.24 archived to `.planning/PROJECT.md` Key Decisions tab
 - [Phase 125]: Generation prompt reversed from "restrict to existing formatting" to "improve formatting freely"
 - [Phase 125]: Bun.hash for content-hash cache invalidation; spread sampling first/middle/last 2 chunks; extractWikiConventions scans all chunks
 - [Phase quick-18]: PR title prefix detection uses keyword matching on issue title content (feat/fix/refactor)
+- [Phase 126]: Allowlist uses substring matching on lowercase claim text for simplicity and performance
+- [Phase 126]: Context classifier checks allowlist first, then external-knowledge patterns, then diff delegation, then word overlap
+- [Phase 126]: Fire-and-forget audit logging via void + .catch() pattern consistent with citation logging (121-01)
 
 ### Key Constraints (Carry-Forward)
 
@@ -103,6 +106,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07T08:40:42.348Z
-**Stopped At:** Phase 126 context gathered
-**Resume file:** .planning/phases/126-global-anti-hallucination-guardrails/126-CONTEXT.md
+**Last session:** 2026-03-07T09:11:47.705Z
+**Stopped At:** Completed 126-01-PLAN.md
+**Resume file:** None
