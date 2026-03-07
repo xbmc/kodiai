@@ -25,14 +25,16 @@ const configSchema = z.object({
   wikiStalenessThresholdDays: z.coerce.number().min(1).max(365).default(30),
   wikiGithubOwner: z.string().default("xbmc"),
   wikiGithubRepo: z.string().default("xbmc"),
+  botUserPat: z.string().default(""),
+  botUserLogin: z.string().default(""),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
 
 async function loadPrivateKey(): Promise<string> {
-  const keyEnv = process.env.GITHUB_PRIVATE_KEY;
+  const keyEnv = process.env.GITHUB_PRIVATE_KEY ?? process.env.GITHUB_PRIVATE_KEY_BASE64;
   if (!keyEnv) {
-    throw new Error("GITHUB_PRIVATE_KEY environment variable is required");
+    throw new Error("GITHUB_PRIVATE_KEY or GITHUB_PRIVATE_KEY_BASE64 environment variable is required");
   }
 
   // Inline PEM string
@@ -89,6 +91,8 @@ export async function loadConfig(): Promise<AppConfig> {
     wikiStalenessThresholdDays: process.env.WIKI_STALENESS_THRESHOLD_DAYS,
     wikiGithubOwner: process.env.WIKI_GITHUB_OWNER,
     wikiGithubRepo: process.env.WIKI_GITHUB_REPO,
+    botUserPat: process.env.BOT_USER_PAT,
+    botUserLogin: process.env.BOT_USER_LOGIN,
   });
 
   if (!result.success) {
