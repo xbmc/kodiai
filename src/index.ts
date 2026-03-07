@@ -10,7 +10,10 @@ import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createSlackEventRoutes } from "./routes/slack-events.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
-import { createWorkspaceManager } from "./jobs/workspace.ts";
+import { createWorkspaceManager, shouldUseGist } from "./jobs/workspace.ts";
+import { createBotUserClient } from "./auth/bot-user.ts";
+import { createForkManager } from "./jobs/fork-manager.ts";
+import { createGistPublisher } from "./jobs/gist-publisher.ts";
 import { createExecutor } from "./execution/executor.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
@@ -69,6 +72,11 @@ const dedup = createDeduplicator();
 // Crashes the process if credentials are invalid (fail-fast).
 const githubApp = createGitHubApp(config, logger);
 await githubApp.initialize();
+
+// Bot user client for fork/gist operations (Phase 127)
+const botUserClient = createBotUserClient(config, logger);
+const forkManager = createForkManager(botUserClient, logger, config.botUserPat || undefined);
+const gistPublisher = createGistPublisher(botUserClient, logger);
 
 // Job infrastructure
 const jobQueue = createJobQueue(logger);
@@ -336,8 +344,8 @@ async function resolveSlackInstallationContext(owner: string, repo: string): Pro
 
 const slackWriteRunner = createSlackWriteRunner({
   resolveRepoInstallationContext: resolveSlackInstallationContext,
-  createWorkspace: async ({ installationId, owner, repo, ref, depth }) =>
-    workspaceManager.create(installationId, { owner, repo, ref, depth }),
+  createWorkspace: async ({ installationId, owner, repo, ref, depth, forkContext }) =>
+    workspaceManager.create(installationId, { owner, repo, ref, depth, forkContext }),
   execute: async ({ workspace, installationId, owner, repo, prompt, triggerBody }) =>
     executor.execute({
       workspace,
@@ -370,6 +378,9 @@ const slackWriteRunner = createSlackWriteRunner({
     });
     return { htmlUrl: response.data.html_url };
   },
+  forkManager,
+  gistPublisher,
+  logger,
 });
 
 const slackAssistantHandler = createSlackAssistantHandler({
@@ -478,6 +489,8 @@ createMentionHandler({
   telemetryStore,
   knowledgeStore,
   retriever,
+  forkManager,
+  gistPublisher,
   sql,
   logger,
 });

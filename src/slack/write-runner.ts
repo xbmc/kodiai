@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
+import { $ } from "bun";
+import type { Logger } from "pino";
 import type { Workspace } from "../jobs/types.ts";
-import { createBranchCommitAndPush, WritePolicyError } from "../jobs/workspace.ts";
+import { createBranchCommitAndPush, WritePolicyError, shouldUseGist, assertOriginIsFork } from "../jobs/workspace.ts";
 import { buildWritePolicyRefusalMessage } from "../handlers/mention.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import type { ExecutionResult } from "../execution/types.ts";
+import type { ForkManager } from "../jobs/fork-manager.ts";
+import type { GistPublisher } from "../jobs/gist-publisher.ts";
 
 export interface SlackWriteRunnerInput {
   owner: string;
@@ -24,7 +28,8 @@ export interface SlackWriteCommentMirror {
 export type SlackWriteRunnerResult =
   | {
       outcome: "success";
-      prUrl: string;
+      prUrl?: string;
+      gistUrl?: string;
       responseText: string;
       retryCommand: string;
       mirrors: SlackWriteCommentMirror[];
@@ -53,6 +58,11 @@ interface SlackWriteRunnerDeps {
     repo: string;
     ref: string;
     depth: number;
+    forkContext?: {
+      forkOwner: string;
+      forkRepo: string;
+      botPat: string;
+    };
   }) => Promise<Workspace>;
   execute: (input: {
     workspace: Workspace;
@@ -73,6 +83,12 @@ interface SlackWriteRunnerDeps {
   }) => Promise<{ htmlUrl: string }>;
   loadRepoConfig?: typeof loadRepoConfig;
   commitBranchAndPush?: typeof createBranchCommitAndPush;
+  /** Fork manager for fork-based write mode (Phase 127). */
+  forkManager?: ForkManager;
+  /** Gist publisher for patch output mode (Phase 127). */
+  gistPublisher?: GistPublisher;
+  /** Logger for fork/gist operations. */
+  logger?: Logger;
 }
 
 function summarizeWriteRequest(request: string): string {
@@ -171,6 +187,7 @@ function collectCommentMirrors(result: ExecutionResult): SlackWriteCommentMirror
 export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
   const loadConfig = deps.loadRepoConfig ?? loadRepoConfig;
   const commitBranchAndPush = deps.commitBranchAndPush ?? createBranchCommitAndPush;
+  const { forkManager, gistPublisher, logger: depsLogger } = deps;
 
   return {
     async run(input: SlackWriteRunnerInput): Promise<SlackWriteRunnerResult> {
@@ -186,12 +203,41 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
         };
       }
 
+      // Fork-based write mode: ensure fork exists and sync (Phase 127)
+      let forkContext: { forkOwner: string; forkRepo: string; botPat: string } | undefined;
+      if (forkManager?.enabled) {
+        try {
+          const fork = await forkManager.ensureFork(input.owner, input.repo);
+          await forkManager.syncFork(fork.forkOwner, fork.forkRepo, installationContext.defaultBranch);
+          forkContext = {
+            forkOwner: fork.forkOwner,
+            forkRepo: fork.forkRepo,
+            botPat: forkManager.getBotPat(),
+          };
+          depsLogger?.info(
+            { owner: input.owner, repo: input.repo, forkOwner: fork.forkOwner },
+            "Fork ensured and synced for Slack write-mode",
+          );
+        } catch (forkErr) {
+          depsLogger?.warn(
+            { err: forkErr, owner: input.owner, repo: input.repo },
+            "Fork setup failed for Slack write-mode; will fall back to gist or legacy mode",
+          );
+        }
+      } else if (depsLogger) {
+        depsLogger.warn(
+          { owner: input.owner, repo: input.repo },
+          "Slack write-mode active without BOT_USER_PAT; using legacy direct-push behavior",
+        );
+      }
+
       const workspace = await deps.createWorkspace({
         installationId: installationContext.installationId,
         owner: input.owner,
         repo: input.repo,
         ref: installationContext.defaultBranch,
         depth: 1,
+        forkContext,
       });
 
       try {
@@ -225,6 +271,189 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
           };
         }
 
+        // Output routing: determine gist vs PR (Phase 127)
+        if (forkContext && gistPublisher?.enabled) {
+          const changedFilesRaw = (await $`git -C ${workspace.dir} diff --name-only HEAD`.quiet().nothrow()).text().trim();
+          const stagedFilesRaw = (await $`git -C ${workspace.dir} diff --cached --name-only`.quiet().nothrow()).text().trim();
+          const allChangedRaw = [changedFilesRaw, stagedFilesRaw].filter(Boolean).join("\n");
+          const changedFiles = [...new Set(allChangedRaw.split("\n").map((f) => f.trim()).filter(Boolean))];
+
+          const useGist = shouldUseGist({ keyword: input.keyword }, changedFiles);
+
+          if (useGist) {
+            // Gist path
+            try {
+              await $`git -C ${workspace.dir} add -A`.quiet();
+              const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+
+              if (patch.trim().length > 0) {
+                const requestSummary = summarizeWriteRequest(input.request);
+                const gist = await gistPublisher.createPatchGist({
+                  owner: input.owner,
+                  repo: input.repo,
+                  summary: requestSummary,
+                  patch,
+                });
+
+                const mirrors = collectCommentMirrors(execution);
+                return {
+                  outcome: "success",
+                  gistUrl: gist.htmlUrl,
+                  responseText: [
+                    `Created patch gist: ${gist.htmlUrl}`,
+                    "",
+                    "To apply locally:",
+                    `\`curl -sL ${gist.htmlUrl}.patch | git apply\``,
+                  ].join("\n"),
+                  retryCommand,
+                  mirrors,
+                };
+              }
+            } catch (gistErr) {
+              depsLogger?.warn(
+                { err: gistErr, owner: input.owner, repo: input.repo },
+                "Gist creation failed; falling through to PR path",
+              );
+            }
+          }
+
+          // PR path with fork: commit, push to fork, create cross-fork PR
+          try {
+            await assertOriginIsFork(workspace.dir, forkContext.forkOwner);
+
+            const branchName = buildDeterministicBranchName(input);
+            const requestSummary = summarizeWriteRequest(input.request);
+            const lower = requestSummary.toLowerCase();
+            let prefix: string;
+            if (/\b(?:fix|bug|crash|broken|error)\b/.test(lower)) {
+              prefix = "fix";
+            } else if (/\brefactor\b/.test(lower)) {
+              prefix = "refactor";
+            } else {
+              prefix = "feat";
+            }
+            const commitSubject = `${prefix}: ${requestSummary}`;
+            const maxSubjectLen = 72;
+            const truncatedSubject = commitSubject.length <= maxSubjectLen
+              ? commitSubject
+              : `${commitSubject.slice(0, maxSubjectLen - 3).trimEnd()}...`;
+
+            const commitMessage = [
+              truncatedSubject,
+              "",
+              `source: slack channel ${input.channel} thread ${input.threadTs}`,
+              `request: ${requestSummary}`,
+            ].join("\n");
+
+            const pushed = await commitBranchAndPush({
+              dir: workspace.dir,
+              branchName,
+              commitMessage,
+              policy: {
+                allowPaths: config.write.allowPaths,
+                denyPaths: config.write.denyPaths,
+                secretScanEnabled: config.write.secretScan.enabled,
+              },
+            });
+
+            // Cross-fork PR: head uses forkOwner:branchName format
+            const crossForkHead = `${forkContext.forkOwner}:${pushed.branchName}`;
+            const prTitle = `chore(slack-write): ${requestSummary}`;
+            const prBody = [
+              "Requested via Slack write-mode execution.",
+              "",
+              `Request: ${input.request}`,
+              `Slack channel: ${input.channel}`,
+              `Slack thread: ${input.threadTs}`,
+              `Commit: ${pushed.headSha}`,
+            ].join("\n");
+
+            const createdPr = await deps.createPullRequest({
+              installationId: installationContext.installationId,
+              owner: input.owner,
+              repo: input.repo,
+              title: prTitle,
+              head: crossForkHead,
+              base: installationContext.defaultBranch,
+              body: prBody,
+            });
+
+            const mirrors = collectCommentMirrors(execution);
+            const mirrorLines = mirrors.length > 0
+              ? [
+                  "",
+                  "Mirrored GitHub comments:",
+                  ...mirrors.map((mirror) => `- ${mirror.url}\n  ${mirror.excerpt}`),
+                ]
+              : [];
+
+            return {
+              outcome: "success",
+              prUrl: createdPr.htmlUrl,
+              responseText: [`Opened PR: ${createdPr.htmlUrl}`, ...mirrorLines].join("\n"),
+              retryCommand,
+              mirrors,
+            };
+          } catch (forkPrErr) {
+            depsLogger?.warn(
+              { err: forkPrErr, owner: input.owner, repo: input.repo },
+              "Fork-based PR creation failed; falling back to gist",
+            );
+
+            if (forkPrErr instanceof WritePolicyError) {
+              return {
+                outcome: "refusal",
+                reason: "policy",
+                responseText: `${buildWritePolicyRefusalMessage(forkPrErr, config.write.allowPaths)}\n\nRetry command: ${retryCommand}`,
+                retryCommand,
+              };
+            }
+
+            // Fallback: create gist with patch
+            if (gistPublisher.enabled) {
+              try {
+                await $`git -C ${workspace.dir} add -A`.quiet();
+                const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+                if (patch.trim().length > 0) {
+                  const requestSummary = summarizeWriteRequest(input.request);
+                  const gist = await gistPublisher.createPatchGist({
+                    owner: input.owner,
+                    repo: input.repo,
+                    summary: requestSummary,
+                    patch,
+                  });
+                  const mirrors = collectCommentMirrors(execution);
+                  return {
+                    outcome: "success",
+                    gistUrl: gist.htmlUrl,
+                    responseText: [
+                      "Could not create PR from fork, but here is the patch as a gist:",
+                      `${gist.htmlUrl}`,
+                      "",
+                      "To apply locally:",
+                      `\`curl -sL ${gist.htmlUrl}.patch | git apply\``,
+                    ].join("\n"),
+                    retryCommand,
+                    mirrors,
+                  };
+                }
+              } catch (fallbackErr) {
+                depsLogger?.error(
+                  { err: fallbackErr },
+                  "Fallback gist creation also failed in Slack write-runner",
+                );
+              }
+            }
+
+            // Fall through to legacy behavior
+            depsLogger?.warn(
+              { owner: input.owner, repo: input.repo },
+              "Fork-based write mode failed completely in Slack write-runner; falling through to legacy path",
+            );
+          }
+        }
+
+        // Legacy path: direct push to target repo (when fork mode not available)
         const branchName = buildDeterministicBranchName(input);
         const requestSummary = summarizeWriteRequest(input.request);
         // Derive prefix from request content (same heuristic as mention handler)

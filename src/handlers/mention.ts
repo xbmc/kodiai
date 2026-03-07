@@ -21,7 +21,11 @@ import {
   commitAndPushToRemoteRef,
   pushHeadToRemoteRef,
   WritePolicyError,
+  assertOriginIsFork,
+  shouldUseGist,
 } from "../jobs/workspace.ts";
+import type { ForkManager } from "../jobs/fork-manager.ts";
+import type { GistPublisher } from "../jobs/gist-publisher.ts";
 import {
   type MentionEvent,
   normalizeIssueComment,
@@ -176,6 +180,10 @@ export function createMentionHandler(deps: {
   telemetryStore: TelemetryStore;
   knowledgeStore?: KnowledgeStore;
   retriever?: ReturnType<typeof createRetriever>;
+  /** Fork manager for fork-based write mode (Phase 127). */
+  forkManager?: ForkManager;
+  /** Gist publisher for patch output mode (Phase 127). */
+  gistPublisher?: GistPublisher;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
   logger: Logger;
@@ -188,6 +196,8 @@ export function createMentionHandler(deps: {
     executor,
     telemetryStore,
     retriever,
+    forkManager,
+    gistPublisher,
     sql,
     logger,
   } = deps;
@@ -1020,12 +1030,43 @@ export function createMentionHandler(deps: {
           "Creating workspace for mention execution",
         );
 
+        // Fork-based write mode: ensure fork exists and sync before cloning (Phase 127)
+        let forkContext: { forkOwner: string; forkRepo: string; botPat: string } | undefined;
+        if (writeEnabled && !forkManager?.enabled) {
+          logger.warn(
+            { owner: mention.owner, repo: mention.repo },
+            "Write-mode active without BOT_USER_PAT; using legacy direct-push behavior",
+          );
+        }
+        if (forkManager?.enabled && writeEnabled && !usesPrRef) {
+          try {
+            const fork = await forkManager.ensureFork(mention.owner, mention.repo);
+            await forkManager.syncFork(fork.forkOwner, fork.forkRepo, cloneRef!);
+            forkContext = {
+              forkOwner: fork.forkOwner,
+              forkRepo: fork.forkRepo,
+              botPat: forkManager.getBotPat(),
+            };
+            logger.info(
+              { owner: mention.owner, repo: mention.repo, forkOwner: fork.forkOwner, forkRepo: fork.forkRepo },
+              "Fork ensured and synced for write-mode",
+            );
+          } catch (forkErr) {
+            logger.warn(
+              { err: forkErr, owner: mention.owner, repo: mention.repo },
+              "Fork setup failed; will fall back to gist or legacy mode",
+            );
+            // forkContext stays undefined -- handled later in output routing
+          }
+        }
+
         // Clone workspace
         workspace = await workspaceManager.create(event.installationId, {
           owner: cloneOwner,
           repo: cloneRepo,
           ref: cloneRef!,
           depth: cloneDepth,
+          forkContext,
         });
 
         // PR mentions: fetch and checkout PR head ref from base repo.
@@ -1848,6 +1889,267 @@ export function createMentionHandler(deps: {
             );
             await postMentionReply(replyBody);
             return;
+          }
+
+          // Fork-based output routing: determine gist vs PR (Phase 127)
+          if (forkContext && gistPublisher?.enabled) {
+            // Get list of changed files for routing decision
+            const changedFilesRaw = (await $`git -C ${workspace.dir} diff --name-only HEAD`.quiet().nothrow()).text().trim();
+            const stagedFilesRaw = (await $`git -C ${workspace.dir} diff --cached --name-only`.quiet().nothrow()).text().trim();
+            const allChangedRaw = [changedFilesRaw, stagedFilesRaw].filter(Boolean).join("\n");
+            const changedFiles = allChangedRaw.split("\n").map((f) => f.trim()).filter(Boolean);
+            const uniqueChangedFiles = [...new Set(changedFiles)];
+
+            const useGist = shouldUseGist({ keyword: writeIntent.keyword }, uniqueChangedFiles);
+
+            if (useGist) {
+              // Gist path: generate patch and create gist
+              try {
+                // Stage all changes to generate a complete diff
+                await $`git -C ${workspace.dir} add -A`.quiet();
+                const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+
+                if (patch.trim().length === 0) {
+                  const replyBody = wrapInDetails(
+                    "No diff content to create a patch from.",
+                    "kodiai response",
+                  );
+                  await postMentionReply(replyBody);
+                  return;
+                }
+
+                const requestSummary = summarizeWriteRequest(writeIntent.request);
+                const gist = await gistPublisher.createPatchGist({
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  summary: requestSummary,
+                  patch,
+                });
+
+                // Post gist link as comment with apply instructions
+                const gistReplyBody = wrapInDetails(
+                  [
+                    `Patch gist: ${gist.htmlUrl}`,
+                    "",
+                    "To apply this patch locally:",
+                    "```bash",
+                    `curl -sL ${gist.htmlUrl}.patch | git apply`,
+                    "```",
+                    "",
+                    `Files changed: ${uniqueChangedFiles.join(", ")}`,
+                  ].join("\n"),
+                  "kodiai response",
+                );
+                await postMentionReply(gistReplyBody);
+
+                logger.info(
+                  {
+                    evidenceType: "write-mode",
+                    outcome: "created-gist",
+                    deliveryId: event.id,
+                    installationId: event.installationId,
+                    owner: mention.owner,
+                    repoName: mention.repo,
+                    repo: `${mention.owner}/${mention.repo}`,
+                    gistUrl: gist.htmlUrl,
+                    gistId: gist.id,
+                    changedFiles: uniqueChangedFiles,
+                    writeOutputKey,
+                    triggerCommentUrl,
+                  },
+                  "Evidence bundle",
+                );
+                return;
+              } catch (gistErr) {
+                logger.warn(
+                  { err: gistErr, owner: mention.owner, repo: mention.repo },
+                  "Gist creation failed; falling through to PR path",
+                );
+                // Fall through to PR path
+              }
+            }
+
+            // PR path with fork: commit, push to fork, create cross-fork PR
+            try {
+              await assertOriginIsFork(workspace.dir, forkContext.forkOwner);
+
+              const branchName = writeBranchName;
+              const sourceRef = mention.prNumber !== undefined
+                ? `PR #${mention.prNumber}`
+                : `#${mention.issueNumber}`;
+              const commitRequestSummary = summarizeWriteRequest(writeIntent.request);
+              const commitSubject = generateCommitSubject({
+                issueTitle: mention.issueTitle,
+                requestSummary: commitRequestSummary,
+                isFromPr: mention.prNumber !== undefined,
+                ref: sourceRef,
+              });
+              const commitMessage = [
+                commitSubject,
+                "",
+                `kodiai-write-output-key: ${writeOutputKey}`,
+                `deliveryId: ${event.id}`,
+              ].join("\n");
+
+              const pushed = await createBranchCommitAndPush({
+                dir: workspace.dir,
+                branchName,
+                commitMessage,
+                policy: {
+                  allowPaths: config.write.allowPaths,
+                  denyPaths: config.write.denyPaths,
+                  secretScanEnabled: config.write.secretScan.enabled,
+                },
+              });
+
+              // Cross-fork PR: head uses forkOwner:branchName format
+              const crossForkHead = `${forkContext.forkOwner}:${pushed.branchName}`;
+              const prBaseRef = mention.prNumber !== undefined ? (mention.baseRef ?? "main") : (cloneRef ?? "main");
+
+              let diffStat = "";
+              try {
+                diffStat = (await $`git -C ${workspace.dir} diff --stat HEAD~1 HEAD`.quiet()).text().trim();
+              } catch {
+                // diff stat is best-effort
+              }
+
+              let fabricationWarnings: string[] = [];
+              try {
+                fabricationWarnings = await scanDiffForFabricatedContent(workspace.dir);
+              } catch {
+                // best-effort scan
+              }
+
+              const requestSummary = summarizeWriteRequest(writeIntent.request);
+              const prTitle = generatePrTitle(mention.issueTitle, requestSummary, mention.prNumber !== undefined);
+              const sourceUrl =
+                mention.prNumber !== undefined
+                  ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+                  : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
+              const prBody = generatePrBody({
+                summary: requestSummary,
+                issueTitle: mention.issueTitle,
+                sourceUrl,
+                triggerCommentUrl,
+                deliveryId: event.id,
+                headSha: pushed.headSha,
+                isFromPr: mention.prNumber !== undefined,
+                issueNumber: mention.issueNumber,
+                prNumber: mention.prNumber,
+                diffStat,
+                warnings: fabricationWarnings,
+              });
+
+              const response = await octokit.rest.pulls.create({
+                owner: mention.owner,
+                repo: mention.repo,
+                title: prTitle,
+                head: crossForkHead,
+                base: prBaseRef,
+                body: prBody,
+              });
+
+              const createdPrUrl = response.data.html_url;
+              const issueLinkbackUrl =
+                mention.prNumber !== undefined
+                  ? `https://github.com/${mention.owner}/${mention.repo}/pull/${mention.prNumber}`
+                  : `https://github.com/${mention.owner}/${mention.repo}/issues/${mention.issueNumber}`;
+
+              const replyBody = buildIssueWriteSuccessReply({
+                prUrl: createdPrUrl,
+                issueLinkbackUrl,
+              });
+              await postMentionReply(replyBody);
+
+              logger.info(
+                {
+                  evidenceType: "write-mode",
+                  outcome: "created-cross-fork-pr",
+                  deliveryId: event.id,
+                  installationId: event.installationId,
+                  owner: mention.owner,
+                  repoName: mention.repo,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  forkOwner: forkContext.forkOwner,
+                  crossForkHead,
+                  prUrl: createdPrUrl,
+                  commitSha: pushed.headSha,
+                  writeOutputKey,
+                  triggerCommentUrl,
+                },
+                "Evidence bundle",
+              );
+              return;
+            } catch (forkPrErr) {
+              // Fallback to gist on fork/PR failure
+              logger.warn(
+                { err: forkPrErr, owner: mention.owner, repo: mention.repo },
+                "Fork-based PR creation failed; falling back to gist",
+              );
+
+              if (forkPrErr instanceof WritePolicyError) {
+                const refusal = buildWritePolicyRefusalMessage(forkPrErr, config.write.allowPaths);
+                const replyBody = wrapInDetails(refusal, "kodiai response");
+                await postMentionReply(replyBody);
+                return;
+              }
+
+              if (gistPublisher.enabled) {
+                try {
+                  await $`git -C ${workspace.dir} add -A`.quiet();
+                  const patch = (await $`git -C ${workspace.dir} diff --cached`.quiet()).text();
+                  if (patch.trim().length > 0) {
+                    const requestSummary = summarizeWriteRequest(writeIntent.request);
+                    const gist = await gistPublisher.createPatchGist({
+                      owner: mention.owner,
+                      repo: mention.repo,
+                      summary: requestSummary,
+                      patch,
+                    });
+
+                    const gistReplyBody = wrapInDetails(
+                      [
+                        "Could not create a PR from the fork, but here is the patch as a gist:",
+                        "",
+                        `Patch gist: ${gist.htmlUrl}`,
+                        "",
+                        "To apply this patch locally:",
+                        "```bash",
+                        `curl -sL ${gist.htmlUrl}.patch | git apply`,
+                        "```",
+                      ].join("\n"),
+                      "kodiai response",
+                    );
+                    await postMentionReply(gistReplyBody);
+
+                    logger.info(
+                      {
+                        evidenceType: "write-mode",
+                        outcome: "fallback-gist",
+                        deliveryId: event.id,
+                        owner: mention.owner,
+                        repo: `${mention.owner}/${mention.repo}`,
+                        gistUrl: gist.htmlUrl,
+                        writeOutputKey,
+                      },
+                      "Evidence bundle",
+                    );
+                    return;
+                  }
+                } catch (fallbackErr) {
+                  logger.error(
+                    { err: fallbackErr },
+                    "Fallback gist creation also failed",
+                  );
+                }
+              }
+
+              // If gist fallback failed too, fall through to legacy behavior
+              logger.warn(
+                { owner: mention.owner, repo: mention.repo },
+                "Fork-based write mode failed completely; falling through to legacy direct-push path",
+              );
+            }
           }
 
           const sourcePrUrl =
