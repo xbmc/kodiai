@@ -39,6 +39,8 @@ import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../
 import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import { validateIssue, generateGuidanceComment, generateLabelRecommendation, generateGenericNudge } from "../triage/triage-agent.ts";
+import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 
 export function buildWritePolicyRefusalMessage(
   err: WritePolicyError,
@@ -861,10 +863,39 @@ export function createMentionHandler(deps: {
           replyBody: string,
           options?: { sanitizeMentions?: boolean },
         ): Promise<void> {
-          const sanitizedBody =
+          let sanitizedBody =
             options?.sanitizeMentions === false
               ? replyBody
               : sanitizeOutgoingMentions(replyBody, possibleHandles);
+
+          // Guardrail pipeline: filter LLM-prose output before publishing (GUARD-07)
+          // Only run on substantive LLM prose; skip template/status messages
+          // (wrapped in <details> tags or short messages).
+          // Fail-open: on error, use original sanitized body.
+          const isTemplateBased = sanitizedBody.trimStart().startsWith("<details>") || sanitizedBody.length <= 500;
+          if (!isTemplateBased) {
+            try {
+              const guardResult = await runGuardrailPipeline({
+                adapter: mentionAdapter,
+                input: {
+                  issueBody: mention.commentBody,
+                  prDescription: undefined,
+                  conversationHistory: [],
+                  retrievalResults: [],
+                },
+                output: sanitizedBody,
+                config: { strictness: "standard" },
+                repo: `${mention.owner}/${mention.repo}`,
+              });
+              if (guardResult.output !== null && !guardResult.suppressed) {
+                sanitizedBody = guardResult.output;
+              }
+              // If suppressed, keep original body (fail-open)
+            } catch {
+              // Guardrail error: fail-open, use original sanitized body
+            }
+          }
+
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
             try {

@@ -19,6 +19,8 @@ import { classifyFindingDeltas, type DeltaClassification } from "../lib/delta-cl
 import { classifyClaims, buildFileDiffsMap, type FindingClaimClassification } from "../lib/claim-classifier.ts";
 import { demoteExternalClaimSeverities, type DemotableFinding } from "../lib/severity-demoter.ts";
 import { filterExternalClaims, formatSuppressedFindingsSection, type FilterableFinding, type FilteredFindingRecord } from "../lib/output-filter.ts";
+import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
 import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
@@ -3157,6 +3159,42 @@ export function createReviewHandler(deps: {
               })),
             },
             "Output filter applied: external knowledge claims filtered",
+          );
+        }
+
+        // Unified guardrail pipeline (GUARD-01): run for audit logging and
+        // additional claim-level filtering across the unified framework.
+        // Fail-open: on error, existing flow above is authoritative.
+        try {
+          const guardResult = await runGuardrailPipeline({
+            adapter: reviewAdapter,
+            input: {
+              findings: enforcedFindings as unknown as Array<import("../lib/claim-classifier.ts").FindingForClassification>,
+              fileDiffs,
+              prDescription: pr.body ?? null,
+              commitMessages: commitMessagesForLinking,
+            } satisfies ReviewInput,
+            output: {
+              findings: processedFindings as unknown as import("../lib/guardrail/adapters/review-adapter.ts").ReviewFinding[],
+            },
+            config: { strictness: config.guardrails?.strictness ?? "standard" },
+            repo: `${apiOwner}/${apiRepo}`,
+          });
+          if (guardResult.claimsRemoved > 0) {
+            logger.info(
+              {
+                ...baseLog,
+                guardrailClaimsTotal: guardResult.claimsTotal,
+                guardrailClaimsRemoved: guardResult.claimsRemoved,
+                guardrailSuppressed: guardResult.suppressed,
+              },
+              "Guardrail pipeline applied to review findings",
+            );
+          }
+        } catch (guardErr) {
+          logger.warn(
+            { ...baseLog, err: guardErr },
+            "Guardrail pipeline failed (fail-open, existing filter results used)",
           );
         }
 
