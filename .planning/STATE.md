@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: Idle — ready for next milestone
-stopped_at: Completed 127-01-PLAN.md
-last_updated: "2026-03-07T21:51:33.609Z"
+stopped_at: Completed 127-03-PLAN.md
+last_updated: "2026-03-07T21:56:42.923Z"
 last_activity: 2026-03-07 -- v0.25 Wiki Content Updates shipped
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -40,6 +40,7 @@ Progress: Milestone complete
 
 All decisions through v0.25 archived to `.planning/PROJECT.md` Key Decisions table.
 - [Phase 127]: BotUserClient uses getter-based stub that throws on access when disabled
+- [Phase 127]: Fork policy instructions added to write-mode prompt only, centralized in src/execution/prompts.ts
 
 ### Key Constraints (Carry-Forward)
 
@@ -60,6 +61,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07T21:51:33.607Z
-**Stopped At:** Completed 127-01-PLAN.md
+**Last session:** 2026-03-07T21:56:42.922Z
+**Stopped At:** Completed 127-03-PLAN.md
 **Resume file:** None
