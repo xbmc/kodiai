@@ -130,7 +130,7 @@ type ProcessedFinding = ExtractedFinding & {
   preDemotionSeverity?: FindingSeverity;
   severityDemoted?: boolean;
   demotionReason?: string;
-  filterAction?: "rewritten" | "suppressed";
+  filterAction?: "rewritten" | "suppressed" | "guardrail-suppressed" | "guardrail-rewritten";
   originalTitle?: string;
 };
 
@@ -3168,9 +3168,9 @@ export function createReviewHandler(deps: {
           );
         }
 
-        // Unified guardrail pipeline (GUARD-01): run for audit logging and
-        // additional claim-level filtering across the unified framework.
-        // Fail-open: on error, existing flow above is authoritative.
+        // Unified guardrail pipeline (GUARD-01): authoritative claim-level filtering.
+        // Runs after existing classifyClaims+filterExternalClaims for defense-in-depth.
+        // Fail-open: on error, existing filter results are used as fallback.
         try {
           const guardResult = await runGuardrailPipeline({
             adapter: reviewAdapter,
@@ -3197,6 +3197,22 @@ export function createReviewHandler(deps: {
               },
               "Guardrail pipeline applied to review findings",
             );
+          }
+          // Apply guardrail result: replace processedFindings with filtered output (GUARD-01).
+          // Owner decision: guardrail pipeline is authoritative for reviews, not shadow/audit-only.
+          if (guardResult.output !== null && !guardResult.suppressed) {
+            processedFindings = processedFindings.map((f) => {
+              const kept = guardResult.output!.findings.find((gf) => gf.commentId === f.commentId);
+              if (!kept) {
+                // Finding was removed by guardrail -- suppress it
+                return { ...f, suppressed: true, filterAction: "guardrail-suppressed" as const, originalTitle: f.title };
+              }
+              if (kept.title !== f.title) {
+                // Finding title was rewritten by guardrail
+                return { ...f, title: kept.title, filterAction: "guardrail-rewritten" as const, originalTitle: f.title };
+              }
+              return f;
+            });
           }
         } catch (guardErr) {
           logger.warn(
