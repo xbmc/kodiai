@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: Idle — ready for next milestone
-stopped_at: Phase 127 context gathered
-last_updated: "2026-03-07T21:15:37.339Z"
+stopped_at: Completed 127-01-PLAN.md
+last_updated: "2026-03-07T21:51:33.609Z"
 last_activity: 2026-03-07 -- v0.25 Wiki Content Updates shipped
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 3
+  completed_plans: 1
 ---
 
 # Project State
@@ -39,6 +39,7 @@ Progress: Milestone complete
 ### Decisions
 
 All decisions through v0.25 archived to `.planning/PROJECT.md` Key Decisions table.
+- [Phase 127]: BotUserClient uses getter-based stub that throws on access when disabled
 
 ### Key Constraints (Carry-Forward)
 
@@ -59,6 +60,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07T21:15:37.337Z
-**Stopped At:** Phase 127 context gathered
-**Resume file:** .planning/phases/127-fork-based-write-mode-with-gist-patches/127-CONTEXT.md
+**Last session:** 2026-03-07T21:51:33.607Z
+**Stopped At:** Completed 127-01-PLAN.md
+**Resume file:** None
