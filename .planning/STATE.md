@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.25
 milestone_name: Wiki Content Updates
 status: completed
-stopped_at: Completed 126-02-PLAN.md
-last_updated: "2026-03-07T09:18:12.640Z"
-last_activity: 2026-03-07 -- Completed 126-03 (Non-Review Surface Adapters)
+stopped_at: Completed 126-05-PLAN.md (phase 126 complete)
+last_updated: "2026-03-07T15:13:29.525Z"
+last_activity: 2026-03-07 -- Completed 126-05 (Audit Store Wiring and Review Authoritative Mode)
 progress:
   total_phases: 7
-  completed_phases: 6
-  total_plans: 18
-  completed_plans: 17
+  completed_phases: 7
+  total_plans: 19
+  completed_plans: 19
   percent: 100
 ---
 
