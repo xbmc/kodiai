@@ -42,6 +42,7 @@ import { validateIssue, generateGuidanceComment, generateLabelRecommendation, ge
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
+import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 
 export function buildWritePolicyRefusalMessage(
   err: WritePolicyError,
@@ -1672,6 +1673,7 @@ export function createMentionHandler(deps: {
               "- NEVER fabricate checksums, hashes, version numbers, download URLs, or any verifiable data. If you need a real value (e.g. a SHA512 of a download), leave a clearly-marked TODO placeholder like `SHA512=TODO_REPLACE_WITH_REAL_HASH` instead of generating a fake one.",
               "- NEVER invent API endpoints, package names, or configuration values that you have not verified exist in the codebase.",
               "- Verify completeness: if you add a new module/component, trace it through the build system and make sure it is actually wired in (e.g., find_package calls, CMakeLists.txt, imports, etc.).",
+              FORK_WRITE_POLICY_INSTRUCTIONS,
             ].join("\n")
             : isWriteRequest
               ? [
