@@ -1,17 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: none
-milestone_name: Planning next milestone
-status: idle
-stopped_at: v0.25 milestone completed and archived
-last_updated: "2026-03-07T17:50:00.000Z"
+milestone: v0.1
+milestone_name: milestone
+status: Idle — ready for next milestone
+stopped_at: Phase 127 context gathered
+last_updated: "2026-03-07T21:15:37.339Z"
 last_activity: 2026-03-07 -- v0.25 Wiki Content Updates shipped
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
 ---
 
 # Project State
@@ -35,7 +34,7 @@ Progress: Milestone complete
 
 ### Roadmap Evolution
 
-(Fresh — v0.25 archived to `.planning/milestones/v0.25-ROADMAP.md`)
+- Phase 127 added: Fork-based write mode with gist patches — use forked repos instead of branches in main, gist creation for patch requests, prevent direct branch creation
 
 ### Decisions
 
@@ -60,6 +59,6 @@ None.
 
 ## Session Continuity
 
-**Last session:** 2026-03-07
-**Stopped At:** v0.25 milestone completed
-**Resume file:** None
+**Last session:** 2026-03-07T21:15:37.337Z
+**Stopped At:** Phase 127 context gathered
+**Resume file:** .planning/phases/127-fork-based-write-mode-with-gist-patches/127-CONTEXT.md
