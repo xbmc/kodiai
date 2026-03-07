@@ -353,14 +353,15 @@ Plans:
   7. Strictness toggle (strict/standard/lenient) configurable in .kodiai.yml
   8. All surfaces fail-open on guardrail errors -- never block publishing
   9. Troubleshooting agent uses buildEpistemicBoundarySection and wiki generator uses unified pipeline instead of checkGrounding
-**Plans:** 4/4 plans complete
+**Plans:** 5 plans
 
 Plans:
 - [ ] 126-01-PLAN.md — Core types, context classifier, allowlist, pipeline, audit store, migration, config schema
 - [ ] 126-02-PLAN.md — Review adapter wrapping existing classifier+filter, LLM fallback classifier
 - [ ] 126-03-PLAN.md — Surface adapters for mention, slack, troubleshooting, triage, wiki
 - [ ] 126-04-PLAN.md — Wire all handlers through guardrail pipeline, epistemic prompt unification
+- [ ] 126-05-PLAN.md — Gap closure: wire auditStore into all handlers, make review pipeline authoritative
 
 ---
 
-*Roadmap updated: 2026-03-07 -- Phase 126 planned with 4 plans across 3 waves*
+*Roadmap updated: 2026-03-07 -- Phase 126 gap closure plan added (126-05)*
