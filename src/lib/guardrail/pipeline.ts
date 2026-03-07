@@ -14,6 +14,7 @@ import type {
   StrictnessLevel,
 } from "./types.ts";
 import type { GuardrailAuditStore } from "./audit-store.ts";
+import type { LlmClassifier } from "./llm-classifier.ts";
 
 // ---------------------------------------------------------------------------
 // Pipeline options
@@ -26,11 +27,8 @@ export type RunGuardrailPipelineOpts<TInput, TOutput> = {
   config: GuardrailConfig;
   repo: string;
   auditStore?: GuardrailAuditStore;
-  /** Optional LLM classifier for ambiguous claims (placeholder for plan 02) */
-  llmClassifier?: (
-    claim: string,
-    context: string[],
-  ) => Promise<ClaimClassification>;
+  /** Optional LLM classifier for ambiguous claims (batched Haiku call) */
+  llmClassifier?: LlmClassifier;
 };
 
 // ---------------------------------------------------------------------------
@@ -104,29 +102,40 @@ export async function runGuardrailPipeline<TInput, TOutput>(
       classifications.push(classification);
     }
 
-    // 4. Handle ambiguous claims
+    // 4. Handle ambiguous claims via batched LLM fallback
     let claimsAmbiguous = 0;
     let llmFallbackUsed = false;
 
+    // Collect ambiguous claim indices for batched LLM call
+    const ambiguousIndices: number[] = [];
     for (let i = 0; i < classifications.length; i++) {
       if (classifications[i].confidence < AMBIGUITY_THRESHOLD) {
         claimsAmbiguous++;
-        if (llmClassifier) {
-          // LLM fallback (placeholder for plan 02)
-          try {
-            const llmResult = await llmClassifier(
-              claims[i],
-              context.providedContext,
-            );
-            classifications[i] = llmResult;
-            llmFallbackUsed = true;
-          } catch {
-            // LLM failed — keep original (treat as grounded)
-          }
-        }
-        // If no llmClassifier, ambiguous claims treated as grounded (fail-open)
+        ambiguousIndices.push(i);
       }
     }
+
+    if (llmClassifier && ambiguousIndices.length > 0) {
+      // Batch all ambiguous claims into a single LLM call
+      try {
+        const ambiguousClaims = ambiguousIndices.map((idx) => ({
+          text: claims[idx],
+          context,
+        }));
+        const llmResults = await llmClassifier(ambiguousClaims);
+
+        // Replace ambiguous classifications with LLM results
+        for (let j = 0; j < ambiguousIndices.length; j++) {
+          if (llmResults[j]) {
+            classifications[ambiguousIndices[j]] = llmResults[j];
+          }
+        }
+        llmFallbackUsed = true;
+      } catch {
+        // LLM failed — keep original classifications (fail-open)
+      }
+    }
+    // If no llmClassifier, ambiguous claims treated as grounded (fail-open)
 
     // 5. Filter: keep grounded and inferential, remove external-knowledge
     const keptClaims: string[] = [];

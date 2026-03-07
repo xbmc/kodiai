@@ -5,7 +5,9 @@ import type {
   GroundingContext,
   GuardrailConfig,
   AuditRecord,
+  ClaimClassification,
 } from "./types.ts";
+import type { LlmClassifier, LlmClassifierClaim } from "./llm-classifier.ts";
 
 // ---------------------------------------------------------------------------
 // Mock adapter operating on string arrays
@@ -222,5 +224,111 @@ describe("runGuardrailPipeline", () => {
 
     expect(loggedRecord).not.toBeNull();
     expect(loggedRecord!.strictness).toBe("strict");
+  });
+
+  test("with llmClassifier: ambiguous claims (confidence < 0.6) are reclassified via LLM", async () => {
+    // Context that will result in ambiguous classification (low word overlap)
+    const adapter = createMockAdapter({
+      buildGroundingContext: () => ({
+        providedContext: ["some unrelated context about networking"],
+        contextSources: ["issue"],
+      }),
+    });
+    // Claims with no strong signal get confidence 0.5 (below 0.6 threshold)
+    const output = [
+      "The method signature changed slightly",
+      "This was released in March 2024", // external-knowledge pattern
+    ];
+
+    let llmCalledWith: LlmClassifierClaim[] = [];
+    const mockLlmClassifier: LlmClassifier = mock(async (claims) => {
+      llmCalledWith = claims;
+      return claims.map((c) => ({
+        text: c.text,
+        label: "external-knowledge" as const,
+        confidence: 0.85,
+        evidence: "LLM classified as external",
+      }));
+    });
+
+    let loggedRecord: AuditRecord | null = null;
+    const auditStore = {
+      logRun: (record: AuditRecord) => {
+        loggedRecord = record;
+      },
+    };
+
+    const result = await runGuardrailPipeline({
+      adapter,
+      input: [],
+      output,
+      config: defaultConfig,
+      repo: "owner/repo",
+      llmClassifier: mockLlmClassifier,
+      auditStore,
+    });
+
+    // The LLM should have been called for ambiguous claims
+    expect(loggedRecord!.llmFallbackUsed).toBe(true);
+    expect(loggedRecord!.claimsAmbiguous).toBeGreaterThan(0);
+  });
+
+  test("without llmClassifier: ambiguous claims treated as grounded (fail-open)", async () => {
+    const adapter = createMockAdapter({
+      buildGroundingContext: () => ({
+        providedContext: ["some unrelated context"],
+        contextSources: ["issue"],
+      }),
+    });
+    // A claim with no signal defaults to confidence 0.5 (ambiguous)
+    const output = ["The method signature changed slightly"];
+
+    let loggedRecord: AuditRecord | null = null;
+    const auditStore = {
+      logRun: (record: AuditRecord) => {
+        loggedRecord = record;
+      },
+    };
+
+    const result = await runGuardrailPipeline({
+      adapter,
+      input: [],
+      output,
+      config: defaultConfig,
+      repo: "owner/repo",
+      auditStore,
+    });
+
+    // Without LLM classifier, ambiguous claims remain grounded
+    expect(result.output).not.toBeNull();
+    expect(loggedRecord!.llmFallbackUsed).toBe(false);
+    expect(loggedRecord!.claimsAmbiguous).toBeGreaterThan(0);
+  });
+
+  test("llmClassifier error: fail-open, keep original classifications", async () => {
+    const adapter = createMockAdapter({
+      buildGroundingContext: () => ({
+        providedContext: ["some unrelated context"],
+        contextSources: ["issue"],
+      }),
+    });
+    const output = ["The method signature changed slightly"];
+
+    const mockLlmClassifier: LlmClassifier = mock(async () => {
+      throw new Error("LLM unavailable");
+    });
+
+    const result = await runGuardrailPipeline({
+      adapter,
+      input: [],
+      output,
+      config: defaultConfig,
+      repo: "owner/repo",
+      llmClassifier: mockLlmClassifier,
+    });
+
+    // Should fail-open: output kept as-is
+    expect(result.output).not.toBeNull();
+    expect(result.classifierError).toBe(false);
   });
 });

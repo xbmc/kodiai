@@ -27,6 +27,8 @@ export const TASK_TYPES = {
   VOICE_VALIDATE: "voice.validate",
   /** Section-level update generation for wiki pages (non-agentic, Phase 123). */
   SECTION_UPDATE: "section.update",
+  /** Guardrail claim classification via Haiku (non-agentic, Phase 126). */
+  GUARDRAIL_CLASSIFICATION: "guardrail.classification",
 } as const;
 
 /** Union type of all valid task type strings. */
