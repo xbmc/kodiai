@@ -356,11 +356,11 @@ Plans:
 **Plans:** 5 plans
 
 Plans:
-- [ ] 126-01-PLAN.md — Core types, context classifier, allowlist, pipeline, audit store, migration, config schema
-- [ ] 126-02-PLAN.md — Review adapter wrapping existing classifier+filter, LLM fallback classifier
-- [ ] 126-03-PLAN.md — Surface adapters for mention, slack, troubleshooting, triage, wiki
-- [ ] 126-04-PLAN.md — Wire all handlers through guardrail pipeline, epistemic prompt unification
-- [ ] 126-05-PLAN.md — Gap closure: wire auditStore into all handlers, make review pipeline authoritative
+- [x] 126-01-PLAN.md — Core types, context classifier, allowlist, pipeline, audit store, migration, config schema
+- [x] 126-02-PLAN.md — Review adapter wrapping existing classifier+filter, LLM fallback classifier
+- [x] 126-03-PLAN.md — Surface adapters for mention, slack, troubleshooting, triage, wiki
+- [x] 126-04-PLAN.md — Wire all handlers through guardrail pipeline, epistemic prompt unification
+- [x] 126-05-PLAN.md — Gap closure: wire auditStore into all handlers, make review pipeline authoritative
 
 ---
 
