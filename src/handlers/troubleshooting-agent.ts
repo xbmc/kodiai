@@ -34,6 +34,9 @@ import { retrieveTroubleshootingContext } from "../knowledge/troubleshooting-ret
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import { buildEpistemicBoundarySection } from "../execution/review-prompt.ts";
+import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { troubleshootAdapter } from "../lib/guardrail/adapters/troubleshoot-adapter.ts";
 
 export function createTroubleshootingHandler(deps: {
   eventRouter: EventRouter;
@@ -183,17 +186,44 @@ export function createTroubleshootingHandler(deps: {
           resolved,
           prompt,
           system:
-            "You are a troubleshooting assistant for a software project. Synthesize actionable guidance from the provided resolved issues and wiki pages. Be concise and specific. Do not invent solutions not grounded in the sources.",
+            "You are a troubleshooting assistant for a software project. Synthesize actionable guidance from the provided resolved issues and wiki pages. Be concise and specific. Do not invent solutions not grounded in the sources.\n\n" + buildEpistemicBoundarySection(),
           costTracker,
           repo: fullRepo,
           deliveryId: event.id,
           logger: handlerLogger,
         });
 
+        // 12b. Guardrail pipeline: filter synthesized guidance (GUARD-09)
+        // Fail-open: on error, use original generated text.
+        let filteredGuidance = genResult.text;
+        try {
+          const guardResult = await runGuardrailPipeline({
+            adapter: troubleshootAdapter,
+            input: {
+              resolvedIssues: result.matches,
+              wikiResults: result.wikiResults,
+              issueTitle: issue.title,
+              issueBody: issue.body ?? null,
+            },
+            output: genResult.text,
+            config: { strictness: config.guardrails?.strictness ?? "standard" },
+            repo: fullRepo,
+          });
+          if (guardResult.suppressed) {
+            handlerLogger.info("Troubleshooting guidance suppressed by guardrail, skipping comment");
+            return;
+          }
+          if (guardResult.output !== null) {
+            filteredGuidance = guardResult.output;
+          }
+        } catch {
+          // Guardrail error: fail-open, use original generated text
+        }
+
         // 13. Format comment
         const marker = buildTroubleshootMarker(fullRepo, issue.number, comment.id);
         const commentBody = formatTroubleshootingComment({
-          synthesizedGuidance: genResult.text,
+          synthesizedGuidance: filteredGuidance,
           result,
           marker,
         });

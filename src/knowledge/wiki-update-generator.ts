@@ -24,6 +24,8 @@ import { createVoicePreservingPipeline } from "./wiki-voice-analyzer.ts";
 import type { SectionInput } from "./wiki-voice-analyzer.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
+import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { wikiAdapter } from "../lib/guardrail/adapters/wiki-adapter.ts";
 
 /** Maximum patches to include per section. */
 const MAX_PATCHES_PER_SECTION = 5;
@@ -261,6 +263,7 @@ export function parseGeneratedSuggestion(text: string): {
  *
  * Exported for testing.
  */
+/** @deprecated Use runGuardrailPipeline with wikiAdapter instead. Kept as safety net. */
 export function checkGrounding(
   suggestionText: string,
   inputPrNumbers: number[],
@@ -571,14 +574,41 @@ async function processPage(
       continue;
     }
 
-    // Check grounding
+    // Guardrail pipeline: unified grounding check replacing checkGrounding() (GUARD-01)
+    // Wiki is always strict per decision.
     const inputPrNumbers = sectionMatch.matchingPatches.map((p) => p.prNumber);
-    const isGrounded = checkGrounding(parsed.suggestion, inputPrNumbers);
+    let finalSuggestion = parsed.suggestion;
+    let isGrounded = true;
+    try {
+      const guardResult = await runGuardrailPipeline({
+        adapter: wikiAdapter,
+        input: {
+          patchDiffs: sectionMatch.matchingPatches.map((p) => ({
+            prNumber: p.prNumber,
+            prTitle: p.prTitle,
+            patch: p.patch,
+          })),
+          wikiPageContent: sectionMatch.sectionContent,
+          wikiPageTitle: page.pageTitle,
+        },
+        output: parsed.suggestion,
+        config: { strictness: "strict" },
+        repo: page.pageTitle,
+      });
+      if (guardResult.suppressed) {
+        isGrounded = false;
+      } else if (guardResult.output !== null) {
+        finalSuggestion = guardResult.output;
+      }
+    } catch {
+      // Guardrail error: fall back to legacy checkGrounding
+      isGrounded = checkGrounding(parsed.suggestion, inputPrNumbers);
+    }
 
     if (!isGrounded) {
       logger.info(
         { pageId: page.pageId, section: vr.sectionHeading },
-        "Suggestion failed grounding check (no matching PR citations), dropping",
+        "Suggestion failed grounding check, dropping",
       );
       pageDropped++;
       result.suggestionsDropped++;
@@ -586,22 +616,23 @@ async function processPage(
     }
 
     // Extract cited PRs
-    const citingPrs = extractCitedPrs(parsed.suggestion, evidence);
+    const citingPrs = extractCitedPrs(finalSuggestion, evidence);
 
     if (vr.voiceMismatchWarning) {
       result.voiceMismatches++;
     }
 
     // Store in DB (unless dry run)
+    const groundingStatus = finalSuggestion !== parsed.suggestion ? "partially-grounded" : "grounded";
     if (!runOpts.dryRun) {
       await storeSuggestion(opts.sql, {
         pageId: page.pageId,
         pageTitle: page.pageTitle,
         sectionHeading: vr.sectionHeading,
         originalContent: vr.originalContent,
-        suggestion: parsed.suggestion,
+        suggestion: finalSuggestion,
         whySummary: parsed.whySummary,
-        groundingStatus: "grounded",
+        groundingStatus,
         citingPrs,
         voiceMismatchWarning: vr.voiceMismatchWarning,
         voiceScores: vr.validationScores,

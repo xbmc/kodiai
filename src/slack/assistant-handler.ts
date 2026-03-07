@@ -13,6 +13,8 @@ import {
   createInMemoryWriteConfirmationStore,
   type SlackWriteConfirmationStore,
 } from "./write-confirmation-store.ts";
+import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
+import { slackAdapter } from "../lib/guardrail/adapters/slack-adapter.ts";
 
 export interface SlackAssistantAddressedPayload {
   channel: string;
@@ -442,17 +444,39 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                 prompt: pending.prompt,
               });
 
+              // Guardrail pipeline: filter LLM-prose before publishing (GUARD-08)
+              let confirmedReplyText = executionResult.answerText;
+              if (confirmedReplyText.length > 100) {
+                try {
+                  const guardResult = await runGuardrailPipeline({
+                    adapter: slackAdapter,
+                    input: { userMessage: pending.request },
+                    output: confirmedReplyText,
+                    config: {
+                      strictness: "standard",
+                      overrides: { slack: { strictness: "lenient" } },
+                    },
+                    repo: `${pending.owner}/${pending.repo}`,
+                  });
+                  if (guardResult.output !== null && !guardResult.suppressed) {
+                    confirmedReplyText = guardResult.output;
+                  }
+                } catch {
+                  // Guardrail error: fail-open
+                }
+              }
+
               await publishInThread({
                 channel: payload.channel,
                 threadTs: payload.threadTs,
-                text: executionResult.answerText,
+                text: confirmedReplyText,
               });
 
               return {
                 outcome: "answered",
                 route: "write",
                 repo: `${pending.owner}/${pending.repo}`,
-                publishedText: executionResult.answerText,
+                publishedText: confirmedReplyText,
               };
             } finally {
               await workspace.cleanup();
@@ -574,10 +598,35 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
             prompt,
           });
 
-          const replyText =
+          let replyText =
             resolution.outcome === "override"
               ? `${resolution.acknowledgementText}\n\n${executionResult.answerText}`
               : executionResult.answerText;
+
+          // Guardrail pipeline: filter LLM-prose before publishing (GUARD-08)
+          // Only run on substantive prose (>100 chars); skip short/template responses.
+          // Fail-open: on error, use original reply text.
+          if (replyText.length > 100) {
+            try {
+              const guardResult = await runGuardrailPipeline({
+                adapter: slackAdapter,
+                input: {
+                  userMessage: messageText,
+                },
+                output: replyText,
+                config: {
+                  strictness: "standard",
+                  overrides: { slack: { strictness: "lenient" } },
+                },
+                repo: resolution.repo,
+              });
+              if (guardResult.output !== null && !guardResult.suppressed) {
+                replyText = guardResult.output;
+              }
+            } catch {
+              // Guardrail error: fail-open
+            }
+          }
 
           await publishInThread({
             channel: payload.channel,
