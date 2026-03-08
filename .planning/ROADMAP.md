@@ -242,13 +242,14 @@ See `.planning/milestones/v0.25-ROADMAP.md` for full phase details.
 **Goal:** Configure write-mode to use forked repositories instead of creating branches in main, implement gist creation for patch requests, and add explicit instructions preventing the bot from creating branches directly
 **Requirements**: [FORK-01, FORK-02, FORK-03, FORK-04, FORK-05, FORK-06, FORK-07, FORK-08, FORK-09, FORK-10]
 **Depends on:** Phase 126
-**Plans:** 3/3 plans complete
+**Plans:** 4 plans
 
 Plans:
-- [ ] 127-01-PLAN.md -- Bot user auth client, fork manager, and gist publisher foundation
-- [ ] 127-02-PLAN.md -- Fork-aware workspace creation and write-mode consumer wiring
-- [ ] 127-03-PLAN.md -- Agent system prompt fork instructions and legacy branch cleanup
+- [x] 127-01-PLAN.md -- Bot user auth client, fork manager, and gist publisher foundation
+- [x] 127-02-PLAN.md -- Fork-aware workspace creation and write-mode consumer wiring
+- [x] 127-03-PLAN.md -- Agent system prompt fork instructions and legacy branch cleanup
+- [ ] 127-04-PLAN.md -- Gap closure: fix TS errors and wire fork policy into write-runner
 
 ---
 
-*Roadmap updated: 2026-03-07 -- Phase 127 planned*
+*Roadmap updated: 2026-03-07 -- Phase 127 gap closure plan added*
