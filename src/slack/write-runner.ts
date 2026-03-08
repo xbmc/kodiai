@@ -8,6 +8,7 @@ import { loadRepoConfig } from "../execution/config.ts";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 
 export interface SlackWriteRunnerInput {
   owner: string;
@@ -251,12 +252,17 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
           };
         }
 
+        // When fork mode is active, append fork policy instructions to the agent prompt
+        const effectivePrompt = forkContext
+          ? `${input.prompt}\n\n${FORK_WRITE_POLICY_INSTRUCTIONS}`
+          : input.prompt;
+
         const execution = await deps.execute({
           workspace,
           installationId: installationContext.installationId,
           owner: input.owner,
           repo: input.repo,
-          prompt: input.prompt,
+          prompt: effectivePrompt,
           triggerBody: input.request,
         });
 
