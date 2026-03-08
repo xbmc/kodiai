@@ -1031,14 +1031,20 @@ export function createMentionHandler(deps: {
         );
 
         // Fork-based write mode: ensure fork exists and sync before cloning (Phase 127)
+        // Preliminary write intent check before config is available -- fork setup is
+        // harmless if config later disables write, so we gate only on user intent.
+        const prelimWriteIntent = parseWriteIntent(
+          stripMention(mention.commentBody, [appSlug, "claude"]),
+        );
+        const maybeWriteMode = prelimWriteIntent.writeIntent && prelimWriteIntent.keyword !== "plan";
         let forkContext: { forkOwner: string; forkRepo: string; botPat: string } | undefined;
-        if (writeEnabled && !forkManager?.enabled) {
+        if (maybeWriteMode && !forkManager?.enabled) {
           logger.warn(
             { owner: mention.owner, repo: mention.repo },
             "Write-mode active without BOT_USER_PAT; using legacy direct-push behavior",
           );
         }
-        if (forkManager?.enabled && writeEnabled && !usesPrRef) {
+        if (forkManager?.enabled && maybeWriteMode && !usesPrRef) {
           try {
             const fork = await forkManager.ensureFork(mention.owner, mention.repo);
             await forkManager.syncFork(fork.forkOwner, fork.forkRepo, cloneRef!);

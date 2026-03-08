@@ -44,7 +44,8 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
     while (Date.now() < deadline) {
       try {
         const response = await botClient.octokit.rest.repos.get({ owner, repo });
-        const [forkOwner, forkRepo] = response.data.full_name.split("/");
+        const parts = response.data.full_name.split("/") as [string, string];
+        const [forkOwner, forkRepo] = parts;
         return { forkOwner, forkRepo };
       } catch {
         // Fork not ready yet
@@ -72,7 +73,8 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
         // Verify it's actually a fork of the expected upstream
         const source = response.data.source;
         if (source && source.full_name === `${owner}/${repo}`) {
-          const [forkOwner, forkRepo] = response.data.full_name.split("/");
+          const parts = response.data.full_name.split("/") as [string, string];
+          const [forkOwner, forkRepo] = parts;
           const result = { forkOwner, forkRepo };
           forkCache.set(cacheKey, result);
           logger.info({ owner, repo, forkOwner, forkRepo }, "Found existing fork");

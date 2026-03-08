@@ -46,7 +46,7 @@ export function createGistPublisher(botClient: BotUserClient, logger: Logger): G
       });
 
       const htmlUrl = response.data.html_url!;
-      const id = response.data.id;
+      const id = response.data.id!;
 
       logger.info({ id, htmlUrl }, "Secret gist created");
 
