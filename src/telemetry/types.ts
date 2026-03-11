@@ -1,7 +1,7 @@
 /**
  * Telemetry record representing a single execution event.
  *
- * Maps to the `executions` table in the telemetry SQLite database.
+ * Maps to the `executions` table in the telemetry PostgreSQL database.
  * All optional fields have sensible defaults applied at the store layer.
  */
 export type TelemetryRecord = {
@@ -66,7 +66,7 @@ export type ResilienceEventRecord = {
 /**
  * Retrieval quality telemetry for a retrieval attempt.
  *
- * Maps to the `retrieval_quality` table in the telemetry SQLite database.
+ * Maps to the `retrieval_quality` table in the telemetry PostgreSQL database.
  */
 export type RetrievalQualityRecord = {
   deliveryId?: string;
@@ -87,7 +87,7 @@ export type RetrievalQualityRecord = {
 /**
  * Rate-limit telemetry for Search enrichment behavior.
  *
- * Maps to the `rate_limit_events` table in the telemetry SQLite database.
+ * Maps to the `rate_limit_events` table in the telemetry PostgreSQL database.
  */
 export type RateLimitEventRecord = {
   /**

@@ -55,7 +55,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Dead Code Removal & Repo Hygiene** `risk:low` `depends:[]`
+- [x] **S01: Dead Code Removal & Repo Hygiene** `risk:low` `depends:[]`
   > After this: `git ls-files data/ .planning/` returns empty, .env.example has all vars, merged branches deleted, deprecated files removed, .gitignore updated.
 
 - [ ] **S02: TypeScript Fixes & Code Quality** `risk:medium` `depends:[S01]`

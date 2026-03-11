@@ -72,8 +72,12 @@ if (!process.env.GITHUB_APP_ID) {
   process.exit(1);
 }
 
+if (!process.env.GITHUB_PRIVATE_KEY && process.env.GITHUB_PRIVATE_KEY_BASE64) {
+  process.env.GITHUB_PRIVATE_KEY = process.env.GITHUB_PRIVATE_KEY_BASE64;
+}
+
 if (!process.env.GITHUB_PRIVATE_KEY) {
-  console.error("ERROR: GITHUB_PRIVATE_KEY environment variable is required.");
+  console.error("ERROR: GITHUB_PRIVATE_KEY or GITHUB_PRIVATE_KEY_BASE64 environment variable is required.");
   process.exit(1);
 }
 

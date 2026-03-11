@@ -213,6 +213,4 @@ Runbook for diagnosing manual re-request issues: `docs/runbooks/review-requested
 
 ## Milestones
 
-24 milestones shipped (v0.1 through v0.24). Per-version release notes are in [MILESTONES.md](.planning/MILESTONES.md).
-
-Archived planning artifacts live in `.planning/milestones/`.
+24 milestones shipped (v0.1 through v0.24). See [CHANGELOG.md](CHANGELOG.md) for release history.

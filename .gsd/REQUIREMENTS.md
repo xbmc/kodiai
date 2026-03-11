@@ -15,47 +15,47 @@
 
 ### R002 — Dead code and legacy artifacts removed
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Deprecated files (db-path.ts, SQLite databases in data/, root-level test-delta-verification.ts), stale SQLite references in comments, and orphaned code are removed
 - Why it matters: Dead code confuses contributors and agents; stale references mislead about the actual storage backend
 - Source: execution
 - Primary owning slice: M026/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: data/ dir has 3 SQLite DBs not in .gitignore; telemetry/types.ts still says "SQLite database"
+- Validation: S01 — all deprecated files deleted, SQLite refs in telemetry/types.ts at 0, also removed kodiai-stats.ts and kodiai-trends.ts
+- Notes: 5 files deleted total; .gitignore now covers data/
 
 ### R003 — .env.example documents all env vars
 - Class: operability
-- Status: active
+- Status: validated
 - Description: .env.example lists every environment variable the app reads with required/optional status and description
 - Why it matters: Current .env.example has 7 vars; production uses 22+. New contributors cannot set up the project
 - Source: execution
 - Primary owning slice: M026/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Missing DATABASE_URL, VOYAGE_API_KEY, SLACK_*, WIKI_*, BOT_USER_*
+- Validation: S01 — 26 vars documented in 9 categories with required/optional markers
+- Notes: GITHUB_PRIVATE_KEY and GITHUB_PRIVATE_KEY_BASE64 listed as separate alternative entries
 
 ### R004 — .gitignore covers all generated artifacts
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: data/, .planning/ (after archive), and any other generated directories are properly gitignored
 - Why it matters: SQLite files in data/ could get committed; .planning/ is 11MB of legacy planning tracked in git
 - Source: execution
 - Primary owning slice: M026/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: .planning/ to be archived and gitignored per user decision
+- Validation: S01 — data/ and .planning/ entries verified in .gitignore
+- Notes: Both entries present with descriptive comments
 
 ### R005 — Stale git branches cleaned up
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Merged local branches are deleted; only main and active feature branches remain
 - Why it matters: 36 local branches, 5+ already merged into main — confusing for anyone running `git branch`
 - Source: execution
 - Primary owning slice: M026/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Branches merged into main: feat/issue-write-pr, fix/aireview-team-trigger, fix/auto-approve-published, fix/pr10-review-items, temp/enable-issue-write, temp/harden-write-allowpaths, temp/issue-intent-summary-v2
+- Validation: S01 — 7 merged local branches + 1 remote branch deleted; git branch --merged main returns 0 non-main/gsd branches
+- Notes: Also removed 2 stale worktrees and pruned 28 stale remote tracking refs
 
 ### R006 — console.log replaced with structured pino logger
 - Class: quality-attribute
@@ -169,18 +169,36 @@
 
 ### R016 — Legacy .planning/ archived and removed from tracking
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: .planning/ directory (11MB, 1028 files) removed from git tracking and added to .gitignore
 - Why it matters: Superseded by .gsd/; adds bulk to clone and confuses the two planning systems
 - Source: user
 - Primary owning slice: M026/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: README references to .planning/ should be updated
+- Validation: S01 — git ls-files .planning/ returns 0; README .planning/ references replaced with CHANGELOG.md
+- Notes: Local .planning/ directory preserved on disk; .gitignore prevents re-tracking
 
 ## Validated
 
-(None — milestone not yet started)
+### R002 — Dead code and legacy artifacts removed
+- Validated by: M026/S01
+- Proof: All 5 deprecated files deleted; grep -c 'SQLite' src/telemetry/types.ts returns 0
+
+### R003 — .env.example documents all env vars
+- Validated by: M026/S01
+- Proof: grep -c '^[A-Z_]*=' .env.example returns 26 (≥24)
+
+### R004 — .gitignore covers all generated artifacts
+- Validated by: M026/S01
+- Proof: data/ and .planning/ entries verified in .gitignore
+
+### R005 — Stale git branches cleaned up
+- Validated by: M026/S01
+- Proof: git branch --merged main returns 0 non-main/gsd branches
+
+### R016 — Legacy .planning/ archived and removed from tracking
+- Validated by: M026/S01
+- Proof: git ls-files .planning/ returns 0; README has no .planning/ links
 
 ## Deferred
 
@@ -235,10 +253,10 @@
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
 | R001 | quality-attribute | active | M026/S02 | none | unmapped |
-| R002 | quality-attribute | active | M026/S01 | none | unmapped |
-| R003 | operability | active | M026/S01 | none | unmapped |
-| R004 | quality-attribute | active | M026/S01 | none | unmapped |
-| R005 | quality-attribute | active | M026/S01 | none | unmapped |
+| R002 | quality-attribute | validated | M026/S01 | none | S01 — deprecated files deleted, SQLite refs fixed |
+| R003 | operability | validated | M026/S01 | none | S01 — 26 vars documented |
+| R004 | quality-attribute | validated | M026/S01 | none | S01 — data/ and .planning/ in .gitignore |
+| R005 | quality-attribute | validated | M026/S01 | none | S01 — all merged branches deleted |
 | R006 | quality-attribute | active | M026/S02 | none | unmapped |
 | R007 | quality-attribute | active | M026/S05 | M026/S03, M026/S04 | unmapped |
 | R008 | quality-attribute | active | M026/S03 | none | unmapped |
@@ -249,7 +267,7 @@
 | R013 | quality-attribute | active | M026/S05 | none | unmapped |
 | R014 | quality-attribute | active | M026/S02 | none | unmapped |
 | R015 | quality-attribute | active | M026/S02 | none | unmapped |
-| R016 | quality-attribute | active | M026/S01 | none | unmapped |
+| R016 | quality-attribute | validated | M026/S01 | none | S01 — .planning/ untracked, README updated |
 | R017 | quality-attribute | deferred | none | none | unmapped |
 | R018 | quality-attribute | deferred | none | none | unmapped |
 | R019 | quality-attribute | out-of-scope | none | none | n/a |
@@ -257,7 +275,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 16
-- Mapped to slices: 16
-- Validated: 0
+- Active requirements: 11
+- Mapped to slices: 11
+- Validated: 5 (R002, R003, R004, R005, R016)
 - Unmapped active requirements: 0

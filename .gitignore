@@ -9,6 +9,12 @@ dist
 # local scratch/reference repos (not part of shipped artifact)
 tmp/
 
+# local dev data (stale SQLite DBs, etc.)
+data/
+
+# legacy planning directory (superseded by .gsd/)
+.planning/
+
 # secrets / keys
 *.pem
 *.key
@@ -41,3 +47,33 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# ── GSD baseline (auto-generated) ──
+.gsd/activity/
+.gsd/runtime/
+.gsd/worktrees/
+.gsd/auto.lock
+.gsd/metrics.json
+.gsd/STATE.md
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.code-workspace
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+venv/
+target/
+vendor/
+*.log
+coverage/
+.cache/
