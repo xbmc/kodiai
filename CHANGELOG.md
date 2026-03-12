@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.25 (2026-03-07)
+
+Wiki Content Updates.
+
+### Added
+
+- Wiki embeddings migrated to voyage-context-3 with per-corpus model routing in retrieval pipeline
+- Page popularity scoring combining MediaWiki inbound links, retrieval citation frequency, and edit recency
+- Enhanced staleness detection grounded in actual PR/commit diffs from last 90 days
+- LLM-generated section-level update suggestions with PR/commit citations and grounding verification
+- Update suggestions published as tracking issue comments on xbmc/wiki with rate-limit safety
+- Voice-preserving generation with spread sampling, style caching, template/heading validation
+- Unified anti-hallucination guardrail pipeline across all output surfaces with context-grounded classification, LLM fallback, and audit logging
+
 ## v0.24.1 (2026-03-03)
 
 Post-milestone fixes.

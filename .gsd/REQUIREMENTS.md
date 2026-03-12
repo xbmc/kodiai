@@ -70,13 +70,13 @@
 
 ### R007 — Comprehensive README with contributor onboarding
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: README covers architecture overview, complete setup instructions, configuration reference, and links to in-depth docs
 - Why it matters: Current README lists features but is light on architecture, contributor guidance, and complete config reference
 - Source: user
 - Primary owning slice: M026/S05
 - Supporting slices: M026/S03, M026/S04
-- Validation: unmapped
+- Validation: S05 — README rewritten to 105 lines with contributor-first structure; links to docs/architecture.md, docs/configuration.md, docs/README.md, CONTRIBUTING.md, CHANGELOG.md, .env.example all resolve
 - Notes: Target audience is open-source contributors
 
 ### R008 — Architecture documentation
@@ -125,25 +125,25 @@
 
 ### R012 — Contributing guide
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: CONTRIBUTING.md covers development setup, testing, code style, PR process, and module ownership
 - Why it matters: Open-source contributor audience needs onboarding guide
 - Source: user
 - Primary owning slice: M026/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Should reference architecture docs and testing conventions
+- Validation: S05 — CONTRIBUTING.md created with prerequisites, dev setup, testing (including describe.skipIf pattern), code style, PR process, and architecture.md reference
+- Notes: Does not reference LICENSE file (none exists)
 
 ### R013 — CHANGELOG updated through v0.25
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: CHANGELOG.md backfilled with entries for v0.17 through v0.25
 - Why it matters: Current CHANGELOG stops at v0.16; 9 milestones of work are undocumented in the changelog
 - Source: user
 - Primary owning slice: M026/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Source from .gsd/PROJECT.md release history and milestone summaries
+- Validation: S05 — v0.25 entry added with 7 Wiki Content Updates deliverables sourced from PROJECT.md
+- Notes: v0.17–v0.24 were backfilled in prior milestones; S05 added v0.25
 
 ### R014 — God file light extraction
 - Class: quality-attribute
@@ -232,6 +232,18 @@
 - Validated by: M026/S04
 - Proof: docs/knowledge-system.md with 18 sections covering 5 corpora, retrieval pipeline, two-stage RRF, background systems; docs/issue-intelligence.md (24 sections) and docs/guardrails.md (16 sections) also created
 
+### R007 — Comprehensive README with contributor onboarding
+- Validated by: M026/S05
+- Proof: README rewritten to 105 lines; links to docs/architecture.md, docs/configuration.md, docs/README.md, CONTRIBUTING.md, CHANGELOG.md, .env.example all resolve
+
+### R012 — Contributing guide
+- Validated by: M026/S05
+- Proof: CONTRIBUTING.md at project root with prerequisites, dev setup, testing (describe.skipIf pattern), code style, PR process, architecture.md reference
+
+### R013 — CHANGELOG updated through v0.25
+- Validated by: M026/S05
+- Proof: v0.25 entry added to CHANGELOG.md with 7 Wiki Content Updates deliverables
+
 ## Deferred
 
 ### R017 — Full handler refactoring
@@ -290,13 +302,13 @@
 | R004 | quality-attribute | validated | M026/S01 | none | S01 — data/ and .planning/ in .gitignore |
 | R005 | quality-attribute | validated | M026/S01 | none | S01 — all merged branches deleted |
 | R006 | quality-attribute | validated | M026/S02 | none | S02 — console.* grep returns 0 for all 7 target files |
-| R007 | quality-attribute | active | M026/S05 | M026/S03, M026/S04 | unmapped |
+| R007 | quality-attribute | validated | M026/S05 | M026/S03, M026/S04 | S05 — README 105 lines, all doc links resolve |
 | R008 | quality-attribute | validated | M026/S03 | none | S03 — architecture.md with 22 sections, 20 modules, 2 lifecycles |
 | R009 | quality-attribute | validated | M026/S03 | none | S03 — configuration.md with 81 sections, ~80 fields from Zod schema |
 | R010 | quality-attribute | validated | M026/S04 | none | S04 — knowledge-system.md (18 sections), issue-intelligence.md (24), guardrails.md (16) |
 | R011 | operability | validated | M026/S03 | none | S03 — deployment.md cross-linked, README.md indexes 17 docs |
-| R012 | quality-attribute | active | M026/S05 | none | unmapped |
-| R013 | quality-attribute | active | M026/S05 | none | unmapped |
+| R012 | quality-attribute | validated | M026/S05 | none | S05 — CONTRIBUTING.md with setup, testing, code style, PR process |
+| R013 | quality-attribute | validated | M026/S05 | none | S05 — v0.25 entry added to CHANGELOG.md |
 | R014 | quality-attribute | validated | M026/S02 | none | S02 — review-utils.ts + mention-utils.ts extracted, tests pass |
 | R015 | quality-attribute | validated | M026/S02 | none | S02 — 0 failures, DB tests skip gracefully |
 | R016 | quality-attribute | validated | M026/S01 | none | S01 — .planning/ untracked, README updated |
@@ -307,7 +319,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 3
-- Mapped to slices: 3
-- Validated: 13 (R001, R002, R003, R004, R005, R006, R008, R009, R010, R011, R014, R015, R016)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 16 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016)
 - Unmapped active requirements: 0

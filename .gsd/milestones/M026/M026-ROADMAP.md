@@ -67,7 +67,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Knowledge System & Feature Docs** `risk:low` `depends:[S03]`
   > After this: docs/knowledge-system.md documents all 5 corpora and retrieval pipeline, docs/issue-intelligence.md covers triage and troubleshooting, docs/guardrails.md covers epistemic system.
 
-- [ ] **S05: README, Contributing & Changelog** `risk:low` `depends:[S03,S04]`
+- [x] **S05: README, Contributing & Changelog** `risk:low` `depends:[S03,S04]`
   > After this: README rewritten with contributor focus and links to all docs, CONTRIBUTING.md at project root, CHANGELOG.md backfilled through v0.25.
 
 ## Boundary Map
