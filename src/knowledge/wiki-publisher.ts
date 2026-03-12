@@ -218,7 +218,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
       // ── 2. Fetch unpublished suggestions ──────────────────────────
       const conditions = [
         sql`published_at IS NULL`,
-        sql`grounding_status = 'grounded'`,
+        sql`grounding_status IN ('grounded', 'partially-grounded')`,
       ];
       if (pageIds && pageIds.length > 0) {
         conditions.push(sql`page_id = ANY(${pageIds})`);
@@ -253,11 +253,15 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
             suggestions: [],
           });
         }
+        const citingPrs = typeof row.citing_prs === "string"
+          ? JSON.parse(row.citing_prs)
+          : (row.citing_prs ?? []);
+
         groupMap.get(pageId)!.suggestions.push({
           sectionHeading: row.section_heading as string | null,
           suggestion: row.suggestion as string,
           whySummary: row.why_summary as string,
-          citingPrs: (row.citing_prs ?? []) as Array<{
+          citingPrs: citingPrs as Array<{
             prNumber: number;
             prTitle: string;
           }>,
@@ -343,7 +347,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
             SET published_at = NOW(), published_issue_number = ${issueNumber}
             WHERE page_id = ${group.pageId}
               AND published_at IS NULL
-              AND grounding_status = 'grounded'
+              AND grounding_status IN ('grounded', 'partially-grounded')
           `;
 
           totalPublished += group.suggestions.length;
