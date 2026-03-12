@@ -1,1 +1,26 @@
-[]
+[
+  {
+    "id": "80d169ef",
+    "label": "wiki-pr-evidence-backfill",
+    "command": "cd /home/keith/src/kodiai && LOG_LEVEL=info bun scripts/backfill-pr-evidence.ts --days 90 --repo xbmc/xbmc 2>&1",
+    "cwd": "/home/keith/src/kodiai",
+    "startedAt": 1773293952189,
+    "processType": "build",
+    "group": null,
+    "readyPattern": "Backfill complete|Evidence stored|failed|ERROR",
+    "readyPort": null,
+    "pid": 564630
+  },
+  {
+    "id": "e8d8fd77",
+    "label": "wiki-generate-updates-post-migration",
+    "command": "cd /home/keith/src/kodiai && set -a && source .env && set +a && bun scripts/generate-wiki-updates.ts --top-n 20 2>&1",
+    "cwd": "/home/keith/src/kodiai",
+    "startedAt": 1773293952695,
+    "processType": "build",
+    "group": null,
+    "readyPattern": "Wiki Update Generation Complete|No stale pages with PR evidence found|failed|Error",
+    "readyPort": null,
+    "pid": 564651
+  }
+]
