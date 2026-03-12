@@ -32,7 +32,7 @@ const { values } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`
+  logger.info(`
 Usage: bun src/scripts/backfill-language.ts [options]
 
 Options:
@@ -51,7 +51,7 @@ const batchSize = parseInt(values["batch-size"] ?? "500", 10);
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
-  console.error("ERROR: DATABASE_URL environment variable is not set.");
+  logger.error("DATABASE_URL environment variable is not set");
   process.exit(1);
 }
 
@@ -146,19 +146,16 @@ try {
 
   // ── Print stats summary ────────────────────────────────────────────────
 
-  console.log("\n=== Backfill Language Classification Complete ===");
-  console.log(`Total records: ${total}`);
-  console.log("Records per language:");
-
+  const langBreakdown: Record<string, number> = {};
   for (const row of languageRows) {
     const lang = (row.language as string | null) ?? "(null)";
-    const count = (row.count as number) ?? 0;
-    console.log(`  ${lang}: ${count}`);
+    langBreakdown[lang] = (row.count as number) ?? 0;
   }
 
-  console.log(`Records marked 'unknown': ${unknownCount}`);
-  console.log(`Failures: ${failureCount}`);
-  console.log("");
+  logger.info(
+    { total, languageBreakdown: langBreakdown, unknownCount, failureCount },
+    "Backfill language classification complete",
+  );
 } finally {
   await client.close();
 }

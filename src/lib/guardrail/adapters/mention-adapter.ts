@@ -102,7 +102,7 @@ export const mentionAdapter: SurfaceAdapter<MentionInput, MentionOutput> = {
     if (input.diffPatches?.length) {
       providedContext.push(...input.diffPatches);
       contextSources.push("diff");
-      diffContext = parseDiffForClassifier(input.diffPatches[0]);
+      diffContext = parseDiffForClassifier(input.diffPatches[0]!);
     }
 
     return { providedContext, diffContext, contextSources };
@@ -144,12 +144,12 @@ export const mentionAdapter: SurfaceAdapter<MentionInput, MentionOutput> = {
     // Remove orphaned headings (headings with no content between them or before end)
     const result: string[] = [];
     for (let i = 0; i < lines.length; i++) {
-      const trimmed = lines[i].trim();
+      const trimmed = lines[i]!.trim();
       if (/^#{1,6}\s/.test(trimmed)) {
         // Look ahead for content (non-empty, non-heading lines)
         let hasContent = false;
         for (let j = i + 1; j < lines.length; j++) {
-          const nextTrimmed = lines[j].trim();
+          const nextTrimmed = lines[j]!.trim();
           if (/^#{1,6}\s/.test(nextTrimmed)) break; // Next heading found
           if (nextTrimmed.length > 0) {
             hasContent = true;
@@ -157,10 +157,10 @@ export const mentionAdapter: SurfaceAdapter<MentionInput, MentionOutput> = {
           }
         }
         if (hasContent) {
-          result.push(lines[i]);
+          result.push(lines[i]!);
         }
       } else {
-        result.push(lines[i]);
+        result.push(lines[i]!);
       }
     }
 

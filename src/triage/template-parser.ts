@@ -21,19 +21,19 @@ export function parseTemplate(slug: string, content: string): TemplateDefinition
   // Parse YAML frontmatter if present
   const frontmatterMatch = content.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
   if (frontmatterMatch) {
-    const frontmatter = frontmatterMatch[1];
-    body = content.slice(frontmatterMatch[0].length);
+    const frontmatter = frontmatterMatch[1]!;
+    body = content.slice(frontmatterMatch[0]!.length);
 
     // Extract name
     const nameMatch = frontmatter.match(/^name:\s*['"]?(.+?)['"]?\s*$/m);
     if (nameMatch) {
-      name = nameMatch[1].trim();
+      name = nameMatch[1]!.trim();
     }
 
     // Extract labels (comma-separated string or YAML list)
     const labelsLineMatch = frontmatter.match(/^labels:\s*(.+)$/m);
     if (labelsLineMatch) {
-      const labelsValue = labelsLineMatch[1].trim();
+      const labelsValue = labelsLineMatch[1]!.trim();
       // Handle both: "bug, enhancement" and "[bug, enhancement]"
       const cleaned = labelsValue.replace(/^\[|\]$/g, "");
       labels = cleaned
@@ -44,7 +44,7 @@ export function parseTemplate(slug: string, content: string): TemplateDefinition
       // Handle YAML list format (multi-line)
       const labelsBlockMatch = frontmatter.match(/^labels:\s*\n((?:\s+-\s+.+\n?)+)/m);
       if (labelsBlockMatch) {
-        labels = labelsBlockMatch[1]
+        labels = labelsBlockMatch[1]!
           .split("\n")
           .map((line) => line.replace(/^\s*-\s*/, "").trim().replace(/^['"]|['"]$/g, ""))
           .filter((l) => l.length > 0);
@@ -67,19 +67,19 @@ function extractSections(body: string): TemplateSection[] {
 
   let i = 0;
   while (i < lines.length) {
-    const headingMatch = lines[i].match(/^##\s+(.+)/);
+    const headingMatch = lines[i]!.match(/^##\s+(.+)/);
     if (!headingMatch) {
       i++;
       continue;
     }
 
-    const heading = headingMatch[1].trim();
+    const heading = headingMatch[1]!.trim();
     i++;
 
     // Collect content between this heading and the next ## heading
     const contentLines: string[] = [];
-    while (i < lines.length && !lines[i].match(/^##\s+/)) {
-      contentLines.push(lines[i]);
+    while (i < lines.length && !lines[i]!.match(/^##\s+/)) {
+      contentLines.push(lines[i]!);
       i++;
     }
 
@@ -92,7 +92,7 @@ function extractSections(body: string): TemplateSection[] {
     let hint: string | null = null;
     const commentMatches = sectionContent.matchAll(/<!--\s*([\s\S]*?)\s*-->/g);
     for (const match of commentMatches) {
-      const commentText = match[1].trim();
+      const commentText = match[1]!.trim();
       if (!/^optional$/i.test(commentText) && commentText.length > 0) {
         hint = commentText;
         break; // Use first non-optional comment as hint
@@ -178,18 +178,18 @@ function extractIssueHeadings(body: string): IssueHeading[] {
 
   let i = 0;
   while (i < lines.length) {
-    const headingMatch = lines[i].match(/^##\s+(.+)/);
+    const headingMatch = lines[i]!.match(/^##\s+(.+)/);
     if (!headingMatch) {
       i++;
       continue;
     }
 
-    const heading = headingMatch[1].trim();
+    const heading = headingMatch[1]!.trim();
     i++;
 
     const contentLines: string[] = [];
-    while (i < lines.length && !lines[i].match(/^##\s+/)) {
-      contentLines.push(lines[i]);
+    while (i < lines.length && !lines[i]!.match(/^##\s+/)) {
+      contentLines.push(lines[i]!);
       i++;
     }
 

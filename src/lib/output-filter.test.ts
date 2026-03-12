@@ -55,7 +55,7 @@ describe("filterExternalClaims", () => {
 
     const result = filterExternalClaims(findings);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].title).toBe("This removes the old handler. The new handler uses streams.");
+    expect(result.findings[0]!.title).toBe("This removes the old handler. The new handler uses streams.");
     expect(result.rewriteCount).toBe(0);
     expect(result.suppressionCount).toBe(0);
     expect(result.filtered).toHaveLength(0);
@@ -81,11 +81,11 @@ describe("filterExternalClaims", () => {
     expect(result.suppressionCount).toBe(1);
     expect(result.rewriteCount).toBe(0);
     expect(result.filtered).toHaveLength(1);
-    expect(result.filtered[0].action).toBe("suppressed");
-    expect(result.filtered[0].originalTitle).toBe(
+    expect(result.filtered[0]!.action).toBe("suppressed");
+    expect(result.filtered[0]!.originalTitle).toBe(
       "Library X version 3.0 introduced a breaking change in the API.",
     );
-    expect(result.filtered[0].classificationEvidence).toContain("Version number not in diff");
+    expect(result.filtered[0]!.classificationEvidence).toContain("Version number not in diff");
   });
 
   it("rewrites mixed findings by removing external-knowledge sentences", () => {
@@ -107,15 +107,15 @@ describe("filterExternalClaims", () => {
 
     const result = filterExternalClaims(findings);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].title).toContain("This adds a new dependency on libfoo.");
-    expect(result.findings[0].title).toContain("The import statement is correct.");
-    expect(result.findings[0].title).not.toContain("Libfoo version 2.0");
-    expect(result.findings[0].title).toContain("\u2139\uFE0F Some claims removed (unverifiable)");
+    expect(result.findings[0]!.title).toContain("This adds a new dependency on libfoo.");
+    expect(result.findings[0]!.title).toContain("The import statement is correct.");
+    expect(result.findings[0]!.title).not.toContain("Libfoo version 2.0");
+    expect(result.findings[0]!.title).toContain("\u2139\uFE0F Some claims removed (unverifiable)");
     expect(result.rewriteCount).toBe(1);
     expect(result.suppressionCount).toBe(0);
     expect(result.filtered).toHaveLength(1);
-    expect(result.filtered[0].action).toBe("rewritten");
-    expect(result.filtered[0].rewrittenTitle).toBeDefined();
+    expect(result.filtered[0]!.action).toBe("rewritten");
+    expect(result.filtered[0]!.rewrittenTitle).toBeDefined();
   });
 
   it("keeps inferential sentences in rewritten output", () => {
@@ -137,9 +137,9 @@ describe("filterExternalClaims", () => {
 
     const result = filterExternalClaims(findings);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].title).toContain("This removes error handling around the database call.");
-    expect(result.findings[0].title).toContain("This could cause unhandled promise rejections at runtime.");
-    expect(result.findings[0].title).not.toContain("The library documentation says");
+    expect(result.findings[0]!.title).toContain("This removes error handling around the database call.");
+    expect(result.findings[0]!.title).toContain("This could cause unhandled promise rejections at runtime.");
+    expect(result.findings[0]!.title).not.toContain("The library documentation says");
   });
 
   it("suppresses mixed findings that become too short after rewriting", () => {
@@ -162,7 +162,7 @@ describe("filterExternalClaims", () => {
     expect(result.findings).toHaveLength(0);
     expect(result.suppressionCount).toBe(1);
     expect(result.rewriteCount).toBe(0);
-    expect(result.filtered[0].action).toBe("suppressed");
+    expect(result.filtered[0]!.action).toBe("suppressed");
   });
 
   it("passes through findings with no claimClassification (fail-open)", () => {
@@ -175,7 +175,7 @@ describe("filterExternalClaims", () => {
 
     const result = filterExternalClaims(findings);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].title).toBe("Missing error handling in the callback.");
+    expect(result.findings[0]!.title).toBe("Missing error handling in the callback.");
     expect(result.rewriteCount).toBe(0);
     expect(result.suppressionCount).toBe(0);
   });
@@ -191,7 +191,7 @@ describe("filterExternalClaims", () => {
 
     const result = filterExternalClaims(findings);
     expect(result.findings).toHaveLength(1);
-    expect(result.findings[0].title).toBe("Some finding text here.");
+    expect(result.findings[0]!.title).toBe("Some finding text here.");
   });
 
   it("returns empty result for empty findings array", () => {
@@ -286,8 +286,8 @@ describe("filterExternalClaims", () => {
 
     filterExternalClaims(findings, logger);
     expect(logs.length).toBeGreaterThan(0);
-    expect(logs[0].obj).toHaveProperty("commentId", 30);
-    expect(logs[0].obj).toHaveProperty("action", "suppressed");
+    expect(logs[0]!.obj).toHaveProperty("commentId", 30);
+    expect(logs[0]!.obj).toHaveProperty("action", "suppressed");
   });
 });
 

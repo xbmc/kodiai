@@ -60,10 +60,10 @@ describe("truncateIssueBody", () => {
     ];
     const body = paragraphs.join("\n\n");
     const result = truncateIssueBody(body, 100);
-    expect(result).toContain(paragraphs[0]);
+    expect(result).toContain(paragraphs[0]!);
     expect(result).toContain("[...]");
-    expect(result).toContain(paragraphs[3]);
-    expect(result).not.toContain(paragraphs[1]);
+    expect(result).toContain(paragraphs[3]!);
+    expect(result).not.toContain(paragraphs[1]!);
   });
 
   test("hard truncates when only 1-2 paragraphs", () => {

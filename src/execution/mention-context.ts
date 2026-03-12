@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
 import type { MentionEvent } from "../handlers/mention-types.ts";
 import {
   filterCommentsToTriggerTime,
@@ -32,6 +33,8 @@ export type BuildMentionContextOptions = {
     startLine: number | null;
     title: string;
   } | null;
+  /** Optional pino logger — warnings are silently dropped if not provided. */
+  logger?: Logger;
 };
 
 const DEFAULT_MAX_COMMENTS = 20;
@@ -85,6 +88,7 @@ export async function buildMentionContext(
   mention: MentionEvent,
   options: BuildMentionContextOptions = {},
 ): Promise<string> {
+  const log = options.logger;
   const maxComments = options.maxComments ?? DEFAULT_MAX_COMMENTS;
   const maxCommentChars = options.maxCommentChars ?? DEFAULT_MAX_COMMENT_CHARS;
   const maxConversationChars =
@@ -353,7 +357,7 @@ export async function buildMentionContext(
     } catch (error) {
       const status = (error as { status?: number }).status;
       if (status === 404) {
-        console.warn(
+        log?.warn(
           {
             owner: mention.owner,
             repo: mention.repo,
@@ -379,12 +383,12 @@ export async function buildMentionContext(
             mention.inReplyToId,
           );
         } catch (error) {
-          console.warn(
+          log?.warn(
             {
               owner: mention.owner,
               repo: mention.repo,
               parentCommentId: mention.inReplyToId,
-              error,
+              err: error,
             },
             "Skipping finding metadata in mention context because lookup failed",
           );

@@ -40,6 +40,7 @@ function makeResult(overrides?: Partial<TroubleshootingResult>): Troubleshooting
         sectionAnchor: null,
         lastModified: null,
         languageTags: [],
+        source: "wiki" as const,
       },
     ],
     source: "both",

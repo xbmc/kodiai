@@ -39,7 +39,7 @@ export type UpdateSuggestion = {
   /** 1-2 sentence explanation of why the section needs updating. */
   whySummary: string;
   /** Whether the suggestion is grounded in PR evidence. */
-  groundingStatus: "grounded" | "ungrounded" | "no_update";
+  groundingStatus: "grounded" | "partially-grounded" | "ungrounded" | "no_update";
   /** PR(s) cited in the suggestion. */
   citingPrs: Array<{ prNumber: number; prTitle: string }>;
   /** True if voice validation failed after retry. */

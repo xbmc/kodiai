@@ -101,7 +101,7 @@ function createMockSql() {
   });
 
   // Expose for test inspection
-  (sqlFn as Record<string, unknown>)._syncStates = syncStates;
+  (sqlFn as unknown as Record<string, unknown>)._syncStates = syncStates;
   return sqlFn;
 }
 
@@ -206,7 +206,7 @@ describe("backfillIssues", () => {
     const sql = createMockSql();
 
     // Pre-populate sync state
-    const syncStates = (sql as Record<string, unknown>)._syncStates as Map<string, Record<string, unknown>>;
+    const syncStates = (sql as unknown as Record<string, unknown>)._syncStates as Map<string, Record<string, unknown>>;
     syncStates.set("xbmc/xbmc", {
       repo: "xbmc/xbmc",
       last_synced_at: new Date("2024-06-01T00:00:00Z"),
@@ -227,7 +227,7 @@ describe("backfillIssues", () => {
 
     expect(result.resumed).toBe(true);
     // Should pass `since` to the API (verified by the octokit mock receiving it)
-    const listCall = octokit.rest.issues.listForRepo.mock.calls[0]![0] as Record<string, unknown>;
+    const listCall = (octokit.rest.issues.listForRepo as unknown as { mock: { calls: any[][] } }).mock.calls[0]![0]! as Record<string, unknown>;
     expect(listCall.since).toBe("2024-06-01T00:00:00.000Z");
   });
 
@@ -268,7 +268,7 @@ describe("backfillIssueComments", () => {
     const sql = createMockSql();
 
     // Need sync state for the since param
-    const syncStates = (sql as Record<string, unknown>)._syncStates as Map<string, Record<string, unknown>>;
+    const syncStates = (sql as unknown as Record<string, unknown>)._syncStates as Map<string, Record<string, unknown>>;
     syncStates.set("xbmc/xbmc", {
       repo: "xbmc/xbmc",
       last_synced_at: null,
@@ -314,7 +314,7 @@ describe("backfillIssueComments", () => {
     });
 
     // The upsertComment call should have issueNumber 12345
-    const call = store.upsertComment.mock.calls[0]![0] as Record<string, unknown>;
+    const call = (store.upsertComment as unknown as { mock: { calls: any[][] } }).mock.calls[0]![0]! as Record<string, unknown>;
     expect(call.issueNumber).toBe(12345);
   });
 
@@ -344,7 +344,7 @@ describe("adaptiveRateDelay", () => {
     // The rate delay is internal but we verify the overall flow works
     const items = [makeIssueItem({ number: 1 })];
     const octokit = createMockOctokit([items]);
-    (octokit.rest.issues.listForRepo as ReturnType<typeof mock>).mockImplementation(async () => ({
+    (octokit.rest.issues.listForRepo as unknown as ReturnType<typeof mock>).mockImplementation(async () => ({
       data: items,
       headers: {
         "x-ratelimit-remaining": "50",

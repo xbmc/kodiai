@@ -131,22 +131,22 @@ describe("TelemetryStore", () => {
 
     const [row] = await sql`SELECT * FROM telemetry_events WHERE delivery_id = 'abc-123'`;
     expect(row).toBeTruthy();
-    expect(row.repo).toBe("octocat/hello-world");
-    expect(row.pr_number).toBe(42);
-    expect(row.event_type).toBe("pull_request.opened");
-    expect(row.provider).toBe("anthropic");
-    expect(row.model).toBe("claude-sonnet-4-5-20250929");
-    expect(row.input_tokens).toBe(1000);
-    expect(row.output_tokens).toBe(500);
-    expect(row.cache_read_tokens).toBe(200);
-    expect(row.cache_creation_tokens).toBe(100);
-    expect(row.duration_ms).toBe(3000);
-    expect(row.cost_usd).toBe(0.05);
-    expect(row.conclusion).toBe("success");
-    expect(row.session_id).toBe("sess-001");
-    expect(row.num_turns).toBe(5);
-    expect(row.stop_reason).toBe("end_turn");
-    expect(row.created_at).toBeTruthy();
+    expect(row!.repo).toBe("octocat/hello-world");
+    expect(row!.pr_number).toBe(42);
+    expect(row!.event_type).toBe("pull_request.opened");
+    expect(row!.provider).toBe("anthropic");
+    expect(row!.model).toBe("claude-sonnet-4-5-20250929");
+    expect(row!.input_tokens).toBe(1000);
+    expect(row!.output_tokens).toBe(500);
+    expect(row!.cache_read_tokens).toBe(200);
+    expect(row!.cache_creation_tokens).toBe(100);
+    expect(row!.duration_ms).toBe(3000);
+    expect(row!.cost_usd).toBe(0.05);
+    expect(row!.conclusion).toBe("success");
+    expect(row!.session_id).toBe("sess-001");
+    expect(row!.num_turns).toBe(5);
+    expect(row!.stop_reason).toBe("end_turn");
+    expect(row!.created_at).toBeTruthy();
   });
 
   test("record() with minimal fields applies defaults", async () => {
@@ -154,18 +154,18 @@ describe("TelemetryStore", () => {
 
     const [row] = await sql`SELECT * FROM telemetry_events LIMIT 1`;
     expect(row).toBeTruthy();
-    expect(row.provider).toBe("anthropic");
-    expect(row.input_tokens).toBe(0);
-    expect(row.output_tokens).toBe(0);
-    expect(row.cache_read_tokens).toBe(0);
-    expect(row.cache_creation_tokens).toBe(0);
-    expect(row.duration_ms).toBe(0);
-    expect(row.cost_usd).toBe(0);
-    expect(row.delivery_id).toBeNull();
-    expect(row.pr_number).toBeNull();
-    expect(row.session_id).toBeNull();
-    expect(row.num_turns).toBeNull();
-    expect(row.stop_reason).toBeNull();
+    expect(row!.provider).toBe("anthropic");
+    expect(row!.input_tokens).toBe(0);
+    expect(row!.output_tokens).toBe(0);
+    expect(row!.cache_read_tokens).toBe(0);
+    expect(row!.cache_creation_tokens).toBe(0);
+    expect(row!.duration_ms).toBe(0);
+    expect(row!.cost_usd).toBe(0);
+    expect(row!.delivery_id).toBeNull();
+    expect(row!.pr_number).toBeNull();
+    expect(row!.session_id).toBeNull();
+    expect(row!.num_turns).toBeNull();
+    expect(row!.stop_reason).toBeNull();
   });
 
   test("purgeOlderThan(0) deletes all rows and returns count", async () => {
@@ -185,7 +185,7 @@ describe("TelemetryStore", () => {
     expect(purged).toBe(0);
 
     const [result] = await sql`SELECT COUNT(*) AS cnt FROM telemetry_events`;
-    expect(Number(result.cnt)).toBe(1);
+    expect(Number(result!.cnt)).toBe(1);
   });
 
   test("checkpoint() runs without error", async () => {
@@ -235,16 +235,16 @@ describe("TelemetryStore", () => {
     `;
 
     expect(row).toBeTruthy();
-    expect(row.repo).toBe("octocat/hello-world");
-    expect(row.pr_number).toBe(123);
-    expect(row.event_type).toBe("pull_request.opened");
-    expect(row.top_k).toBe(8);
-    expect(row.distance_threshold).toBe(0.3);
-    expect(row.result_count).toBe(2);
-    expect(row.avg_distance).toBe(0.25);
-    expect(row.language_match_ratio).toBe(0.5);
-    expect(row.created_at).toBeTruthy();
-    expect(Number(count.cnt)).toBe(1);
+    expect(row!.repo).toBe("octocat/hello-world");
+    expect(row!.pr_number).toBe(123);
+    expect(row!.event_type).toBe("pull_request.opened");
+    expect(row!.top_k).toBe(8);
+    expect(row!.distance_threshold).toBe(0.3);
+    expect(row!.result_count).toBe(2);
+    expect(row!.avg_distance).toBe(0.25);
+    expect(row!.language_match_ratio).toBe(0.5);
+    expect(row!.created_at).toBeTruthy();
+    expect(Number(count!.cnt)).toBe(1);
   });
 
   test("recordResilienceEvent() inserts a row and is idempotent by delivery_id", async () => {
@@ -290,14 +290,14 @@ describe("TelemetryStore", () => {
     const [row] = await sql`SELECT * FROM resilience_events WHERE delivery_id = 'res-001'`;
     const [count] = await sql`SELECT COUNT(*) AS cnt FROM resilience_events WHERE delivery_id = 'res-001'`;
 
-    expect(Number(count.cnt)).toBe(1);
-    expect(row.repo).toBe("octocat/hello-world");
-    expect(row.pr_number).toBe(7);
-    expect(row.pr_author).toBe("octocat");
-    expect(row.kind).toBe("timeout");
-    expect(row.execution_conclusion).toBe("timeout_partial");
-    expect(row.checkpoint_files_reviewed).toBe(4);
-    expect(row.created_at).toBeTruthy();
+    expect(Number(count!.cnt)).toBe(1);
+    expect(row!.repo).toBe("octocat/hello-world");
+    expect(row!.pr_number).toBe(7);
+    expect(row!.pr_author).toBe("octocat");
+    expect(row!.kind).toBe("timeout");
+    expect(row!.execution_conclusion).toBe("timeout_partial");
+    expect(row!.checkpoint_files_reviewed).toBe(4);
+    expect(row!.created_at).toBeTruthy();
   });
 
   test("recordRateLimitEvent() is idempotent by delivery_id + event_type", async () => {
@@ -351,20 +351,20 @@ describe("TelemetryStore", () => {
       SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'rate-001'
     `;
 
-    expect(Number(count.cnt)).toBe(2);
-    expect(reviewRequestedRow.repo).toBe("octocat/hello-world");
-    expect(reviewRequestedRow.pr_number).toBe(7);
-    expect(reviewRequestedRow.event_type).toBe("pull_request.review_requested");
-    expect(reviewRequestedRow.cache_hit_rate).toBe(0.75);
-    expect(reviewRequestedRow.skipped_queries).toBe(0);
-    expect(reviewRequestedRow.retry_attempts).toBe(1);
-    expect(reviewRequestedRow.degradation_path).toBe("none");
-    expect(reviewRequestedRow.created_at).toBeTruthy();
-    expect(openedRow.event_type).toBe("pull_request.opened");
-    expect(openedRow.cache_hit_rate).toBe(0);
-    expect(openedRow.skipped_queries).toBe(1);
-    expect(openedRow.retry_attempts).toBe(1);
-    expect(openedRow.degradation_path).toBe("search-api-rate-limit");
+    expect(Number(count!.cnt)).toBe(2);
+    expect(reviewRequestedRow!.repo).toBe("octocat/hello-world");
+    expect(reviewRequestedRow!.pr_number).toBe(7);
+    expect(reviewRequestedRow!.event_type).toBe("pull_request.review_requested");
+    expect(reviewRequestedRow!.cache_hit_rate).toBe(0.75);
+    expect(reviewRequestedRow!.skipped_queries).toBe(0);
+    expect(reviewRequestedRow!.retry_attempts).toBe(1);
+    expect(reviewRequestedRow!.degradation_path).toBe("none");
+    expect(reviewRequestedRow!.created_at).toBeTruthy();
+    expect(openedRow!.event_type).toBe("pull_request.opened");
+    expect(openedRow!.cache_hit_rate).toBe(0);
+    expect(openedRow!.skipped_queries).toBe(1);
+    expect(openedRow!.retry_attempts).toBe(1);
+    expect(openedRow!.degradation_path).toBe("search-api-rate-limit");
   });
 
   test("recordRateLimitEvent() ignores replayed writes for same delivery/event identity", async () => {
@@ -400,11 +400,11 @@ describe("TelemetryStore", () => {
       SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'rate-replay-001' AND event_type = 'pull_request.review_requested'
     `;
 
-    expect(Number(count.cnt)).toBe(1);
-    expect(row.cache_hit_rate).toBe(0);
-    expect(row.skipped_queries).toBe(1);
-    expect(row.retry_attempts).toBe(1);
-    expect(row.degradation_path).toBe("search-api-rate-limit");
+    expect(Number(count!.cnt)).toBe(1);
+    expect(row!.cache_hit_rate).toBe(0);
+    expect(row!.skipped_queries).toBe(1);
+    expect(row!.retry_attempts).toBe(1);
+    expect(row!.degradation_path).toBe("search-api-rate-limit");
   });
 
   test("recordRateLimitEvent() forces configured identity failures without writing duplicate rows", async () => {
@@ -441,7 +441,7 @@ describe("TelemetryStore", () => {
       SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE delivery_id = 'delivery-injected-001'
     `;
 
-    expect(Number(count.cnt)).toBe(0);
+    expect(Number(count!.cnt)).toBe(0);
     expect(warnings).toHaveLength(2);
     expect(warnings[0]?.message).toBe("Rate-limit telemetry write forced to fail");
     expect((warnings[0]?.data as { executionIdentity?: string }).executionIdentity).toBe("delivery-injected-001");
@@ -473,6 +473,6 @@ describe("TelemetryStore", () => {
       SELECT COUNT(*) AS cnt FROM rate_limit_events WHERE repo = 'owner/repo' AND pr_number = 77
     `;
 
-    expect(Number(count.cnt)).toBe(0);
+    expect(Number(count!.cnt)).toBe(0);
   });
 });

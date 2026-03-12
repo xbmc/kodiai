@@ -120,7 +120,7 @@ describe("findDuplicateCandidates", () => {
     });
 
     expect(candidates).toHaveLength(1);
-    expect(candidates[0].issueNumber).toBe(50);
+    expect(candidates[0]!.issueNumber).toBe(50);
   });
 
   it("filters out candidates below threshold", async () => {
@@ -137,8 +137,8 @@ describe("findDuplicateCandidates", () => {
     });
 
     expect(candidates).toHaveLength(1);
-    expect(candidates[0].issueNumber).toBe(50);
-    expect(candidates[0].similarityPct).toBe(90);
+    expect(candidates[0]!.issueNumber).toBe(50);
+    expect(candidates[0]!.similarityPct).toBe(90);
   });
 
   it("respects maxCandidates limit", async () => {
@@ -172,7 +172,7 @@ describe("findDuplicateCandidates", () => {
     });
 
     expect(candidates).toHaveLength(2);
-    expect(candidates[0].similarityPct).toBe(85);
-    expect(candidates[1].similarityPct).toBe(75);
+    expect(candidates[0]!.similarityPct).toBe(85);
+    expect(candidates[1]!.similarityPct).toBe(75);
   });
 });

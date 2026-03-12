@@ -249,7 +249,7 @@ export async function embedChunks(
     try {
       const result = await embeddingProvider.generate(chunk.chunkText, "document");
       if (result) {
-        chunk.embedding = result;
+        chunk.embedding = result.embedding;
         embeddingsGenerated++;
       } else {
         chunk.embedding = null;

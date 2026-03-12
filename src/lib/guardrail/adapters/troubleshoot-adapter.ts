@@ -93,7 +93,7 @@ export const troubleshootAdapter: SurfaceAdapter<TroubleshootInput, Troubleshoot
       // Bullet points: check content after bullet marker
       const bulletMatch = trimmed.match(/^([*-])\s+(.*)/);
       if (bulletMatch) {
-        const bulletContent = bulletMatch[2];
+        const bulletContent = bulletMatch[2]!;
         // Keep if any kept claim matches the bullet content
         const keep = keptClaims.some(
           (claim) => bulletContent.includes(claim) || claim.includes(bulletContent),

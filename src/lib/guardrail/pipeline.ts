@@ -14,7 +14,7 @@ import type {
   StrictnessLevel,
 } from "./types.ts";
 import type { GuardrailAuditStore } from "./audit-store.ts";
-import type { LlmClassifier } from "./llm-classifier.ts";
+import type { LlmClassifier, LlmClassifierClaim } from "./llm-classifier.ts";
 
 // ---------------------------------------------------------------------------
 // Pipeline options
@@ -109,7 +109,7 @@ export async function runGuardrailPipeline<TInput, TOutput>(
     // Collect ambiguous claim indices for batched LLM call
     const ambiguousIndices: number[] = [];
     for (let i = 0; i < classifications.length; i++) {
-      if (classifications[i].confidence < AMBIGUITY_THRESHOLD) {
+      if (classifications[i]!.confidence < AMBIGUITY_THRESHOLD) {
         claimsAmbiguous++;
         ambiguousIndices.push(i);
       }
@@ -118,8 +118,8 @@ export async function runGuardrailPipeline<TInput, TOutput>(
     if (llmClassifier && ambiguousIndices.length > 0) {
       // Batch all ambiguous claims into a single LLM call
       try {
-        const ambiguousClaims = ambiguousIndices.map((idx) => ({
-          text: claims[idx],
+        const ambiguousClaims: LlmClassifierClaim[] = ambiguousIndices.map((idx) => ({
+          text: claims[idx]!,
           context,
         }));
         const llmResults = await llmClassifier(ambiguousClaims);
@@ -127,7 +127,7 @@ export async function runGuardrailPipeline<TInput, TOutput>(
         // Replace ambiguous classifications with LLM results
         for (let j = 0; j < ambiguousIndices.length; j++) {
           if (llmResults[j]) {
-            classifications[ambiguousIndices[j]] = llmResults[j];
+            classifications[ambiguousIndices[j]!] = llmResults[j]!;
           }
         }
         llmFallbackUsed = true;
@@ -142,7 +142,7 @@ export async function runGuardrailPipeline<TInput, TOutput>(
     const removedClaims: AuditRecord["removedClaims"] = [];
 
     for (let i = 0; i < classifications.length; i++) {
-      const c = classifications[i];
+      const c = classifications[i]!;
       if (c.label === "external-knowledge") {
         removedClaims.push({
           text: c.text,
@@ -150,7 +150,7 @@ export async function runGuardrailPipeline<TInput, TOutput>(
           evidence: c.evidence,
         });
       } else {
-        keptClaims.push(claims[i]);
+        keptClaims.push(claims[i]!);
       }
     }
 

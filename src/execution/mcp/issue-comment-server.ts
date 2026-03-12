@@ -11,6 +11,7 @@ interface TriageCommentConfig {
 }
 
 interface ToolResult {
+  [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 }
@@ -300,7 +301,7 @@ export function createIssueCommentServer(
             .optional()
             .describe("Structured comment input (provide this OR body)"),
         },
-        async ({ issue_number, body, structured }) => {
+        async ({ issue_number, body, structured }, _extra) => {
           return createCommentHandler({
             getOctokit,
             owner,
@@ -323,7 +324,7 @@ export function createIssueCommentServer(
             .optional()
             .describe("Structured comment input (provide this OR body)"),
         },
-        async ({ comment_id, body, structured }) => {
+        async ({ comment_id, body, structured }, _extra) => {
           return updateCommentHandler({
             getOctokit,
             owner,

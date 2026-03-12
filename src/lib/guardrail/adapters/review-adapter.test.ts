@@ -136,7 +136,7 @@ describe("reviewAdapter", () => {
 
     // The primarily-external finding should be removed
     expect(result.findings.length).toBe(1);
-    expect(result.findings[0].commentId).toBe(1);
+    expect(result.findings[0]!.commentId).toBe(1);
   });
 
   test("reconstructOutput keeps findings with mixed claims when some claims are kept", () => {
@@ -164,7 +164,7 @@ describe("reviewAdapter", () => {
 
     // Finding should be kept but with rewritten title (external claim removed)
     expect(result.findings.length).toBe(1);
-    expect(result.findings[0].title).not.toContain("CVE-2024-1234");
-    expect(result.findings[0].title).toContain("This removes the handler.");
+    expect(result.findings[0]!.title).not.toContain("CVE-2024-1234");
+    expect(result.findings[0]!.title).toContain("This removes the handler.");
   });
 });

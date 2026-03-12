@@ -90,7 +90,7 @@ export function formatSummaryTable(
   ];
 
   for (let i = 0; i < pageResults.length; i++) {
-    const r = pageResults[i];
+    const r = pageResults[i]!;
     const num = i + 1;
     const wikiUrl = `https://kodi.wiki/view/${encodeURIComponent(r.pageTitle.replace(/ /g, "_"))}`;
     const wikiLink = `[View](${wikiUrl})`;
@@ -277,7 +277,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
           { pages: groups.length, suggestions: rows.length },
           "Dry-run: formatted suggestions for all pages",
         );
-        console.log(dryRunOutput);
+        logger.info({ dryRunOutput }, "Dry-run output");
         return {
           ...emptyResult,
           pagesPosted: groups.length,
@@ -308,7 +308,7 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
       let totalPublished = 0;
 
       for (let i = 0; i < groups.length; i++) {
-        const group = groups[i];
+        const group = groups[i]!;
         const commentBody = formatPageComment(group, prOwner, prRepo);
         const uniquePrs = new Set<number>();
         let hasVoiceWarnings = false;

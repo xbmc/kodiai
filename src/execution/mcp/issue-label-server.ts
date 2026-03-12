@@ -8,6 +8,7 @@ interface TriageLabelConfig {
 }
 
 interface ToolResult {
+  [key: string]: unknown;
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 }
@@ -215,7 +216,7 @@ export function createIssueLabelServer(
             .min(1)
             .describe("Labels to apply (case-insensitive matching)"),
         },
-        async ({ issue_number, labels }) => {
+        async ({ issue_number, labels }, _extra) => {
           return addLabelsHandler({
             getOctokit,
             owner,

@@ -92,7 +92,7 @@ function createMockSql(rows: Record<string, unknown>[] = []) {
       return target.apply(thisArg, argArray);
     },
   });
-  return { sql: proxy as unknown as ReturnType<typeof import("postgres").default>, calls };
+  return { sql: proxy as any, calls };
 }
 
 // ── formatPageComment ───────────────────────────────────────────────────
@@ -245,7 +245,7 @@ describe("postCommentWithRetry", () => {
 
   it("returns null on non-403 error", async () => {
     const octokit = createMockOctokit();
-    (octokit.rest.issues.createComment as ReturnType<typeof mock>).mockImplementation(() =>
+    (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() =>
       Promise.reject({ status: 500, message: "Server error" }),
     );
     const result = await postCommentWithRetry(octokit, "xbmc", "wiki", 1, "body", 0);
@@ -255,7 +255,7 @@ describe("postCommentWithRetry", () => {
   it("retries on 403 and succeeds", async () => {
     const octokit = createMockOctokit();
     let callCount = 0;
-    (octokit.rest.issues.createComment as ReturnType<typeof mock>).mockImplementation(() => {
+    (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() => {
       callCount++;
       if (callCount === 1) {
         return Promise.reject({ status: 403, response: { headers: { "retry-after": "0" } } });
@@ -269,7 +269,7 @@ describe("postCommentWithRetry", () => {
 
   it("returns null after max retries on 403", async () => {
     const octokit = createMockOctokit();
-    (octokit.rest.issues.createComment as ReturnType<typeof mock>).mockImplementation(() =>
+    (octokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(() =>
       Promise.reject({ status: 403, response: { headers: { "retry-after": "0" } } }),
     );
     const result = await postCommentWithRetry(octokit, "xbmc", "wiki", 1, "body", 1);
@@ -410,7 +410,7 @@ describe("createWikiPublisher", () => {
     it("handles partial failure — skips failed page and continues", async () => {
       const mockOctokit = createMockOctokit();
       let commentCallCount = 0;
-      (mockOctokit.rest.issues.createComment as ReturnType<typeof mock>).mockImplementation(
+      (mockOctokit.rest.issues.createComment as unknown as ReturnType<typeof mock>).mockImplementation(
         () => {
           commentCallCount++;
           if (commentCallCount === 1) {
@@ -491,9 +491,9 @@ describe("createWikiPublisher", () => {
       });
       await publisher.publish();
 
-      const createCall = (mockOctokit.rest.issues.create as ReturnType<typeof mock>).mock
+      const createCall = (mockOctokit.rest.issues.create as unknown as ReturnType<typeof mock>).mock
         .calls[0];
-      const args = createCall[0] as Record<string, unknown>;
+      const args = createCall![0] as Record<string, unknown>;
       expect(args.title).toMatch(/^Wiki Update Suggestions — \d{4}-\d{2}-\d{2}$/);
       expect(args.labels).toEqual(["wiki-update", "bot-generated"]);
       expect(args.owner).toBe("xbmc");

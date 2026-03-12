@@ -107,7 +107,7 @@ function parseClassifications(
   let jsonText = text.trim();
   const fenceMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fenceMatch) {
-    jsonText = fenceMatch[1].trim();
+    jsonText = fenceMatch[1]!.trim();
   }
 
   const parsed: RawClassification[] = JSON.parse(jsonText);

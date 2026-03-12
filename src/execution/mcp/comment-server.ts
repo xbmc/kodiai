@@ -1,6 +1,7 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
@@ -14,6 +15,7 @@ export function createCommentServer(
   onPublish?: () => void,
   prNumber?: number,
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
+  logger?: Logger,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
@@ -258,7 +260,7 @@ export function createCommentServer(
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
             if (sev === "CRITICAL" || sev === "MAJOR") {
-              console.warn(`Preference finding with ${sev} severity -- expected MEDIUM or MINOR`);
+              logger?.warn({ severity: sev }, "Preference finding with unexpected severity — expected MEDIUM or MINOR");
             }
           }
           continue;
@@ -315,7 +317,7 @@ export function createCommentServer(
           if (currentSubsection === "### Preference" && severityMatch) {
             const sev = severityMatch[1];
             if (sev === "CRITICAL" || sev === "MAJOR") {
-              console.warn(`Preference finding with ${sev} severity -- expected MEDIUM or MINOR`);
+              logger?.warn({ severity: sev }, "Preference finding with unexpected severity — expected MEDIUM or MINOR");
             }
           }
           continue;
@@ -365,8 +367,9 @@ export function createCommentServer(
 
     // Soft check: blockers exist but verdict is green (log warning, don't throw).
     if (blockerCount > 0 && verdictEmoji === "green_circle") {
-      console.warn(
-        `Verdict uses :green_circle: but ${blockerCount} blocker(s) (CRITICAL/MAJOR) exist under ### Impact`,
+      logger?.warn(
+        { blockerCount },
+        "Verdict uses :green_circle: but blockers (CRITICAL/MAJOR) exist under ### Impact",
       );
     }
 

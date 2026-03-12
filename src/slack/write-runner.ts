@@ -3,7 +3,7 @@ import { $ } from "bun";
 import type { Logger } from "pino";
 import type { Workspace } from "../jobs/types.ts";
 import { createBranchCommitAndPush, WritePolicyError, shouldUseGist, assertOriginIsFork } from "../jobs/workspace.ts";
-import { buildWritePolicyRefusalMessage } from "../handlers/mention.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import type { ExecutionResult } from "../execution/types.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";

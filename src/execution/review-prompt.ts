@@ -1328,7 +1328,7 @@ function buildSecuritySection(security: SecurityContext): string {
   const advisoriesToShow = security.advisories.slice(0, 3);
   const footnotes: string[] = [];
   for (let i = 0; i < advisoriesToShow.length; i++) {
-    const adv = advisoriesToShow[i];
+    const adv = advisoriesToShow[i]!;
     const footnoteIdx = footnotes.length + 1;
     lines.push(`- **${adv.ghsaId}** (${adv.severity}): ${adv.summary}[${footnoteIdx}]`);
     footnotes.push(`[${footnoteIdx}]: ${adv.url}`);

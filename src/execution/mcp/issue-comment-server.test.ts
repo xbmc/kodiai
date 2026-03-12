@@ -2,9 +2,9 @@ import { describe, it, expect, mock } from "bun:test";
 
 // Mock Octokit factory
 function createMockOctokit(overrides: {
-  createComment?: () => Promise<any>;
-  updateComment?: () => Promise<any>;
-  getIssue?: () => Promise<any>;
+  createComment?: (...args: any[]) => Promise<any>;
+  updateComment?: (...args: any[]) => Promise<any>;
+  getIssue?: (...args: any[]) => Promise<any>;
 } = {}) {
   return {
     rest: {
@@ -54,7 +54,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "## Missing Fields\nPlease fill in..." },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.comment_id).toBe(12345);
       expect(parsed.comment_url).toBe("https://github.com/testowner/testrepo/issues/42#issuecomment-12345");
@@ -87,11 +87,11 @@ describe("createIssueCommentServer", () => {
         },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
 
       // Verify the body was formatted correctly
-      const callArgs = createCommentMock.mock.calls[0][0];
+      const callArgs = createCommentMock.mock.calls[0]![0];
       const body = callArgs.body;
       expect(body).toContain("## Missing Fields");
       expect(body).toContain("Please fill in the required sections.");
@@ -116,7 +116,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test comment" },
       });
 
-      const callArgs = createCommentMock.mock.calls[0][0];
+      const callArgs = createCommentMock.mock.calls[0]![0];
       const body: string = callArgs.body;
       expect(body).not.toContain("Kodiai");
       expect(body).not.toContain("Posted by");
@@ -141,7 +141,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: longBody },
       });
 
-      const callArgs = createCommentMock.mock.calls[0][0];
+      const callArgs = createCommentMock.mock.calls[0]![0];
       const body: string = callArgs.body;
       expect(body.length).toBeLessThanOrEqual(60100); // 60000 + truncation note
       expect(body).toContain("Comment truncated due to length.");
@@ -163,7 +163,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.warning).toBe("Issue is closed");
     });
@@ -186,7 +186,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 999, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("ISSUE_NOT_FOUND");
     });
@@ -209,7 +209,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("PERMISSION_DENIED");
     });
@@ -240,7 +240,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(callCount).toBe(2);
     });
@@ -257,7 +257,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("TOOL_DISABLED");
     });
@@ -274,7 +274,7 @@ describe("createIssueCommentServer", () => {
         params: { issue_number: 42, body: "Test" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.issue_number).toBe(42);
       expect(parsed.repo).toBe("testowner/testrepo");
       expect(parsed.comment_id).toBeDefined();
@@ -303,7 +303,7 @@ describe("createIssueCommentServer", () => {
         params: { comment_id: 12345, body: "Updated comment" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.comment_id).toBe(12345);
       expect(updateCommentMock).toHaveBeenCalled();
@@ -327,7 +327,7 @@ describe("createIssueCommentServer", () => {
         params: { comment_id: 99999, body: "Updated comment" },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("COMMENT_NOT_FOUND");
     });
@@ -350,7 +350,7 @@ describe("createIssueCommentServer", () => {
         params: { comment_id: 12345, body: longBody },
       });
 
-      const callArgs = updateCommentMock.mock.calls[0][0];
+      const callArgs = updateCommentMock.mock.calls[0]![0];
       const body: string = callArgs.body;
       expect(body.length).toBeLessThanOrEqual(60100);
       expect(body).toContain("Comment truncated due to length.");

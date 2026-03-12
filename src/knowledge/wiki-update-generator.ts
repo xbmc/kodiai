@@ -25,7 +25,7 @@ import type { SectionInput } from "./wiki-voice-analyzer.ts";
 import { generateWithFallback } from "../llm/generate.ts";
 import { TASK_TYPES } from "../llm/task-types.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
-import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
+import { createGuardrailAuditStore, type GuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { wikiAdapter } from "../lib/guardrail/adapters/wiki-adapter.ts";
 
 /** Maximum patches to include per section. */
@@ -428,7 +428,7 @@ export function createUpdateGenerator(opts: UpdateGeneratorOptions): {
       // Step 2: Process each page sequentially
       for (const page of pages) {
         try {
-          await processPage(page, pipeline, opts, runOpts, result, logger);
+          await processPage(page, pipeline, opts, runOpts, result, logger, guardrailAuditStore);
         } catch (err) {
           logger.error(
             { err, pageId: page.pageId, pageTitle: page.pageTitle },
@@ -473,6 +473,7 @@ async function processPage(
   runOpts: { dryRun?: boolean },
   result: UpdateGeneratorResult,
   logger: Logger,
+  guardrailAuditStore: GuardrailAuditStore,
 ): Promise<void> {
   // Fetch page chunks
   const pageChunks = await opts.wikiPageStore.getPageChunks(page.pageId);
@@ -671,14 +672,14 @@ async function storeSuggestion(
 
   await sql.begin(async (tx) => {
     // Delete existing suggestion for this page + section
-    await tx`
+    await (tx as unknown as Sql)`
       DELETE FROM wiki_update_suggestions
       WHERE page_id = ${suggestion.pageId}
         AND COALESCE(section_heading, '') = ${headingCoalesced}
     `;
 
     // Insert new suggestion
-    await tx`
+    await (tx as unknown as Sql)`
       INSERT INTO wiki_update_suggestions (
         page_id, page_title, section_heading, original_content,
         suggestion, why_summary, grounding_status,

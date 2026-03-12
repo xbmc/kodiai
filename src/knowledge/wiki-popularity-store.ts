@@ -147,8 +147,8 @@ export function createWikiPopularityStore(opts: {
           citation_count: r.citationCount,
           edit_recency_score: r.editRecencyScore,
           composite_score: r.compositeScore,
-          last_scored_at: sql`now()`,
-          updated_at: sql`now()`,
+          last_scored_at: new Date(),
+          updated_at: new Date(),
         }));
 
         await sql`

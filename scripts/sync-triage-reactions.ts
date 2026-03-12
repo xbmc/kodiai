@@ -138,6 +138,12 @@ async function main(): Promise<void> {
         port: 0,
         logLevel: "info",
         botAllowList: [],
+      slackWikiChannelId: "",
+      wikiStalenessThresholdDays: 30,
+      wikiGithubOwner: "",
+      wikiGithubRepo: "",
+      botUserPat: "",
+      botUserLogin: "",
       },
       logger,
     );
@@ -169,7 +175,7 @@ async function main(): Promise<void> {
     }
 
     // 4. Group by repo for efficient octokit reuse
-    const byRepo = new Map<string, typeof triageRecords>();
+    const byRepo = new Map<string, (typeof triageRecords)[number][]>();
     for (const record of triageRecords) {
       const repo = record.repo as string;
       if (!byRepo.has(repo)) byRepo.set(repo, []);
@@ -371,8 +377,8 @@ async function shouldRecordObservation(params: {
 
   if (
     existing.length > 0 &&
-    existing[0].observation_recorded === true &&
-    existing[0].observation_direction === direction
+    existing[0]!.observation_recorded === true &&
+    existing[0]!.observation_direction === direction
   ) {
     return { record: false, reason: "already_recorded" };
   }

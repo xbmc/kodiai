@@ -111,9 +111,9 @@ describe("hdbscan", () => {
     const result = hdbscan(data, { minClusterSize: 3 });
 
     for (let i = 0; i < result.probabilities.length; i++) {
-      if (result.labels[i] >= 0) {
-        expect(result.probabilities[i]).toBeGreaterThanOrEqual(0);
-        expect(result.probabilities[i]).toBeLessThanOrEqual(1);
+      if (result!.labels[i]! >= 0) {
+        expect(result.probabilities[i]!).toBeGreaterThanOrEqual(0);
+        expect(result.probabilities[i]!).toBeLessThanOrEqual(1);
       }
     }
   });

@@ -87,7 +87,7 @@ export function createTroubleshootingHandler(deps: {
       const defaultBranch = repository.default_branch ?? "main";
 
       // 2. Skip PRs -- troubleshooting is issues only
-      if ((issue as Record<string, unknown>).pull_request) {
+      if ((issue as unknown as Record<string, unknown>).pull_request) {
         return;
       }
 

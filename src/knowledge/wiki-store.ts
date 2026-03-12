@@ -123,7 +123,7 @@ export function createWikiPageStore(opts: {
 
     async replacePageChunks(pageId: number, chunks: WikiPageChunk[]): Promise<void> {
       await sql.begin(async (tx) => {
-        await tx`
+        await (tx as unknown as Sql)`
           DELETE FROM wiki_pages WHERE page_id = ${pageId}
         `;
 
@@ -132,7 +132,7 @@ export function createWikiPageStore(opts: {
           const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-code-3") : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
           const languageTags = chunk.languageTags ?? ["general"];
-          await tx`
+          await (tx as unknown as Sql)`
             INSERT INTO wiki_pages (
               page_id, page_title, namespace, page_url,
               section_heading, section_anchor, section_level,

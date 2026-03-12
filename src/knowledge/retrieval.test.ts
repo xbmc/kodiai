@@ -259,7 +259,7 @@ describe("createRetriever", () => {
 
   test("reviewPrecedents populated when reviewCommentStore provided", async () => {
     const results = [makeRetrievalResult(1, 0.2)];
-    const mockCommentStore: ReviewCommentStore = {
+    const mockCommentStore = {
       async writeChunks() {},
       async softDelete() {},
       async updateChunks() {},
@@ -289,7 +289,7 @@ describe("createRetriever", () => {
       embeddingProvider: makeMockEmbeddingProvider(),
       isolationLayer: makeMockIsolationLayer(results),
       config: makeConfig(),
-      reviewCommentStore: mockCommentStore,
+      reviewCommentStore: mockCommentStore as unknown as ReviewCommentStore,
     });
 
     const result = await retriever.retrieve(makeBaseOpts());
@@ -302,7 +302,7 @@ describe("createRetriever", () => {
 
   test("review comment search failure does not block learning memory results", async () => {
     const results = [makeRetrievalResult(1, 0.2)];
-    const throwingCommentStore: ReviewCommentStore = {
+    const throwingCommentStore = {
       async writeChunks() {},
       async softDelete() {},
       async updateChunks() {},
@@ -320,7 +320,7 @@ describe("createRetriever", () => {
       embeddingProvider: makeMockEmbeddingProvider(),
       isolationLayer: makeMockIsolationLayer(results),
       config: makeConfig(),
-      reviewCommentStore: throwingCommentStore,
+      reviewCommentStore: throwingCommentStore as unknown as ReviewCommentStore,
     });
 
     const result = await retriever.retrieve(makeBaseOpts());

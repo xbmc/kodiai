@@ -209,7 +209,7 @@ async function main() {
             SET embedding = ${vectorStr}::vector,
                 embedding_model = ${model},
                 stale = false
-            WHERE id = ${chunkIds[i]}
+            WHERE id = ${chunkIds[i]!}
           `;
           chunksEmbedded++;
         } else {

@@ -31,10 +31,10 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("medium");
-    expect(result[0].preDemotionSeverity).toBe("critical");
-    expect(result[0].severityDemoted).toBe(true);
-    expect(result[0].demotionReason).toBeDefined();
+    expect(result[0]!.severity).toBe("medium");
+    expect(result[0]!.preDemotionSeverity).toBe("critical");
+    expect(result[0]!.severityDemoted).toBe(true);
+    expect(result[0]!.demotionReason).toBeDefined();
   });
 
   test("demotes MAJOR + primarily-external to medium", () => {
@@ -49,9 +49,9 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("medium");
-    expect(result[0].preDemotionSeverity).toBe("major");
-    expect(result[0].severityDemoted).toBe(true);
+    expect(result[0]!.severity).toBe("medium");
+    expect(result[0]!.preDemotionSeverity).toBe("major");
+    expect(result[0]!.severityDemoted).toBe(true);
   });
 
   test("does NOT demote CRITICAL + primarily-diff-grounded", () => {
@@ -64,9 +64,9 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("critical");
-    expect(result[0].severityDemoted).toBeUndefined();
-    expect(result[0].preDemotionSeverity).toBeUndefined();
+    expect(result[0]!.severity).toBe("critical");
+    expect(result[0]!.severityDemoted).toBeUndefined();
+    expect(result[0]!.preDemotionSeverity).toBeUndefined();
   });
 
   test("does NOT demote CRITICAL + mixed", () => {
@@ -79,8 +79,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("critical");
-    expect(result[0].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("critical");
+    expect(result[0]!.severityDemoted).toBeUndefined();
   });
 
   test("does NOT demote medium + primarily-external (already at/below cap)", () => {
@@ -93,8 +93,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("medium");
-    expect(result[0].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("medium");
+    expect(result[0]!.severityDemoted).toBeUndefined();
   });
 
   test("does NOT demote minor + primarily-external (already below cap)", () => {
@@ -107,8 +107,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("minor");
-    expect(result[0].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("minor");
+    expect(result[0]!.severityDemoted).toBeUndefined();
   });
 
   test("fail-open: undefined claimClassification does not trigger demotion", () => {
@@ -120,8 +120,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("critical");
-    expect(result[0].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("critical");
+    expect(result[0]!.severityDemoted).toBeUndefined();
   });
 
   test("fail-open: null summaryLabel does not trigger demotion", () => {
@@ -134,8 +134,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("critical");
-    expect(result[0].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("critical");
+    expect(result[0]!.severityDemoted).toBeUndefined();
   });
 
   test("returns new objects (immutable, does not mutate inputs)", () => {
@@ -149,7 +149,7 @@ describe("demoteExternalClaimSeverities", () => {
     const result = demoteExternalClaimSeverities([original]);
     expect(original.severity).toBe(originalSeverity); // input unchanged
     expect(result[0]).not.toBe(original); // different object
-    expect(result[0].severity).toBe("medium"); // output demoted
+    expect(result[0]!.severity).toBe("medium"); // output demoted
   });
 
   test("empty findings array returns empty array", () => {
@@ -179,12 +179,12 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].severity).toBe("medium");
-    expect(result[0].severityDemoted).toBe(true);
-    expect(result[1].severity).toBe("critical");
-    expect(result[1].severityDemoted).toBeUndefined();
-    expect(result[2].severity).toBe("major");
-    expect(result[2].severityDemoted).toBeUndefined();
+    expect(result[0]!.severity).toBe("medium");
+    expect(result[0]!.severityDemoted).toBe(true);
+    expect(result[1]!.severity).toBe("critical");
+    expect(result[1]!.severityDemoted).toBeUndefined();
+    expect(result[2]!.severity).toBe("major");
+    expect(result[2]!.severityDemoted).toBeUndefined();
   });
 
   test("demotionReason includes evidence from external-knowledge claims", () => {
@@ -201,8 +201,8 @@ describe("demoteExternalClaimSeverities", () => {
       }),
     ];
     const result = demoteExternalClaimSeverities(findings);
-    expect(result[0].demotionReason).toContain("version number not in diff");
-    expect(result[0].demotionReason).toContain("deprecation not visible in diff");
+    expect(result[0]!.demotionReason).toContain("version number not in diff");
+    expect(result[0]!.demotionReason).toContain("deprecation not visible in diff");
   });
 
   test("logs demotion when logger is provided", () => {
@@ -222,11 +222,11 @@ describe("demoteExternalClaimSeverities", () => {
     ];
     demoteExternalClaimSeverities(findings, mockLogger);
     expect(logs.length).toBe(1);
-    expect(logs[0].obj.findingTitle).toBe("Logged finding");
-    expect(logs[0].obj.originalSeverity).toBe("critical");
-    expect(logs[0].obj.newSeverity).toBe("medium");
-    expect(logs[0].obj.summaryLabel).toBe("primarily-external");
-    expect(logs[0].msg).toContain("Severity demoted");
+    expect(logs[0]!.obj.findingTitle).toBe("Logged finding");
+    expect(logs[0]!.obj.originalSeverity).toBe("critical");
+    expect(logs[0]!.obj.newSeverity).toBe("medium");
+    expect(logs[0]!.obj.summaryLabel).toBe("primarily-external");
+    expect(logs[0]!.msg).toContain("Severity demoted");
   });
 
   test("does NOT log when no demotion occurs", () => {

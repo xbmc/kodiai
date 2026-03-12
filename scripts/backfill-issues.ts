@@ -140,6 +140,12 @@ async function main() {
       port: 0,
       logLevel: "info",
       botAllowList: [],
+      slackWikiChannelId: "",
+      wikiStalenessThresholdDays: 30,
+      wikiGithubOwner: "",
+      wikiGithubRepo: "",
+      botUserPat: "",
+      botUserLogin: "",
     },
     logger,
   );

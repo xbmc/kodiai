@@ -56,7 +56,7 @@ export function createWebhookQueueStore(opts: {
 
     async dequeuePending() {
       const entries = await sql.begin(async (tx) => {
-        const rows = await tx`
+        const rows = await (tx as unknown as Sql)`
           SELECT id, source, delivery_id, event_name, headers, body, queued_at, processed_at, status
           FROM webhook_queue
           WHERE status = 'pending'
@@ -69,7 +69,7 @@ export function createWebhookQueueStore(opts: {
         }
 
         const ids = rows.map((r: Record<string, unknown>) => r.id as number);
-        await tx`
+        await (tx as unknown as Sql)`
           UPDATE webhook_queue
           SET status = 'processing'
           WHERE id = ANY(${ids})

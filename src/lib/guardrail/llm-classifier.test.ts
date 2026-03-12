@@ -76,9 +76,9 @@ describe("createLlmClassifier", () => {
     const results = await classifier(claims);
 
     expect(results).toHaveLength(2);
-    expect(results[0].label).toBe("diff-grounded");
-    expect(results[0].confidence).toBe(0.9);
-    expect(results[1].label).toBe("external-knowledge");
+    expect(results[0]!.label).toBe("diff-grounded");
+    expect(results[0]!.confidence).toBe(0.9);
+    expect(results[1]!.label).toBe("external-knowledge");
   });
 
   test("returns diff-grounded on JSON parse failure (fail-open)", async () => {
@@ -89,8 +89,8 @@ describe("createLlmClassifier", () => {
     const results = await classifier(claims);
 
     expect(results).toHaveLength(1);
-    expect(results[0].label).toBe("diff-grounded");
-    expect(results[0].evidence).toContain("fail-open");
+    expect(results[0]!.label).toBe("diff-grounded");
+    expect(results[0]!.evidence).toContain("fail-open");
   });
 
   test("returns diff-grounded on LLM error (fail-open)", async () => {
@@ -104,8 +104,8 @@ describe("createLlmClassifier", () => {
     const results = await classifier(claims);
 
     expect(results).toHaveLength(1);
-    expect(results[0].label).toBe("diff-grounded");
-    expect(results[0].evidence).toContain("fail-open");
+    expect(results[0]!.label).toBe("diff-grounded");
+    expect(results[0]!.evidence).toContain("fail-open");
   });
 
   test("batches into chunks of 10 when > 10 claims", async () => {
@@ -146,9 +146,9 @@ describe("createLlmClassifier", () => {
     expect(results).toHaveLength(12);
     expect(callCount).toBe(2);
     // First 10 should be diff-grounded (from batch1)
-    expect(results[0].label).toBe("diff-grounded");
+    expect(results[0]!.label).toBe("diff-grounded");
     // Last 2 should be external-knowledge (from batch2)
-    expect(results[10].label).toBe("external-knowledge");
+    expect(results[10]!.label).toBe("external-knowledge");
   });
 
   test("handles mismatched response length by padding with fail-open", async () => {
@@ -169,10 +169,10 @@ describe("createLlmClassifier", () => {
     const results = await classifier(claims);
 
     expect(results).toHaveLength(3);
-    expect(results[0].label).toBe("diff-grounded");
+    expect(results[0]!.label).toBe("diff-grounded");
     // Padded claims should fail-open
-    expect(results[1].label).toBe("diff-grounded");
-    expect(results[2].label).toBe("diff-grounded");
+    expect(results[1]!.label).toBe("diff-grounded");
+    expect(results[2]!.label).toBe("diff-grounded");
   });
 
   test("includes claim text in returned classifications", async () => {
@@ -186,6 +186,6 @@ describe("createLlmClassifier", () => {
     const claims = [makeClaim("CVE-2024-1234 is critical.")];
     const results = await classifier(claims);
 
-    expect(results[0].text).toBe("CVE-2024-1234 is critical.");
+    expect(results[0]!.text).toBe("CVE-2024-1234 is critical.");
   });
 });

@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Dead Code Removal & Repo Hygiene** `risk:low` `depends:[]`
   > After this: `git ls-files data/ .planning/` returns empty, .env.example has all vars, merged branches deleted, deprecated files removed, .gitignore updated.
 
-- [ ] **S02: TypeScript Fixes & Code Quality** `risk:medium` `depends:[S01]`
+- [x] **S02: TypeScript Fixes & Code Quality** `risk:medium` `depends:[S01]`
   > After this: `bunx tsc --noEmit` exits 0, `bun test` has 0 failures, console.log replaced with pino in production code, light helper extraction from review.ts and mention.ts verified by passing tests.
 
 - [ ] **S03: Architecture & Operations Docs** `risk:low` `depends:[S01]`

@@ -702,3 +702,8 @@
 - "M026: Documentation audience is open-source contributors — includes onboarding, architecture walkthrough, contribution guide"
 - "M026: DB-dependent tests should skip gracefully when DATABASE_URL is not set — not fail"
 - "M026: Phase verification scripts kept as-is — renaming would break package.json aliases and operator runbooks"
+- "M026: pgvector tests use TEST_DATABASE_URL (not DATABASE_URL) for skip guards — DATABASE_URL in .env is always set (prod URL), so checking it would never skip"
+- "M026: noUncheckedIndexedAccess — use `!` for array index access in bounded for-loops, after length guards, and on SQL RETURNING/aggregate query results"
+- "M026: Optional logger injection pattern — add `logger?: Logger` param with `logger?.method()` calls for backward-compatible structured logging migration"
+- "M026: Pure helper extraction pattern — functions with no closure over handler state moved to src/lib/*-utils.ts (review-utils.ts: 19 functions, mention-utils.ts: 2 functions)"
+- "M026: Added `partially-grounded` to UpdateSuggestion.groundingStatus union — code produces it and DB column accepts it, type was incomplete"

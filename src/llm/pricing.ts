@@ -7,6 +7,9 @@
 
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
+
+const logger = pino({ name: "pricing" });
 
 /** Pricing for a single model. */
 export type ModelPricing = {
@@ -42,8 +45,9 @@ export function loadPricing(): PricingConfig {
     (Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60 * 24),
   );
   if (daysSinceUpdate > 30) {
-    console.warn(
-      `[pricing] pricing.json is ${daysSinceUpdate} days old (last updated: ${data.lastUpdated}). Consider updating.`,
+    logger.warn(
+      { daysSinceUpdate, lastUpdated: data.lastUpdated },
+      "pricing.json is stale — consider updating",
     );
   }
 

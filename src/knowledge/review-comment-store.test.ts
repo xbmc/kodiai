@@ -55,14 +55,16 @@ function makeEmbedding(seed: number = 42): Float32Array {
   return arr;
 }
 
-describe("ReviewCommentStore (pgvector)", () => {
+const TEST_DB_URL = process.env.TEST_DATABASE_URL;
+
+describe.skipIf(!TEST_DB_URL)("ReviewCommentStore (pgvector)", () => {
   let sql: Sql;
   let store: ReviewCommentStore;
   let closeDb: () => Promise<void>;
 
   beforeAll(async () => {
     const client = createDbClient({
-      connectionString: "postgresql://kodiai:kodiai@localhost:5432/kodiai",
+      connectionString: TEST_DB_URL!,
       logger: mockLogger,
     });
     sql = client.sql;

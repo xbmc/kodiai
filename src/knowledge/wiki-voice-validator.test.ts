@@ -118,6 +118,7 @@ describe("validateVoiceMatch", () => {
       formattingElements: ["bullet lists"],
       mediaWikiMarkup: [],
       tokenCount: 100,
+      wikiConventions: { categories: [], interwikiLinks: [], navboxes: [], templates: [] },
     };
 
     const opts = {
@@ -169,6 +170,7 @@ describe("generateWithVoicePreservation", () => {
     formattingElements: [],
     mediaWikiMarkup: [],
     tokenCount: 50,
+    wikiConventions: { categories: [], interwikiLinks: [], navboxes: [], templates: [] },
   };
 
   // Note: Full integration tests of generateWithVoicePreservation require

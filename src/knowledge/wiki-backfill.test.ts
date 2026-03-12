@@ -53,6 +53,7 @@ function createMockStore(): WikiPageStore & {
     },
     async countBySource() { return 0; },
     async getPageRevision(pageId: number) { return _revisions.get(pageId) ?? null; },
+    async searchByFullText() { return []; },
   };
 
   return obj;

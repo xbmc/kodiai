@@ -44,9 +44,9 @@ function createMockRecord(overrides: Partial<WikiPageRecord> = {}): WikiPageReco
 
 function createMockEmbeddingProvider(shouldReturnNull = false): EmbeddingProvider {
   return {
-    generate: mock(async () =>
+    generate: mock(async (_text: string, _inputType: "document" | "query") =>
       shouldReturnNull ? null : { embedding: new Float32Array([0.1, 0.2, 0.3]), tokenCount: 5 },
-    ),
+    ) as any,
     model: "voyage-code-3",
     dimensions: 1024,
   };
@@ -64,6 +64,7 @@ function createMockStore(results: WikiPageSearchResult[] = []): WikiPageStore {
     updateSyncState: mock(async () => {}),
     countBySource: mock(async () => 0),
     getPageRevision: mock(async () => null),
+    searchByFullText: mock(async () => []),
   };
 }
 

@@ -243,7 +243,7 @@ describe("runGuardrailPipeline", () => {
     let llmCalledWith: LlmClassifierClaim[] = [];
     const mockLlmClassifier: LlmClassifier = mock(async (claims) => {
       llmCalledWith = claims;
-      return claims.map((c) => ({
+      return claims.map((c: any) => ({
         text: c.text,
         label: "external-knowledge" as const,
         confidence: 0.85,

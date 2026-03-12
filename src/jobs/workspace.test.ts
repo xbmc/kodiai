@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildWritePolicyRefusalMessage } from "../handlers/mention.ts";
+import { buildWritePolicyRefusalMessage } from "../lib/mention-utils.ts";
 import { enforceWritePolicy, WritePolicyError } from "./workspace.ts";
 
 async function createTempDir(): Promise<string> {

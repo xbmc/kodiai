@@ -117,11 +117,11 @@ export const wikiAdapter: SurfaceAdapter<WikiInput, WikiOutput> = {
     // Remove orphaned wiki headings
     const cleaned: string[] = [];
     for (let i = 0; i < result.length; i++) {
-      const trimmed = result[i].trim();
+      const trimmed = result[i]!.trim();
       if (isWikiHeading(trimmed)) {
         let hasContent = false;
         for (let j = i + 1; j < result.length; j++) {
-          const nextTrimmed = result[j].trim();
+          const nextTrimmed = result[j]!.trim();
           if (isWikiHeading(nextTrimmed)) break;
           if (nextTrimmed.length > 0) {
             hasContent = true;
@@ -129,10 +129,10 @@ export const wikiAdapter: SurfaceAdapter<WikiInput, WikiOutput> = {
           }
         }
         if (hasContent) {
-          cleaned.push(result[i]);
+          cleaned.push(result[i]!);
         }
       } else {
-        cleaned.push(result[i]);
+        cleaned.push(result[i]!);
       }
     }
 

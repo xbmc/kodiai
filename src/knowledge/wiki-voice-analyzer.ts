@@ -375,7 +375,7 @@ export async function extractPageStyle(
 async function extractPageStyleLLM(
   pageChunks: WikiPageRecord[],
   opts: VoiceAnalyzerOptions,
-  logger: ReturnType<Logger["child"]>,
+  logger: Logger,
 ): Promise<PageStyleDescription> {
   const pageTitle = pageChunks[0]!.pageTitle;
 

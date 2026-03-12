@@ -74,11 +74,11 @@ describe("KnowledgeStore", () => {
 
     const [row] = await sql`SELECT * FROM reviews WHERE id = ${reviewId}`;
     expect(row).toBeTruthy();
-    expect(row.repo).toBe("owner/repo");
-    expect(row.pr_number).toBe(42);
-    expect(row.files_analyzed).toBe(12);
-    expect(row.findings_total).toBe(10);
-    expect(row.suppressions_applied).toBe(2);
+    expect(row!.repo).toBe("owner/repo");
+    expect(row!.pr_number).toBe(42);
+    expect(row!.files_analyzed).toBe(12);
+    expect(row!.findings_total).toBe(10);
+    expect(row!.suppressions_applied).toBe(2);
   });
 
   test("recordFindings batch inserts findings linked to review", async () => {
@@ -112,10 +112,10 @@ describe("KnowledgeStore", () => {
 
     const [finding] = await sql`SELECT * FROM findings WHERE review_id = ${reviewId}`;
     expect(finding).toBeTruthy();
-    expect(finding.file_path).toBe("src/api/auth.ts");
-    expect(finding.severity).toBe("major");
-    expect(finding.category).toBe("security");
-    expect(finding.suppressed).toBe(false);
+    expect(finding!.file_path).toBe("src/api/auth.ts");
+    expect(finding!.severity).toBe("major");
+    expect(finding!.category).toBe("security");
+    expect(finding!.suppressed).toBe(false);
   });
 
   test("recordFindings persists deterministic comment linkage fields", async () => {
@@ -151,9 +151,9 @@ describe("KnowledgeStore", () => {
     const [finding] = await sql`
       SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ${reviewId}
     `;
-    expect(finding.comment_id).toBe(1234);
-    expect(finding.comment_surface).toBe("pull_request_review_comment");
-    expect(finding.review_output_key).toBe("kodiai-review-output:v1:test");
+    expect(finding!.comment_id).toBe(1234);
+    expect(finding!.comment_surface).toBe("pull_request_review_comment");
+    expect(finding!.review_output_key).toBe("kodiai-review-output:v1:test");
   });
 
   test("recordFeedbackReactions is append-only and deduplicates by repo/comment/reaction", async () => {
@@ -192,7 +192,7 @@ describe("KnowledgeStore", () => {
       {
         repo: "owner/repo",
         reviewId,
-        findingId: findingRow.id,
+        findingId: findingRow!.id,
         commentId: 222,
         commentSurface: "pull_request_review_comment",
         reactionId: 9001,
@@ -207,7 +207,7 @@ describe("KnowledgeStore", () => {
       {
         repo: "owner/repo",
         reviewId,
-        findingId: findingRow.id,
+        findingId: findingRow!.id,
         commentId: 222,
         commentSurface: "pull_request_review_comment",
         reactionId: 9002,
@@ -222,7 +222,7 @@ describe("KnowledgeStore", () => {
       {
         repo: "owner/repo",
         reviewId,
-        findingId: findingRow.id,
+        findingId: findingRow!.id,
         commentId: 222,
         commentSurface: "pull_request_review_comment",
         reactionId: 9001,
@@ -238,7 +238,7 @@ describe("KnowledgeStore", () => {
 
     const rows = await sql`
       SELECT reaction_content, reactor_login, severity, category, file_path, title
-      FROM feedback_reactions WHERE finding_id = ${findingRow.id} ORDER BY reaction_id ASC
+      FROM feedback_reactions WHERE finding_id = ${findingRow!.id} ORDER BY reaction_id ASC
     `;
 
     expect(rows).toHaveLength(2);
@@ -371,7 +371,7 @@ describe("KnowledgeStore", () => {
     });
 
     const [countRow] = await sql`SELECT COUNT(*) AS count FROM author_cache`;
-    expect(Number(countRow.count)).toBe(0);
+    expect(Number(countRow!.count)).toBe(0);
   });
 
   test("recordSuppressionLog stores suppression entries", async () => {
@@ -400,9 +400,9 @@ describe("KnowledgeStore", () => {
 
     const [row] = await sql`SELECT * FROM suppression_log WHERE review_id = ${reviewId}`;
     expect(row).toBeTruthy();
-    expect(row.pattern).toBe("missing JSDoc");
-    expect(row.matched_count).toBe(2);
-    expect(row.finding_ids).toBe("[11,12]");
+    expect(row!.pattern).toBe("missing JSDoc");
+    expect(row!.matched_count).toBe(2);
+    expect(row!.finding_ids).toBe("[11,12]");
   });
 
   test("recordGlobalPattern upserts anonymized aggregate counts", async () => {
@@ -425,11 +425,11 @@ describe("KnowledgeStore", () => {
       SELECT severity, category, confidence_band, pattern_fingerprint, count
       FROM global_patterns WHERE pattern_fingerprint = ${"fp-abc123"}
     `;
-    expect(row.severity).toBe("major");
-    expect(row.category).toBe("correctness");
-    expect(row.confidence_band).toBe("high");
-    expect(row.pattern_fingerprint).toBe("fp-abc123");
-    expect(row.count).toBe(5);
+    expect(row!.severity).toBe("major");
+    expect(row!.category).toBe("correctness");
+    expect(row!.confidence_band).toBe("high");
+    expect(row!.pattern_fingerprint).toBe("fp-abc123");
+    expect(row!.count).toBe(5);
   });
 
   test("recordDepBumpMergeHistory persists idempotent dep bump merge row", async () => {
@@ -466,12 +466,12 @@ describe("KnowledgeStore", () => {
       FROM dep_bump_merge_history WHERE repo = ${"owner/repo"} AND pr_number = ${123}
     `;
 
-    expect(Number(countRow.count)).toBe(1);
-    expect(row.repo).toBe("owner/repo");
-    expect(row.pr_number).toBe(123);
-    expect(row.source).toBe("dependabot");
-    expect(row.package_name).toBe("lodash");
-    expect(row.semver_bump_type).toBe("patch");
+    expect(Number(countRow!.count)).toBe(1);
+    expect(row!.repo).toBe("owner/repo");
+    expect(row!.pr_number).toBe(123);
+    expect(row!.source).toBe("dependabot");
+    expect(row!.package_name).toBe("lodash");
+    expect(row!.semver_bump_type).toBe("patch");
   });
 
   test("getRepoStats returns aggregate totals and top files", async () => {
@@ -678,8 +678,8 @@ describe("KnowledgeStore", () => {
       expect(secondRun.supersededRunKeys).toContain(firstRun.runKey);
 
       const [row] = await sql`SELECT status, superseded_by FROM run_state WHERE run_key = ${firstRun.runKey}`;
-      expect(row.status).toBe("superseded");
-      expect(row.superseded_by).toBe(secondRun.runKey);
+      expect(row!.status).toBe("superseded");
+      expect(row!.superseded_by).toBe(secondRun.runKey);
     });
 
     test("completeRun marks run as completed", async () => {
@@ -696,8 +696,8 @@ describe("KnowledgeStore", () => {
       await store.completeRun(result.runKey);
 
       const [row] = await sql`SELECT status, completed_at FROM run_state WHERE run_key = ${result.runKey}`;
-      expect(row.status).toBe("completed");
-      expect(row.completed_at).toBeTruthy();
+      expect(row!.status).toBe("completed");
+      expect(row!.completed_at).toBeTruthy();
     });
 
     test("purgeOldRuns removes old completed runs", async () => {

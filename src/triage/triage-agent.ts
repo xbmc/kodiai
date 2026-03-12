@@ -76,7 +76,7 @@ function extractHeadings(text: string): string[] {
   for (const line of text.split("\n")) {
     const match = line.match(/^##\s+(.+)/);
     if (match) {
-      headings.push(match[1].trim().toLowerCase());
+      headings.push(match[1]!.trim().toLowerCase());
     }
   }
   return headings;

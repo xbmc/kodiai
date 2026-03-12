@@ -21,8 +21,8 @@ assignees: ''
     expect(result.name).toBe("Bug Report");
     expect(result.labels).toEqual(["bug", "needs-triage"]);
     expect(result.sections).toHaveLength(2);
-    expect(result.sections[0].heading).toBe("Description");
-    expect(result.sections[1].heading).toBe("Steps to Reproduce");
+    expect(result.sections[0]!.heading).toBe("Description");
+    expect(result.sections[1]!.heading).toBe("Steps to Reproduce");
   });
 
   it("handles labels as YAML array with brackets", () => {
@@ -96,8 +96,8 @@ labels: bug
 <!-- Add screenshots if applicable -->
 `;
     const result = parseTemplate("bug", content);
-    expect(result.sections[0].required).toBe(true);
-    expect(result.sections[1].required).toBe(false);
+    expect(result.sections[0]!.required).toBe(true);
+    expect(result.sections[1]!.required).toBe(false);
   });
 
   it("extracts hint from HTML comments (not the optional marker)", () => {
@@ -114,9 +114,9 @@ labels: bug
 <!-- Add screenshots if applicable -->
 `;
     const result = parseTemplate("bug", content);
-    expect(result.sections[0].hint).toBe("A clear description of the bug");
+    expect(result.sections[0]!.hint).toBe("A clear description of the bug");
     // For optional section, hint should be the non-optional comment
-    expect(result.sections[1].hint).toBe("Add screenshots if applicable");
+    expect(result.sections[1]!.hint).toBe("Add screenshots if applicable");
   });
 
   it("returns empty sections array for template with no headings", () => {
@@ -136,7 +136,7 @@ This template has no section headings.
 <!-- OPTIONAL -->
 `;
     const result = parseTemplate("test", content);
-    expect(result.sections[0].required).toBe(false);
+    expect(result.sections[0]!.required).toBe(false);
   });
 
   it("handles frontmatter with no labels field", () => {

@@ -21,6 +21,8 @@ function baseMention(): MentionEvent {
     filePath: undefined,
     fileLine: undefined,
     inReplyToId: undefined,
+    issueBody: "test issue body",
+    issueTitle: "test issue title",
   };
 }
 

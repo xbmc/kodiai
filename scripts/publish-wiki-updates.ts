@@ -138,6 +138,8 @@ async function main() {
       wikiStalenessThresholdDays: 30,
       wikiGithubOwner: values.owner!,
       wikiGithubRepo: values.repo!,
+      botUserPat: "",
+      botUserLogin: "",
     };
     githubApp = createGitHubApp(config, logger);
     await githubApp.initialize();

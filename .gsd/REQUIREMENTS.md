@@ -4,14 +4,14 @@
 
 ### R001 — TypeScript strict compilation passes
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: `bunx tsc --noEmit` produces zero errors across the entire codebase
 - Why it matters: 474 TS errors undermine refactoring confidence and IDE support; strict types prevent runtime nullability bugs
 - Source: execution
 - Primary owning slice: M026/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Errors concentrated in triage/, telemetry/store.test.ts, knowledge/store.ts, handlers/
+- Validation: S02 — `bunx tsc --noEmit` exits 0 with zero errors across all 474 original error sites
+- Notes: Fixed via null assertions, tx casts, type union additions, and mock type corrections
 
 ### R002 — Dead code and legacy artifacts removed
 - Class: quality-attribute
@@ -59,14 +59,14 @@
 
 ### R006 — console.log replaced with structured pino logger
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Production source files use pino logger instead of console.log/warn/error (scripts/migrations excluded)
 - Why it matters: console.log bypasses structured logging, making production debugging harder
 - Source: execution
 - Primary owning slice: M026/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: 12 source files currently use console.log/warn/error in non-test code
+- Validation: S02 — grep -c 'console\.(log|warn|error)' returns 0 for all 7 targeted production files
+- Notes: Uses optional logger injection pattern (logger?: Logger) for backward compatibility
 
 ### R007 — Comprehensive README with contributor onboarding
 - Class: quality-attribute
@@ -147,25 +147,25 @@
 
 ### R014 — God file light extraction
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Extract obvious helper functions from review.ts (4,415 lines) and mention.ts (2,677 lines) without restructuring handler flow
 - Why it matters: These files are too large for effective code review and agent comprehension
 - Source: user
 - Primary owning slice: M026/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Light extraction only — no restructuring. Focus on pure functions that can be moved to lib/
+- Validation: S02 — review-utils.ts (451 lines, 19 functions) and mention-utils.ts (106 lines, 2 functions) extracted; review.ts reduced by 386 lines, mention.ts by 90 lines; all tests pass
+- Notes: Deep restructuring deferred to R017
 
 ### R015 — Test suite passes cleanly
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: All tests pass or DB-dependent tests are properly skipped when Postgres is unavailable
 - Why it matters: 4 failing tests (pgvector stores + telemetry purge) fail on every local run without Postgres
 - Source: execution
 - Primary owning slice: M026/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Tests should skip gracefully when DATABASE_URL is not set
+- Validation: S02 — bun test → 2181 pass, 45 skip, 0 fail; DB tests use describe.skipIf(!TEST_DATABASE_URL)
+- Notes: Uses TEST_DATABASE_URL (not DATABASE_URL) for skip guards
 
 ### R016 — Legacy .planning/ archived and removed from tracking
 - Class: quality-attribute
@@ -199,6 +199,22 @@
 ### R016 — Legacy .planning/ archived and removed from tracking
 - Validated by: M026/S01
 - Proof: git ls-files .planning/ returns 0; README has no .planning/ links
+
+### R001 — TypeScript strict compilation passes
+- Validated by: M026/S02
+- Proof: `bunx tsc --noEmit` exits 0 with zero errors (474 → 0)
+
+### R006 — console.log replaced with structured pino logger
+- Validated by: M026/S02
+- Proof: grep -c 'console\.(log|warn|error)' returns 0 for all 7 targeted production files
+
+### R014 — God file light extraction
+- Validated by: M026/S02
+- Proof: review-utils.ts (451 lines, 19 functions) and mention-utils.ts (106 lines, 2 functions) exist; review.ts −386 lines, mention.ts −90 lines; all tests pass
+
+### R015 — Test suite passes cleanly
+- Validated by: M026/S02
+- Proof: bun test → 2181 pass, 45 skip, 0 fail; DB tests skip via describe.skipIf(!TEST_DATABASE_URL)
 
 ## Deferred
 
@@ -252,12 +268,12 @@
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | quality-attribute | active | M026/S02 | none | unmapped |
+| R001 | quality-attribute | validated | M026/S02 | none | S02 — tsc --noEmit exits 0, 474 errors fixed |
 | R002 | quality-attribute | validated | M026/S01 | none | S01 — deprecated files deleted, SQLite refs fixed |
 | R003 | operability | validated | M026/S01 | none | S01 — 26 vars documented |
 | R004 | quality-attribute | validated | M026/S01 | none | S01 — data/ and .planning/ in .gitignore |
 | R005 | quality-attribute | validated | M026/S01 | none | S01 — all merged branches deleted |
-| R006 | quality-attribute | active | M026/S02 | none | unmapped |
+| R006 | quality-attribute | validated | M026/S02 | none | S02 — console.* grep returns 0 for all 7 target files |
 | R007 | quality-attribute | active | M026/S05 | M026/S03, M026/S04 | unmapped |
 | R008 | quality-attribute | active | M026/S03 | none | unmapped |
 | R009 | quality-attribute | active | M026/S03 | none | unmapped |
@@ -265,8 +281,8 @@
 | R011 | operability | active | M026/S03 | none | unmapped |
 | R012 | quality-attribute | active | M026/S05 | none | unmapped |
 | R013 | quality-attribute | active | M026/S05 | none | unmapped |
-| R014 | quality-attribute | active | M026/S02 | none | unmapped |
-| R015 | quality-attribute | active | M026/S02 | none | unmapped |
+| R014 | quality-attribute | validated | M026/S02 | none | S02 — review-utils.ts + mention-utils.ts extracted, tests pass |
+| R015 | quality-attribute | validated | M026/S02 | none | S02 — 0 failures, DB tests skip gracefully |
 | R016 | quality-attribute | validated | M026/S01 | none | S01 — .planning/ untracked, README updated |
 | R017 | quality-attribute | deferred | none | none | unmapped |
 | R018 | quality-attribute | deferred | none | none | unmapped |
@@ -275,7 +291,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 11
-- Mapped to slices: 11
-- Validated: 5 (R002, R003, R004, R005, R016)
+- Active requirements: 7
+- Mapped to slices: 7
+- Validated: 9 (R001, R002, R003, R004, R005, R006, R014, R015, R016)
 - Unmapped active requirements: 0

@@ -90,7 +90,7 @@ describe("runClusterPipeline", () => {
     const store = createMockStore();
 
     const result = await runClusterPipeline({
-      sql: mockSql,
+      sql: mockSql as any,
       store,
       taskRouter: createMockTaskRouter(),
       logger: createMockLogger(),
@@ -123,7 +123,7 @@ describe("runClusterPipeline", () => {
     const store = createMockStore();
 
     const result = await runClusterPipeline({
-      sql: mockSql,
+      sql: mockSql as any,
       store,
       taskRouter: createMockTaskRouter(),
       logger: createMockLogger(),
@@ -143,7 +143,7 @@ describe("runClusterPipeline", () => {
     const store = createMockStore();
 
     const result = await runClusterPipeline({
-      sql: mockSql,
+      sql: mockSql as any,
       store,
       taskRouter: createMockTaskRouter(),
       logger: createMockLogger(),
@@ -204,7 +204,7 @@ describe("runClusterPipeline", () => {
     });
 
     const result = await runClusterPipeline({
-      sql: mockSql,
+      sql: mockSql as any,
       store,
       taskRouter: createMockTaskRouter(),
       logger: createMockLogger(),
@@ -246,7 +246,7 @@ describe("runClusterPipeline", () => {
     });
 
     await runClusterPipeline({
-      sql: mockSql,
+      sql: mockSql as any,
       store,
       taskRouter: createMockTaskRouter(),
       logger: createMockLogger(),

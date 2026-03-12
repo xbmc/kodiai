@@ -69,7 +69,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug", "priority:high"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.applied).toEqual(["bug", "priority:high"]);
       expect(parsed.invalid).toEqual([]);
@@ -97,7 +97,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["BUG"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.applied).toEqual(["bug"]);
     });
@@ -120,7 +120,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug", "nonexistent"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.applied).toEqual(["bug"]);
       expect(parsed.invalid).toEqual(["nonexistent"]);
@@ -141,7 +141,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["fake1", "fake2"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("LABEL_NOT_FOUND");
       expect(parsed.invalid_labels).toEqual(["fake1", "fake2"]);
@@ -164,7 +164,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(parsed.warning).toBe("Issue is closed");
     });
@@ -187,7 +187,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 999, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("ISSUE_NOT_FOUND");
     });
@@ -210,7 +210,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("PERMISSION_DENIED");
     });
@@ -239,7 +239,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(true);
       expect(callCount).toBe(2);
     });
@@ -256,7 +256,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("TOOL_DISABLED");
     });
@@ -273,7 +273,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.success).toBe(false);
       expect(parsed.error_code).toBe("TOOL_DISABLED");
     });
@@ -290,7 +290,7 @@ describe("createIssueLabelServer", () => {
         params: { issue_number: 42, labels: ["bug"] },
       });
 
-      const parsed = JSON.parse(result.content[0].text);
+      const parsed = JSON.parse(result.content[0]!.text);
       expect(parsed.issue_number).toBe(42);
       expect(parsed.repo).toBe("testowner/testrepo");
       expect(parsed.timestamp).toBeDefined();

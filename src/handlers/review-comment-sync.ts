@@ -76,7 +76,7 @@ async function embedChunks(
   for (const chunk of chunks) {
     try {
       const result = await embeddingProvider.generate(chunk.chunkText, "document");
-      chunk.embedding = result ?? null;
+      chunk.embedding = result?.embedding ?? null;
     } catch {
       chunk.embedding = null;
     }

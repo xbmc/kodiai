@@ -149,13 +149,13 @@ export async function getEffectiveThreshold(params: {
     WHERE repo = ${repo}
   `;
 
-  if (rows.length === 0 || (rows[0].sample_count as number) < minSamples) {
+  if (rows.length === 0 || (rows[0]!.sample_count as number) < minSamples) {
     return { threshold: configThreshold, source: "config" };
   }
 
-  const alpha = rows[0].alpha as number;
-  const beta = rows[0].beta_ as number;
-  const sampleCount = rows[0].sample_count as number;
+  const alpha = rows[0]!.alpha as number;
+  const beta = rows[0]!.beta_ as number;
+  const sampleCount = rows[0]!.sample_count as number;
   const threshold = posteriorToThreshold(alpha, beta, floor, ceiling);
 
   logger.info(

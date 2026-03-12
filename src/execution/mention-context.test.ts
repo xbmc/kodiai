@@ -111,6 +111,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -153,6 +155,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention);
@@ -194,6 +198,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, { maxPrBodyChars: 8 });
@@ -248,6 +254,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -286,6 +294,8 @@ describe("buildMentionContext", () => {
       filePath: "src/index.ts",
       fileLine: 42,
       inReplyToId: undefined,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention);
@@ -348,6 +358,8 @@ describe("buildMentionContext", () => {
       filePath: "src/index.ts",
       fileLine: 10,
       inReplyToId: 900,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -396,6 +408,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 700,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -458,6 +472,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 710,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -515,6 +531,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 720,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -555,6 +573,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 799,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -636,6 +656,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 900,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {
@@ -692,6 +714,8 @@ describe("buildMentionContext", () => {
       filePath: undefined,
       fileLine: undefined,
       inReplyToId: 910,
+      issueBody: "test issue body",
+      issueTitle: "test issue title",
     };
 
     const ctx = await buildMentionContext(octokit, mention, {

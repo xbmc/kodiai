@@ -226,11 +226,13 @@ async function main() {
 
       const maxRows = Math.max(oldEntries.length, newEntries.length);
       for (let i = 0; i < maxRows; i++) {
-        const oldCol = oldEntries[i]
-          ? `${i + 1}. ${oldEntries[i].pageTitle} (${oldEntries[i].distance.toFixed(4)})`
+        const oldEntry = oldEntries[i];
+        const oldCol = oldEntry
+          ? `${i + 1}. ${oldEntry.pageTitle} (${oldEntry.distance.toFixed(4)})`
           : "";
-        const newCol = newEntries[i]
-          ? `${i + 1}. ${newEntries[i].pageTitle} (${newEntries[i].distance.toFixed(4)})`
+        const newEntry = newEntries[i];
+        const newCol = newEntry
+          ? `${i + 1}. ${newEntry.pageTitle} (${newEntry.distance.toFixed(4)})`
           : "";
         console.log(`  ${pad(oldCol, 40)} | ${newCol}`);
       }

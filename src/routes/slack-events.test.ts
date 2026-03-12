@@ -34,6 +34,12 @@ function createTestConfig(): AppConfig {
     port: 3000,
     logLevel: "info",
     botAllowList: [],
+    slackWikiChannelId: "",
+    wikiStalenessThresholdDays: 30,
+    wikiGithubOwner: "xbmc",
+    wikiGithubRepo: "xbmc",
+    botUserLogin: "",
+    botUserPat: "",
   };
 }
 

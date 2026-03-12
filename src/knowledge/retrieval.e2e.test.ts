@@ -721,11 +721,15 @@ describe("Cross-corpus retrieval E2E", () => {
           record: {
             id: 20,
             createdAt: new Date().toISOString(),
-            source: "confluence",
             namespace: "engineering",
             pageId: 1001,
             pageTitle: "Parser Architecture",
-            sectionTitle: "Error Handling",
+            pageUrl: "https://wiki.example.com/Parser_Architecture",
+            sectionHeading: null,
+            sectionAnchor: null,
+            sectionLevel: null,
+            rawText: "The parser module uses a two-phase approach.",
+            languageTags: [],
             chunkIndex: 0,
             chunkText: "The parser module uses a two-phase approach: validation then execution. All inputs must be bounds-checked.",
             tokenCount: 15,
@@ -744,11 +748,15 @@ describe("Cross-corpus retrieval E2E", () => {
           record: {
             id: 21,
             createdAt: new Date().toISOString(),
-            source: "confluence",
             namespace: "engineering",
             pageId: 1002,
             pageTitle: "Coding Standards",
-            sectionTitle: "Input Validation",
+            pageUrl: "https://wiki.example.com/Coding_Standards",
+            sectionHeading: null,
+            sectionAnchor: null,
+            sectionLevel: null,
+            rawText: "All parser inputs must validate buffer sizes.",
+            languageTags: [],
             chunkIndex: 0,
             chunkText: "All parser inputs must validate buffer sizes before processing to prevent overflow.",
             tokenCount: 12,
@@ -863,7 +871,7 @@ describe("Cross-corpus retrieval E2E", () => {
 
     if (prCodeChunks.length > 0 && baseCodeChunks.length > 0) {
       // The boosted score should be >= the non-boosted score
-      expect(prCodeChunks[0].rrfScore).toBeGreaterThanOrEqual(baseCodeChunks[0].rrfScore);
+      expect(prCodeChunks[0]!.rrfScore).toBeGreaterThanOrEqual(baseCodeChunks[0]!.rrfScore);
     }
   });
 
@@ -905,7 +913,7 @@ describe("Cross-corpus retrieval E2E", () => {
     const baseWikiChunks = baseResult!.unifiedResults.filter((r) => r.source === "wiki");
 
     if (qWikiChunks.length > 0 && baseWikiChunks.length > 0) {
-      expect(qWikiChunks[0].rrfScore).toBeGreaterThanOrEqual(baseWikiChunks[0].rrfScore);
+      expect(qWikiChunks[0]!.rrfScore).toBeGreaterThanOrEqual(baseWikiChunks[0]!.rrfScore);
     }
   });
 

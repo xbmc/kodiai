@@ -364,9 +364,9 @@ function makeOctokit() {
   return { octokit, getCalledBody: () => calledBody };
 }
 
-async function callCreate(body: string) {
+async function callCreate(body: string, logger?: import("pino").Logger) {
   const { octokit, getCalledBody } = makeOctokit();
-  const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+  const server = createCommentServer(async () => octokit as never, "acme", "repo", [], undefined, undefined, undefined, undefined, logger);
   const { create } = getToolHandlers(server);
   const result = await create({ issueNumber: 1, body });
   return { result, calledBody: getCalledBody() };
@@ -748,25 +748,29 @@ describe("Phase 36: Verdict-Observations cross-check", () => {
   });
 
   test("warns when green verdict used despite CRITICAL findings", async () => {
-    const originalWarn = console.warn;
-    const warnCalls: string[] = [];
-    console.warn = (...args: unknown[]) => { warnCalls.push(args.map(String).join(" ")); };
+    const warnCalls: Array<{ obj: unknown; msg: string }> = [];
+    const mockLogger = {
+      info: () => {},
+      warn: (obj: unknown, msg: string) => { warnCalls.push({ obj, msg }); },
+      error: () => {},
+      debug: () => {},
+      trace: () => {},
+      fatal: () => {},
+      child: () => mockLogger,
+      level: "silent",
+    } as unknown as import("pino").Logger;
 
-    try {
-      const body = buildTestSummary({
-        "## What Changed": "Security patch.",
-        "## Observations": "### Impact\n[CRITICAL] src/auth.ts (5): Hardcoded secret key\nThe JWT signing key is hardcoded in source code.",
-        "## Verdict": ":green_circle: **Ready to merge** -- No blocking issues found",
-      });
+    const body = buildTestSummary({
+      "## What Changed": "Security patch.",
+      "## Observations": "### Impact\n[CRITICAL] src/auth.ts (5): Hardcoded secret key\nThe JWT signing key is hardcoded in source code.",
+      "## Verdict": ":green_circle: **Ready to merge** -- No blocking issues found",
+    });
 
-      const { result } = await callCreate(body);
-      // Should NOT throw -- soft warning only.
-      expect(result.isError).toBeUndefined();
-      // console.warn should have been called with blocker message.
-      expect(warnCalls.some((msg) => msg.includes("blocker(s)"))).toBe(true);
-    } finally {
-      console.warn = originalWarn;
-    }
+    const { result } = await callCreate(body, mockLogger);
+    // Should NOT throw -- soft warning only.
+    expect(result.isError).toBeUndefined();
+    // Logger.warn should have been called with blocker message.
+    expect(warnCalls.some((call) => call.msg.includes("blocker"))).toBe(true);
   });
 
   test("accepts green verdict when only Preference findings exist with MEDIUM under Impact", async () => {

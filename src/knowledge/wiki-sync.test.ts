@@ -18,13 +18,19 @@ function createMockLogger(): Logger {
 
 function createMockEmbeddingProvider(): EmbeddingProvider {
   return {
-    generate: mock(async () => ({
+    generate: (async () => ({
       embedding: new Float32Array([0.1, 0.2, 0.3]),
       tokenCount: 5,
-    })),
+    })) as any,
     model: "voyage-code-3",
     dimensions: 1024,
   };
+}
+
+// Bun's mock() return type Mock<T> is not assignable to `typeof fetch` even
+// with matching signatures. Helper wraps mock creation to avoid TS2352.
+function mockFetch(fn: (...args: any[]) => Promise<Response>): typeof fetch {
+  return mock(fn) as any;
 }
 
 type MockStore = WikiPageStore & { _syncState: WikiSyncState | null };
@@ -44,6 +50,7 @@ function createMockStore(): MockStore {
     }),
     countBySource: mock(async () => 0),
     getPageRevision: mock(async () => null),
+    searchByFullText: mock(async () => []),
   };
   return obj;
 }
@@ -97,7 +104,7 @@ describe("createWikiSyncScheduler", () => {
     const store = createMockStore();
     let callIndex = 0;
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([
           { pageid: 1, title: "TestPage", revid: 200 },
@@ -137,7 +144,7 @@ describe("createWikiSyncScheduler", () => {
 
     const redirectHtml = '<div class="redirectMsg"><p>Redirect to <a href="/view/RealPage">RealPage</a></p></div>';
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([
           { pageid: 1, title: "OldPage", revid: 200 },
@@ -172,7 +179,7 @@ describe("createWikiSyncScheduler", () => {
     // Page already has revision 100
     (store.getPageRevision as ReturnType<typeof mock>).mockImplementation(async () => 100);
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([
           { pageid: 1, title: "UnchangedPage", revid: 100 }, // Same revision
@@ -195,7 +202,7 @@ describe("createWikiSyncScheduler", () => {
     expect(result.pagesChecked).toBe(1);
     expect(result.pagesUpdated).toBe(0);
     // parse should NOT have been called since revision matched
-    const parseCalls = (fetchFn as ReturnType<typeof mock>).mock.calls.filter(
+    const parseCalls = (fetchFn as any).mock.calls.filter(
       (call: unknown[]) => String(call[0]).includes("action=parse"),
     );
     expect(parseCalls.length).toBe(0);
@@ -204,7 +211,7 @@ describe("createWikiSyncScheduler", () => {
   test("updates sync state timestamp after sync", async () => {
     const store = createMockStore();
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([])));
       }
@@ -231,7 +238,7 @@ describe("createWikiSyncScheduler", () => {
 
   test("start() and stop() manage interval correctly", async () => {
     const store = createMockStore();
-    const fetchFn = mock(async () =>
+    const fetchFn = mockFetch(async () =>
       new Response(JSON.stringify(buildRCResponse([]))),
     ) as typeof globalThis.fetch;
 
@@ -260,7 +267,7 @@ describe("createWikiSyncScheduler", () => {
     const store = createMockStore();
     let parseCallCount = 0;
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         return new Response(JSON.stringify(buildRCResponse([
           { pageid: 1, title: "EditedPage", revid: 200, timestamp: "2025-02-01T12:00:00Z" },
@@ -295,7 +302,7 @@ describe("createWikiSyncScheduler", () => {
   test("handles RC API failure gracefully", async () => {
     const store = createMockStore();
 
-    const fetchFn = mock(async () =>
+    const fetchFn = mockFetch(async () =>
       new Response("Internal Server Error", { status: 500 }),
     ) as typeof globalThis.fetch;
 
@@ -321,7 +328,7 @@ describe("createWikiSyncScheduler", () => {
     const store = createMockStore();
     let rcCallCount = 0;
 
-    const fetchFn = mock(async (url: string) => {
+    const fetchFn = mockFetch(async (url: string) => {
       if (url.includes("list=recentchanges")) {
         rcCallCount++;
         if (rcCallCount === 1) {

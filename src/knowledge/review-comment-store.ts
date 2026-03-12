@@ -143,7 +143,7 @@ export function createReviewCommentStore(opts: {
 
       await sql.begin(async (tx) => {
         // Delete existing chunks for this comment
-        await tx`
+        await (tx as unknown as Sql)`
           DELETE FROM review_comments
           WHERE repo = ${repo} AND comment_github_id = ${commentGithubId}
         `;
@@ -153,7 +153,7 @@ export function createReviewCommentStore(opts: {
           const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
           const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
           const embeddingModel = hasEmbedding ? "voyage-code-3" : null;
-          await tx`
+          await (tx as unknown as Sql)`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
               thread_id, in_reply_to_id, file_path, start_line, end_line,

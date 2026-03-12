@@ -128,13 +128,13 @@ describe("recordObservation", () => {
       logger: createMockLogger(),
     });
     expect(calls).toHaveLength(1);
-    const joined = calls[0].strings.join(" ");
+    const joined = calls[0]!.strings.join(" ");
     expect(joined).toContain("triage_threshold_state");
     expect(joined).toContain("ON CONFLICT");
     // TP: alphaInc=1, betaInc=0
     // Values: repo, 1.0+1=2.0, 1.0+0=1.0, alphaInc=1, betaInc=0
-    expect(calls[0].values).toContain(1); // alphaInc
-    expect(calls[0].values).toContain(0); // betaInc
+    expect(calls[0]!.values).toContain(1); // alphaInc
+    expect(calls[0]!.values).toContain(0); // betaInc
   });
 
   it("FP increments beta atomically", async () => {
@@ -148,8 +148,8 @@ describe("recordObservation", () => {
     });
     expect(calls).toHaveLength(1);
     // FP: alphaInc=0, betaInc=1
-    expect(calls[0].values).toContain(0); // alphaInc
-    expect(calls[0].values).toContain(1); // betaInc
+    expect(calls[0]!.values).toContain(0); // alphaInc
+    expect(calls[0]!.values).toContain(1); // betaInc
   });
 
   it("FN increments beta atomically", async () => {
@@ -163,7 +163,7 @@ describe("recordObservation", () => {
     });
     expect(calls).toHaveLength(1);
     // FN: alphaInc=0, betaInc=1
-    expect(calls[0].values).toContain(1); // betaInc
+    expect(calls[0]!.values).toContain(1); // betaInc
   });
 });
 

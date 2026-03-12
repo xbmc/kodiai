@@ -231,7 +231,7 @@ describe("createIssueOpenedHandler", () => {
     });
 
     expect(router.captured).toHaveLength(1);
-    expect(router.captured[0].key).toBe("issues.opened");
+    expect(router.captured[0]!.key).toBe("issues.opened");
   });
 
   it("returns early when triage is disabled", async () => {
@@ -264,7 +264,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(false);
   });
 
@@ -298,7 +298,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(false);
   });
 
@@ -332,7 +332,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(false);
   });
 
@@ -366,7 +366,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(false);
   });
 
@@ -414,7 +414,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(true);
     expect(commentBody).toContain("Possible duplicates detected:");
     expect(commentBody).toContain("#50");
@@ -462,7 +462,7 @@ describe("createIssueOpenedHandler", () => {
     });
 
     // Should not throw despite label API failure
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(true);
   });
 
@@ -501,7 +501,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(commentPosted).toBe(false);
   });
 
@@ -548,7 +548,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     // Should continue despite comment scan failure and post comment
     expect(commentPosted).toBe(true);
   });
@@ -604,7 +604,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     const commentIdCall = sqlCalls.find((c) =>
       c.strings.some((s) => s.includes("comment_github_id")),
@@ -674,7 +674,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     // Verify triage_threshold_state was queried
     const thresholdCall = sqlCalls.find((c) =>
@@ -743,7 +743,7 @@ describe("createIssueOpenedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     // Verify triage_threshold_state was queried but returned no rows
     const thresholdCall = sqlCalls.find((c) =>
@@ -810,7 +810,7 @@ describe("createIssueOpenedHandler", () => {
     });
 
     // Should not throw -- handler continues to apply labels
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
     expect(labelApplied).toBe(true);
   });
 });

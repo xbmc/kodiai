@@ -5,6 +5,7 @@
 // Follows the void + .catch() pattern from citation logging (121-01).
 // ---------------------------------------------------------------------------
 
+import type { Logger } from "pino";
 import type { AuditRecord } from "./types.ts";
 
 export type GuardrailAuditStore = {
@@ -18,6 +19,7 @@ export type GuardrailAuditStore = {
  */
 export function createGuardrailAuditStore(
   sql: (strings: TemplateStringsArray, ...values: any[]) => Promise<any>,
+  logger?: Logger,
 ): GuardrailAuditStore {
   return {
     logRun(record: AuditRecord): void {
@@ -36,7 +38,7 @@ export function createGuardrailAuditStore(
           ${removedClaimsJson}::jsonb, ${record.durationMs}
         )
       `.catch((err) => {
-        console.error("[guardrail-audit] Failed to log audit record:", err);
+        logger?.error({ err }, "Failed to log guardrail audit record");
       });
     },
   };

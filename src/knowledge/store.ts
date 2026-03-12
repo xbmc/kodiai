@@ -73,14 +73,14 @@ export function createKnowledgeStore(opts: {
         )
         RETURNING id
       `;
-      return inserted.id;
+      return inserted!.id;
     },
 
     async recordFindings(findings: FindingRecord[]): Promise<void> {
       if (findings.length === 0) return;
       await sql.begin(async (tx) => {
         for (const finding of findings) {
-          await tx`
+          await (tx as unknown as Sql)`
             INSERT INTO findings (
               review_id, file_path, start_line, end_line,
               severity, category, confidence, title, suppressed, suppression_pattern,
@@ -100,7 +100,7 @@ export function createKnowledgeStore(opts: {
       if (reactions.length === 0) return;
       await sql.begin(async (tx) => {
         for (const reaction of reactions) {
-          await tx`
+          await (tx as unknown as Sql)`
             INSERT INTO feedback_reactions (
               repo, review_id, finding_id, comment_id, comment_surface,
               reaction_id, reaction_content, reactor_login, reacted_at,
@@ -162,7 +162,7 @@ export function createKnowledgeStore(opts: {
       if (entries.length === 0) return;
       await sql.begin(async (tx) => {
         for (const entry of entries) {
-          await tx`
+          await (tx as unknown as Sql)`
             INSERT INTO suppression_log (review_id, pattern, matched_count, finding_ids)
             VALUES (${entry.reviewId}, ${entry.pattern}, ${entry.matchedCount}, ${entry.findingIds ? JSON.stringify(entry.findingIds) : null})
           `;
@@ -289,16 +289,16 @@ export function createKnowledgeStore(opts: {
         findingsBySeverity[row.severity] = Number(row.count);
       }
 
-      const totalReviews = Number(summary.total_reviews);
-      const totalFindings = Number(summary.total_findings);
+      const totalReviews = Number(summary!.total_reviews);
+      const totalFindings = Number(summary!.total_findings);
 
       return {
         totalReviews,
         totalFindings,
         findingsBySeverity,
-        totalSuppressed: Number(summary.total_suppressed),
+        totalSuppressed: Number(summary!.total_suppressed),
         avgFindingsPerReview: totalReviews > 0 ? totalFindings / totalReviews : 0,
-        avgConfidence: Number(confidenceRow.avg_confidence ?? 0),
+        avgConfidence: Number(confidenceRow!.avg_confidence ?? 0),
         topFiles: topFilesRows.map((row) => ({ path: row.path, findingCount: Number(row.finding_count) })),
       };
     },
@@ -357,7 +357,7 @@ export function createKnowledgeStore(opts: {
 
       return await sql.begin(async (tx) => {
         // Check for existing run with this key
-        const existing = await tx`
+        const existing = await (tx as unknown as Sql)`
           SELECT run_key, status FROM run_state WHERE run_key = ${runKey}
         `;
         if (existing.length > 0) {
@@ -370,7 +370,7 @@ export function createKnowledgeStore(opts: {
         }
 
         // Find prior runs for the same PR
-        const priorRuns = await tx`
+        const priorRuns = await (tx as unknown as Sql)`
           SELECT run_key FROM run_state
           WHERE repo = ${params.repo} AND pr_number = ${params.prNumber}
             AND status NOT IN ('superseded')
@@ -378,7 +378,7 @@ export function createKnowledgeStore(opts: {
 
         const supersededRunKeys: string[] = [];
         for (const prior of priorRuns) {
-          await tx`
+          await (tx as unknown as Sql)`
             UPDATE run_state SET status = 'superseded', superseded_by = ${runKey}
             WHERE run_key = ${prior.run_key}
           `;
@@ -386,7 +386,7 @@ export function createKnowledgeStore(opts: {
         }
 
         // Insert the new run
-        await tx`
+        await (tx as unknown as Sql)`
           INSERT INTO run_state (run_key, repo, pr_number, base_sha, head_sha, delivery_id, action, status)
           VALUES (${runKey}, ${params.repo}, ${params.prNumber}, ${params.baseSha}, ${params.headSha}, ${params.deliveryId}, ${params.action}, 'pending')
         `;
@@ -434,7 +434,7 @@ export function createKnowledgeStore(opts: {
       `;
 
       if (rows.length === 0) return null;
-      const row = rows[0];
+      const row = rows[0]!;
 
       return {
         tier: row.tier,
@@ -455,7 +455,7 @@ export function createKnowledgeStore(opts: {
       `;
 
       if (rows.length === 0) return null;
-      const row = rows[0];
+      const row = rows[0]!;
 
       return {
         severity: row.severity as FindingSeverity,
@@ -520,7 +520,7 @@ export function createKnowledgeStore(opts: {
         ORDER BY created_at DESC
         LIMIT 1
       `;
-      return rows.length > 0 ? rows[0].head_sha : null;
+      return rows.length > 0 ? rows[0]!.head_sha : null;
     },
 
     async getPriorReviewFindings(params: { repo: string; prNumber: number; limit?: number }): Promise<PriorFinding[]> {
@@ -627,7 +627,7 @@ export function createKnowledgeStore(opts: {
       `;
 
       if (rows.length === 0) return null;
-      const row = rows[0];
+      const row = rows[0]!;
 
       let parsed: CheckpointData | null = null;
       try {

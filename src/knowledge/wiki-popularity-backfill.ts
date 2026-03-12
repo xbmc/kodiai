@@ -62,22 +62,15 @@ async function main(): Promise<void> {
     const topPages = await popularityStore.getTopPages(10);
 
     if (topPages.length > 0) {
-      console.log("\n--- Top 10 Pages by Composite Score ---\n");
-      console.log(
-        "Rank  Score     Links  Citations  Recency  Title",
-      );
-      console.log(
-        "----  --------  -----  ---------  -------  -----",
-      );
-
-      for (let i = 0; i < topPages.length; i++) {
-        const page = topPages[i]!;
-        console.log(
-          `${String(i + 1).padStart(4)}  ${page.compositeScore.toFixed(6)}  ${String(page.inboundLinks).padStart(5)}  ${String(page.citationCount).padStart(9)}  ${page.editRecencyScore.toFixed(5)}  ${page.pageTitle}`,
-        );
-      }
-
-      console.log("");
+      const rows = topPages.map((page, i) => ({
+        rank: i + 1,
+        title: page.pageTitle,
+        compositeScore: page.compositeScore,
+        inboundLinks: page.inboundLinks,
+        citationCount: page.citationCount,
+        editRecencyScore: page.editRecencyScore,
+      }));
+      logger.info({ topPages: rows }, "Top 10 pages by composite score");
     } else {
       logger.info("No popularity records found after scoring");
     }

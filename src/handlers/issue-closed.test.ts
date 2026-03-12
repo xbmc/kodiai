@@ -112,7 +112,7 @@ describe("createIssueClosedHandler", () => {
     });
 
     expect(router.captured).toHaveLength(1);
-    expect(router.captured[0].key).toBe("issues.closed");
+    expect(router.captured[0]!.key).toBe("issues.closed");
   });
 
   it("skips pull request closure events", async () => {
@@ -138,7 +138,7 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // No SQL calls should have been made (PR filtered before any DB queries)
     expect(mockSql.calls).toHaveLength(0);
@@ -166,19 +166,19 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // Should have 2 SQL calls: SELECT triage + INSERT outcome
     expect(mockSql.calls).toHaveLength(2);
 
     const insertCall = mockSql.calls[1];
-    const insertStr = insertCall.strings.join("");
+    const insertStr = insertCall!.strings.join("");
     expect(insertStr).toContain("INSERT");
     expect(insertStr).toContain("issue_outcome_feedback");
 
     // Values: repo, issueNumber, triageId, outcome, kodiaiPredictedDuplicate, confirmedDuplicate, stateReason, labelNames, deliveryId
-    expect(insertCall.values[3]).toBe("completed"); // outcome
-    expect(insertCall.values[5]).toBe(false); // confirmed_duplicate
+    expect(insertCall!.values[3]).toBe("completed"); // outcome
+    expect(insertCall!.values[5]).toBe(false); // confirmed_duplicate
   });
 
   it("records duplicate outcome from state_reason", async () => {
@@ -203,11 +203,11 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[3]).toBe("duplicate"); // outcome
-    expect(insertCall.values[5]).toBe(true); // confirmed_duplicate
+    expect(insertCall!.values[3]).toBe("duplicate"); // outcome
+    expect(insertCall!.values[5]).toBe(true); // confirmed_duplicate
   });
 
   it("records duplicate from label fallback when state_reason is null", async () => {
@@ -232,11 +232,11 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[3]).toBe("duplicate"); // outcome
-    expect(insertCall.values[5]).toBe(true); // confirmed_duplicate
+    expect(insertCall!.values[3]).toBe("duplicate"); // outcome
+    expect(insertCall!.values[5]).toBe(true); // confirmed_duplicate
   });
 
   it("records unknown outcome when no state_reason and no duplicate label", async () => {
@@ -261,11 +261,11 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[3]).toBe("unknown"); // outcome
-    expect(insertCall.values[5]).toBe(false); // confirmed_duplicate
+    expect(insertCall!.values[3]).toBe("unknown"); // outcome
+    expect(insertCall!.values[5]).toBe(false); // confirmed_duplicate
   });
 
   it("does not treat possible-duplicate label as confirmed duplicate", async () => {
@@ -290,11 +290,11 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[3]).toBe("unknown"); // outcome -- NOT "duplicate"
-    expect(insertCall.values[5]).toBe(false); // confirmed_duplicate
+    expect(insertCall!.values[3]).toBe("unknown"); // outcome -- NOT "duplicate"
+    expect(insertCall!.values[5]).toBe(false); // confirmed_duplicate
   });
 
   it("links to triage record when one exists", async () => {
@@ -308,11 +308,11 @@ describe("createIssueClosedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[2]).toBe(42); // triage_id
-    expect(insertCall.values[4]).toBe(true); // kodiai_predicted_duplicate (duplicate_count > 0)
+    expect(insertCall!.values[2]).toBe(42); // triage_id
+    expect(insertCall!.values[4]).toBe(true); // kodiai_predicted_duplicate (duplicate_count > 0)
   });
 
   it("sets triage_id null when no triage record", async () => {
@@ -326,11 +326,11 @@ describe("createIssueClosedHandler", () => {
       logger: createMockLogger(),
     });
 
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     const insertCall = mockSql.calls[1];
-    expect(insertCall.values[2]).toBeNull(); // triage_id
-    expect(insertCall.values[4]).toBe(false); // kodiai_predicted_duplicate
+    expect(insertCall!.values[2]).toBeNull(); // triage_id
+    expect(insertCall!.values[4]).toBe(false); // kodiai_predicted_duplicate
   });
 
   it("skips insert on delivery-ID conflict", async () => {
@@ -345,7 +345,7 @@ describe("createIssueClosedHandler", () => {
     });
 
     // Should not throw
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
 
     // Both SQL calls should have been made
     expect(mockSql.calls).toHaveLength(2);
@@ -367,7 +367,7 @@ describe("createIssueClosedHandler", () => {
     });
 
     // Should not throw -- handler catches and logs
-    await router.captured[0].handler(makeEvent());
+    await router.captured[0]!.handler(makeEvent());
   });
 
   it("calls recordObservation after outcome insert when triage_id is not null", async () => {
@@ -395,7 +395,7 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // Verify a SQL call for triage_threshold_state exists (from recordObservation)
     const thresholdCall = mockSql.calls.find((c) =>
@@ -438,7 +438,7 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // Verify NO SQL call for triage_threshold_state
     const thresholdCall = mockSql.calls.find((c) =>
@@ -472,7 +472,7 @@ describe("createIssueClosedHandler", () => {
       },
     });
 
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // Verify NO SQL call for triage_threshold_state (handler returned early)
     const thresholdCall = mockSql.calls.find((c) =>
@@ -529,7 +529,7 @@ describe("createIssueClosedHandler", () => {
     });
 
     // Should not throw -- recordObservation failure is caught
-    await router.captured[0].handler(event);
+    await router.captured[0]!.handler(event);
 
     // Verify outcome INSERT still happened
     const insertCall = calls.find((c) =>
@@ -549,12 +549,12 @@ describe("createIssueClosedHandler", () => {
 
     // No issue in payload
     const noIssueEvent = makeEvent({ issue: undefined });
-    await router.captured[0].handler(noIssueEvent);
+    await router.captured[0]!.handler(noIssueEvent);
     expect(mockSql.calls).toHaveLength(0);
 
     // No repository in payload
     const noRepoEvent = makeEvent({ repository: undefined });
-    await router.captured[0].handler(noRepoEvent);
+    await router.captured[0]!.handler(noRepoEvent);
     expect(mockSql.calls).toHaveLength(0);
   });
 });
