@@ -178,7 +178,7 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 ## Current State
 
-v0.26 shipped, and M027/S01-S02 are complete. The codebase now has production-wired embedding audit, live retriever verification, and a bounded/resumable wiki repair path in addition to the M026 audit/documentation work:
+v0.26 shipped, and M027/S01-S03 are complete. The codebase now has production-wired embedding audit, live retriever verification, bounded/resumable wiki repair, and unified non-wiki repair/proof tooling in addition to the M026 audit/documentation work:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Embedding integrity audit: `bun run audit:embeddings [--json]` reports six-corpus completeness/model status, including `issue_comments` and schema-aware stale semantics, from a read-only Postgres transaction
@@ -187,6 +187,9 @@ v0.26 shipped, and M027/S01-S02 are complete. The codebase now has production-wi
 - Bounded wiki repair: `bun run repair:wiki-embeddings -- --page-title "<title>" [--json|--resume]` repairs only degraded wiki rows with `voyage-context-3`, conservative contextual windows, retry-vs-split failure routing, and batched per-window writes
 - Wiki repair status/proof surfaces: `bun run repair:wiki-embeddings -- --status --json` exposes durable checkpoint state from `wiki_embedding_repair_state`, and `bun run verify:m027:s02 -- --page-title "<title>" --json` preserves raw repair/status/audit evidence with stable check IDs (`M027-S02-REPAIR`, `M027-S02-STATUS`, `M027-S02-AUDIT`)
 - Representative live wiki hardening proof: `JSON-RPC API/v8` completed through the bounded path with durable checkpoint evidence (`388` repaired chunks across `49` windows, `failed=0`, `used_split_fallback=false`)
+- Unified non-wiki repair: `bun run repair:embeddings -- --corpus <review_comments|learning_memories|code_snippets|issues|issue_comments> [--json|--status|--resume|--dry-run]` repairs degraded persisted rows online from Postgres-backed corpus data only
+- Non-wiki repair status/proof surfaces: `embedding_repair_state`, `bun run repair:embeddings -- --corpus <name> --status --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` preserve stable repair/status/no-op/audit evidence with check IDs (`M027-S03-REPAIR`, `M027-S03-STATUS`, `M027-S03-NOOP`, `M027-S03-AUDIT`)
+- Current embedding audit state is all-green: `bun run audit:embeddings --json` reports `overall_status=pass` with `review_comments.missing_or_null=0` and no remaining model mismatches across the six audited corpora
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
 - Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
@@ -525,8 +528,8 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 - [x] M001-M025: Feature development (v0.1 through v0.25)
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
-- [ ] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, and harden online repair/backfill paths
+- [ ] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, harden online repair/backfill paths, and finish the integrated end-to-end proof in S04
 - [ ] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
 
 ---
-*Last updated: 2026-03-12 after M027/S02 completion*
+*Last updated: 2026-03-12 after M027/S03 completion*

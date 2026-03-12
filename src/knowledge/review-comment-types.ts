@@ -85,6 +85,8 @@ export type ReviewCommentSearchResult = {
   distance: number;
 };
 
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+
 /** Sync state tracking record for cursor-based resume. */
 export type SyncState = {
   id?: number;
@@ -94,6 +96,10 @@ export type SyncState = {
   totalCommentsSynced: number;
   backfillComplete: boolean;
   updatedAt?: string;
+};
+
+export type ReviewCommentRepairCandidate = ReviewCommentRecord & {
+  corpus: "review_comments";
 };
 
 /** Store interface for review comment CRUD and search operations. */
@@ -147,4 +153,21 @@ export type ReviewCommentStore = {
 
   /** Get comment by GitHub ID for edit detection in catch-up sync. */
   getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null>;
+
+  /** List degraded persisted rows that need row-local embedding repair. */
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<ReviewCommentRepairCandidate[]>;
+
+  /** Read the durable generic repair state for the corpus. */
+  getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;
+
+  /** Persist the durable generic repair state for the corpus. */
+  saveRepairState?(state: EmbeddingRepairCheckpoint): Promise<void>;
+
+  /** Batch-update repaired embeddings for a bounded row set. */
+  writeRepairEmbeddingsBatch?(payload: {
+    corpus: EmbeddingRepairCorpus;
+    row_ids: number[];
+    target_model: string;
+    embeddings: Array<{ row_id: number; embedding: Float32Array }>;
+  }): Promise<void>;
 };

@@ -1,4 +1,5 @@
 import type { FeedbackPattern } from "../feedback/types.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
 
 export type FindingSeverity = "critical" | "major" | "medium" | "minor";
 
@@ -296,6 +297,19 @@ export type SharingConfig = {
   enabled: boolean;
 };
 
+export type LearningMemoryRepairCandidate = {
+  id: number;
+  corpus: "learning_memories";
+  embedding: unknown;
+  embeddingModel: string | null;
+  stale: boolean;
+  findingText: string;
+  severity: string;
+  category: string;
+  filePath: string;
+  language?: string | null;
+};
+
 export type LearningMemoryStore = {
   writeMemory(record: LearningMemoryRecord, embedding: Float32Array): Promise<void>;
   retrieveMemories(params: {
@@ -317,6 +331,24 @@ export type LearningMemoryStore = {
   }): Promise<{ memoryId: number; rank: number }[]>;
   markStale(embeddingModel: string): Promise<number>;
   purgeStaleEmbeddings(): Promise<number>;
+
+  /** List degraded persisted rows that need row-local embedding repair. */
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<LearningMemoryRepairCandidate[]>;
+
+  /** Read the durable generic repair state for the corpus. */
+  getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;
+
+  /** Persist the durable generic repair state for the corpus. */
+  saveRepairState?(state: EmbeddingRepairCheckpoint): Promise<void>;
+
+  /** Batch-update repaired embeddings for a bounded row set. */
+  writeRepairEmbeddingsBatch?(payload: {
+    corpus: EmbeddingRepairCorpus;
+    row_ids: number[];
+    target_model: string;
+    embeddings: Array<{ row_id: number; embedding: Float32Array }>;
+  }): Promise<void>;
+
   close(): void;
 };
 

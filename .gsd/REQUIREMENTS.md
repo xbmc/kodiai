@@ -15,14 +15,14 @@
 
 ### R020 — Online-safe repair tooling restores missing or stale embeddings
 - Class: operability
-- Status: active
+- Status: validated
 - Description: Operators can repair missing/stale embeddings without downtime using resumable, rate-limited tooling for all persisted corpora.
 - Why it matters: Silent fail-open embedding behavior preserves uptime but can leave production data degraded indefinitely unless repair is safe and practical.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: partially validated in M027/S02 — `bun run repair:wiki-embeddings -- --page-title "JSON-RPC API/v8" --json` and `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json` prove the bounded/resumable repair path on real wiki data; remaining corpora still require later slices.
-- Notes: Repair mode should be explicit, observable, and resumable. S02 closes the wiki-only path, not the all-corpora repair story.
+- Validation: M027/S03 — `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` proved resumable live repair for the degraded corpus plus truthful no-op handling for another corpus through the shared contract.
+- Notes: Repair mode is now explicit, observable, resumable, and shared across wiki plus all remaining non-wiki corpora.
 
 ### R021 — Query-time embedding usage is verified end to end
 - Class: correctness
@@ -37,14 +37,14 @@
 
 ### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
 - Class: reliability
-- Status: active
+- Status: validated
 - Description: The script/backfill timeout failure is identified at the root cause and fixed with bounded batching, retries, resume behavior, and/or control-flow changes as needed.
 - Why it matters: Repair tooling that times out is not operationally usable, especially against production data.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: partially validated in M027/S02 — bounded wiki repair completed a representative live run for `JSON-RPC API/v8` (`bun run repair:wiki-embeddings -- --page-title "JSON-RPC API/v8" --json`) and the repeatable proof harness (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) preserved the repair/status/audit evidence; remaining non-wiki timeout paths still belong to later slices.
-- Notes: Root cause may differ by corpus; S02 fixes the dominant wiki path and also corrected the Voyage contextualized endpoint wiring exposed during live proof execution.
+- Validation: M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence.
+- Notes: The hardened repair story now covers the prior wiki timeout path plus the live non-wiki `review_comments` degradation through the same bounded, resumable operational model.
 
 ### R023 — Corpus/model correctness is validated
 - Class: correctness
@@ -59,14 +59,14 @@
 
 ### R024 — Regression coverage prevents future embedding drift
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Tests and/or deterministic operator verifiers catch future embedding completeness drift and timeout regressions before they become silent production degradation.
 - Why it matters: This class of failure will recur if it relies only on one-time manual inspection.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: partially advanced in M027/S01/S02 via contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, and `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`; full validation still requires later-slice repair coverage for non-wiki corpora.
-- Notes: Guardrails now cover audit/verifier contract drift plus the wiki repair proof envelope; broader repair-regression coverage remains for later slices.
+- Validation: M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes.
+- Notes: Guardrails now cover both live repair families and preserve raw audit/repair/status evidence with stable check IDs for machine re-verification.
 
 ### R025 — Wiki outputs are modification-only
 - Class: correctness
@@ -377,6 +377,18 @@
 - Validated by: M027/S01
 - Proof: `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` expectations and surfaces live wiki model mismatches
 
+### R020 — Online-safe repair tooling restores missing or stale embeddings
+- Validated by: M027/S03
+- Proof: `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` prove live repair plus truthful no-op handling through the shared non-wiki contract
+
+### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
+- Validated by: M027/S02/S03
+- Proof: `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json` and `bun run verify:m027:s03 -- --corpus review_comments --json` preserve bounded repair/status/audit evidence for representative wiki and non-wiki live runs without timeout-class failure
+
+### R024 — Regression coverage prevents future embedding drift
+- Validated by: M027/S03
+- Proof: `bun test ./scripts/verify-m027-s03.test.ts` plus `bun run verify:m027:s03 -- --corpus review_comments --json` lock and exercise the repeatable S03 repair/status/no-op/audit proof envelope
+
 ## Deferred
 
 ### R017 — Full handler refactoring
@@ -448,14 +460,17 @@
 | R017 | quality-attribute | deferred | none | none | unmapped |
 | R018 | quality-attribute | deferred | none | none | unmapped |
 | R019 (embedding audit) | operability | validated | M027/S01 | none | S01 — `audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction |
+| R020 (online repair) | operability | validated | M027/S03 | none | S03 — `repair:embeddings` live repair/status/resume/no-op commands plus `verify:m027:s03` prove all-corpus repair contract |
 | R021 | correctness | validated | M027/S01 | none | S01 — `verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises `createRetriever(...).retrieve(...)` and returns attributed live hits |
+| R022 | reliability | validated | M027/S02,S03 | none | S02/S03 — repeatable wiki + non-wiki live repair proofs completed without timeout-class failure |
 | R023 | correctness | validated | M027/S01 | none | S01 — audit locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` and surfaces live mismatches |
+| R024 | quality-attribute | validated | M027/S03 | none | S03 — repeatable proof/test harnesses now cover non-wiki repair/status/no-op/audit drift |
 | R019 (script cleanup) | quality-attribute | out-of-scope | none | none | n/a |
 | R020 | quality-attribute | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 8
-- Mapped to slices: 8
-- Validated: 19 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R021, R023)
+- Active requirements: 5
+- Mapped to slices: 5
+- Validated: 22 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024)
 - Unmapped active requirements: 0

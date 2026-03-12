@@ -1,6 +1,6 @@
 # Embedding Integrity Operator Runbook
 
-This runbook covers the S01 read-only operator surfaces for persisted embedding health and live retriever verification, plus the S02 bounded wiki repair command and checkpoint/status inspection flow.
+This runbook covers the S01 read-only operator surfaces for persisted embedding health and live retriever verification, the S02 bounded wiki repair command, and the S03 unified non-wiki repair/status command for persisted Postgres-backed corpora.
 
 ## Commands
 
@@ -71,6 +71,88 @@ ORDER BY updated_at DESC;
 Legacy compatibility:
 - `bun scripts/wiki-embedding-backfill.ts` is now only a compatibility wrapper over `repair:wiki-embeddings`
 - the wrapper refuses old model overrides and no longer runs the timeout-prone monolithic rewrite path
+
+### Repair degraded non-wiki embeddings
+
+```bash
+bun run repair:embeddings -- --corpus review_comments
+bun run repair:embeddings -- --corpus review_comments --json
+bun run repair:embeddings -- --corpus review_comments --resume --json
+bun run repair:embeddings -- --corpus review_comments --status --json
+bun run repair:embeddings -- --corpus issues --dry-run --json
+```
+
+Supported corpora:
+- `review_comments`
+- `learning_memories`
+- `code_snippets`
+- `issues`
+- `issue_comments`
+
+What it does:
+- repairs degraded persisted rows using only text already stored in Postgres for the selected corpus
+- uses the shared non-wiki target model `voyage-code-3`
+- persists cursor/progress/failure state in `embedding_repair_state` keyed by `corpus + repair_key`
+- keeps normal repair row-local and DB-driven rather than re-fetching GitHub issues, comments, or snippets during repair
+
+Mode behavior:
+- default mode is mutating repair for the selected corpus
+- `--status` is read-only and reports the last persisted cursor plus whether resume-worthy degraded rows still exist
+- `--dry-run` executes the same candidate selection/reporting path without writing repaired embeddings
+- `--resume` continues from the persisted `last_row_id`/batch cursor saved in `embedding_repair_state`
+
+Stable top-level fields:
+- `command`
+- `mode`
+- `success`
+- `status_code`
+- `corpus`
+- `target_model`
+- `resumed`
+- `dry_run`
+- `run`
+
+Stable `run` fields:
+- `run_id`
+- `status`
+- `corpus`
+- `batch_index`
+- `batches_total`
+- `last_row_id`
+- `processed`
+- `repaired`
+- `skipped`
+- `failed`
+- `failure_summary.by_class`
+- `failure_summary.last_failure_class`
+- `failure_summary.last_failure_message`
+- `updated_at`
+
+Status codes:
+- `repair_completed` — repair finished cleanly or status shows no resume-worthy degraded rows
+- `repair_not_needed` — the mutating repair path found no degraded rows to rewrite
+- `repair_resume_available` — `--status` found degraded rows still pending or a persisted failure that can be resumed
+- `repair_failed` — the current repair invocation stopped on a bounded batch failure
+
+Inspection guidance:
+- operator-first: `bun run repair:embeddings -- --status --corpus <name> --json`
+- direct DB inspection when deeper debugging is needed:
+
+```sql
+SELECT corpus, repair_key, run_id, status, resume_ready,
+       batch_index, batches_total, last_row_id,
+       processed, repaired, skipped, failed,
+       failure_counts, last_failure_class, last_failure_message,
+       updated_at
+FROM embedding_repair_state
+WHERE corpus = 'review_comments'
+ORDER BY updated_at DESC;
+```
+
+When to use this command instead of older scripts:
+- use `repair:embeddings` when the degraded data already exists in local Postgres and you only need to rebuild embeddings from persisted row content
+- use historical ingestion/backfill scripts only when the underlying corpus rows themselves are missing and must be fetched or synchronized first
+- `repair:embeddings` is not a GitHub sync loop; it is a bounded persisted-row repair surface
 
 ### Audit persisted embeddings
 
@@ -207,6 +289,48 @@ Interpretation notes:
 - Re-running the harness after a successful repair may show `repair_evidence.run.repaired = 0` because the target page is already healthy. Use `status_evidence` for the durable proof surface (`page_title`, `window_index`, `windows_total`, `repaired`, `updated_at`) from the last completed bounded repair run.
 - Representative live evidence for this slice was executed against `JSON-RPC API/v8`; the bounded repair completed 388 chunk rewrites across 49 windows with `voyage-context-3` writes and no timeout-class failure.
 
+### Run the S03 non-wiki repair proof
+
+```bash
+bun run verify:m027:s03 -- --corpus review_comments
+bun run verify:m027:s03 -- --corpus review_comments --json
+```
+
+The S03 harness runs four surfaces in order:
+1. `repair:embeddings -- --corpus review_comments --json`
+2. `repair:embeddings -- --corpus review_comments --status --json`
+3. `repair:embeddings -- --corpus issues --dry-run --json` (or another remaining healthy/no-op corpus)
+4. `audit:embeddings --json`
+
+Human output shows:
+- final `PASS`/`FAIL` verdict
+- stable check IDs
+- per-check `status_code`
+- live repair details for the degraded corpus
+- durable status details after the repair run
+- no-op probe details for another corpus through the same shared CLI contract
+- scoped audit details for the repaired corpus plus the no-op corpus
+
+JSON output preserves the underlying evidence instead of collapsing it into one summary:
+- summary fields: `check_ids`, `checks`, `overallPassed`, `success`, `status_code`, `corpus`, `noop_corpus`
+- raw surfaces: `repair_evidence`, `status_evidence`, `noop_probe_evidence`, `audit_evidence`
+
+Stable check IDs:
+- `M027-S03-REPAIR`
+- `M027-S03-STATUS`
+- `M027-S03-NOOP`
+- `M027-S03-AUDIT`
+
+Final status codes:
+- `m027_s03_ok`
+- `m027_s03_resume_required`
+- `m027_s03_failed`
+
+Interpretation notes:
+- `M027-S03-AUDIT` is scoped to the repaired corpus and the no-op probe corpus inside the full audit envelope. The raw `audit_evidence` still preserves the other audited corpora instead of hiding them.
+- Re-running the harness after a successful live repair is intentionally idempotent: `repair_evidence.status_code` may become `repair_not_needed` while `status_evidence` retains the truthful durable post-run surface.
+- Representative live evidence for this slice repaired 1,833 degraded `review_comments` rows with `voyage-code-3`, then verified `repair_completed` status, a safe `issues` dry-run no-op (`repair_not_needed`), and a passing post-run audit (`audit_ok`).
+
 ## Required runtime assumptions
 
 Required:
@@ -215,6 +339,7 @@ Required:
 Optional but important:
 - `VOYAGE_API_KEY` enables live query embeddings for `verify:retriever` and `verify:m027:s01`
 - `VOYAGE_API_KEY` is required for `repair:wiki-embeddings` repair runs; `--status` can still inspect checkpoint state without it
+- `VOYAGE_API_KEY` is required for `repair:embeddings` runs that still need live document embeddings; `--status` remains DB-only and healthy/no-op `--dry-run` probes stay truthful when no degraded candidates exist
 - without `VOYAGE_API_KEY`, the retriever verification is expected to report `query_embedding_unavailable`
 
 Safety constraints:

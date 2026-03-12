@@ -1,3 +1,5 @@
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+
 /**
  * Type definitions for GitHub issue corpus storage, search, and retrieval.
  */
@@ -94,6 +96,25 @@ export type IssueCommentSearchResult = {
   distance: number;
 };
 
+export type IssueRepairCandidate = {
+  id: number;
+  corpus: "issues";
+  embedding: unknown;
+  embeddingModel: string | null;
+  title: string;
+  body: string | null;
+};
+
+export type IssueCommentRepairCandidate = {
+  id: number;
+  corpus: "issue_comments";
+  embedding: unknown;
+  embeddingModel: string | null;
+  issueNumber: number;
+  issueTitle: string;
+  commentBody: string;
+};
+
 /** Store interface for issue corpus CRUD and search operations. */
 export type IssueStore = {
   /** Upsert an issue (ON CONFLICT UPDATE). */
@@ -142,4 +163,21 @@ export type IssueStore = {
     repo: string;
     topK: number;
   }): Promise<IssueCommentSearchResult[]>;
+
+  /** List degraded persisted rows that need row-local embedding repair. */
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<Array<IssueRepairCandidate | IssueCommentRepairCandidate>>;
+
+  /** Read the durable generic repair state for the corpus. */
+  getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;
+
+  /** Persist the durable generic repair state for the corpus. */
+  saveRepairState?(state: EmbeddingRepairCheckpoint): Promise<void>;
+
+  /** Batch-update repaired embeddings for a bounded row set. */
+  writeRepairEmbeddingsBatch?(payload: {
+    corpus: EmbeddingRepairCorpus;
+    row_ids: number[];
+    target_model: string;
+    embeddings: Array<{ row_id: number; embedding: Float32Array }>;
+  }): Promise<void>;
 };
