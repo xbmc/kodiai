@@ -1,270 +1,88 @@
-/**
- * CLI script to re-embed all wiki page chunks with voyage-context-3.
- *
- * Usage:
- *   bun scripts/wiki-embedding-backfill.ts                    # Full backfill
- *   bun scripts/wiki-embedding-backfill.ts --model voyage-context-3
- *   bun scripts/wiki-embedding-backfill.ts --delay 1000       # 1s delay between pages
- *   bun scripts/wiki-embedding-backfill.ts --dry-run          # Calculate totals only
- *
- * Environment variables required:
- *   DATABASE_URL          - PostgreSQL connection string
- *   VOYAGE_API_KEY        - VoyageAI API key
- */
+import { main as runWikiEmbeddingRepairMain, parseWikiEmbeddingRepairCliArgs } from "./wiki-embedding-repair.ts";
+import { TARGET_WIKI_EMBEDDING_MODEL } from "../src/knowledge/wiki-embedding-repair.ts";
 
-import { parseArgs } from "node:util";
-import pino from "pino";
-import { createDbClient } from "../src/db/client.ts";
-import { runMigrations } from "../src/db/migrate.ts";
-import {
-  contextualizedEmbedChunks,
-  createContextualizedEmbeddingProvider,
-} from "../src/knowledge/embeddings.ts";
+function usage(): string {
+  return [
+    "Usage: bun scripts/wiki-embedding-backfill.ts [--page-title <title>] [--resume] [--status] [--json]",
+    "",
+    "Compatibility wrapper:",
+    "  This legacy entrypoint now delegates to bun run repair:wiki-embeddings.",
+    "  The old monolithic backfill flow has been removed to keep wiki repair bounded and resumable.",
+    "",
+    "Accepted options:",
+    "  --page-title <title>  Limit repair work to one wiki page title",
+    "  --resume              Resume from persisted checkpoint state",
+    "  --status              Read repair status without running repair work",
+    "  --json                Print machine-readable JSON output",
+    "  --help                Show this help",
+    "",
+    "Rejected legacy options:",
+    `  --model <name>        Only ${TARGET_WIKI_EMBEDDING_MODEL} is supported`,
+    "  --delay <ms>          Removed; bounded windows replace page-level throttling",
+    "  --dry-run             Removed; use --status for non-mutating inspection",
+  ].join("\n");
+}
 
-const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
+function readStringFlag(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index >= 0 ? args[index + 1] : undefined;
+}
 
-// ── Parse arguments ─────────────────────────────────────────────────────────
+function validateLegacyArgs(args: string[]): string | null {
+  const model = readStringFlag(args, "--model");
+  if (model && model !== TARGET_WIKI_EMBEDDING_MODEL) {
+    return `Legacy wiki repair wrapper refuses --model ${model}. Use the bounded repair CLI with ${TARGET_WIKI_EMBEDDING_MODEL}.`;
+  }
+  if (args.includes("--delay")) {
+    return "Legacy wiki repair wrapper no longer supports --delay. The bounded repair CLI controls window sizing instead of page-level delays.";
+  }
+  if (args.includes("--dry-run")) {
+    return "Legacy wiki repair wrapper no longer supports --dry-run. Use --status for a non-mutating checkpoint/status read.";
+  }
+  return null;
+}
 
-const { values } = parseArgs({
-  args: process.argv.slice(2),
-  options: {
-    model: { type: "string", default: "voyage-context-3" },
-    delay: { type: "string", default: "500" },
-    "dry-run": { type: "boolean", default: false },
-    help: { type: "boolean", default: false },
+export async function main(
+  args: string[] = process.argv.slice(2),
+  deps?: {
+    stdout?: { write: (chunk: string) => void };
+    stderr?: { write: (chunk: string) => void };
   },
-});
+): Promise<number> {
+  const stdout = deps?.stdout ?? process.stdout;
+  const stderr = deps?.stderr ?? process.stderr;
 
-if (values.help) {
-  console.log(`
-Usage: bun scripts/wiki-embedding-backfill.ts [options]
-
-Options:
-  --model <name>    Target embedding model (default: voyage-context-3)
-  --delay <ms>      Delay between pages in ms (default: 500)
-  --dry-run         Calculate totals without writing
-  --help            Show this help
-
-Environment:
-  DATABASE_URL      PostgreSQL connection string (required)
-  VOYAGE_API_KEY    VoyageAI API key (required)
-`);
-  process.exit(0);
-}
-
-const model = values.model!;
-const delayMs = parseInt(values.delay!, 10);
-const dryRun = values["dry-run"]!;
-
-// ── Validate environment ────────────────────────────────────────────────────
-
-if (!process.env.DATABASE_URL) {
-  console.error("ERROR: DATABASE_URL environment variable is required.");
-  process.exit(1);
-}
-
-if (!process.env.VOYAGE_API_KEY) {
-  console.error("ERROR: VOYAGE_API_KEY environment variable is required.");
-  process.exit(1);
-}
-
-const voyageApiKey = process.env.VOYAGE_API_KEY;
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
- */
-function float32ArrayToVectorString(arr: Float32Array): string {
-  const parts: string[] = new Array(arr.length);
-  for (let i = 0; i < arr.length; i++) {
-    parts[i] = String(arr[i]);
+  if (args.includes("--help") || args.includes("-h")) {
+    stdout.write(`${usage()}\n`);
+    return 0;
   }
-  return `[${parts.join(",")}]`;
-}
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ── Main ────────────────────────────────────────────────────────────────────
-
-async function main() {
-  const startTime = Date.now();
-
-  console.log(`Model:      ${model}`);
-  console.log(`Delay:      ${delayMs}ms`);
-  if (dryRun) console.log("DRY RUN: No data will be written.");
-  console.log();
-
-  // ── Database ──────────────────────────────────────────────────────────────
-  const db = createDbClient({ logger });
-  await runMigrations(db.sql);
-
-  try {
-    // ── Pre-flight ────────────────────────────────────────────────────────
-    const [preflight] = await db.sql`
-      SELECT
-        COUNT(*)::int AS total_chunks,
-        COALESCE(SUM(token_count), 0)::int AS total_tokens
-      FROM wiki_pages
-      WHERE deleted = false
-    `;
-
-    const totalChunks = preflight!.total_chunks as number;
-    const totalTokens = preflight!.total_tokens as number;
-    const estimatedCost = (totalTokens / 1_000_000) * 0.18;
-
-    console.log("Pre-flight summary:");
-    console.log(`  Total chunks:     ${totalChunks}`);
-    console.log(`  Total tokens:     ${totalTokens.toLocaleString()}`);
-    console.log(`  Estimated cost:   $${estimatedCost.toFixed(4)} ($0.18/1M tokens, first 200M free)`);
-    console.log();
-
-    if (dryRun) {
-      console.log("Dry run complete. No embeddings were generated or written.");
-      return;
-    }
-
-    // ── Get distinct pages ──────────────────────────────────────────────────
-    const pageRows = await db.sql`
-      SELECT DISTINCT page_id
-      FROM wiki_pages
-      WHERE deleted = false
-      ORDER BY page_id
-    `;
-
-    const totalPages = pageRows.length;
-    console.log(`Found ${totalPages} distinct pages to process.`);
-    console.log();
-
-    // ── Embedding provider ──────────────────────────────────────────────────
-    const fallbackProvider = createContextualizedEmbeddingProvider({
-      apiKey: voyageApiKey,
-      model,
-      dimensions: 1024,
-      logger,
-    });
-
-    let chunksEmbedded = 0;
-    let chunksFailed = 0;
-    let pagesProcessed = 0;
-
-    // ── Process each page ───────────────────────────────────────────────────
-    for (const pageRow of pageRows) {
-      const pageId = pageRow.page_id as number;
-
-      // Load all chunks for this page
-      const chunks = await db.sql`
-        SELECT id, chunk_index, chunk_text
-        FROM wiki_pages
-        WHERE page_id = ${pageId} AND deleted = false
-        ORDER BY chunk_index
-      `;
-
-      if (chunks.length === 0) {
-        pagesProcessed++;
-        continue;
-      }
-
-      const chunkTexts = chunks.map((c) => c.chunk_text as string);
-      const chunkIds = chunks.map((c) => c.id as number);
-
-      // Try batch embedding for the whole page
-      let embeddings = await contextualizedEmbedChunks({
-        apiKey: voyageApiKey,
-        chunks: chunkTexts,
-        model,
-        dimensions: 1024,
-        logger,
-      });
-
-      // Fallback: if batch returned nothing (token limit error), embed individually
-      if (embeddings.size === 0 && chunkTexts.length > 0) {
-        logger.warn(
-          { pageId, chunkCount: chunkTexts.length },
-          "Batch embedding returned empty -- falling back to per-chunk embedding",
-        );
-
-        embeddings = new Map<number, Float32Array>();
-        for (let i = 0; i < chunkTexts.length; i++) {
-          const result = await fallbackProvider.generate(chunkTexts[i]!, "document");
-          if (result) {
-            embeddings.set(i, result.embedding);
-          } else {
-            logger.warn({ pageId, chunkIndex: i }, "Per-chunk fallback embedding failed");
-          }
-        }
-      }
-
-      // Update each chunk in DB
-      for (let i = 0; i < chunkIds.length; i++) {
-        const embedding = embeddings.get(i);
-        if (embedding) {
-          const vectorStr = float32ArrayToVectorString(embedding);
-          await db.sql`
-            UPDATE wiki_pages
-            SET embedding = ${vectorStr}::vector,
-                embedding_model = ${model},
-                stale = false
-            WHERE id = ${chunkIds[i]!}
-          `;
-          chunksEmbedded++;
-        } else {
-          chunksFailed++;
-          logger.warn({ pageId, chunkIndex: i, chunkId: chunkIds[i] }, "No embedding generated for chunk");
-        }
-      }
-
-      pagesProcessed++;
-
-      // Progress logging every 10 pages
-      if (pagesProcessed % 10 === 0 || pagesProcessed === totalPages) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(
-          `Progress: ${pagesProcessed}/${totalPages} pages | ${chunksEmbedded} embedded | ${chunksFailed} failed | ${elapsed}s`,
-        );
-      }
-
-      // Rate limit delay between pages
-      if (pagesProcessed < totalPages) {
-        await sleep(delayMs);
-      }
-    }
-
-    console.log();
-
-    // ── Post-backfill verification ──────────────────────────────────────────
-    const [verification] = await db.sql`
-      SELECT COUNT(*)::int AS remaining
-      FROM wiki_pages
-      WHERE embedding_model != ${model}
-        AND deleted = false
-        AND embedding IS NOT NULL
-    `;
-
-    const remaining = verification!.remaining as number;
-    if (remaining > 0) {
-      console.log(`WARNING: ${remaining} rows still have a different embedding_model.`);
-      logger.warn({ remaining, expectedModel: model }, "Post-backfill verification: rows with old model remain");
-    } else {
-      console.log("Verification PASSED: zero rows with old embedding model.");
-    }
-
-    console.log();
-
-    // ── Summary ─────────────────────────────────────────────────────────────
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log("Backfill complete.");
-    console.log(`  Pages processed:  ${pagesProcessed}`);
-    console.log(`  Chunks embedded:  ${chunksEmbedded}`);
-    console.log(`  Chunks failed:    ${chunksFailed}`);
-    console.log(`  Elapsed time:     ${elapsed}s`);
-    console.log();
-    console.log("Post-migration: consider running REINDEX INDEX idx_wiki_pages_embedding_hnsw for optimal search quality.");
-  } finally {
-    await db.close();
+  const validationError = validateLegacyArgs(args);
+  if (validationError) {
+    stderr.write(`${validationError}\n`);
+    return 1;
   }
+
+  const options = parseWikiEmbeddingRepairCliArgs(args);
+  const forwardedArgs: string[] = [];
+
+  if (options.pageTitle) {
+    forwardedArgs.push("--page-title", options.pageTitle);
+  }
+  if (options.resume) {
+    forwardedArgs.push("--resume");
+  }
+  if (options.status) {
+    forwardedArgs.push("--status");
+  }
+  if (options.json) {
+    forwardedArgs.push("--json");
+  }
+
+  return await runWikiEmbeddingRepairMain(forwardedArgs, { stdout, stderr });
 }
 
-await main();
+if (import.meta.main) {
+  const exitCode = await main();
+  process.exit(exitCode);
+}

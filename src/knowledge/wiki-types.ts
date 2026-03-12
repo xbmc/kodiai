@@ -75,6 +75,29 @@ export type WikiSyncState = {
   updatedAt?: string;
 };
 
+/** Candidate wiki row eligible for bounded embedding repair. */
+export type WikiRepairCandidate = WikiPageRecord;
+
+/** Dedicated durable checkpoint state for wiki embedding repair. */
+export type WikiEmbeddingRepairCheckpoint = {
+  id?: number;
+  repairKey?: string;
+  pageId: number | null;
+  pageTitle: string | null;
+  windowIndex: number | null;
+  windowsTotal: number | null;
+  repaired: number;
+  skipped: number;
+  failed: number;
+  retryCount: number;
+  usedSplitFallback: boolean;
+  lastFailureClass: string | null;
+  lastFailureMessage: string | null;
+  lastProcessedChunkIds?: number[];
+  updatedAt?: string;
+  createdAt?: string;
+};
+
 /** Store interface for wiki page CRUD and search operations. */
 export type WikiPageStore = {
   /** Bulk upsert chunks (idempotent: ON CONFLICT DO NOTHING). */
@@ -117,4 +140,25 @@ export type WikiPageStore = {
 
   /** Get the revision ID for a page (for change detection). */
   getPageRevision(pageId: number): Promise<number | null>;
+
+  /** List degraded rows that need repair, ordered for deterministic bounded processing. */
+  listRepairCandidates(params?: {
+    pageTitle?: string;
+    targetModel?: string;
+  }): Promise<WikiRepairCandidate[]>;
+
+  /** Read the dedicated wiki embedding repair checkpoint surface. */
+  getRepairCheckpoint(repairKey?: string): Promise<WikiEmbeddingRepairCheckpoint | null>;
+
+  /** Persist the dedicated wiki embedding repair checkpoint surface. */
+  saveRepairCheckpoint(state: WikiEmbeddingRepairCheckpoint): Promise<void>;
+
+  /** Batch-update a bounded window of repaired embeddings. */
+  writeRepairEmbeddingsBatch(payload: {
+    pageId: number;
+    pageTitle: string;
+    chunkIds: number[];
+    targetModel: string;
+    embeddings: Array<{ chunkId: number; embedding: Float32Array }>;
+  }): Promise<void>;
 };

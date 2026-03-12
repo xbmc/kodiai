@@ -21,8 +21,8 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Repair mode should be explicit, observable, and resumable.
+- Validation: partially validated in M027/S02 — `bun run repair:wiki-embeddings -- --page-title "JSON-RPC API/v8" --json` and `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json` prove the bounded/resumable repair path on real wiki data; remaining corpora still require later slices.
+- Notes: Repair mode should be explicit, observable, and resumable. S02 closes the wiki-only path, not the all-corpora repair story.
 
 ### R021 — Query-time embedding usage is verified end to end
 - Class: correctness
@@ -43,8 +43,8 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Root cause may differ by corpus; fix the dominant real failure mode rather than masking symptoms.
+- Validation: partially validated in M027/S02 — bounded wiki repair completed a representative live run for `JSON-RPC API/v8` (`bun run repair:wiki-embeddings -- --page-title "JSON-RPC API/v8" --json`) and the repeatable proof harness (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) preserved the repair/status/audit evidence; remaining non-wiki timeout paths still belong to later slices.
+- Notes: Root cause may differ by corpus; S02 fixes the dominant wiki path and also corrected the Voyage contextualized endpoint wiring exposed during live proof execution.
 
 ### R023 — Corpus/model correctness is validated
 - Class: correctness
@@ -65,8 +65,8 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: partially advanced in M027/S01 via contract tests plus `audit:embeddings`, `verify:retriever`, and `verify:m027:s01`; full validation still requires repair/resume and timeout-regression coverage in later slices
-- Notes: Guardrails now cover audit/verifier contract drift; timeout and repair-regression coverage remains for later slices.
+- Validation: partially advanced in M027/S01/S02 via contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, and `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`; full validation still requires later-slice repair coverage for non-wiki corpora.
+- Notes: Guardrails now cover audit/verifier contract drift plus the wiki repair proof envelope; broader repair-regression coverage remains for later slices.
 
 ### R025 — Wiki outputs are modification-only
 - Class: correctness

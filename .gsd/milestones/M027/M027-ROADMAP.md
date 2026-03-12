@@ -68,7 +68,7 @@ This milestone is complete only when all are true:
 
 - [x] **S01: Live Audit & Retriever Verification Surface** `risk:high` `depends:[]`
   > After this: operators can run a read-only embedding integrity audit plus a live retriever verifier that reports corpus health, model correctness, query-embedding status, and real retrieval hits through the production `createRetriever` path.
-- [ ] **S02: Timeout-Hardened Wiki Repair Path** `risk:high` `depends:[S01]`
+- [x] **S02: Timeout-Hardened Wiki Repair Path** `risk:high` `depends:[S01]`
   > After this: the known highest-risk repair surface for wiki pages runs with bounded contextual batches, durable progress/resume output, model-correct writes, and representative completion evidence instead of opaque timeouts.
 - [ ] **S03: Unified Online Repair for Remaining Corpora** `risk:medium` `depends:[S01,S02]`
   > After this: operators can explicitly repair learning memories, review comments, code snippets, issues, and issue comments with resumable/rate-limited commands that share a stable reporting contract and regression coverage.

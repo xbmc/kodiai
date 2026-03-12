@@ -1,10 +1,12 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type {
+  WikiEmbeddingRepairCheckpoint,
   WikiPageChunk,
   WikiPageRecord,
   WikiPageSearchResult,
   WikiPageStore,
+  WikiRepairCandidate,
   WikiSyncState,
 } from "./wiki-types.ts";
 
@@ -18,6 +20,9 @@ function float32ArrayToVectorString(arr: Float32Array): string {
   }
   return `[${parts.join(",")}]`;
 }
+
+const DEFAULT_WIKI_REPAIR_KEY = "wiki-embedding-repair";
+const DEFAULT_WIKI_REPAIR_MODEL = "voyage-context-3";
 
 type WikiRow = {
   id: number;
@@ -64,6 +69,27 @@ function rowToRecord(row: WikiRow): WikiPageRecord {
     revisionId: row.revision_id,
     deleted: row.deleted,
     languageTags: row.language_tags ?? [],
+  };
+}
+
+function rowToRepairCheckpoint(row: Record<string, unknown>): WikiEmbeddingRepairCheckpoint {
+  return {
+    id: row.id as number,
+    repairKey: row.repair_key as string,
+    pageId: row.page_id as number | null,
+    pageTitle: row.page_title as string | null,
+    windowIndex: row.window_index as number | null,
+    windowsTotal: row.windows_total as number | null,
+    repaired: row.repaired as number,
+    skipped: row.skipped as number,
+    failed: row.failed as number,
+    retryCount: row.retry_count as number,
+    usedSplitFallback: row.used_split_fallback as boolean,
+    lastFailureClass: row.last_failure_class as string | null,
+    lastFailureMessage: row.last_failure_message as string | null,
+    lastProcessedChunkIds: (row.last_processed_chunk_ids as number[] | null) ?? [],
+    updatedAt: row.updated_at as string,
+    createdAt: row.created_at as string,
   };
 }
 
@@ -292,6 +318,107 @@ export function createWikiPageStore(opts: {
       `;
       if (rows.length === 0) return null;
       return rows[0]!.revision_id as number | null;
+    },
+
+    async listRepairCandidates(params?: {
+      pageTitle?: string;
+      targetModel?: string;
+    }): Promise<WikiRepairCandidate[]> {
+      const targetModel = params?.targetModel ?? DEFAULT_WIKI_REPAIR_MODEL;
+      const rows = params?.pageTitle
+        ? await sql`
+            SELECT * FROM wiki_pages
+            WHERE deleted = false
+              AND page_title = ${params.pageTitle}
+              AND (
+                embedding IS NULL
+                OR stale = true
+                OR embedding_model IS DISTINCT FROM ${targetModel}
+              )
+            ORDER BY page_id, chunk_index
+          `
+        : await sql`
+            SELECT * FROM wiki_pages
+            WHERE deleted = false
+              AND (
+                embedding IS NULL
+                OR stale = true
+                OR embedding_model IS DISTINCT FROM ${targetModel}
+              )
+            ORDER BY page_id, chunk_index
+          `;
+
+      return rows.map((row) => rowToRecord(row as unknown as WikiRow));
+    },
+
+    async getRepairCheckpoint(repairKey = DEFAULT_WIKI_REPAIR_KEY): Promise<WikiEmbeddingRepairCheckpoint | null> {
+      const rows = await sql`
+        SELECT * FROM wiki_embedding_repair_state
+        WHERE repair_key = ${repairKey}
+        LIMIT 1
+      `;
+      if (rows.length === 0) return null;
+      return rowToRepairCheckpoint(rows[0] as Record<string, unknown>);
+    },
+
+    async saveRepairCheckpoint(state: WikiEmbeddingRepairCheckpoint): Promise<void> {
+      const repairKey = state.repairKey ?? DEFAULT_WIKI_REPAIR_KEY;
+      await sql`
+        INSERT INTO wiki_embedding_repair_state (
+          repair_key, page_id, page_title, window_index, windows_total,
+          repaired, skipped, failed, retry_count, used_split_fallback,
+          last_failure_class, last_failure_message, last_processed_chunk_ids, updated_at
+        ) VALUES (
+          ${repairKey}, ${state.pageId}, ${state.pageTitle}, ${state.windowIndex}, ${state.windowsTotal},
+          ${state.repaired}, ${state.skipped}, ${state.failed}, ${state.retryCount}, ${state.usedSplitFallback},
+          ${state.lastFailureClass}, ${state.lastFailureMessage}, ${sql.array(state.lastProcessedChunkIds ?? [])},
+          ${state.updatedAt ?? new Date().toISOString()}
+        )
+        ON CONFLICT (repair_key) DO UPDATE SET
+          page_id = EXCLUDED.page_id,
+          page_title = EXCLUDED.page_title,
+          window_index = EXCLUDED.window_index,
+          windows_total = EXCLUDED.windows_total,
+          repaired = EXCLUDED.repaired,
+          skipped = EXCLUDED.skipped,
+          failed = EXCLUDED.failed,
+          retry_count = EXCLUDED.retry_count,
+          used_split_fallback = EXCLUDED.used_split_fallback,
+          last_failure_class = EXCLUDED.last_failure_class,
+          last_failure_message = EXCLUDED.last_failure_message,
+          last_processed_chunk_ids = EXCLUDED.last_processed_chunk_ids,
+          updated_at = EXCLUDED.updated_at
+      `;
+    },
+
+    async writeRepairEmbeddingsBatch(payload: {
+      pageId: number;
+      pageTitle: string;
+      chunkIds: number[];
+      targetModel: string;
+      embeddings: Array<{ chunkId: number; embedding: Float32Array }>;
+    }): Promise<void> {
+      if (payload.embeddings.length === 0) return;
+
+      const ids = payload.embeddings.map((item) => item.chunkId);
+      const vectors = payload.embeddings.map((item) => float32ArrayToVectorString(item.embedding));
+
+      await sql.begin(async (tx) => {
+        await (tx as unknown as Sql).unsafe(
+          `
+            UPDATE wiki_pages AS wp
+            SET embedding = updates.embedding::vector,
+                embedding_model = $2,
+                stale = false
+            FROM (
+              SELECT UNNEST($1::bigint[]) AS chunk_id, UNNEST($3::text[]) AS embedding
+            ) AS updates
+            WHERE wp.id = updates.chunk_id
+              AND wp.page_id = $4
+          `,
+          [ids, payload.targetModel, vectors, payload.pageId],
+        );
+      });
     },
   };
 

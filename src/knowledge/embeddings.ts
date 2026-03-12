@@ -4,7 +4,7 @@ import type { EmbeddingProvider, EmbeddingResult } from "./types.ts";
 // ── Voyage AI REST API types ────────────────────────────────────────────────
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
-const VOYAGE_CONTEXTUALIZED_URL = "https://api.voyageai.com/v1/contextualized-embeddings";
+const VOYAGE_CONTEXTUALIZED_URL = "https://api.voyageai.com/v1/contextualizedembeddings";
 
 interface VoyageEmbedResponse {
   data?: Array<{ embedding?: number[]; index?: number }>;
@@ -19,6 +19,32 @@ interface VoyageContextualizedResponse {
   model?: string;
   usage?: { total_tokens: number };
 }
+
+export type RepairEmbeddingFailureClass =
+  | "request_too_large"
+  | "timeout_transient"
+  | "rate_limited"
+  | "server_error"
+  | "network_error"
+  | "unauthorized"
+  | "provider_error"
+  | "response_missing_data";
+
+export type ClassifiedContextualizedEmbeddingBatchResult =
+  | {
+      status: "ok";
+      embeddings: Map<number, Float32Array>;
+      retry_count: number;
+    }
+  | {
+      status: "failed";
+      failure_class: RepairEmbeddingFailureClass;
+      message: string;
+      retryable: boolean;
+      should_split: boolean;
+      retry_count: number;
+      http_status?: number;
+    };
 
 /**
  * Make a Voyage AI API request with retry and timeout.
@@ -257,4 +283,162 @@ export async function contextualizedEmbedChunks(opts: {
   }
 
   return result;
+}
+
+function classifyContextualizedEmbeddingFailure(params: {
+  status?: number;
+  error?: unknown;
+  responseBody?: string;
+}): {
+  failure_class: RepairEmbeddingFailureClass;
+  retryable: boolean;
+  should_split: boolean;
+  message: string;
+} {
+  const body = (params.responseBody ?? "").toLowerCase();
+  const errorMessage = params.error instanceof Error ? params.error.message : String(params.error ?? "");
+  const message = errorMessage || params.responseBody || `Voyage request failed${params.status ? ` (${params.status})` : ""}`;
+
+  if (params.status === 401 || params.status === 403) {
+    return { failure_class: "unauthorized", retryable: false, should_split: false, message };
+  }
+  if (params.status === 408 || body.includes("timeout") || errorMessage.toLowerCase().includes("timeout") || errorMessage.toLowerCase().includes("abort")) {
+    return { failure_class: "timeout_transient", retryable: true, should_split: false, message };
+  }
+  if (params.status === 429) {
+    return { failure_class: "rate_limited", retryable: true, should_split: false, message };
+  }
+  if (params.status && params.status >= 500) {
+    return { failure_class: "server_error", retryable: true, should_split: false, message };
+  }
+  if (params.status === 400 || params.status === 413 || body.includes("too large") || body.includes("token") || body.includes("context length") || body.includes("maximum context")) {
+    return { failure_class: "request_too_large", retryable: false, should_split: true, message };
+  }
+  if (params.error) {
+    return { failure_class: "network_error", retryable: true, should_split: false, message };
+  }
+  return { failure_class: "provider_error", retryable: false, should_split: false, message };
+}
+
+export async function contextualizedEmbedChunksForRepair(opts: {
+  apiKey: string;
+  chunks: string[];
+  model: string;
+  dimensions: number;
+  logger: Logger;
+  timeoutMs?: number;
+  maxRetries?: number;
+}): Promise<ClassifiedContextualizedEmbeddingBatchResult> {
+  const { apiKey, chunks, model, dimensions, logger } = opts;
+  const timeoutMs = opts.timeoutMs ?? 60_000;
+  const maxRetries = opts.maxRetries ?? 0;
+
+  if (chunks.length === 0) {
+    return { status: "ok", embeddings: new Map(), retry_count: 0 };
+  }
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(VOYAGE_CONTEXTUALIZED_URL, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputs: [chunks],
+          model,
+          input_type: "document",
+          output_dimension: dimensions,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!response.ok) {
+        const responseBody = await response.text().catch(() => "");
+        const classified = classifyContextualizedEmbeddingFailure({ status: response.status, responseBody });
+        if (classified.retryable && attempt < maxRetries) {
+          logger.debug({ attempt, status: response.status, failureClass: classified.failure_class }, "Repair embedding request failed, retrying");
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        return {
+          status: "failed",
+          failure_class: classified.failure_class,
+          message: classified.message,
+          retryable: classified.retryable,
+          should_split: classified.should_split,
+          retry_count: attempt,
+          http_status: response.status,
+        };
+      }
+
+      const payload = await response.json() as VoyageContextualizedResponse;
+      const docData = payload.data?.[0]?.data;
+      if (!docData) {
+        return {
+          status: "failed",
+          failure_class: "response_missing_data",
+          message: "Contextualized embedding response missing data",
+          retryable: false,
+          should_split: false,
+          retry_count: attempt,
+        };
+      }
+
+      const embeddings = new Map<number, Float32Array>();
+      for (const item of docData) {
+        if (item.index !== undefined && item.embedding) {
+          embeddings.set(item.index, new Float32Array(item.embedding));
+        }
+      }
+
+      if (embeddings.size !== chunks.length) {
+        return {
+          status: "failed",
+          failure_class: "response_missing_data",
+          message: `Contextualized embedding response returned ${embeddings.size}/${chunks.length} embeddings`,
+          retryable: false,
+          should_split: false,
+          retry_count: attempt,
+        };
+      }
+
+      return {
+        status: "ok",
+        embeddings,
+        retry_count: attempt,
+      };
+    } catch (error: unknown) {
+      clearTimeout(timer);
+      const classified = classifyContextualizedEmbeddingFailure({ error });
+      if (classified.retryable && attempt < maxRetries) {
+        logger.debug({ attempt, failureClass: classified.failure_class, err: String(error) }, "Repair embedding request threw, retrying");
+        await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        continue;
+      }
+      return {
+        status: "failed",
+        failure_class: classified.failure_class,
+        message: classified.message,
+        retryable: classified.retryable,
+        should_split: classified.should_split,
+        retry_count: attempt,
+      };
+    }
+  }
+
+  return {
+    status: "failed",
+    failure_class: "provider_error",
+    message: "Repair embedding request exhausted without a classified result",
+    retryable: false,
+    should_split: false,
+    retry_count: maxRetries,
+  };
 }

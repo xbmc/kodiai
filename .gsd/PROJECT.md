@@ -178,12 +178,15 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 ## Current State
 
-v0.26 shipped, and M027/S01 is complete. The codebase now has production-wired embedding audit and live retriever verification surfaces in addition to the M026 audit/documentation work:
+v0.26 shipped, and M027/S01-S02 are complete. The codebase now has production-wired embedding audit, live retriever verification, and a bounded/resumable wiki repair path in addition to the M026 audit/documentation work:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Embedding integrity audit: `bun run audit:embeddings [--json]` reports six-corpus completeness/model status, including `issue_comments` and schema-aware stale semantics, from a read-only Postgres transaction
 - Live retriever verification: `bun run verify:retriever --repo <owner/repo> --query "..." [--json]` reuses the production `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from zero hits, and reports attributed results plus `not_in_retriever` gaps
 - Combined slice proof harness: `bun run verify:m027:s01 --repo <owner/repo> --query "..." [--json]` preserves raw audit/retriever evidence with stable check IDs (`M027-S01-AUDIT`, `M027-S01-RETRIEVER`)
+- Bounded wiki repair: `bun run repair:wiki-embeddings -- --page-title "<title>" [--json|--resume]` repairs only degraded wiki rows with `voyage-context-3`, conservative contextual windows, retry-vs-split failure routing, and batched per-window writes
+- Wiki repair status/proof surfaces: `bun run repair:wiki-embeddings -- --status --json` exposes durable checkpoint state from `wiki_embedding_repair_state`, and `bun run verify:m027:s02 -- --page-title "<title>" --json` preserves raw repair/status/audit evidence with stable check IDs (`M027-S02-REPAIR`, `M027-S02-STATUS`, `M027-S02-AUDIT`)
+- Representative live wiki hardening proof: `JSON-RPC API/v8` completed through the bounded path with durable checkpoint evidence (`388` repaired chunks across `49` windows, `failed=0`, `used_split_fallback=false`)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
 - Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
@@ -526,4 +529,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [ ] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
 
 ---
-*Last updated: 2026-03-11 after M026 completion*
+*Last updated: 2026-03-12 after M027/S02 completion*
