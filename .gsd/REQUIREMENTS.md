@@ -4,14 +4,14 @@
 
 ### R019 — Production embedding audit covers all persisted corpora
 - Class: operability
-- Status: active
+- Status: validated
 - Description: A deterministic audit reports embedding completeness and integrity for learning memories, PR review comments, wiki pages, code snippets, issues, and issue comments, including null/missing/stale/model-mismatch counts.
 - Why it matters: The system currently has corpus-specific backfills and smoke checks but no end-to-end proof that embeddings are actually present across production data.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Production-first scope; audit should default to read-only.
+- Validation: M027/S01 — `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures instead of hiding them
+- Notes: Production-first scope; audit is read-only and machine-checkable.
 
 ### R020 — Online-safe repair tooling restores missing or stale embeddings
 - Class: operability
@@ -26,14 +26,14 @@
 
 ### R021 — Query-time embedding usage is verified end to end
 - Class: correctness
-- Status: active
+- Status: validated
 - Description: Verification proves that query-time embedding generation and retrieval actually use the persisted corpora after repair, not just that rows exist in tables.
 - Why it matters: Row completeness alone does not prove the retrieval pipeline is healthy.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Should exercise the real retrieval pipeline (`createRetriever`) where possible.
+- Validation: M027/S01 — `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from no-hit states, and returns attributed live hits
+- Notes: Verified through the real production retrieval pipeline, not table-only checks.
 
 ### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
 - Class: reliability
@@ -48,14 +48,14 @@
 
 ### R023 — Corpus/model correctness is validated
 - Class: correctness
-- Status: active
+- Status: validated
 - Description: The audit verifies that each corpus uses the intended embedding model and path, especially wiki `voyage-context-3` versus `voyage-code-3` for other corpora.
 - Why it matters: Mixed or incorrect vector spaces can degrade retrieval even when embeddings are present.
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Presence is insufficient; model alignment matters.
+- Validation: M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts
+- Notes: Presence is insufficient; model alignment is now audited explicitly.
 
 ### R024 — Regression coverage prevents future embedding drift
 - Class: quality-attribute
@@ -65,8 +65,63 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
+- Validation: partially advanced in M027/S01 via contract tests plus `audit:embeddings`, `verify:retriever`, and `verify:m027:s01`; full validation still requires repair/resume and timeout-regression coverage in later slices
+- Notes: Guardrails now cover audit/verifier contract drift; timeout and repair-regression coverage remains for later slices.
+
+### R025 — Wiki outputs are modification-only
+- Class: correctness
+- Status: active
+- Description: The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
+- Why it matters: The current output contract publishes advice about what should change instead of directly usable wiki modifications.
+- Source: user
+- Primary owning slice: M028
+- Supporting slices: none
 - Validation: unmapped
-- Notes: Guardrails may include fixture-based tests, audit commands, and smoke/verification scripts.
+- Notes: Replaces the current suggestion-style contract introduced in M025.
+
+### R026 — Published wiki comments contain only modification content plus minimal metadata
+- Class: correctness
+- Status: active
+- Description: Published `xbmc/wiki` tracking issue comments contain replacement content and only minimal citations/metadata, with no `WHY:` blocks or opinionated explanatory prose.
+- Why it matters: The user wants actionable wiki updates, not commentary.
+- Source: user
+- Primary owning slice: M028
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Section headings and PR links may remain if they are purely navigational/traceable metadata.
+
+### R027 — Wiki modification artifacts support hybrid granularity
+- Class: product-capability
+- Status: active
+- Description: The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
+- Why it matters: Some stale pages need focused edits; others need a coherent page-wide rewrite.
+- Source: user
+- Primary owning slice: M028
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Planning must define the deterministic threshold or rule for switching modes.
+
+### R028 — Existing published wiki suggestion comments can be retrofitted or superseded
+- Class: operability
+- Status: active
+- Description: Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
+- Why it matters: The user explicitly called out a live published comment as unacceptable; fixing only future output leaves the visible workflow inconsistent.
+- Source: user
+- Primary owning slice: M028
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Externally visible GitHub history must be handled safely and reproducibly.
+
+### R029 — Regression checks prevent opinion-style wiki publishing from returning
+- Class: quality-attribute
+- Status: active
+- Description: Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
+- Why it matters: This is a contract change, not just a one-off formatting tweak.
+- Source: user
+- Primary owning slice: M028
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
 
 ### R001 — TypeScript strict compilation passes
 - Class: quality-attribute
@@ -310,6 +365,18 @@
 - Validated by: M026/S05
 - Proof: v0.25 entry added to CHANGELOG.md with 7 Wiki Content Updates deliverables
 
+### R019 — Production embedding audit covers all persisted corpora
+- Validated by: M027/S01
+- Proof: `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures
+
+### R021 — Query-time embedding usage is verified end to end
+- Validated by: M027/S01
+- Proof: `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path and returns attributed live hits with explicit degraded-state reporting
+
+### R023 — Corpus/model correctness is validated
+- Validated by: M027/S01
+- Proof: `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` expectations and surfaces live wiki model mismatches
+
 ## Deferred
 
 ### R017 — Full handler refactoring
@@ -380,12 +447,15 @@
 | R016 | quality-attribute | validated | M026/S01 | none | S01 — .planning/ untracked, README updated |
 | R017 | quality-attribute | deferred | none | none | unmapped |
 | R018 | quality-attribute | deferred | none | none | unmapped |
-| R019 | quality-attribute | out-of-scope | none | none | n/a |
+| R019 (embedding audit) | operability | validated | M027/S01 | none | S01 — `audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction |
+| R021 | correctness | validated | M027/S01 | none | S01 — `verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises `createRetriever(...).retrieve(...)` and returns attributed live hits |
+| R023 | correctness | validated | M027/S01 | none | S01 — audit locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` and surfaces live mismatches |
+| R019 (script cleanup) | quality-attribute | out-of-scope | none | none | n/a |
 | R020 | quality-attribute | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated: 16 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016)
+- Active requirements: 8
+- Mapped to slices: 8
+- Validated: 19 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R021, R023)
 - Unmapped active requirements: 0

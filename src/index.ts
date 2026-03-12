@@ -24,26 +24,17 @@ import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.t
 import { createIssueOpenedHandler } from "./handlers/issue-opened.ts";
 import { createIssueClosedHandler } from "./handlers/issue-closed.ts";
 import { createTroubleshootingHandler } from "./handlers/troubleshooting-agent.ts";
-import { createReviewCommentStore } from "./knowledge/review-comment-store.ts";
-import { createWikiPageStore } from "./knowledge/wiki-store.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
 import { createWikiStalenessDetector } from "./knowledge/wiki-staleness-detector.ts";
 import { createClusterScheduler } from "./knowledge/cluster-scheduler.ts";
-import { createWikiPopularityStore } from "./knowledge/wiki-popularity-store.ts";
 import { createWikiPopularityScorer } from "./knowledge/wiki-popularity-scorer.ts";
 import { createClusterStore } from "./knowledge/cluster-store.ts";
 import { matchClusterPatterns } from "./knowledge/cluster-matcher.ts";
 import { createTaskRouter } from "./llm/task-router.ts";
 import { createCostTracker } from "./llm/cost-tracker.ts";
-import { createCodeSnippetStore } from "./knowledge/code-snippet-store.ts";
-import { createIssueStore } from "./knowledge/issue-store.ts";
 import { createTelemetryStore } from "./telemetry/store.ts";
 import { createKnowledgeStore } from "./knowledge/store.ts";
-import { createLearningMemoryStore } from "./knowledge/memory-store.ts";
-import { createEmbeddingProvider, createNoOpEmbeddingProvider, createContextualizedEmbeddingProvider } from "./knowledge/embeddings.ts";
-import type { LearningMemoryStore, EmbeddingProvider } from "./knowledge/types.ts";
-import { createIsolationLayer, type IsolationLayer } from "./knowledge/isolation.ts";
-import { createRetriever } from "./knowledge/retrieval.ts";
+import { createKnowledgeRuntime, startEmbeddingSmokeTest } from "./knowledge/runtime.ts";
 import { createDbClient, type Sql } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { createContributorProfileStore } from "./contributor/index.ts";
@@ -151,130 +142,21 @@ logger.info("Knowledge store initialized (PostgreSQL)");
 const contributorProfileStore = createContributorProfileStore({ sql, logger });
 logger.info("Contributor profile store initialized (PostgreSQL)");
 
-// Learning memory (v0.5 LEARN-06, migrated to PostgreSQL + pgvector in v0.17)
-let learningMemoryStore: LearningMemoryStore | undefined;
-let embeddingProvider: EmbeddingProvider | undefined;
-
-try {
-  learningMemoryStore = createLearningMemoryStore({ sql, logger });
-  logger.info("Learning memory store initialized (PostgreSQL + pgvector)");
-} catch (err) {
-  logger.warn({ err }, "Learning memory store failed to initialize (fail-open, learning disabled)");
-}
-
-const voyageApiKey = process.env.VOYAGE_API_KEY?.trim();
-if (voyageApiKey && learningMemoryStore) {
-  embeddingProvider = createEmbeddingProvider({
-    apiKey: voyageApiKey,
-    model: "voyage-code-3",
-    dimensions: 1024,
-    logger,
-  });
-  logger.info({ model: "voyage-code-3", dimensions: 1024 }, "Embedding provider initialized");
-} else {
-  embeddingProvider = createNoOpEmbeddingProvider(logger);
-  if (!voyageApiKey) {
-    logger.info("VOYAGE_API_KEY not set, embedding generation disabled (no-op provider)");
-  }
-}
-
-// Wiki-specific embedding provider (voyage-context-3 via contextualizedEmbed API)
-const wikiEmbeddingProvider: EmbeddingProvider = voyageApiKey
-  ? createContextualizedEmbeddingProvider({
-      apiKey: voyageApiKey,
-      model: "voyage-context-3",
-      dimensions: 1024,
-      logger,
-    })
-  : embeddingProvider; // fallback to shared (which may be no-op)
-if (voyageApiKey) {
-  logger.info({ model: "voyage-context-3", dimensions: 1024 }, "Wiki embedding provider initialized (contextualized)");
-}
+const knowledgeRuntime = createKnowledgeRuntime({ sql, logger });
+const {
+  learningMemoryStore,
+  embeddingProvider,
+  wikiEmbeddingProvider,
+  reviewCommentStore,
+  wikiPageStore,
+  codeSnippetStore,
+  issueStore,
+  retriever,
+  wikiCitationLogger: popularityStore,
+} = knowledgeRuntime;
 
 // Embeddings smoke test -- runs concurrently, does NOT block server startup
-void Promise.resolve()
-  .then(async () => {
-    if (!embeddingProvider || embeddingProvider.model === "none") {
-      return; // no-op provider, skip smoke test
-    }
-    const start = Date.now();
-    try {
-      const result = await embeddingProvider.generate("kodiai smoke test", "query");
-      const latencyMs = Date.now() - start;
-      if (result !== null) {
-        logger.info(
-          { model: embeddingProvider.model, dimensions: embeddingProvider.dimensions, latencyMs },
-          "Embeddings smoke test passed",
-        );
-      } else {
-        logger.warn(
-          { model: embeddingProvider.model },
-          "Embeddings smoke test failed -- VoyageAI returned null (embeddings degraded)",
-        );
-      }
-    } catch (err) {
-      logger.warn(
-        { err, model: embeddingProvider.model },
-        "Embeddings smoke test failed -- error connecting to VoyageAI (embeddings degraded)",
-      );
-    }
-  })
-  .catch((err) => {
-    logger.warn({ err }, "Embeddings smoke test unexpected error (non-fatal)");
-  });
-
-// Review comment store (v0.18 KI-04)
-const reviewCommentStore = createReviewCommentStore({ sql, logger });
-logger.info("Review comment store initialized (PostgreSQL + pgvector)");
-
-// Wiki page store (v0.18 KI-10)
-const wikiPageStore = createWikiPageStore({ sql, logger, embeddingModel: "voyage-context-3" });
-logger.info("Wiki page store initialized (PostgreSQL + pgvector)");
-
-// Code snippet store (v0.19 SNIP-01)
-const codeSnippetStore = createCodeSnippetStore({ sql, logger });
-logger.info("Code snippet store initialized (PostgreSQL + pgvector)");
-
-// Issue store (v0.21 ICORP-02)
-const issueStore = createIssueStore({ sql, logger });
-logger.info("Issue store initialized (PostgreSQL + pgvector)");
-
-// Learning memory isolation layer (LEARN-07)
-let isolationLayer: IsolationLayer | undefined;
-if (learningMemoryStore) {
-  isolationLayer = createIsolationLayer({ memoryStore: learningMemoryStore, logger });
-  logger.info("Learning memory isolation layer initialized");
-}
-
-// Wiki popularity store (Phase 121: citation logging + popularity scoring)
-const popularityStore = createWikiPopularityStore({ sql, logger });
-
-// Knowledge retrieval (unified pipeline)
-const retriever = isolationLayer && embeddingProvider
-  ? createRetriever({
-      embeddingProvider,
-      wikiEmbeddingProvider,
-      isolationLayer,
-      config: {
-        retrieval: {
-          enabled: true,
-          topK: 5,
-          distanceThreshold: 0.3,
-          adaptive: true,
-          maxContextChars: 2000,
-        },
-        sharing: {
-          enabled: false,
-        },
-      },
-      reviewCommentStore,
-      wikiPageStore,
-      memoryStore: learningMemoryStore,
-      codeSnippetStore,
-      issueStore,
-      wikiCitationLogger: popularityStore,
-    })
-  : undefined;
+startEmbeddingSmokeTest({ embeddingProvider, logger });
 
 // Startup maintenance: purge old run state entries
 if (knowledgeStore) {

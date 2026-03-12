@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
+    "audit:embeddings": "bun scripts/embedding-audit.ts",
+    "verify:retriever": "bun scripts/retriever-verify.ts",
+    "verify:m027:s01": "bun scripts/verify-m027-s01.ts",
     "report": "bun scripts/usage-report.ts",
     "verify:phase72": "bun scripts/phase72-telemetry-follow-through.ts",
     "trigger:phase73:degraded": "bun scripts/phase73-trigger-degraded-review.ts",

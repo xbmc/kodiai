@@ -174,13 +174,16 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: None (planning next)
+## Current Milestone: M027 — Embedding Integrity & Timeout Hardening
 
 ## Current State
 
-v0.26 shipped. Codebase audit and documentation complete — zero TypeScript errors, comprehensive docs, clean repo:
+v0.26 shipped, and M027/S01 is complete. The codebase now has production-wired embedding audit and live retriever verification surfaces in addition to the M026 audit/documentation work:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
+- Embedding integrity audit: `bun run audit:embeddings [--json]` reports six-corpus completeness/model status, including `issue_comments` and schema-aware stale semantics, from a read-only Postgres transaction
+- Live retriever verification: `bun run verify:retriever --repo <owner/repo> --query "..." [--json]` reuses the production `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from zero hits, and reports attributed results plus `not_in_retriever` gaps
+- Combined slice proof harness: `bun run verify:m027:s01 --repo <owner/repo> --query "..." [--json]` preserves raw audit/retriever evidence with stable check IDs (`M027-S01-AUDIT`, `M027-S01-RETRIEVER`)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
 - Hybrid search: BM25 full-text + vector similarity per corpus, merged via Reciprocal Rank Fusion
 - Multi-LLM: non-agentic tasks route through Vercel AI SDK with task-based model selection; agentic tasks remain on Claude Agent SDK
@@ -520,6 +523,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M001-M025: Feature development (v0.1 through v0.25)
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
 - [ ] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, and harden online repair/backfill paths
+- [ ] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
 
 ---
 *Last updated: 2026-03-11 after M026 completion*
