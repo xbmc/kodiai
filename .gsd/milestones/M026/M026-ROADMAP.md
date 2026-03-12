@@ -64,7 +64,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Architecture & Operations Docs** `risk:low` `depends:[S01]`
   > After this: docs/architecture.md explains system design and data flow, docs/configuration.md documents all .kodiai.yml options, docs/deployment.md consolidated from root, docs/README.md indexes all docs.
 
-- [ ] **S04: Knowledge System & Feature Docs** `risk:low` `depends:[S03]`
+- [x] **S04: Knowledge System & Feature Docs** `risk:low` `depends:[S03]`
   > After this: docs/knowledge-system.md documents all 5 corpora and retrieval pipeline, docs/issue-intelligence.md covers triage and troubleshooting, docs/guardrails.md covers epistemic system.
 
 - [ ] **S05: README, Contributing & Changelog** `risk:low` `depends:[S03,S04]`

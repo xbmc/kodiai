@@ -14,7 +14,9 @@ Kodiai is a GitHub App that provides AI-powered code reviews, issue triage, ment
 
 ## Knowledge System
 
-> *Coming soon* — S04 will add detailed documentation for the knowledge system, issue intelligence, and guardrails.
+- **[Knowledge System](knowledge-system.md)** — 5-corpus retrieval pipeline (findings, threads, wiki, snippets, issues) with two-stage RRF merge, vector + BM25 search, and background sync
+- **[Issue Intelligence](issue-intelligence.md)** — Automated issue triage, template validation, duplicate detection, Bayesian threshold learning, and troubleshooting retrieval
+- **[Guardrails](guardrails.md)** — Epistemic guardrail pipeline for claim classification, hallucination prevention, and context-grounded response filtering
 
 ## Operational Runbooks
 

@@ -707,3 +707,4 @@
 - "M026: Optional logger injection pattern — add `logger?: Logger` param with `logger?.method()` calls for backward-compatible structured logging migration"
 - "M026: Pure helper extraction pattern — functions with no closure over handler state moved to src/lib/*-utils.ts (review-utils.ts: 19 functions, mention-utils.ts: 2 functions)"
 - "M026: Added `partially-grounded` to UpdateSuggestion.groundingStatus union — code produces it and DB column accepts it, type was incomplete"
+- "Documented both legacy per-corpus pipeline outputs and unified cross-corpus pipeline to reflect actual backward-compatible API surface in knowledge-system.md"

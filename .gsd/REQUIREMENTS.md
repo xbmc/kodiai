@@ -103,14 +103,14 @@
 
 ### R010 — Knowledge system documentation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: docs/knowledge-system.md documents the 5-corpus retrieval pipeline, embedding strategy, hybrid search, and RRF merging
 - Why it matters: The knowledge system is the crown jewel — 63 files in src/knowledge/ with zero external docs
 - Source: user
 - Primary owning slice: M026/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Should cover each corpus, chunking strategy, search flow, citation format
+- Validation: S04 — docs/knowledge-system.md created with 18 sections covering all 5 corpora, chunking strategies, embedding models, 9-step unified retrieval pipeline, two-stage RRF, dedup, adaptive thresholds, language-aware reranking, and background systems
+- Notes: Also produced docs/issue-intelligence.md (24 sections) and docs/guardrails.md (16 sections) as supporting feature docs
 
 ### R011 — Deployment and operations documentation
 - Class: operability
@@ -228,6 +228,10 @@
 - Validated by: M026/S03
 - Proof: docs/deployment.md has cross-links to architecture.md and configuration.md; docs/README.md indexes all 17 docs files including 6 runbooks
 
+### R010 — Knowledge system documentation
+- Validated by: M026/S04
+- Proof: docs/knowledge-system.md with 18 sections covering 5 corpora, retrieval pipeline, two-stage RRF, background systems; docs/issue-intelligence.md (24 sections) and docs/guardrails.md (16 sections) also created
+
 ## Deferred
 
 ### R017 — Full handler refactoring
@@ -289,7 +293,7 @@
 | R007 | quality-attribute | active | M026/S05 | M026/S03, M026/S04 | unmapped |
 | R008 | quality-attribute | validated | M026/S03 | none | S03 — architecture.md with 22 sections, 20 modules, 2 lifecycles |
 | R009 | quality-attribute | validated | M026/S03 | none | S03 — configuration.md with 81 sections, ~80 fields from Zod schema |
-| R010 | quality-attribute | active | M026/S04 | none | unmapped |
+| R010 | quality-attribute | validated | M026/S04 | none | S04 — knowledge-system.md (18 sections), issue-intelligence.md (24), guardrails.md (16) |
 | R011 | operability | validated | M026/S03 | none | S03 — deployment.md cross-linked, README.md indexes 17 docs |
 | R012 | quality-attribute | active | M026/S05 | none | unmapped |
 | R013 | quality-attribute | active | M026/S05 | none | unmapped |
@@ -303,7 +307,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 4
-- Mapped to slices: 4
-- Validated: 12 (R001, R002, R003, R004, R005, R006, R008, R009, R011, R014, R015, R016)
+- Active requirements: 3
+- Mapped to slices: 3
+- Validated: 13 (R001, R002, R003, R004, R005, R006, R008, R009, R010, R011, R014, R015, R016)
 - Unmapped active requirements: 0
