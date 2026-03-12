@@ -6,11 +6,12 @@
  */
 
 import { generateText } from "ai";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type { ResolvedModel } from "./task-router.ts";
 import type { CostTracker } from "./cost-tracker.ts";
 import { createProviderModel } from "./providers.ts";
-import { isAgenticTaskType } from "./task-types.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
 
 /** Result from generateWithFallback. */
@@ -24,6 +25,113 @@ export interface GenerateResult {
   /** Visible annotation to include in output when fallback was used. */
   fallbackAnnotation?: string;
   durationMs: number;
+}
+
+function shouldUseAgentSdk(resolved: ResolvedModel): boolean {
+  if (resolved.sdk === "agent") return true;
+  return resolved.provider === "anthropic"
+    && !process.env.ANTHROPIC_API_KEY
+    && !!process.env.CLAUDE_CODE_OAUTH_TOKEN;
+}
+
+async function generateWithAgentSdk(opts: {
+  taskType: string;
+  resolved: ResolvedModel;
+  prompt: string;
+  system?: string;
+  costTracker?: CostTracker;
+  repo?: string;
+  deliveryId?: string;
+  logger: Logger;
+}): Promise<GenerateResult> {
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const modelId = opts.resolved.modelId.includes("haiku")
+    ? opts.resolved.fallbackModelId
+    : opts.resolved.modelId;
+  const sdkQuery = query({
+    prompt: opts.prompt,
+    options: {
+      abortController: controller,
+      cwd: process.cwd(),
+      model: modelId,
+      maxTurns: 1,
+      systemPrompt: {
+        type: "preset",
+        preset: "claude_code",
+        ...(opts.system ? { append: opts.system } : {}),
+      },
+      allowedTools: [],
+      disallowedTools: [],
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      env: {
+        ...process.env,
+        CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-generate",
+      },
+    },
+  });
+
+  let resultMessage: SDKResultMessage | undefined;
+  let lastAssistantText = "";
+  for await (const message of sdkQuery) {
+    if (message.type === "assistant") {
+      const parts = (message.message?.content ?? []) as Array<{ type?: string; text?: string }>;
+      const text = parts
+        .filter((part: { type?: string; text?: string }) => part.type === "text")
+        .map((part: { type?: string; text?: string }) => part.text ?? "")
+        .join("");
+      if (text.trim().length > 0) {
+        lastAssistantText = text;
+      }
+    }
+    if (message.type === "result") {
+      resultMessage = message as SDKResultMessage;
+    }
+  }
+
+  const durationMs = Date.now() - startTime;
+  if ((!resultMessage || resultMessage.subtype !== "success") && lastAssistantText.trim().length === 0) {
+    const errorText = resultMessage && "result" in resultMessage
+      ? String(resultMessage.result)
+      : "No successful result message received from Claude Agent SDK";
+    throw new Error(errorText);
+  }
+
+  const modelEntries = Object.entries(resultMessage?.modelUsage ?? {});
+  const primaryModel = modelEntries[0]?.[0] ?? modelId;
+  const totalInput = modelEntries.reduce((sum, [, u]) => sum + u.inputTokens, 0);
+  const totalOutput = modelEntries.reduce((sum, [, u]) => sum + u.outputTokens, 0);
+  const totalCacheRead = modelEntries.reduce((sum, [, u]) => sum + u.cacheReadInputTokens, 0);
+  const totalCacheCreation = modelEntries.reduce((sum, [, u]) => sum + u.cacheCreationInputTokens, 0);
+
+  if (opts.costTracker && opts.repo && resultMessage) {
+    opts.costTracker.trackAgentSdkCall({
+      repo: opts.repo,
+      taskType: opts.taskType,
+      model: primaryModel,
+      inputTokens: totalInput,
+      outputTokens: totalOutput,
+      cacheReadTokens: totalCacheRead,
+      cacheWriteTokens: totalCacheCreation,
+      durationMs: resultMessage.duration_ms ?? durationMs,
+      costUsd: resultMessage.total_cost_usd,
+      deliveryId: opts.deliveryId,
+    });
+  }
+
+  const finalText = resultMessage && "result" in resultMessage
+    ? String(resultMessage.result)
+    : lastAssistantText;
+
+  return {
+    text: finalText,
+    usage: { inputTokens: totalInput, outputTokens: totalOutput },
+    model: primaryModel,
+    provider: "anthropic",
+    usedFallback: false,
+    durationMs: resultMessage?.duration_ms ?? durationMs,
+  };
 }
 
 /**
@@ -48,7 +156,11 @@ export async function generateWithFallback(opts: {
   const startTime = Date.now();
 
   try {
-    // Attempt with primary model
+    // Attempt with primary model using the appropriate SDK.
+    if (shouldUseAgentSdk(resolved)) {
+      return await generateWithAgentSdk(opts);
+    }
+
     const model = createProviderModel(resolved.modelId);
     const response = await generateText({
       model,
