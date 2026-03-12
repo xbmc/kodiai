@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S02: TypeScript Fixes & Code Quality** `risk:medium` `depends:[S01]`
   > After this: `bunx tsc --noEmit` exits 0, `bun test` has 0 failures, console.log replaced with pino in production code, light helper extraction from review.ts and mention.ts verified by passing tests.
 
-- [ ] **S03: Architecture & Operations Docs** `risk:low` `depends:[S01]`
+- [x] **S03: Architecture & Operations Docs** `risk:low` `depends:[S01]`
   > After this: docs/architecture.md explains system design and data flow, docs/configuration.md documents all .kodiai.yml options, docs/deployment.md consolidated from root, docs/README.md indexes all docs.
 
 - [ ] **S04: Knowledge System & Feature Docs** `risk:low` `depends:[S03]`

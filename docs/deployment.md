@@ -2,6 +2,8 @@
 
 This project is deployed as a containerized Bun service on Azure Container Apps.
 
+> **See also:** [Architecture](architecture.md) for system design and module map, [Configuration](configuration.md) for the complete `.kodiai.yml` reference, [Graceful Restart Runbook](GRACEFUL-RESTART-RUNBOOK.md) for zero-downtime deploys.
+
 ## Current Production
 
 - Azure resource group: `rg-kodiai`
@@ -53,6 +55,8 @@ On success, the script prints:
 ## Configuration Details
 
 ### Secrets and env vars
+
+See `.env.example` for the full list of environment variables. For repository-level behavior configuration (review rules, mention handling, knowledge features), see [Configuration](configuration.md).
 
 Azure secrets created by `deploy.sh`:
 

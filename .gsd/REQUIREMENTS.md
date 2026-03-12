@@ -81,25 +81,25 @@
 
 ### R008 — Architecture documentation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: docs/architecture.md explains the system design, module boundaries, data flow, and key abstractions
 - Why it matters: 212 source files across 20+ directories with no architectural documentation; contributors must read code to understand structure
 - Source: user
 - Primary owning slice: M026/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Should cover handler flow, knowledge pipeline, execution model, LLM routing
+- Validation: S03 — docs/architecture.md created with 22 sections covering system overview, 20-entry module map, review lifecycle (12-step), mention lifecycle, data layer (13 stores), key abstractions, knowledge system overview, and HTTP API surface
+- Notes: Forward link to knowledge-system.md (S04 creates that file)
 
 ### R009 — Configuration reference documentation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: docs/configuration.md documents every .kodiai.yml option with types, defaults, and examples
 - Why it matters: Users have no reference for config options; only way to learn is reading config.ts (911 lines)
 - Source: user
 - Primary owning slice: M026/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Should be generated or hand-written from config.ts schema
+- Validation: S03 — docs/configuration.md created with 81 sections documenting all 14 top-level config keys and ~80 fields with types, ranges, defaults from Zod schema
+- Notes: Hand-written from config.ts schema; includes quick-start YAML example and two-pass safeParse behavior
 
 ### R010 — Knowledge system documentation
 - Class: quality-attribute
@@ -114,14 +114,14 @@
 
 ### R011 — Deployment and operations documentation
 - Class: operability
-- Status: active
+- Status: validated
 - Description: docs/deployment.md consolidates deployment instructions; existing runbooks are linked from a docs index
 - Why it matters: deployment.md is orphaned at project root; runbooks exist but aren't discoverable from README
 - Source: user
 - Primary owning slice: M026/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Move deployment.md into docs/, create docs/README.md as index
+- Validation: S03 — docs/deployment.md updated with cross-links to architecture.md, configuration.md, GRACEFUL-RESTART-RUNBOOK.md; docs/README.md created indexing all 17 docs files across 5 sections including 6 runbooks
+- Notes: deployment.md moved to docs/ by S01; S03 added cross-links and created the index
 
 ### R012 — Contributing guide
 - Class: quality-attribute
@@ -216,6 +216,18 @@
 - Validated by: M026/S02
 - Proof: bun test → 2181 pass, 45 skip, 0 fail; DB tests skip via describe.skipIf(!TEST_DATABASE_URL)
 
+### R008 — Architecture documentation
+- Validated by: M026/S03
+- Proof: docs/architecture.md exists with 22 sections covering system design, 20-entry module map, review and mention lifecycles, data layer, key abstractions
+
+### R009 — Configuration reference documentation
+- Validated by: M026/S03
+- Proof: docs/configuration.md exists with 81 sections documenting all 14 top-level config keys and ~80 fields with types/ranges/defaults from Zod schema
+
+### R011 — Deployment and operations documentation
+- Validated by: M026/S03
+- Proof: docs/deployment.md has cross-links to architecture.md and configuration.md; docs/README.md indexes all 17 docs files including 6 runbooks
+
 ## Deferred
 
 ### R017 — Full handler refactoring
@@ -275,10 +287,10 @@
 | R005 | quality-attribute | validated | M026/S01 | none | S01 — all merged branches deleted |
 | R006 | quality-attribute | validated | M026/S02 | none | S02 — console.* grep returns 0 for all 7 target files |
 | R007 | quality-attribute | active | M026/S05 | M026/S03, M026/S04 | unmapped |
-| R008 | quality-attribute | active | M026/S03 | none | unmapped |
-| R009 | quality-attribute | active | M026/S03 | none | unmapped |
+| R008 | quality-attribute | validated | M026/S03 | none | S03 — architecture.md with 22 sections, 20 modules, 2 lifecycles |
+| R009 | quality-attribute | validated | M026/S03 | none | S03 — configuration.md with 81 sections, ~80 fields from Zod schema |
 | R010 | quality-attribute | active | M026/S04 | none | unmapped |
-| R011 | operability | active | M026/S03 | none | unmapped |
+| R011 | operability | validated | M026/S03 | none | S03 — deployment.md cross-linked, README.md indexes 17 docs |
 | R012 | quality-attribute | active | M026/S05 | none | unmapped |
 | R013 | quality-attribute | active | M026/S05 | none | unmapped |
 | R014 | quality-attribute | validated | M026/S02 | none | S02 — review-utils.ts + mention-utils.ts extracted, tests pass |
@@ -291,7 +303,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 7
-- Mapped to slices: 7
-- Validated: 9 (R001, R002, R003, R004, R005, R006, R014, R015, R016)
+- Active requirements: 4
+- Mapped to slices: 4
+- Validated: 12 (R001, R002, R003, R004, R005, R006, R008, R009, R011, R014, R015, R016)
 - Unmapped active requirements: 0
