@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
+import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,7 @@ export type WikiSyncSchedulerOptions = {
   delayMs?: number;
   logger: Logger;
   /** Override fetch for testing */
-  fetchFn?: typeof globalThis.fetch;
+  fetchFn?: FetchFn;
 };
 
 export type WikiSyncResult = {
@@ -97,7 +98,7 @@ async function runSync(opts: {
   baseUrl: string;
   delayMs: number;
   logger: Logger;
-  fetchFn: typeof globalThis.fetch;
+  fetchFn: FetchFn;
 }): Promise<WikiSyncResult> {
   const { store, embeddingProvider, source, baseUrl, delayMs, logger, fetchFn } = opts;
   const startTime = Date.now();
@@ -136,7 +137,7 @@ async function runSync(opts: {
 
     let rcResponse: RecentChangesResponse;
     try {
-      const response = await fetchFn(`${baseUrl}/w/api.php?${params.toString()}`);
+      const response = await fetchFn(buildWikiApiUrl(baseUrl, params));
       if (!response.ok) {
         logger.warn({ status: response.status }, "Wiki RecentChanges API request failed");
         break;
@@ -173,7 +174,7 @@ async function runSync(opts: {
 
         let parseData: ParseResponse;
         try {
-          const parseResponse = await fetchFn(`${baseUrl}/w/api.php?${parseParams.toString()}`);
+          const parseResponse = await fetchFn(buildWikiApiUrl(baseUrl, parseParams));
           if (!parseResponse.ok) {
             logger.warn(
               { pageId: change.pageid, status: parseResponse.status },
@@ -292,7 +293,7 @@ export function createWikiSyncScheduler(opts: WikiSyncSchedulerOptions): {
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
-  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
 
   let intervalHandle: ReturnType<typeof setInterval> | null = null;
   let startupHandle: ReturnType<typeof setTimeout> | null = null;

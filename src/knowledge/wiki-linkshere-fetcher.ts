@@ -12,6 +12,7 @@ import {
   LINKSHERE_MAX_PER_PAGE,
   LINKSHERE_NAMESPACE,
 } from "./wiki-popularity-config.ts";
+import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
 
 // ── MediaWiki API response types ─────────────────────────────────────────
 
@@ -61,11 +62,11 @@ function sleep(ms: number): Promise<void> {
 export async function fetchAllLinkshereCounts(opts: {
   baseUrl: string;
   pageIds: number[];
-  fetchFn?: typeof globalThis.fetch;
+  fetchFn?: FetchFn;
   logger: Logger;
 }): Promise<Map<number, number>> {
   const { baseUrl, pageIds, logger } = opts;
-  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
   const counts = new Map<number, number>();
 
   if (pageIds.length === 0) return counts;
@@ -125,7 +126,7 @@ export async function fetchAllLinkshereCounts(opts: {
 async function fetchBatchLinkshere(opts: {
   baseUrl: string;
   pageIds: number[];
-  fetchFn: typeof globalThis.fetch;
+  fetchFn: FetchFn;
   counts: Map<number, number>;
   logger: Logger;
 }): Promise<void> {
@@ -152,7 +153,7 @@ async function fetchBatchLinkshere(opts: {
       params.set("lhcontinue", lhcontinue);
     }
 
-    const url = `${baseUrl}/w/api.php?${params.toString()}`;
+    const url = buildWikiApiUrl(baseUrl, params);
     const response = await fetchFn(url);
 
     if (!response.ok) {

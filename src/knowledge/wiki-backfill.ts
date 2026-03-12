@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 import type { WikiPageStore, WikiPageInput } from "./wiki-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 import { chunkWikiPage } from "./wiki-chunker.ts";
+import { buildWikiApiUrl, withWikiHeaders, type FetchFn } from "./wiki-fetch.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ export type WikiBackfillOptions = {
   dryRun?: boolean;
   delayMs?: number;
   /** Override fetch for testing */
-  fetchFn?: typeof globalThis.fetch;
+  fetchFn?: FetchFn;
 };
 
 // ── MediaWiki API types ─────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ export async function backfillWikiPages(
     delayMs = 500,
   } = opts;
   const baseUrl = opts.baseUrl ?? "https://kodi.wiki";
-  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  const fetchFn = withWikiHeaders(opts.fetchFn ?? globalThis.fetch);
 
   const startTime = Date.now();
   let totalPages = 0;
@@ -157,12 +158,12 @@ export async function backfillWikiPages(
 
     let pageListResponse: AllPagesResponse;
     try {
-      const response = await fetchFn(`${baseUrl}/w/api.php?${params.toString()}`);
+      const response = await fetchFn(buildWikiApiUrl(baseUrl, params));
       if (!response.ok) {
         logger.warn({ status: response.status, url: response.url }, "Wiki API allpages request failed");
         // Retry once with backoff
         await sleep(2000);
-        const retryResponse = await fetchFn(`${baseUrl}/w/api.php?${params.toString()}`);
+        const retryResponse = await fetchFn(buildWikiApiUrl(baseUrl, params));
         if (!retryResponse.ok) {
           logger.error({ status: retryResponse.status }, "Wiki API allpages request failed after retry, stopping");
           break;
@@ -193,7 +194,7 @@ export async function backfillWikiPages(
 
         let parseData: ParseResponse;
         try {
-          const parseResponse = await fetchFn(`${baseUrl}/w/api.php?${parseParams.toString()}`);
+          const parseResponse = await fetchFn(buildWikiApiUrl(baseUrl, parseParams));
           if (!parseResponse.ok) {
             logger.warn({ pageId: pageInfo.pageid, status: parseResponse.status }, "Wiki parse request failed, skipping page");
             skippedPages++;
