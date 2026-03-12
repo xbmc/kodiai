@@ -712,3 +712,6 @@
 - "M027 covers all embedding-backed corpora plus query-time retrieval verification, not just review comments and wiki"
 - "M027 assumes no-downtime repair: audit defaults read-only, repair flows must be resumable, rate-limited, and online-safe"
 - "M027 timeout investigation targets script/backfill paths first and requires root-cause fixes rather than one-off reruns"
+- "M027 roadmap orders read-only audit plus live retriever verification before repair so production truth and query-path health are established before mutation"
+- "M027 keeps audit and repair as separate operator surfaces: audit defaults read-only, repair is explicit and resumable"
+- "M027 includes a final live integration slice so repaired corpus rows are proven through createRetriever() and post-repair audit output, not just table counts"
