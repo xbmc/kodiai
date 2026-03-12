@@ -140,6 +140,25 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 </details>
 
 <details>
+<summary>Previous Release: v0.26 Codebase Audit & Documentation (2026-03-11)</summary>
+
+**Shipped:** 2026-03-11
+**Milestone:** M026 (5 slices, 16 tasks)
+
+**Delivered:**
+- Zero TypeScript errors across entire codebase (474 → 0 via noUncheckedIndexedAccess fixes, tx casts, type union additions)
+- Zero test failures with graceful DB test skipping (2181 pass, 45 skip, 0 fail)
+- Comprehensive documentation: architecture.md, configuration.md, knowledge-system.md, issue-intelligence.md, guardrails.md
+- CONTRIBUTING.md with complete contributor onboarding and development setup
+- .env.example expanded from 7 to 26 documented environment variables
+- Dead code removal: 5 deprecated files, 9 stale SQLite files untracked, .planning/ (11MB) removed from git
+- Structured pino logging in all production files replacing console.log
+- 21 pure helpers extracted from review.ts and mention.ts into dedicated lib modules
+- README rewritten with contributor-first structure and links to all documentation
+
+</details>
+
+<details>
 <summary>Previous Release: v0.24 Hallucination Prevention & Fact Verification (2026-03-03)</summary>
 
 **Shipped:** 2026-03-03
@@ -155,11 +174,11 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: M026 — Codebase Audit & Documentation
+## Current Milestone: None (planning next)
 
 ## Current State
 
-v0.25 shipped. Wiki content update pipeline and global anti-hallucination guardrails complete:
+v0.26 shipped. Codebase audit and documentation complete — zero TypeScript errors, comprehensive docs, clean repo:
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Unified retrieval: single `createRetriever()` call fans out to all five corpora with source-aware RRF ranking and `[issue: #N]` citations
@@ -184,7 +203,10 @@ v0.25 shipped. Wiki content update pipeline and global anti-hallucination guardr
 - Output filtering: findings rewritten to strip external claims or suppressed entirely before publishing
 - Wiki content updates: voyage-context-3 embeddings, page popularity scoring, PR-grounded staleness detection, section-level update generation, voice-preserving output, tracking issue publishing
 - Global guardrail pipeline: unified classify-then-filter across all surfaces, context-grounded classification, LLM fallback, audit logging, configurable strictness
-- ~95,500 lines of TypeScript
+- ~95,000 lines of TypeScript (dead code removed, helpers extracted)
+- Zero TypeScript compilation errors (`bunx tsc --noEmit` exits 0)
+- 2181 passing tests, 45 skipped (DB tests skip gracefully without Postgres)
+- Comprehensive documentation in docs/ (architecture, configuration, knowledge system, issue intelligence, guardrails)
 
 ## Requirements
 
@@ -496,7 +518,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [x] M001-M025: Feature development (v0.1 through v0.25)
-- [ ] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
+- [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
 
 ---
-*Last updated: 2026-03-11 after M026 planning*
+*Last updated: 2026-03-11 after M026 completion*
