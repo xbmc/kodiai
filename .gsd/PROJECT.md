@@ -519,6 +519,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 - [x] M001-M025: Feature development (v0.1 through v0.25)
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
+- [ ] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, and harden online repair/backfill paths
 
 ---
 *Last updated: 2026-03-11 after M026 completion*

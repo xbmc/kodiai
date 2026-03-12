@@ -2,6 +2,72 @@
 
 ## Active
 
+### R019 — Production embedding audit covers all persisted corpora
+- Class: operability
+- Status: active
+- Description: A deterministic audit reports embedding completeness and integrity for learning memories, PR review comments, wiki pages, code snippets, issues, and issue comments, including null/missing/stale/model-mismatch counts.
+- Why it matters: The system currently has corpus-specific backfills and smoke checks but no end-to-end proof that embeddings are actually present across production data.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Production-first scope; audit should default to read-only.
+
+### R020 — Online-safe repair tooling restores missing or stale embeddings
+- Class: operability
+- Status: active
+- Description: Operators can repair missing/stale embeddings without downtime using resumable, rate-limited tooling for all persisted corpora.
+- Why it matters: Silent fail-open embedding behavior preserves uptime but can leave production data degraded indefinitely unless repair is safe and practical.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Repair mode should be explicit, observable, and resumable.
+
+### R021 — Query-time embedding usage is verified end to end
+- Class: correctness
+- Status: active
+- Description: Verification proves that query-time embedding generation and retrieval actually use the persisted corpora after repair, not just that rows exist in tables.
+- Why it matters: Row completeness alone does not prove the retrieval pipeline is healthy.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Should exercise the real retrieval pipeline (`createRetriever`) where possible.
+
+### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
+- Class: reliability
+- Status: active
+- Description: The script/backfill timeout failure is identified at the root cause and fixed with bounded batching, retries, resume behavior, and/or control-flow changes as needed.
+- Why it matters: Repair tooling that times out is not operationally usable, especially against production data.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Root cause may differ by corpus; fix the dominant real failure mode rather than masking symptoms.
+
+### R023 — Corpus/model correctness is validated
+- Class: correctness
+- Status: active
+- Description: The audit verifies that each corpus uses the intended embedding model and path, especially wiki `voyage-context-3` versus `voyage-code-3` for other corpora.
+- Why it matters: Mixed or incorrect vector spaces can degrade retrieval even when embeddings are present.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Presence is insufficient; model alignment matters.
+
+### R024 — Regression coverage prevents future embedding drift
+- Class: quality-attribute
+- Status: active
+- Description: Tests and/or deterministic operator verifiers catch future embedding completeness drift and timeout regressions before they become silent production degradation.
+- Why it matters: This class of failure will recur if it relies only on one-time manual inspection.
+- Source: user
+- Primary owning slice: M027
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Guardrails may include fixture-based tests, audit commands, and smoke/verification scripts.
+
 ### R001 — TypeScript strict compilation passes
 - Class: quality-attribute
 - Status: validated

@@ -708,3 +708,7 @@
 - "M026: Pure helper extraction pattern — functions with no closure over handler state moved to src/lib/*-utils.ts (review-utils.ts: 19 functions, mention-utils.ts: 2 functions)"
 - "M026: Added `partially-grounded` to UpdateSuggestion.groundingStatus union — code produces it and DB column accepts it, type was incomplete"
 - "Documented both legacy per-corpus pipeline outputs and unified cross-corpus pipeline to reflect actual backward-compatible API surface in knowledge-system.md"
+- "M027 queues production-first embedding integrity work: audit live data first, then backport code/tests/tooling as needed"
+- "M027 covers all embedding-backed corpora plus query-time retrieval verification, not just review comments and wiki"
+- "M027 assumes no-downtime repair: audit defaults read-only, repair flows must be resumable, rate-limited, and online-safe"
+- "M027 timeout investigation targets script/backfill paths first and requires root-cause fixes rather than one-off reruns"
