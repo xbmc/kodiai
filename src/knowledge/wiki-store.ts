@@ -146,6 +146,7 @@ export function createWikiPageStore(opts: {
               ${embeddingValue}::vector, ${embeddingModel}, ${chunk.embedding ? false : true},
               ${chunk.lastModified ?? null}, ${chunk.revisionId ?? null}, ${sql.array(languageTags)}
             )
+            ON CONFLICT (page_id, COALESCE(section_anchor, ''), chunk_index) DO NOTHING
           `;
         }
       });

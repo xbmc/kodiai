@@ -17,7 +17,6 @@ import pino from "pino";
 import { createDbClient } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import {
-  VoyageAIClient,
   contextualizedEmbedChunks,
   createContextualizedEmbeddingProvider,
 } from "../src/knowledge/embeddings.ts";
@@ -139,8 +138,7 @@ async function main() {
     console.log(`Found ${totalPages} distinct pages to process.`);
     console.log();
 
-    // ── Embedding client ────────────────────────────────────────────────────
-    const client = new VoyageAIClient({ apiKey: voyageApiKey });
+    // ── Embedding provider ──────────────────────────────────────────────────
     const fallbackProvider = createContextualizedEmbeddingProvider({
       apiKey: voyageApiKey,
       model,
@@ -174,7 +172,7 @@ async function main() {
 
       // Try batch embedding for the whole page
       let embeddings = await contextualizedEmbedChunks({
-        client,
+        apiKey: voyageApiKey,
         chunks: chunkTexts,
         model,
         dimensions: 1024,
