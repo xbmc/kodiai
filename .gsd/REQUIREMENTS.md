@@ -10,7 +10,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S01 — `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures instead of hiding them
+- Validation: M027/S01 — `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures instead of hiding them; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-FULL-AUDIT` passing against the preserved six-corpus `s01.audit` envelope, including the audited-only `issue_comments` boundary.
 - Notes: Production-first scope; audit is read-only and machine-checkable.
 
 ### R020 — Online-safe repair tooling restores missing or stale embeddings
@@ -21,7 +21,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S03 — `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` proved resumable live repair for the degraded corpus plus truthful no-op handling for another corpus through the shared contract.
+- Validation: M027/S03 — `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` proved resumable live repair for the degraded corpus plus truthful no-op handling for another corpus through the shared contract; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-NON-WIKI-REPAIR-STATE=repair_completed`, interpreting the idempotent `review_comments` rerun truthfully from durable status evidence rather than requiring fresh mutations.
 - Notes: Repair mode is now explicit, observable, resumable, and shared across wiki plus all remaining non-wiki corpora.
 
 ### R021 — Query-time embedding usage is verified end to end
@@ -32,7 +32,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S01 — `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from no-hit states, and returns attributed live hits
+- Validation: M027/S01 — `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from no-hit states, and returns attributed live hits; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-RETRIEVER=retrieval_hits`, preserving `s01.retriever.not_in_retriever=["issue_comments"]` so end-to-end proof stays truthful about live scope.
 - Notes: Verified through the real production retrieval pipeline, not table-only checks.
 
 ### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
@@ -43,7 +43,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence.
+- Validation: M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with both repair-state checks passing from durable status-backed evidence (`JSON-RPC API/v8` still `repair_completed`; `review_comments` healthy idempotent rerun still backed by `repair_completed`).
 - Notes: The hardened repair story now covers the prior wiki timeout path plus the live non-wiki `review_comments` degradation through the same bounded, resumable operational model.
 
 ### R023 — Corpus/model correctness is validated
@@ -54,7 +54,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts
+- Validation: M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone from the preserved all-green `s01.audit` envelope, confirming `wiki_pages` remained on `voyage-context-3` while the other audited corpora, including the audited-only `issue_comments`, remained on the non-wiki model boundary.
 - Notes: Presence is insufficient; model alignment is now audited explicitly.
 
 ### R024 — Regression coverage prevents future embedding drift
@@ -65,7 +65,7 @@
 - Source: user
 - Primary owning slice: M027
 - Supporting slices: none
-- Validation: M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes.
+- Validation: M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes; M027/S04 — `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` close the milestone with a repeatable machine-checkable final proof that preserves nested S01/S02/S03 evidence and stable milestone-level check IDs.
 - Notes: Guardrails now cover both live repair families and preserve raw audit/repair/status evidence with stable check IDs for machine re-verification.
 
 ### R025 — Wiki outputs are modification-only
@@ -366,28 +366,28 @@
 - Proof: v0.25 entry added to CHANGELOG.md with 7 Wiki Content Updates deliverables
 
 ### R019 — Production embedding audit covers all persisted corpora
-- Validated by: M027/S01
-- Proof: `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures
+- Validated by: M027/S01, M027/S04
+- Proof: `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures; `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-FULL-AUDIT=audit_ok` against the preserved six-corpus `s01.audit` envelope
 
 ### R021 — Query-time embedding usage is verified end to end
-- Validated by: M027/S01
-- Proof: `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path and returns attributed live hits with explicit degraded-state reporting
+- Validated by: M027/S01, M027/S04
+- Proof: `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path and returns attributed live hits with explicit degraded-state reporting; `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-RETRIEVER=retrieval_hits` while preserving `not_in_retriever=["issue_comments"]`
 
 ### R023 — Corpus/model correctness is validated
-- Validated by: M027/S01
-- Proof: `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` expectations and surfaces live wiki model mismatches
+- Validated by: M027/S01, M027/S04
+- Proof: `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` expectations and surfaces live wiki model mismatches; `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone from the preserved all-green `s01.audit` envelope with the same model boundary intact
 
 ### R020 — Online-safe repair tooling restores missing or stale embeddings
-- Validated by: M027/S03
-- Proof: `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` prove live repair plus truthful no-op handling through the shared non-wiki contract
+- Validated by: M027/S03, M027/S04
+- Proof: `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` prove live repair plus truthful no-op handling through the shared non-wiki contract; `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with durable wiki and non-wiki repair-state checks both passing
 
 ### R022 — Timeout-prone embedding and backfill paths are root-caused and hardened
-- Validated by: M027/S02/S03
-- Proof: `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json` and `bun run verify:m027:s03 -- --corpus review_comments --json` preserve bounded repair/status/audit evidence for representative wiki and non-wiki live runs without timeout-class failure
+- Validated by: M027/S02/S03, M027/S04
+- Proof: `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json` and `bun run verify:m027:s03 -- --corpus review_comments --json` preserve bounded repair/status/audit evidence for representative wiki and non-wiki live runs without timeout-class failure; `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closes the milestone by proving those repair-state surfaces stay healthy together under the final production-wired acceptance pass
 
 ### R024 — Regression coverage prevents future embedding drift
-- Validated by: M027/S03
-- Proof: `bun test ./scripts/verify-m027-s03.test.ts` plus `bun run verify:m027:s03 -- --corpus review_comments --json` lock and exercise the repeatable S03 repair/status/no-op/audit proof envelope
+- Validated by: M027/S03, M027/S04
+- Proof: `bun test ./scripts/verify-m027-s03.test.ts` plus `bun run verify:m027:s03 -- --corpus review_comments --json` lock and exercise the repeatable S03 repair/status/no-op/audit proof envelope; `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` add the milestone-closing regression contract for final-proof composition and scope truthfulness
 
 ## Deferred
 
@@ -459,12 +459,12 @@
 | R016 | quality-attribute | validated | M026/S01 | none | S01 — .planning/ untracked, README updated |
 | R017 | quality-attribute | deferred | none | none | unmapped |
 | R018 | quality-attribute | deferred | none | none | unmapped |
-| R019 (embedding audit) | operability | validated | M027/S01 | none | S01 — `audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction |
-| R020 (online repair) | operability | validated | M027/S03 | none | S03 — `repair:embeddings` live repair/status/resume/no-op commands plus `verify:m027:s03` prove all-corpus repair contract |
-| R021 | correctness | validated | M027/S01 | none | S01 — `verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises `createRetriever(...).retrieve(...)` and returns attributed live hits |
-| R022 | reliability | validated | M027/S02,S03 | none | S02/S03 — repeatable wiki + non-wiki live repair proofs completed without timeout-class failure |
-| R023 | correctness | validated | M027/S01 | none | S01 — audit locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` and surfaces live mismatches |
-| R024 | quality-attribute | validated | M027/S03 | none | S03 — repeatable proof/test harnesses now cover non-wiki repair/status/no-op/audit drift |
+| R019 (embedding audit) | operability | validated | M027/S01 | M027/S04 | S01 — `audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction; S04 — final proof command closed with `M027-S04-FULL-AUDIT=audit_ok` |
+| R020 (online repair) | operability | validated | M027/S03 | M027/S04 | S03 — `repair:embeddings` live repair/status/resume/no-op commands plus `verify:m027:s03` prove all-corpus repair contract; S04 — final proof closed with both durable repair-state checks passing |
+| R021 | correctness | validated | M027/S01 | M027/S04 | S01 — `verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises `createRetriever(...).retrieve(...)` and returns attributed live hits; S04 — final proof closed with `M027-S04-RETRIEVER=retrieval_hits` and truthful `issue_comments` scope |
+| R022 | reliability | validated | M027/S02,S03 | M027/S04 | S02/S03 — repeatable wiki + non-wiki live repair proofs completed without timeout-class failure; S04 — final proof kept both repair families green together under the production-wired acceptance pass |
+| R023 | correctness | validated | M027/S01 | M027/S04 | S01 — audit locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3` and surfaces live mismatches; S04 — final proof closed from the preserved all-green audit envelope with the same model boundary intact |
+| R024 | quality-attribute | validated | M027/S03 | M027/S04 | S03 — repeatable proof/test harnesses now cover non-wiki repair/status/no-op/audit drift; S04 — final proof/test harnesses close the milestone with stable composition and scope-truthfulness coverage |
 | R019 (script cleanup) | quality-attribute | out-of-scope | none | none | n/a |
 | R020 | quality-attribute | out-of-scope | none | none | n/a |
 

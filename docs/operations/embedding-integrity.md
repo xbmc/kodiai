@@ -331,6 +331,57 @@ Interpretation notes:
 - Re-running the harness after a successful live repair is intentionally idempotent: `repair_evidence.status_code` may become `repair_not_needed` while `status_evidence` retains the truthful durable post-run surface.
 - Representative live evidence for this slice repaired 1,833 degraded `review_comments` rows with `voyage-code-3`, then verified `repair_completed` status, a safe `issues` dry-run no-op (`repair_not_needed`), and a passing post-run audit (`audit_ok`).
 
+### Run the final S04 milestone proof
+
+```bash
+bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments
+bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json
+bun run repair:wiki-embeddings -- --status --json
+bun run repair:embeddings -- --corpus review_comments --status --json
+```
+
+Required inputs:
+- `--repo` — repo forwarded to the live retriever proof (`xbmc/xbmc` in the representative acceptance run)
+- `--query` — live retrieval query (`json-rpc subtitle delay` in the representative acceptance run)
+- `--page-title` — representative wiki repair target (`JSON-RPC API/v8`)
+- `--corpus` — representative non-wiki repair corpus (`review_comments`)
+
+The S04 harness composes the existing slice proofs instead of re-implementing them:
+1. `verify:m027:s01` for the full six-corpus audit + live retriever proof
+2. `verify:m027:s02` for the wiki repair proof + durable wiki status evidence
+3. `verify:m027:s03` for the non-wiki repair proof + durable non-wiki status evidence
+
+Human output shows:
+- final milestone `PASS`/`FAIL` verdict
+- stable milestone-level check IDs
+- per-check `status_code`
+- whether the live retriever result stayed truthful about `issue_comments`
+- whether wiki and non-wiki repair-state success came from durable status evidence instead of a fresh rewrite
+
+JSON output preserves the full subordinate proof payloads instead of flattening them:
+- summary fields: `check_ids`, `checks`, `overallPassed`, `success`, `status_code`, `repo`, `query`, `page_title`, `corpus`
+- raw surfaces: `s01`, `s02`, `s03`
+
+Stable check IDs:
+- `M027-S04-FULL-AUDIT`
+- `M027-S04-RETRIEVER`
+- `M027-S04-WIKI-REPAIR-STATE`
+- `M027-S04-NON-WIKI-REPAIR-STATE`
+
+Final status codes:
+- `m027_s04_ok`
+- `m027_s04_resume_required`
+- `m027_s04_failed`
+
+Interpretation notes:
+- `M027-S04-FULL-AUDIT` only passes when the top-level S01 audit envelope is fully green across all six audited corpora. Slice-local audit success is not enough.
+- `M027-S04-RETRIEVER` requires live query embedding generation plus attributed hits. `retrieval_no_hits`, `retrieval_unavailable`, and `query_embedding_unavailable` are distinct failure modes and should be debugged from the preserved `s01.retriever` payload.
+- `M027-S04-RETRIEVER` must continue surfacing `issue_comments` under `not_in_retriever`. That corpus is audited-only today. A passing S04 verdict does not claim live retriever coverage for `issue_comments`.
+- `M027-S04-WIKI-REPAIR-STATE` and `M027-S04-NON-WIKI-REPAIR-STATE` are durable-state checks, not “did this rerun mutate rows?” checks. A healthy rerun may show `repair_not_needed` or `run.status=not_needed` on the immediate repair probe while the paired `--status --json` surface still reports `repair_completed` with zero failures.
+- Treat `repair_resume_available` on either repair-state family as a real regression. It means the persisted state says there is unfinished or failed repair work to resume, so the milestone proof should stay red until the repair surface is completed and the status row returns to `repair_completed`.
+- Operator-first localization flow: run `verify:m027:s04 --json`, then inspect `s01`, `s02`, or `s03` by failing check ID. Use `repair:wiki-embeddings -- --status --json` and `repair:embeddings -- --corpus review_comments --status --json` to confirm the durable rows backing a healthy no-op rerun.
+- Representative live acceptance for this milestone passed with `audit_ok`, `retrieval_hits`, wiki `repair_completed`, and non-wiki durable `repair_completed` while the immediate `review_comments` repair probe correctly reported `repair_not_needed`.
+
 ## Required runtime assumptions
 
 Required:
@@ -389,21 +440,28 @@ That gap is not hidden by the combined harness. A passing retriever verification
 
 ## Suggested operator flow
 
-1. Run `bun run verify:m027:s01 --repo <owner/repo> --query "..."`
-2. If it fails, inspect the failing check ID and `status_code`
-3. Re-run the specific underlying command with `--json`:
+1. Run `bun run verify:m027:s04 -- --repo <owner/repo> --query "..." --page-title "..." --corpus <name>`
+2. If it fails, inspect the failing S04 check ID and `status_code`
+3. Re-run the milestone harness with `--json` and inspect the preserved nested payload that corresponds to the failing check:
+   - `s01` for `M027-S04-FULL-AUDIT` or `M027-S04-RETRIEVER`
+   - `s02` for `M027-S04-WIKI-REPAIR-STATE`
+   - `s03` for `M027-S04-NON-WIKI-REPAIR-STATE`
+4. Re-run the specific underlying command with `--json` only when the nested proof payload is not enough:
    - `bun run audit:embeddings --json`
    - `bun run verify:retriever --repo <owner/repo> --query "..." --json`
-4. Use the structured fields above to determine whether the failure is:
-   - persisted data integrity
-   - embedding provider degradation
-   - retriever availability
-   - honest retriever corpus coverage gap
+   - `bun run repair:wiki-embeddings -- --status --json`
+   - `bun run repair:embeddings -- --corpus <name> --status --json`
+5. Use the structured fields above to determine whether the failure is:
+   - milestone-wide persisted data integrity drift
+   - embedding provider degradation before retrieval
+   - retriever availability or zero-hit behavior
+   - wiki/non-wiki durable repair-state regression (`repair_resume_available`)
+   - honest retriever corpus coverage gap (`issue_comments` remains audited-only)
 
 ## Example
 
 ```bash
-bun run verify:m027:s01 --repo xbmc/xbmc --query "json-rpc subtitle delay" --json
+bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json
 ```
 
-This is the slice-level proof command for M027/S01.
+This is the milestone-closing proof command for M027/S04.

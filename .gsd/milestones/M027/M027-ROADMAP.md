@@ -72,7 +72,7 @@ This milestone is complete only when all are true:
   > After this: the known highest-risk repair surface for wiki pages runs with bounded contextual batches, durable progress/resume output, model-correct writes, and representative completion evidence instead of opaque timeouts.
 - [x] **S03: Unified Online Repair for Remaining Corpora** `risk:medium` `depends:[S01,S02]`
   > After this: operators can explicitly repair learning memories, review comments, code snippets, issues, and issue comments with resumable/rate-limited commands that share a stable reporting contract and regression coverage.
-- [ ] **S04: Final Integrated Production Repair Proof** `risk:medium` `depends:[S01,S02,S03]`
+- [x] **S04: Final Integrated Production Repair Proof** `risk:medium` `depends:[S01,S02,S03]`
   > After this: a full production-style run proves the assembled system end to end — audit detects degradation, repairs restore data online, follow-up audit clears the gaps, and the live retriever returns attributed results from repaired corpora.
 
 ## Boundary Map

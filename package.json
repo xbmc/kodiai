@@ -13,6 +13,7 @@
     "verify:m027:s01": "bun scripts/verify-m027-s01.ts",
     "verify:m027:s02": "bun scripts/verify-m027-s02.ts",
     "verify:m027:s03": "bun scripts/verify-m027-s03.ts",
+    "verify:m027:s04": "bun scripts/verify-m027-s04.ts",
     "report": "bun scripts/usage-report.ts", 
     "verify:phase72": "bun scripts/phase72-telemetry-follow-through.ts",
     "trigger:phase73:degraded": "bun scripts/phase73-trigger-degraded-review.ts",
