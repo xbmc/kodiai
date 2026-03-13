@@ -77,3 +77,6 @@ vendor/
 *.log
 coverage/
 .cache/
+
+# ── GSD baseline (auto-generated) ──
+.gsd/completed-units.json
