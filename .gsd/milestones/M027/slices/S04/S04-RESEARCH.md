@@ -6,7 +6,7 @@
 
 S04 is the milestone-closing composition slice. The implementation is substantially complete: `scripts/verify-m027-s04.ts` (459 lines, 4 stable check IDs) is implemented, all 6 contract tests pass, the package alias is wired, and the runbook section in `docs/operations/embedding-integrity.md` exists. All four GSD tasks (T01–T04) are marked complete in the slice plan.
 
-**Current live state (2026-03-14 18:56 UTC — confirmed this research session):**
+**Current live state (2026-03-14 — confirmed this research session):**
 
 The live proof passes:
 ```
@@ -18,11 +18,11 @@ bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --
   M027-S04-NON-WIKI-REPAIR-STATE PASS repair_completed
 ```
 
-`bun run audit:embeddings --json` returns `status_code=audit_ok` across all six corpora with `missing_or_null=0` for all. `repair:embeddings -- --corpus review_comments --status --json` returns `status_code=repair_completed`. The retriever returns 5 attributed hits (4 snippets + 1 review comment) with `query_embedding.status=generated` and `not_in_retriever=["issue_comments"]`.
+`bun run audit:embeddings --json` returns `status_code=audit_ok` across all six corpora with `missing_or_null=0` for all. `repair:embeddings -- --corpus review_comments --status --json` returns `status_code=repair_completed`. `repair:wiki-embeddings -- --status --json` returns `status_code=repair_completed` for page_title `Test Page` with `repaired=1`, `failed=0`. The retriever returns attributed hits with `query_embedding.status=generated` and `not_in_retriever=["issue_comments"]`.
 
 **Two structural bugs remain open** that were identified during this research session. They do not block the current live proof but create recurrence risk:
 
-**Bug 1 — `src/knowledge/wiki-store.test.ts` uses wrong skip guard.** Line 57 checks `if (!process.env.DATABASE_URL)` inside `beforeAll`. In this environment `DATABASE_URL` is always set to the production Azure PostgreSQL URL, so the test suite runs against production when `TEST_DATABASE_URL` is unset. The `afterAll` block (lines 68–70) only closes the DB connection — it has no final `TRUNCATE`. The `beforeEach` TRUNCATEs `wiki_pages` and `wiki_sync_state` before each test, so cleanup happens before the next test but not after the last one. When the test suite runs, it leaves "Test Page" (page_id=100) in `wiki_pages`. Because `createWikiPageStore({ sql, logger: mockLogger })` is called without `embeddingModel`, it hits the `wiki-store.ts` default `opts.embeddingModel ?? "voyage-code-3"` at line 114, writing the wrong model into production. This is what forced the wiki repair run that cleaned the contamination before the current proof.
+**Bug 1 — `src/knowledge/wiki-store.test.ts` uses wrong skip guard.** Line 57 checks `if (!process.env.DATABASE_URL)` inside `beforeAll`. In this environment `DATABASE_URL` is always set to the production Azure PostgreSQL URL, so the test suite runs against production when `TEST_DATABASE_URL` is unset. The `afterAll` block (lines 68–70) only closes the DB connection — it has no final `TRUNCATE`. The `beforeEach` TRUNCATEs `wiki_pages` and `wiki_sync_state` before each test, so cleanup happens before the next test but not after the last one. When the test suite runs, it leaves "Test Page" (page_id=100) in `wiki_pages`. Because `createWikiPageStore({ sql, logger: mockLogger })` is called without `embeddingModel`, it hits the `wiki-store.ts` default `opts.embeddingModel ?? "voyage-code-3"` at line 114, writing the wrong model into production. This is what forced the wiki repair run that cleaned the contamination before the current proof. The current wiki repair state shows `page_title=Test Page`, `repaired=1` as evidence of this cleanup.
 
 **Bug 2 — `scripts/backfill-wiki.ts` uses hardcoded `voyage-code-3`.** Line 93 has `model: "voyage-code-3"` in the `createEmbeddingProvider` call and line 86 has no `embeddingModel` in `createWikiPageStore`. If an operator runs this script against production, it writes wrong-model wiki embeddings and breaks the next audit run. The correct constant `DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3"` is already exported from `src/knowledge/runtime.ts` line 19.
 
@@ -31,6 +31,8 @@ bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --
 2. Fix `scripts/backfill-wiki.ts` model drift (prevents future operational contamination)
 3. Re-run the live proof to confirm it still passes after the fixes
 4. Write S04-SUMMARY.md and update milestone closure artifacts with final passing evidence
+
+Note: The existing `S04-SUMMARY.md` was written as a forward-looking placeholder artifact during prior task execution. After the bug fixes and final proof rerun, it must be updated with the actual post-fix passing evidence and the correct citation of the two structural fixes.
 
 ## Recommendation
 
@@ -101,7 +103,7 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 - `DATABASE_URL` is always set to the Azure PostgreSQL production URL in `.env`; test files using it as a skip guard will always run against production. Only `TEST_DATABASE_URL` is safe as a skip guard.
 - The `verify:m027:s04` live proof depends on real Voyage API for the retriever check (`M027-S04-RETRIEVER`). The repair-state checks use `--status` mode only and do not call Voyage.
 - The wiki sync scheduler re-populates `wiki_pages` from `kodi.wiki` using `voyage-context-3` (via `createKnowledgeRuntime`). If it fires, new pages will have the correct model — no audit impact.
-- The `wiki_pages` corpus currently has exactly 1 row ("Test Page", page_id=100, model=voyage-context-3). The wiki sync scheduler may add real pages; those will also use the correct model.
+- The `wiki_pages` corpus currently contains rows with the correct model. The wiki sync scheduler may add real pages; those will also use the correct model.
 
 ## Common Pitfalls
 
@@ -137,15 +139,15 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 
 ## Sources
 
-- Live proof passing (status_code=m027_s04_ok, all 4 checks PASS): `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` at 2026-03-14T18:56:56Z (source: live run this research session)
-- Full audit clean (audit_ok, all 6 corpora): `bun run audit:embeddings --json` at 2026-03-14T18:56:27Z → all corpora `missing_or_null=0`, `model_mismatch=0` (source: live run this research session)
-- S04 contract tests all passing: `bun test ./scripts/verify-m027-s04.test.ts` → 6 pass, 0 fail (source: live run this research session)
-- Non-wiki repair state confirmed `repair_completed`: `bun run repair:embeddings -- --corpus review_comments --status --json` → `status_code=repair_completed`, `run.status=completed` at 2026-03-14T17:12:08Z (source: live run this research session)
-- Wiki repair state confirmed `repair_completed`: `bun run repair:wiki-embeddings -- --status --json` → `status_code=repair_completed`, `page_title=Test Page`, `repaired=1`, `failed=0` (source: live run this research session)
-- Skip guard bug confirmed: `if (!process.env.DATABASE_URL)` at line 57 of `src/knowledge/wiki-store.test.ts`; `afterAll` has `close()` but no TRUNCATE (source: code review this research session)
+- Live proof passing (status_code=m027_s04_ok, all 4 checks PASS): `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` confirmed during research session (source: live run 2026-03-14)
+- Full audit clean (audit_ok, all 6 corpora): `bun run audit:embeddings --json` → `status_code=audit_ok` (source: live run 2026-03-14)
+- S04 contract tests all passing: `bun test ./scripts/verify-m027-s04.test.ts` → 6 pass, 0 fail (source: live run 2026-03-14)
+- Non-wiki repair state confirmed `repair_completed`: `bun run repair:embeddings -- --corpus review_comments --status --json` → `status_code=repair_completed`, `run.status=completed`, `repaired=1`, `failed=0`, `updated_at=2026-03-14T17:12:08.407Z` (source: live run 2026-03-14)
+- Wiki repair state confirmed `repair_completed`: `bun run repair:wiki-embeddings -- --status --json` → `status_code=repair_completed`, `page_title=Test Page`, `repaired=1`, `failed=0`, `updated_at=2026-03-13T15:46:36.138Z` (source: live run 2026-03-14)
+- Skip guard bug confirmed: `if (!process.env.DATABASE_URL)` at line 57 of `src/knowledge/wiki-store.test.ts`; `afterAll` has `close()` but no TRUNCATE (source: code review 2026-03-14)
 - Reference skip guard pattern: `const TEST_DB_URL = process.env.TEST_DATABASE_URL; describe.skipIf(!TEST_DB_URL)(...)` (source: `src/knowledge/review-comment-store.test.ts` lines 58–60)
 - M026 decision establishing the pattern: "pgvector tests use TEST_DATABASE_URL (not DATABASE_URL) for skip guards — DATABASE_URL in .env is always set (prod URL), so checking it would never skip" (source: `.gsd/DECISIONS.md`)
-- Model drift in backfill script: `model: "voyage-code-3"` at line 93; `createWikiPageStore` without `embeddingModel` at line 86 (source: `scripts/backfill-wiki.ts` code review this research session)
-- Correct wiki model constant: `DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3"` at line 19 of `src/knowledge/runtime.ts` (source: code review this research session)
+- Model drift in backfill script: `model: "voyage-code-3"` at line 93; `createWikiPageStore` without `embeddingModel` at line 86 (source: `scripts/backfill-wiki.ts` code review 2026-03-14)
+- Correct wiki model constant: `DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3"` at line 19 of `src/knowledge/runtime.ts` (source: code review 2026-03-14)
 - `wiki-store.ts` store default behavior: `opts.embeddingModel ?? "voyage-code-3"` at line 114 — no `embeddingModel` means wrong-model writes (source: `src/knowledge/wiki-store.ts`)
-- Live retriever evidence: 5 attributed hits (4 snippets, 1 review comment) for query "json-rpc subtitle delay" against xbmc/xbmc, `query_embedding.status=generated`, `not_in_retriever=["issue_comments"]` (source: live run this research session)
+- `verify-m027-s04.ts` confirmed 459 lines, `verify-m027-s04.test.ts` confirmed 882 lines, package alias `verify:m027:s04` confirmed wired (source: filesystem check 2026-03-14)
