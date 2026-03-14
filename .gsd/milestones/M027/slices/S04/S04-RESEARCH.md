@@ -80,7 +80,7 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 
 - `scripts/verify-m027-s04.test.ts` (882 lines, 6 tests) — contract tests all passing (6 pass, 0 fail). Tests use mock deps via injectable functions. **No changes needed.**
 
-- `src/knowledge/wiki-store.test.ts` — **buggy skip guard at line 57**: `if (!process.env.DATABASE_URL)` inside `beforeAll`. The `afterAll` (lines 68–70) only closes the DB, no final TRUNCATE. The `beforeEach` TRUNCATEs `wiki_pages`/`wiki_sync_state` before each test but not after the last. `createWikiPageStore({ sql, logger: mockLogger })` at line 67 has no `embeddingModel`, so `writeChunks` hits `opts.embeddingModel ?? "voyage-code-3"` fallback at wiki-store.ts line 114 — writing `voyage-code-3` into production on the last test's chunk write.
+- `src/knowledge/wiki-store.test.ts` — **buggy skip guard at line 57**: `if (!process.env.DATABASE_URL)` inside `beforeAll`. The `afterAll` (lines 68–70) only closes the DB, no final TRUNCATE. The `beforeEach` TRUNCATEs `wiki_pages`/`wiki_sync_state` before each test but not after the last. `createWikiPageStore({ sql, logger: mockLogger })` at line 65 has no `embeddingModel`, so `writeChunks` hits `opts.embeddingModel ?? "voyage-code-3"` fallback at wiki-store.ts line 114 — writing `voyage-code-3` into production on the last test's chunk write.
 
 - `src/knowledge/review-comment-store.test.ts` (lines 58–60) — reference implementation of the correct pgvector test skip guard: `const TEST_DB_URL = process.env.TEST_DATABASE_URL; describe.skipIf(!TEST_DB_URL)("ReviewCommentStore (pgvector)", () => {`.
 
@@ -93,6 +93,8 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 - `src/knowledge/wiki-store.ts` (line 25) — `const DEFAULT_WIKI_REPAIR_MODEL = "voyage-context-3"` used by `listRepairCandidates()` to identify degraded rows where `embedding_model IS DISTINCT FROM 'voyage-context-3'`.
 
 - `scripts/verify-m027-s02.ts` (line 153) — S02 status check requires `status.success && status.status_code === "repair_completed" && status.run.status === "completed"`. The status evidence reports "Test Page" as the last repaired page, not `JSON-RPC API/v8`. This is expected: the wiki repair state surface reflects the last repair run's target page, and the "Test Page" repair was the one that cleaned prior test contamination.
+
+- `scripts/verify-m027-s04.ts` (lines 162–170) — S04's `didWikiDurableStatusPass` is more permissive than S02's direct check: it uses `["completed", "not_needed"].includes(report.status_evidence.run.status)` and requires `failed === 0` and `last_failure_class == null`. The live state (`run.status=completed`, `failed=0`, `last_failure_class=None`) satisfies all conditions.
 
 - `docs/operations/embedding-integrity.md` — already has a `verify:m027:s04` section. May need minor updates to reflect the final passing proof evidence from the post-fix pass.
 
@@ -115,9 +117,11 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 
 - **Treating the live proof as closed before the bug fixes land** — the proof currently passes because prior repair runs cleaned the contamination. Without the code fixes, the next test run against production would re-contaminate and break the audit.
 
-- **Conflating wiki repair state cursor with proof target** — the S02 status evidence reports `page_title=Test Page` (the last page actually repaired) not `JSON-RPC API/v8`. This is correct: the proof harness shows the last completed repair checkpoint, which happens to be the test contamination cleanup run. This does not indicate a proof failure.
+- **Conflating wiki repair state cursor with proof target** — the S02 status evidence reports `page_title=Test Page` (the last page actually repaired) not `JSON-RPC API/v8`. This is correct: the proof harness shows the last completed repair checkpoint, which happens to be the test contamination cleanup run. This does not indicate a proof failure; `didWikiDurableStatusPass` checks status code and counts, not page title.
 
 - **Treating the S04-SUMMARY.md as already final** — the SUMMARY was written as a forward-looking artifact during prior task execution. After the bug fixes and final proof rerun, it must be updated with the actual post-fix passing evidence and the correct citation of the two structural fixes.
+
+- **Using `DATABASE_URL` in a new test's skip guard** — the established M026 pattern is `TEST_DATABASE_URL`. Any new pgvector test file must follow this pattern. Do not introduce more `DATABASE_URL` skip guards.
 
 ## Open Risks
 
@@ -140,14 +144,17 @@ Then update S04-SUMMARY.md citing the fresh post-fix proof output and update mil
 ## Sources
 
 - Live proof passing (status_code=m027_s04_ok, all 4 checks PASS): `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` confirmed during research session (source: live run 2026-03-14)
-- Full audit clean (audit_ok, all 6 corpora): `bun run audit:embeddings --json` → `status_code=audit_ok` (source: live run 2026-03-14)
-- S04 contract tests all passing: `bun test ./scripts/verify-m027-s04.test.ts` → 6 pass, 0 fail (source: live run 2026-03-14)
-- Non-wiki repair state confirmed `repair_completed`: `bun run repair:embeddings -- --corpus review_comments --status --json` → `status_code=repair_completed`, `run.status=completed`, `repaired=1`, `failed=0`, `updated_at=2026-03-14T17:12:08.407Z` (source: live run 2026-03-14)
-- Wiki repair state confirmed `repair_completed`: `bun run repair:wiki-embeddings -- --status --json` → `status_code=repair_completed`, `page_title=Test Page`, `repaired=1`, `failed=0`, `updated_at=2026-03-13T15:46:36.138Z` (source: live run 2026-03-14)
-- Skip guard bug confirmed: `if (!process.env.DATABASE_URL)` at line 57 of `src/knowledge/wiki-store.test.ts`; `afterAll` has `close()` but no TRUNCATE (source: code review 2026-03-14)
+- Full audit clean (audit_ok, all 6 corpora, all `missing_or_null=0`): `bun run audit:embeddings --json` → `status_code=audit_ok` (source: live run 2026-03-14)
+- S04 contract tests all passing: `bun test ./scripts/verify-m027-s04.test.ts` → 6 pass, 0 fail, 35 expect() calls (source: live run 2026-03-14)
+- Non-wiki repair state confirmed `repair_completed`: `bun run repair:embeddings -- --corpus review_comments --status --json` → `status_code=repair_completed`, `run.status=completed`, `repaired=1`, `failed=0`, `last_row_id=3061`, `failure_summary.last_failure_class=null` (source: live run 2026-03-14)
+- Wiki repair state confirmed `repair_completed`: `bun run repair:wiki-embeddings -- --status --json` → `status_code=repair_completed`, `run.status=completed`, `page_title=Test Page`, `repaired=1`, `failed=0`, `failure_summary.last_failure_class=null` (source: live run 2026-03-14)
+- Skip guard bug confirmed: `if (!process.env.DATABASE_URL)` at line 57 of `src/knowledge/wiki-store.test.ts`; `afterAll` has `if (close) await close()` but no TRUNCATE (source: code review 2026-03-14)
 - Reference skip guard pattern: `const TEST_DB_URL = process.env.TEST_DATABASE_URL; describe.skipIf(!TEST_DB_URL)(...)` (source: `src/knowledge/review-comment-store.test.ts` lines 58–60)
+- `src/knowledge/issue-store.test.ts` and `src/knowledge/memory-store.test.ts` both confirmed to use `TEST_DATABASE_URL` correctly (source: code review 2026-03-14)
 - M026 decision establishing the pattern: "pgvector tests use TEST_DATABASE_URL (not DATABASE_URL) for skip guards — DATABASE_URL in .env is always set (prod URL), so checking it would never skip" (source: `.gsd/DECISIONS.md`)
 - Model drift in backfill script: `model: "voyage-code-3"` at line 93; `createWikiPageStore` without `embeddingModel` at line 86 (source: `scripts/backfill-wiki.ts` code review 2026-03-14)
-- Correct wiki model constant: `DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3"` at line 19 of `src/knowledge/runtime.ts` (source: code review 2026-03-14)
-- `wiki-store.ts` store default behavior: `opts.embeddingModel ?? "voyage-code-3"` at line 114 — no `embeddingModel` means wrong-model writes (source: `src/knowledge/wiki-store.ts`)
+- Correct wiki model constant: `DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3"` at line 19 of `src/knowledge/runtime.ts`; used at lines 86, 94, 105 (source: code review 2026-03-14)
+- `wiki-store.ts` store default behavior: `opts.embeddingModel ?? "voyage-code-3"` — no `embeddingModel` means wrong-model writes (source: `src/knowledge/wiki-store.ts`)
 - `verify-m027-s04.ts` confirmed 459 lines, `verify-m027-s04.test.ts` confirmed 882 lines, package alias `verify:m027:s04` confirmed wired (source: filesystem check 2026-03-14)
+- S04 wiki durable status check uses `["completed", "not_needed"].includes(run.status)` (more permissive than S02's `=== "completed"`) so idempotent reruns satisfy the check regardless of `not_needed` vs `completed` outcome (source: `scripts/verify-m027-s04.ts` lines 162–170, code review 2026-03-14)
+- NON_WIKI_REPAIR_CORPORA confirmed as: `["review_comments", "learning_memories", "code_snippets", "issues", "issue_comments"]` (source: `src/knowledge/embedding-repair.ts` lines 146–152, code review 2026-03-14)
