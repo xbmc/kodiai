@@ -15,7 +15,7 @@ However, **two structural code bugs are confirmed present in the code as of 2026
 **Confirmed live state as of 2026-03-14:**
 - `audit:embeddings --json` → `status_code=audit_failed`, `wiki_pages.model_mismatch=1`, `actual_models=["voyage-code-3"]`, `total=1`
 - `wiki_pages` DB: one row — `page_id=100, page_title="Test Page", embedding_model="voyage-code-3"` (test contamination)
-- `wiki_embedding_repair_state` DB: one row — `repair_key="wiki-embedding-repair", page_id=100, page_title="Test Page", repaired=2, failed=0, last_failure_class=null`
+- `wiki_embedding_repair_state` DB: status `resume_required` because `listRepairCandidates()` finds the contaminated row
 - `repair:embeddings -- --corpus review_comments --status --json` → `status_code=repair_completed` ✓
 - `bun test ./scripts/verify-m027-s04.test.ts` → 6 pass, 0 fail ✓
 
@@ -149,9 +149,10 @@ Then update `S04-SUMMARY.md` citing the fresh post-fix proof output.
 - T01–T04 all marked `[x]` complete in `S04-PLAN.md` and all T*-SUMMARY.md files present (source: filesystem check, 2026-03-14)
 - S04-SUMMARY.md records `verification_result: passed` and `completed_at: 2026-03-12T15:24:00-07:00` (source: file read, 2026-03-14)
 - **Live proof is FAILING at time of this research**: `bun run audit:embeddings --json` returns `status_code=audit_failed`, `wiki_pages.model_mismatch=1`, `actual_models=["voyage-code-3"]`, `total=1` (source: live run, 2026-03-14)
-- **DB confirmed contamination**: `wiki_pages` table has one row `page_id=100, page_title="Test Page", embedding_model="voyage-code-3"` (source: direct SQL query via bun -e, 2026-03-14)
-- **Wiki repair state row**: `wiki_embedding_repair_state` has `repair_key="wiki-embedding-repair", page_id=100, page_title="Test Page", repaired=2, failed=0, last_failure_class=null` (source: direct SQL query via bun -e, 2026-03-14)
+- **DB confirmed contamination**: `wiki_pages` table has one row with `embedding_model="voyage-code-3"` (source: direct SQL query and audit output, 2026-03-14)
+- **Wiki repair state**: `wiki_embedding_repair_state` shows `status_code=repair_resume_available`, `run.status=resume_required` because `listRepairCandidates()` finds the contaminated row (source: `bun run repair:wiki-embeddings -- --status --json`, 2026-03-14)
 - **Non-wiki repair healthy**: `bun run repair:embeddings -- --corpus review_comments --status --json` returns `status_code=repair_completed`, `run.status=completed`, `failed=0` (source: live run, 2026-03-14)
+- **`review_comments` has 3067 total rows, 0 missing, 0 model_mismatch** — healthy state from S03 repair (source: `bun run audit:embeddings --json`, 2026-03-14)
 - Skip guard bug confirmed present in current code: `if (!process.env.DATABASE_URL)` at line 57 of `src/knowledge/wiki-store.test.ts`; `createWikiPageStore({ sql, logger: mockLogger })` at line 65 has no `embeddingModel` (source: code read, 2026-03-14)
 - Reference skip guard pattern: `const TEST_DB_URL = process.env.TEST_DATABASE_URL; describe.skipIf(!TEST_DB_URL)(...)` (source: `src/knowledge/review-comment-store.test.ts` lines 58–60, confirmed 2026-03-14)
 - `src/knowledge/issue-store.test.ts` and `src/knowledge/memory-store.test.ts` both confirmed to use `TEST_DATABASE_URL` correctly (source: code read, 2026-03-14)
@@ -165,3 +166,4 @@ Then update `S04-SUMMARY.md` citing the fresh post-fix proof output.
 - Four M027-S04 check IDs confirmed in harness: `M027-S04-FULL-AUDIT`, `M027-S04-RETRIEVER`, `M027-S04-WIKI-REPAIR-STATE`, `M027-S04-NON-WIKI-REPAIR-STATE` (source: `scripts/verify-m027-s04.ts` lines 16–19, 2026-03-14)
 - `M027-S04-FULL-AUDIT` gates on `s01.audit.status_code === "audit_ok"` (source: `scripts/verify-m027-s04.ts` line 237, 2026-03-14)
 - `verify:m027:s04` package alias confirmed wired: `"verify:m027:s04": "bun scripts/verify-m027-s04.ts"` in package.json (source: package.json grep, 2026-03-14)
+- Running `bun test src/knowledge/wiki-store.test.ts` during this research session confirmed re-contaminated production `wiki_pages` (16 pass but against production DB) (source: live test run, 2026-03-14)
