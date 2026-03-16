@@ -133,3 +133,32 @@ Implement the S02 proof harness — `scripts/verify-m028-s02.ts` with four check
 - `scripts/verify-m028-s02.ts` — new proof harness with 4 check IDs, exported evaluator and harness
 - `scripts/verify-m028-s02.test.ts` — new: 20+ tests
 - `package.json` — `verify:m028:s02` alias added
+
+## Observability Impact
+
+**New signals introduced:**
+- `bun run verify:m028:s02 --json` — structured JSON report; every check has `.id`, `.passed`, `.skipped`, `.status_code`, `.detail`
+- `.detail` field is human-inspectable for every failure: includes first-80-char preview on marker pass, mock path name on upsert fail, numeric gap count on linkage fail
+
+**Failure-state inspection:**
+```bash
+# Surface only failing/skipped checks:
+bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.passed == false)'
+
+# Distinguish DB skip vs DB failure:
+bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.skipped == true)'
+# skipped=true + status_code="db_unavailable" → DATABASE_URL absent or DB unreachable (non-failure)
+# skipped=false + passed=false → real failure (column_missing or linkage_gap_found)
+```
+
+**Status codes a future agent should know:**
+- `marker_present` — formatPageComment emits HTML marker as first line ✓
+- `marker_absent` — HTML marker missing from formatPageComment output ✗
+- `upsert_contract_ok` — both update and create paths work as specified ✓
+- `upsert_update_path_failed` / `upsert_create_path_failed` — one mock path misbehaved ✗
+- `schema_ok` — published_comment_id column exists in wiki_update_suggestions ✓
+- `column_missing` — column absent despite DB being reachable ✗ (run migration 031)
+- `no_linkage_gap` — all published rows have published_comment_id set ✓
+- `linkage_gap_found` — gap count in detail; backfill legacy rows or investigate publish loop ✗
+- `db_unavailable` — DATABASE_URL not set or DB unreachable; DB-gated checks skipped (not a failure)
+

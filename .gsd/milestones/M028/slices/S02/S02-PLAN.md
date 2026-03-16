@@ -36,13 +36,17 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types|verify-m02
 # CLI smoke:
 bun scripts/publish-wiki-updates.ts --help | grep -q 'retrofit-preview'
 
-# Failure-state surface — surface only failing checks with diagnostic detail:
-bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.status != "pass")'
-# When a check fails, each entry has .status ('fail' | 'db_unavailable') and a .detail field:
-#   M028-S02-COMMENT-MARKER fail → .detail contains offending first-line snippet
-#   M028-S02-UPSERT-CONTRACT fail → .detail names which mock path (update or create) misbehaved
-#   M028-S02-COMMENT-ID-SCHEMA fail → .detail is 'column_missing' (DB reachable, column absent)
-#   M028-S02-PUBLISHED-LINKAGE fail → .detail is 'linkage_gap_found' + numeric gap count
+# Failure-state surface — surface only failing/skipped checks with diagnostic detail:
+bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.passed == false)'
+# When a check fails, each entry has .status_code and a .detail field:
+#   M028-S02-COMMENT-MARKER fail → .status_code="marker_absent", .detail contains offending first-line snippet
+#   M028-S02-UPSERT-CONTRACT fail → .status_code="upsert_update_path_failed" or "upsert_create_path_failed", .detail names which mock path misbehaved
+#   M028-S02-COMMENT-ID-SCHEMA fail → .status_code="column_missing" (DB reachable, column absent)
+#   M028-S02-PUBLISHED-LINKAGE fail → .status_code="linkage_gap_found", .detail includes numeric gap count
+
+# DB-skip vs DB-fail distinction (skipped checks are non-failures):
+bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.skipped == true)'
+# skipped + status_code="db_unavailable" means DB was unreachable or DATABASE_URL unset — not a failure
 ```
 
 ## Observability / Diagnostics
@@ -102,7 +106,7 @@ bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.status != "pass")'
   - Verify: `bun test src/knowledge/wiki-publisher.test.ts`; `bun scripts/publish-wiki-updates.ts --help | grep -q retrofit-preview`; `bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|publish-wiki'` → no output
   - Done when: publisher tests include retrofit-preview coverage; CLI `--help` lists `--retrofit-preview`; TypeScript clean on target files; retrofit-preview does not call any mutation methods on mock Octokit
 
-- [ ] **T03: Verifier, test suite, and package.json alias** `est:1h`
+- [x] **T03: Verifier, test suite, and package.json alias** `est:1h`
   - Why: The S02 proof harness provides machine-checkable evidence that all four surfaces work — the marker contract (pure-code), the upsert contract (pure-code), the DB schema column (DB-gated), and published-row linkage (DB-gated). Follows the S01 verifier pattern exactly.
   - Files: `scripts/verify-m028-s02.ts`, `scripts/verify-m028-s02.test.ts`, `package.json`
   - Do:
