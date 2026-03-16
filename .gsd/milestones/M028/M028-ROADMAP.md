@@ -67,7 +67,7 @@ This milestone is complete only when all are true:
 
 - [x] **S01: Modification Artifact Contract Through Real Entry Points** `risk:high` `depends:[]`
   > After this: operators can run the real wiki generate + publish-dry-run commands and inspect persisted/rendered outputs that are modification-only, explicitly scoped as section or page replacements, and free of `WHY:`/suggestion prose.
-- [ ] **S02: Deterministic Retrofit & Comment Identity Surface** `risk:high` `depends:[S01]`
+- [x] **S02: Deterministic Retrofit & Comment Identity Surface** `risk:high` `depends:[S01]`
   > After this: operators can preview exactly which existing `xbmc/wiki` comments will be updated or superseded, using stable comment identity or deterministic markers rather than manual thread cleanup.
 - [ ] **S03: Live Modification-Only Wiki Publishing** `risk:medium` `depends:[S01,S02]`
   > After this: the real `xbmc/wiki` tracking issue flow publishes modification-only comments for new wiki updates and can supersede prior suggestion-style output through the same live publisher path.
