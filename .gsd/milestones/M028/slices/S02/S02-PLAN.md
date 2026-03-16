@@ -36,15 +36,13 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types|verify-m02
 # CLI smoke:
 bun scripts/publish-wiki-updates.ts --help | grep -q 'retrofit-preview'
 
-# Failure-state diagnostics (inspectable failure path):
-# When a check fails, bun run verify:m028:s02 --json exits 1 and emits structured JSON with
-# each check's status ('pass' | 'fail' | 'db_unavailable') and a 'detail' field explaining why:
-#   M028-S02-COMMENT-MARKER fail → detail contains offending first line snippet
-#   M028-S02-UPSERT-CONTRACT fail → detail names which mock path (update or create) misbehaved
-#   M028-S02-COMMENT-ID-SCHEMA fail → detail is 'column_missing' (DB reachable, column absent)
-#   M028-S02-PUBLISHED-LINKAGE fail → detail is 'linkage_gap_found' + numeric gap count
-# Run: bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.status != "pass")'
-# to surface only failing checks with their diagnostic detail.
+# Failure-state surface — surface only failing checks with diagnostic detail:
+bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.status != "pass")'
+# When a check fails, each entry has .status ('fail' | 'db_unavailable') and a .detail field:
+#   M028-S02-COMMENT-MARKER fail → .detail contains offending first-line snippet
+#   M028-S02-UPSERT-CONTRACT fail → .detail names which mock path (update or create) misbehaved
+#   M028-S02-COMMENT-ID-SCHEMA fail → .detail is 'column_missing' (DB reachable, column absent)
+#   M028-S02-PUBLISHED-LINKAGE fail → .detail is 'linkage_gap_found' + numeric gap count
 ```
 
 ## Observability / Diagnostics
@@ -80,7 +78,7 @@ bun scripts/publish-wiki-updates.ts --help | grep -q 'retrofit-preview'
   - Verify: `bun test src/knowledge/wiki-publisher.test.ts` (all tests pass including new ones); `bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types'` → no output
   - Done when: all publisher tests pass, TypeScript clean on target files, migration files exist, marker appears in formatPageComment output, upsertWikiPageComment follows update-or-create contract
 
-- [ ] **T02: Retrofit preview path and CLI flag** `est:1h`
+- [x] **T02: Retrofit preview path and CLI flag** `est:1h`
   - Why: The retrofit-preview mode gives operators a safe way to inspect planned comment actions (update vs create vs no-op) on an existing tracking issue without mutating GitHub. This is the operational surface S02 is named for.
   - Files: `src/knowledge/wiki-publisher.ts`, `src/knowledge/wiki-publisher-types.ts`, `scripts/publish-wiki-updates.ts`, `src/knowledge/wiki-publisher.test.ts`
   - Do:

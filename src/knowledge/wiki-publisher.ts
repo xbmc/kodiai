@@ -16,6 +16,8 @@ import type {
   PublishRunOptions,
   PageSuggestionGroup,
   PagePostResult,
+  RetrofitPageAction,
+  RetrofitPreviewResult,
 } from "./wiki-publisher-types.ts";
 
 // ── Helpers (exported for testing) ──────────────────────────────────────
@@ -357,7 +359,95 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
       }
       const groups = Array.from(groupMap.values());
 
-      // ── 4. Dry-run branch ─────────────────────────────────────────
+      // ── 4a. Retrofit-preview branch (scan-only, no mutation) ──────
+      if (runOptions.retrofitPreview === true) {
+        if (!runOptions.issueNumber) {
+          throw new Error("retrofitPreview requires issueNumber in runOptions");
+        }
+        if (dryRun) {
+          logger.warn(
+            "retrofitPreview ignores dryRun — it needs a live GitHub connection to scan comments",
+          );
+        }
+
+        // retrofitPreview needs a live Octokit (reads GitHub)
+        if (!octokit) {
+          const installCtx = await githubApp.getRepoInstallationContext(owner, repo);
+          if (!installCtx) {
+            const slug = githubApp.getAppSlug();
+            logger.error(
+              { owner, repo },
+              `GitHub App not installed on ${owner}/${repo}. Install the app at https://github.com/apps/${slug}/installations`,
+            );
+            return emptyResult;
+          }
+          octokit = await githubApp.getInstallationOctokit(installCtx.installationId);
+        }
+
+        const previewIssueNumber = runOptions.issueNumber;
+        const actions: RetrofitPageAction[] = [];
+
+        for (const group of groups) {
+          const marker = `<!-- kodiai:wiki-modification:${group.pageId} -->`;
+          let existingCommentId: number | null = null;
+
+          try {
+            for (let page = 1; page <= 10; page++) {
+              const { data: comments } = await octokit.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: previewIssueNumber,
+                per_page: 100,
+                page,
+                sort: "created",
+                direction: "desc",
+              });
+
+              if (comments.length === 0) break;
+
+              for (const comment of comments) {
+                if (comment.body?.includes(marker)) {
+                  existingCommentId = comment.id;
+                  break;
+                }
+              }
+
+              if (existingCommentId !== null) break;
+              if (comments.length < 100) break;
+            }
+          } catch {
+            logger.debug(
+              { pageId: group.pageId, issueNumber: previewIssueNumber },
+              "Failed to scan for existing wiki comment in retrofit-preview",
+            );
+          }
+
+          const action: RetrofitPageAction = {
+            pageId: group.pageId,
+            pageTitle: group.pageTitle,
+            action: existingCommentId !== null ? 'update' : 'create',
+            existingCommentId,
+          };
+
+          actions.push(action);
+          logger.info(
+            { pageId: group.pageId, pageTitle: group.pageTitle, action: action.action, existingCommentId },
+            `Retrofit preview: ${group.pageTitle} → ${action.action}`,
+          );
+        }
+
+        const retrofitPreviewResult: RetrofitPreviewResult = {
+          actions,
+          issueNumber: previewIssueNumber,
+        };
+
+        return {
+          ...emptyResult,
+          retrofitPreviewResult,
+        };
+      }
+
+      // ── 4b. Dry-run branch ────────────────────────────────────────
       if (dryRun) {
         const parts: string[] = [];
         for (const group of groups) {

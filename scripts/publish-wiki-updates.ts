@@ -42,6 +42,8 @@ const { values } = parseArgs({
     repo: { type: "string", default: "wiki" },
     output: { type: "string" },
     "comment-delay": { type: "string", default: "3000" },
+    "retrofit-preview": { type: "boolean", default: false },
+    "issue-number": { type: "string" },
     help: { type: "boolean", default: false },
   },
 });
@@ -58,6 +60,9 @@ Options:
   --owner <owner>       Target repo owner (default: xbmc)
   --repo <repo>         Target wiki repo name (default: wiki)
   --comment-delay <ms>  Milliseconds between comment API calls (default: 3000)
+  --retrofit-preview    Scan issue for existing wiki comments, preview planned actions
+                        (requires --issue-number; reads GitHub, does not post)
+  --issue-number <n>    Target issue number for --retrofit-preview
   --help                Show this help
 
 Environment:
@@ -76,6 +81,21 @@ const pageIds = values["page-ids"]
   ?.split(",")
   .map(Number)
   .filter((n) => !isNaN(n));
+
+const retrofitPreview = values["retrofit-preview"]!;
+let retrofitIssueNumber: number | undefined;
+
+if (retrofitPreview) {
+  if (!values["issue-number"]) {
+    console.error("Error: --retrofit-preview requires --issue-number <n>");
+    process.exit(1);
+  }
+  retrofitIssueNumber = parseInt(values["issue-number"]!, 10);
+  if (isNaN(retrofitIssueNumber)) {
+    console.error(`Error: --issue-number must be an integer, got: ${values["issue-number"]}`);
+    process.exit(1);
+  }
+}
 
 // ── Private key loader (reuse config.ts logic) ──────────────────────────
 
@@ -104,6 +124,7 @@ async function main() {
     {
       dryRun,
       groundedOnly,
+      retrofitPreview,
       pageIds: pageIds ?? "all",
       owner: values.owner,
       repo: values.repo,
@@ -116,9 +137,9 @@ async function main() {
   const db = createDbClient({ logger });
   await runMigrations(db.sql);
 
-  // Setup: GitHub App (only needed for live runs)
+  // Setup: GitHub App (only needed for live runs; retrofitPreview also needs live GitHub)
   let githubApp;
-  if (!dryRun) {
+  if (!dryRun || retrofitPreview) {
     const privateKey = await loadPrivateKey();
     // Build minimal AppConfig — only GitHub fields are used by the publisher
     const config: AppConfig = {
@@ -144,7 +165,7 @@ async function main() {
     githubApp = createGitHubApp(config, logger);
     await githubApp.initialize();
   } else {
-    // Dry-run: create a stub GitHubApp — publish() won't call any GitHub APIs
+    // Dry-run (no retrofit-preview): create a stub GitHubApp — publish() won't call any GitHub APIs
     githubApp = {
       getInstallationOctokit: async () => {
         throw new Error("Dry-run: no Octokit available");
@@ -172,7 +193,38 @@ async function main() {
     dryRun,
     pageIds,
     groundedOnly,
+    retrofitPreview,
+    issueNumber: retrofitIssueNumber,
   });
+
+  // ── Handle --retrofit-preview output ──────────────────────────────
+  if (retrofitPreview && result.retrofitPreviewResult) {
+    const { actions, issueNumber: scanIssue } = result.retrofitPreviewResult;
+
+    console.log(`\nRetrofit Preview — Issue #${scanIssue}\n`);
+
+    const ACTION_W = 8;
+    const PAGE_W = 26;
+    const COMMENT_W = 12;
+    const URL_W = 40;
+
+    const pad = (s: string, w: number) => s.length >= w ? s : s + " ".repeat(w - s.length);
+    const header = `${pad("ACTION", ACTION_W)} | ${pad("PAGE", PAGE_W)} | ${pad("COMMENT ID", COMMENT_W)} | WIKI URL`;
+    const separator = "-".repeat(ACTION_W) + "-+-" + "-".repeat(PAGE_W) + "-+-" + "-".repeat(COMMENT_W) + "-+-" + "-".repeat(URL_W);
+
+    console.log(header);
+    console.log(separator);
+
+    for (const a of actions) {
+      const wikiUrl = `https://kodi.wiki/view/${encodeURIComponent(a.pageTitle.replace(/ /g, "_"))}`;
+      const commentCol = a.existingCommentId != null ? String(a.existingCommentId) : "(new)";
+      console.log(`${pad(a.action, ACTION_W)} | ${pad(a.pageTitle, PAGE_W)} | ${pad(commentCol, COMMENT_W)} | ${wikiUrl}`);
+    }
+
+    console.log();
+    await db.close();
+    return;
+  }
 
   // Handle --output for dry-run
   if (dryRun && values.output && result.dryRunOutput) {

@@ -42,6 +42,8 @@ export type PublishResult = {
   skippedPages: Array<{ pageTitle: string; reason: string }>;
   /** Formatted markdown output (populated in dry-run mode). */
   dryRunOutput?: string;
+  /** Populated when retrofitPreview: true — per-page planned actions (no mutation). */
+  retrofitPreviewResult?: RetrofitPreviewResult;
 };
 
 /** Options for a publish invocation. */
