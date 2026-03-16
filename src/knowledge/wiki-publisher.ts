@@ -9,6 +9,7 @@
  */
 
 import type { Octokit } from "@octokit/rest";
+import type { Logger } from "pino";
 import type {
   WikiPublisherOptions,
   PublishResult,
@@ -32,6 +33,8 @@ export function formatPageComment(
 ): string {
   const wikiUrl = `https://kodi.wiki/view/${encodeURIComponent(group.pageTitle.replace(/ /g, "_"))}`;
   const lines: string[] = [
+    `<!-- kodiai:wiki-modification:${group.pageId} -->`,
+    "",
     `## ${group.pageTitle}`,
     "",
     `**Wiki page:** [View on wiki](${wikiUrl})`,
@@ -165,6 +168,90 @@ export async function postCommentWithRetry(
     }
   }
   return null;
+}
+
+/**
+ * Scan an issue's comments for an existing wiki-modification marker and update it,
+ * or create a new comment if no match is found.
+ *
+ * Returns `{ commentId, action }` on success, `null` on failure.
+ */
+export async function upsertWikiPageComment(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  pageId: number,
+  body: string,
+  logger: Logger,
+): Promise<{ commentId: number; action: 'updated' | 'created' } | null> {
+  const marker = `<!-- kodiai:wiki-modification:${pageId} -->`;
+  let existingCommentId: number | null = null;
+
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const { data: comments } = await octokit.rest.issues.listComments({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        per_page: 100,
+        page,
+        sort: "created",
+        direction: "desc",
+      });
+
+      if (comments.length === 0) break;
+
+      for (const comment of comments) {
+        if (comment.body?.includes(marker)) {
+          existingCommentId = comment.id;
+          break;
+        }
+      }
+
+      if (existingCommentId !== null) break;
+      if (comments.length < 100) break;
+    }
+  } catch {
+    logger.debug(
+      { pageId, issueNumber },
+      "Failed to scan for existing wiki comment, will create new",
+    );
+  }
+
+  try {
+    if (existingCommentId !== null) {
+      await octokit.rest.issues.updateComment({
+        owner,
+        repo,
+        comment_id: existingCommentId,
+        body,
+      });
+      logger.debug(
+        { pageId, commentId: existingCommentId, action: 'updated' },
+        "Updated existing wiki comment",
+      );
+      return { commentId: existingCommentId, action: 'updated' };
+    } else {
+      const response = await octokit.rest.issues.createComment({
+        owner,
+        repo,
+        issue_number: issueNumber,
+        body,
+      });
+      logger.debug(
+        { pageId, commentId: response.data.id, action: 'created' },
+        "Created new wiki comment",
+      );
+      return { commentId: response.data.id, action: 'created' };
+    }
+  } catch {
+    logger.debug(
+      { pageId, issueNumber },
+      "Failed to post wiki comment (upsert API error)",
+    );
+    return null;
+  }
 }
 
 // ── Main factory ────────────────────────────────────────────────────────
@@ -322,12 +409,14 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
           if (s.voiceMismatchWarning) hasVoiceWarnings = true;
         }
 
-        const result = await postCommentWithRetry(
+        const result = await upsertWikiPageComment(
           octokit!,
           owner,
           repo,
           issueNumber,
+          group.pageId,
           commentBody,
+          logger,
         );
 
         if (result) {
@@ -339,12 +428,15 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
             suggestionsCount: group.suggestions.length,
             prsCount: uniquePrs.size,
             hasVoiceWarnings,
+            commentAction: result.action,
           });
 
           // ── 7. Mark published in DB ───────────────────────────────
           await sql`
             UPDATE wiki_update_suggestions
-            SET published_at = NOW(), published_issue_number = ${issueNumber}
+            SET published_at = NOW(),
+                published_issue_number = ${issueNumber},
+                published_comment_id = ${result.commentId}
             WHERE page_id = ${group.pageId}
               AND published_at IS NULL
               AND grounding_status IN ('grounded', 'partially-grounded')

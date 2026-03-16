@@ -80,3 +80,12 @@ coverage/
 
 # ── GSD baseline (auto-generated) ──
 .gsd/completed-units.json
+
+# ── GSD baseline (auto-generated) ──
+.gsd/gsd.db
+.gsd/DISCUSSION-MANIFEST.json
+.gsd/milestones/**/*-CONTINUE.md
+.gsd/milestones/**/continue.md
+
+# ── GSD baseline (auto-generated) ──
+.gsd/forensics/

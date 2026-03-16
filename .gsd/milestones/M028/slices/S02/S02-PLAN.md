@@ -35,6 +35,16 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types|verify-m02
 
 # CLI smoke:
 bun scripts/publish-wiki-updates.ts --help | grep -q 'retrofit-preview'
+
+# Failure-state diagnostics (inspectable failure path):
+# When a check fails, bun run verify:m028:s02 --json exits 1 and emits structured JSON with
+# each check's status ('pass' | 'fail' | 'db_unavailable') and a 'detail' field explaining why:
+#   M028-S02-COMMENT-MARKER fail → detail contains offending first line snippet
+#   M028-S02-UPSERT-CONTRACT fail → detail names which mock path (update or create) misbehaved
+#   M028-S02-COMMENT-ID-SCHEMA fail → detail is 'column_missing' (DB reachable, column absent)
+#   M028-S02-PUBLISHED-LINKAGE fail → detail is 'linkage_gap_found' + numeric gap count
+# Run: bun run verify:m028:s02 --json 2>&1 | jq '.checks[] | select(.status != "pass")'
+# to surface only failing checks with their diagnostic detail.
 ```
 
 ## Observability / Diagnostics
@@ -52,7 +62,7 @@ bun scripts/publish-wiki-updates.ts --help | grep -q 'retrofit-preview'
 
 ## Tasks
 
-- [ ] **T01: Migration 031, comment marker, and upsert contract** `est:1.5h`
+- [x] **T01: Migration 031, comment marker, and upsert contract** `est:1.5h`
   - Why: The DB schema dependency (published_comment_id) and the stable HTML marker are the foundation for all scan-based identity work. The upsert function replaces the create-only postCommentWithRetry call so future publish runs update existing comments instead of creating duplicates.
   - Files: `src/db/migrations/031-wiki-comment-identity.sql`, `src/db/migrations/031-wiki-comment-identity.down.sql`, `src/knowledge/wiki-publisher.ts`, `src/knowledge/wiki-publisher-types.ts`, `src/knowledge/wiki-publisher.test.ts`
   - Do:

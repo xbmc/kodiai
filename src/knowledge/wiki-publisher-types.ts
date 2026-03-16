@@ -52,6 +52,10 @@ export type PublishRunOptions = {
   pageIds?: number[];
   /** If true, skip suggestions with voice mismatch warnings. */
   groundedOnly?: boolean;
+  /** If true, scan existing issue for wiki comments and report planned actions without mutating. */
+  retrofitPreview?: boolean;
+  /** Issue number to scan for retrofit-preview mode. Required when retrofitPreview is true. */
+  issueNumber?: number;
 };
 
 /** A page's grouped suggestions ready for comment formatting. */
@@ -77,4 +81,21 @@ export type PagePostResult = {
   suggestionsCount: number;
   prsCount: number;
   hasVoiceWarnings: boolean;
+  /** Whether an existing comment was updated or a new one was created. */
+  commentAction?: 'updated' | 'created';
+};
+
+/** Per-page planned action for retrofit-preview mode. */
+export type RetrofitPageAction = {
+  pageId: number;
+  pageTitle: string;
+  /** 'update' = existing marker comment found; 'create' = no existing comment; 'no-op' = already published. */
+  action: 'update' | 'create' | 'no-op';
+  existingCommentId: number | null;
+};
+
+/** Result of a retrofit-preview run (read-only scan of existing issue comments). */
+export type RetrofitPreviewResult = {
+  actions: RetrofitPageAction[];
+  issueNumber: number;
 };

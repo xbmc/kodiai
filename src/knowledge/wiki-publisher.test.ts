@@ -3,6 +3,7 @@ import {
   formatPageComment,
   formatSummaryTable,
   postCommentWithRetry,
+  upsertWikiPageComment,
   createWikiPublisher,
 } from "./wiki-publisher.ts";
 import type { PageSuggestionGroup, PagePostResult } from "./wiki-publisher-types.ts";
@@ -53,6 +54,10 @@ function createMockOctokit() {
         createComment: mock(() =>
           Promise.resolve({ data: { id: 99001 } }),
         ),
+        listComments: mock(() =>
+          Promise.resolve({ data: [] }),
+        ),
+        updateComment: mock(() => Promise.resolve({ data: {} })),
         update: mock(() => Promise.resolve({ data: {} })),
       },
     },
@@ -518,6 +523,180 @@ describe("createWikiPublisher", () => {
       // Should NOT have created an issue
       expect(mockOctokit.rest.issues.create).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ── formatPageComment — marker tests ───────────────────────────────────
+
+describe("formatPageComment — comment identity marker", () => {
+  it("starts with the wiki-modification marker", () => {
+    const group = makeGroup({ pageId: 42, pageTitle: "Test Page" });
+    const result = formatPageComment(group, "xbmc", "xbmc");
+    expect(result.startsWith("<!-- kodiai:wiki-modification:42 -->")).toBe(true);
+  });
+
+  it("marker contains the correct pageId", () => {
+    const group = makeGroup({ pageId: 99, pageTitle: "Audio Settings" });
+    const result = formatPageComment(group, "xbmc", "xbmc");
+    expect(result).toContain("<!-- kodiai:wiki-modification:99 -->");
+  });
+
+  it("marker does not break S01 guard — no **Why:** in prefix", () => {
+    const group = makeGroup({ pageId: 42 });
+    const result = formatPageComment(group, "xbmc", "xbmc");
+    // The marker itself must not contain **Why:**
+    const markerLine = result.split("\n")[0]!;
+    expect(markerLine).not.toContain("**Why:**");
+  });
+
+  it("marker does not break S01 guard — no :warning: in prefix", () => {
+    const group = makeGroup({ pageId: 42 });
+    const result = formatPageComment(group, "xbmc", "xbmc");
+    const markerLine = result.split("\n")[0]!;
+    expect(markerLine).not.toContain(":warning:");
+  });
+
+  it("still includes page title heading after marker", () => {
+    const group = makeGroup({ pageId: 42, pageTitle: "Add-on development" });
+    const result = formatPageComment(group, "xbmc", "xbmc");
+    expect(result).toContain("## Add-on development");
+  });
+});
+
+// ── upsertWikiPageComment ───────────────────────────────────────────────
+
+describe("upsertWikiPageComment", () => {
+  it("calls updateComment when marker found, not createComment", async () => {
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
+    const listComments = mock(() =>
+      Promise.resolve({
+        data: [
+          { id: 5001, body: "<!-- kodiai:wiki-modification:42 --> some content here" },
+        ],
+      }),
+    );
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          updateComment,
+          createComment,
+        },
+      },
+    } as unknown as Octokit;
+
+    const logger = createSilentLogger();
+    const result = await upsertWikiPageComment(
+      mockOctokit,
+      "xbmc",
+      "xbmc",
+      100,
+      42,
+      "new body",
+      logger,
+    );
+
+    expect(updateComment).toHaveBeenCalledTimes(1);
+    expect((updateComment as ReturnType<typeof mock>).mock.calls[0]![0]).toMatchObject({
+      comment_id: 5001,
+    });
+    expect(createComment).not.toHaveBeenCalled();
+    expect(result).toEqual({ commentId: 5001, action: "updated" });
+  });
+
+  it("calls createComment when no marker found, not updateComment", async () => {
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+    const createComment = mock(() => Promise.resolve({ data: { id: 9999 } }));
+    const listComments = mock(() =>
+      Promise.resolve({ data: [] }),
+    );
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          updateComment,
+          createComment,
+        },
+      },
+    } as unknown as Octokit;
+
+    const logger = createSilentLogger();
+    const result = await upsertWikiPageComment(
+      mockOctokit,
+      "xbmc",
+      "xbmc",
+      100,
+      42,
+      "new body",
+      logger,
+    );
+
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(updateComment).not.toHaveBeenCalled();
+    expect(result).toEqual({ commentId: 9999, action: "created" });
+  });
+
+  it("returns null when API call fails", async () => {
+    const listComments = mock(() => Promise.resolve({ data: [] }));
+    const createComment = mock(() => Promise.reject(new Error("API error")));
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          updateComment,
+          createComment,
+        },
+      },
+    } as unknown as Octokit;
+
+    const logger = createSilentLogger();
+    const result = await upsertWikiPageComment(
+      mockOctokit,
+      "xbmc",
+      "xbmc",
+      100,
+      42,
+      "new body",
+      logger,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("falls through to createComment when scan throws", async () => {
+    const listComments = mock(() => Promise.reject(new Error("scan failed")));
+    const createComment = mock(() => Promise.resolve({ data: { id: 7777 } }));
+    const updateComment = mock(() => Promise.resolve({ data: {} }));
+
+    const mockOctokit = {
+      rest: {
+        issues: {
+          listComments,
+          updateComment,
+          createComment,
+        },
+      },
+    } as unknown as Octokit;
+
+    const logger = createSilentLogger();
+    const result = await upsertWikiPageComment(
+      mockOctokit,
+      "xbmc",
+      "xbmc",
+      100,
+      42,
+      "new body",
+      logger,
+    );
+
+    expect(createComment).toHaveBeenCalledTimes(1);
+    expect(updateComment).not.toHaveBeenCalled();
+    expect(result).toEqual({ commentId: 7777, action: "created" });
   });
 });
 
