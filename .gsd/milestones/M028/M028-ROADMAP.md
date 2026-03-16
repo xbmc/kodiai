@@ -65,7 +65,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Modification Artifact Contract Through Real Entry Points** `risk:high` `depends:[]`
+- [x] **S01: Modification Artifact Contract Through Real Entry Points** `risk:high` `depends:[]`
   > After this: operators can run the real wiki generate + publish-dry-run commands and inspect persisted/rendered outputs that are modification-only, explicitly scoped as section or page replacements, and free of `WHY:`/suggestion prose.
 - [ ] **S02: Deterministic Retrofit & Comment Identity Surface** `risk:high` `depends:[S01]`
   > After this: operators can preview exactly which existing `xbmc/wiki` comments will be updated or superseded, using stable comment identity or deterministic markers rather than manual thread cleanup.

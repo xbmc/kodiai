@@ -178,7 +178,13 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 ## Current State
 
-v0.26 shipped, and M027 is now complete after the passing final integrated proof. The codebase now has production-wired embedding audit, live retriever verification, bounded/resumable wiki repair, unified non-wiki repair/proof tooling, and a milestone-closing acceptance harness in addition to the M026 audit/documentation work:
+M028 S01 complete. The wiki update pipeline now produces modification-only artifacts (no WHY:/suggestion prose), with explicit `modificationMode: 'section' | 'page'` scope and `replacementContent` as the primary output field. All four tasks verified:
+- **T01** (pre-existing): Type contract in `wiki-update-types.ts`, DB migration 030 with `modification_mode` + `replacement_content` columns
+- **T02**: `parseModificationContent()` replaces `parseGeneratedSuggestion()`; page-mode stitching (`>= pageModeThreshold` sections → single artifact); `storeSuggestion()` writes new columns
+- **T03**: `formatPageComment()` rewritten — no `**Why:**`, no voice-mismatch prose; `formatSummaryTable()` uses Modifications terminology; DB SELECT includes new columns with legacy fallback
+- **T04**: `scripts/verify-m028-s01.ts` with four check IDs; `bun run verify:m028:s01 --json` outputs `overallPassed: true`; 79 tests pass across generator/publisher/verifier
+
+M027 (prior milestone) is complete: all embedding corpora audited and repaired, retrieval verified end-to-end, bounded wiki repair operational.
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Embedding integrity audit: `bun run audit:embeddings [--json]` reports six-corpus completeness/model status, including `issue_comments` and schema-aware stale semantics, from a read-only Postgres transaction
