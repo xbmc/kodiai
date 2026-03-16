@@ -140,15 +140,25 @@ export function createExecutor(deps: {
         });
 
         // Build allowed tools list
-        const baseTools = [
-          "Read",
-          "Grep",
-          "Glob",
-          "Bash(git diff:*)",
-          "Bash(git log:*)",
-          "Bash(git show:*)",
-          "Bash(git status:*)",
-        ];
+        // Read-only PR mentions get a trimmed tool set: the diff is pre-fetched into context,
+        // so git log / git show / Glob are rarely needed and just burn extra turns.
+        const isReadOnlyPrMention = isMentionEvent && !isWriteMode && context.prNumber !== undefined;
+        const baseTools = isReadOnlyPrMention
+          ? [
+              "Read",
+              "Grep",
+              "Bash(git diff:*)",
+              "Bash(git status:*)",
+            ]
+          : [
+              "Read",
+              "Grep",
+              "Glob",
+              "Bash(git diff:*)",
+              "Bash(git log:*)",
+              "Bash(git show:*)",
+              "Bash(git status:*)",
+            ];
 
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));

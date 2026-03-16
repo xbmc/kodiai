@@ -1641,6 +1641,43 @@ export function createMentionHandler(deps: {
                 ].join("\n")
               : undefined;
 
+        // Pre-fetch PR diff for PR mentions — prevents turn exhaustion by giving the model
+        // the diff upfront so it does not need to tool-call git to read it.
+        // Cap at 8000 chars; truncate at the last newline to avoid splitting mid-line.
+        const PR_DIFF_MAX_CHARS = 8_000;
+        let prDiffContext: { stat: string; diff: string; truncated: boolean; fileCount: number } | undefined;
+        // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
+        if (mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
+          try {
+            const [statResult, diffResult] = await Promise.all([
+              $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --stat`.quiet().nothrow(),
+              $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD`.quiet().nothrow(),
+            ]);
+            if (statResult.exitCode === 0 && diffResult.exitCode === 0) {
+              const stat = statResult.text().trim();
+              const fullDiff = diffResult.text();
+              const truncated = fullDiff.length > PR_DIFF_MAX_CHARS;
+              // Truncate at last newline to avoid splitting mid-line or mid-hunk.
+              let diff: string;
+              if (truncated) {
+                const cutPoint = fullDiff.lastIndexOf("\n", PR_DIFF_MAX_CHARS);
+                diff = cutPoint > 0 ? fullDiff.slice(0, cutPoint) : fullDiff.slice(0, PR_DIFF_MAX_CHARS);
+              } else {
+                diff = fullDiff.trim();
+              }
+              // Count files from stat output (lines like "path/to/file.ts | 12 +++---")
+              const fileCount = stat.split("\n").filter(l => l.includes("|")).length;
+              prDiffContext = { stat, diff, truncated, fileCount };
+              logger.debug(
+                { surface: mention.surface, prNumber: mention.prNumber, fileCount, truncated },
+                "Pre-fetched PR diff for mention context",
+              );
+            }
+          } catch {
+            // fail-open — model falls back to tool calls if this fails
+          }
+        }
+
         // Build mention prompt
         const mentionPrompt = buildMentionPrompt({
           mention,
@@ -1657,7 +1694,17 @@ export function createMentionHandler(deps: {
           contextWindow: contextWindowForPrompt,
           // Triage context for issue mentions (TRIA-03)
           triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
+          // Pre-fetched PR diff (prevents turn exhaustion on review-intent mentions)
+          prDiffContext,
         });
+
+        // Cap max turns for read-only PR mentions — with the diff pre-fetched into context,
+        // the model rarely needs more than a handful of tool calls to respond.
+        // Write-mode keeps the default (25) since it may need more tool calls to apply changes.
+        // Issue mentions (no prNumber) also keep the default — they often need more exploration.
+        const mentionMaxTurns = (!writeEnabled && mention.prNumber !== undefined)
+          ? 12
+          : undefined; // undefined → falls through to config.maxTurns
 
         // Execute via Claude
         const result = await executor.execute({
@@ -1676,6 +1723,7 @@ export function createMentionHandler(deps: {
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: mention.commentBody,
           prompt: mentionPrompt,
+          maxTurnsOverride: mentionMaxTurns,
         });
 
         logger.info(
@@ -2524,6 +2572,31 @@ export function createMentionHandler(deps: {
             "Kodiai encountered an error",
           );
           await postMentionError(errorBody);
+        }
+
+        // If execution hit the turn limit without publishing, post a brief explanation.
+        // Gated on stopReason === "max_turns" to distinguish turn exhaustion from other failure
+        // subtypes (error_during_execution, error_max_budget_usd, error_max_structured_output_retries)
+        // which should not produce a "ran out of steps" message.
+        if (result.conclusion === "failure" && !result.published && result.stopReason === "max_turns") {
+          const turnLimitBody = wrapInDetails(
+            [
+              "I ran out of steps analyzing this and wasn't able to post a complete response.",
+              "",
+              "This can happen on PRs with large or complex diffs. To get a response:",
+              "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
+              "- Or mention me again — the next run may complete within the step budget",
+            ].join("\n"),
+            "kodiai response",
+          );
+          try {
+            await postMentionError(turnLimitBody);
+          } catch (postErr) {
+            logger.warn(
+              { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
+              "Failed to post turn-limit notice (non-blocking)",
+            );
+          }
         }
       } catch (err) {
         logger.error(

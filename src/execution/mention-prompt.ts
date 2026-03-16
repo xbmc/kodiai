@@ -43,6 +43,17 @@ export function buildMentionPrompt(params: {
   contextWindow?: string;
   /** Triage validation context for issue mentions */
   triageContext?: string;
+  /**
+   * Pre-fetched PR diff context (stat + truncated full diff) for PR mentions.
+   * When present, injected into the prompt so the model does not need tool calls
+   * to read the diff — prevents turn exhaustion on large / complex diffs.
+   */
+  prDiffContext?: {
+    stat: string;
+    diff: string;
+    truncated: boolean;
+    fileCount: number;
+  };
 }): string {
   const {
     mention,
@@ -55,6 +66,7 @@ export function buildMentionPrompt(params: {
     unifiedResults,
     contextWindow,
     triageContext,
+    prDiffContext,
   } = params;
   const lines: string[] = [];
 
@@ -93,6 +105,26 @@ export function buildMentionPrompt(params: {
   // Context (optional)
   if (mentionContext.trim().length > 0) {
     lines.push(mentionContext);
+    lines.push("");
+  }
+
+  // Pre-fetched PR diff context — injected to prevent turn exhaustion on review-intent mentions.
+  // When present the model has the full diff and does not need to tool-call git to read it.
+  if (prDiffContext) {
+    lines.push("## PR Diff");
+    lines.push(`Files changed: ${prDiffContext.fileCount}`);
+    lines.push("");
+    lines.push("```diff-stat");
+    lines.push(prDiffContext.stat);
+    lines.push("```");
+    lines.push("");
+    lines.push("```diff");
+    lines.push(prDiffContext.diff);
+    lines.push("```");
+    if (prDiffContext.truncated) {
+      lines.push("");
+      lines.push("*(diff truncated — use file reading tools for sections not shown above)*");
+    }
     lines.push("");
   }
 
