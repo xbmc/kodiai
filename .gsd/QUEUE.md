@@ -13,3 +13,9 @@
 - Added: 2026-03-11
 - Summary: Replace suggestion-style wiki update output with concrete modification artifacts, keep only minimal citations/metadata, support hybrid section/full-page publishing, and retrofit existing published wiki comments.
 - Context: `.gsd/milestones/M028/M028-CONTEXT.md`
+
+### M029 — Wiki Generation Quality & Issue Cleanup
+- Status: queued
+- Added: 2026-03-16
+- Summary: Fix LLM outputting reasoning prose instead of actual wiki replacement text, tighten PR evidence → page targeting to filter irrelevant matches, clean up xbmc/wiki issue #5 (delete junk comments), and re-run generation/publication with quality-gated output.
+- Context: `.gsd/milestones/M029/M029-CONTEXT.md`

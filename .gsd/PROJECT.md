@@ -555,6 +555,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
 - [x] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, harden online repair/backfill paths, and finish the integrated end-to-end proof in S04
 - [x] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
+- [ ] M029: Wiki Generation Quality & Issue Cleanup — Fix LLM outputting reasoning prose instead of wiki content, tighten page targeting, clean up issue #5
 
 ---
 *Last updated: 2026-03-16 after M028 summary/closure verification and milestone completion*
