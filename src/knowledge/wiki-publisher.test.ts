@@ -212,7 +212,7 @@ describe("formatPageComment", () => {
 describe("formatSummaryTable", () => {
   it("includes date-stamped header", () => {
     const result = formatSummaryTable("2026-03-05", [], 0);
-    expect(result).toContain("# Wiki Update Suggestions — 2026-03-05");
+    expect(result).toContain("# Wiki Modification Artifacts — 2026-03-05");
   });
 
   it("includes anchor links for posted pages", () => {
@@ -237,17 +237,27 @@ describe("formatSummaryTable", () => {
     ];
     const result = formatSummaryTable("2026-03-05", results, 4);
     expect(result).toContain("**Pages evaluated:** 2");
-    expect(result).toContain("**Suggestions posted:** 4");
+    expect(result).toContain("**Modifications posted:** 4");
   });
 
-  it("shows voice warning column", () => {
+  it("does not render voice warning column", () => {
     const results = [
       makePageResult({ hasVoiceWarnings: true }),
       makePageResult({ pageTitle: "Clean", hasVoiceWarnings: false }),
     ];
     const result = formatSummaryTable("2026-03-05", results, 3);
-    expect(result).toContain("| yes |");
-    expect(result).toContain("| no |");
+    expect(result).not.toContain("Voice Warnings");
+    expect(result).not.toContain("| yes |");
+    expect(result).not.toContain("| no |");
+  });
+
+  it("does not contain suggestion-style labels", () => {
+    const result = formatSummaryTable("2026-03-05", [], 0);
+    expect(result).not.toContain("Wiki Update Suggestions");
+    expect(result).not.toContain("Suggestions posted");
+    expect(result).not.toContain("Voice Warnings");
+    expect(result).not.toContain("WHY:");
+    expect(result).not.toContain(":warning:");
   });
 });
 

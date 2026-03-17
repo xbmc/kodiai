@@ -24,6 +24,9 @@
 bun test src/knowledge/wiki-publisher.test.ts
 # → 38+ pass, 0 fail; no "Wiki Update Suggestions" or "Suggestions posted" in output
 
+# Diagnose T01 label regressions (any failing negative guard shows the offending string):
+bun test src/knowledge/wiki-publisher.test.ts --reporter=verbose 2>&1 | grep -E 'FAIL|not.toContain'
+
 # T02 — S04 verifier test suite:
 bun test ./scripts/verify-m028-s04.test.ts
 # → 30+ pass, 0 fail
@@ -65,7 +68,7 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|verify-m028-s04'
 
 ## Tasks
 
-- [ ] **T01: Fix `formatSummaryTable` labels and add regression tests** `est:30m`
+- [x] **T01: Fix `formatSummaryTable` labels and add regression tests** `est:30m`
   - Why: `formatSummaryTable` is the last publisher surface still emitting suggestion-style language ("Wiki Update Suggestions", "Suggestions posted", "Voice Warnings" column). Fixing it closes the surface consistency gap required by R026/R029, and new negative guards prevent regression.
   - Files: `src/knowledge/wiki-publisher.ts`, `src/knowledge/wiki-publisher.test.ts`
   - Do: In `wiki-publisher.ts` `formatSummaryTable`, change the title line to `"# Wiki Modification Artifacts — ${date}"`, change the stat line to `"**Modifications posted:** ${totalSuggestions}"`, remove the Voice Warnings column from the table header (`| # | Page | Wiki Link | Sections | PRs Cited | Comment |`) and remove `voiceCol` from the row template. In `wiki-publisher.test.ts`, update the two stale assertions (lines ~215 and ~240) to match the new strings, remove or update the "shows voice warning column" test (it checks `| yes |`/`| no |` which no longer renders), and add new negative guards on `formatSummaryTable` output: `expect(result).not.toContain("Wiki Update Suggestions")`, `expect(result).not.toContain("Suggestions posted")`, `expect(result).not.toContain("Voice Warnings")`.

@@ -58,6 +58,14 @@ This is a pure code and test change — no DB migrations, no new files, no type 
 - [ ] New negative guards added: `not.toContain("Wiki Update Suggestions")`, `not.toContain("Suggestions posted")`, `not.toContain("Voice Warnings")`
 - [ ] `bun test src/knowledge/wiki-publisher.test.ts` passes with 0 failures
 
+## Observability Impact
+
+This task is a pure formatting change with no runtime side-effects or DB writes. The observable signal is the test suite itself:
+
+- **Pass signal:** `bun test src/knowledge/wiki-publisher.test.ts` → 39 pass, 0 fail (including the two new negative-guard tests)
+- **Failure signal:** If a future change re-introduces a stale label, the negative-guard tests (`does not contain suggestion-style labels`, `does not render voice warning column`) will fail with a descriptive `expect(result).not.toContain(...)` message showing exactly which string reappeared
+- **Spot inspection:** `bun -e "import {formatSummaryTable} from './src/knowledge/wiki-publisher.ts'; console.log(formatSummaryTable('2026-03-05', [], 0))"` prints the full summary table for visual inspection of labels
+
 ## Verification
 
 ```bash

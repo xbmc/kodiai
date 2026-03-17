@@ -75,15 +75,15 @@ export function formatSummaryTable(
   const skipped = pageResults.filter((r) => !r.success).length;
 
   const lines: string[] = [
-    `# Wiki Update Suggestions — ${date}`,
+    `# Wiki Modification Artifacts — ${date}`,
     "",
     `**Generated:** ${date}`,
     `**Pages evaluated:** ${pageResults.length}`,
-    `**Suggestions posted:** ${totalSuggestions}`,
+    `**Modifications posted:** ${totalSuggestions}`,
     `**Pages skipped:** ${skipped}`,
     "",
-    "| # | Page | Wiki Link | Sections | PRs Cited | Voice Warnings | Comment |",
-    "|---|------|-----------|----------|-----------|----------------|---------|",
+    "| # | Page | Wiki Link | Sections | PRs Cited | Comment |",
+    "|---|------|-----------|----------|-----------|---------|",
   ];
 
   for (let i = 0; i < pageResults.length; i++) {
@@ -91,7 +91,6 @@ export function formatSummaryTable(
     const num = i + 1;
     const wikiUrl = `https://kodi.wiki/view/${encodeURIComponent(r.pageTitle.replace(/ /g, "_"))}`;
     const wikiLink = `[View](${wikiUrl})`;
-    const voiceCol = r.hasVoiceWarnings ? "yes" : "no";
 
     let commentCol: string;
     if (r.success && r.commentId != null) {
@@ -101,7 +100,7 @@ export function formatSummaryTable(
     }
 
     lines.push(
-      `| ${num} | ${r.pageTitle} | ${wikiLink} | ${r.suggestionsCount} | ${r.prsCount} | ${voiceCol} | ${commentCol} |`,
+      `| ${num} | ${r.pageTitle} | ${wikiLink} | ${r.suggestionsCount} | ${r.prsCount} | ${commentCol} |`,
     );
   }
 
