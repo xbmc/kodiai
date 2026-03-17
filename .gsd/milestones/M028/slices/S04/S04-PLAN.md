@@ -51,6 +51,11 @@ bun run verify:m028:s02 --json && bun run verify:m028:s03 --json && bun run veri
 # Type check:
 bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|verify-m028-s04'
 # → (no output)
+
+# Failure-path diagnostic (inspect any failing checks with structured detail):
+bun run verify:m028:s04 --json 2>&1 | grep -A5 '"passed": false'
+# → shows id, status_code, and detail for any failing check
+# Example for SENTINEL-SUPERSEDED failure: detail="sentinel_rows=21 (need 0; run re-publish to supersede)"
 ```
 
 ## Observability / Diagnostics
@@ -75,7 +80,7 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|verify-m028-s04'
   - Verify: `bun test src/knowledge/wiki-publisher.test.ts` → all pass, 0 fail
   - Done when: test suite passes with no failures; `formatSummaryTable("2026-03-05", [], 0)` does not contain "Wiki Update Suggestions" or "Suggestions posted"
 
-- [ ] **T02: Write S04 proof harness, publish sentinel rows, run regression sweep** `est:90m`
+- [x] **T02: Write S04 proof harness, publish sentinel rows, run regression sweep** `est:90m`
   - Why: The milestone is only complete when a machine-verifiable harness confirms the full R025–R029 contract and the 21 legacy sentinel rows carry real GitHub comment IDs. This task writes the verifier, runs it to baseline, performs the sentinel re-publish, then re-runs to confirm `overallPassed: true`.
   - Files: `scripts/verify-m028-s04.ts`, `scripts/verify-m028-s04.test.ts`, `package.json`
   - Do: Write `scripts/verify-m028-s04.ts` following `verify-m028-s03.ts` exactly as structural template. Export `M028_S04_CHECK_IDS`, `M028S04CheckId`, `M028S04Check`, `M028S04EvaluationReport`, `evaluateM028S04`, `buildM028S04ProofHarness`. Implement 5 checks: `M028-S04-NO-WHY-IN-RENDER` (pure-code — import and call `checkNoWhyInRender` from `./verify-m028-s03.ts`); `M028-S04-NO-WHY-IN-SUMMARY` (pure-code — call `formatSummaryTable` with mock data, assert output has no `"**Why:**"`, `":warning:"`, or `"Wiki Update Suggestions"`); `M028-S04-LIVE-PUBLISHED` (DB-gated — `COUNT(*) WHERE published_comment_id > 0`, pass when count >= 80); `M028-S04-SENTINEL-SUPERSEDED` (DB-gated — `COUNT(*) WHERE published_comment_id = 0 AND published_at IS NOT NULL`, pass when count = 0); `M028-S04-DRY-RUN-CLEAN` (pure-code — call `formatPageComment` on a mock group, assert no `"**Why:**"` or `":warning:"`; can import `checkNoWhyInRender` again or inline). `overallPassed` must include SENTINEL-SUPERSEDED in the gate — no informational exclusion. Write `scripts/verify-m028-s04.test.ts` (~30 tests): check ID list, envelope shape, each pure-code pass/fail path, DB-gated skip behavior, and `overallPassed` semantics including SENTINEL-SUPERSEDED as a real gate. Add `"verify:m028:s04": "bun scripts/verify-m028-s04.ts"` to `package.json`. Run `bun run verify:m028:s04 --json` to confirm baseline (LIVE-PUBLISHED passes, SENTINEL-SUPERSEDED fails with count=21). Then perform sentinel re-publish: run `psql $DATABASE_URL -c "UPDATE wiki_update_suggestions SET published_at = NULL WHERE published_comment_id = 0 AND published_at IS NOT NULL"` to reset the 21 sentinel rows, then run `bun scripts/publish-wiki-updates.ts --issue-number 5` (the publish loop queries `WHERE published_at IS NULL`, so the reset rows are now eligible; upsert will find or create comments on issue #5). After publish, run `bun run verify:m028:s04 --json` and confirm all 5 checks pass. Finally run full regression sweep: `bun run verify:m028:s02 --json && bun run verify:m028:s03 --json && bun run verify:m028:s04 --json`.

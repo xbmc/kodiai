@@ -27,7 +27,8 @@
     "backfill:reviews": "bun scripts/backfill-review-comments.ts",
     "backfill:wiki": "bun scripts/backfill-wiki.ts",
     "verify:m028:s02": "bun scripts/verify-m028-s02.ts",
-    "verify:m028:s03": "bun scripts/verify-m028-s03.ts"
+    "verify:m028:s03": "bun scripts/verify-m028-s03.ts",
+    "verify:m028:s04": "bun scripts/verify-m028-s04.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",
