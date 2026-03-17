@@ -143,9 +143,12 @@ describe("formatPageComment", () => {
     expect(result).toContain(
       "[#27901](https://github.com/xbmc/xbmc/pull/27901) (New build system)",
     );
+    // Modification-only: no **Why:** or voice-mismatch warning prose
+    expect(result).not.toContain("**Why:**");
+    expect(result).not.toContain(":warning:");
   });
 
-  it("includes voice mismatch warning when flag is true", () => {
+  it("omits voice mismatch warning regardless of flag (modification-only format)", () => {
     const group = makeGroup({
       suggestions: [
         {
@@ -158,13 +161,17 @@ describe("formatPageComment", () => {
       ],
     });
     const result = formatPageComment(group, "xbmc", "xbmc");
-    expect(result).toContain(":warning: **Voice mismatch**");
+    // S01 contract: no voice-mismatch warning prose in published comments
+    expect(result).not.toContain(":warning:");
+    expect(result).not.toContain("Voice mismatch");
+    expect(result).not.toContain("**Why:**");
   });
 
   it("omits voice mismatch warning when flag is false", () => {
     const group = makeGroup();
     const result = formatPageComment(group, "xbmc", "xbmc");
     expect(result).not.toContain("Voice mismatch");
+    expect(result).not.toContain("**Why:**");
   });
 
   it("handles multiple suggestions for one page", () => {

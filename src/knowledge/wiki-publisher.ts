@@ -48,7 +48,6 @@ export function formatPageComment(
     const heading = s.sectionHeading ?? "Introduction";
     lines.push("", `### ${heading}`, "");
     lines.push(s.suggestion);
-    lines.push("", `**Why:** ${s.whySummary}`);
 
     if (s.citingPrs.length > 0) {
       const prLinks = s.citingPrs
@@ -58,13 +57,6 @@ export function formatPageComment(
         )
         .join(", ");
       lines.push(`**PRs:** ${prLinks}`);
-    }
-
-    if (s.voiceMismatchWarning) {
-      lines.push(
-        "",
-        "> :warning: **Voice mismatch** — review tone and style carefully before applying",
-      );
     }
 
     lines.push("", "---");
