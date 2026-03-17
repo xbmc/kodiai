@@ -1500,9 +1500,15 @@ export function createMentionHandler(deps: {
           try {
             let filePaths: string[] = [];
             if (mention.prNumber !== undefined && mention.baseRef) {
-              const diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
+              // Try three-dot diff first; fall back to two-dot if merge-base unreachable (shallow clone).
+              let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --name-only`
                 .quiet()
                 .nothrow();
+              if (diffResult.exitCode !== 0) {
+                diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD --name-only`
+                  .quiet()
+                  .nothrow();
+              }
               if (diffResult.exitCode === 0) {
                 filePaths = splitGitLines(diffResult.text());
               } else {
@@ -1649,10 +1655,21 @@ export function createMentionHandler(deps: {
         // mention.baseRef is the PR base branch (e.g. "main"), set by the event parser.
         if (mention.prNumber !== undefined && mention.baseRef && !writeEnabled) {
           try {
-            const [statResult, diffResult] = await Promise.all([
-              $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --stat`.quiet().nothrow(),
-              $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD`.quiet().nothrow(),
-            ]);
+            // Try three-dot diff first (shows only changes introduced by the PR branch).
+            // Falls back to two-dot diff when the merge base isn't reachable — this can happen
+            // in shallow clones where --depth=1 re-fetch of the base branch truncates history
+            // enough that `git merge-base` fails with exit 128.
+            let statResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD --stat`.quiet().nothrow();
+            let diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}...HEAD`.quiet().nothrow();
+            if (statResult.exitCode !== 0 || diffResult.exitCode !== 0) {
+              logger.debug(
+                { surface: mention.surface, prNumber: mention.prNumber, baseRef: mention.baseRef,
+                  statExitCode: statResult.exitCode, diffExitCode: diffResult.exitCode },
+                "Three-dot diff failed, falling back to two-dot diff",
+              );
+              statResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD --stat`.quiet().nothrow();
+              diffResult = await $`git -C ${workspace.dir} diff origin/${mention.baseRef}..HEAD`.quiet().nothrow();
+            }
             if (statResult.exitCode === 0 && diffResult.exitCode === 0) {
               const stat = statResult.text().trim();
               const fullDiff = diffResult.text();
@@ -1698,12 +1715,14 @@ export function createMentionHandler(deps: {
           prDiffContext,
         });
 
-        // Cap max turns for read-only PR mentions — with the diff pre-fetched into context,
-        // the model rarely needs more than a handful of tool calls to respond.
-        // Write-mode keeps the default (25) since it may need more tool calls to apply changes.
-        // Issue mentions (no prNumber) also keep the default — they often need more exploration.
+        // Cap max turns for read-only PR mentions.
+        // When the diff pre-fetch succeeds, 12 turns is usually enough.
+        // When it fails (shallow-clone merge-base issue, exit 128), the model needs
+        // to fall back to git tool calls and may need the full 25 turns.
+        // Use 20 as a middle ground: enough headroom for the tool-call fallback path
+        // while still capping worst-case cost vs write-mode and issue mentions.
         const mentionMaxTurns = (!writeEnabled && mention.prNumber !== undefined)
-          ? 12
+          ? (prDiffContext !== undefined ? 12 : 20)
           : undefined; // undefined → falls through to config.maxTurns
 
         // Execute via Claude
@@ -2595,6 +2614,32 @@ export function createMentionHandler(deps: {
             logger.warn(
               { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
               "Failed to post turn-limit notice (non-blocking)",
+            );
+          }
+        }
+
+        // Handle SDK error_during_execution (failure with no stopReason) — this fires when the
+        // agent ends in a non-assistant state (e.g. mid-tool, permission denial, internal SDK error).
+        // Without this, the failure is silent and the user never sees any response.
+        if (result.conclusion === "failure" && !result.published && !result.stopReason) {
+          const executionErrorBody = wrapInDetails(
+            [
+              "I wasn't able to complete a response for this request.",
+              "",
+              "This can happen when:",
+              "- The PR diff couldn't be fetched (shallow clone merge-base issue)",
+              "- An unexpected error occurred mid-execution",
+              "",
+              "Try mentioning me again — the next run may succeed.",
+            ].join("\n"),
+            "kodiai response",
+          );
+          try {
+            await postMentionError(executionErrorBody);
+          } catch (postErr) {
+            logger.warn(
+              { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
+              "Failed to post execution-error notice (non-blocking)",
             );
           }
         }
