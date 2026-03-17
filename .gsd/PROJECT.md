@@ -174,21 +174,32 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: M028 — Wiki Modification-Only Publishing (Complete)
+
+<details>
+<summary>Previous Release: v0.27 Wiki Modification-Only Publishing (2026-03-16)</summary>
+
+**Shipped:** 2026-03-16
+**Milestone:** M028 (4 slices, 12 tasks)
+
+**Delivered:**
+- `formatPageComment()` produces only replacement wiki text + identity marker — no `**Why:**`, voice-mismatch warning, or rationale prose
+- `formatSummaryTable()` uses `Wiki Modification Artifacts` title and `Modifications posted` stat; Voice Warnings column removed
+- HTML identity marker `<!-- kodiai:wiki-modification:{pageId} -->` as first line of every published comment — hidden in rendered view, scannable via API
+- `upsertWikiPageComment()` replacing `postCommentWithRetry` — marker-scan-based upsert eliminates duplicate comments
+- `published_comment_id BIGINT` column (migration 031) for durable per-row comment identity
+- Retrofit-preview CLI path (`--retrofit-preview --issue-number`) — reads GitHub, never mutates, shows planned update/create actions
+- `--issue-number` flag wired to live publish path so all run modes can target an existing tracking issue
+- Live publish to xbmc/wiki issue #5: 104 rows with real GitHub comment IDs in DB; all 21 legacy sentinel rows re-published (sentinel_rows=0)
+- 3 proof harnesses (`verify-m028-s02.ts`, `verify-m028-s03.ts`, `verify-m028-s04.ts`) all exit `overallPassed:true`
+- 39-test publisher suite with 17 `not.toContain` negative guards preventing regression of banned strings
+- R025, R026, R027, R028, R029 all validated
+
+</details>
+
+
+## Current Milestone: (planning next milestone)
 
 ## Current State
-
-M028 complete. All four slices (S01–S04) verified. The wiki update pipeline is now modification-only end to end with machine-verifiable regression guards and no legacy sentinel rows remaining.
-
-**M028 summary:**
-- **S01**: Modification artifact contract — `WikiUpdateGroup` with `modificationMode: 'section' | 'page'`, `replacementContent` as primary field, `formatPageComment()` with no `**Why:**`/voice prose, `scripts/verify-m028-s01.ts` with 4 checks
-- **S02**: Comment identity surface — `published_comment_id` column (migration 031), `upsertWikiPageComment()` marker-scan upsert, retrofit preview contract, `scripts/verify-m028-s02.ts` with 4 checks
-- **S03**: Live modification-only publish — `--issue-number` flag, live publish to xbmc/wiki issue #5, 80+ real comment IDs in DB, `checkNoWhyInRender` export, `scripts/verify-m028-s03.ts` with 4 checks
-- **S04**: Final integrated proof — `formatSummaryTable` modification-only labels, 5-check harness (`scripts/verify-m028-s04.ts`), all 21 sentinel rows re-published (sentinel_rows=0), full regression sweep S02+S03+S04 exits 0
-
-All five M028 requirements (R025–R029) are now validated.
-
-M027 (prior milestone) is complete: all embedding corpora audited and repaired, retrieval verified end-to-end, bounded wiki repair operational.
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
 - Five knowledge corpora: code (learning_memories), PR review comments (review_comments), wiki pages (wiki_pages), code snippets (code_snippets), issues (issues)
 - Embedding integrity audit: `bun run audit:embeddings [--json]` reports six-corpus completeness/model status, including `issue_comments` and schema-aware stale semantics, from a read-only Postgres transaction
@@ -224,7 +235,7 @@ M027 (prior milestone) is complete: all embedding corpora audited and repaired, 
 - Claim classification: heuristic engine labels findings as diff-grounded, external-knowledge, or inferential
 - Severity demotion: external-knowledge CRITICALs/MAJORs capped at medium, bypassing suppression protection
 - Output filtering: findings rewritten to strip external claims or suppressed entirely before publishing
-- Wiki content updates: voyage-context-3 embeddings, page popularity scoring, PR-grounded staleness detection, section-level update generation, voice-preserving output, tracking issue publishing
+- Wiki content updates: voyage-context-3 embeddings, page popularity scoring, PR-grounded staleness detection, section-level update generation, modification-only output, tracking issue publishing with identity markers and upsert-based publishing
 - Global guardrail pipeline: unified classify-then-filter across all surfaces, context-grounded classification, LLM fallback, audit logging, configurable strictness
 - ~95,000 lines of TypeScript (dead code removed, helpers extracted)
 - Zero TypeScript compilation errors (`bunx tsc --noEmit` exits 0)
@@ -543,7 +554,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M001-M025: Feature development (v0.1 through v0.25)
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
 - [x] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, harden online repair/backfill paths, and finish the integrated end-to-end proof in S04
-- [ ] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
+- [x] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
 
 ---
-*Last updated: 2026-03-12 after M027 summary/closure verification and milestone completion*
+*Last updated: 2026-03-16 after M028 summary/closure verification and milestone completion*
