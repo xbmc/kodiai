@@ -174,15 +174,19 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 
 </details>
 
-## Current Milestone: M028 — Wiki Modification-Only Publishing
+## Current Milestone: M028 — Wiki Modification-Only Publishing (Complete)
 
 ## Current State
 
-M028 S01 complete. The wiki update pipeline now produces modification-only artifacts (no WHY:/suggestion prose), with explicit `modificationMode: 'section' | 'page'` scope and `replacementContent` as the primary output field. All four tasks verified:
-- **T01** (pre-existing): Type contract in `wiki-update-types.ts`, DB migration 030 with `modification_mode` + `replacement_content` columns
-- **T02**: `parseModificationContent()` replaces `parseGeneratedSuggestion()`; page-mode stitching (`>= pageModeThreshold` sections → single artifact); `storeSuggestion()` writes new columns
-- **T03**: `formatPageComment()` rewritten — no `**Why:**`, no voice-mismatch prose; `formatSummaryTable()` uses Modifications terminology; DB SELECT includes new columns with legacy fallback
-- **T04**: `scripts/verify-m028-s01.ts` with four check IDs; `bun run verify:m028:s01 --json` outputs `overallPassed: true`; 79 tests pass across generator/publisher/verifier
+M028 complete. All four slices (S01–S04) verified. The wiki update pipeline is now modification-only end to end with machine-verifiable regression guards and no legacy sentinel rows remaining.
+
+**M028 summary:**
+- **S01**: Modification artifact contract — `WikiUpdateGroup` with `modificationMode: 'section' | 'page'`, `replacementContent` as primary field, `formatPageComment()` with no `**Why:**`/voice prose, `scripts/verify-m028-s01.ts` with 4 checks
+- **S02**: Comment identity surface — `published_comment_id` column (migration 031), `upsertWikiPageComment()` marker-scan upsert, retrofit preview contract, `scripts/verify-m028-s02.ts` with 4 checks
+- **S03**: Live modification-only publish — `--issue-number` flag, live publish to xbmc/wiki issue #5, 80+ real comment IDs in DB, `checkNoWhyInRender` export, `scripts/verify-m028-s03.ts` with 4 checks
+- **S04**: Final integrated proof — `formatSummaryTable` modification-only labels, 5-check harness (`scripts/verify-m028-s04.ts`), all 21 sentinel rows re-published (sentinel_rows=0), full regression sweep S02+S03+S04 exits 0
+
+All five M028 requirements (R025–R029) are now validated.
 
 M027 (prior milestone) is complete: all embedding corpora audited and repaired, retrieval verified end-to-end, bounded wiki repair operational.
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns

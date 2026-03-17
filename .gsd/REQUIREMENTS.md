@@ -2,52 +2,6 @@
 
 This file is the explicit capability and coverage contract for the project.
 
-## Active
-
-### R025 — The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
-- Class: correctness
-- Status: active
-- Description: The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
-- Why it matters: The current output contract publishes advice about what should change instead of directly usable wiki modifications.
-- Source: user
-- Primary owning slice: M028
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Replaces the current suggestion-style contract introduced in M025.
-
-### R027 — The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
-- Class: product-capability
-- Status: active
-- Description: The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
-- Why it matters: Some stale pages need focused edits; others need a coherent page-wide rewrite.
-- Source: user
-- Primary owning slice: M028
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Planning must define the deterministic threshold or rule for switching modes.
-
-### R028 — Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
-- Class: operability
-- Status: active
-- Description: Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
-- Why it matters: The user explicitly called out a live published comment as unacceptable; fixing only future output leaves the visible workflow inconsistent.
-- Source: user
-- Primary owning slice: M028
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Externally visible GitHub history must be handled safely and reproducibly.
-
-### R029 — Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
-- Class: quality-attribute
-- Status: active
-- Description: Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
-- Why it matters: This is a contract change, not just a one-off formatting tweak.
-- Source: user
-- Primary owning slice: M028
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -292,6 +246,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes; M027/S04 — `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` close the milestone with a repeatable machine-checkable final proof that preserves nested S01/S02/S03 evidence and stable milestone-level check IDs.
 - Notes: Guardrails now cover both live repair families and preserve raw audit/repair/status evidence with stable check IDs for machine re-verification.
 
+### R025 — The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
+- Class: correctness
+- Status: validated
+- Description: The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
+- Why it matters: The current output contract publishes advice about what should change instead of directly usable wiki modifications.
+- Source: user
+- Primary owning slice: M028/S01
+- Supporting slices: M028/S03, M028/S04
+- Validation: S01–S04 — Modification-only artifact contract proven end-to-end: WikiUpdateGroup type carries mode/scope (section|page), formatPageComment emits replacement text only, formatSummaryTable emits Wiki Modification Artifacts title and Modifications posted stat. bun run verify:m028:s04 --json overallPassed:true with NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all passing. 104 rows in DB with real comment IDs confirming full pipeline is modification-first.
+- Notes: Replaces the current suggestion-style contract introduced in M025.
+
 ### R026 — Published `xbmc/wiki` tracking issue comments contain replacement content and only minimal citations/metadata, with no `WHY:` blocks or opinionated explanatory prose.
 - Class: correctness
 - Status: validated
@@ -302,6 +267,39 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: S03 — Live publish to xbmc/wiki issue #5 confirmed: 3 comments posted with modification-only content and <!-- kodiai:wiki-modification:{pageId} --> markers, no **Why:** or voice-mismatch prose. formatPageComment fixed. bun run verify:m028:s03 --json → overallPassed: true with LIVE-MARKER count=80.
 - Notes: Section headings and PR links may remain if they are purely navigational/traceable metadata.
+
+### R027 — The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
+- Class: product-capability
+- Status: validated
+- Description: The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
+- Why it matters: Some stale pages need focused edits; others need a coherent page-wide rewrite.
+- Source: user
+- Primary owning slice: M028/S01
+- Supporting slices: M028/S03, M028/S04
+- Validation: S01 — WikiUpdateGroup type carries explicit mode field (section|page) with replacement text and scope metadata. Section vs page mode is deterministically chosen and machine-checkable in stored artifacts and verifier output. S04 regression harness confirms mode field present in all formatPageComment mock renders.
+- Notes: Planning must define the deterministic threshold or rule for switching modes.
+
+### R028 — Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
+- Class: operability
+- Status: validated
+- Description: Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
+- Why it matters: The user explicitly called out a live published comment as unacceptable; fixing only future output leaves the visible workflow inconsistent.
+- Source: user
+- Primary owning slice: M028/S02
+- Supporting slices: M028/S03, M028/S04
+- Validation: S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104).
+- Notes: Externally visible GitHub history must be handled safely and reproducibly.
+
+### R029 — Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
+- Class: quality-attribute
+- Status: validated
+- Description: Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
+- Why it matters: This is a contract change, not just a one-off formatting tweak.
+- Source: user
+- Primary owning slice: M028/S04
+- Supporting slices: M028/S01, M028/S02, M028/S03
+- Validation: S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears.
+- Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
 
 ## Deferred
 
@@ -355,15 +353,15 @@ This file is the explicit capability and coverage contract for the project.
 | R022 | reliability | validated | M027 | none | M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with both repair-state checks passing from durable status-backed evidence (`JSON-RPC API/v8` still `repair_completed`; `review_comments` healthy idempotent rerun still backed by `repair_completed`). |
 | R023 | correctness | validated | M027 | none | M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone from the preserved all-green `s01.audit` envelope, confirming `wiki_pages` remained on `voyage-context-3` while the other audited corpora, including the audited-only `issue_comments`, remained on the non-wiki model boundary. |
 | R024 | quality-attribute | validated | M027 | none | M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes; M027/S04 — `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` close the milestone with a repeatable machine-checkable final proof that preserves nested S01/S02/S03 evidence and stable milestone-level check IDs. |
-| R025 | correctness | active | M028 | none | unmapped |
+| R025 | correctness | validated | M028/S01 | M028/S03, M028/S04 | S01–S04 — Modification-only artifact contract proven end-to-end: WikiUpdateGroup type carries mode/scope (section|page), formatPageComment emits replacement text only, formatSummaryTable emits Wiki Modification Artifacts title and Modifications posted stat. bun run verify:m028:s04 --json overallPassed:true with NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all passing. 104 rows in DB with real comment IDs confirming full pipeline is modification-first. |
 | R026 | correctness | validated | M028/S03 | none | S03 — Live publish to xbmc/wiki issue #5 confirmed: 3 comments posted with modification-only content and <!-- kodiai:wiki-modification:{pageId} --> markers, no **Why:** or voice-mismatch prose. formatPageComment fixed. bun run verify:m028:s03 --json → overallPassed: true with LIVE-MARKER count=80. |
-| R027 | product-capability | active | M028 | none | unmapped |
-| R028 | operability | active | M028 | none | unmapped |
-| R029 | quality-attribute | active | M028 | none | unmapped |
+| R027 | product-capability | validated | M028/S01 | M028/S03, M028/S04 | S01 — WikiUpdateGroup type carries explicit mode field (section|page) with replacement text and scope metadata. Section vs page mode is deterministically chosen and machine-checkable in stored artifacts and verifier output. S04 regression harness confirms mode field present in all formatPageComment mock renders. |
+| R028 | operability | validated | M028/S02 | M028/S03, M028/S04 | S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104). |
+| R029 | quality-attribute | validated | M028/S04 | M028/S01, M028/S02, M028/S03 | S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears. |
 
 ## Coverage Summary
 
-- Active requirements: 4
-- Mapped to slices: 4
-- Validated: 23 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R026)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 27 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029)
 - Unmapped active requirements: 0
