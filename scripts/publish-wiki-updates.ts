@@ -62,7 +62,7 @@ Options:
   --comment-delay <ms>  Milliseconds between comment API calls (default: 3000)
   --retrofit-preview    Scan issue for existing wiki comments, preview planned actions
                         (requires --issue-number; reads GitHub, does not post)
-  --issue-number <n>    Target issue number for --retrofit-preview
+  --issue-number <n>    Target issue number for live publish or --retrofit-preview
   --help                Show this help
 
 Environment:
@@ -83,18 +83,20 @@ const pageIds = values["page-ids"]
   .filter((n) => !isNaN(n));
 
 const retrofitPreview = values["retrofit-preview"]!;
-let retrofitIssueNumber: number | undefined;
 
-if (retrofitPreview) {
-  if (!values["issue-number"]) {
-    console.error("Error: --retrofit-preview requires --issue-number <n>");
-    process.exit(1);
-  }
-  retrofitIssueNumber = parseInt(values["issue-number"]!, 10);
-  if (isNaN(retrofitIssueNumber)) {
+// Parse --issue-number unconditionally — applies to both --retrofit-preview and live publish
+let liveIssueNumber: number | undefined;
+if (values["issue-number"] != null) {
+  liveIssueNumber = parseInt(values["issue-number"]!, 10);
+  if (isNaN(liveIssueNumber)) {
     console.error(`Error: --issue-number must be an integer, got: ${values["issue-number"]}`);
     process.exit(1);
   }
+}
+
+if (retrofitPreview && liveIssueNumber == null) {
+  console.error("Error: --retrofit-preview requires --issue-number <n>");
+  process.exit(1);
 }
 
 // ── Private key loader (reuse config.ts logic) ──────────────────────────
@@ -194,7 +196,7 @@ async function main() {
     pageIds,
     groundedOnly,
     retrofitPreview,
-    issueNumber: retrofitIssueNumber,
+    issueNumber: liveIssueNumber,
   });
 
   // ── Handle --retrofit-preview output ──────────────────────────────
@@ -233,10 +235,13 @@ async function main() {
   }
 
   // Summary
-  const issueInfo =
-    result.issueNumber != null
-      ? `#${result.issueNumber} (${result.issueUrl})`
-      : "N/A";
+  let issueInfo: string;
+  if (result.issueNumber != null) {
+    const supplied = liveIssueNumber != null && !dryRun;
+    issueInfo = `#${result.issueNumber} (${supplied ? "supplied" : "created"}) — ${result.issueUrl}`;
+  } else {
+    issueInfo = "N/A";
+  }
 
   console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

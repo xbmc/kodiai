@@ -21,6 +21,18 @@
 ## Verification
 
 ```bash
+# 0. Failure-path diagnostic — confirm publisher errors are observable
+#    If the GitHub App is not installed, the publisher logs an error and returns
+#    an empty result (not an unhandled exception). Inspect with:
+#      LOG_LEVEL=debug bun scripts/publish-wiki-updates.ts --dry-run 2>&1 | head -20
+#    For live-run failures (e.g., 404 from issues.get with bad --issue-number):
+#      bun scripts/publish-wiki-updates.ts --issue-number 999999 2>&1
+#    → should print "Wiki update publishing failed" with error detail and exit 1
+#    DB failure visibility: query
+#      SELECT page_id, published_comment_id FROM wiki_update_suggestions
+#        WHERE published_at IS NOT NULL AND published_comment_id = 0 LIMIT 5;
+#    → rows with published_comment_id = 0 mean sentinel/stub IDs were written (regression)
+
 # 1. Publisher test suite (no regressions from T01 wiring changes)
 bun test src/knowledge/wiki-publisher.test.ts
 # → 37 pass, 0 fail
@@ -70,7 +82,7 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types|verify-m02
 
 ## Tasks
 
-- [ ] **T01: Wire `--issue-number` to live publish path** `est:45m`
+- [x] **T01: Wire `--issue-number` to live publish path** `est:45m`
   - Why: Currently `--issue-number` is only parsed inside the `if (retrofitPreview)` block in `scripts/publish-wiki-updates.ts`, and `publish()` always calls `issues.create` on live runs. To post to an existing issue, we need: (a) parse `--issue-number` unconditionally, (b) pass it to `publisher.publish()` even without `--retrofit-preview`, and (c) have `publish()` skip `issues.create` and use the supplied `issueNumber` directly when provided.
   - Files: `scripts/publish-wiki-updates.ts`, `src/knowledge/wiki-publisher.ts`, `src/knowledge/wiki-publisher-types.ts`, `src/knowledge/wiki-publisher.test.ts`
   - Do: Move `--issue-number` parsing outside the `if (retrofitPreview)` block so it applies to all runs. Pass `issueNumber` from the parsed CLI value to `publisher.publish({ ..., issueNumber: liveIssueNumber })`. In `wiki-publisher.ts` publish(), just before step 5 (`issues.create`), add: if `runOptions.issueNumber` is provided and `!retrofitPreview`, assign `issueNumber = runOptions.issueNumber` and fetch `issueUrl` via `octokit.rest.issues.get(...)` instead of creating. Also update the tracking-issue title — rename from `Wiki Update Suggestions` to `Wiki Modification Artifacts` in the title of newly created issues. Update `PublishRunOptions` comment: `issueNumber` now applies to both retrofitPreview AND live publish. Add a publisher test covering the supplied-issue-number path. In `scripts/publish-wiki-updates.ts`, update the `--issue-number` help text and the printed summary to show "Issue: #N (supplied)" vs "Issue: #N (created)".

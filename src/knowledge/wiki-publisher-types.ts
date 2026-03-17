@@ -56,7 +56,9 @@ export type PublishRunOptions = {
   groundedOnly?: boolean;
   /** If true, scan existing issue for wiki comments and report planned actions without mutating. */
   retrofitPreview?: boolean;
-  /** Issue number to scan for retrofit-preview mode. Required when retrofitPreview is true. */
+  /** Issue number to scan for retrofit-preview mode, OR an existing issue to target for live publish.
+   *  When provided and `retrofitPreview` is false, the publisher skips `issues.create` and posts
+   *  directly to this issue via `issues.get` + `upsertWikiPageComment`. */
   issueNumber?: number;
 };
 

@@ -51,6 +51,11 @@ function createMockOctokit() {
             data: { number: 42, html_url: "https://github.com/xbmc/wiki/issues/42" },
           }),
         ),
+        get: mock(() =>
+          Promise.resolve({
+            data: { html_url: "https://github.com/xbmc/wiki/issues/42" },
+          }),
+        ),
         createComment: mock(() =>
           Promise.resolve({ data: { id: 99001 } }),
         ),
@@ -499,7 +504,7 @@ describe("createWikiPublisher", () => {
       const createCall = (mockOctokit.rest.issues.create as unknown as ReturnType<typeof mock>).mock
         .calls[0];
       const args = createCall![0] as Record<string, unknown>;
-      expect(args.title).toMatch(/^Wiki Update Suggestions — \d{4}-\d{2}-\d{2}$/);
+      expect(args.title).toMatch(/^Wiki Modification Artifacts — \d{4}-\d{2}-\d{2}$/);
       expect(args.labels).toEqual(["wiki-update", "bot-generated"]);
       expect(args.owner).toBe("xbmc");
       expect(args.repo).toBe("wiki");
@@ -522,6 +527,70 @@ describe("createWikiPublisher", () => {
       expect(result.pagesPosted).toBe(0);
       // Should NOT have created an issue
       expect(mockOctokit.rest.issues.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("supplied issueNumber — live publish to existing issue", () => {
+    it("uses issues.get instead of issues.create when issueNumber is supplied", async () => {
+      const mockOctokit = {
+        rest: {
+          issues: {
+            get: mock(() =>
+              Promise.resolve({
+                data: { html_url: "https://github.com/xbmc/wiki/issues/5" },
+              }),
+            ),
+            create: mock(() =>
+              Promise.resolve({
+                data: { number: 99, html_url: "https://github.com/xbmc/wiki/issues/99" },
+              }),
+            ),
+            createComment: mock(() => Promise.resolve({ data: { id: 88001 } })),
+            listComments: mock(() => Promise.resolve({ data: [] })),
+            updateComment: mock(() => Promise.resolve({ data: {} })),
+            update: mock(() => Promise.resolve({ data: {} })),
+          },
+        },
+      } as unknown as Octokit;
+
+      const githubApp = createMockGithubApp({
+        getInstallationOctokit: mock(() => Promise.resolve(mockOctokit)),
+      });
+      const { sql } = createMockSql([
+        {
+          id: 1,
+          page_id: 100,
+          page_title: "Test Page",
+          section_heading: "Overview",
+          suggestion: "New content here",
+          why_summary: "PR updated this",
+          citing_prs: [],
+          voice_mismatch_warning: false,
+        },
+      ]);
+      const logger = createSilentLogger();
+
+      const publisher = createWikiPublisher({
+        sql,
+        githubApp,
+        logger,
+        commentDelayMs: 0,
+      });
+      const result = await publisher.publish({ issueNumber: 5 });
+
+      // issues.get called with correct issue_number
+      expect(mockOctokit.rest.issues.get).toHaveBeenCalledTimes(1);
+      const getCall = (mockOctokit.rest.issues.get as unknown as ReturnType<typeof mock>).mock
+        .calls[0]![0] as Record<string, unknown>;
+      expect(getCall.issue_number).toBe(5);
+
+      // issues.create must NOT have been called
+      expect(mockOctokit.rest.issues.create).not.toHaveBeenCalled();
+
+      // result reflects the supplied issue number
+      expect(result.issueNumber).toBe(5);
+      expect(result.issueUrl).toBe("https://github.com/xbmc/wiki/issues/5");
+      expect(result.pagesPosted).toBe(1);
     });
   });
 });

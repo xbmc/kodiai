@@ -467,22 +467,40 @@ export function createWikiPublisher(options: WikiPublisherOptions) {
         };
       }
 
-      // ── 5. Create tracking issue (PUB-01) ─────────────────────────
+      // ── 5. Get or create tracking issue ──────────────────────────
       const today = new Date().toISOString().slice(0, 10);
-      const issue = await octokit!.rest.issues.create({
-        owner,
-        repo,
-        title: `Wiki Update Suggestions — ${today}`,
-        body: "Posting update suggestions... (will be updated with summary table)",
-        labels: ["wiki-update", "bot-generated"],
-      });
-      const issueNumber = issue.data.number;
-      const issueUrl = issue.data.html_url;
+      let issueNumber: number;
+      let issueUrl: string;
 
-      logger.info(
-        { issueNumber, issueUrl },
-        `Created tracking issue #${issueNumber}`,
-      );
+      if (runOptions.issueNumber) {
+        // Supplied issue — skip create, fetch URL via issues.get
+        const issueData = await octokit!.rest.issues.get({
+          owner,
+          repo,
+          issue_number: runOptions.issueNumber,
+        });
+        issueNumber = runOptions.issueNumber;
+        issueUrl = issueData.data.html_url;
+        logger.info(
+          { issueNumber, issueUrl },
+          `Using supplied tracking issue #${issueNumber}`,
+        );
+      } else {
+        // Create new tracking issue (PUB-01)
+        const issue = await octokit!.rest.issues.create({
+          owner,
+          repo,
+          title: `Wiki Modification Artifacts — ${today}`,
+          body: "Posting modification artifacts... (will be updated with summary table)",
+          labels: ["wiki-update", "bot-generated"],
+        });
+        issueNumber = issue.data.number;
+        issueUrl = issue.data.html_url;
+        logger.info(
+          { issueNumber, issueUrl },
+          `Created tracking issue #${issueNumber}`,
+        );
+      }
 
       // ── 6. Post per-page comments (PUB-02 + PUB-03) ──────────────
       const pageResults: PagePostResult[] = [];
