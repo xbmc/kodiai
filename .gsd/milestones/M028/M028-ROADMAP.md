@@ -69,7 +69,7 @@ This milestone is complete only when all are true:
   > After this: operators can run the real wiki generate + publish-dry-run commands and inspect persisted/rendered outputs that are modification-only, explicitly scoped as section or page replacements, and free of `WHY:`/suggestion prose.
 - [x] **S02: Deterministic Retrofit & Comment Identity Surface** `risk:high` `depends:[S01]`
   > After this: operators can preview exactly which existing `xbmc/wiki` comments will be updated or superseded, using stable comment identity or deterministic markers rather than manual thread cleanup.
-- [ ] **S03: Live Modification-Only Wiki Publishing** `risk:medium` `depends:[S01,S02]`
+- [x] **S03: Live Modification-Only Wiki Publishing** `risk:medium` `depends:[S01,S02]`
   > After this: the real `xbmc/wiki` tracking issue flow publishes modification-only comments for new wiki updates and can supersede prior suggestion-style output through the same live publisher path.
 - [ ] **S04: Final Integrated Publication & Retrofit Proof** `risk:medium` `depends:[S01,S02,S03]`
   > After this: a single production-style acceptance path proves the assembled system end to end — generation persists the new artifact contract, publication renders only modification text, retrofit leaves the live thread contract-consistent, and regression checks catch any return of `WHY:`/opinion prose.
