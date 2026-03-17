@@ -96,7 +96,7 @@ bunx tsc --noEmit 2>&1 | grep -E 'wiki-publisher|wiki-publisher-types|verify-m02
   - Verify: DB query `SELECT page_id, published_comment_id, published_issue_number FROM wiki_update_suggestions WHERE published_at IS NOT NULL AND published_comment_id > 0 ORDER BY published_at DESC LIMIT 5` returns at least one row; `published_issue_number = 5` for those rows
   - Done when: At least one row has `published_comment_id > 0` and `published_issue_number = 5` in the DB; no new tracking issue was created during the run
 
-- [ ] **T03: S03 proof harness** `est:60m`
+- [x] **T03: S03 proof harness** `est:60m`
   - Why: S03 needs a machine-checkable verifier that locks the live-publish contract the same way S01 and S02 proof harnesses locked their contracts. The harness must cover both pure-code checks (always runnable) and DB/GitHub-gated checks (report `db_unavailable` or `github_unavailable` gracefully when not wired).
   - Files: `scripts/verify-m028-s03.ts` (new), `scripts/verify-m028-s03.test.ts` (new), `package.json`
   - Do: Model the harness after `verify-m028-s02.ts`. Export `M028_S03_CHECK_IDS`, `evaluateM028S03(sql?, octokit?, owner?, repo?, issueNumber?)`, and `buildM028S03ProofHarness(opts?)`. Implement four checks:
