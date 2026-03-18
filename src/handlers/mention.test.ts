@@ -1115,6 +1115,146 @@ describe("createMentionHandler conversational review wiring", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("review requests on PR surfaces never trigger write mode (regression: 'please do a full review')", async () => {
+    // Regression test: "please do a full review of this PR" was misclassified as write intent
+    // because "please" in confirmationAction matched + "\bpr\b" in actionSignal matched.
+    // Fix: removed "please" from confirmationAction, added isReviewRequest guard.
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+    const prNumber = 101;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const writeModes: Array<boolean | undefined> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({
+            data: {
+              number: prNumber,
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: {
+                ref: "feature",
+                repo: { name: "repo", owner: { login: "acme" } },
+              },
+              base: { ref: "main" },
+            },
+          }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          create: async () => ({ data: { html_url: "https://example.com/pr/should-not-create" } }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { writeMode?: boolean }) => {
+          writeModes.push(ctx.writeMode);
+          return {
+            conclusion: "success",
+            published: true,
+            writeMode: ctx.writeMode,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const issueHandler = handlers.get("issue_comment.created");
+    const reviewHandler = handlers.get("pull_request_review_comment.created");
+    expect(issueHandler).toBeDefined();
+    expect(reviewHandler).toBeDefined();
+
+    // The exact phrase that triggered the bug
+    await issueHandler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai please do a full review of this PR",
+      }),
+    );
+
+    // Variations that should also be read-only
+    await issueHandler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai please review this",
+      }),
+    );
+
+    await issueHandler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai can you do a full review",
+      }),
+    );
+
+    await reviewHandler!(
+      buildReviewCommentMentionEvent({
+        prNumber,
+        baseRef: "main",
+        headRef: "feature",
+        headRepoOwner: "acme",
+        headRepoName: "repo",
+        commentBody: "@kodiai review this code",
+      }),
+    );
+
+    expect(writeModes).toHaveLength(4);
+    // All review requests must be read-only — none should activate write mode
+    expect(writeModes.every((wm) => wm !== true)).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
   test("implementation verbs on PR surfaces trigger write mode with expanded detection", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
