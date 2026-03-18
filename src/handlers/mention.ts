@@ -710,7 +710,11 @@ export function createMentionHandler(deps: {
       /(?:\bwrite\b|\bdo\s+it\b|\bgo\s+ahead\b|\bproceed\b|\bpr\b|\bimplement\b|\bfix\b|\bopen\b|\bsubmit\b|\bsend\b|\bmake\b|\bcreate\b)/;
 
     // Confirmation + action: "yes, please write the PR", "yes do it", "yes go ahead"
-    const confirmationAction = /^(?:yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely|please)\b/;
+    // NOTE: "please" is intentionally excluded — it is a politeness prefix, not a confirmation.
+    // "please do X" should be handled by the implementation-verb patterns, not treated as
+    // a confirmation of a prior offer. Including "please" here caused "please do a full review
+    // of this PR" to match as write intent (confirmationAction="please" + actionSignal="\bpr\b").
+    const confirmationAction = /^(?:yes|yeah|yep|yup|sure|ok|okay|absolutely|definitely)\b/;
     // Sentiment + action: "sounds good, go ahead", "looks good, make the PR"
     const sentimentAction =
       /^(?:sounds?\s+good|looks?\s+good|that(?:'s|\s+is)\s+(?:good|great|perfect|fine)|perfect|great)\b/;
@@ -723,6 +727,30 @@ export function createMentionHandler(deps: {
       return true;
 
     return false;
+  }
+
+  /**
+   * Detect explicit review requests on PR surfaces.
+   *
+   * Review requests should never trigger write mode — the bot should post a review
+   * comment/summary on the PR, not open a new PR. This guard must run before
+   * detectImplicitPrPatchIntent so that "please do a full review" doesn't fall
+   * through to the patch/apply detection path.
+   *
+   * Returns true if the request is unambiguously asking for a code review.
+   */
+  function isReviewRequest(userQuestion: string): boolean {
+    const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase().trim();
+    if (normalized.length === 0) return false;
+
+    // Direct: "review this", "review the PR", "review this PR", "do a review", "do a full review"
+    const reviewDirect =
+      /^(?:please\s+)?(?:do\s+(?:a\s+)?(?:full\s+)?review|review)\b/;
+    // Polite ask: "can you review", "can you do a review", "can you do a full review"
+    const reviewAsk =
+      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:do\s+(?:a\s+)?(?:full\s+)?review|review)\b/;
+
+    return reviewDirect.test(normalized) || reviewAsk.test(normalized);
   }
 
   async function handleMention(event: WebhookEvent): Promise<void> {
@@ -1098,8 +1126,10 @@ export function createMentionHandler(deps: {
             : undefined;
 
         // PR surfaces: broad write intent detection (implementation verbs, confirmations, patches)
+        // Guard: explicit review requests must never trigger write mode — they are always read-only.
         const prWriteIntent =
-          isPrSurface && !isIssueThreadComment && !parsedWriteIntent.writeIntent
+          isPrSurface && !isIssueThreadComment && !parsedWriteIntent.writeIntent &&
+          !isReviewRequest(parsedWriteIntent.request)
             ? detectImplicitPrPatchIntent(parsedWriteIntent.request)
             : undefined;
 
