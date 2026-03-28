@@ -20,6 +20,7 @@ import {
   createBranchCommitAndPush,
   commitAndPushToRemoteRef,
   pushHeadToRemoteRef,
+  buildAuthFetchUrl,
   WritePolicyError,
   assertOriginIsFork,
   shouldUseGist,
@@ -1019,12 +1020,14 @@ export function createMentionHandler(deps: {
             dir: workspace.dir,
             prNumber: mention.prNumber,
             localBranch: "pr-mention",
+            token: workspace.token,
           });
 
           // Ensure base branch exists as a remote-tracking ref so git diff tools can compare
           // origin/BASE...HEAD even in --single-branch workspaces.
           if (mention.baseRef) {
-            await $`git -C ${workspace.dir} fetch origin ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
+            const fetchRemote1 = await buildAuthFetchUrl(workspace.dir, workspace.token);
+            await $`git -C ${workspace.dir} fetch ${fetchRemote1} ${mention.baseRef}:refs/remotes/origin/${mention.baseRef} --depth=1`.quiet();
           }
         }
 
@@ -2013,6 +2016,7 @@ export function createMentionHandler(deps: {
                   denyPaths: config.write.denyPaths,
                   secretScanEnabled: config.write.secretScan.enabled,
                 },
+                token: forkContext.botPat,
               });
 
               // Cross-fork PR: head uses forkOwner:branchName format
@@ -2187,7 +2191,8 @@ export function createMentionHandler(deps: {
             // do duplicate work concurrently. This project currently deploys with max-replicas=1.
 
             try {
-              await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+              const fetchRemote2 = await buildAuthFetchUrl(workspace.dir, workspace.token);
+              await $`git -C ${workspace.dir} fetch ${fetchRemote2} ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
               const recentMessages = (
                 await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
               )
@@ -2251,6 +2256,7 @@ export function createMentionHandler(deps: {
                   denyPaths: config.write.denyPaths,
                   secretScanEnabled: config.write.secretScan.enabled,
                 },
+                token: workspace.token,
               });
 
               logger.info(
@@ -2300,7 +2306,8 @@ export function createMentionHandler(deps: {
 
               // If another concurrent run already pushed an idempotent commit, treat this as a no-op.
               try {
-                await $`git -C ${workspace.dir} fetch origin ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
+                const fetchRemote3 = await buildAuthFetchUrl(workspace.dir, workspace.token);
+                await $`git -C ${workspace.dir} fetch ${fetchRemote3} ${headRef}:refs/remotes/origin/${headRef} --depth=50`.quiet();
                 const recentMessages = (
                   await $`git -C ${workspace.dir} log -n 50 --pretty=%B refs/remotes/origin/${headRef}`.quiet()
                 )
@@ -2348,6 +2355,7 @@ export function createMentionHandler(deps: {
                 await pushHeadToRemoteRef({
                   dir: workspace.dir,
                   remoteRef: writeBranchName,
+                  token: workspace.token,
                 });
               } catch (pushErr) {
                 if (await maybeReplyWritePermissionFailure(pushErr)) {
@@ -2392,6 +2400,7 @@ export function createMentionHandler(deps: {
                 denyPaths: config.write.denyPaths,
                 secretScanEnabled: config.write.secretScan.enabled,
               },
+              token: workspace.token,
             });
           } catch (err) {
             if (err instanceof WritePolicyError) {

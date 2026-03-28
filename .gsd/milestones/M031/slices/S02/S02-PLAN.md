@@ -35,7 +35,7 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
   - Estimate: 45m
   - Files: src/jobs/workspace.ts
   - Verify: bunx tsc --noEmit && echo 'types ok'
-- [ ] **T03: Thread workspace.token through all handler and write-runner call sites** — Update all call sites in mention.ts, review.ts, and write-runner.ts that call push/fetch functions or run `git fetch origin` directly, so they pass `workspace.token` (the installation token) or the appropriate bot PAT for fork push operations.
+- [x] **T03: Wired workspace.token and forkContext.botPat through all push/fetch call sites in mention.ts, review.ts, and write-runner.ts via exported buildAuthFetchUrl helper** — Update all call sites in mention.ts, review.ts, and write-runner.ts that call push/fetch functions or run `git fetch origin` directly, so they pass `workspace.token` (the installation token) or the appropriate bot PAT for fork push operations.
 
 Call sites to update:
 

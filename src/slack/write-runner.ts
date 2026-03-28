@@ -360,6 +360,7 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
                 denyPaths: config.write.denyPaths,
                 secretScanEnabled: config.write.secretScan.enabled,
               },
+              token: forkContext.botPat,
             });
 
             // Cross-fork PR: head uses forkOwner:branchName format
@@ -496,6 +497,7 @@ export function createSlackWriteRunner(deps: SlackWriteRunnerDeps) {
               denyPaths: config.write.denyPaths,
               secretScanEnabled: config.write.secretScan.enabled,
             },
+            token: workspace.token,
           });
         } catch (err) {
           if (err instanceof WritePolicyError) {

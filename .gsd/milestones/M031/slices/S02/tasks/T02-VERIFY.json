@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M031/S02/T02",
+  "timestamp": 1774717379354,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bunx tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 7667,
+      "verdict": "pass"
+    },
+    {
+      "command": "echo 'types ok'",
+      "exitCode": 0,
+      "durationMs": 10,
+      "verdict": "pass"
+    }
+  ]
+}

@@ -154,6 +154,18 @@ function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
   return strippedUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
 }
 
+/**
+ * Read the stripped origin remote URL from `dir` and inject `token` into it so
+ * it can be used as an ephemeral fetch remote.  Returns `'origin'` when token
+ * is absent so the caller can pass the result directly as the remote argument
+ * without special-casing.
+ */
+export async function buildAuthFetchUrl(dir: string, token: string | undefined): Promise<string> {
+  if (!token) return "origin";
+  const url = (await $`git -C ${dir} remote get-url origin`.quiet()).text().trim();
+  return makeAuthUrl(url, token);
+}
+
 function redactTokenFromError(err: unknown, token: string | undefined): void {
   if (!(err instanceof Error)) return;
 

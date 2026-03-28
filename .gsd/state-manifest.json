@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T17:02:49.455Z",
+  "exported_at": "2026-03-28T17:08:37.419Z",
   "milestones": [
     {
       "id": "M001",
@@ -1288,19 +1288,27 @@
       "milestone_id": "M031",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Thread workspace.token through all handler and write-runner call sites",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired workspace.token and forkContext.botPat through all push/fetch call sites in mention.ts, review.ts, and write-runner.ts via exported buildAuthFetchUrl helper",
+      "status": "complete",
+      "one_liner": "Wired workspace.token and forkContext.botPat through all push/fetch call sites in mention.ts, review.ts, and write-runner.ts via exported buildAuthFetchUrl helper",
+      "narrative": "Added exported buildAuthFetchUrl helper to workspace.ts that reads the stripped origin URL and injects a token, returning 'origin' when absent. Updated 8 call sites in mention.ts (fetchAndCheckoutPullRequestHeadRef, three inline fetch commands, commitAndPushToRemoteRef, pushHeadToRemoteRef, two createBranchCommitAndPush calls), 5 sites in review.ts (added token? to collectDiffContext params with a single fetchRemote computed once for all deepen iterations, fetchAndCheckoutPullRequestHeadRef twice, inline fetch twice, collectDiffContext invocation), and 2 sites in write-runner.ts (both commitBranchAndPush calls). No git network operation now reads credentials from .git/config.",
+      "verification_result": "bunx tsc --noEmit exits 0. bun test src/jobs/workspace.test.ts 9/9 pass. bun test src/handlers/mention.test.ts src/handlers/review.test.ts 159/159 pass.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-28T17:08:37.404Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/workspace.ts",
+        "src/handlers/mention.ts",
+        "src/handlers/review.ts",
+        "src/slack/write-runner.ts"
+      ],
+      "key_decisions": [
+        "Exported buildAuthFetchUrl from workspace.ts rather than duplicating remote-URL-read+inject logic at each fetch site; returns 'origin' when token absent for backward compat",
+        "collectDiffContext computes fetchRemote once before the deepen loop to avoid repeated git remote get-url calls per step"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M031\nkey_files:\n  - src/jobs/workspace.ts\n  - src/handlers/mention.ts\n  - src/handlers/review.ts\n  - src/slack/write-runner.ts\nkey_decisions:\n  - Exported buildAuthFetchUrl from workspace.ts rather than duplicating remote-URL-read+inject logic at each fetch site; returns 'origin' when token absent for backward compat\n  - collectDiffContext computes fetchRemote once before the deepen loop to avoid repeated git remote get-url calls per step\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T17:08:37.404Z\nblocker_discovered: false\n---\n\n# T03: Wired workspace.token and forkContext.botPat through all push/fetch call sites in mention.ts, review.ts, and write-runner.ts via exported buildAuthFetchUrl helper\n\n**Wired workspace.token and forkContext.botPat through all push/fetch call sites in mention.ts, review.ts, and write-runner.ts via exported buildAuthFetchUrl helper**\n\n## What Happened\n\nAdded exported buildAuthFetchUrl helper to workspace.ts that reads the stripped origin URL and injects a token, returning 'origin' when absent. Updated 8 call sites in mention.ts (fetchAndCheckoutPullRequestHeadRef, three inline fetch commands, commitAndPushToRemoteRef, pushHeadToRemoteRef, two createBranchCommitAndPush calls), 5 sites in review.ts (added token? to collectDiffContext params with a single fetchRemote computed once for all deepen iterations, fetchAndCheckoutPullRequestHeadRef twice, inline fetch twice, collectDiffContext invocation), and 2 sites in write-runner.ts (both commitBranchAndPush calls). No git network operation now reads credentials from .git/config.\n\n## Verification\n\nbunx tsc --noEmit exits 0. bun test src/jobs/workspace.test.ts 9/9 pass. bun test src/handlers/mention.test.ts src/handlers/review.test.ts 159/159 pass.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bunx tsc --noEmit` | 0 | ✅ pass | 7400ms |\n| 2 | `bun test src/jobs/workspace.test.ts` | 0 | ✅ pass | 3000ms |\n| 3 | `bun test src/handlers/mention.test.ts src/handlers/review.test.ts` | 0 | ✅ pass | 8100ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/workspace.ts`\n- `src/handlers/mention.ts`\n- `src/handlers/review.ts`\n- `src/slack/write-runner.ts`\n",
       "description": "Update all call sites in mention.ts, review.ts, and write-runner.ts that call push/fetch functions or run `git fetch origin` directly, so they pass `workspace.token` (the installation token) or the appropriate bot PAT for fork push operations.\n\nCall sites to update:\n\n**src/handlers/mention.ts:**\n- Line ~1018: `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~1027: `git -C ${workspace.dir} fetch origin ${mention.baseRef}...` → replace `origin` with the auth URL constructed as `(workspace.token ? \\`https://x-access-token:${workspace.token}@github.com\\` : 'origin')` pattern, or better: extract the stripped remote URL and apply makeAuthUrl. Simplest inline approach: replace literal `origin` with a variable `const fetchRemote = workspace.token ? \\`https://x-access-token:${workspace.token}@github.com/${owner}/${repo}.git\\` : 'origin'` — but owner/repo are in scope. Use that variable in the fetch command.\n- Line ~2007: `createBranchCommitAndPush({ dir: workspace.dir, ... })` → add `token: forkContext.botPat` (fork pushes use bot PAT, not installation token)\n- Line ~2190: `git -C ${workspace.dir} fetch origin ${headRef}...` → same auth URL pattern using workspace.token (this fetch is from base repo, not fork)\n- Line ~2245: `commitAndPushToRemoteRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~2303: `git -C ${workspace.dir} fetch origin ${headRef}...` → auth URL pattern\n- Line ~2348: `pushHeadToRemoteRef({ dir: workspace.dir, ... })` → add appropriate token\n- Line ~2386: `createBranchCommitAndPush({ dir: workspace.dir, branchName, ... })` (non-fork push) → add `token: workspace.token`\n\n**src/handlers/review.ts:**\n- `collectDiffContext` helper (line ~696): add `token?: string` to its params type. Replace `fetch origin` calls inside with auth URL: `const authRemote = makeAuthUrl(strippedOriginUrl, token)` — but makeAuthUrl is private to workspace.ts. Best approach: add and export a `buildAuthFetchUrl(dir: string, token: string | undefined): Promise<string>` helper from workspace.ts that reads the stripped remote URL and injects the token. Then call-site can await it once and reuse. Alternative: inline the URL construction using `await $\\`git -C ${workspaceDir} remote get-url origin\\`.quiet().text().trim()` in each fetch call. Choose the exported helper approach for cleanliness.\n- Line ~1278: `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~1287: `git -C ${workspace.dir} fetch origin ...` → auth URL\n- Line ~3600: `fetchAndCheckoutPullRequestHeadRef({ dir: retryWorkspace.dir, ... })` → add `token: retryWorkspace.token`\n- Line ~3607: `git -C ${retryWorkspace.dir} fetch origin ...` → auth URL\n- Call `collectDiffContext` at line ~1574 with added `token: workspace.token`\n\n**src/slack/write-runner.ts:**\n- Line ~354: `commitBranchAndPush({ dir: workspace.dir, ... })` (fork push) → add `token: forkContext.botPat`\n- Line ~491: `commitBranchAndPush({ dir: workspace.dir, ... })` (non-fork push — check context) → add `token: workspace.token`\n\nThe exported `buildAuthFetchUrl` helper to add to workspace.ts:\n```ts\nexport async function buildAuthFetchUrl(dir: string, token: string | undefined): Promise<string> {\n  if (!token) return 'origin';\n  const url = (await $\\`git -C ${dir} remote get-url origin\\`.quiet()).text().trim();\n  return makeAuthUrl(url, token);\n}\n```\n\nRun `bunx tsc --noEmit` after changes. Run `bun test src/jobs/workspace.test.ts src/handlers/*.test.ts` if handler tests exist.",
       "estimate": "1h",
       "files": [
@@ -1685,6 +1693,39 @@
       "verdict": "✅ pass",
       "duration_ms": 5400,
       "created_at": "2026-03-28T17:02:49.441Z"
+    },
+    {
+      "id": 17,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bunx tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7400,
+      "created_at": "2026-03-28T17:08:37.404Z"
+    },
+    {
+      "id": 18,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bun test src/jobs/workspace.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3000,
+      "created_at": "2026-03-28T17:08:37.404Z"
+    },
+    {
+      "id": 19,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bun test src/handlers/mention.test.ts src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8100,
+      "created_at": "2026-03-28T17:08:37.404Z"
     }
   ]
 }

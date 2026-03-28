@@ -92,7 +92,7 @@ import {
 } from "../knowledge/code-snippet-chunker.ts";
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { $ } from "bun";
-import { fetchAndCheckoutPullRequestHeadRef } from "../jobs/workspace.ts";
+import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
@@ -699,19 +699,23 @@ async function collectDiffContext(params: {
   maxFilesForFullDiff: number;
   logger: Logger;
   baseLog: Record<string, unknown>;
+  token?: string;
 }): Promise<DiffCollectionResult> {
-  const { workspaceDir, baseRef, maxFilesForFullDiff, logger, baseLog } = params;
+  const { workspaceDir, baseRef, maxFilesForFullDiff, logger, baseLog, token } = params;
 
   let strategy: DiffCollectionStrategy = "triple-dot";
   let mergeBaseRecovered = false;
   let deepenAttempts = 0;
   let unshallowAttempted = false;
 
+  // Build auth-injected remote URL once for all fetch calls in this function.
+  const fetchRemote = await buildAuthFetchUrl(workspaceDir, token);
+
   let mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
   if (!mergeBaseAvailable) {
     for (const step of DIFF_DEEPEN_STEPS) {
       deepenAttempts += 1;
-      await $`git -C ${workspaceDir} fetch origin ${baseRef}:refs/remotes/origin/${baseRef} --deepen=${step}`
+      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --deepen=${step}`
         .quiet()
         .nothrow();
 
@@ -725,7 +729,7 @@ async function collectDiffContext(params: {
 
     if (!mergeBaseAvailable) {
       unshallowAttempted = true;
-      await $`git -C ${workspaceDir} fetch origin ${baseRef}:refs/remotes/origin/${baseRef} --unshallow`
+      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --unshallow`
         .quiet()
         .nothrow();
 
@@ -1279,12 +1283,14 @@ export function createReviewHandler(deps: {
             dir: workspace.dir,
             prNumber: pr.number,
             localBranch: "pr-review",
+            token: workspace.token,
           });
         }
 
         // Fetch base branch so git diff origin/BASE...HEAD works.
         // Explicit refspec needed because --single-branch clones don't track other branches.
-        await $`git -C ${workspace.dir} fetch origin ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
+        const fetchRemoteReview = await buildAuthFetchUrl(workspace.dir, workspace.token);
+        await $`git -C ${workspace.dir} fetch ${fetchRemoteReview} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
         // Load repo config (.kodiai.yml) with defaults
         const { config, warnings } = await loadRepoConfig(workspace.dir);
@@ -1577,6 +1583,7 @@ export function createReviewHandler(deps: {
           maxFilesForFullDiff: 200,
           logger,
           baseLog,
+          token: workspace.token,
         });
         const allChangedFiles = diffContext.changedFiles;
 
@@ -3601,10 +3608,12 @@ export function createReviewHandler(deps: {
                         dir: retryWorkspace.dir,
                         prNumber: pr.number,
                         localBranch: "pr-review-retry-1",
+                        token: retryWorkspace.token,
                       });
                     }
 
-                    await $`git -C ${retryWorkspace.dir} fetch origin ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
+                    const fetchRemoteRetry = await buildAuthFetchUrl(retryWorkspace.dir, retryWorkspace.token);
+                    await $`git -C ${retryWorkspace.dir} fetch ${fetchRemoteRetry} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
                     const retryInstruction = [
                       "This is a retry of a timed-out review with reduced scope.",
