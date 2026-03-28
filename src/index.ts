@@ -413,6 +413,8 @@ createAddonCheckHandler({
   githubApp,
   config,
   logger,
+  workspaceManager,
+  jobQueue,
 });
 
 if (issueStore && embeddingProvider) {

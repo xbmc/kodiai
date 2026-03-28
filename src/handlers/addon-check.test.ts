@@ -4,16 +4,21 @@ import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.t
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { AppConfig } from "../config.ts";
+import type { WorkspaceManager, JobQueue, Workspace } from "../jobs/types.ts";
 
 // ── Test helpers ──────────────────────────────────────────────────────────
 
 type InfoCall = { bindings: Record<string, unknown>; message: string };
+type WarnCall = { bindings: Record<string, unknown>; message: string };
 
 function createMockLogger() {
   const infoCalls: InfoCall[] = [];
   const debugCalls: InfoCall[] = [];
+  const warnCalls: WarnCall[] = [];
   const logger = {
-    warn: () => {},
+    warn: (bindings: Record<string, unknown>, message: string) => {
+      warnCalls.push({ bindings, message });
+    },
     info: (bindings: Record<string, unknown>, message: string) => {
       infoCalls.push({ bindings, message });
     },
@@ -21,11 +26,36 @@ function createMockLogger() {
       debugCalls.push({ bindings, message });
     },
     error: () => {},
-    child: () => createMockLogger().logger,
+    child: () => {
+      // Child logger writes to same arrays by default — tests can override
+      return createMockLoggerWithArrays(infoCalls, debugCalls, warnCalls);
+    },
     _infoCalls: infoCalls,
     _debugCalls: debugCalls,
+    _warnCalls: warnCalls,
   };
-  return { logger: logger as unknown as Logger, infoCalls, debugCalls };
+  return { logger: logger as unknown as Logger, infoCalls, debugCalls, warnCalls };
+}
+
+function createMockLoggerWithArrays(
+  infoCalls: InfoCall[],
+  debugCalls: InfoCall[],
+  warnCalls: WarnCall[],
+) {
+  const logger = {
+    warn: (bindings: Record<string, unknown>, message: string) => {
+      warnCalls.push({ bindings, message });
+    },
+    info: (bindings: Record<string, unknown>, message: string) => {
+      infoCalls.push({ bindings, message });
+    },
+    debug: (bindings: Record<string, unknown>, message: string) => {
+      debugCalls.push({ bindings, message });
+    },
+    error: () => {},
+    child: () => createMockLoggerWithArrays(infoCalls, debugCalls, warnCalls),
+  };
+  return logger as unknown as Logger;
 }
 
 type CapturedRegistration = { key: string; handler: EventHandler };
@@ -73,15 +103,81 @@ function makePartialConfig(addonRepos: string[]): AppConfig {
   return { addonRepos } as unknown as AppConfig;
 }
 
-function makePrEvent(repoFullName: string, prNumber: number = 42): WebhookEvent {
+/** Returns a no-op workspace stub with a capturable cleanup spy. */
+function createMockWorkspace(dir = "/tmp/test-workspace"): {
+  workspace: Workspace;
+  cleanupCalled: () => boolean;
+} {
+  let cleaned = false;
+  const workspace: Workspace = {
+    dir,
+    cleanup: async () => { cleaned = true; },
+  };
+  return { workspace, cleanupCalled: () => cleaned };
+}
+
+function createMockWorkspaceManager(workspaceOverride?: Workspace): {
+  manager: WorkspaceManager;
+  createSpy: ReturnType<typeof mock>;
+  workspace: Workspace;
+  cleanupCalled: () => boolean;
+} {
+  const { workspace, cleanupCalled } = createMockWorkspace();
+  const effectiveWorkspace = workspaceOverride ?? workspace;
+  const createSpy = mock(async () => effectiveWorkspace);
+  const manager: WorkspaceManager = {
+    create: createSpy as unknown as WorkspaceManager["create"],
+    cleanupStale: async () => 0,
+  };
+  return { manager, createSpy, workspace: effectiveWorkspace, cleanupCalled };
+}
+
+function createMockJobQueue(): {
+  queue: JobQueue;
+  enqueueArgs: Array<{ installationId: number }>;
+} {
+  const enqueueArgs: Array<{ installationId: number }> = [];
+  const queue: JobQueue = {
+    enqueue: async (installationId, fn) => {
+      enqueueArgs.push({ installationId });
+      return fn();
+    },
+    getQueueSize: () => 0,
+    getPendingCount: () => 0,
+  };
+  return { queue, enqueueArgs };
+}
+
+/** Subprocess stub that returns checker output with one ERROR finding. */
+function makeCheckerSubprocess(output: string) {
+  return mock(async (_p: { addonDir: string; branch: string }) => ({
+    exitCode: 1,
+    stdout: output,
+  }));
+}
+
+function makePrEvent(
+  repoFullName: string,
+  prNumber: number = 42,
+  opts: { baseBranch?: string; headBranch?: string } = {},
+): WebhookEvent {
   const [owner = "xbmc", repoName = "repo-plugins"] = repoFullName.split("/");
+  const baseBranch = opts.baseBranch ?? "omega";
+  const headBranch = opts.headBranch ?? "feature/my-addon";
   return {
     id: "delivery-pr-1",
     name: "pull_request",
     installationId: 99,
     payload: {
       action: "opened",
-      pull_request: { number: prNumber },
+      pull_request: {
+        number: prNumber,
+        base: { ref: baseBranch },
+        head: {
+          ref: headBranch,
+          repo: { full_name: `${owner}/${repoName}` },
+        },
+      },
       repository: {
         full_name: repoFullName,
         name: repoName,
@@ -100,15 +196,21 @@ describe("createAddonCheckHandler", () => {
     router = createMockEventRouter();
   });
 
+  // ── Registration ──────────────────────────────────────────────────────
+
   it("registers on pull_request.opened and pull_request.synchronize", () => {
     const { app } = createMockGithubApp([]);
     const { logger } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
 
     createAddonCheckHandler({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
       logger,
+      workspaceManager: manager,
+      jobQueue: queue,
     });
 
     const keys = router.captured.map((c) => c.key);
@@ -117,15 +219,21 @@ describe("createAddonCheckHandler", () => {
     expect(router.captured).toHaveLength(2);
   });
 
+  // ── Repo gate ─────────────────────────────────────────────────────────
+
   it("non-addon repo returns without calling listFiles", async () => {
     const { app, octokit } = createMockGithubApp([]);
     const { logger } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
 
     createAddonCheckHandler({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
       logger,
+      workspaceManager: manager,
+      jobQueue: queue,
     });
 
     // Dispatch to xbmc/xbmc — not in addonRepos
@@ -137,6 +245,208 @@ describe("createAddonCheckHandler", () => {
     expect(octokit.rest.pulls.listFiles).not.toHaveBeenCalled();
   });
 
+  // ── Unknown kodi branch ───────────────────────────────────────────────
+
+  it("unknown base branch warns and skips (does not enqueue)", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app } = createMockGithubApp(files);
+    const { logger, warnCalls } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue, enqueueArgs } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "main" }),
+    );
+
+    // No enqueue
+    expect(enqueueArgs).toHaveLength(0);
+    // Warn emitted with baseBranch binding
+    const warnEntry = warnCalls.find((c) => c.message === "addon-check: unknown kodi branch, skipping");
+    expect(warnEntry).toBeDefined();
+    expect(warnEntry!.bindings.baseBranch).toBe("main");
+  });
+
+  // ── Workspace creation with head branch ──────────────────────────────
+
+  it("workspace.create called with head branch on non-fork PR", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app } = createMockGithubApp(files);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("INFO: looks good\n");
+    const { manager, createSpy } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega", headBranch: "feature/foo" }),
+    );
+
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const createCall = (createSpy as any).mock.calls[0];
+    expect(createCall[1]).toMatchObject({
+      owner: "xbmc",
+      repo: "repo-plugins",
+      ref: "feature/foo",
+    });
+  });
+
+  // ── Runner called per addon with correct args ─────────────────────────
+
+  it("runner called per addon with correct addonDir and branch", async () => {
+    const files = [
+      "plugin.video.foo/addon.xml",
+      "plugin.audio.bar/addon.xml",
+    ];
+    const { app } = createMockGithubApp(files);
+    const { logger } = createMockLogger();
+    const { workspace } = createMockWorkspace("/tmp/ws");
+    const subprocess = mock(async (p: { addonDir: string; branch: string }) => ({
+      exitCode: 0,
+      stdout: "",
+    }));
+    const { manager } = createMockWorkspaceManager(workspace);
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "nexus" }),
+    );
+
+    expect(subprocess).toHaveBeenCalledTimes(2);
+    const dirs = (subprocess as any).mock.calls.map((c: any) => c[0].addonDir as string);
+    expect(dirs).toContain("/tmp/ws/plugin.audio.bar");
+    expect(dirs).toContain("/tmp/ws/plugin.video.foo");
+    const branches = (subprocess as any).mock.calls.map((c: any) => c[0].branch as string);
+    expect(branches.every((b: string) => b === "nexus")).toBe(true);
+  });
+
+  // ── Findings logged with structured bindings ──────────────────────────
+
+  it("findings logged with addonId, level, message bindings", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app } = createMockGithubApp(files);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("ERROR: missing changelog\nWARN: old icon\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const findingLogs = infoCalls.filter((c) => c.message === "addon-check: finding");
+    expect(findingLogs.length).toBe(2);
+    expect(findingLogs[0]!.bindings.level).toBe("ERROR");
+    expect(findingLogs[0]!.bindings.message).toBe("missing changelog");
+    expect(findingLogs[1]!.bindings.level).toBe("WARN");
+    expect(findingLogs[1]!.bindings.message).toBe("old icon");
+  });
+
+  // ── Summary log ───────────────────────────────────────────────────────
+
+  it("logs summary with addonIds and totalFindings on completion", async () => {
+    const files = ["plugin.video.foo/addon.xml", "plugin.audio.bar/addon.xml"];
+    const { app } = createMockGithubApp(files);
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("ERROR: missing changelog\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    const summary = infoCalls.find((c) => c.message === "addon-check: complete");
+    expect(summary).toBeDefined();
+    expect(summary!.bindings.addonIds).toEqual(["plugin.audio.bar", "plugin.video.foo"]);
+    // 1 ERROR finding per addon × 2 addons
+    expect(summary!.bindings.totalFindings).toBe(2);
+  });
+
+  // ── workspace.cleanup called in finally ───────────────────────────────
+
+  it("workspace.cleanup called even when runner throws", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app } = createMockGithubApp(files);
+    const { logger } = createMockLogger();
+    const failingSubprocess = mock(async (_p: { addonDir: string; branch: string }) => {
+      throw new Error("subprocess exploded");
+    });
+    let cleaned = false;
+    const crashWorkspace: Workspace = {
+      dir: "/tmp/crash-ws",
+      cleanup: async () => { cleaned = true; },
+    };
+    const { manager } = createMockWorkspaceManager(crashWorkspace);
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: failingSubprocess,
+    });
+
+    // Should not throw — outer catch handles runner errors
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(cleaned).toBe(true);
+  });
+
+  // ── Existing scaffold tests (updated message) ─────────────────────────
+
   it("addon repo logs correct addon IDs (sorted, deduplicated)", async () => {
     const files = [
       "plugin.video.foo/addon.xml",
@@ -145,31 +455,28 @@ describe("createAddonCheckHandler", () => {
     ];
     const { app } = createMockGithubApp(files);
     const { logger, infoCalls } = createMockLogger();
-
-    // Override child to return a logger that also writes to the same infoCalls array
-    (logger as any).child = () => {
-      const { logger: childLogger } = createMockLogger();
-      (childLogger as any).info = (bindings: Record<string, unknown>, message: string) => {
-        infoCalls.push({ bindings, message });
-      };
-      return childLogger;
-    };
+    const subprocess = makeCheckerSubprocess("");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
 
     createAddonCheckHandler({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
       logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
     });
 
-    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
 
     expect(infoCalls.length).toBeGreaterThanOrEqual(1);
-    const addonCheckCall = infoCalls.find((c) =>
-      c.message === "Addon check: would check addons",
-    );
-    expect(addonCheckCall).toBeDefined();
-    expect(addonCheckCall!.bindings.addonIds).toEqual([
+    const completionLog = infoCalls.find((c) => c.message === "addon-check: complete");
+    expect(completionLog).toBeDefined();
+    expect(completionLog!.bindings.addonIds).toEqual([
       "plugin.audio.bar",
       "plugin.video.foo",
     ]);
@@ -177,61 +484,54 @@ describe("createAddonCheckHandler", () => {
 
   it("empty PR (no files) logs empty addon ID list", async () => {
     const { app } = createMockGithubApp([]);
-    const infoCalls: InfoCall[] = [];
-    const { logger } = createMockLogger();
-
-    (logger as any).child = () => {
-      const { logger: childLogger } = createMockLogger();
-      (childLogger as any).info = (bindings: Record<string, unknown>, message: string) => {
-        infoCalls.push({ bindings, message });
-      };
-      return childLogger;
-    };
+    const { logger, infoCalls } = createMockLogger();
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
 
     createAddonCheckHandler({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
       logger,
+      workspaceManager: manager,
+      jobQueue: queue,
     });
 
-    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
-
-    const addonCheckCall = infoCalls.find((c) =>
-      c.message === "Addon check: would check addons",
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
-    expect(addonCheckCall).toBeDefined();
-    expect(addonCheckCall!.bindings.addonIds).toEqual([]);
+
+    // Empty addon list → early return before enqueue, logs "addon-check: complete" with empty array
+    const completionLog = infoCalls.find((c) => c.message === "addon-check: complete");
+    expect(completionLog).toBeDefined();
+    expect(completionLog!.bindings.addonIds).toEqual([]);
   });
 
   it("root-level files (no slash) are excluded from addon IDs", async () => {
     const files = ["README.md", "plugin.video.foo/addon.xml"];
     const { app } = createMockGithubApp(files);
-    const infoCalls: InfoCall[] = [];
-    const { logger } = createMockLogger();
-
-    (logger as any).child = () => {
-      const { logger: childLogger } = createMockLogger();
-      (childLogger as any).info = (bindings: Record<string, unknown>, message: string) => {
-        infoCalls.push({ bindings, message });
-      };
-      return childLogger;
-    };
+    const { logger, infoCalls } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
 
     createAddonCheckHandler({
       eventRouter: router,
       githubApp: app,
       config: makePartialConfig(["xbmc/repo-plugins"]),
       logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
     });
 
-    await router.captured[0]!.handler(makePrEvent("xbmc/repo-plugins"));
-
-    const addonCheckCall = infoCalls.find((c) =>
-      c.message === "Addon check: would check addons",
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
     );
-    expect(addonCheckCall).toBeDefined();
+
+    const completionLog = infoCalls.find((c) => c.message === "addon-check: complete");
+    expect(completionLog).toBeDefined();
     // README.md has no slash → excluded. plugin.video.foo/addon.xml → "plugin.video.foo"
-    expect(addonCheckCall!.bindings.addonIds).toEqual(["plugin.video.foo"]);
+    expect(completionLog!.bindings.addonIds).toEqual(["plugin.video.foo"]);
   });
 });

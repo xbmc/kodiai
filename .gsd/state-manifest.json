@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T16:05:40.880Z",
+  "exported_at": "2026-03-28T16:09:02.857Z",
   "milestones": [
     {
       "id": "M001",
@@ -847,19 +847,27 @@
       "milestone_id": "M030",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Wire runner into addon-check handler and update index.ts",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wire runAddonChecker into addon-check handler with workspace lifecycle, jobQueue enqueue, branch resolution, structured finding logs, and 11 passing tests",
+      "status": "complete",
+      "one_liner": "Wire runAddonChecker into addon-check handler with workspace lifecycle, jobQueue enqueue, branch resolution, structured finding logs, and 11 passing tests",
+      "narrative": "Updated addon-check.ts to accept workspaceManager and jobQueue, resolve Kodi branch from base.ref (warn+skip on unknown), short-circuit before enqueue on empty addonIds, clone head branch via workspaceManager.create, run runAddonChecker per addon with correct addonDir and kodiVersion, log toolNotFound/timedOut warnings, log structured findings per-addon and a completion summary, and call workspace.cleanup() in finally. Updated index.ts to pass the two new deps. Rewrote addon-check.test.ts with 11 tests covering all the new behaviors plus the retained scaffold tests updated to match new log messages.",
+      "verification_result": "bun test src/handlers/addon-check.test.ts → 11 pass; bun test src/lib/addon-checker-runner.test.ts → 19 pass (regression clean); bun run tsc --noEmit → exit 0",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-28T16:09:02.845Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "The cleanup-on-throw test uses workspace.create throwing instead of subprocess throwing, because runAddonChecker fails open on non-ENOENT errors — the outer finally block still runs correctly either way.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "src/index.ts"
+      ],
+      "key_decisions": [
+        "Empty addonIds list returns early before enqueue to avoid creating a no-op workspace",
+        "createMockLoggerWithArrays centralizes shared-array writes for child loggers",
+        "Cleanup-on-throw test uses workspace.create throwing (not subprocess) since runAddonChecker fails open on non-ENOENT errors"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M030\nkey_files:\n  - src/handlers/addon-check.ts\n  - src/handlers/addon-check.test.ts\n  - src/index.ts\nkey_decisions:\n  - Empty addonIds list returns early before enqueue to avoid creating a no-op workspace\n  - createMockLoggerWithArrays centralizes shared-array writes for child loggers\n  - Cleanup-on-throw test uses workspace.create throwing (not subprocess) since runAddonChecker fails open on non-ENOENT errors\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:09:02.846Z\nblocker_discovered: false\n---\n\n# T02: Wire runAddonChecker into addon-check handler with workspace lifecycle, jobQueue enqueue, branch resolution, structured finding logs, and 11 passing tests\n\n**Wire runAddonChecker into addon-check handler with workspace lifecycle, jobQueue enqueue, branch resolution, structured finding logs, and 11 passing tests**\n\n## What Happened\n\nUpdated addon-check.ts to accept workspaceManager and jobQueue, resolve Kodi branch from base.ref (warn+skip on unknown), short-circuit before enqueue on empty addonIds, clone head branch via workspaceManager.create, run runAddonChecker per addon with correct addonDir and kodiVersion, log toolNotFound/timedOut warnings, log structured findings per-addon and a completion summary, and call workspace.cleanup() in finally. Updated index.ts to pass the two new deps. Rewrote addon-check.test.ts with 11 tests covering all the new behaviors plus the retained scaffold tests updated to match new log messages.\n\n## Verification\n\nbun test src/handlers/addon-check.test.ts → 11 pass; bun test src/lib/addon-checker-runner.test.ts → 19 pass (regression clean); bun run tsc --noEmit → exit 0\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/handlers/addon-check.test.ts` | 0 | ✅ pass | 48ms |\n| 2 | `bun test src/lib/addon-checker-runner.test.ts` | 0 | ✅ pass | 20ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 6000ms |\n\n\n## Deviations\n\nThe cleanup-on-throw test uses workspace.create throwing instead of subprocess throwing, because runAddonChecker fails open on non-ENOENT errors — the outer finally block still runs correctly either way.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/addon-check.ts`\n- `src/handlers/addon-check.test.ts`\n- `src/index.ts`\n",
       "description": "Update src/handlers/addon-check.ts to accept workspaceManager and jobQueue, clone the workspace, resolve the kodi branch, and call runAddonChecker per addon. Update src/index.ts to pass these deps.\n\nSpecific changes to addon-check.ts:\n1. Add imports: WorkspaceManager, JobQueue from ../jobs/types.ts; runAddonChecker, resolveCheckerBranch, AddonFinding from ../lib/addon-checker-runner.ts; fetchAndCheckoutPullRequestHeadRef from ../jobs/workspace.ts\n2. Extend the deps type to include workspaceManager: WorkspaceManager, jobQueue: JobQueue\n3. Extend the payload type cast to include pull_request.base.ref (string) and pull_request.head.ref (string) and pull_request.head.repo (optional fork info)\n4. Inside handlePullRequest, after extracting addonIds:\n   a. Call resolveCheckerBranch(payload.pull_request.base.ref) — if null, handlerLogger.warn({ baseBranch }, 'addon-check: unknown kodi branch, skipping') and return\n   b. Wrap the actual check work in jobQueue.enqueue(event.installationId, async () => { ... })\n   c. Inside the enqueue: create workspace via workspaceManager.create with the head branch (use fork/non-fork pattern from review.ts lines 1178-1205: if head.repo differs from base repo → clone base branch then fetchAndCheckoutPullRequestHeadRef; else clone head.ref directly). For S02, simplify: always clone base.ref and then call fetchAndCheckoutPullRequestHeadRef for non-fork PRs too — safe and matches review.ts's fork path. Actually: clone head.ref directly (non-fork is the common case for xbmc repos; fork handling can be S03 polish).\n   d. For each addonId: call runAddonChecker({ addonDir: path.join(workspace.dir, addonId), branch: kodiVersion, timeBudgetMs: 120000 })\n   e. Log findings: for each finding, handlerLogger.info({ addonId: finding.addonId, level: finding.level, message: finding.message }, 'addon-check: finding')\n   f. Log summary: handlerLogger.info({ addonIds, totalFindings: allFindings.length }, 'addon-check: complete')\n   g. Call workspace.cleanup() in finally\n5. Replace the old scaffold log ('Addon check: would check addons') with the new flow\n6. Accept __runSubprocessForTests as an optional dep for test injection (same pattern as T01)\n\nSpecific changes to index.ts:\n- Add workspaceManager and jobQueue to the createAddonCheckHandler call (they're already created on lines 74-75)\n\nUpdate src/handlers/addon-check.test.ts:\n- Add tests:\n  a. unknown branch → warns and skips (resolveCheckerBranch returns null path)\n  b. workspace.create called with head branch on non-fork PR\n  c. runner called per addon with correct addonDir and branch\n  d. findings logged with structured bindings\n  e. workspace.cleanup called in finally (even on runner error)\n- Keep all 5 existing tests passing (they test the scaffold behavior — update the 'logs addon IDs' test to match the new log message 'addon-check: complete' or adjust as needed)\n\nVerify:\n- bun test src/handlers/addon-check.test.ts (all tests pass)\n- bun test src/lib/addon-checker-runner.test.ts (regression check)\n- bun run tsc --noEmit (exit 0)",
       "estimate": "90m",
       "files": [
@@ -1039,6 +1047,39 @@
       "verdict": "✅ pass",
       "duration_ms": 6100,
       "created_at": "2026-03-28T16:05:40.870Z"
+    },
+    {
+      "id": 6,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M030",
+      "command": "bun test src/handlers/addon-check.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 48,
+      "created_at": "2026-03-28T16:09:02.846Z"
+    },
+    {
+      "id": 7,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M030",
+      "command": "bun test src/lib/addon-checker-runner.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 20,
+      "created_at": "2026-03-28T16:09:02.846Z"
+    },
+    {
+      "id": 8,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M030",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6000,
+      "created_at": "2026-03-28T16:09:02.846Z"
     }
   ]
 }

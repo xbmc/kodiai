@@ -21,7 +21,7 @@ Also create src/lib/addon-checker-runner.test.ts with describe blocks:
   - Estimate: 90m
   - Files: src/lib/addon-checker-runner.ts, src/lib/addon-checker-runner.test.ts, src/lib/usage-analyzer.ts
   - Verify: bun test src/lib/addon-checker-runner.test.ts
-- [ ] **T02: Wire runner into addon-check handler and update index.ts** — Update src/handlers/addon-check.ts to accept workspaceManager and jobQueue, clone the workspace, resolve the kodi branch, and call runAddonChecker per addon. Update src/index.ts to pass these deps.
+- [x] **T02: Wire runAddonChecker into addon-check handler with workspace lifecycle, jobQueue enqueue, branch resolution, structured finding logs, and 11 passing tests** — Update src/handlers/addon-check.ts to accept workspaceManager and jobQueue, clone the workspace, resolve the kodi branch, and call runAddonChecker per addon. Update src/index.ts to pass these deps.
 
 Specific changes to addon-check.ts:
 1. Add imports: WorkspaceManager, JobQueue from ../jobs/types.ts; runAddonChecker, resolveCheckerBranch, AddonFinding from ../lib/addon-checker-runner.ts; fetchAndCheckoutPullRequestHeadRef from ../jobs/workspace.ts
