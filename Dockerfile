@@ -9,7 +9,7 @@ FROM oven/bun:1-debian
 
 # git is required for workspace manager (git clone)
 # python3 + kodi-addon-checker required for addon lint checks
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir kodi-addon-checker && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir --break-system-packages kodi-addon-checker && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
