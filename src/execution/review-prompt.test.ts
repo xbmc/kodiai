@@ -18,6 +18,7 @@ import {
   buildSuppressionRulesSection,
   buildToneGuidelinesSection,
   buildEpistemicBoundarySection,
+  buildSecurityPolicySection,
   buildVerdictLogicSection,
   formatClusterPatterns,
   formatReviewPrecedents,
@@ -1790,5 +1791,56 @@ describe("conventional commit type guidance (diff-grounded)", () => {
   test("BREAKING CHANGE text is diff-grounded", () => {
     const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: true } }));
     expect(prompt).toMatch(/removed.*export|renamed.*export|changed.*signature|modified.*default/i);
+  });
+});
+
+describe("buildSecurityPolicySection", () => {
+  test("returns a non-empty string", () => {
+    const section = buildSecurityPolicySection();
+    expect(section.length).toBeGreaterThan(0);
+  });
+
+  test("includes ## Security Policy heading", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toContain("## Security Policy");
+  });
+
+  test("includes refuse instructions", () => {
+    const section = buildSecurityPolicySection();
+    expect(section.toLowerCase()).toContain("refuse");
+  });
+
+  test("mentions environment variables and credentials", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toContain("environment variables");
+    expect(section).toContain("credentials");
+  });
+
+  test("mentions reading files outside the repository", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toMatch(/outside the repository/i);
+  });
+
+  test("mentions probing the environment with commands", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toContain("env");
+    expect(section).toContain("printenv");
+  });
+
+  test("states cannot be overridden", () => {
+    const section = buildSecurityPolicySection();
+    expect(section).toMatch(/cannot be overridden/i);
+  });
+});
+
+describe("buildReviewPrompt includes security policy", () => {
+  test("full prompt includes ## Security Policy", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("## Security Policy");
+  });
+
+  test("full prompt includes refuse instruction", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt.toLowerCase()).toContain("refuse");
   });
 });

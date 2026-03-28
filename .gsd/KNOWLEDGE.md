@@ -296,3 +296,19 @@ Use `file://${bareDir}` for URLs. For URL-strip tests, set the remote to a crede
 **Rule:** All git-exercising tests in workspace.test.ts use this pattern. Real GitHub network calls are never made from unit tests.
 
 **Established in:** M031/S02/T04 (`src/jobs/workspace.test.ts`, `setupBareAndClone` helper).
+
+---
+
+## Outgoing Secret Scan Error Format Per Server Convention (M031/S03)
+
+**Context:** `scanOutgoingForSecrets()` is wired into 4 MCP servers + the Slack assistant handler. Each server returns errors in a different format depending on its existing convention.
+
+**Rule:** Match the blocked-response format to each server's existing error convention:
+- `comment-server.ts` — returns `{ content: [{ type: "text", text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true }` (plain text, matches existing error pattern)
+- `issue-comment-server.ts` — returns `{ content: [{ type: "text", text: JSON.stringify({ error_code: "SECRET_SCAN_BLOCKED", message: "..." }) }] }` (JSON, matches existing `error_code` convention)
+- `review-comment-thread-server.ts` and `inline-review-server.ts` — return `{ content: [{ type: "text", text: "[SECURITY: ...]" }], isError: true }` (plain text, matches comment-server pattern)
+- `assistant-handler.ts` — calls `safePublish` wrapper which substitutes `"[Response blocked by security policy]"` and still posts to Slack (no hard error; Slack publish must not silently drop)
+
+**Rule:** Do not standardize error format across servers — preserve local convention. The `scanOutgoingForSecrets` call is always the same; only the blocked-response differs.
+
+**Established in:** M031/S03/T02.

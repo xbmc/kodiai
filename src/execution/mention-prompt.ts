@@ -1,7 +1,7 @@
 import type { MentionEvent } from "../handlers/mention-types.ts";
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { sanitizeContent } from "../lib/sanitizer.ts";
-import { buildEpistemicBoundarySection, formatUnifiedContext } from "./review-prompt.ts";
+import { buildEpistemicBoundarySection, buildSecurityPolicySection, formatUnifiedContext } from "./review-prompt.ts";
 
 /**
  * Build the prompt for a mention-triggered execution.
@@ -319,6 +319,7 @@ export function buildMentionPrompt(params: {
   // Epistemic guardrails (PROMPT-04)
   lines.push("");
   lines.push(buildEpistemicBoundarySection());
+  lines.push("", buildSecurityPolicySection());
 
   // Issue mentions: context-visible tier adaptation
   if (mention.prNumber === undefined) {

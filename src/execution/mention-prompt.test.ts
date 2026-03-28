@@ -526,4 +526,22 @@ describe("epistemic guardrails on mention surfaces (PROMPT-04)", () => {
     expect(prPrompt).not.toContain("## Factual Accuracy");
     expect(issuePrompt).not.toContain("## Factual Accuracy");
   });
+
+  test("includes ## Security Policy section", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Please review this.",
+    });
+    expect(prompt).toContain("## Security Policy");
+  });
+
+  test("includes refuse instruction in security policy", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Please review this.",
+    });
+    expect(prompt.toLowerCase()).toContain("refuse");
+  });
 });
