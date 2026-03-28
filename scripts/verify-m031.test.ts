@@ -218,7 +218,7 @@ describe("envelope", () => {
     expect(report.overallPassed).toBe(false);
     const failing = report.checks.filter((c) => !c.passed && !c.skipped);
     expect(failing.length).toBeGreaterThanOrEqual(1);
-    expect(failing[0].id).toBe("M031-OUTGOING-SCAN-BLOCKS");
+    expect(failing[0]!.id).toBe("M031-OUTGOING-SCAN-BLOCKS");
   });
 
   test("overallPassed skips skipped checks", async () => {
