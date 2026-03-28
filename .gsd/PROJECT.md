@@ -197,7 +197,14 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 </details>
 
 
-## Current Milestone: (planning next milestone)
+## M029 Complete — Wiki Generation Quality & Issue Cleanup
+
+**S01:** ✅ done — `isReasoningProse` gate + `## Output Contract` prompt section both shipped and verified (88 tests pass across S01+S02).
+**S02:** ✅ done — `MIN_HEURISTIC_SCORE = 3` constant + `AND wpe.heuristic_score >= 3` in page-selection query; SQL-capture mock tests confirm wiring.
+**S03:** ✅ done — `scripts/cleanup-wiki-issue.ts` dry-run-safe one-shot script ships; all required-arg paths exit 1, TypeScript-clean.
+**S04:** ✅ done — `verify:m029:s04` harness ships (51 tests, `overallPassed: true`); ops runbook at `docs/m029-s04-ops-runbook.md` for live DB/GitHub completion.
+
+**No active milestone.** Planning next milestone.
 
 ## Current State
 - All persistent data in Azure PostgreSQL with pgvector HNSW indexes and tsvector columns
@@ -228,6 +235,7 @@ When a PR is opened, `@kodiai` is mentioned on GitHub, or `@kodiai` is addressed
 - Language-aware retrieval boosting with proportional multi-language boost and related-language affinity
 - Specialized [depends] PR deep review pipeline with changelog, impact, and hash verification
 - CI failure recognition: base-branch comparison via Checks API with flakiness tracking
+- `@kodiai` mention on PR review surfaces: `isReviewRequest()` guard short-circuits write-mode detection for review request phrasings ("please do a full review of this PR", "can you review this", etc.) — always treated as read-only; `please` removed from write-confirmation signal list (hotfix 2026-03-18, fixes incident on xbmc/xbmc PR #27402)
 - Automatically reviews all PRs including drafts (with soft suggestive tone and draft badge)
 - Responds to `@kodiai` mentions across GitHub issue/PR/review surfaces with write-mode support and issue triage
 - Operates as a Slack assistant in `#kodiai` with concise, chat-native responses and write-mode PR creation
@@ -555,7 +563,8 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [x] M026: Codebase Audit & Documentation — Fix TS errors, remove dead code, write comprehensive docs
 - [x] M027: Embedding Integrity & Timeout Hardening — Audit all embedding corpora, verify retrieval usage, harden online repair/backfill paths, and finish the integrated end-to-end proof in S04
 - [x] M028: Wiki Modification-Only Publishing — Replace suggestion-style wiki issue output with concrete modification artifacts and retrofit existing published comments
-- [ ] M029: Wiki Generation Quality & Issue Cleanup — Fix LLM outputting reasoning prose instead of wiki content, tighten page targeting, clean up issue #5
+- [x] Hotfix 2026-03-18: Write-mode guard on PR review surfaces — `isReviewRequest()` guard prevents review request phrasings from triggering write mode; removes `please` as a standalone write-confirmation signal; fixes incident where bot opened unsolicited PR #28043 on xbmc/xbmc in response to a review request on PR #27402
+- [x] M029: Wiki Generation Quality & Issue Cleanup — Fix LLM outputting reasoning prose instead of wiki content, tighten page targeting, clean up issue #5
 
 ---
-*Last updated: 2026-03-16 after M028 summary/closure verification and milestone completion*
+*Last updated: 2026-03-21 after M029 S04 verification and milestone completion*

@@ -1,9 +1,11 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, mock } from "bun:test";
 import {
   matchPatchesToSection,
   buildGroundedSectionPrompt,
   parseGeneratedSuggestion,
   checkGrounding,
+  createUpdateGenerator,
+  MIN_HEURISTIC_SCORE,
 } from "./wiki-update-generator.ts";
 import type { WikiPageRecord } from "./wiki-types.ts";
 import type { PREvidence } from "./wiki-staleness-types.ts";
@@ -335,5 +337,55 @@ describe("checkGrounding", () => {
 
   it("returns false for empty suggestion text", () => {
     expect(checkGrounding("", [27901])).toBe(false);
+  });
+});
+
+// ── MIN_HEURISTIC_SCORE ────────────────────────────────────────────────
+
+describe("MIN_HEURISTIC_SCORE", () => {
+  it("is set to 3 (High relevance threshold)", () => {
+    expect(MIN_HEURISTIC_SCORE).toBe(3);
+  });
+});
+
+// ── createUpdateGenerator page selection ──────────────────────────────
+
+describe("createUpdateGenerator page selection", () => {
+  it("includes heuristic_score >= MIN_HEURISTIC_SCORE in the page-selection query", async () => {
+    const capturedCalls: Array<{ query: string; values: unknown[] }> = [];
+
+    const sqlMock = mock(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      capturedCalls.push({ query: strings.join("?"), values });
+      return [];
+    });
+
+    const logMock = {
+      info: mock(() => {}),
+      warn: mock(() => {}),
+      error: mock(() => {}),
+      debug: mock(() => {}),
+      child: mock(() => logMock),
+    };
+
+    const generator = createUpdateGenerator({
+      sql: sqlMock as unknown as import("../db/client.ts").Sql,
+      wikiPageStore: {
+        getPageChunks: mock(async () => []),
+        upsertWikiPage: mock(async () => {}),
+        upsertWikiPageComment: mock(async () => ({ commentId: 0, created: false })),
+      } as unknown as import("./wiki-types.ts").WikiPageStore,
+      taskRouter: { resolve: mock(() => Promise.resolve("")) } as unknown as import("../llm/task-router.ts").TaskRouter,
+      logger: logMock as unknown as import("pino").Logger,
+      githubOwner: "xbmc",
+      githubRepo: "wiki",
+    });
+
+    await generator.run({ topN: 5 });
+
+    // Page-selection returns [] so generator exits early; one SQL call captured
+    expect(capturedCalls.length).toBeGreaterThanOrEqual(1);
+    const pageSelectCall = capturedCalls[0];
+    expect(pageSelectCall.query).toContain("heuristic_score >=");
+    expect(pageSelectCall.values).toContain(3);
   });
 });

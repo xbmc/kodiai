@@ -8,6 +8,7 @@ import {
   checkHeadingLevels,
   checkFormattingNovelty,
   checkSectionLength,
+  isReasoningProse,
 } from "./wiki-voice-validator.ts";
 import type { PageStyleDescription, VoiceAnalyzerOptions } from "./wiki-voice-types.ts";
 
@@ -296,5 +297,92 @@ describe("checkSectionLength", () => {
     const suggestion = "Some updated content here that is reasonable.";
     const result = checkSectionLength(original, suggestion);
     expect(result.advisory).toBeNull();
+  });
+});
+
+describe("isReasoningProse", () => {
+  it("returns true for I'll starter", () => {
+    expect(isReasoningProse("I'll analyze the evidence from PR #27909")).toBe(true);
+  });
+
+  it("returns true for Let me starter", () => {
+    expect(isReasoningProse("Let me look at what changed in this section.")).toBe(true);
+  });
+
+  it("returns true for I will starter", () => {
+    expect(isReasoningProse("I will now update this section.")).toBe(true);
+  });
+
+  it("returns true for Looking at starter", () => {
+    expect(isReasoningProse("Looking at the changes, the API was renamed.")).toBe(true);
+  });
+
+  it("returns true for I need to starter", () => {
+    expect(isReasoningProse("I need to first understand the context.")).toBe(true);
+  });
+
+  it("returns false for valid wiki content with PR citation", () => {
+    expect(isReasoningProse("== Configuration ==\nThe add-on now supports OAuth 2.0 (PR #27909).")).toBe(false);
+  });
+
+  it("returns false for empty string", () => {
+    expect(isReasoningProse("")).toBe(false);
+  });
+
+  it("returns false when reasoning words appear mid-text", () => {
+    expect(isReasoningProse("The system will now let me explain later.")).toBe(false);
+  });
+
+  it("is case insensitive", () => {
+    expect(isReasoningProse("i'll start with the overview.")).toBe(true);
+  });
+});
+
+describe("generateWithVoicePreservation — reasoning prose drop", () => {
+  function makeOpts() {
+    return {
+      taskRouter: {
+        resolve: mock(() => ({
+          modelId: "test",
+          provider: "anthropic",
+          sdk: "ai" as const,
+          fallbackModelId: "test",
+          fallbackProvider: "anthropic",
+        })),
+      },
+      logger: {
+        child: () => ({
+          debug: () => {},
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+        }),
+      } as any,
+    };
+  }
+
+  const styleDescription: PageStyleDescription = {
+    pageTitle: "Test Page",
+    styleText: "Informal tone.",
+    formattingElements: [],
+    mediaWikiMarkup: [],
+    tokenCount: 50,
+    wikiConventions: { categories: [], interwikiLinks: [], navboxes: [], templates: [] },
+  };
+
+  it("drops suggestion when generateFn returns reasoning prose", async () => {
+    const result = await generateWithVoicePreservation({
+      generateFn: async () => "I'll analyze the evidence from PR #27909",
+      originalSection: "Original content",
+      styleDescription,
+      buildPromptWithFeedback: async (_feedback: string) => "should not be called",
+      ...makeOpts(),
+    });
+
+    expect(result.suggestion).toBe("");
+    expect(result.voiceMismatchWarning).toBe(false);
+    expect(result.validationResult.passed).toBe(false);
+    expect(result.templateCheckPassed).toBe(false);
+    expect(result.headingCheckPassed).toBe(false);
   });
 });

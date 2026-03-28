@@ -494,7 +494,13 @@ ${opts.diffEvidence}
 - PRESERVE heading levels: if the section uses == Heading ==, keep that exact level
 - Do NOT add, remove, or reorder sections — update content within the existing section only
 - Match the section's writing voice: tone, perspective (you/imperative/third person), terminology
-- Output the COMPLETE updated section, not a diff`;
+- Output the COMPLETE updated section, not a diff
+
+## Output Contract
+- Do NOT begin your response with reasoning, analysis, or meta-commentary
+- Do NOT start with: "I'll", "Let me", "I will", "Looking at", "I need to", or similar phrases
+- Output MUST begin directly with the updated section text
+- Reasoning and explanation belong in a code review, not in a wiki article`;
 }
 
 /**

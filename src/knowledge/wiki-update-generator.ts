@@ -37,6 +37,9 @@ const PATCH_CONTENT_CAP = 3000;
 /** Minimum non-stopword token overlap to include a patch. */
 const MIN_OVERLAP_SCORE = 2;
 
+/** Minimum heuristic score for PR evidence to qualify a page for selection. */
+export const MIN_HEURISTIC_SCORE = 3;
+
 // ── Section-to-Patch Matching ──────────────────────────────────────────
 
 /**
@@ -381,6 +384,7 @@ export function createUpdateGenerator(opts: UpdateGeneratorOptions): {
           SELECT DISTINCT wpp.page_id, wpp.page_title, wpp.composite_score
           FROM wiki_page_popularity wpp
           INNER JOIN wiki_pr_evidence wpe ON wpe.matched_page_id = wpp.page_id
+          WHERE wpe.heuristic_score >= ${MIN_HEURISTIC_SCORE}
           ORDER BY wpp.composite_score DESC
           LIMIT ${topN}
         `;

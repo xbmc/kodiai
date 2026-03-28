@@ -310,6 +310,19 @@ describe("buildVoicePreservingPrompt", () => {
     expect(prompt).toContain("## What Changed");
     expect(prompt).toContain("renamed from /v1/users to /v2/users");
   });
+
+  it("includes Output Contract section banning reasoning starters", () => {
+    const prompt = buildVoicePreservingPrompt({
+      styleDescription,
+      exemplarSections: [],
+      originalSection: "Content.",
+      sectionHeading: "Test",
+      diffEvidence: "Change.",
+    });
+    expect(prompt.includes("## Output Contract")).toBe(true);
+    expect(prompt.includes("Do NOT")).toBe(true);
+    expect(prompt.includes("I'll")).toBe(true);
+  });
 });
 
 describe("sampleSpreadContent", () => {

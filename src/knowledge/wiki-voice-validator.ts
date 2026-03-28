@@ -18,6 +18,22 @@ import { TASK_TYPES } from "../llm/task-types.ts";
 /** Default threshold: average score must be >= 3.5 to pass voice validation. */
 export const VOICE_MATCH_THRESHOLD = 3.5;
 
+// ── Pre-validation filter ───────────────────────────────────────────
+
+/**
+ * Detect reasoning prose starters that indicate LLM meta-commentary rather than
+ * actual wiki content. These appear when the model starts reasoning about the task
+ * instead of producing the requested output.
+ *
+ * Matched starters (case-insensitive, anchored at start of trimmed text):
+ * `I'll`, `Let me`, `I will`, `Looking at`, `I need to`
+ *
+ * Satisfies R033: generation output is pattern-verified before storage.
+ */
+export function isReasoningProse(text: string): boolean {
+  return /^(I'll|Let me|I will|Looking at|I need to)/i.test(text.trim());
+}
+
 // ── Post-generation validation checks ──────────────────────────────
 
 /**
@@ -337,6 +353,36 @@ export async function generateWithVoicePreservation(
 
   // Step 1: Generate initial suggestion
   let suggestion = await opts.generateFn();
+
+  // Step 1a: Reasoning-prose guard — drop immediately if the model returned
+  // meta-commentary instead of wiki content (R033: pre-storage pattern verification)
+  if (isReasoningProse(suggestion)) {
+    logger.warn(
+      { pageTitle: opts.styleDescription.pageTitle },
+      "isReasoningProse: dropping suggestion — starts with reasoning prose",
+    );
+    return {
+      suggestion: "",
+      voiceMismatchWarning: false,
+      validationResult: {
+        passed: false,
+        scores: {
+          toneMatch: 0,
+          perspectiveMatch: 0,
+          structureMatch: 0,
+          terminologyMatch: 0,
+          formattingMatch: 0,
+          markupPreservation: 0,
+        },
+        overallScore: 0,
+        feedback: "Reasoning prose detected: suggestion dropped",
+      },
+      templateCheckPassed: false,
+      headingCheckPassed: false,
+      formattingAdvisory: [],
+      sectionLengthAdvisory: null,
+    };
+  }
 
   // Step 1b: Post-generation template check (retry once, drop on second failure)
   let templateCheck = checkTemplatePreservation(opts.originalSection, suggestion);

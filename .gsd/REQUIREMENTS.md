@@ -301,6 +301,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears.
 - Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
 
+### R030 — `@kodiai` mention on a PR review surface must never trigger write mode when the user is requesting a code review
+- Class: correctness
+- Status: validated
+- Description: When a user posts a comment like "please do a full review of this PR" or any explicit review request on a PR surface, the bot must classify it as read-only and never enter write mode (branch creation, commits, PR creation).
+- Why it matters: A production failure caused the bot to open an unsolicited PR (#28043 on xbmc/xbmc) in response to a review request comment on PR #27402. External contributors saw this as intrusive and confusing.
+- Source: user (override 2026-03-18)
+- Primary owning slice: hotfix (pre-M029)
+- Supporting slices: none
+- Validation: Hotfix branch `fix/mention-review-write-mode` merged to main 2026-03-18 — `isReviewRequest()` guard added to `mention.ts` short-circuits `detectImplicitPrPatchIntent` for review-request phrasings; `please` removed from `confirmationAction` list in `isConversationalConfirmation`; 140-line regression test in `mention.test.ts` covers "please do a full review of this PR" and three other phrasings, all producing `writeMode=false`; PR #28043 on xbmc/xbmc closed immediately after the incident.
+- Notes: Fix was delivered as an immediate out-of-band hotfix, not part of M029 slice work. Supersedes the prior write-intent detection behavior that treated `please` as a universal write confirmation.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -359,9 +370,33 @@ This file is the explicit capability and coverage contract for the project.
 | R028 | operability | validated | M028/S02 | M028/S03, M028/S04 | S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104). |
 | R029 | quality-attribute | validated | M028/S04 | M028/S01, M028/S02, M028/S03 | S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears. |
 
+| R030 | correctness | validated | hotfix (pre-M029) | none | Hotfix branch `fix/mention-review-write-mode` merged 2026-03-18 — `isReviewRequest()` guard + removal of `please` from write-confirmation signals; 140-line regression test; PR #28043 on xbmc/xbmc closed. |
+| R033 | correctness | validated | M029/S01 | M029/S04 | S01 — `isReasoningProse("I'll analyze the evidence from PR #27909")` returns true; valid MediaWiki content returns false. S04 proof harness CONTENT-FILTER-REJECTS passes in CI (pure-code, no infra). NO-REASONING-IN-DB check provides live DB gate post-operation. 51-test harness suite passes 0 failures. |
+| R034 | correctness | validated | M029/S02 | none | S02 — `bun test src/knowledge/wiki-update-generator.test.ts` passes 26/26: `MIN_HEURISTIC_SCORE > is set to 3` asserts constant value; `createUpdateGenerator page selection > includes heuristic_score >= MIN_HEURISTIC_SCORE` verifies clause and parameter wired into page-selection query. |
+
 ## Coverage Summary
 
 - Active requirements: 0
 - Mapped to slices: 0
-- Validated: 27 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029)
+- Validated: 30 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R033, R034)
 - Unmapped active requirements: 0
+
+### R033 — Generation output is pattern-verified before storage (deterministic content filter)
+- Class: correctness
+- Status: validated
+- Description: Generated wiki suggestions are checked against a deterministic pattern filter (`isReasoningProse()`) before being stored. Suggestions that begin with or primarily consist of reasoning starters ("I'll", "Let me", "I will", "I need to", "Looking at") are dropped, not stored.
+- Why it matters: The LLM defaults to narrating its reasoning when not explicitly constrained. The voice validation pipeline cannot reliably catch this — an LLM validator may score reasoning prose as voice-matching. A deterministic pattern gate is the reliable enforcement contract.
+- Source: M029/CONTEXT.md
+- Primary owning slice: M029/S01
+- Supporting slices: M029/S04
+- Validation: S01 — `isReasoningProse("I'll analyze the evidence from PR #27909")` returns true; valid MediaWiki content returns false. S04 proof harness CONTENT-FILTER-REJECTS check passes in CI (pure-code, no infra) confirming the deterministic gate is wired. NO-REASONING-IN-DB check provides live DB gate post-operation. 51-test harness suite passes 0 failures.
+
+### R034 — Page selection enforces minimum evidence quality threshold (heuristic_score >= 3)
+- Class: correctness
+- Status: validated
+- Description: The page-selection query in `createUpdateGenerator()` includes `AND wpe.heuristic_score >= 3`, ensuring only pages with high-quality PR evidence are targeted for generation. Pages matched by superficial token overlap (score < 3) are excluded.
+- Why it matters: The current query includes any page with any PR evidence record regardless of match quality, producing false positives (e.g., C++ source changes triggering updates to unrelated wiki pages like "Music Library").
+- Source: M029/CONTEXT.md
+- Primary owning slice: M029/S02
+- Supporting slices: none
+- Validation: S02 — `bun test src/knowledge/wiki-update-generator.test.ts` passes 26/26: `MIN_HEURISTIC_SCORE > is set to 3` asserts constant value; `createUpdateGenerator page selection > includes heuristic_score >= MIN_HEURISTIC_SCORE` uses SQL-capture mock to verify the clause and parameter value are wired into the page-selection query. All 24 pre-existing tests remain green.
