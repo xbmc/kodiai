@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T16:17:07.635Z",
+  "exported_at": "2026-03-28T16:20:47.764Z",
   "milestones": [
     {
       "id": "M001",
@@ -941,19 +941,27 @@
       "milestone_id": "M030",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Wire upsert, fork detection, and Dockerfile into handler",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired fork detection, idempotent PR comment upsert, and python3/kodi-addon-checker Dockerfile into addon-check handler — 15/15 tests pass, tsc clean",
+      "status": "complete",
+      "one_liner": "Wired fork detection, idempotent PR comment upsert, and python3/kodi-addon-checker Dockerfile into addon-check handler — 15/15 tests pass, tsc clean",
+      "narrative": "Updated src/handlers/addon-check.ts with fork detection (isFork/isDeletedFork from head.repo), an unexported upsertAddonCheckComment helper that list/create/updates PR comments using the marker for idempotency, toolNotFoundCount guard to skip comment when checker is missing, and __fetchAndCheckoutForTests injection point for testability. Updated Dockerfile with python3+pip+kodi-addon-checker. Extended test file with createMockOctokitWithIssues helper and 4 new tests covering posts-comment, no-comment-on-toolNotFound, upsert path, and fork PR path.",
+      "verification_result": "bun test src/handlers/addon-check.test.ts — 15 pass, 0 fail. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-28T16:20:47.751Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "toolNotFound test stub throws ENOENT instead of returning exitCode:127 — the plan implied exitCode:127 but runAddonChecker detects toolNotFound via caught ENOENT error, not exit code.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "Dockerfile"
+      ],
+      "key_decisions": [
+        "toolNotFound detection requires subprocess to throw with code=ENOENT; exitCode:127 takes the success branch",
+        "upsertAddonCheckComment is unexported inline helper with typed octokit slice",
+        "__fetchAndCheckoutForTests injection mirrors __runSubprocessForTests pattern"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M030\nkey_files:\n  - src/handlers/addon-check.ts\n  - src/handlers/addon-check.test.ts\n  - Dockerfile\nkey_decisions:\n  - toolNotFound detection requires subprocess to throw with code=ENOENT; exitCode:127 takes the success branch\n  - upsertAddonCheckComment is unexported inline helper with typed octokit slice\n  - __fetchAndCheckoutForTests injection mirrors __runSubprocessForTests pattern\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:20:47.751Z\nblocker_discovered: false\n---\n\n# T02: Wired fork detection, idempotent PR comment upsert, and python3/kodi-addon-checker Dockerfile into addon-check handler — 15/15 tests pass, tsc clean\n\n**Wired fork detection, idempotent PR comment upsert, and python3/kodi-addon-checker Dockerfile into addon-check handler — 15/15 tests pass, tsc clean**\n\n## What Happened\n\nUpdated src/handlers/addon-check.ts with fork detection (isFork/isDeletedFork from head.repo), an unexported upsertAddonCheckComment helper that list/create/updates PR comments using the marker for idempotency, toolNotFoundCount guard to skip comment when checker is missing, and __fetchAndCheckoutForTests injection point for testability. Updated Dockerfile with python3+pip+kodi-addon-checker. Extended test file with createMockOctokitWithIssues helper and 4 new tests covering posts-comment, no-comment-on-toolNotFound, upsert path, and fork PR path.\n\n## Verification\n\nbun test src/handlers/addon-check.test.ts — 15 pass, 0 fail. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/handlers/addon-check.test.ts` | 0 | ✅ pass | 4200ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6300ms |\n\n\n## Deviations\n\ntoolNotFound test stub throws ENOENT instead of returning exitCode:127 — the plan implied exitCode:127 but runAddonChecker detects toolNotFound via caught ENOENT error, not exit code.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/addon-check.ts`\n- `src/handlers/addon-check.test.ts`\n- `Dockerfile`\n",
       "description": "Update `src/handlers/addon-check.ts` with three changes:\\n\\n1. **Fork detection** — follow `review.ts` lines 1168–1195. Read `payload.pull_request.head.repo`. Set `isFork = Boolean(headRepo && headRepo.full_name !== repo)` and `isDeletedFork = !headRepo`. In the job: if fork/deleted-fork, call `workspaceManager.create(installationId, { owner, repo: repoName, ref: baseBranch })` then `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, prNumber, localBranch: 'pr-check' })`; else `workspaceManager.create(installationId, { owner, repo: repoName, ref: headRef })`. Import `fetchAndCheckoutPullRequestHeadRef` from `../jobs/workspace.ts`.\\n\\n2. **Upsert comment** — add an inline async helper `upsertAddonCheckComment({ octokit, owner, repo, prNumber, body })` inside the handler file (not exported). It: calls `octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 })`, finds an existing comment whose body includes `buildAddonCheckMarker(owner, repo, prNumber)`, then calls `updateComment` or `createComment`. After the per-addon loop, call `upsertAddonCheckComment` with `formatAddonCheckComment(allFindings, buildAddonCheckMarker(owner, repo, prNumber))`. Do NOT call upsert if every addon returned `toolNotFound: true` (i.e., skip when `allFindings.length === 0 && toolNotFoundCount === addonIds.length`). Import `buildAddonCheckMarker, formatAddonCheckComment` from `../lib/addon-check-formatter.ts`.\\n\\n3. **Tests** — extend `src/handlers/addon-check.test.ts` with 4 new tests. The mock octokit needs `rest.issues.listComments`, `rest.issues.createComment`, `rest.issues.updateComment` added (create a new `createMockOctokitWithIssues(files, existingComments)` helper that adds these methods). Tests:\\n   - `posts comment when findings exist`: octokit has no existing comments; after handler runs, `createComment` called once with body containing the marker and an ERROR row.\\n   - `no comment posted when no findings and tool not found`: all addons return `toolNotFound: true`; `createComment` NOT called.\\n   - `updates existing comment on second push (upsert path)`: octokit returns one existing comment whose body contains the marker; `updateComment` called once, `createComment` NOT called.\\n   - `fork PR uses base branch + fetchAndCheckoutPullRequestHeadRef`: payload has `head.repo.full_name !== repository.full_name`; `workspaceManager.create` called with `ref: baseBranch`; inject `__fetchAndCheckoutForTests` (see below).\\n\\nFor fork test: add optional `__fetchAndCheckoutForTests?: typeof fetchAndCheckoutPullRequestHeadRef` parameter to `createAddonCheckHandler` deps, used in the same place as the real import. This avoids needing to mock the module.\\n\\n4. **Dockerfile** — change the apt line to:\\n```\\nRUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir kodi-addon-checker && rm -rf /var/lib/apt/lists/*\\n```\\n\\n5. **Verify TypeScript** — run `bun run tsc --noEmit` and fix any errors introduced.",
       "estimate": "60m",
       "files": [
@@ -1176,6 +1184,28 @@
       "verdict": "✅ pass",
       "duration_ms": 3300,
       "created_at": "2026-03-28T16:17:07.626Z"
+    },
+    {
+      "id": 10,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M030",
+      "command": "bun test src/handlers/addon-check.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4200,
+      "created_at": "2026-03-28T16:20:47.751Z"
+    },
+    {
+      "id": 11,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M030",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6300,
+      "created_at": "2026-03-28T16:20:47.751Z"
     }
   ]
 }

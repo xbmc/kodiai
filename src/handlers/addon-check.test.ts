@@ -1,5 +1,6 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
 import { createAddonCheckHandler } from "./addon-check.ts";
+import { buildAddonCheckMarker } from "../lib/addon-check-formatter.ts";
 import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.ts";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -83,11 +84,55 @@ function createMockOctokit(files: string[]) {
   };
 }
 
+type MockComment = { id: number; body: string };
+
+function createMockOctokitWithIssues(files: string[], existingComments: MockComment[] = []) {
+  const listCommentsMock = mock(async () => ({ data: existingComments }));
+  const createCommentMock = mock(async () => ({ data: { id: 9999 } }));
+  const updateCommentMock = mock(async () => ({ data: { id: existingComments[0]?.id ?? 1 } }));
+  return {
+    rest: {
+      pulls: {
+        listFiles: mock(async () => ({
+          data: files.map((filename) => ({ filename })),
+        })),
+      },
+      issues: {
+        listComments: listCommentsMock,
+        createComment: createCommentMock,
+        updateComment: updateCommentMock,
+      },
+    },
+    _listCommentsMock: listCommentsMock,
+    _createCommentMock: createCommentMock,
+    _updateCommentMock: updateCommentMock,
+  };
+}
+
 function createMockGithubApp(files: string[]): {
   app: GitHubApp;
   octokit: ReturnType<typeof createMockOctokit>;
 } {
   const octokit = createMockOctokit(files);
+  const app = {
+    getInstallationOctokit: async () => octokit as any,
+    getAppSlug: () => "kodiai",
+    initialize: async () => {},
+    checkConnectivity: async () => true,
+    getInstallationToken: async () => "token",
+    getRepoInstallationContext: async () => null,
+  } as unknown as GitHubApp;
+  return { app, octokit };
+}
+
+function createMockGithubAppWithIssues(
+  files: string[],
+  existingComments: MockComment[] = [],
+): {
+  app: GitHubApp;
+  octokit: ReturnType<typeof createMockOctokitWithIssues>;
+} {
+  const octokit = createMockOctokitWithIssues(files, existingComments);
   const app = {
     getInstallationOctokit: async () => octokit as any,
     getAppSlug: () => "kodiai",
@@ -533,5 +578,176 @@ describe("createAddonCheckHandler", () => {
     expect(completionLog).toBeDefined();
     // README.md has no slash → excluded. plugin.video.foo/addon.xml → "plugin.video.foo"
     expect(completionLog!.bindings.addonIds).toEqual(["plugin.video.foo"]);
+  });
+
+  // ── Comment upsert ────────────────────────────────────────────────────
+
+  it("posts comment when findings exist", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    // Subprocess returns one ERROR finding
+    const subprocess = makeCheckerSubprocess("ERROR: missing changelog\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(octokit._createCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+
+    const callArgs = (octokit._createCommentMock as any).mock.calls[0][0];
+    const marker = buildAddonCheckMarker("xbmc", "repo-plugins", 42);
+    expect(callArgs.body).toContain(marker);
+    expect(callArgs.body).toContain("ERROR");
+    expect(callArgs.body).toContain("missing changelog");
+  });
+
+  it("no comment posted when no findings and tool not found", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    // Subprocess throws ENOENT — signals toolNotFound path in runAddonChecker
+    const subprocess = mock(async (_p: { addonDir: string; branch: string }) => {
+      const err = new Error("not found") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    });
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+    expect(octokit._updateCommentMock).not.toHaveBeenCalled();
+  });
+
+  it("updates existing comment on second push (upsert path)", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const marker = buildAddonCheckMarker("xbmc", "repo-plugins", 42);
+    const existingComments: MockComment[] = [
+      { id: 777, body: `${marker}\n## Kodiai Addon Check\n\n✅ No issues found.` },
+    ];
+    const { app, octokit } = createMockGithubAppWithIssues(files, existingComments);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("ERROR: missing changelog\n");
+    const { manager } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+    });
+
+    await router.captured[0]!.handler(
+      makePrEvent("xbmc/repo-plugins", 42, { baseBranch: "omega" }),
+    );
+
+    expect(octokit._updateCommentMock).toHaveBeenCalledTimes(1);
+    expect(octokit._createCommentMock).not.toHaveBeenCalled();
+
+    const updateArgs = (octokit._updateCommentMock as any).mock.calls[0][0];
+    expect(updateArgs.comment_id).toBe(777);
+    expect(updateArgs.body).toContain(marker);
+  });
+
+  it("fork PR uses base branch + fetchAndCheckoutPullRequestHeadRef", async () => {
+    const files = ["plugin.video.foo/addon.xml"];
+    const { app, octokit } = createMockGithubAppWithIssues(files, []);
+    const { logger } = createMockLogger();
+    const subprocess = makeCheckerSubprocess("");
+    const { manager, createSpy } = createMockWorkspaceManager();
+    const { queue } = createMockJobQueue();
+
+    const fetchAndCheckoutCalls: Array<{ dir: string; prNumber: number; localBranch: string }> = [];
+    const fetchAndCheckoutStub = mock(
+      async (opts: { dir: string; prNumber: number; localBranch?: string }) => {
+        fetchAndCheckoutCalls.push({
+          dir: opts.dir,
+          prNumber: opts.prNumber,
+          localBranch: opts.localBranch ?? "pr-review",
+        });
+        return { localBranch: opts.localBranch ?? "pr-review" };
+      },
+    );
+
+    createAddonCheckHandler({
+      eventRouter: router,
+      githubApp: app,
+      config: makePartialConfig(["xbmc/repo-plugins"]),
+      logger,
+      workspaceManager: manager,
+      jobQueue: queue,
+      __runSubprocessForTests: subprocess,
+      __fetchAndCheckoutForTests: fetchAndCheckoutStub as any,
+    });
+
+    // Fork PR: head.repo.full_name differs from repository.full_name
+    const event: WebhookEvent = {
+      id: "delivery-fork-1",
+      name: "pull_request",
+      installationId: 99,
+      payload: {
+        action: "opened",
+        pull_request: {
+          number: 42,
+          base: { ref: "omega" },
+          head: {
+            ref: "feature/my-fix",
+            repo: { full_name: "contributor/repo-plugins" },  // fork
+          },
+        },
+        repository: {
+          full_name: "xbmc/repo-plugins",
+          name: "repo-plugins",
+          owner: { login: "xbmc" },
+        },
+      },
+    };
+
+    await router.captured[0]!.handler(event);
+
+    // Workspace should be created with base branch, not head branch
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    const createCall = (createSpy as any).mock.calls[0];
+    expect(createCall[1]).toMatchObject({
+      owner: "xbmc",
+      repo: "repo-plugins",
+      ref: "omega",  // base branch
+    });
+
+    // fetchAndCheckoutPullRequestHeadRef should be called
+    expect(fetchAndCheckoutCalls).toHaveLength(1);
+    expect(fetchAndCheckoutCalls[0]!.prNumber).toBe(42);
+    expect(fetchAndCheckoutCalls[0]!.localBranch).toBe("pr-check");
   });
 });
