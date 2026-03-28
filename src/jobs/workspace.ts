@@ -549,10 +549,17 @@ export function createWorkspaceManager(
           // Add upstream remote pointing at the original repo (using installation token)
           const upstreamUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
           await $`git -C ${dir} remote add upstream ${upstreamUrl}`.quiet();
+
+          // Strip credentials from remotes immediately — token stays in memory only
+          await $`git -C ${dir} remote set-url origin https://github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git`.quiet();
+          await $`git -C ${dir} remote set-url upstream https://github.com/${owner}/${repo}.git`.quiet();
         } else {
           // Standard clone from target repo using installation token
           const cloneUrl = `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
           await $`git clone --depth=${depth} --single-branch --branch ${ref} ${cloneUrl} ${dir}`.quiet();
+
+          // Strip credentials from remote immediately — token stays in memory only
+          await $`git -C ${dir} remote set-url origin https://github.com/${owner}/${repo}.git`.quiet();
         }
 
         // Configure git identity as kodiai[bot]
@@ -574,7 +581,7 @@ export function createWorkspaceManager(
         logger.debug({ dir }, "Workspace cleaned up");
       };
 
-      return { dir, cleanup };
+      return { dir, cleanup, token };
     },
 
     async cleanupStale(): Promise<number> {

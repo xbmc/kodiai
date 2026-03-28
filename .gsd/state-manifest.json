@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T16:43:07.929Z",
+  "exported_at": "2026-03-28T16:57:15.624Z",
   "milestones": [
     {
       "id": "M001",
@@ -763,14 +763,14 @@
       "milestone_id": "M031",
       "id": "S01",
       "title": "Env Allowlist — buildAgentEnv()",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [],
       "demo": "Unit test output shows buildAgentEnv() blocks all application secrets and preserves SDK auth + system vars. bun test src/execution/env.test.ts exits 0.",
       "created_at": "2026-03-28T16:38:14.869Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-28T16:44:36.481Z",
+      "full_summary_md": "---\nid: S01\nparent: M031\nmilestone: M031\nprovides:\n  - src/execution/env.ts module with AGENT_ENV_ALLOWLIST and buildAgentEnv() — importable by any downstream slice needing to understand or extend the allowlist\n  - Established pattern for subprocess env isolation that S02/S03/S04/S05 can reference\nrequires:\n  []\naffects:\n  - S02 — git remote sanitization builds on the same security model; no shared code but same threat model\n  - S04 — CLAUDE.md in workspace is a separate security surface; buildAgentEnv() is already in place for the executor call site S04 modifies\n  - S05 — proof harness can import buildAgentEnv() or AGENT_ENV_ALLOWLIST directly for env-isolation checks\nkey_files:\n  - src/execution/env.ts\n  - src/execution/env.test.ts\n  - src/execution/executor.ts\n  - src/llm/generate.ts\nkey_decisions:\n  - CLAUDE_CODE_ENTRYPOINT excluded from AGENT_ENV_ALLOWLIST — each call site sets the correct context-specific value\n  - 26-element explicit allowlist (not denylist) — any new env var is blocked by default until explicitly permitted\n  - beforeEach/afterEach snapshot pattern for process.env mutation isolation in tests\npatterns_established:\n  - Allowlist-first subprocess env construction: src/execution/env.ts is the single source of truth. Any future subprocess launch that uses agent code should import buildAgentEnv() rather than spreading process.env.\n  - Process.env test isolation: save ALL keys touched by the test suite in beforeEach, restore ALL of them in afterEach — including keys that may have been undefined before the test set them.\nobservability_surfaces:\n  - none\ndrill_down_paths:\n  - .gsd/milestones/M031/slices/S01/tasks/T01-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:44:36.481Z\nblocker_discovered: false\n---\n\n# S01: Env Allowlist — buildAgentEnv()\n\n**Created src/execution/env.ts with AGENT_ENV_ALLOWLIST and buildAgentEnv(); wired into executor.ts and generate.ts, closing the env-secret-leakage attack surface. All 10 unit tests pass.**\n\n## What Happened\n\nS01 delivered a single focused change with direct security impact: the agent subprocess environment in this codebase was previously constructed with `...process.env`, meaning every application secret (GITHUB_PRIVATE_KEY, DATABASE_URL, SLACK_BOT_TOKEN, VOYAGE_API_KEY, etc.) was visible to the Claude Code agent process.\n\nThe fix: `src/execution/env.ts` exports a 26-element `AGENT_ENV_ALLOWLIST` (SDK auth, POSIX system, locale/terminal, git identity, runtime paths) and `buildAgentEnv()` which iterates the list and returns a new object containing only the allowed keys that are present in `process.env`. Keys absent from `process.env` are omitted entirely — no undefined values.\n\nBoth call sites were updated: `executor.ts:192` and `generate.ts:69` now call `buildAgentEnv()` instead of spreading `process.env`. Each call site still appends its own `CLAUDE_CODE_ENTRYPOINT` value on top, which is correct — the module intentionally omits it so `executor.ts` can set `'kodiai-github-app'` and `generate.ts` can set `'kodiai-llm-generate'`.\n\nThe unit test suite (10 tests, 23 expect() calls) covers: application secret blocking (9 keys), SDK auth forwarding, system var forwarding, unknown var blocking, absent-key omission (hasOwnProperty check), object identity (not process.env itself), and CLAUDE_CODE_ENTRYPOINT exclusion. Process.env mutations are isolated via a beforeEach/afterEach snapshot pattern that saves and restores the exact set of keys touched by the tests.\n\n## Verification\n\nbun test src/execution/env.test.ts → 10 pass, 0 fail, 23 expect() calls. Exit 0. Both executor.ts and generate.ts build cleanly via bun build.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone. Delivered exactly as planned.\n\n## Known Limitations\n\nNone. The allowlist is exhaustive for the current subprocess needs. If new SDK auth vars are introduced (e.g., a new provider's API key), AGENT_ENV_ALLOWLIST must be updated manually — there is no dynamic discovery mechanism by design.\n\n## Follow-ups\n\nS02 can now import from ./env.ts if needed. S04 wires CLAUDE.md into the workspace but the env boundary established here is independent of the CLAUDE.md mechanism.\n\n## Files Created/Modified\n\n- `src/execution/env.ts` — New module: AGENT_ENV_ALLOWLIST (26 keys) and buildAgentEnv() — the single source of truth for subprocess env construction\n- `src/execution/env.test.ts` — New test suite: 10 tests covering secret blocking, SDK auth forwarding, system var forwarding, unknown var blocking, absent-key omission, object identity, CLAUDE_CODE_ENTRYPOINT exclusion\n- `src/execution/executor.ts` — Replaced `...process.env,` at line ~192 with `...buildAgentEnv(),` — closes secret leakage on the mention/review agent call site\n- `src/llm/generate.ts` — Replaced `...process.env,` at line ~69 with `...buildAgentEnv(),` — closes secret leakage on the LLM generate call site\n",
+      "full_uat_md": "# S01: Env Allowlist — buildAgentEnv() — UAT\n\n**Milestone:** M031\n**Written:** 2026-03-28T16:44:36.481Z\n\n## UAT: S01 — Env Allowlist (buildAgentEnv())\n\n### Preconditions\n\n- Node/Bun environment with `src/execution/env.ts` present\n- `bun` installed and `bun test` runnable from the repo root\n- No DATABASE_URL or GITHUB_PRIVATE_KEY set in the test execution environment (they should be blocked regardless)\n\n---\n\n### Test Cases\n\n#### TC-01: Test suite passes with exit 0\n\n**Steps:**\n1. Run `bun test src/execution/env.test.ts`\n\n**Expected:**\n- Output: `10 pass, 0 fail`\n- Exit code: 0\n- All 10 named tests show `(pass)`\n\n---\n\n#### TC-02: Application secrets are blocked\n\n**Steps:**\n1. Inspect `src/execution/env.test.ts` test `\"blocks application secret keys\"`\n2. Confirm it sets GITHUB_PRIVATE_KEY, GITHUB_PRIVATE_KEY_BASE64, GITHUB_APP_ID, GITHUB_WEBHOOK_SECRET, DATABASE_URL, SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, VOYAGE_API_KEY, BOT_USER_PAT in process.env\n3. Confirm `buildAgentEnv()` result is asserted undefined for each\n\n**Expected:** Test passes; 9 keys blocked\n\n---\n\n#### TC-03: SDK auth vars are forwarded\n\n**Steps:**\n1. Inspect test `\"forwards SDK auth vars when set\"`\n2. Confirm CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY are set and then asserted present in result\n\n**Expected:** Test passes; both keys forwarded with correct values\n\n---\n\n#### TC-04: System vars are forwarded\n\n**Steps:**\n1. Inspect test `\"forwards system vars when set\"`\n2. Confirm HOME, PATH, USER are set to test values and asserted present in result\n\n**Expected:** Test passes; all three system keys forwarded\n\n---\n\n#### TC-05: Unknown vars are blocked\n\n**Steps:**\n1. Inspect test `\"blocks unknown arbitrary vars\"`\n2. Confirm SOME_UNKNOWN_SECRET is set but asserted absent\n\n**Expected:** Test passes; arbitrary key blocked\n\n---\n\n#### TC-06: Absent allowlisted keys are omitted (not undefined)\n\n**Steps:**\n1. Inspect test `\"omits allowlisted keys that are not set in process.env\"`\n2. Confirm TMPDIR is deleted from process.env, then `Object.prototype.hasOwnProperty.call(env, \"TMPDIR\")` asserted false\n\n**Expected:** Test passes; key entirely absent from result object\n\n---\n\n#### TC-07: CLAUDE_CODE_ENTRYPOINT is excluded from allowlist\n\n**Steps:**\n1. Inspect test `\"does not include CLAUDE_CODE_ENTRYPOINT (callers set it)\"` (AGENT_ENV_ALLOWLIST describe)\n2. Inspect test `\"does not include CLAUDE_CODE_ENTRYPOINT\"` (buildAgentEnv describe)\n\n**Expected:** Both tests pass; CLAUDE_CODE_ENTRYPOINT absent from allowlist and absent from buildAgentEnv() result\n\n---\n\n#### TC-08: executor.ts uses buildAgentEnv()\n\n**Steps:**\n1. Open `src/execution/executor.ts`\n2. Search for `buildAgentEnv`\n3. Confirm import from `./env.ts` is present\n4. Confirm the agent spawn env object contains `...buildAgentEnv()` (not `...process.env`)\n5. Confirm `CLAUDE_CODE_ENTRYPOINT: 'kodiai-github-app'` is still present as a separate key\n\n**Expected:** Import present; spread uses buildAgentEnv(); entrypoint key is set by the call site\n\n---\n\n#### TC-09: generate.ts uses buildAgentEnv()\n\n**Steps:**\n1. Open `src/llm/generate.ts`\n2. Search for `buildAgentEnv`\n3. Confirm import from `../execution/env.ts` is present\n4. Confirm the agent spawn env object contains `...buildAgentEnv()` (not `...process.env`)\n5. Confirm `CLAUDE_CODE_ENTRYPOINT: 'kodiai-llm-generate'` is still present\n\n**Expected:** Import present; spread uses buildAgentEnv(); entrypoint key is set by the call site\n\n---\n\n#### TC-10: AGENT_ENV_ALLOWLIST is exported and non-empty\n\n**Steps:**\n1. Run `bun test src/execution/env.test.ts --test-name-pattern \"is a non-empty array\"`\n2. Confirm test passes\n\n**Expected:** Array.isArray true; length > 0 (actual: 26 elements)\n\n",
       "goal": "Create src/execution/env.ts with buildAgentEnv() and AGENT_ENV_ALLOWLIST. Wire it into executor.ts and generate.ts in place of ...process.env. Prove with unit tests that application secrets are absent from the agent subprocess environment and SDK auth vars are preserved.",
       "success_criteria": "bun test src/execution/env.test.ts exits 0. Tests assert: (1) known application secret keys (GITHUB_PRIVATE_KEY, DATABASE_URL, SLACK_BOT_TOKEN, VOYAGE_API_KEY, BOT_USER_PAT, GITHUB_WEBHOOK_SECRET) are absent from buildAgentEnv() output; (2) SDK auth keys (CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY) are forwarded when set; (3) system vars (HOME, PATH, USER) are forwarded when set; (4) arbitrary unknown keys not in the allowlist are absent.",
       "proof_level": "contract",
@@ -793,11 +793,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Post-clone, immediately rewrite the git remote URL to strip the x-access-token credential. Carry the token in Workspace.token (memory only). Refactor createBranchCommitAndPush, commitAndPushToRemoteRef, pushHeadToRemoteRef, and fetchAndCheckoutPullRequestHeadRef to receive the token from the caller rather than re-reading it from .git/config.",
-      "success_criteria": "After workspace.create(), git remote get-url origin returns a plain HTTPS URL with no x-access-token. Workspace.token carries the installation token in memory. Push functions reconstruct auth URL inline and do not call getOriginTokenFromDir. Unit tests pass.",
-      "proof_level": "Unit tests on workspace creation assert the remote URL is clean. Push function signatures are verified to accept token parameter. getOriginTokenFromDir call sites in push paths are removed.",
-      "integration_closure": "src/jobs/workspace.ts owns all clone and push logic. src/jobs/types.ts carries the Workspace interface. No other files need changing for this slice except callers that pass workspace.token to push functions.",
-      "observability_impact": "Post-clone log line already exists at INFO level. Add a debug-level log after remote URL strip confirming the sanitization step completed.",
+      "goal": "Strip the installation token from the git remote URL immediately after cloning, store it in Workspace.token (memory only), and thread it explicitly through all push and fetch operations so no credential is ever on disk during the agent's execution window.",
+      "success_criteria": "- `git remote get-url origin` in any workspace returned by `workspace.create()` returns `https://github.com/owner/repo.git` with no `x-access-token` present\n- All push/fetch operations reconstruct the auth URL inline from the in-memory token and succeed\n- `bun test src/jobs/workspace.test.ts` exits 0 with new strip + auth-URL tests passing\n- `bunx tsc --noEmit` exits 0 (no type errors)",
+      "proof_level": "contract — unit tests verify URL-strip behavior and token threading with local bare-repo fixtures; no GitHub network access required",
+      "integration_closure": "Upstream: S01's env allowlist is in place; this slice is independent of it. New wiring: Workspace.token field flows from workspace.create() through handler call sites to push/fetch functions — fully wired end-to-end. Remaining before milestone is end-to-end usable: S03 (outgoing secret scan), S04 (CLAUDE.md), S05 (proof harness).",
+      "observability_impact": "redactTokenFromError continues to work: after strip, getOriginTokenFromDir returns undefined, so it falls through to regex-based URL redaction (already present as defense-in-depth). No diagnostic regression.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -1202,6 +1202,160 @@
       "observability_impact": "None — buildAgentEnv() is synchronous and pure; no runtime signals or new log paths introduced.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M031",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added Workspace.token field and stripped installation tokens from git remotes immediately after cloning",
+      "status": "complete",
+      "one_liner": "Added Workspace.token field and stripped installation tokens from git remotes immediately after cloning",
+      "narrative": "Added `token?: string` to the Workspace interface in types.ts. In workspace.ts createWorkspaceManager().create(), added git remote set-url calls immediately after the clone block for both paths: standard clone strips origin, fork clone strips both origin and upstream. Updated return to include token. Token is now memory-only; .git/config contains bare HTTPS URLs for the entire workspace lifetime.",
+      "verification_result": "bunx tsc --noEmit: 0 errors. bun test src/jobs/workspace.test.ts: 9/9 pass.",
+      "duration": "",
+      "completed_at": "2026-03-28T16:57:15.612Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "key_decisions": [
+        "Strip happens immediately after clone+upstream-add so .git/config is clean for the entire workspace lifetime",
+        "token field is optional (token?) for backward compat with existing { dir, cleanup } literal constructions in tests"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M031\nkey_files:\n  - src/jobs/types.ts\n  - src/jobs/workspace.ts\nkey_decisions:\n  - Strip happens immediately after clone+upstream-add so .git/config is clean for the entire workspace lifetime\n  - token field is optional (token?) for backward compat with existing { dir, cleanup } literal constructions in tests\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:57:15.612Z\nblocker_discovered: false\n---\n\n# T01: Added Workspace.token field and stripped installation tokens from git remotes immediately after cloning\n\n**Added Workspace.token field and stripped installation tokens from git remotes immediately after cloning**\n\n## What Happened\n\nAdded `token?: string` to the Workspace interface in types.ts. In workspace.ts createWorkspaceManager().create(), added git remote set-url calls immediately after the clone block for both paths: standard clone strips origin, fork clone strips both origin and upstream. Updated return to include token. Token is now memory-only; .git/config contains bare HTTPS URLs for the entire workspace lifetime.\n\n## Verification\n\nbunx tsc --noEmit: 0 errors. bun test src/jobs/workspace.test.ts: 9/9 pass.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bunx tsc --noEmit && echo 'types ok'` | 0 | ✅ pass | 6100ms |\n| 2 | `bun test src/jobs/workspace.test.ts` | 0 | ✅ pass | 2300ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/types.ts`\n- `src/jobs/workspace.ts`\n",
+      "description": "Add `token?: string` to the Workspace interface in types.ts. In createWorkspaceManager().create(), after the git clone succeeds, call `git remote set-url origin` with the bare HTTPS URL (no token) to strip the credential from .git/config. For fork clones, strip both origin (fork URL) and upstream remote (base URL). Return `token` in the workspace object so callers can use it for subsequent auth operations.\n\nSteps:\n1. In `src/jobs/types.ts`, add `token?: string` to the Workspace interface after the `dir` field. The optional field preserves backward compatibility with test code that constructs `{ dir, cleanup }` literals.\n2. In `src/jobs/workspace.ts`, inside `createWorkspaceManager().create()`, after the clone succeeds (and the upstream remote add for fork clones), add the strip calls:\n   - Standard clone: `await $\\`git -C ${dir} remote set-url origin https://github.com/${owner}/${repo}.git\\`.quiet()`\n   - Fork clone: `await $\\`git -C ${dir} remote set-url origin https://github.com/${forkContext.forkOwner}/${forkContext.forkRepo}.git\\`.quiet()` and `await $\\`git -C ${dir} remote set-url upstream https://github.com/${owner}/${repo}.git\\`.quiet()`\n3. Update the return statement from `return { dir, cleanup }` to `return { dir, cleanup, token }`.\n4. Run `bunx tsc --noEmit` to verify no type errors.",
+      "estimate": "30m",
+      "files": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "verify": "bunx tsc --noEmit && echo 'types ok'",
+      "inputs": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "expected_output": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M031",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Refactor push/fetch functions to accept explicit token and construct auth URL inline",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Update the four workspace.ts functions that perform network operations to accept an explicit `token?: string` parameter and construct the auth URL inline rather than relying on a stored remote URL. Add a private `makeAuthUrl` helper to avoid duplication.\n\nSteps:\n1. Add a private helper function at the top of workspace.ts (after `redactTokenFromError`):\n```ts\nfunction makeAuthUrl(strippedUrl: string, token: string | undefined): string {\n  if (!token) return strippedUrl;\n  return strippedUrl.replace(/^https:\\/\\//, `https://x-access-token:${token}@`);\n}\n```\n2. Update `createBranchCommitAndPush` options type: add `token?: string`. Replace `const token = await getOriginTokenFromDir(dir)` with the passed-in token for auth. Construct push URL: read the stripped remote URL with `git remote get-url origin`, apply makeAuthUrl, use it instead of the `remote` constant in the push command. Keep using `token` (or the read-back value) in `redactTokenFromError`. Signature change: `options: { dir, branchName, commitMessage, remote?, token?, policy? }`.\n3. Same changes for `commitAndPushToRemoteRef`: add `token?` to options, construct auth push URL inline.\n4. Same changes for `pushHeadToRemoteRef`: add `token?` to options, construct auth push URL inline.\n5. Update `fetchAndCheckoutPullRequestHeadRef`: add `token?` to options. The current code calls `getOriginTokenFromRemoteUrl(dir)` for error-redaction. After strip, this returns undefined. Instead, use the passed-in token. Construct auth fetch URL inline: read stripped remote URL, apply makeAuthUrl, use it in the `git fetch` command.\n6. The `getOriginTokenFromDir` / `getOriginTokenFromRemoteUrl` functions are kept but their usage in push/fetch paths is replaced by the explicit token parameter. They continue to be called only in `redactTokenFromError` fallback paths (returning undefined after strip — regex fallback handles it).\n7. Run `bunx tsc --noEmit` to verify no type errors.",
+      "estimate": "45m",
+      "files": [
+        "src/jobs/workspace.ts"
+      ],
+      "verify": "bunx tsc --noEmit && echo 'types ok'",
+      "inputs": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "expected_output": [
+        "src/jobs/workspace.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M031",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Thread workspace.token through all handler and write-runner call sites",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Update all call sites in mention.ts, review.ts, and write-runner.ts that call push/fetch functions or run `git fetch origin` directly, so they pass `workspace.token` (the installation token) or the appropriate bot PAT for fork push operations.\n\nCall sites to update:\n\n**src/handlers/mention.ts:**\n- Line ~1018: `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~1027: `git -C ${workspace.dir} fetch origin ${mention.baseRef}...` → replace `origin` with the auth URL constructed as `(workspace.token ? \\`https://x-access-token:${workspace.token}@github.com\\` : 'origin')` pattern, or better: extract the stripped remote URL and apply makeAuthUrl. Simplest inline approach: replace literal `origin` with a variable `const fetchRemote = workspace.token ? \\`https://x-access-token:${workspace.token}@github.com/${owner}/${repo}.git\\` : 'origin'` — but owner/repo are in scope. Use that variable in the fetch command.\n- Line ~2007: `createBranchCommitAndPush({ dir: workspace.dir, ... })` → add `token: forkContext.botPat` (fork pushes use bot PAT, not installation token)\n- Line ~2190: `git -C ${workspace.dir} fetch origin ${headRef}...` → same auth URL pattern using workspace.token (this fetch is from base repo, not fork)\n- Line ~2245: `commitAndPushToRemoteRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~2303: `git -C ${workspace.dir} fetch origin ${headRef}...` → auth URL pattern\n- Line ~2348: `pushHeadToRemoteRef({ dir: workspace.dir, ... })` → add appropriate token\n- Line ~2386: `createBranchCommitAndPush({ dir: workspace.dir, branchName, ... })` (non-fork push) → add `token: workspace.token`\n\n**src/handlers/review.ts:**\n- `collectDiffContext` helper (line ~696): add `token?: string` to its params type. Replace `fetch origin` calls inside with auth URL: `const authRemote = makeAuthUrl(strippedOriginUrl, token)` — but makeAuthUrl is private to workspace.ts. Best approach: add and export a `buildAuthFetchUrl(dir: string, token: string | undefined): Promise<string>` helper from workspace.ts that reads the stripped remote URL and injects the token. Then call-site can await it once and reuse. Alternative: inline the URL construction using `await $\\`git -C ${workspaceDir} remote get-url origin\\`.quiet().text().trim()` in each fetch call. Choose the exported helper approach for cleanliness.\n- Line ~1278: `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, ... })` → add `token: workspace.token`\n- Line ~1287: `git -C ${workspace.dir} fetch origin ...` → auth URL\n- Line ~3600: `fetchAndCheckoutPullRequestHeadRef({ dir: retryWorkspace.dir, ... })` → add `token: retryWorkspace.token`\n- Line ~3607: `git -C ${retryWorkspace.dir} fetch origin ...` → auth URL\n- Call `collectDiffContext` at line ~1574 with added `token: workspace.token`\n\n**src/slack/write-runner.ts:**\n- Line ~354: `commitBranchAndPush({ dir: workspace.dir, ... })` (fork push) → add `token: forkContext.botPat`\n- Line ~491: `commitBranchAndPush({ dir: workspace.dir, ... })` (non-fork push — check context) → add `token: workspace.token`\n\nThe exported `buildAuthFetchUrl` helper to add to workspace.ts:\n```ts\nexport async function buildAuthFetchUrl(dir: string, token: string | undefined): Promise<string> {\n  if (!token) return 'origin';\n  const url = (await $\\`git -C ${dir} remote get-url origin\\`.quiet()).text().trim();\n  return makeAuthUrl(url, token);\n}\n```\n\nRun `bunx tsc --noEmit` after changes. Run `bun test src/jobs/workspace.test.ts src/handlers/*.test.ts` if handler tests exist.",
+      "estimate": "1h",
+      "files": [
+        "src/handlers/mention.ts",
+        "src/handlers/review.ts",
+        "src/slack/write-runner.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "verify": "bunx tsc --noEmit && bun test src/jobs/workspace.test.ts",
+      "inputs": [
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts",
+        "src/handlers/mention.ts",
+        "src/handlers/review.ts",
+        "src/slack/write-runner.ts"
+      ],
+      "expected_output": [
+        "src/handlers/mention.ts",
+        "src/handlers/review.ts",
+        "src/slack/write-runner.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M031",
+      "slice_id": "S02",
+      "id": "T04",
+      "title": "Add workspace.test.ts tests for URL strip and token threading",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Extend src/jobs/workspace.test.ts with tests that verify the two key behaviors of this slice: (1) workspace.create() strips the token from the git remote URL, and (2) the push functions construct auth URLs from an explicit token parameter.\n\nSteps:\n\n1. **URL-strip test using a local bare repo** (the 'unit test reads back git remote get-url origin after workspace.create()' scenario from the roadmap demo):\n   - Create a local bare repo: `git init --bare ${tmpDir}/fake-remote.git`\n   - Create a repo with a test commit and push to the bare remote\n   - The problem: `workspace.create()` takes `installationId` and calls `githubApp.getInstallationToken()`, then clones from GitHub. We can't call it with a real GitHub URL in unit tests.\n   - Solution: extract and test `makeAuthUrl` and the URL-strip logic directly. Add an integration-style test that uses a mock workspace manager: create a temp dir, simulate a clone by running `git clone file://${bareRepo} ${dir}`, then call `git remote set-url origin https://github.com/testowner/testrepo.git` and verify `git remote get-url origin` returns the clean URL.\n   - Test: `workspace created with local bare repo, then set-url strips token-like URL; git remote get-url origin returns clean https://github.com/... URL`\n   - Verify: `git remote get-url origin` output does not contain `x-access-token`\n\n2. **makeAuthUrl unit tests** (test via exported function or inline logic):\n   - Import the `buildAuthFetchUrl` helper (if exported from workspace.ts) and test:\n     - With token: `https://x-access-token:TOKEN@github.com/owner/repo.git`\n     - Without token: returns `'origin'` (the literal fallback)\n   - If `makeAuthUrl` is not exported, test the observable behavior through `buildAuthFetchUrl`\n\n3. **Push function token acceptance** (mock-based to avoid real git push):\n   - Test that `createBranchCommitAndPush` accepts `token` in its options type (TypeScript compile check is sufficient; actual push behavior requires real git remotes)\n   - Alternatively: test that the auth URL would be constructed correctly by calling `buildAuthFetchUrl` with a mock dir that has a known stripped remote URL set up via local bare repo.\n\n4. After writing tests, run `bun test src/jobs/workspace.test.ts` and ensure all pass.\n\n5. Run the full test suite `bun test` to ensure no regressions.",
+      "estimate": "45m",
+      "files": [
+        "src/jobs/workspace.test.ts"
+      ],
+      "verify": "bun test src/jobs/workspace.test.ts && echo 'workspace tests pass'",
+      "inputs": [
+        "src/jobs/workspace.ts",
+        "src/jobs/types.ts",
+        "src/jobs/workspace.test.ts"
+      ],
+      "expected_output": [
+        "src/jobs/workspace.test.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -1482,6 +1636,28 @@
       "verdict": "✅ pass",
       "duration_ms": 2600,
       "created_at": "2026-03-28T16:43:07.918Z"
+    },
+    {
+      "id": 13,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bunx tsc --noEmit && echo 'types ok'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6100,
+      "created_at": "2026-03-28T16:57:15.612Z"
+    },
+    {
+      "id": 14,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bun test src/jobs/workspace.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2300,
+      "created_at": "2026-03-28T16:57:15.612Z"
     }
   ]
 }

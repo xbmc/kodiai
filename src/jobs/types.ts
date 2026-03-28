@@ -20,6 +20,11 @@ export interface Workspace {
   dir: string;
   /** Clean up the workspace directory. Idempotent, never throws. */
   cleanup(): Promise<void>;
+  /**
+   * Installation token (or bot PAT for fork clones) for auth operations.
+   * Stored in memory only — never written to disk after workspace.create() strips it from remotes.
+   */
+  token?: string;
 }
 
 /** Job queue with per-installation concurrency control */
