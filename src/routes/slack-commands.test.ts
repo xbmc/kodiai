@@ -41,6 +41,7 @@ function createTestConfig(): AppConfig {
     wikiGithubRepo: "xbmc",
     botUserLogin: "",
     botUserPat: "",
+    addonRepos: [],
   };
 }
 

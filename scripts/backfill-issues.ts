@@ -146,6 +146,7 @@ async function main() {
       wikiGithubRepo: "",
       botUserPat: "",
       botUserLogin: "",
+      addonRepos: [],
     },
     logger,
   );

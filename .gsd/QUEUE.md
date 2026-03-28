@@ -19,3 +19,9 @@
 - Added: 2026-03-16
 - Summary: Fix LLM outputting reasoning prose instead of actual wiki replacement text, tighten PR evidence → page targeting to filter irrelevant matches, clean up xbmc/wiki issue #5 (delete junk comments), and re-run generation/publication with quality-gated output.
 - Context: `.gsd/milestones/M029/M029-CONTEXT.md`
+
+### M031 — Security Hardening
+- Status: queued
+- Added: 2026-03-28
+- Summary: Defense-in-depth against credential exfiltration: agent env allowlist, git remote token sanitization, outgoing secret scan on all publish paths, prompt-level refusal instructions, CLAUDE.md security policy in workspace.
+- Context: `.gsd/milestones/M031/M031-CONTEXT.md`

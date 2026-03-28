@@ -23,6 +23,7 @@ import { createCIFailureHandler } from "./handlers/ci-failure.ts";
 import { createReviewCommentSyncHandler } from "./handlers/review-comment-sync.ts";
 import { createIssueOpenedHandler } from "./handlers/issue-opened.ts";
 import { createIssueClosedHandler } from "./handlers/issue-closed.ts";
+import { createAddonCheckHandler } from "./handlers/addon-check.ts";
 import { createTroubleshootingHandler } from "./handlers/troubleshooting-agent.ts";
 import { createWikiSyncScheduler } from "./knowledge/wiki-sync.ts";
 import { createWikiStalenessDetector } from "./knowledge/wiki-staleness-detector.ts";
@@ -406,6 +407,13 @@ if (reviewCommentStore && embeddingProvider) {
     logger,
   });
 }
+
+createAddonCheckHandler({
+  eventRouter,
+  githubApp,
+  config,
+  logger,
+});
 
 if (issueStore && embeddingProvider) {
   createIssueOpenedHandler({

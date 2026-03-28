@@ -491,6 +491,7 @@ export async function buildM029S04ProofHarness(opts?: {
           wikiGithubRepo: "",
           botUserPat: "",
           botUserLogin: "",
+          addonRepos: [],
         };
 
         const githubApp = createGitHubApp(appConfig as Parameters<typeof createGitHubApp>[0], logger);

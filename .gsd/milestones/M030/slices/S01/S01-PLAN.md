@@ -37,7 +37,7 @@
   - Estimate: 45m
   - Files: src/config.ts, src/handlers/addon-check.ts, src/handlers/addon-check.test.ts
   - Verify: bun test src/handlers/addon-check.test.ts
-- [ ] **T02: Wire createAddonCheckHandler into src/index.ts and verify TypeScript compiles** — Import and call createAddonCheckHandler in src/index.ts, passing the minimal deps (eventRouter, githubApp, config, logger). Verify the full TypeScript compilation passes.
+- [x] **T02: Wired createAddonCheckHandler into src/index.ts unconditionally and fixed addonRepos TypeScript errors in 10 stub files** — Import and call createAddonCheckHandler in src/index.ts, passing the minimal deps (eventRouter, githubApp, config, logger). Verify the full TypeScript compilation passes.
 
 ### Steps
 

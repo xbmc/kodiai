@@ -163,6 +163,7 @@ async function main() {
       wikiGithubRepo: values.repo!,
       botUserPat: "",
       botUserLogin: "",
+      addonRepos: [],
     };
     githubApp = createGitHubApp(config, logger);
     await githubApp.initialize();

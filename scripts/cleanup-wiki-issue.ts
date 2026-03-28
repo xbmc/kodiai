@@ -173,6 +173,7 @@ async function main() {
     wikiGithubRepo: "",
     botUserPat: "",
     botUserLogin: "",
+    addonRepos: [],
   } satisfies AppConfig;
 
   const githubApp = createGitHubApp(appConfig, logger);

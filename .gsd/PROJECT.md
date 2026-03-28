@@ -32,3 +32,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 - ✅ M001–M029: Core platform through wiki quality (see CHANGELOG.md)
 - [ ] M030: Addon Rule Enforcement — run `kodi-addon-checker` on PRs to addon repos, post violations as PR comments
+- [ ] M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)

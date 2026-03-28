@@ -144,6 +144,7 @@ async function main(): Promise<void> {
       wikiGithubRepo: "",
       botUserPat: "",
       botUserLogin: "",
+      addonRepos: [],
       },
       logger,
     );
