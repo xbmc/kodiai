@@ -160,7 +160,7 @@ const DEFAULT_BATCH_SIZE = 100;
 const DEFAULT_REPAIR_KEY = "default";
 
 function supportsStale(corpus: EmbeddingRepairCorpus): boolean {
-  return STALE_SUPPORTED_CORPORA.includes(corpus);
+  return (STALE_SUPPORTED_CORPORA as readonly string[]).includes(corpus);
 }
 
 function normalizeFailureSummary(summary?: Partial<EmbeddingRepairFailureSummary> | null): EmbeddingRepairFailureSummary {
@@ -686,30 +686,32 @@ function createScopedRepairStore(params: {
     throw new Error(`${storeName} is missing repair helpers required for ${corpus} embedding repair`);
   }
 
+  const { listRepairCandidates, getRepairState, saveRepairState, writeRepairEmbeddingsBatch } = store as Required<typeof store>;
+
   return {
     listRepairCandidates: async (requestedCorpus) => {
       if (requestedCorpus !== corpus) {
         throw new Error(`${storeName} repair store only supports ${corpus}, received ${requestedCorpus}`);
       }
-      return await store.listRepairCandidates(requestedCorpus);
+      return await listRepairCandidates(requestedCorpus);
     },
     getRepairState: async (requestedCorpus) => {
       if (requestedCorpus !== corpus) {
         throw new Error(`${storeName} repair state only supports ${corpus}, received ${requestedCorpus}`);
       }
-      return await store.getRepairState(requestedCorpus);
+      return await getRepairState(requestedCorpus);
     },
     saveRepairState: async (state) => {
       if (state.corpus !== corpus) {
         throw new Error(`${storeName} repair state only supports ${corpus}, received ${state.corpus}`);
       }
-      await store.saveRepairState(state);
+      await saveRepairState(state);
     },
     writeRepairEmbeddingsBatch: async (payload) => {
       if (payload.corpus !== corpus) {
         throw new Error(`${storeName} repair writes only support ${corpus}, received ${payload.corpus}`);
       }
-      await store.writeRepairEmbeddingsBatch(payload);
+      await writeRepairEmbeddingsBatch(payload);
     },
   };
 }

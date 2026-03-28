@@ -85,7 +85,7 @@ export type ReviewCommentSearchResult = {
   distance: number;
 };
 
-import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
 /** Sync state tracking record for cursor-based resume. */
 export type SyncState = {
@@ -155,7 +155,7 @@ export type ReviewCommentStore = {
   getByGithubId(repo: string, commentGithubId: number): Promise<ReviewCommentRecord | null>;
 
   /** List degraded persisted rows that need row-local embedding repair. */
-  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<ReviewCommentRepairCandidate[]>;
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

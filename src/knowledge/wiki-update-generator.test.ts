@@ -384,7 +384,7 @@ describe("createUpdateGenerator page selection", () => {
 
     // Page-selection returns [] so generator exits early; one SQL call captured
     expect(capturedCalls.length).toBeGreaterThanOrEqual(1);
-    const pageSelectCall = capturedCalls[0];
+    const pageSelectCall = capturedCalls[0]!;
     expect(pageSelectCall.query).toContain("heuristic_score >=");
     expect(pageSelectCall.values).toContain(3);
   });

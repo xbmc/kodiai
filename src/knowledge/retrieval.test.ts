@@ -386,6 +386,10 @@ function makeMockWikiStore(results: WikiPageSearchResult[] = []): WikiPageStore 
     async updateSyncState() {},
     async countBySource() { return 0; },
     async getPageRevision() { return null; },
+    async listRepairCandidates() { return []; },
+    async getRepairCheckpoint() { return null; },
+    async saveRepairCheckpoint() {},
+    async writeRepairEmbeddingsBatch() {},
   };
 }
 

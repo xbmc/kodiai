@@ -52,7 +52,7 @@ The goal: build a defense-in-depth stack so that no information reachable inside
 ## Risks and Unknowns
 
 - **Agent SDK env requirements** — The agent subprocess needs `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) and system vars (`HOME`, `PATH`, `TMPDIR`, `USER`, `LANG`, `TERM`, `GIT_*`). Stripping too aggressively could break auth. Verified: no application secrets (`DATABASE_URL`, `GITHUB_PRIVATE_KEY`, etc.) are needed by the agent subprocess itself.
-- **git extraheader vs token-in-URL** — Switching from embedded-token remote URL to `http.https://github.com/.extraheader = "Authorization: Bearer TOKEN"` allows the remote URL to be `https://github.com/...` (no token), while push/pull still authenticates. Post-clone: `git remote set-url origin https://github.com/owner/repo.git` + `git config http.https://github.com/.extraheader "Authorization: Bearer TOKEN"`. Must verify this works with shallow clone and write-mode push.
+- **Git token must be kept entirely in memory** — `http.extraheader` is NOT a viable fix: `git config http.extraheader "Authorization: Bearer TOKEN"` writes the token to `.git/config` under a different key — the agent can still `Read(".git/config")` and find it there. The correct fix has two parts: (1) post-clone, strip the token from the remote URL with `git remote set-url origin https://github.com/owner/repo.git` — read-only git ops (`diff`, `log`, `show`, `status`) don't need auth because objects are already on disk; (2) refactor `Workspace` to carry `token?: string` in memory, passed explicitly to `commitAndPush`/`pushToRemote`/`pushCommit` which currently call `getOriginTokenFromDir(dir)` to re-read from `.git/config`. With this change the token is never on disk during the agent's execution window.
 - **`generate.ts` also needs fixing** — Uses `...process.env` with `allowedTools: []`, so no exfiltration path currently. Still a hygiene fix for the principle.
 - **CLAUDE.md gets picked up per-repo** — `settingSources: ["project"]` means if a target repo has a `CLAUDE.md`, it could override our security instructions. The written CLAUDE.md should be in the workspace root (temp clone dir), which takes precedence over project-level CLAUDE.md. Verify SDK resolution order.
 - **Outgoing scan false positives** — Secret patterns should match specifically enough to avoid blocking legitimate content (e.g. a review comment that happens to contain a regex-like string). Use the same patterns as `workspace.ts` secret scan (which is already battle-tested).
@@ -64,7 +64,9 @@ Verified against current codebase state:
 - `src/execution/executor.ts:191-194` — `env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: ... }` — full env passthrough; the fix goes here
 - `src/llm/generate.ts:68-70` — same `...process.env` passthrough; needs same fix
 - `src/lib/sanitizer.ts` — `redactGitHubTokens()` exists for inbound sanitization; `sanitizeOutgoingMentions()` is the only outgoing sanitizer. Need to add `scanOutgoingForSecrets()` alongside it.
-- `src/jobs/workspace.ts:544-560` — clone logic; token embedded in remote URL (`cloneUrl`). Add post-clone remote rewrite here.
+- `src/jobs/workspace.ts:544-560` — clone logic; token embedded in remote URL (`cloneUrl`). Post-clone: `git remote set-url origin https://github.com/owner/repo.git` to strip it. `Workspace` type gains `token?: string` field.
+- `src/jobs/workspace.ts:381,428,467` — `commitAndPush`, `pushToRemote`, `pushCommit` call `getOriginTokenFromDir(dir)` to re-read the token from `.git/config`. Refactor to accept token from `Workspace.token` instead.
+- `src/jobs/types.ts` — `Workspace` interface gains `token?: string`.
 - `src/jobs/workspace.ts:210-255` — `findHighEntropyTokens()` and named regex patterns already exist for write-policy scanning. The outgoing scan can reuse the same patterns.
 - `src/execution/mcp/comment-server.ts:491` — all publish paths run through `sanitizeOutgoingMentions`. Add outgoing secret scan here.
 - `src/execution/mcp/inline-review-server.ts:136` — same; fix here too.
@@ -83,7 +85,7 @@ No existing validated requirements directly cover credential exfiltration preven
 ### In Scope
 
 - **Env allowlist in executor and generate**: replace `...process.env` with a `buildAgentEnv()` helper that passes only SDK auth vars and safe system vars
-- **Git remote sanitization**: post-clone, rewrite remote URL to remove token; use `http.extraheader` for subsequent git operations
+- **Git remote sanitization**: post-clone, immediately rewrite remote URL to `https://github.com/owner/repo.git` (token stripped). Refactor `Workspace` type to carry `token?: string` in memory; push operations receive it explicitly rather than re-reading from `.git/config`. Token is never on disk during agent execution window.
 - **Outgoing secret scan on all publish paths**: GitHub comment, inline review, review thread reply, Slack reply — block publish if content matches secret patterns (reuse patterns from `workspace.ts`)
 - **Prompt-level refusal instructions**: add `## Security Policy` section to `buildMentionPrompt` and the review system prompt, instructing the agent to refuse requests to reveal env vars, credentials, or internal configuration
 - **CLAUDE.md written to workspace**: write a `CLAUDE.md` to the temp workspace dir before invoking the SDK, containing security policy at the project level
@@ -115,5 +117,5 @@ No existing validated requirements directly cover credential exfiltration preven
 ## Open Questions
 
 - **SDK env minimum**: confirmed `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) + system vars is sufficient. No application secrets needed by agent subprocess.
-- **git extraheader write-mode**: need to verify push still works after remote URL sanitization. Plan: test by running write-mode mention in dev before declaring contract complete.
+- **git token memory refactor**: `commitAndPush`, `pushToRemote`, `pushCommit` all call `getOriginTokenFromDir(dir)` to read the token back from `.git/config`. Once the remote URL is stripped, these functions need the token passed explicitly. The `Workspace` type gains a `token?: string` field; workspace creation sets it from the installation token at clone time.
 - **CLAUDE.md vs repo CLAUDE.md**: SDK `settingSources: ["project"]` reads CLAUDE.md from the workspace `cwd` (the temp clone dir). Our written CLAUDE.md will be at `{workspace.dir}/CLAUDE.md`. If the target repo also has a CLAUDE.md, the SDK merges them or uses the workspace-root one. Verify merge behavior — if SDK merges, our instructions are safe; if it chooses one, we need to ensure ours wins.

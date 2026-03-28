@@ -192,7 +192,7 @@ type VerifyM027S04Module = {
 
 async function loadVerifyM027S04Module(): Promise<VerifyM027S04Module> {
   try {
-    return await import("./verify-m027-s04.ts") as VerifyM027S04Module;
+    return await import("./verify-m027-s04.ts") as unknown as VerifyM027S04Module;
   } catch (error) {
     throw new Error(
       "Missing S04 implementation: expected scripts/verify-m027-s04.ts to export parseVerifyM027S04Args(), evaluateM027S04Checks(), renderM027S04Report(), and main() for bun run verify:m027:s04 -- --repo <owner/repo> --query <text> --page-title <title> --corpus <name> [--json].",
@@ -651,14 +651,14 @@ describe("final integrated S04 proof harness contract for scripts/verify-m027-s0
         overallPassed: false,
         status_code: "m027_s02_resume_required",
         checks: [
-          makeS02Report().checks[0],
+          makeS02Report().checks[0]!,
           {
             id: "M027-S02-STATUS",
             passed: false,
             status_code: "repair_resume_available",
             detail: "status_code=repair_resume_available run_status=resume_required cursor_page_title=JSON-RPC API/v8 window=2/4 repaired=6 failed=1 failure_classes=timeout_transient last_failure_class=timeout_transient",
           },
-          makeS02Report().checks[2],
+          makeS02Report().checks[2]!,
         ],
         status_evidence: makeWikiRepairEvidence({
           mode: "status",
@@ -706,15 +706,15 @@ describe("final integrated S04 proof harness contract for scripts/verify-m027-s0
         overallPassed: false,
         status_code: "m027_s03_resume_required",
         checks: [
-          makeS03Report().checks[0],
+          makeS03Report().checks[0]!,
           {
             id: "M027-S03-STATUS",
             passed: false,
             status_code: "repair_resume_available",
             detail: "status_code=repair_resume_available run_status=resume_required corpus=review_comments cursor_last_row_id=1516 batch=1/2 processed=2 repaired=2 failed=1 failure_classes=timeout_transient=2 last_failure_class=timeout_transient",
           },
-          makeS03Report().checks[2],
-          makeS03Report().checks[3],
+          makeS03Report().checks[2]!,
+          makeS03Report().checks[3]!,
         ],
         status_evidence: makeNonWikiRepairEvidence({
           mode: "status",

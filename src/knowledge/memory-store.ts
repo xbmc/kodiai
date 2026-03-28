@@ -60,7 +60,7 @@ type RepairStateRow = {
 };
 
 const DEFAULT_REPAIR_KEY = "default";
-const REPAIR_CORPUS: EmbeddingRepairCorpus = "learning_memories";
+const REPAIR_CORPUS = "learning_memories" as const satisfies EmbeddingRepairCorpus;
 
 function rowToRecord(row: MemoryRow): LearningMemoryRecord {
   return {

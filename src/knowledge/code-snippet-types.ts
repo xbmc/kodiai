@@ -1,4 +1,4 @@
-import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
 /**
  * Types for hunk-level code snippet embedding with content-hash deduplication.
@@ -85,7 +85,7 @@ export type CodeSnippetStore = {
   }): Promise<CodeSnippetSearchResult[]>;
 
   /** List degraded persisted rows that need row-local embedding repair. */
-  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<CodeSnippetRepairCandidate[]>;
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

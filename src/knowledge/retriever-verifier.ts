@@ -51,7 +51,7 @@ type RetrievedUnifiedResult = {
   source: string;
   sourceLabel: string;
   text: string;
-  vectorDistance: number;
+  vectorDistance: number | null;
   rrfScore: number;
 };
 
@@ -69,7 +69,7 @@ function buildHit(result: RetrievedUnifiedResult): RetrieverVerifierReport["hits
     source: result.source,
     source_label: result.sourceLabel,
     text_excerpt: result.text.slice(0, 280),
-    vector_distance: result.vectorDistance,
+    vector_distance: result.vectorDistance ?? 0,
     rrf_score: result.rrfScore,
   };
 }

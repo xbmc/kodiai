@@ -101,7 +101,7 @@ type VerifyM027S03Module = {
 
 async function loadVerifyM027S03Module(): Promise<VerifyM027S03Module> {
   try {
-    return await import("./verify-m027-s03.ts") as VerifyM027S03Module;
+    return await import("./verify-m027-s03.ts") as unknown as VerifyM027S03Module;
   } catch (error) {
     throw new Error(
       "Missing S03 implementation: expected scripts/verify-m027-s03.ts to export parseVerifyM027S03Args(), evaluateM027S03Checks(), renderM027S03Report(), and main() for bun run verify:m027:s03 -- --corpus <name> [--json].",

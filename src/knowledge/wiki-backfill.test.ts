@@ -54,6 +54,10 @@ function createMockStore(): WikiPageStore & {
     async countBySource() { return 0; },
     async getPageRevision(pageId: number) { return _revisions.get(pageId) ?? null; },
     async searchByFullText() { return []; },
+    async listRepairCandidates() { return []; },
+    async getRepairCheckpoint() { return null; },
+    async saveRepairCheckpoint() {},
+    async writeRepairEmbeddingsBatch() {},
   };
 
   return obj;

@@ -195,7 +195,7 @@ type EmbeddingRepairModule = {
 
 async function loadEmbeddingRepairModule(): Promise<EmbeddingRepairModule> {
   try {
-    return await import("./embedding-repair.ts") as EmbeddingRepairModule;
+    return await import("./embedding-repair.ts") as unknown as EmbeddingRepairModule;
   } catch (error) {
     throw new Error(
       "Missing S03 implementation: expected src/knowledge/embedding-repair.ts to export NON_WIKI_TARGET_EMBEDDING_MODEL, NON_WIKI_REPAIR_CORPORA, STALE_SUPPORTED_CORPORA, buildRepairEmbeddingText(), buildEmbeddingRepairPlan(), and runEmbeddingRepair() for the shared non-wiki repair contract.",
@@ -632,7 +632,7 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
         listRepairCandidates: mock(async () => []),
         getRepairState: mock(async () => ({
           run_id: "embedding-repair-review_comments-2026-03-12T08:30:00.000Z",
-          corpus: "review_comments",
+          corpus: "review_comments" as const,
           last_row_id: 3033,
           processed: 1833,
           repaired: 1833,

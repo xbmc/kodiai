@@ -51,6 +51,10 @@ function createMockStore(): MockStore {
     countBySource: mock(async () => 0),
     getPageRevision: mock(async () => null),
     searchByFullText: mock(async () => []),
+    listRepairCandidates: mock(async () => []),
+    getRepairCheckpoint: mock(async () => null),
+    saveRepairCheckpoint: mock(async () => {}),
+    writeRepairEmbeddingsBatch: mock(async () => {}),
   };
   return obj;
 }

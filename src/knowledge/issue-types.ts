@@ -1,4 +1,4 @@
-import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
 /**
  * Type definitions for GitHub issue corpus storage, search, and retrieval.
@@ -165,7 +165,7 @@ export type IssueStore = {
   }): Promise<IssueCommentSearchResult[]>;
 
   /** List degraded persisted rows that need row-local embedding repair. */
-  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<Array<IssueRepairCandidate | IssueCommentRepairCandidate>>;
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

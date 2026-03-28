@@ -9,6 +9,7 @@ import {
   runLearningMemoryEmbeddingRepair,
   runReviewCommentEmbeddingRepair,
   type EmbeddingRepairCorpus,
+  type EmbeddingRepairCheckpoint,
   type EmbeddingRepairReport,
   type EmbeddingRepairRun,
 } from "../src/knowledge/embedding-repair.ts";
@@ -139,7 +140,7 @@ function renderHumanReport(report: RepairCliReport): string {
 
 function normalizeStatusReport(params: {
   corpus: EmbeddingRepairCorpus;
-  checkpoint: EmbeddingRepairRun | null;
+  checkpoint: EmbeddingRepairCheckpoint | null;
   hasCandidates: boolean;
 }): RepairCliReport {
   const updatedAt = params.checkpoint?.updated_at ?? new Date().toISOString();
@@ -279,27 +280,27 @@ async function executeStatus(options: {
 
     switch (options.corpus) {
       case "review_comments": {
-        const checkpoint = await runtime.reviewCommentStore.getRepairState(options.corpus);
-        const candidates = await runtime.reviewCommentStore.listRepairCandidates(options.corpus);
+        const checkpoint = await runtime.reviewCommentStore.getRepairState!(options.corpus);
+        const candidates = await runtime.reviewCommentStore.listRepairCandidates!(options.corpus);
         return normalizeStatusReport({ corpus: options.corpus, checkpoint, hasCandidates: candidates.length > 0 });
       }
       case "learning_memories": {
         if (!runtime.learningMemoryStore) {
           throw new Error("Learning memory store is unavailable; cannot inspect learning_memories repair state");
         }
-        const checkpoint = await runtime.learningMemoryStore.getRepairState(options.corpus);
-        const candidates = await runtime.learningMemoryStore.listRepairCandidates(options.corpus);
+        const checkpoint = await runtime.learningMemoryStore.getRepairState!(options.corpus);
+        const candidates = await runtime.learningMemoryStore.listRepairCandidates!(options.corpus);
         return normalizeStatusReport({ corpus: options.corpus, checkpoint, hasCandidates: candidates.length > 0 });
       }
       case "code_snippets": {
-        const checkpoint = await runtime.codeSnippetStore.getRepairState(options.corpus);
-        const candidates = await runtime.codeSnippetStore.listRepairCandidates(options.corpus);
+        const checkpoint = await runtime.codeSnippetStore.getRepairState!(options.corpus);
+        const candidates = await runtime.codeSnippetStore.listRepairCandidates!(options.corpus);
         return normalizeStatusReport({ corpus: options.corpus, checkpoint, hasCandidates: candidates.length > 0 });
       }
       case "issues":
       case "issue_comments": {
-        const checkpoint = await runtime.issueStore.getRepairState(options.corpus);
-        const candidates = await runtime.issueStore.listRepairCandidates(options.corpus);
+        const checkpoint = await runtime.issueStore.getRepairState!(options.corpus);
+        const candidates = await runtime.issueStore.listRepairCandidates!(options.corpus);
         return normalizeStatusReport({ corpus: options.corpus, checkpoint, hasCandidates: candidates.length > 0 });
       }
       default: {

@@ -174,3 +174,37 @@ async function runContentFilterRejects(opts?: {
 **Implication for milestone summaries:** Document infra-gated criteria as "⚠️ Pending ops runbook execution" rather than "failed" — they aren't failures, they're deferred live operations. The harness check IDs and skip conditions are the proof that the code is in place.
 
 **Established in:** M029/S04 — same pattern as M027/M028 DB/GitHub-gated checks.
+
+---
+
+## `bun run tsc --noEmit` Gate Requires Exit 0 — All Pre-Existing Errors Must Be Fixed
+
+**Context:** M030/S01/T02 reduced the pre-existing tsc error count from 68 to 56 (by adding `addonRepos: []` to 10 AppConfig stubs). The task summary described this as acceptable — "zero new M030 errors". But the verification gate requires exit 0, not just "no new errors". The slice closer had to fix all 53 remaining errors.
+
+**Rule:** Whenever `bun run tsc --noEmit` is a verification step and the gate requires exit 0, all TypeScript errors in the repo must be fixed — including pre-existing ones. Do not stop at "no new errors from this task".
+
+**Pattern:** If pre-existing errors are numerous, fix them in batches by category:
+1. Interface type mismatches (store `listRepairCandidates` return types, etc.) — align interface types with actual implementations
+2. Const literal narrowing (`.includes()` on narrow const arrays vs wider union) — cast to `(array as readonly string[]).includes(value)`
+3. TS closure narrowing (optional method called inside returned closure) — destructure after guard: `const { fn } = obj; return { method: () => fn() }`
+4. Mock type casts in test files — `as unknown as ModuleType` for dynamic imports
+5. Array index access `T | undefined` — add `!` non-null assertion when `expect(arr.length).toBeGreaterThan(0)` guards it
+
+**Established in:** M030/S01 (slice closer).
+
+---
+
+## TS Closure Narrowing: Destructure After Guard
+
+**Context:** `createScopedRepairStore` in `src/knowledge/embedding-repair.ts` uses `if (!store.fn) throw` to guard optional methods, then calls `store.fn()` inside returned closures. TypeScript does not narrow closure-captured optional properties — the guard is forgotten by the time the closure executes.
+
+**Fix:**
+```ts
+if (!store.fn) throw new Error(...);
+const { fn } = store as Required<typeof store>;  // narrow here
+return { method: () => fn() };  // closure captures the narrowed local
+```
+
+**Rule:** Whenever a guard `if (!obj.optionalMethod) throw` precedes closures that call `obj.optionalMethod`, destructure the narrowed value before the return. TypeScript's narrowing does not flow into closures.
+
+**Established in:** M030/S01 (`src/knowledge/embedding-repair.ts`, `createScopedRepairStore`).

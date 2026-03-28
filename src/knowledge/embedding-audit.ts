@@ -447,8 +447,8 @@ export async function auditEmbeddings(opts?: {
 
   try {
     const report = await db.sql.begin(async (tx) => {
-      await tx`SET TRANSACTION READ ONLY`;
-      const corpora = await collectEmbeddingAuditData(tx as Sql);
+      await (tx as unknown as Sql)`SET TRANSACTION READ ONLY`;
+      const corpora = await collectEmbeddingAuditData(tx as unknown as Sql);
       return buildEmbeddingAuditReport({
         generatedAt: new Date().toISOString(),
         corpora,

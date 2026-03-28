@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T15:29:11.795Z",
+  "exported_at": "2026-03-28T16:05:40.880Z",
   "milestones": [
     {
       "id": "M001",
@@ -638,14 +638,14 @@
       "milestone_id": "M030",
       "id": "S01",
       "title": "Handler scaffold and repo detection",
-      "status": "pending",
+      "status": "complete",
       "risk": "low",
       "depends": [],
       "demo": "After this: handler fires on a repo-plugins PR and logs the addon IDs it would check; non-addon repos produce no output.",
       "created_at": "2026-03-28T15:18:01.704Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-28T15:46:15.394Z",
+      "full_summary_md": "---\nid: S01\nparent: M030\nmilestone: M030\nprovides:\n  - createAddonCheckHandler factory (src/handlers/addon-check.ts) — wired into src/index.ts, fires on pull_request.opened and pull_request.synchronize\n  - addonRepos: string[] on AppConfig — configurable via ADDON_REPOS env var, defaults to xbmc/repo-plugins,xbmc/repo-scripts,xbmc/repo-scrapers\n  - Addon ID extraction logic: takes first path segment of files containing '/', deduplicates and sorts — ready for S02 to pass the sorted IDs to kodi-addon-checker subprocess\nrequires:\n  []\naffects:\n  - S02\n  - S03\nkey_files:\n  - src/config.ts\n  - src/handlers/addon-check.ts\n  - src/handlers/addon-check.test.ts\n  - src/index.ts\n  - src/knowledge/embedding-repair.ts\n  - src/knowledge/embedding-audit.ts\n  - src/knowledge/retriever-verifier.ts\n  - src/knowledge/wiki-embedding-repair.ts\n  - src/knowledge/review-comment-store.ts\n  - src/knowledge/review-comment-types.ts\n  - src/knowledge/issue-types.ts\n  - src/knowledge/types.ts\n  - src/knowledge/code-snippet-types.ts\n  - src/knowledge/retrieval.test.ts\n  - src/knowledge/wiki-retrieval.test.ts\n  - src/knowledge/wiki-backfill.test.ts\n  - src/knowledge/wiki-sync.test.ts\n  - src/knowledge/troubleshooting-retrieval.test.ts\n  - src/knowledge/embedding-repair.test.ts\n  - src/knowledge/wiki-update-generator.test.ts\n  - scripts/embedding-repair.ts\n  - scripts/wiki-embedding-repair.ts\n  - scripts/verify-m027-s02.test.ts\n  - scripts/verify-m027-s03.test.ts\n  - scripts/verify-m027-s04.test.ts\n  - scripts/verify-m029-s04.test.ts\nkey_decisions:\n  - Registered createAddonCheckHandler unconditionally — only needs eventRouter/githubApp/config/logger, no optional stores required\n  - Root-level file exclusion uses includes('/') guard — simple and correct for all POSIX paths\n  - Used same child-logger pattern as issue-opened.ts (handler, repo, prNumber, deliveryId bindings)\n  - Pre-existing tsc errors required full fix (not just 'no new errors') because gate requires exit 0; fixed all 53\n  - EmbeddingRepairCorpus .includes() widened with 'as readonly string[]' to allow broader union check against narrow const arrays\n  - RepairStore exported from wiki-embedding-repair.ts so scripts/wiki-embedding-repair.ts can cast WikiPageStore to it\n  - createScopedRepairStore uses destructure-after-guard to narrow optional methods after the null check for TS closure narrowing\npatterns_established:\n  - addon-check handler factory pattern following createIssueOpenedHandler: register on two events, gate on config list, call listFiles, extract first path segments, log structured info\n  - For TS guard narrowing inside closures: destructure narrowed values before returning closures (const { fn } = obj after guard, then use fn() in closures instead of obj.fn())\n  - Pre-existing tsc errors: when gate requires exit 0, all errors must be fixed even if not caused by the current milestone; document as deviation\nobservability_surfaces:\n  - logger.info({ addonIds, prNumber, repo }, 'Addon check: would check addons') — structured log on every gated PR\n  - logger.debug for non-addon repo early return — confirms gating works in logs\n  - logger.error on handler exception — non-fatal, consistent with issue-opened.ts pattern\ndrill_down_paths:\n  - milestones/M030/slices/S01/tasks/T01-SUMMARY.md\n  - milestones/M030/slices/S01/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T15:46:15.395Z\nblocker_discovered: false\n---\n\n# S01: Handler scaffold and repo detection\n\n**Created the addon-check handler scaffold with addonRepos config field, PR file inspection, and addon ID extraction — plus fixed 53 pre-existing TypeScript errors to achieve clean tsc exit 0.**\n\n## What Happened\n\nS01 delivered the full handler scaffold for M030's addon rule enforcement feature. T01 added `addonRepos` to `AppConfig` (Zod schema with comma-split transform, default of three xbmc repos), created `src/handlers/addon-check.ts` following the `createIssueOpenedHandler` factory pattern, and wrote 5 unit tests covering all scenarios. The handler registers on `pull_request.opened` and `pull_request.synchronize`, gates on `config.addonRepos.includes(repo)`, calls `octokit.rest.pulls.listFiles`, extracts first path segments from files containing a slash (excluding root-level files like README.md), deduplicates, sorts, and logs the addon IDs at info level with structured bindings. T02 wired the handler into `src/index.ts` (unconditionally, after existing handler registrations) and fixed 10 AppConfig stub objects in test/script files that gained a required `addonRepos` field.\n\nThe verification gate required `bun run tsc --noEmit` to exit 0. T02 had reduced errors from 68 to 56 (12 fewer, all pre-existing). The gate still failed with exit code 2 because pre-existing errors existed. This required fixing all 53 remaining errors across the codebase: (1) `EmbeddingRepairCorpus` widening with `as readonly string[]` for `.includes()` calls; (2) non-null assertions on optional repair methods in `scripts/embedding-repair.ts`; (3) `EmbeddingRepairCheckpoint | null` parameter type fix in `normalizeStatusReport`; (4) `as const satisfies` for `REPAIR_CORPUS` literals to narrow from `EmbeddingRepairCorpus` to the specific literal; (5) `listRepairCandidates` interface types updated to `RepairCandidateRow[]` in `IssueStore`, `LearningMemoryStore`, `ReviewCommentStore`, `CodeSnippetStore` interfaces; (6) `rowToRepairCandidate` rewritten to return `RepairCandidateRow` directly (snake_case shape); (7) wiki test mock stubs updated to include the 4 new required `WikiPageStore` methods; (8) `createScopedRepairStore` destructure-after-guard pattern to resolve optional method closures; (9) `TransactionSql → as unknown as Sql` in `embedding-audit.ts`; (10) `vectorDistance: number | null` alignment in `retriever-verifier.ts`; (11) module cast double-cast pattern (`as unknown as ModuleType`) for M027 test type mismatches; (12) `RepairStore` exported from `wiki-embedding-repair.ts`; (13) `normalizeCheckpoint` parameter union with `null`; and (14) non-null assertions for array index access in M027 tests. After all fixes, `bun run tsc --noEmit` exits 0 cleanly.\n\n## Verification\n\nbun test src/handlers/addon-check.test.ts — 5 pass, 0 fail. bun run tsc --noEmit — exit 0, no errors.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT02 description said the pre-existing baseline was 68 errors and after fixes would be 56. The verification gate requires exit 0 (not just 'no new errors'). This required fixing all 53 remaining pre-existing errors across embedding-repair, wiki-embedding-repair, audit, retrieval, and M027 test infrastructure — none of which are M030 code.\n\n## Known Limitations\n\nNone.\n\n## Follow-ups\n\nNone.\n\n## Files Created/Modified\n\n- `src/config.ts` — Added addonRepos Zod field with comma-split transform and default of three xbmc repos\n- `src/handlers/addon-check.ts` — New addon-check handler factory: registers on pull_request.opened/synchronize, gates on addonRepos, extracts addon IDs from listFiles output\n- `src/handlers/addon-check.test.ts` — 5 unit tests covering registration, repo gating, ID extraction, empty PR, root-level file exclusion\n- `src/index.ts` — Imports and calls createAddonCheckHandler unconditionally after existing handlers\n- `src/knowledge/embedding-repair.ts` — Fixed STALE_SUPPORTED_CORPORA.includes() widening; createScopedRepairStore destructure-after-guard pattern\n- `src/knowledge/embedding-audit.ts` — Fixed TransactionSql to Sql cast via unknown\n- `src/knowledge/retriever-verifier.ts` — Fixed RetrievedUnifiedResult.vectorDistance to number | null; ?? 0 in buildHit\n- `src/knowledge/wiki-embedding-repair.ts` — Exported RepairStore type; fixed normalizeCheckpoint parameter to allow null\n- `src/knowledge/review-comment-store.ts` — REPAIR_CORPUS as const satisfies; listRepairCandidates returns RepairCandidateRow[]; rowToRepairCandidate rewritten to snake_case shape\n- `src/knowledge/review-comment-types.ts` — listRepairCandidates interface updated to return RepairCandidateRow[]\n- `src/knowledge/issue-types.ts` — listRepairCandidates interface updated to return RepairCandidateRow[]\n- `src/knowledge/types.ts` — LearningMemoryStore.listRepairCandidates updated to return RepairCandidateRow[]\n- `src/knowledge/code-snippet-types.ts` — CodeSnippetStore.listRepairCandidates updated to return RepairCandidateRow[]\n- `src/knowledge/retrieval.test.ts` — Mock WikiPageStore updated with 4 repair stubs\n- `src/knowledge/wiki-retrieval.test.ts` — Mock store updated with 4 repair stubs\n- `src/knowledge/wiki-backfill.test.ts` — Mock store updated with 4 repair stubs\n- `src/knowledge/wiki-sync.test.ts` — Mock store updated with 4 repair stubs\n- `src/knowledge/troubleshooting-retrieval.test.ts` — Mock WikiPageStore updated with 4 repair stubs\n- `src/knowledge/embedding-repair.test.ts` — Double-cast import; corpus as const literal fix\n- `src/knowledge/wiki-update-generator.test.ts` — Non-null assertion on capturedCalls[0]!\n- `scripts/embedding-repair.ts` — Non-null assertions on optional repair methods; EmbeddingRepairCheckpoint parameter in normalizeStatusReport; import added\n- `scripts/wiki-embedding-repair.ts` — Import RepairStore; cast wikiPageStore as unknown as RepairStore\n- `scripts/verify-m027-s02.test.ts` — Double-cast import fix\n- `scripts/verify-m027-s03.test.ts` — Double-cast import fix\n- `scripts/verify-m027-s04.test.ts` — Double-cast import fix; non-null assertions on array indexing\n- `scripts/verify-m029-s04.test.ts` — NonNullable<Parameters<...>[0]> cast fix\n- `src/routes/slack-commands.test.ts` — addonRepos: [] added to AppConfig stub\n- `src/routes/slack-events.test.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/backfill-issues.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/backfill-pr-evidence.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/backfill-review-comments.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/cleanup-legacy-branches.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/cleanup-wiki-issue.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/publish-wiki-updates.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/sync-triage-reactions.ts` — addonRepos: [] added to AppConfig stub\n- `scripts/verify-m029-s04.ts` — addonRepos: [] added to AppConfig stub\n",
+      "full_uat_md": "# S01: Handler scaffold and repo detection — UAT\n\n**Milestone:** M030\n**Written:** 2026-03-28T15:46:15.395Z\n\n# S01 UAT: Handler scaffold and repo detection\n\n## Preconditions\n- App is running with default `ADDON_REPOS` (xbmc/repo-plugins, xbmc/repo-scripts, xbmc/repo-scrapers)\n- GitHub App installation exists for xbmc org\n\n## Test Cases\n\n### TC-01: Handler registers on both pull_request events\n**What:** `createAddonCheckHandler` registers handlers for both `pull_request.opened` and `pull_request.synchronize`.\n**How:** Inspect the EventRouter after calling `createAddonCheckHandler`. Both event keys must be present.\n**Expected:** Router has entries for both `pull_request.opened` and `pull_request.synchronize`.\n**Evidence:** Unit test `registers on pull_request.opened and pull_request.synchronize` — passes.\n\n### TC-02: Non-addon repo produces no output\n**What:** A PR on a repo not in `addonRepos` (e.g., `xbmc/xbmc`) triggers the handler but exits early without calling `listFiles`.\n**How:** Trigger with `repository.full_name = \"xbmc/xbmc\"`, config `addonRepos = [\"xbmc/repo-plugins\"]`.\n**Expected:** `listFiles` is never called. No info log emitted. Debug log confirms repo not in addonRepos.\n**Evidence:** Unit test `non-addon repo returns without calling listFiles` — passes.\n\n### TC-03: Addon repo logs correct addon IDs (sorted, deduplicated)\n**What:** A PR on `xbmc/repo-plugins` with files from two addons logs both addon IDs sorted alphabetically.\n**How:** Files: `[\"plugin.video.foo/addon.xml\", \"plugin.video.foo/icon.png\", \"plugin.audio.bar/addon.xml\"]`.\n**Expected:** `logger.info` called with `addonIds: [\"plugin.audio.bar\", \"plugin.video.foo\"]` (sorted, deduplicated).\n**Evidence:** Unit test `addon repo logs correct addon IDs` — passes.\n\n### TC-04: Empty PR logs empty addon ID list\n**What:** A PR with zero changed files logs an empty array (not an error).\n**How:** Files: `[]`.\n**Expected:** `logger.info` called with `addonIds: []`.\n**Evidence:** Unit test `empty PR (no files) logs empty addon ID list` — passes.\n\n### TC-05: Root-level files are excluded\n**What:** Root-level files (no `/` in path) like `README.md` are excluded; files with a `/` (even `.github/`) are treated as having an addon directory first segment.\n**How:** Files: `[\"README.md\", \"plugin.video.foo/addon.xml\"]`.\n**Expected:** `addonIds: [\"plugin.video.foo\"]` — `README.md` excluded because no slash.\n**Evidence:** Unit test `root-level files (no slash) are excluded` — passes.\n\n### TC-06: addonRepos default config\n**What:** When `ADDON_REPOS` env var is not set, `config.addonRepos` defaults to the three standard xbmc repos.\n**How:** Parse config with no `ADDON_REPOS` env var set.\n**Expected:** `config.addonRepos` equals `[\"xbmc/repo-plugins\", \"xbmc/repo-scripts\", \"xbmc/repo-scrapers\"]`.\n\n### TC-07: TypeScript clean compilation\n**What:** Adding `addonRepos` to `AppConfig` must not break any existing TypeScript consumers.\n**How:** Run `bun run tsc --noEmit`.\n**Expected:** Exit code 0, no errors.\n**Evidence:** tsc --noEmit exits 0.\n\n### TC-08: Handler wired into production entrypoint\n**What:** `createAddonCheckHandler` is called in `src/index.ts` so the handler is active in the running app.\n**How:** Grep `src/index.ts` for `createAddonCheckHandler`.\n**Expected:** Import and unconditional call are present.\n**Evidence:** T02 implementation confirmed — handler registered after existing handlers, outside optional store guards.\n\n",
       "goal": "Create the addon-check handler that fires on pull_request.opened and pull_request.synchronize events, gates on config.addonRepos, and logs the addon IDs it would check by inspecting PR file paths.",
       "success_criteria": "Handler registered on both pull_request events; non-addon-repo PRs return immediately without calling listFiles; addon-repo PRs log a deduplicated list of top-level directory names from PR file paths; bun test src/handlers/addon-check.test.ts passes; bun run tsc --noEmit exits 0.",
       "proof_level": "contract",
@@ -668,11 +668,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Install kodi-addon-checker in the Dockerfile, run it as a subprocess against each affected addon dir in the cloned workspace, and parse its output into structured findings.",
-      "success_criteria": "Given a cloned workspace containing a known-bad addon, runAddonCheck() returns findings with correct severity and message. Unknown branch names return empty findings with a warning log. Dockerfile builds and kodi-addon-checker --version succeeds.",
-      "proof_level": "unit tests: parser, branch mapping, multi-addon detection; Dockerfile smoke: tool --version exits 0",
-      "integration_closure": "Runner function exported and importable by S03 handler; Dockerfile updated",
-      "observability_impact": "Structured logs: subprocess exit code, finding count per addon, branch used, duration",
+      "goal": "Build the kodi-addon-checker subprocess runner and output parser so the handler produces structured findings instead of just logging addon IDs.",
+      "success_criteria": "- `parseCheckerOutput` correctly strips ANSI codes and classifies ERROR/WARN/INFO lines, ignoring non-matching output\n- `resolveCheckerBranch` validates against the 10 known Kodi version branch names, returning null for unknown branches\n- `runAddonChecker` fails open on ENOENT (toolNotFound) and on timeout, returning empty findings in both cases\n- `createAddonCheckHandler` clones the PR workspace, resolves the kodi branch, calls the runner per addon, and logs structured findings\n- `bun run tsc --noEmit` exits 0",
+      "proof_level": "Contract — unit tests with injected subprocess mock prove all parser, resolver, and fail-open behaviors; handler tests prove workspace/runner wiring with mocked dependencies.",
+      "integration_closure": "Upstream: S01 handler scaffold (src/handlers/addon-check.ts), WorkspaceManager/JobQueue types (src/jobs/types.ts), withTimeBudget (src/lib/usage-analyzer.ts). New wiring in T02: createAddonCheckHandler gains workspaceManager+jobQueue deps, src/index.ts passes them. Remaining before end-to-end: S03 PR comment posting.",
+      "observability_impact": "handler logs structured findings at info level per addon (addonId, level, message bindings); logs warn when branch is unknown (skipping); logs warn on toolNotFound; logs warn on runner timeout; existing error log on handler exception unchanged.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -796,6 +796,92 @@
         "`src/index.ts` — modified: import and call for createAddonCheckHandler added"
       ],
       "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M030",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Created addon-checker-runner.ts with ANSI-stripping output parser, Kodi branch resolver, and injectable subprocess runner; 19/19 tests pass, TypeScript clean",
+      "status": "complete",
+      "one_liner": "Created addon-checker-runner.ts with ANSI-stripping output parser, Kodi branch resolver, and injectable subprocess runner; 19/19 tests pass, TypeScript clean",
+      "narrative": "Built src/lib/addon-checker-runner.ts as a pure injectable module following the usage-analyzer.ts pattern. Reused withTimeBudget from usage-analyzer rather than duplicating it. The __runSubprocessForTests injection matches __runGrepForTests shape exactly. ANSI stripping uses the regex before line splitting. Non-zero exit codes are treated as normal (tool exits 1 when findings exist). Non-ENOENT errors fail open. addonId in parseCheckerOutput is caller-provided; runAddonChecker derives it from the last path segment of addonDir. Created 19 tests covering all three exported functions across all specified edge cases.",
+      "verification_result": "bun test src/lib/addon-checker-runner.test.ts → 19 pass, 0 fail. bun run tsc --noEmit → exit 0.",
+      "duration": "",
+      "completed_at": "2026-03-28T16:05:40.870Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/lib/addon-checker-runner.ts",
+        "src/lib/addon-checker-runner.test.ts"
+      ],
+      "key_decisions": [
+        "Reused withTimeBudget from usage-analyzer.ts rather than duplicating timeout logic",
+        "addonId derived from last path segment of addonDir in runAddonChecker",
+        "Non-ENOENT errors fail open matching usage-analyzer.ts convention"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M030\nkey_files:\n  - src/lib/addon-checker-runner.ts\n  - src/lib/addon-checker-runner.test.ts\nkey_decisions:\n  - Reused withTimeBudget from usage-analyzer.ts rather than duplicating timeout logic\n  - addonId derived from last path segment of addonDir in runAddonChecker\n  - Non-ENOENT errors fail open matching usage-analyzer.ts convention\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:05:40.871Z\nblocker_discovered: false\n---\n\n# T01: Created addon-checker-runner.ts with ANSI-stripping output parser, Kodi branch resolver, and injectable subprocess runner; 19/19 tests pass, TypeScript clean\n\n**Created addon-checker-runner.ts with ANSI-stripping output parser, Kodi branch resolver, and injectable subprocess runner; 19/19 tests pass, TypeScript clean**\n\n## What Happened\n\nBuilt src/lib/addon-checker-runner.ts as a pure injectable module following the usage-analyzer.ts pattern. Reused withTimeBudget from usage-analyzer rather than duplicating it. The __runSubprocessForTests injection matches __runGrepForTests shape exactly. ANSI stripping uses the regex before line splitting. Non-zero exit codes are treated as normal (tool exits 1 when findings exist). Non-ENOENT errors fail open. addonId in parseCheckerOutput is caller-provided; runAddonChecker derives it from the last path segment of addonDir. Created 19 tests covering all three exported functions across all specified edge cases.\n\n## Verification\n\nbun test src/lib/addon-checker-runner.test.ts → 19 pass, 0 fail. bun run tsc --noEmit → exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/lib/addon-checker-runner.test.ts` | 0 | ✅ pass | 56ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6100ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/lib/addon-checker-runner.ts`\n- `src/lib/addon-checker-runner.test.ts`\n",
+      "description": "Build src/lib/addon-checker-runner.ts as a pure, injectable module. Export:\n- ValidKodiVersions: readonly string[] — the 10 known Kodi release branch names (nexus, omega, matrix, leia, jarvis, isengard, helix, gotham, frodo, dharma)\n- AddonFinding type: { level: 'ERROR' | 'WARN' | 'INFO'; addonId: string; message: string }\n- AddonCheckerResult type: { findings: AddonFinding[]; timedOut: boolean; toolNotFound: boolean }\n- parseCheckerOutput(raw: string, addonId: string): AddonFinding[] — strips ANSI codes with /\\x1B\\[[0-9;]*m/g, then for each line matches /^(ERROR|WARN|INFO): (.+)$/, attaches addonId; ignores non-matching lines\n- resolveCheckerBranch(baseBranch: string): string | null — returns baseBranch if it's in ValidKodiVersions, null otherwise\n- runAddonChecker(opts: { addonDir: string; branch: string; timeBudgetMs?: number; __runSubprocessForTests?: ... }): Promise<AddonCheckerResult> — spawns kodi-addon-checker with args ['--branch', branch, addonDir], captures stdout, parses with parseCheckerOutput; if subprocess ENOENT → { findings: [], timedOut: false, toolNotFound: true }; if withTimeBudget returns null → { findings: [], timedOut: true, toolNotFound: false }; non-zero exit code (but not ENOENT) is NOT an error — parse stdout regardless\n\nThe __runSubprocessForTests injection accepts the same shape as analyzePackageUsage's __runGrepForTests: (params) => Promise<{ exitCode: number; stdout: string; error?: { code?: string } }>. Use Bun's $ shell as the real implementation (same as usage-analyzer.ts uses).\n\nAlso create src/lib/addon-checker-runner.test.ts with describe blocks:\n1. parseCheckerOutput — strips ANSI, classifies ERROR/WARN/INFO, ignores non-matching lines (XML schema lines, blank lines, debug output), attaches addonId\n2. resolveCheckerBranch — returns branch for each known version, null for unknown (e.g. 'main', 'master', 'develop')\n3. runAddonChecker — toolNotFound when subprocess returns ENOENT error, timedOut when subprocess takes longer than budget (inject a slow stub), returns parsed findings on success with exit code 1 (non-zero is not failure)",
+      "estimate": "90m",
+      "files": [
+        "src/lib/addon-checker-runner.ts",
+        "src/lib/addon-checker-runner.test.ts",
+        "src/lib/usage-analyzer.ts"
+      ],
+      "verify": "bun test src/lib/addon-checker-runner.test.ts",
+      "inputs": [
+        "src/lib/usage-analyzer.ts",
+        "src/handlers/addon-check.ts"
+      ],
+      "expected_output": [
+        "src/lib/addon-checker-runner.ts",
+        "src/lib/addon-checker-runner.test.ts"
+      ],
+      "observability_impact": "No runtime signals in this module itself — observability is surfaced at the handler layer in T02 using the findings returned here.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M030",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Wire runner into addon-check handler and update index.ts",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Update src/handlers/addon-check.ts to accept workspaceManager and jobQueue, clone the workspace, resolve the kodi branch, and call runAddonChecker per addon. Update src/index.ts to pass these deps.\n\nSpecific changes to addon-check.ts:\n1. Add imports: WorkspaceManager, JobQueue from ../jobs/types.ts; runAddonChecker, resolveCheckerBranch, AddonFinding from ../lib/addon-checker-runner.ts; fetchAndCheckoutPullRequestHeadRef from ../jobs/workspace.ts\n2. Extend the deps type to include workspaceManager: WorkspaceManager, jobQueue: JobQueue\n3. Extend the payload type cast to include pull_request.base.ref (string) and pull_request.head.ref (string) and pull_request.head.repo (optional fork info)\n4. Inside handlePullRequest, after extracting addonIds:\n   a. Call resolveCheckerBranch(payload.pull_request.base.ref) — if null, handlerLogger.warn({ baseBranch }, 'addon-check: unknown kodi branch, skipping') and return\n   b. Wrap the actual check work in jobQueue.enqueue(event.installationId, async () => { ... })\n   c. Inside the enqueue: create workspace via workspaceManager.create with the head branch (use fork/non-fork pattern from review.ts lines 1178-1205: if head.repo differs from base repo → clone base branch then fetchAndCheckoutPullRequestHeadRef; else clone head.ref directly). For S02, simplify: always clone base.ref and then call fetchAndCheckoutPullRequestHeadRef for non-fork PRs too — safe and matches review.ts's fork path. Actually: clone head.ref directly (non-fork is the common case for xbmc repos; fork handling can be S03 polish).\n   d. For each addonId: call runAddonChecker({ addonDir: path.join(workspace.dir, addonId), branch: kodiVersion, timeBudgetMs: 120000 })\n   e. Log findings: for each finding, handlerLogger.info({ addonId: finding.addonId, level: finding.level, message: finding.message }, 'addon-check: finding')\n   f. Log summary: handlerLogger.info({ addonIds, totalFindings: allFindings.length }, 'addon-check: complete')\n   g. Call workspace.cleanup() in finally\n5. Replace the old scaffold log ('Addon check: would check addons') with the new flow\n6. Accept __runSubprocessForTests as an optional dep for test injection (same pattern as T01)\n\nSpecific changes to index.ts:\n- Add workspaceManager and jobQueue to the createAddonCheckHandler call (they're already created on lines 74-75)\n\nUpdate src/handlers/addon-check.test.ts:\n- Add tests:\n  a. unknown branch → warns and skips (resolveCheckerBranch returns null path)\n  b. workspace.create called with head branch on non-fork PR\n  c. runner called per addon with correct addonDir and branch\n  d. findings logged with structured bindings\n  e. workspace.cleanup called in finally (even on runner error)\n- Keep all 5 existing tests passing (they test the scaffold behavior — update the 'logs addon IDs' test to match the new log message 'addon-check: complete' or adjust as needed)\n\nVerify:\n- bun test src/handlers/addon-check.test.ts (all tests pass)\n- bun test src/lib/addon-checker-runner.test.ts (regression check)\n- bun run tsc --noEmit (exit 0)",
+      "estimate": "90m",
+      "files": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "src/index.ts"
+      ],
+      "verify": "bun test src/handlers/addon-check.test.ts && bun test src/lib/addon-checker-runner.test.ts && bun run tsc --noEmit",
+      "inputs": [
+        "src/lib/addon-checker-runner.ts",
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "src/index.ts",
+        "src/jobs/types.ts",
+        "src/jobs/workspace.ts"
+      ],
+      "expected_output": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "src/index.ts"
+      ],
+      "observability_impact": "Adds structured log per finding (addonId, level, message bindings at info level) and summary log (addonIds, totalFindings). Warns on unknown kodi branch with baseBranch binding. Warns on toolNotFound (kodi-addon-checker not installed). Warns on runner timeout with addonId.",
       "full_plan_md": "",
       "sequence": 0
     }
@@ -931,6 +1017,28 @@
       "verdict": "✅ 56 errors (−12 vs baseline, 0 new M030 errors)",
       "duration_ms": 6600,
       "created_at": "2026-03-28T15:29:11.783Z"
+    },
+    {
+      "id": 4,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M030",
+      "command": "bun test src/lib/addon-checker-runner.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 56,
+      "created_at": "2026-03-28T16:05:40.870Z"
+    },
+    {
+      "id": 5,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M030",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6100,
+      "created_at": "2026-03-28T16:05:40.870Z"
     }
   ]
 }

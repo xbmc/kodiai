@@ -67,7 +67,7 @@ type RepairSuccess = {
   retry_count?: number;
 };
 
-type RepairStore = {
+export type RepairStore = {
   listRepairCandidates: (params?: { pageTitle?: string }) => Promise<RawRepairCandidateRow[]>;
   getRepairCheckpoint: () => Promise<{
     page_id: number | null;
@@ -309,7 +309,7 @@ function buildWriteBatch(params: {
   };
 }
 
-function normalizeCheckpoint(checkpoint: Awaited<ReturnType<RepairStore["getRepairCheckpoint"]>> & {
+function normalizeCheckpoint(checkpoint: (Awaited<ReturnType<RepairStore["getRepairCheckpoint"]>> & {
   pageId?: number | null;
   pageTitle?: string | null;
   windowIndex?: number | null;
@@ -317,7 +317,7 @@ function normalizeCheckpoint(checkpoint: Awaited<ReturnType<RepairStore["getRepa
   skipped?: number;
   failed?: number;
   lastFailureClass?: string | null;
-}): {
+}) | null): {
   page_id: number | null;
   page_title: string | null;
   window_index: number | null;

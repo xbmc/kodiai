@@ -1,5 +1,5 @@
 import type { FeedbackPattern } from "../feedback/types.ts";
-import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
 export type FindingSeverity = "critical" | "major" | "medium" | "minor";
 
@@ -333,7 +333,7 @@ export type LearningMemoryStore = {
   purgeStaleEmbeddings(): Promise<number>;
 
   /** List degraded persisted rows that need row-local embedding repair. */
-  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<LearningMemoryRepairCandidate[]>;
+  listRepairCandidates?(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]>;
 
   /** Read the durable generic repair state for the corpus. */
   getRepairState?(corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null>;

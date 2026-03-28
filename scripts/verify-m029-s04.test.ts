@@ -200,7 +200,7 @@ describe("PROMPT-BANS-META check", () => {
   test("fails when mock _promptBuilderFn returns prompt with Output Contract but no Do NOT", async () => {
     const mockFn = () =>
       "You are updating a wiki section.\n## Output Contract\nOutput the updated section.\n";
-    const report = await evaluateM029S04({ _promptBuilderFn: mockFn as Parameters<typeof evaluateM029S04>[0]["_promptBuilderFn"] });
+    const report = await evaluateM029S04({ _promptBuilderFn: mockFn as NonNullable<Parameters<typeof evaluateM029S04>[0]>["_promptBuilderFn"] });
     const check = getCheck(report, "M029-S04-PROMPT-BANS-META");
     expect(check.passed).toBe(false);
     expect(check.status_code).toBe("prompt_missing_contract");

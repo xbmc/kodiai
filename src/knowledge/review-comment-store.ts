@@ -8,7 +8,7 @@ import type {
   ReviewCommentStore,
   SyncState,
 } from "./review-comment-types.ts";
-import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus } from "./embedding-repair.ts";
+import type { EmbeddingRepairCheckpoint, EmbeddingRepairCorpus, RepairCandidateRow } from "./embedding-repair.ts";
 
 /**
  * Convert a Float32Array to pgvector-compatible string format: [0.1,0.2,...]
@@ -75,7 +75,7 @@ type RepairStateRow = {
 };
 
 const DEFAULT_REPAIR_KEY = "default";
-const REPAIR_CORPUS: EmbeddingRepairCorpus = "review_comments";
+const REPAIR_CORPUS = "review_comments" as const satisfies EmbeddingRepairCorpus;
 
 function rowToRecord(row: CommentRow): ReviewCommentRecord {
   return {
@@ -108,11 +108,15 @@ function rowToRecord(row: CommentRow): ReviewCommentRecord {
   };
 }
 
-function rowToRepairCandidate(row: CommentRow): ReviewCommentRepairCandidate {
+function rowToRepairCandidate(row: CommentRow): RepairCandidateRow {
   return {
-    ...rowToRecord(row),
+    id: row.id as number,
     corpus: REPAIR_CORPUS,
-    chunk_text: row.chunk_text,
+    embedding_model: (row.embedding_model as string | null) ?? null,
+    embedding: row.embedding,
+    stale: Boolean(row.stale),
+    deleted: Boolean(row.deleted),
+    chunk_text: row.chunk_text as string | undefined,
   };
 }
 
@@ -394,7 +398,7 @@ export function createReviewCommentStore(opts: {
       return rowToRecord(rows[0] as unknown as CommentRow);
     },
 
-    async listRepairCandidates(corpus: EmbeddingRepairCorpus): Promise<ReviewCommentRepairCandidate[]> {
+    async listRepairCandidates(corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]> {
       if (corpus !== REPAIR_CORPUS) {
         throw new Error(`Unsupported repair corpus for ReviewCommentStore: ${corpus}`);
       }

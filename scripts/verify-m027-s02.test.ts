@@ -93,7 +93,7 @@ type VerifyM027S02Module = {
 
 async function loadVerifyM027S02Module(): Promise<VerifyM027S02Module> {
   try {
-    return await import("./verify-m027-s02.ts") as VerifyM027S02Module;
+    return await import("./verify-m027-s02.ts") as unknown as VerifyM027S02Module;
   } catch (error) {
     throw new Error(
       "Missing S02 implementation: expected scripts/verify-m027-s02.ts to export parseVerifyM027S02Args(), evaluateM027S02Checks(), renderM027S02Report(), and main() for bun run verify:m027:s02 -- --page-title <title> [--json].",

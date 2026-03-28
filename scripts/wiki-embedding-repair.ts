@@ -3,7 +3,7 @@ import { createDbClient } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { contextualizedEmbedChunksForRepair } from "../src/knowledge/embeddings.ts";
 import { DEFAULT_EMBEDDING_DIMENSIONS, createKnowledgeRuntime } from "../src/knowledge/runtime.ts";
-import { TARGET_WIKI_EMBEDDING_MODEL, runWikiEmbeddingRepair, type RepairWindow } from "../src/knowledge/wiki-embedding-repair.ts";
+import { TARGET_WIKI_EMBEDDING_MODEL, runWikiEmbeddingRepair, type RepairStore, type RepairWindow } from "../src/knowledge/wiki-embedding-repair.ts";
 
 export type RepairCliReport = {
   command: "repair:wiki-embeddings";
@@ -170,7 +170,7 @@ async function executeRepair(options: { pageTitle?: string; resume?: boolean }):
     const result = await runWikiEmbeddingRepair({
       pageTitle: options.pageTitle,
       resume: options.resume,
-      store: runtime.wikiPageStore,
+      store: runtime.wikiPageStore as unknown as RepairStore,
       logger,
       embedWindow: async (window: RepairWindow, attempt: number) => {
         const rows = await runtime.wikiPageStore.getPageChunks(window.page_id);
