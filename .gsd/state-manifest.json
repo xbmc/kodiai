@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T16:57:15.624Z",
+  "exported_at": "2026-03-28T17:02:49.455Z",
   "milestones": [
     {
       "id": "M001",
@@ -1249,19 +1249,24 @@
       "milestone_id": "M031",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Refactor push/fetch functions to accept explicit token and construct auth URL inline",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added makeAuthUrl helper and refactored all four git network functions to accept explicit token? and construct auth URL inline instead of reading from remote config",
+      "status": "complete",
+      "one_liner": "Added makeAuthUrl helper and refactored all four git network functions to accept explicit token? and construct auth URL inline instead of reading from remote config",
+      "narrative": "Added `makeAuthUrl(strippedUrl, token)` private helper that injects x-access-token credentials into a stripped HTTPS URL for a single command — returns the URL unchanged when token is undefined. Updated createBranchCommitAndPush, commitAndPushToRemoteRef, pushHeadToRemoteRef, and fetchAndCheckoutPullRequestHeadRef to (1) accept token? in options, (2) remove getOriginTokenFromDir/getOriginTokenFromRemoteUrl calls, (3) read the stripped remote URL with git remote get-url, apply makeAuthUrl, and pass the result directly as the remote argument to git push/fetch. The auth URL is ephemeral — constructed per-command, never stored. All existing call sites are backward-compatible since token? is optional.",
+      "verification_result": "bunx tsc --noEmit exits 0. bun test src/jobs/workspace.test.ts 9/9 pass.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-28T17:02:49.441Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/workspace.ts"
+      ],
+      "key_decisions": [
+        "push/fetch commands receive the auth URL as the remote argument (git push <url> HEAD:ref) rather than mutating remote config; URL is ephemeral",
+        "getOriginTokenFromDir and getOriginTokenFromRemoteUrl retained but unused — noUnusedLocals:false, deletion deferred to cleanup pass"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M031\nkey_files:\n  - src/jobs/workspace.ts\nkey_decisions:\n  - push/fetch commands receive the auth URL as the remote argument (git push <url> HEAD:ref) rather than mutating remote config; URL is ephemeral\n  - getOriginTokenFromDir and getOriginTokenFromRemoteUrl retained but unused — noUnusedLocals:false, deletion deferred to cleanup pass\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T17:02:49.441Z\nblocker_discovered: false\n---\n\n# T02: Added makeAuthUrl helper and refactored all four git network functions to accept explicit token? and construct auth URL inline instead of reading from remote config\n\n**Added makeAuthUrl helper and refactored all four git network functions to accept explicit token? and construct auth URL inline instead of reading from remote config**\n\n## What Happened\n\nAdded `makeAuthUrl(strippedUrl, token)` private helper that injects x-access-token credentials into a stripped HTTPS URL for a single command — returns the URL unchanged when token is undefined. Updated createBranchCommitAndPush, commitAndPushToRemoteRef, pushHeadToRemoteRef, and fetchAndCheckoutPullRequestHeadRef to (1) accept token? in options, (2) remove getOriginTokenFromDir/getOriginTokenFromRemoteUrl calls, (3) read the stripped remote URL with git remote get-url, apply makeAuthUrl, and pass the result directly as the remote argument to git push/fetch. The auth URL is ephemeral — constructed per-command, never stored. All existing call sites are backward-compatible since token? is optional.\n\n## Verification\n\nbunx tsc --noEmit exits 0. bun test src/jobs/workspace.test.ts 9/9 pass.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bunx tsc --noEmit && echo 'types ok'` | 0 | ✅ pass | 7600ms |\n| 2 | `bun test src/jobs/workspace.test.ts` | 0 | ✅ pass | 5400ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/workspace.ts`\n",
       "description": "Update the four workspace.ts functions that perform network operations to accept an explicit `token?: string` parameter and construct the auth URL inline rather than relying on a stored remote URL. Add a private `makeAuthUrl` helper to avoid duplication.\n\nSteps:\n1. Add a private helper function at the top of workspace.ts (after `redactTokenFromError`):\n```ts\nfunction makeAuthUrl(strippedUrl: string, token: string | undefined): string {\n  if (!token) return strippedUrl;\n  return strippedUrl.replace(/^https:\\/\\//, `https://x-access-token:${token}@`);\n}\n```\n2. Update `createBranchCommitAndPush` options type: add `token?: string`. Replace `const token = await getOriginTokenFromDir(dir)` with the passed-in token for auth. Construct push URL: read the stripped remote URL with `git remote get-url origin`, apply makeAuthUrl, use it instead of the `remote` constant in the push command. Keep using `token` (or the read-back value) in `redactTokenFromError`. Signature change: `options: { dir, branchName, commitMessage, remote?, token?, policy? }`.\n3. Same changes for `commitAndPushToRemoteRef`: add `token?` to options, construct auth push URL inline.\n4. Same changes for `pushHeadToRemoteRef`: add `token?` to options, construct auth push URL inline.\n5. Update `fetchAndCheckoutPullRequestHeadRef`: add `token?` to options. The current code calls `getOriginTokenFromRemoteUrl(dir)` for error-redaction. After strip, this returns undefined. Instead, use the passed-in token. Construct auth fetch URL inline: read stripped remote URL, apply makeAuthUrl, use it in the `git fetch` command.\n6. The `getOriginTokenFromDir` / `getOriginTokenFromRemoteUrl` functions are kept but their usage in push/fetch paths is replaced by the explicit token parameter. They continue to be called only in `redactTokenFromError` fallback paths (returning undefined after strip — regex fallback handles it).\n7. Run `bunx tsc --noEmit` to verify no type errors.",
       "estimate": "45m",
       "files": [
@@ -1658,6 +1663,28 @@
       "verdict": "✅ pass",
       "duration_ms": 2300,
       "created_at": "2026-03-28T16:57:15.612Z"
+    },
+    {
+      "id": 15,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bunx tsc --noEmit && echo 'types ok'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7600,
+      "created_at": "2026-03-28T17:02:49.441Z"
+    },
+    {
+      "id": 16,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M031",
+      "command": "bun test src/jobs/workspace.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5400,
+      "created_at": "2026-03-28T17:02:49.441Z"
     }
   ]
 }

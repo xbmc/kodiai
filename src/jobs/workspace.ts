@@ -143,6 +143,17 @@ async function getOriginTokenFromRemoteUrl(dir: string): Promise<string | undefi
   }
 }
 
+/**
+ * Given a stripped (no-credential) remote URL and an optional token, return the
+ * auth-injected URL for use in a single git command.  If token is absent, the
+ * stripped URL is returned unchanged so the caller can still attempt anonymous
+ * or pre-configured-credential access.
+ */
+function makeAuthUrl(strippedUrl: string, token: string | undefined): string {
+  if (!token) return strippedUrl;
+  return strippedUrl.replace(/^https:\/\//, `https://x-access-token:${token}@`);
+}
+
 function redactTokenFromError(err: unknown, token: string | undefined): void {
   if (!(err instanceof Error)) return;
 
@@ -372,17 +383,16 @@ export async function createBranchCommitAndPush(options: {
   branchName: string;
   commitMessage: string;
   remote?: string;
+  token?: string;
   policy?: {
     allowPaths?: string[];
     denyPaths?: string[];
     secretScanEnabled?: boolean;
   };
 }): Promise<{ branchName: string; headSha: string }> {
-  const { dir, branchName, commitMessage, remote = "origin" } = options;
+  const { dir, branchName, commitMessage, remote = "origin", token } = options;
 
   validateBranchName(branchName);
-
-  const token = await getOriginTokenFromDir(dir);
 
   try {
     await $`git -C ${dir} checkout -b ${branchName}`.quiet();
@@ -405,7 +415,11 @@ export async function createBranchCommitAndPush(options: {
 
     await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
     const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
-    await $`git -C ${dir} push ${remote} HEAD:${branchName}`.quiet();
+
+    // Construct the auth URL inline; never stored — used for this push only.
+    const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
+    const pushUrl = makeAuthUrl(strippedUrl, token);
+    await $`git -C ${dir} push ${pushUrl} HEAD:${branchName}`.quiet();
 
     return { branchName, headSha };
   } catch (err) {
@@ -419,17 +433,16 @@ export async function commitAndPushToRemoteRef(options: {
   remoteRef: string;
   commitMessage: string;
   remote?: string;
+  token?: string;
   policy?: {
     allowPaths?: string[];
     denyPaths?: string[];
     secretScanEnabled?: boolean;
   };
 }): Promise<{ remoteRef: string; headSha: string }> {
-  const { dir, remoteRef, commitMessage, remote = "origin" } = options;
+  const { dir, remoteRef, commitMessage, remote = "origin", token } = options;
 
   validateBranchName(remoteRef);
-
-  const token = await getOriginTokenFromDir(dir);
 
   try {
     await $`git -C ${dir} add -A`.quiet();
@@ -450,7 +463,11 @@ export async function commitAndPushToRemoteRef(options: {
 
     await $`git -C ${dir} commit -m ${commitMessage}`.quiet();
     const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
-    await $`git -C ${dir} push ${remote} HEAD:${remoteRef}`.quiet();
+
+    // Construct the auth URL inline; never stored — used for this push only.
+    const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
+    const pushUrl = makeAuthUrl(strippedUrl, token);
+    await $`git -C ${dir} push ${pushUrl} HEAD:${remoteRef}`.quiet();
 
     return { remoteRef, headSha };
   } catch (err) {
@@ -463,14 +480,19 @@ export async function pushHeadToRemoteRef(options: {
   dir: string;
   remoteRef: string;
   remote?: string;
+  token?: string;
 }): Promise<{ remoteRef: string; headSha: string }> {
-  const { dir, remoteRef, remote = "origin" } = options;
+  const { dir, remoteRef, remote = "origin", token } = options;
   validateBranchName(remoteRef);
 
-  const token = await getOriginTokenFromDir(dir);
   try {
     const headSha = (await $`git -C ${dir} rev-parse HEAD`.quiet()).text().trim();
-    await $`git -C ${dir} push ${remote} HEAD:${remoteRef}`.quiet();
+
+    // Construct the auth URL inline; never stored — used for this push only.
+    const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
+    const pushUrl = makeAuthUrl(strippedUrl, token);
+    await $`git -C ${dir} push ${pushUrl} HEAD:${remoteRef}`.quiet();
+
     return { remoteRef, headSha };
   } catch (err) {
     redactTokenFromError(err, token);
@@ -495,15 +517,18 @@ export async function fetchAndCheckoutPullRequestHeadRef(options: {
   prNumber: number;
   remote?: string;
   localBranch?: string;
+  token?: string;
 }): Promise<{ localBranch: string }> {
-  const { dir, prNumber, remote = "origin", localBranch = "pr-review" } = options;
+  const { dir, prNumber, remote = "origin", localBranch = "pr-review", token } = options;
 
   validatePullRequestNumber(prNumber);
   validateBranchName(localBranch);
 
-  const token = await getOriginTokenFromRemoteUrl(dir);
   try {
-    await $`git -C ${dir} fetch ${remote} pull/${prNumber}/head:${localBranch}`.quiet();
+    // Construct the auth URL inline; never stored — used for this fetch only.
+    const strippedUrl = (await $`git -C ${dir} remote get-url ${remote}`.quiet()).text().trim();
+    const fetchUrl = makeAuthUrl(strippedUrl, token);
+    await $`git -C ${dir} fetch ${fetchUrl} pull/${prNumber}/head:${localBranch}`.quiet();
     await $`git -C ${dir} checkout ${localBranch}`.quiet();
   } catch (err) {
     redactTokenFromError(err, token);

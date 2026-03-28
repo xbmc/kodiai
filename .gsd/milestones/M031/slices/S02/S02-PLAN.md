@@ -16,7 +16,7 @@ Steps:
   - Estimate: 30m
   - Files: src/jobs/types.ts, src/jobs/workspace.ts
   - Verify: bunx tsc --noEmit && echo 'types ok'
-- [ ] **T02: Refactor push/fetch functions to accept explicit token and construct auth URL inline** — Update the four workspace.ts functions that perform network operations to accept an explicit `token?: string` parameter and construct the auth URL inline rather than relying on a stored remote URL. Add a private `makeAuthUrl` helper to avoid duplication.
+- [x] **T02: Added makeAuthUrl helper and refactored all four git network functions to accept explicit token? and construct auth URL inline instead of reading from remote config** — Update the four workspace.ts functions that perform network operations to accept an explicit `token?: string` parameter and construct the auth URL inline rather than relying on a stored remote URL. Add a private `makeAuthUrl` helper to avoid duplication.
 
 Steps:
 1. Add a private helper function at the top of workspace.ts (after `redactTokenFromError`):
