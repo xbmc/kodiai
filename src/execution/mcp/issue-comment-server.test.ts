@@ -51,6 +51,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "## Missing Fields\nPlease fill in..." },
       });
 
@@ -77,6 +78,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: {
           issue_number: 42,
           structured: {
@@ -113,6 +115,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "Test comment" },
       });
 
@@ -138,6 +141,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: longBody },
       });
 
@@ -160,6 +164,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "Test" },
       });
 
@@ -183,6 +188,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 999, body: "Test" },
       });
 
@@ -206,6 +212,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "Test" },
       });
 
@@ -237,6 +244,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "Test" },
       });
 
@@ -254,6 +262,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: () => ({ enabled: true, comment: { enabled: false } }),
+        botHandles: [],
         params: { issue_number: 42, body: "Test" },
       });
 
@@ -271,6 +280,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { issue_number: 42, body: "Test" },
       });
 
@@ -300,6 +310,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { comment_id: 12345, body: "Updated comment" },
       });
 
@@ -324,6 +335,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { comment_id: 99999, body: "Updated comment" },
       });
 
@@ -347,6 +359,7 @@ describe("createIssueCommentServer", () => {
         owner: "testowner",
         repo: "testrepo",
         getTriageConfig: defaultTriageConfig,
+        botHandles: [],
         params: { comment_id: 12345, body: longBody },
       });
 
@@ -357,3 +370,54 @@ describe("createIssueCommentServer", () => {
     });
   });
 });
+
+// --- Phase S03: Outgoing secret scan tests ---
+
+describe("outgoing secret scan", () => {
+  it("createCommentHandler blocks body containing github PAT", async () => {
+    const createCommentMock = mock(async () => ({
+      data: { id: 12345, html_url: "https://github.com/test/test/issues/1#issuecomment-12345" },
+    }));
+    const mockOctokit = createMockOctokit({ createComment: createCommentMock });
+
+    const { createCommentHandler } = await import("./issue-comment-server.ts");
+    const body = "ghp_" + "A".repeat(36);
+    const result = await createCommentHandler({
+      getOctokit: async () => mockOctokit,
+      owner: "testowner",
+      repo: "testrepo",
+      getTriageConfig: defaultTriageConfig,
+      botHandles: [],
+      params: { issue_number: 42, body },
+    });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0]!.text);
+    expect(parsed.error_code).toBe("SECRET_SCAN_BLOCKED");
+    expect(createCommentMock).not.toHaveBeenCalled();
+  });
+
+  it("updateCommentHandler blocks body containing github PAT", async () => {
+    const updateCommentMock = mock(async () => ({
+      data: { id: 12345, html_url: "https://github.com/test/test/issues/1#issuecomment-12345" },
+    }));
+    const mockOctokit = createMockOctokit({ updateComment: updateCommentMock });
+
+    const { updateCommentHandler } = await import("./issue-comment-server.ts");
+    const body = "ghp_" + "A".repeat(36);
+    const result = await updateCommentHandler({
+      getOctokit: async () => mockOctokit,
+      owner: "testowner",
+      repo: "testrepo",
+      getTriageConfig: defaultTriageConfig,
+      botHandles: [],
+      params: { comment_id: 42, body },
+    });
+
+    expect(result.isError).toBe(true);
+    const parsed = JSON.parse(result.content[0]!.text);
+    expect(parsed.error_code).toBe("SECRET_SCAN_BLOCKED");
+    expect(updateCommentMock).not.toHaveBeenCalled();
+  });
+});
+

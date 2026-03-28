@@ -127,6 +127,7 @@ export function buildMcpServers(deps: {
       deps.owner,
       deps.repo,
       () => ({ enabled: getTriageConfig().enabled, comment: getTriageConfig().comment }),
+      deps.botHandles ?? [],
     );
   }
 

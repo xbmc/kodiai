@@ -6,7 +6,7 @@ import {
   buildReviewOutputMarker,
   ensureReviewOutputNotPublished,
 } from "../../handlers/review-idempotency.ts";
-import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
+import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
@@ -134,6 +134,11 @@ export function createInlineReviewServer(
             });
 
             const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
+            const scanResult = scanOutgoingForSecrets(sanitizedBody);
+            if (scanResult.blocked) {
+              logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: "create_inline_comment" }, "Outgoing secret scan blocked publish");
+              return { content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true };
+            }
             const params: Record<string, unknown> = {
               owner,
               repo,

@@ -26,7 +26,7 @@ Steps:
   - Estimate: 30m
   - Files: src/lib/sanitizer.ts, src/lib/sanitizer.test.ts
   - Verify: bun test src/lib/sanitizer.test.ts
-- [ ] **T02: Wire scanOutgoingForSecrets() into all MCP publish paths and Slack assistant handler** — Import scanOutgoingForSecrets from sanitizer.ts in each publish path and block if a credential pattern matches. Add tests for each MCP server path.
+- [x] **T02: Wired scanOutgoingForSecrets() into all 5 publish paths (4 MCP servers + Slack handler); 152 tests pass, 0 fail** — Import scanOutgoingForSecrets from sanitizer.ts in each publish path and block if a credential pattern matches. Add tests for each MCP server path.
 
 Steps:
 

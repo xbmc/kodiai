@@ -2,7 +2,7 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import type { Octokit } from "@octokit/rest";
 import { z } from "zod";
 import { wrapInDetails } from "../../lib/formatting.ts";
-import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
+import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 
 export function createReviewCommentThreadServer(
   getOctokit: () => Promise<Octokit>,
@@ -52,15 +52,24 @@ export function createReviewCommentThreadServer(
           try {
             const octokit = await getOctokit();
 
+            const publishBody = sanitizeOutgoingMentions(
+              sanitizeDecisionBody(wrapInDetails(body, "kodiai response")),
+              botHandles,
+            );
+            const scanResult = scanOutgoingForSecrets(publishBody);
+            if (scanResult.blocked) {
+              return {
+                content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }],
+                isError: true,
+              };
+            }
+
             const { data } = await octokit.rest.pulls.createReplyForReviewComment({
               owner,
               repo,
               pull_number: pullRequestNumber,
               comment_id: commentId,
-              body: sanitizeOutgoingMentions(
-                sanitizeDecisionBody(wrapInDetails(body, "kodiai response")),
-                botHandles,
-              ),
+              body: publishBody,
             });
 
             onPublish?.();

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
-import { sanitizeOutgoingMentions } from "../../lib/sanitizer.ts";
+import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 
 export function createCommentServer(
@@ -494,6 +494,11 @@ export function createCommentServer(
               ),
               botHandles,
             );
+            const scanResult = scanOutgoingForSecrets(sanitized);
+            if (scanResult.blocked) {
+              logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: "update_comment" }, "Outgoing secret scan blocked publish");
+              return { content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true };
+            }
             await octokit.rest.issues.updateComment({
               owner,
               repo,
@@ -541,6 +546,12 @@ export function createCommentServer(
               ),
               botHandles,
             );
+
+            const scanResult = scanOutgoingForSecrets(sanitized);
+            if (scanResult.blocked) {
+              logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: "create_comment" }, "Outgoing secret scan blocked publish");
+              return { content: [{ type: "text" as const, text: "[SECURITY: response blocked — contained credential pattern]" }], isError: true };
+            }
 
             const isApproveNoIssues =
               prNumber !== undefined &&

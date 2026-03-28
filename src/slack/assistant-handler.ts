@@ -16,6 +16,7 @@ import {
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { slackAdapter } from "../lib/guardrail/adapters/slack-adapter.ts";
+import { scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 
 export interface SlackAssistantAddressedPayload {
   channel: string;
@@ -263,6 +264,17 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
   const guardrailAuditStore = deps.sql ? createGuardrailAuditStore(deps.sql) : undefined;
 
+  async function safePublish(input: { channel: string; threadTs: string; text: string }): Promise<void> {
+    const scanResult = scanOutgoingForSecrets(input.text);
+    if (scanResult.blocked) {
+      const localLogger = depsLogger;
+      localLogger?.warn({ matchedPattern: scanResult.matchedPattern }, "Outgoing secret scan blocked Slack publish");
+      await publishInThread({ ...input, text: "[Response blocked by security policy]" });
+      return;
+    }
+    await publishInThread(input);
+  }
+
   async function runAndPublishWrite(input: {
     owner: string;
     repo: string;
@@ -278,12 +290,12 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
       throw new Error("Slack write runner is not configured");
     }
 
-    await publishInThread({
+    await safePublish({
       channel: input.channel,
       threadTs: input.threadTs,
       text: `Write run started for ${input.owner}/${input.repo}.`,
     });
-    await publishInThread({
+    await safePublish({
       channel: input.channel,
       threadTs: input.threadTs,
       text: "Milestone: running write execution and preparing PR output.",
@@ -319,7 +331,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
       replyText = input.acknowledgementText ? `${input.acknowledgementText}\n\n${finalText}` : finalText;
     }
 
-    await publishInThread({
+    await safePublish({
       channel: input.channel,
       threadTs: input.threadTs,
       text: replyText,
@@ -343,7 +355,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
       try {
         const instantReply = buildInstantReply(payload.text, defaultRepo);
         if (instantReply) {
-          await publishInThread({
+          await safePublish({
             channel: payload.channel,
             threadTs: payload.threadTs,
             text: instantReply,
@@ -360,7 +372,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
         const resolution = resolveSlackRepoContext(payload.text, defaultRepo);
 
         if (resolution.outcome === "ambiguous") {
-          await publishInThread({
+          await safePublish({
             channel: payload.channel,
             threadTs: payload.threadTs,
             text: resolution.clarifyingQuestion,
@@ -385,7 +397,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
               `- confirm: ${pendingConfirmation.command}`,
             ].join("\n");
 
-            await publishInThread({
+            await safePublish({
               channel: payload.channel,
               threadTs: payload.threadTs,
               text: reminderText,
@@ -406,7 +418,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
               `- confirm: ${confirmationResult.pending.command}`,
             ].join("\n");
 
-            await publishInThread({
+            await safePublish({
               channel: payload.channel,
               threadTs: payload.threadTs,
               text: mismatchText,
@@ -472,7 +484,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
                 }
               }
 
-              await publishInThread({
+              await safePublish({
                 channel: payload.channel,
                 threadTs: payload.threadTs,
                 text: confirmedReplyText,
@@ -492,7 +504,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
 
         const writeIntent = resolveSlackWriteIntent(payload.text);
         if (writeIntent.outcome === "clarification_required") {
-          await publishInThread({
+          await safePublish({
             channel: payload.channel,
             threadTs: payload.threadTs,
             text: writeIntent.quickActionText,
@@ -522,7 +534,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
           });
 
           const confirmationText = buildConfirmationRequiredReply(writeIntent.keyword, writeIntent.request);
-          await publishInThread({
+          await safePublish({
             channel: payload.channel,
             threadTs: payload.threadTs,
             text: confirmationText,
@@ -635,7 +647,7 @@ export function createSlackAssistantHandler(deps: SlackAssistantHandlerDeps) {
             }
           }
 
-          await publishInThread({
+          await safePublish({
             channel: payload.channel,
             threadTs: payload.threadTs,
             text: replyText,

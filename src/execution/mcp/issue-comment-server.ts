@@ -1,6 +1,7 @@
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
+import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 
 const MAX_COMMENT_LENGTH = 60000;
 const TRUNCATION_NOTE = "\n\n---\n*Comment truncated due to length.*";
@@ -105,13 +106,14 @@ export async function createCommentHandler(deps: {
   owner: string;
   repo: string;
   getTriageConfig: () => TriageCommentConfig;
+  botHandles: string[];
   params: {
     issue_number: number;
     body?: string;
     structured?: { title: string; body: string; suggestions?: string[] };
   };
 }): Promise<ToolResult> {
-  const { getOctokit, owner, repo, getTriageConfig, params } = deps;
+  const { getOctokit, owner, repo, getTriageConfig, botHandles, params } = deps;
   const { issue_number } = params;
 
   try {
@@ -133,7 +135,24 @@ export async function createCommentHandler(deps: {
     }
 
     const octokit = await getOctokit();
-    const body = resolveBody(params);
+    const rawBody = resolveBody(params);
+    const body = sanitizeOutgoingMentions(rawBody, botHandles);
+    const scanResult = scanOutgoingForSecrets(body);
+    if (scanResult.blocked) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              success: false,
+              error_code: "SECRET_SCAN_BLOCKED",
+              message: "[SECURITY: response blocked — contained credential pattern]",
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
 
     // Check issue state for closed warning
     let warning: string | null = null;
@@ -198,13 +217,14 @@ export async function updateCommentHandler(deps: {
   owner: string;
   repo: string;
   getTriageConfig: () => TriageCommentConfig;
+  botHandles: string[];
   params: {
     comment_id: number;
     body?: string;
     structured?: { title: string; body: string; suggestions?: string[] };
   };
 }): Promise<ToolResult> {
-  const { getOctokit, owner, repo, getTriageConfig, params } = deps;
+  const { getOctokit, owner, repo, getTriageConfig, botHandles, params } = deps;
   const { comment_id } = params;
 
   try {
@@ -226,7 +246,24 @@ export async function updateCommentHandler(deps: {
     }
 
     const octokit = await getOctokit();
-    const body = resolveBody(params);
+    const rawBody = resolveBody(params);
+    const body = sanitizeOutgoingMentions(rawBody, botHandles);
+    const scanResult = scanOutgoingForSecrets(body);
+    if (scanResult.blocked) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify({
+              success: false,
+              error_code: "SECRET_SCAN_BLOCKED",
+              message: "[SECURITY: response blocked — contained credential pattern]",
+            }),
+          },
+        ],
+        isError: true,
+      };
+    }
 
     // Update comment with retry
     const { data } = await withRetry(() =>
@@ -274,6 +311,7 @@ export function createIssueCommentServer(
   owner: string,
   repo: string,
   getTriageConfig: () => TriageCommentConfig,
+  botHandles: string[] = [],
 ) {
   const structuredSchema = z.object({
     title: z.string().describe("Comment title (rendered as ## heading)"),
@@ -307,6 +345,7 @@ export function createIssueCommentServer(
             owner,
             repo,
             getTriageConfig,
+            botHandles,
             params: { issue_number, body, structured },
           });
         },
@@ -330,6 +369,7 @@ export function createIssueCommentServer(
             owner,
             repo,
             getTriageConfig,
+            botHandles,
             params: { comment_id, body, structured },
           });
         },

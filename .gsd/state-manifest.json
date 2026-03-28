@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T17:28:25.486Z",
+  "exported_at": "2026-03-28T17:36:54.047Z",
   "milestones": [
     {
       "id": "M001",
@@ -1422,19 +1422,34 @@
       "milestone_id": "M031",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Wire scanOutgoingForSecrets() into all MCP publish paths and Slack assistant handler",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired scanOutgoingForSecrets() into all 5 publish paths (4 MCP servers + Slack handler); 152 tests pass, 0 fail",
+      "status": "complete",
+      "one_liner": "Wired scanOutgoingForSecrets() into all 5 publish paths (4 MCP servers + Slack handler); 152 tests pass, 0 fail",
+      "narrative": "Added scanOutgoingForSecrets import and scan blocks to comment-server (create_comment, update_comment), inline-review-server (create_inline_comment), review-comment-thread-server (reply_to_pr_review_comment), and issue-comment-server (createCommentHandler, updateCommentHandler). Added botHandles parameter to issue-comment-server handlers and factory; updated index.ts call site. In assistant-handler.ts, added safePublish wrapper and replaced all 9 publishInThread call sites in the handler body. Added 5 new secret-scan tests across 3 test files; updated 13 existing handler call sites in issue-comment-server.test.ts to pass botHandles: [].",
+      "verification_result": "bun test src/lib/sanitizer.test.ts src/execution/mcp/comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts src/execution/mcp/issue-comment-server.test.ts — 152 pass, 0 fail in 125ms.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-28T17:36:54.032Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "issue-comment-server handlers use a deps-bag pattern so botHandles was added as a field there rather than a positional parameter. createIssueCommentServer got botHandles: string[] = [] default to avoid breaking other call sites.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/execution/mcp/comment-server.ts",
+        "src/execution/mcp/comment-server.test.ts",
+        "src/execution/mcp/inline-review-server.ts",
+        "src/execution/mcp/review-comment-thread-server.ts",
+        "src/execution/mcp/review-comment-thread-server.test.ts",
+        "src/execution/mcp/issue-comment-server.ts",
+        "src/execution/mcp/issue-comment-server.test.ts",
+        "src/execution/mcp/index.ts",
+        "src/slack/assistant-handler.ts"
+      ],
+      "key_decisions": [
+        "issue-comment-server handlers use deps-bag pattern so botHandles added as field not positional param",
+        "Scan block in issue-comment-server returns JSON error_code: SECRET_SCAN_BLOCKED matching existing JSON convention; comment-server returns plain text matching its convention",
+        "safePublish wraps publishInThread in assistant-handler and replaces all 9 call sites while preserving the destructuring",
+        "review-comment-thread-server omits logger.warn on block — no logger in that scope per plan"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M031\nkey_files:\n  - src/execution/mcp/comment-server.ts\n  - src/execution/mcp/comment-server.test.ts\n  - src/execution/mcp/inline-review-server.ts\n  - src/execution/mcp/review-comment-thread-server.ts\n  - src/execution/mcp/review-comment-thread-server.test.ts\n  - src/execution/mcp/issue-comment-server.ts\n  - src/execution/mcp/issue-comment-server.test.ts\n  - src/execution/mcp/index.ts\n  - src/slack/assistant-handler.ts\nkey_decisions:\n  - issue-comment-server handlers use deps-bag pattern so botHandles added as field not positional param\n  - Scan block in issue-comment-server returns JSON error_code: SECRET_SCAN_BLOCKED matching existing JSON convention; comment-server returns plain text matching its convention\n  - safePublish wraps publishInThread in assistant-handler and replaces all 9 call sites while preserving the destructuring\n  - review-comment-thread-server omits logger.warn on block — no logger in that scope per plan\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T17:36:54.032Z\nblocker_discovered: false\n---\n\n# T02: Wired scanOutgoingForSecrets() into all 5 publish paths (4 MCP servers + Slack handler); 152 tests pass, 0 fail\n\n**Wired scanOutgoingForSecrets() into all 5 publish paths (4 MCP servers + Slack handler); 152 tests pass, 0 fail**\n\n## What Happened\n\nAdded scanOutgoingForSecrets import and scan blocks to comment-server (create_comment, update_comment), inline-review-server (create_inline_comment), review-comment-thread-server (reply_to_pr_review_comment), and issue-comment-server (createCommentHandler, updateCommentHandler). Added botHandles parameter to issue-comment-server handlers and factory; updated index.ts call site. In assistant-handler.ts, added safePublish wrapper and replaced all 9 publishInThread call sites in the handler body. Added 5 new secret-scan tests across 3 test files; updated 13 existing handler call sites in issue-comment-server.test.ts to pass botHandles: [].\n\n## Verification\n\nbun test src/lib/sanitizer.test.ts src/execution/mcp/comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts src/execution/mcp/issue-comment-server.test.ts — 152 pass, 0 fail in 125ms.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/lib/sanitizer.test.ts src/execution/mcp/comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts src/execution/mcp/issue-comment-server.test.ts` | 0 | ✅ pass | 125ms |\n\n\n## Deviations\n\nissue-comment-server handlers use a deps-bag pattern so botHandles was added as a field there rather than a positional parameter. createIssueCommentServer got botHandles: string[] = [] default to avoid breaking other call sites.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/execution/mcp/comment-server.ts`\n- `src/execution/mcp/comment-server.test.ts`\n- `src/execution/mcp/inline-review-server.ts`\n- `src/execution/mcp/review-comment-thread-server.ts`\n- `src/execution/mcp/review-comment-thread-server.test.ts`\n- `src/execution/mcp/issue-comment-server.ts`\n- `src/execution/mcp/issue-comment-server.test.ts`\n- `src/execution/mcp/index.ts`\n- `src/slack/assistant-handler.ts`\n",
       "description": "Import scanOutgoingForSecrets from sanitizer.ts in each publish path and block if a credential pattern matches. Add tests for each MCP server path.\n\nSteps:\n\n## comment-server.ts (create_comment and update_comment)\nIn both tool handlers, after sanitized = sanitizeOutgoingMentions(...), add:\n  const scanResult = scanOutgoingForSecrets(sanitized);\n  if (scanResult.blocked) {\n    logger?.warn({ matchedPattern: scanResult.matchedPattern, tool: \"create_comment\" }, \"Outgoing secret scan blocked publish\");\n    return { content: [{ type: \"text\" as const, text: \"[SECURITY: response blocked — contained credential pattern]\" }], isError: true };\n  }\nAdd to import line: import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from \"../../lib/sanitizer.ts\";\n\n## inline-review-server.ts (create_inline_comment)\nAfter const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);\nAdd the same scan block (tool name: \"create_inline_comment\"). The logger is already available from the outer function signature.\n\n## review-comment-thread-server.ts (reply_to_pr_review_comment)\nThe body passed to octokit is built as: sanitizeOutgoingMentions(sanitizeDecisionBody(wrapInDetails(body, \"kodiai response\")), botHandles)\nCapture this in a variable: const publishBody = sanitizeOutgoingMentions(...);\nAdd scan after capture, before octokit call. Note: no logger available in this server — omit logger.warn.\n\n## issue-comment-server.ts (createCommentHandler and updateCommentHandler)\nThis server has no sanitizeOutgoingMentions or scanOutgoingForSecrets yet.\n- Add botHandles: string[] parameter to createIssueCommentServer() signature.\n- Pass botHandles down to both createCommentHandler and updateCommentHandler via their deps objects.\n- In each handler, after const body = resolveBody(params): add sanitizeOutgoingMentions then scanOutgoingForSecrets. Use the sanitized body for the octokit call.\n- Update createIssueCommentServer signature: add botHandles: string[] as 5th parameter.\n- Update call site in src/execution/mcp/index.ts: pass deps.botHandles ?? [] as the 5th argument to createIssueCommentServer.\n\n## assistant-handler.ts (all publishInThread calls)\n- After the destructuring block that extracts publishInThread from deps, add a safePublish async function:\n  async function safePublish(input: { channel: string; threadTs: string; text: string }): Promise<void> {\n    const scanResult = scanOutgoingForSecrets(input.text);\n    if (scanResult.blocked) {\n      const localLogger = depsLogger;\n      localLogger?.warn({ matchedPattern: scanResult.matchedPattern }, \"Outgoing secret scan blocked Slack publish\");\n      await publishInThread({ ...input, text: \"[Response blocked by security policy]\" });\n      return;\n    }\n    await publishInThread(input);\n  }\n- Replace all publishInThread({ ... }) calls in the handler body with safePublish({ ... }). Do not replace the destructured publishInThread itself or the deps.publishInThread reference.\n- Add import: import { scanOutgoingForSecrets } from \"../lib/sanitizer.ts\";\n\n## Tests\n- In comment-server.test.ts, add test in describe(\"createCommentServer\"): pass body containing \"ghp_\" + \"A\".repeat(36), assert result.isError === true, and result.content[0].text contains \"SECURITY\".\n- In review-comment-thread-server.test.ts, add test: pass body containing a PAT, assert content[0].text contains \"success: false\" or the error path fires. Actually: the review-comment-thread-server wraps body in wrapInDetails + sanitizeDecisionBody before the scan runs, so construct a body that survives those transforms and still contains the PAT token. The simplest approach: pass body = \"ghp_\" + \"A\".repeat(36) — wrapInDetails will wrap it in <details> tags but the PAT is still present in the string, so the scan on the final body will trigger.\n- In issue-comment-server.test.ts: verify the existing tests still pass with botHandles param added.\n- Run bun test src/lib/sanitizer.test.ts src/execution/mcp/comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts src/execution/mcp/issue-comment-server.test.ts",
       "estimate": "1h",
       "files": [
@@ -1865,6 +1880,17 @@
       "verdict": "✅ pass",
       "duration_ms": 10,
       "created_at": "2026-03-28T17:28:25.475Z"
+    },
+    {
+      "id": 23,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M031",
+      "command": "bun test src/lib/sanitizer.test.ts src/execution/mcp/comment-server.test.ts src/execution/mcp/review-comment-thread-server.test.ts src/execution/mcp/issue-comment-server.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 125,
+      "created_at": "2026-03-28T17:36:54.032Z"
     }
   ]
 }

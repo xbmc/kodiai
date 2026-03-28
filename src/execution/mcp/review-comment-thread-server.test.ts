@@ -58,6 +58,37 @@ describe("createReviewCommentThreadServer", () => {
   });
 });
 
+// --- Phase S03: Outgoing secret scan tests ---
+
+describe("outgoing secret scan", () => {
+  test("reply_to_pr_review_comment blocks body containing github PAT", async () => {
+    let createReplyCalled = false;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          createReplyForReviewComment: async () => {
+            createReplyCalled = true;
+            return { data: { id: 456, html_url: "https://example.test/reply" } };
+          },
+        },
+      },
+    };
+
+    const server = createReviewCommentThreadServer(async () => octokit as never, "acme", "repo", []);
+    const handler = getToolHandler(server);
+
+    const body = "ghp_" + "A".repeat(36);
+    const result = await handler({ pullRequestNumber: 42, commentId: 9001, body });
+
+    // The PAT body gets wrapped in <details> by wrapInDetails — the PAT is still present,
+    // so the scan fires on the final publishBody
+    expect((result as { isError?: boolean }).isError).toBe(true);
+    expect(result.content[0]?.text).toContain("SECURITY");
+    expect(createReplyCalled).toBe(false);
+  });
+});
+
 // --- Phase 50: Mention sanitization regression tests ---
 
 describe("mention sanitization", () => {

@@ -815,7 +815,47 @@ describe("Phase 36: Verdict-Observations cross-check", () => {
   });
 });
 
-// --- Phase 38: Delta Re-Review Sanitizer Tests ---
+// --- Phase S03: Outgoing secret scan tests ---
+
+describe("outgoing secret scan", () => {
+  test("create_comment blocks body containing github PAT", async () => {
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const { create } = getToolHandlers(server);
+
+    const body = "ghp_" + "A".repeat(36);
+    const result = await create({ issueNumber: 1, body });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("SECURITY");
+  });
+
+  test("update_comment blocks body containing github PAT", async () => {
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    const server = createCommentServer(async () => octokit as never, "acme", "repo", []);
+    const { update } = getToolHandlers(server);
+
+    const body = "ghp_" + "A".repeat(36);
+    const result = await update({ commentId: 99, body });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("SECURITY");
+  });
+});
 
 interface ReReviewSections {
   reReviewHeader?: string;
