@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M031/S02/T03",
+  "timestamp": 1774717726672,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bunx tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 7381,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test src/jobs/workspace.test.ts",
+      "exitCode": 0,
+      "durationMs": 37,
+      "verdict": "pass"
+    }
+  ]
+}

@@ -74,7 +74,7 @@ Run `bunx tsc --noEmit` after changes. Run `bun test src/jobs/workspace.test.ts 
   - Estimate: 1h
   - Files: src/handlers/mention.ts, src/handlers/review.ts, src/slack/write-runner.ts, src/jobs/workspace.ts
   - Verify: bunx tsc --noEmit && bun test src/jobs/workspace.test.ts
-- [ ] **T04: Add workspace.test.ts tests for URL strip and token threading** — Extend src/jobs/workspace.test.ts with tests that verify the two key behaviors of this slice: (1) workspace.create() strips the token from the git remote URL, and (2) the push functions construct auth URLs from an explicit token parameter.
+- [x] **T04: Added 7 new workspace tests covering buildAuthFetchUrl behavior and the URL-strip invariant; all 16 workspace tests pass** — Extend src/jobs/workspace.test.ts with tests that verify the two key behaviors of this slice: (1) workspace.create() strips the token from the git remote URL, and (2) the push functions construct auth URLs from an explicit token parameter.
 
 Steps:
 
