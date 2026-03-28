@@ -145,6 +145,41 @@ describe("breaking change detection", () => {
       commitSha: "abc1234",
     });
   });
+
+  test("ignores unchecked PR template checkbox mentioning breaking change", () => {
+    // The xbmc/xbmc PR template includes "- [ ] **Breaking change**" as a checkbox option.
+    // An unselected checkbox means the author did NOT indicate a breaking change.
+    const templateBody = [
+      "## Types of change",
+      "- [ ] **Bug fix** (non-breaking change which fixes an issue)",
+      "- [ ] **Breaking change** (fix or feature that will cause existing functionality to change)",
+      "- [ ] **New feature** (non-breaking change which adds functionality)",
+    ].join("\n");
+    const intent = parsePRIntent("Fix login button alignment", templateBody);
+    expect(intent.breakingChangeDetected).toBe(false);
+  });
+
+  test("still detects checked breaking change checkbox", () => {
+    const templateBody = [
+      "## Types of change",
+      "- [ ] **Bug fix** (non-breaking change which fixes an issue)",
+      "- [x] **Breaking change** (fix or feature that will cause existing functionality to change)",
+      "- [ ] **New feature** (non-breaking change which adds functionality)",
+    ].join("\n");
+    const intent = parsePRIntent("Remove deprecated auth endpoint", templateBody);
+    expect(intent.breakingChangeDetected).toBe(true);
+  });
+
+  test("still detects 'breaking change' in plain body prose", () => {
+    const intent = parsePRIntent("Update API", "This is a breaking change to the REST API");
+    expect(intent.breakingChangeDetected).toBe(true);
+  });
+
+  test("ignores HTML comments containing breaking change (template instructions)", () => {
+    const body = "<!-- This breaking change section is for documentation only -->\nFix null pointer";
+    const intent = parsePRIntent("Fix null pointer", body);
+    expect(intent.breakingChangeDetected).toBe(false);
+  });
 });
 
 describe("commit message scanning", () => {

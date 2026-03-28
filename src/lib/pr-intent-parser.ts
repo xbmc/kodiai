@@ -69,6 +69,16 @@ function stripCode(text: string): string {
   return text.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
 }
 
+function stripTemplateBoilerplate(text: string): string {
+  // Remove HTML comments (PR template instructions, e.g. <!-- Describe your change -->)
+  let out = text.replace(/<!--[\s\S]*?-->/g, " ");
+  // Remove unchecked checkbox lines that mention "breaking change" — these are
+  // template options the author has not selected, not actual author declarations.
+  // Matches: "- [ ] **Breaking change**..." or "- [ ] Breaking change..."
+  out = out.replace(/^[ \t]*-[ \t]*\[[ \t]\].*breaking\s+change.*$/gim, "");
+  return out;
+}
+
 function resolveProfileOverride(tags: string[]): "strict" | "balanced" | "minimal" | null {
   const rank: Record<string, number> = { "minimal-review": 1, "balanced-review": 2, "strict-review": 3 };
   let best: "strict" | "balanced" | "minimal" | null = null;
@@ -107,7 +117,7 @@ function detectBreakingChange(title: string, body: string | null, commits: Commi
   const sources: BreakingSource[] = [];
   if (conventionalType?.isBreaking) sources.push({ source: "title", excerpt: title });
 
-  const bodyText = stripCode(body ?? "");
+  const bodyText = stripCode(stripTemplateBoilerplate(body ?? ""));
   if (BREAKING_PATTERNS.some((p) => p.test(bodyText))) {
     sources.push({ source: "body", excerpt: bodyText.trim().slice(0, 120) });
   }
