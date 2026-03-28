@@ -28,7 +28,7 @@ Steps:
   - Estimate: 30m
   - Files: src/execution/review-prompt.ts, src/execution/mention-prompt.ts, src/execution/review-prompt.test.ts, src/execution/mention-prompt.test.ts
   - Verify: bun test src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts
-- [ ] **T02: Write CLAUDE.md to workspace before query() and create executor.test.ts** — Export buildSecurityClaudeMd(): string from executor.ts and write it to {workspace.dir}/CLAUDE.md immediately before the query() call. Create src/execution/executor.test.ts to test both the content builder and the file write.
+- [x] **T02: Export buildSecurityClaudeMd() from executor.ts and write CLAUDE.md to workspace.dir before every Agent SDK query() call, with 8-test executor.test.ts covering content and file-write behavior** — Export buildSecurityClaudeMd(): string from executor.ts and write it to {workspace.dir}/CLAUDE.md immediately before the query() call. Create src/execution/executor.test.ts to test both the content builder and the file write.
 
 CLAUDE.md content (what buildSecurityClaudeMd() should return):
 ```markdown
