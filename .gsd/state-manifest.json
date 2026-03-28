@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T16:09:02.857Z",
+  "exported_at": "2026-03-28T16:17:07.635Z",
   "milestones": [
     {
       "id": "M001",
@@ -658,16 +658,16 @@
       "milestone_id": "M030",
       "id": "S02",
       "title": "kodi-addon-checker subprocess and output parsing",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [
         "S01"
       ],
       "demo": "After this: given a workspace with a bad addon, structured findings are returned from the runner — visible in test output and logs.",
       "created_at": "2026-03-28T15:18:01.704Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-28T16:11:21.770Z",
+      "full_summary_md": "---\nid: S02\nparent: M030\nmilestone: M030\nprovides:\n  - runAddonChecker function with full contract (toolNotFound, timedOut, structured findings, non-zero exit tolerance)\n  - resolveCheckerBranch mapping from PR base branch to kodi-addon-checker --branch arg\n  - addon-check handler wired with workspace lifecycle, jobQueue, branch resolution, per-addon runner calls, and structured finding logs\n  - Injection points for test-time subprocess substitution in both the runner and the handler\nrequires:\n  - slice: S01\n    provides: createAddonCheckHandler scaffold, addon repo detection via listFiles, handler registration pattern\naffects:\n  - S03 — consumes runAddonChecker findings; needs fork PR workspace handling added\nkey_files:\n  - src/lib/addon-checker-runner.ts\n  - src/lib/addon-checker-runner.test.ts\n  - src/handlers/addon-check.ts\n  - src/handlers/addon-check.test.ts\n  - src/index.ts\nkey_decisions:\n  - Reused withTimeBudget from usage-analyzer.ts rather than duplicating timeout logic\n  - addonId derived from last path segment of addonDir in runAddonChecker (caller-agnostic)\n  - Non-ENOENT errors fail open — matches usage-analyzer.ts convention\n  - Empty addonIds returns early before enqueue to avoid no-op workspace creation\n  - createMockLoggerWithArrays centralizes shared-array writes for child-logger assertions\n  - Cleanup-on-throw test uses workspace.create throwing (not subprocess) since runAddonChecker fails open\npatterns_established:\n  - Injectable subprocess runner pattern (addon-checker-runner.ts) mirrors usage-analyzer.ts: __runSubprocessForTests injection, withTimeBudget reuse, ENOENT vs non-ENOENT error discrimination, non-zero exit treated as normal\n  - createMockLoggerWithArrays() pattern for handler tests requiring child-logger assertion (see KNOWLEDGE.md)\nobservability_surfaces:\n  - handlerLogger.warn({ baseBranch }, 'addon-check: unknown kodi branch, skipping') — fires when PR base branch is not a known Kodi version\n  - handlerLogger.info({ addonId, level, message }, 'addon-check: finding') — structured log per finding (grepping 'addon-check: finding' gives all violations from a run)\n  - handlerLogger.info({ addonIds, totalFindings }, 'addon-check: complete') — summary log per PR job (grepping 'addon-check: complete' gives per-PR finding counts)\ndrill_down_paths:\n  - milestones/M030/slices/S02/tasks/T01-SUMMARY.md\n  - milestones/M030/slices/S02/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:11:21.770Z\nblocker_discovered: false\n---\n\n# S02: kodi-addon-checker subprocess and output parsing\n\n**Built the addon-checker subprocess runner and output parser, wired them into the addon-check handler with workspace lifecycle and job queue, producing structured findings — 30/30 tests pass, TypeScript clean.**\n\n## What Happened\n\nS02 delivered two interdependent units of work across T01 and T02.\n\n**T01 — Pure runner module**\n\n`src/lib/addon-checker-runner.ts` was built as a pure injectable module following the `usage-analyzer.ts` pattern established in M027. Key design points:\n- `ValidKodiVersions` is a `readonly string[]` of the 10 known Kodi release branch names (nexus, omega, matrix, leia, jarvis, isengard, helix, gotham, frodo, dharma).\n- `parseCheckerOutput(raw, addonId)` strips ANSI codes with `/\\x1B\\[[0-9;]*m/g` before line splitting, then matches `^(ERROR|WARN|INFO): (.+)$` per line; non-matching lines are silently dropped.\n- `resolveCheckerBranch(baseBranch)` returns the branch if present in `ValidKodiVersions`, else null.\n- `runAddonChecker` spawns `kodi-addon-checker --branch <branch> <addonDir>`, captures stdout, and parses it. ENOENT → `toolNotFound: true`. Timeout → `timedOut: true`. Non-zero exit code is NOT an error (the tool exits 1 when findings exist). Non-ENOENT errors fail open (returns empty findings).\n- `withTimeBudget` was reused from `usage-analyzer.ts` rather than duplicated.\n- `addonId` is derived from the last path segment of `addonDir` inside `runAddonChecker`.\n- The `__runSubprocessForTests` injection point matches `__runGrepForTests` shape exactly.\n- 19 tests covering all three functions across all specified edge cases.\n\n**T02 — Handler wiring**\n\n`src/handlers/addon-check.ts` was updated to accept `workspaceManager` and `jobQueue` as deps alongside the existing `listFiles`. The full flow:\n1. `resolveCheckerBranch(payload.pull_request.base.ref)` — unknown branch → warn and return.\n2. Empty `addonIds` → early return before `enqueue` to avoid no-op workspace creation.\n3. `jobQueue.enqueue(installationId, async () => { ... })` wraps all workspace work.\n4. Inside the job: `workspaceManager.create(headBranch)` → for each addonId call `runAddonChecker` → log each finding (`addonId`, `level`, `message`), log summary (`addonIds`, `totalFindings`), `workspace.cleanup()` in finally.\n5. `src/index.ts` updated to pass `workspaceManager` and `jobQueue` to `createAddonCheckHandler`.\n\nTest decisions:\n- `createMockLoggerWithArrays()` centralizes shared-array writes so child logger assertions work without `.mock.calls` traversal.\n- Cleanup-on-throw test throws from `workspace.create` (not the subprocess) since `runAddonChecker` fails open on non-ENOENT errors.\n- 11 handler tests (5 from scaffold + 6 new) all pass.\n\nAll three verification gates pass: 19 runner tests, 11 handler tests, `bun run tsc --noEmit` exits 0.\n\n## Verification\n\nThree-gate verification all pass:\n1. `bun test src/lib/addon-checker-runner.test.ts` → 19 pass, 0 fail (55 expect() calls)\n2. `bun test src/handlers/addon-check.test.ts` → 11 pass, 0 fail (29 expect() calls)\n3. `bun run tsc --noEmit` → exit 0, no errors\n\n## Requirements Advanced\n\n- R001 — bun run tsc --noEmit exits 0 across the full codebase including new runner and handler files\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone. Both tasks delivered exactly as planned. The only notable implementation choice (empty addonIds early-return before enqueue) was a sensible guard not explicitly specified but aligned with the handler's existing empty-file-list behavior.\n\n## Known Limitations\n\nFork PRs are not handled — the handler always clones the PR's head ref directly, which works for same-repo PRs (the common case for xbmc repos). Fork handling (clone base then fetchAndCheckoutPullRequestHeadRef) is deferred to S03 polish per the T02 plan note.\n\n## Follow-ups\n\nS03 should add fork PR workspace handling (clone base + fetchAndCheckoutPullRequestHeadRef) following the review.ts pattern at lines 1178-1205. The __runSubprocessForTests injection point in runAddonChecker is ready for integration testing if a fixture bad-addon directory is added later.\n\n## Files Created/Modified\n\n- `src/lib/addon-checker-runner.ts` — New: pure injectable subprocess runner — ANSI-stripping output parser, Kodi branch resolver, timeout-gated subprocess spawner\n- `src/lib/addon-checker-runner.test.ts` — New: 19 tests covering parseCheckerOutput, resolveCheckerBranch, and runAddonChecker edge cases\n- `src/handlers/addon-check.ts` — Updated: wired workspaceManager, jobQueue, runAddonChecker, resolveCheckerBranch into handler flow; workspace lifecycle with finally cleanup; per-finding and summary structured logs\n- `src/handlers/addon-check.test.ts` — Updated: 6 new tests for branch resolution, workspace lifecycle, runner dispatch, finding logs, cleanup-on-error; 5 scaffold tests retained\n- `src/index.ts` — Updated: passes workspaceManager and jobQueue to createAddonCheckHandler\n",
+      "full_uat_md": "# S02: kodi-addon-checker subprocess and output parsing — UAT\n\n**Milestone:** M030\n**Written:** 2026-03-28T16:11:21.771Z\n\n# S02 UAT: kodi-addon-checker subprocess and output parsing\n\n## Preconditions\n- Working directory: `/home/keith/src/kodiai`\n- `bun` installed\n- No DB or network required — all tests use injectable stubs\n\n---\n\n## Test Case 1: Output parser — ANSI stripping and line classification\n\n**What:** Verify `parseCheckerOutput` strips ANSI codes, classifies ERROR/WARN/INFO, ignores noise, and attaches addonId.\n\n**Command:**\n```\nbun test src/lib/addon-checker-runner.test.ts --reporter=verbose\n```\n\n**Expected:**\n- `classifies ERROR, WARN, and INFO lines` — pass\n- `strips ANSI escape codes before parsing` — pass\n- `ignores non-matching lines: XML schema noise, blank lines, debug output` — pass\n- `attaches the provided addonId to every finding` — pass\n- `returns empty array for empty input` — pass\n- `handles mixed ANSI and non-ANSI lines in the same output` — pass\n\n---\n\n## Test Case 2: Branch resolver — valid and invalid branch names\n\n**What:** Verify `resolveCheckerBranch` accepts all 10 Kodi release branches and rejects non-Kodi names.\n\n**Expected (from same test run):**\n- `returns the branch for each known Kodi version` — pass (covers all 10: nexus, omega, matrix, leia, jarvis, isengard, helix, gotham, frodo, dharma)\n- `returns null for 'main'`, `'master'`, `'develop'`, empty string — pass\n- `is case-sensitive — 'Nexus' is not a valid version` — pass\n- `covers all 10 expected version names` — pass\n\n---\n\n## Test Case 3: Subprocess runner — tool-not-found\n\n**What:** Verify `runAddonChecker` returns `{ toolNotFound: true }` when the subprocess stub returns `{ error: { code: 'ENOENT' } }`.\n\n**Expected:**\n- `returns toolNotFound: true when subprocess returns ENOENT error` — pass\n\n---\n\n## Test Case 4: Subprocess runner — timeout\n\n**What:** Verify `runAddonChecker` returns `{ timedOut: true }` when the subprocess stub sleeps past the budget.\n\n**Expected:**\n- `returns timedOut: true when subprocess exceeds the time budget` — pass (11ms elapsed per test output)\n\n---\n\n## Test Case 5: Subprocess runner — non-zero exit is not failure\n\n**What:** Verify `runAddonChecker` parses findings normally even when the subprocess exits with code 1 (kodi-addon-checker exits 1 when it finds violations).\n\n**Expected:**\n- `parses findings from stdout even when exit code is 1 (non-zero is not failure)` — pass\n- Findings array is non-empty and contains the expected ERROR/WARN/INFO entries\n\n---\n\n## Test Case 6: Subprocess runner — args passthrough\n\n**What:** Verify the subprocess is invoked with `['--branch', branch, addonDir]`.\n\n**Expected:**\n- `passes the branch and addonDir to the subprocess` — pass\n\n---\n\n## Test Case 7: Subprocess runner — non-ENOENT error fails open\n\n**What:** Verify unexpected errors (e.g. OOM, permission denied) return `{ findings: [], timedOut: false, toolNotFound: false }` rather than throwing.\n\n**Expected:**\n- `returns empty findings on unexpected non-ENOENT error (fails open)` — pass\n\n---\n\n## Test Case 8: Handler — unknown base branch skips\n\n**What:** Verify the handler warns and returns early when the PR base branch is not a known Kodi version (e.g., `main`).\n\n**Command:**\n```\nbun test src/handlers/addon-check.test.ts --reporter=verbose\n```\n\n**Expected:**\n- `unknown base branch warns and skips (does not enqueue)` — pass\n- `jobQueue.enqueue` is NOT called\n- warn log contains `'addon-check: unknown kodi branch, skipping'` with `baseBranch` binding\n\n---\n\n## Test Case 9: Handler — workspace created with head branch\n\n**What:** Verify `workspaceManager.create` is called with the PR head ref (not base ref).\n\n**Expected:**\n- `workspace.create called with head branch on non-fork PR` — pass\n- `workspaceManager.create` receives the `head.ref` value\n\n---\n\n## Test Case 10: Handler — runner called per addon with correct args\n\n**What:** Verify `runAddonChecker` is called once per discovered addonId with `addonDir = path.join(workspace.dir, addonId)` and `branch = kodiVersion`.\n\n**Expected:**\n- `runner called per addon with correct addonDir and branch` — pass\n\n---\n\n## Test Case 11: Handler — findings logged with structured bindings\n\n**What:** Verify each finding is logged with `addonId`, `level`, and `message` bindings at info level.\n\n**Expected:**\n- `findings logged with addonId, level, message bindings` — pass\n\n---\n\n## Test Case 12: Handler — cleanup called even on runner error\n\n**What:** Verify `workspace.cleanup()` is called in the finally block even when an exception is thrown inside the job.\n\n**Expected:**\n- `workspace.cleanup called even when runner throws` — pass\n- Workspace cleanup is unconditional regardless of runner success/failure\n\n---\n\n## Test Case 13: TypeScript integrity\n\n**What:** Verify no type errors introduced by new files.\n\n**Command:**\n```\nbun run tsc --noEmit\n```\n\n**Expected:** exit 0, no output\n\n---\n\n## Summary Execution\n\nRun all three gates in sequence:\n\n```bash\nbun test src/lib/addon-checker-runner.test.ts\nbun test src/handlers/addon-check.test.ts\nbun run tsc --noEmit\n```\n\n**Expected totals:** 19 pass + 11 pass + tsc exit 0 — all gates green.\n",
       "goal": "Build the kodi-addon-checker subprocess runner and output parser so the handler produces structured findings instead of just logging addon IDs.",
       "success_criteria": "- `parseCheckerOutput` correctly strips ANSI codes and classifies ERROR/WARN/INFO lines, ignoring non-matching output\n- `resolveCheckerBranch` validates against the 10 known Kodi version branch names, returning null for unknown branches\n- `runAddonChecker` fails open on ENOENT (toolNotFound) and on timeout, returning empty findings in both cases\n- `createAddonCheckHandler` clones the PR workspace, resolves the kodi branch, calls the runner per addon, and logs structured findings\n- `bun run tsc --noEmit` exits 0",
       "proof_level": "Contract — unit tests with injected subprocess mock prove all parser, resolver, and fail-open behaviors; handler tests prove workspace/runner wiring with mocked dependencies.",
@@ -691,11 +691,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Format parsed findings as a Kodiai-style PR comment and post/update it idempotently on each PR push.",
-      "success_criteria": "End-to-end: handler fires, runner produces findings, comment posted to PR. Second push updates existing comment (marker found), does not post a new one. Clean addon produces a clean comment (no violations).",
-      "proof_level": "unit tests: formatter, marker detection; integration: full flow exercised against a fixture or live PR",
-      "integration_closure": "Handler calls runner, formats output, posts via existing GitHub API client; idempotency via comment marker matching review-idempotency.ts pattern",
-      "observability_impact": "Structured log: comment posted/updated, finding counts by severity, PR and repo details",
+      "goal": "Wire `allFindings` into a posted/updated PR comment: add a pure formatter module, call an idempotent upsert after the per-addon loop, handle fork PRs, and update the Dockerfile with Python 3 + kodi-addon-checker.",
+      "success_criteria": "- `src/lib/addon-check-formatter.ts` exports `buildAddonCheckMarker` and `formatAddonCheckComment`; formatter unit tests pass\n- `src/handlers/addon-check.ts` calls `upsertAddonCheckComment` after the per-addon loop; fork PRs clone base + fetchAndCheckoutPullRequestHeadRef\n- All 15+ handler tests pass (11 existing + 4 new)\n- `Dockerfile` installs python3 + kodi-addon-checker\n- `bun run tsc --noEmit` exits 0",
+      "proof_level": "contract — unit tests verify formatter output and upsert wiring without GitHub API calls",
+      "integration_closure": "Completes M030 end-to-end: PR event → handler → workspace → checker → findings → formatted comment posted/updated idempotently. No remaining gaps.",
+      "observability_impact": "No new observability surfaces needed — S02 already established the per-finding and summary logs. The upsert path is silent-on-success, which matches the existing review handler pattern.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -892,6 +892,91 @@
       "observability_impact": "Adds structured log per finding (addonId, level, message bindings at info level) and summary log (addonIds, totalFindings). Warns on unknown kodi branch with baseBranch binding. Warns on toolNotFound (kodi-addon-checker not installed). Warns on runner timeout with addonId.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M030",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Built pure addon-check-formatter module (marker builder + comment renderer) with 11 passing unit tests",
+      "status": "complete",
+      "one_liner": "Built pure addon-check-formatter module (marker builder + comment renderer) with 11 passing unit tests",
+      "narrative": "Created src/lib/addon-check-formatter.ts with buildAddonCheckMarker and formatAddonCheckComment exports. The formatter filters INFO findings, renders a markdown table for ERROR+WARN entries, and appends a summary count line. Clean-pass branch emits no table. Imports AddonFinding from the re-export in addon-check.ts to avoid circular deps. Tests cover all paths including empty findings, all-INFO input, multi-addon rows, zero-error counts, and marker placement.",
+      "verification_result": "bun test src/lib/addon-check-formatter.test.ts — 11 pass, 0 fail, 9ms",
+      "duration": "",
+      "completed_at": "2026-03-28T16:17:07.625Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/lib/addon-check-formatter.ts",
+        "src/lib/addon-check-formatter.test.ts"
+      ],
+      "key_decisions": [
+        "Imports AddonFinding from handlers/addon-check.ts re-export to avoid circular dep",
+        "INFO filtered at render time; no table rendered on clean pass"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M030\nkey_files:\n  - src/lib/addon-check-formatter.ts\n  - src/lib/addon-check-formatter.test.ts\nkey_decisions:\n  - Imports AddonFinding from handlers/addon-check.ts re-export to avoid circular dep\n  - INFO filtered at render time; no table rendered on clean pass\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T16:17:07.626Z\nblocker_discovered: false\n---\n\n# T01: Built pure addon-check-formatter module (marker builder + comment renderer) with 11 passing unit tests\n\n**Built pure addon-check-formatter module (marker builder + comment renderer) with 11 passing unit tests**\n\n## What Happened\n\nCreated src/lib/addon-check-formatter.ts with buildAddonCheckMarker and formatAddonCheckComment exports. The formatter filters INFO findings, renders a markdown table for ERROR+WARN entries, and appends a summary count line. Clean-pass branch emits no table. Imports AddonFinding from the re-export in addon-check.ts to avoid circular deps. Tests cover all paths including empty findings, all-INFO input, multi-addon rows, zero-error counts, and marker placement.\n\n## Verification\n\nbun test src/lib/addon-check-formatter.test.ts — 11 pass, 0 fail, 9ms\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/lib/addon-check-formatter.test.ts` | 0 | ✅ pass | 3300ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/lib/addon-check-formatter.ts`\n- `src/lib/addon-check-formatter.test.ts`\n",
+      "description": "Build `src/lib/addon-check-formatter.ts` as a pure module with two exports: `buildAddonCheckMarker(owner, repo, prNumber)` returns the HTML marker string `<!-- kodiai:addon-check:{owner}/{repo}:{prNumber} -->`. `formatAddonCheckComment(findings, marker)` renders the full PR comment body: marker on line 1, then `## Kodiai Addon Check` heading, then a markdown table of ERROR and WARN findings (INFO filtered out), then a summary line `_X error(s), Y warning(s) found._`. If no ERROR/WARN findings, emit a clean pass: `## Kodiai Addon Check\\n\\n✅ No issues found by kodi-addon-checker.`\\n\\nTable format:\\n```\\n| Addon | Level | Message |\\n|-------|-------|---------|\\n| plugin.video.foo | ERROR | missing changelog |\\n```\\n\\nWrite `src/lib/addon-check-formatter.test.ts` with tests covering: marker format, non-empty findings table with ERROR+WARN (INFO excluded), clean pass when findings empty or all-INFO, summary line counts only ERROR+WARN, marker appears first in the output. Import `AddonFinding` from `../handlers/addon-check.ts` (re-exported there) to avoid circular deps.",
+      "estimate": "30m",
+      "files": [
+        "src/lib/addon-check-formatter.ts",
+        "src/lib/addon-check-formatter.test.ts",
+        "src/handlers/addon-check.ts"
+      ],
+      "verify": "bun test src/lib/addon-check-formatter.test.ts",
+      "inputs": [
+        "src/handlers/addon-check.ts",
+        "src/lib/addon-checker-runner.ts",
+        "src/triage/triage-comment.ts"
+      ],
+      "expected_output": [
+        "src/lib/addon-check-formatter.ts",
+        "src/lib/addon-check-formatter.test.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M030",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Wire upsert, fork detection, and Dockerfile into handler",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Update `src/handlers/addon-check.ts` with three changes:\\n\\n1. **Fork detection** — follow `review.ts` lines 1168–1195. Read `payload.pull_request.head.repo`. Set `isFork = Boolean(headRepo && headRepo.full_name !== repo)` and `isDeletedFork = !headRepo`. In the job: if fork/deleted-fork, call `workspaceManager.create(installationId, { owner, repo: repoName, ref: baseBranch })` then `fetchAndCheckoutPullRequestHeadRef({ dir: workspace.dir, prNumber, localBranch: 'pr-check' })`; else `workspaceManager.create(installationId, { owner, repo: repoName, ref: headRef })`. Import `fetchAndCheckoutPullRequestHeadRef` from `../jobs/workspace.ts`.\\n\\n2. **Upsert comment** — add an inline async helper `upsertAddonCheckComment({ octokit, owner, repo, prNumber, body })` inside the handler file (not exported). It: calls `octokit.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 })`, finds an existing comment whose body includes `buildAddonCheckMarker(owner, repo, prNumber)`, then calls `updateComment` or `createComment`. After the per-addon loop, call `upsertAddonCheckComment` with `formatAddonCheckComment(allFindings, buildAddonCheckMarker(owner, repo, prNumber))`. Do NOT call upsert if every addon returned `toolNotFound: true` (i.e., skip when `allFindings.length === 0 && toolNotFoundCount === addonIds.length`). Import `buildAddonCheckMarker, formatAddonCheckComment` from `../lib/addon-check-formatter.ts`.\\n\\n3. **Tests** — extend `src/handlers/addon-check.test.ts` with 4 new tests. The mock octokit needs `rest.issues.listComments`, `rest.issues.createComment`, `rest.issues.updateComment` added (create a new `createMockOctokitWithIssues(files, existingComments)` helper that adds these methods). Tests:\\n   - `posts comment when findings exist`: octokit has no existing comments; after handler runs, `createComment` called once with body containing the marker and an ERROR row.\\n   - `no comment posted when no findings and tool not found`: all addons return `toolNotFound: true`; `createComment` NOT called.\\n   - `updates existing comment on second push (upsert path)`: octokit returns one existing comment whose body contains the marker; `updateComment` called once, `createComment` NOT called.\\n   - `fork PR uses base branch + fetchAndCheckoutPullRequestHeadRef`: payload has `head.repo.full_name !== repository.full_name`; `workspaceManager.create` called with `ref: baseBranch`; inject `__fetchAndCheckoutForTests` (see below).\\n\\nFor fork test: add optional `__fetchAndCheckoutForTests?: typeof fetchAndCheckoutPullRequestHeadRef` parameter to `createAddonCheckHandler` deps, used in the same place as the real import. This avoids needing to mock the module.\\n\\n4. **Dockerfile** — change the apt line to:\\n```\\nRUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir kodi-addon-checker && rm -rf /var/lib/apt/lists/*\\n```\\n\\n5. **Verify TypeScript** — run `bun run tsc --noEmit` and fix any errors introduced.",
+      "estimate": "60m",
+      "files": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "Dockerfile"
+      ],
+      "verify": "bun test src/handlers/addon-check.test.ts && bun run tsc --noEmit",
+      "inputs": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "src/lib/addon-check-formatter.ts",
+        "src/jobs/workspace.ts",
+        "Dockerfile"
+      ],
+      "expected_output": [
+        "src/handlers/addon-check.ts",
+        "src/handlers/addon-check.test.ts",
+        "Dockerfile"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -1080,6 +1165,17 @@
       "verdict": "✅ pass",
       "duration_ms": 6000,
       "created_at": "2026-03-28T16:09:02.846Z"
+    },
+    {
+      "id": 9,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M030",
+      "command": "bun test src/lib/addon-check-formatter.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3300,
+      "created_at": "2026-03-28T16:17:07.626Z"
     }
   ]
 }

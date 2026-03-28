@@ -10,7 +10,7 @@ Automated review and rule enforcement that reduces maintainer burden on high-vol
 
 25 milestones shipped (M001–M029). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles.
 
-M030 (Addon Rule Enforcement) is in progress — S01 complete. Handler scaffold fires on PR events for configured addon repos and logs the addon IDs it would check.
+M030 (Addon Rule Enforcement) is in progress — S01 and S02 complete. Handler fires on PR events for addon repos, resolves the Kodi version from the PR base branch, clones a workspace, runs kodi-addon-checker per addon directory, and emits structured finding logs. S03 (PR comment posting and idempotency) pending.
 
 ## Architecture / Key Patterns
 

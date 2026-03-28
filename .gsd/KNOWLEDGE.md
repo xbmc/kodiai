@@ -208,3 +208,29 @@ return { method: () => fn() };  // closure captures the narrowed local
 **Rule:** Whenever a guard `if (!obj.optionalMethod) throw` precedes closures that call `obj.optionalMethod`, destructure the narrowed value before the return. TypeScript's narrowing does not flow into closures.
 
 **Established in:** M030/S01 (`src/knowledge/embedding-repair.ts`, `createScopedRepairStore`).
+
+---
+
+## `createMockLoggerWithArrays` Pattern for Multi-Child Handler Tests (M030/S02)
+
+**Context:** `addon-check.test.ts` needs to assert that child loggers (created by `handlerLogger.child(...)`) emit structured info/warn bindings. A flat mock logger doesn't capture child-logger output separately; each child must write to the same shared arrays.
+
+**Pattern:** Create a `createMockLoggerWithArrays()` factory that returns a logger stub whose `child()` method returns another stub pointing at the same `infoCalls`/`warnCalls` arrays:
+
+```ts
+function createMockLoggerWithArrays() {
+  const infoCalls: unknown[] = [];
+  const warnCalls: unknown[] = [];
+  const logger = {
+    child: () => ({ info: (...args: unknown[]) => infoCalls.push(args),
+                    warn: (...args: unknown[]) => warnCalls.push(args) }),
+    info: (...args: unknown[]) => infoCalls.push(args),
+    warn: (...args: unknown[]) => warnCalls.push(args),
+  };
+  return { logger, infoCalls, warnCalls };
+}
+```
+
+**Rule:** Use this pattern instead of `vi.fn()`-style mock loggers when tests need to assert on bindings emitted by child loggers. The shared arrays make assertions straightforward without needing `.mock.calls` traversal.
+
+**Established in:** M030/S02/T02 (`src/handlers/addon-check.test.ts`).
