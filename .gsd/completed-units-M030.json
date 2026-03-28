@@ -1,0 +1,23 @@
+[
+  "rewrite-docs/M029",
+  "research-milestone/M029",
+  "plan-milestone/M029",
+  "plan-slice/M029/S01",
+  "execute-task/M029/S01/T01",
+  "execute-task/M029/S01/T02",
+  "complete-slice/M029/S01",
+  "research-slice/M029/S02",
+  "plan-slice/M029/S02",
+  "execute-task/M029/S02/T01",
+  "complete-slice/M029/S02",
+  "research-slice/M029/S03",
+  "plan-slice/M029/S03",
+  "execute-task/M029/S03/T01",
+  "complete-slice/M029/S03",
+  "research-slice/M029/S04",
+  "plan-slice/M029/S04",
+  "execute-task/M029/S04/T01",
+  "complete-slice/M029/S04",
+  "validate-milestone/M029",
+  "complete-milestone/M029"
+]

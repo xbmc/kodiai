@@ -8,6 +8,7 @@ import { buildMcpServers, buildAllowedMcpTools } from "./mcp/index.ts";
 import { buildPrompt } from "./prompt.ts";
 import type { CostTracker } from "../llm/cost-tracker.ts";
 import type { ResolvedModel } from "../llm/task-router.ts";
+import { buildAgentEnv } from "./env.ts";
 
 export function createExecutor(deps: {
   githubApp: GitHubApp;
@@ -189,7 +190,7 @@ export function createExecutor(deps: {
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
             env: {
-              ...process.env,
+              ...buildAgentEnv(),
               CLAUDE_CODE_ENTRYPOINT: "kodiai-github-app",
             },
           },

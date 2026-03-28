@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "projectName": "kodiai",
+  "projectPath": "/home/keith/src/kodiai",
+  "gsdVersion": "2.58.0",
+  "entries": [
+    {
+      "filename": "M030-2026-03-28T16-28-40.html",
+      "generatedAt": "2026-03-28T16:28:40.884Z",
+      "milestoneId": "M030",
+      "milestoneTitle": "M030: Addon Rule Enforcement",
+      "label": "M030: M030: Addon Rule Enforcement",
+      "kind": "milestone",
+      "totalCost": 1016.5347532500009,
+      "totalTokens": 1929786339,
+      "totalDuration": 315112675,
+      "doneSlices": 156,
+      "totalSlices": 156,
+      "doneMilestones": 30,
+      "totalMilestones": 31,
+      "phase": "pre-planning"
+    }
+  ]
+}

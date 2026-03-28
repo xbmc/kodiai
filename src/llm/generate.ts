@@ -13,6 +13,7 @@ import type { ResolvedModel } from "./task-router.ts";
 import type { CostTracker } from "./cost-tracker.ts";
 import { createProviderModel } from "./providers.ts";
 import { isFallbackTrigger, getFallbackReason } from "./fallback.ts";
+import { buildAgentEnv } from "../execution/env.ts";
 
 /** Result from generateWithFallback. */
 export interface GenerateResult {
@@ -66,7 +67,7 @@ async function generateWithAgentSdk(opts: {
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       env: {
-        ...process.env,
+        ...buildAgentEnv(),
         CLAUDE_CODE_ENTRYPOINT: "kodiai-llm-generate",
       },
     },
