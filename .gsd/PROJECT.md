@@ -8,9 +8,9 @@ Automated review and rule enforcement that reduces maintainer burden on high-vol
 
 ## Current State
 
-25 milestones shipped (M001–M029). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles.
+26 milestones shipped (M001–M030). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles, addon rule enforcement.
 
-M030 (Addon Rule Enforcement) is in progress — S01 and S02 complete. Handler fires on PR events for addon repos, resolves the Kodi version from the PR base branch, clones a workspace, runs kodi-addon-checker per addon directory, and emits structured finding logs. S03 (PR comment posting and idempotency) pending.
+M030 (Addon Rule Enforcement) complete — PRs to xbmc/repo-plugins, xbmc/repo-scripts, and xbmc/repo-scrapers now trigger kodi-addon-checker against all affected addon directories. Findings are posted as an idempotent PR comment (marker-based upsert). Fork PRs handled via base-branch clone + fetchAndCheckoutPullRequestHeadRef. kodi-addon-checker installed in the production Dockerfile via python3 + pip3. All 10 active requirements validated.
 
 ## Architecture / Key Patterns
 
@@ -30,6 +30,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 ## Milestone Sequence
 
-- ✅ M001–M029: Core platform through wiki quality (see CHANGELOG.md)
-- 🔄 M030: Addon Rule Enforcement — S01 complete (handler scaffold + repo detection); S02 (checker subprocess), S03 (PR comment posting) pending
+- ✅ M001–M030: Core platform through addon rule enforcement (see CHANGELOG.md)
 - [ ] M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)

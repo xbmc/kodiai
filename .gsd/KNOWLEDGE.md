@@ -234,3 +234,15 @@ function createMockLoggerWithArrays() {
 **Rule:** Use this pattern instead of `vi.fn()`-style mock loggers when tests need to assert on bindings emitted by child loggers. The shared arrays make assertions straightforward without needing `.mock.calls` traversal.
 
 **Established in:** M030/S02/T02 (`src/handlers/addon-check.test.ts`).
+
+---
+
+## `toolNotFound` Detection in addon-check Handler — ENOENT, Not exitCode:127 (M030/S03)
+
+**Context:** `runAddonChecker` in `src/lib/addon-checker-runner.ts` detects a missing `kodi-addon-checker` binary by catching a subprocess error whose `.code === "ENOENT"`. It returns `{ findings: [], toolNotFound: true }` on that path. A subprocess that exits with code 127 (shell "command not found") does NOT set `.code = "ENOENT"` on the error object — it falls through to the success branch and returns `{ findings: [], toolNotFound: false }`.
+
+**Rule:** When writing tests that cover the "tool not installed" scenario, stub the subprocess to throw `Object.assign(new Error("not found"), { code: "ENOENT" })` — not to return `{ exitCode: 127 }`. The exitCode:127 path is treated as a successful run with no findings.
+
+**Impact on upsert gate:** `upsertAddonCheckComment` is skipped only when ALL addons returned `toolNotFound: true` (guarded by `toolNotFoundCount === addonIds.length`). An exitCode:127 run doesn't increment `toolNotFoundCount`, so the upsert will be called (with an empty findings comment). Ensure the checker binary is actually present in the Docker image before relying on the skip gate.
+
+**Established in:** M030/S03/T02 (`src/handlers/addon-check.ts`, `src/handlers/addon-check.test.ts`).
