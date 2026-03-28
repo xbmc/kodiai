@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T04",
+  "unitId": "M031/S02/T04",
+  "timestamp": 1774718268023,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test src/jobs/workspace.test.ts",
+      "exitCode": 0,
+      "durationMs": 622,
+      "verdict": "pass"
+    },
+    {
+      "command": "echo 'workspace tests pass'",
+      "exitCode": 0,
+      "durationMs": 8,
+      "verdict": "pass"
+    }
+  ]
+}

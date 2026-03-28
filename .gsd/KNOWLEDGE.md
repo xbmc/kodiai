@@ -246,3 +246,53 @@ function createMockLoggerWithArrays() {
 **Impact on upsert gate:** `upsertAddonCheckComment` is skipped only when ALL addons returned `toolNotFound: true` (guarded by `toolNotFoundCount === addonIds.length`). An exitCode:127 run doesn't increment `toolNotFoundCount`, so the upsert will be called (with an empty findings comment). Ensure the checker binary is actually present in the Docker image before relying on the skip gate.
 
 **Established in:** M030/S03/T02 (`src/handlers/addon-check.ts`, `src/handlers/addon-check.test.ts`).
+
+---
+
+## Ephemeral Auth URL Pattern for Git Network Operations (M031/S02)
+
+**Context:** After workspace.create() strips the installation token from git remote URLs, push/fetch functions no longer read credentials from `.git/config`. Instead they construct an ephemeral auth URL per command.
+
+**Pattern:** A private `makeAuthUrl(strippedUrl, token)` helper injects `x-access-token:${token}@` into the URL for a single command, returning the URL unchanged when token is undefined. Push/fetch functions:
+1. Read the stripped remote URL: `await $\`git -C ${dir} remote get-url origin\`.quiet().text().trim()`
+2. Apply `makeAuthUrl(url, token)` inline to get the auth URL
+3. Pass the auth URL as the remote argument directly: `git push ${authUrl} HEAD:refs/heads/${branch}`
+
+The auth URL is constructed per-command and never stored. Callers pass `token` explicitly; the function never reads from `.git/config`.
+
+**Exported helper for fetch sites:** `buildAuthFetchUrl(dir, token)` wraps the read+inject logic and returns `'origin'` when token is absent. Use this at inline `git fetch` call sites in handlers to avoid repeating the remote-read boilerplate.
+
+**Fork vs base repo auth:** Fork pushes use `forkContext.botPat`; all other operations use `workspace.token` (installation token).
+
+**Established in:** M031/S02 (`src/jobs/workspace.ts`, `buildAuthFetchUrl` export).
+
+---
+
+## Local Bare Repo Pattern for Git-Exercising Unit Tests (M031/S02)
+
+**Context:** workspace.ts functions that call real `git` commands can't be tested against GitHub. Tests need a real git environment without network access.
+
+**Pattern:**
+```ts
+async function setupBareAndClone(tmpDir: string): Promise<{ bareDir: string; cloneDir: string }> {
+  const bareDir = path.join(tmpDir, "bare.git");
+  const cloneDir = path.join(tmpDir, "clone");
+  await $`git init --bare ${bareDir}`.quiet();
+  // seed a commit in a temp work tree so bare has objects
+  const seedDir = path.join(tmpDir, "seed");
+  await $`git clone ${bareDir} ${seedDir}`.quiet();
+  await Bun.write(path.join(seedDir, "README.md"), "test");
+  await $`git -C ${seedDir} add .`.quiet();
+  await $`git -C ${seedDir} -c user.email=t@t.com -c user.name=T commit -m init`.quiet();
+  await $`git -C ${seedDir} push origin main`.quiet();
+  // now clone the bare repo as the workspace
+  await $`git clone ${bareDir} ${cloneDir}`.quiet();
+  return { bareDir, cloneDir };
+}
+```
+
+Use `file://${bareDir}` for URLs. For URL-strip tests, set the remote to a credential-bearing URL via `git remote set-url`, then strip it, then assert `git remote get-url` returns the clean URL.
+
+**Rule:** All git-exercising tests in workspace.test.ts use this pattern. Real GitHub network calls are never made from unit tests.
+
+**Established in:** M031/S02/T04 (`src/jobs/workspace.test.ts`, `setupBareAndClone` helper).

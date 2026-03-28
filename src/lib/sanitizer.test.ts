@@ -10,6 +10,7 @@ import {
   sanitizeContent,
   filterCommentsToTriggerTime,
   sanitizeOutgoingMentions,
+  scanOutgoingForSecrets,
 } from "./sanitizer";
 
 // --- stripHtmlComments ---
@@ -403,5 +404,113 @@ describe("sanitizeOutgoingMentions", () => {
   test("returns unchanged body when no mention exists", () => {
     const body = "thanks team";
     expect(sanitizeOutgoingMentions(body, ["kodiai", "claude"])).toBe(body);
+  });
+});
+
+// --- scanOutgoingForSecrets ---
+
+describe("scanOutgoingForSecrets", () => {
+  test("detects github-pat (ghp_ + 36 chars)", () => {
+    const text = "ghp_" + "A".repeat(36);
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-pat");
+  });
+
+  test("detects aws-access-key (AKIA + 16 uppercase chars)", () => {
+    const text = "AKIAIOSFODNN7EXAMPLE"; // 4+16=20 chars, all uppercase alphanum
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("aws-access-key");
+  });
+
+  test("detects private-key (RSA header)", () => {
+    const text = "-----BEGIN RSA PRIVATE KEY-----";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("private-key");
+  });
+
+  test("detects private-key (EC header)", () => {
+    const text = "-----BEGIN EC PRIVATE KEY-----";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("private-key");
+  });
+
+  test("detects private-key (OPENSSH header)", () => {
+    const text = "-----BEGIN OPENSSH PRIVATE KEY-----";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("private-key");
+  });
+
+  test("detects slack-token (xoxb- prefix)", () => {
+    const text = "xoxb-abc1234567890";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("slack-token");
+  });
+
+  test("detects slack-token (xoxa- prefix)", () => {
+    const text = "xoxa-abc1234567890";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("slack-token");
+  });
+
+  test("detects github-token (ghu_ prefix)", () => {
+    const text = "ghu_" + "A".repeat(36);
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-token");
+  });
+
+  test("detects github-token (gho_ prefix)", () => {
+    const text = "gho_" + "B".repeat(36);
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-token");
+  });
+
+  test("detects github-x-access-token-url", () => {
+    const text = "https://x-access-token:secret@github.com/";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-x-access-token-url");
+  });
+
+  test("detects github-x-access-token-url without trailing slash", () => {
+    const text = "git clone https://x-access-token:ghp_abc@github.com";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-x-access-token-url");
+  });
+
+  test("clean text returns blocked:false with no matchedPattern", () => {
+    const result = scanOutgoingForSecrets("Hello! Here is your deployment summary. All checks passed.");
+    expect(result.blocked).toBe(false);
+    expect(result.matchedPattern).toBeUndefined();
+  });
+
+  test("empty string returns blocked:false", () => {
+    const result = scanOutgoingForSecrets("");
+    expect(result.blocked).toBe(false);
+    expect(result.matchedPattern).toBeUndefined();
+  });
+
+  test("secret embedded in prose is still detected", () => {
+    const text = "Here is the key: ghp_" + "A".repeat(36) + " end";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("github-pat");
+  });
+
+  test("returns first matching pattern when multiple secrets present", () => {
+    // private-key pattern comes first in the list
+    const text = "-----BEGIN RSA PRIVATE KEY-----\nAKIAIOSFODNN7EXAMPLE";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("private-key");
   });
 });

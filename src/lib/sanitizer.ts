@@ -204,6 +204,73 @@ export function filterCommentsToTriggerTime<
   });
 }
 
+// --- Outgoing Secret Scanner ---
+
+/**
+ * Result returned by scanOutgoingForSecrets().
+ * blocked: true when a credential pattern was matched.
+ * matchedPattern: the name of the first matched pattern, or undefined.
+ */
+export interface SecretScanResult {
+  blocked: boolean;
+  matchedPattern: string | undefined;
+}
+
+/**
+ * Scan outgoing agent-generated text for credential patterns before it leaves
+ * the system (via MCP comment servers, Slack assistant handler, etc.).
+ *
+ * Returns { blocked: true, matchedPattern: name } on the first match, or
+ * { blocked: false, matchedPattern: undefined } if no pattern matches.
+ *
+ * Patterns included (6 total):
+ * - private-key:                   PEM private key headers
+ * - aws-access-key:                AWS AKIA access key IDs (4+16 chars)
+ * - github-pat:                    Classic GitHub PATs (ghp_ prefix + 36 chars)
+ * - slack-token:                   Slack OAuth tokens (xox* prefix)
+ * - github-token:                  Other GitHub token types (gho_, gpu_, ghs_, ghu_)
+ * - github-x-access-token-url:     x-access-token in GitHub clone URLs
+ *
+ * Note: high-entropy token detection is intentionally excluded — false positive
+ * risk is too high for outgoing prose text.
+ */
+export function scanOutgoingForSecrets(text: string): SecretScanResult {
+  const patterns: Array<{ name: string; regex: RegExp }> = [
+    {
+      name: "private-key",
+      regex: /-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP)? ?PRIVATE KEY-----/,
+    },
+    {
+      name: "aws-access-key",
+      regex: /AKIA[0-9A-Z]{16}/,
+    },
+    {
+      name: "github-pat",
+      regex: /ghp_[A-Za-z0-9]{36}/,
+    },
+    {
+      name: "slack-token",
+      regex: /xox[baprs]-[A-Za-z0-9-]{10,}/,
+    },
+    {
+      name: "github-token",
+      regex: /gh[opsu]_[A-Za-z0-9]{36,}/,
+    },
+    {
+      name: "github-x-access-token-url",
+      regex: /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/,
+    },
+  ];
+
+  for (const { name, regex } of patterns) {
+    if (regex.test(text)) {
+      return { blocked: true, matchedPattern: name };
+    }
+  }
+
+  return { blocked: false, matchedPattern: undefined };
+}
+
 /**
  * Strip mention handles from outgoing bot replies to prevent self-trigger loops.
  * Replaces @handle with handle (removes the @ prefix) preserving readability.
