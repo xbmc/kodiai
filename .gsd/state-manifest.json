@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-28T17:47:47.569Z",
+  "exported_at": "2026-03-28T17:57:56.345Z",
   "milestones": [
     {
       "id": "M001",
@@ -827,16 +827,16 @@
       "milestone_id": "M031",
       "id": "S04",
       "title": "Prompt Security Policy + CLAUDE.md in Workspace",
-      "status": "pending",
+      "status": "complete",
       "risk": "low",
       "depends": [
         "S01"
       ],
       "demo": "Unit test on buildMentionPrompt asserts result includes '## Security Policy' and 'refuse'. Executor test asserts workspace dir contains CLAUDE.md with security content. bun test src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts src/execution/executor.test.ts exits 0.",
       "created_at": "2026-03-28T16:38:14.869Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-28T17:49:56.509Z",
+      "full_summary_md": "---\nid: S04\nparent: M031\nmilestone: M031\nprovides:\n  - buildSecurityPolicySection() exported from review-prompt.ts — reusable for any new prompt builder\n  - buildSecurityClaudeMd() exported from executor.ts — usable in S05 proof harness to assert content contract\n  - Security policy present in every agent prompt (mention + review) and every ephemeral workspace CLAUDE.md\nrequires:\n  []\naffects:\n  - S05 — end-to-end proof harness verifies S04 outputs; harness will import buildSecurityPolicySection, buildSecurityClaudeMd, and buildMentionPrompt to construct deterministic checks\nkey_files:\n  - src/execution/review-prompt.ts\n  - src/execution/mention-prompt.ts\n  - src/execution/executor.ts\n  - src/execution/executor.test.ts\n  - src/execution/review-prompt.test.ts\n  - src/execution/mention-prompt.test.ts\nkey_decisions:\n  - Security policy section placed after epistemic boundary section in both prompts — consistent with the prompt's existing structure; epistemic-then-security ordering is intentional (epistemic limits scope, security limits actions)\n  - CLAUDE.md write overwrites any existing workspace CLAUDE.md — security policy takes precedence; overwrite is ephemeral and never touches the repo on GitHub (D012)\n  - buildSecurityClaudeMd refusal phrasing is 'I can't help with that — this falls outside the security policy for this assistant' — verbatim from the content spec; test assertions in executor.test.ts check this exact wording\npatterns_established:\n  - CLAUDE.md-in-workspace pattern: write a fixed security CLAUDE.md to workspace.dir immediately before query() so that settingSources:['project'] makes the SDK read it as authoritative project config — no merge, no check for existing file, security wins\nobservability_surfaces:\n  - none\ndrill_down_paths:\n  - .gsd/milestones/M031/slices/S04/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M031/slices/S04/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T17:49:56.510Z\nblocker_discovered: false\n---\n\n# S04: Prompt Security Policy + CLAUDE.md in Workspace\n\n**Security policy injected into both agent prompts and written as CLAUDE.md to every ephemeral workspace before the Agent SDK query call.**\n\n## What Happened\n\nTwo tasks, no blockers, clean implementation throughout.\n\n**T01 — buildSecurityPolicySection() in both prompt builders**\n\nAdded `export function buildSecurityPolicySection(): string` to `src/execution/review-prompt.ts`, placed immediately after `buildEpistemicBoundarySection()`. The function returns a `## Security Policy` block with four **Refuse** bullets covering: environment variable / credential exposure, out-of-repo file reads (`.git/config`, `~/.ssh`, `/etc/passwd`), environment-probing commands (`env`, `printenv`, `cat /proc/...`, external `curl`), and a fixed refusal phrasing for credential requests. Wired via `lines.push(\"\", buildSecurityPolicySection())` in `buildReviewPrompt()` after the epistemic section. In `mention-prompt.ts`, added the import and the same push after `buildEpistemicBoundarySection()`. Extended `review-prompt.test.ts` with 7 unit tests on `buildSecurityPolicySection` and 2 integration tests on `buildReviewPrompt`. Extended `mention-prompt.test.ts` with 2 tests asserting security policy presence. 190 pass, 0 fail.\n\n**T02 — buildSecurityClaudeMd() and CLAUDE.md write in executor.ts**\n\nAdded `writeFile`/`join` imports to `executor.ts`. Exported `buildSecurityClaudeMd(): string` before `createExecutor()` — returns a `# Security Policy` CLAUDE.md with an override-resistance statement and five `Do NOT` credential-protection bullets. Wired `await writeFile(join(context.workspace.dir, \"CLAUDE.md\"), buildSecurityClaudeMd())` immediately before the `sdkQuery = query({})` call. This means every agent invocation (mention or review) writes the security CLAUDE.md to the ephemeral workspace, which the SDK reads via `settingSources: [\"project\"]`. Created `executor.test.ts` with mkdtemp pattern: 6 content tests and 2 file-write round-trip tests, all 8 passing. Slice-level: 198 pass, 0 fail.\n\n**T02 content note:** The CLAUDE.md uses \"I can't help with that\" as the refusal phrasing rather than \"refuse\" — the plan's test assertion was misaligned with the content spec; T02 correctly followed the spec.\n\n## Verification\n\nbun test src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts src/execution/executor.test.ts → 198 pass, 0 fail, 514 expect() calls, 117ms. All three test files exercised. Security policy presence confirmed in: buildReviewPrompt output, buildMentionPrompt output, buildSecurityClaudeMd return value, and CLAUDE.md file written to tmpdir.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT02: Test assertion for CLAUDE.md content changed from result.includes('refuse') to result.includes(\"I can't help with that\") — the content spec uses the latter phrase; the implementation follows the spec exactly. This is a plan spec gap, not a content deviation.\n\n## Known Limitations\n\nThe CLAUDE.md write overwrites any existing CLAUDE.md in the workspace repo. This is intentional (security policy takes precedence, overwrite only affects the ephemeral temp clone) and documented in D012. There is no merge of repo-owned CLAUDE.md content.\n\n## Follow-ups\n\nS05 will build the end-to-end proof harness covering all four S01–S04 security controls, including checks that buildMentionPrompt and buildReviewPrompt include the security policy, and that executor.ts writes CLAUDE.md to the workspace.\n\n## Files Created/Modified\n\n- `src/execution/review-prompt.ts` — Added buildSecurityPolicySection() export; wired into buildReviewPrompt() after epistemic section\n- `src/execution/mention-prompt.ts` — Imported buildSecurityPolicySection; wired into buildMentionPrompt() after epistemic section\n- `src/execution/executor.ts` — Added writeFile/join imports, buildSecurityClaudeMd() export, CLAUDE.md write before query()\n- `src/execution/executor.test.ts` — New file: 8 tests for buildSecurityClaudeMd content and file-write round-trip\n- `src/execution/review-prompt.test.ts` — Added 9 tests: 7 for buildSecurityPolicySection unit, 2 for buildReviewPrompt integration\n- `src/execution/mention-prompt.test.ts` — Added 2 tests asserting security policy presence in buildMentionPrompt output\n",
+      "full_uat_md": "# S04: Prompt Security Policy + CLAUDE.md in Workspace — UAT\n\n**Milestone:** M031\n**Written:** 2026-03-28T17:49:56.510Z\n\n## UAT: S04 — Prompt Security Policy + CLAUDE.md in Workspace\n\n### Preconditions\n\n- Repository checked out with M031/S04 changes applied\n- Bun installed and `bun install` completed\n- No external services required — all checks are pure code / filesystem\n\n---\n\n### Test Case 1: buildSecurityPolicySection() content contract\n\n**Goal:** Verify the function returns a correctly structured security policy block.\n\n**Steps:**\n1. Run `bun test src/execution/review-prompt.test.ts --test-name-pattern \"buildSecurityPolicySection\"`\n2. Observe: 7 tests pass, 0 fail\n3. Confirm: output includes passes for heading, refuse instructions, credential mention, file-read mention, env-probe mention, override-resistance claim, non-empty return\n\n**Expected outcome:** All 7 `buildSecurityPolicySection` tests pass with exit 0.\n\n---\n\n### Test Case 2: buildReviewPrompt() includes security policy\n\n**Goal:** Verify the full review prompt contains the security section.\n\n**Steps:**\n1. Run `bun test src/execution/review-prompt.test.ts --test-name-pattern \"buildReviewPrompt includes security policy\"`\n2. Observe: 2 tests pass — one for `## Security Policy` heading presence, one for refuse instruction presence\n\n**Expected outcome:** Both integration tests pass. The security section appears after the epistemic boundary section in the assembled prompt.\n\n---\n\n### Test Case 3: buildMentionPrompt() includes security policy\n\n**Goal:** Verify the mention prompt also carries the security policy.\n\n**Steps:**\n1. Run `bun test src/execution/mention-prompt.test.ts --test-name-pattern \"epistemic guardrails\"`\n2. Observe: Tests `includes ## Security Policy section` and `includes refuse instruction in security policy` both pass\n\n**Expected outcome:** 2 security-related mention-prompt tests pass. Security policy present on both PR and issue mention surfaces.\n\n---\n\n### Test Case 4: buildSecurityClaudeMd() content contract\n\n**Goal:** Verify the CLAUDE.md builder returns correctly structured markdown.\n\n**Steps:**\n1. Run `bun test src/execution/executor.test.ts`\n2. Observe: 8 tests pass including:\n   - `returns string containing '## Security Policy'`\n   - `result contains refusal response wording`\n   - `result contains 'Do NOT'`\n   - `result mentions credential protection`\n   - `result mentions environment variables`\n   - `result contains override-resistance statement`\n\n**Expected outcome:** All 6 content tests pass. CLAUDE.md includes `# Security Policy` heading, `## Credential and Environment Protection` subsection, and five `Do NOT` bullets.\n\n---\n\n### Test Case 5: CLAUDE.md write round-trip\n\n**Goal:** Verify the CLAUDE.md is written to disk correctly and readable back.\n\n**Steps:**\n1. Run `bun test src/execution/executor.test.ts --test-name-pattern \"CLAUDE.md\"`\n2. Observe: 2 file-write tests pass:\n   - `writing buildSecurityClaudeMd() to CLAUDE.md round-trips correctly`\n   - `CLAUDE.md content includes all three Do NOT directives`\n\n**Expected outcome:** Both tests pass. A tmpdir is created, `buildSecurityClaudeMd()` is written to `CLAUDE.md`, read back, and asserted to include the security content. tmpdir cleaned up in afterAll.\n\n---\n\n### Test Case 6: Full slice verification\n\n**Goal:** All three test files pass together with no regressions.\n\n**Steps:**\n1. Run `bun test src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts src/execution/executor.test.ts`\n2. Observe: 198 pass, 0 fail, ~514 expect() calls, exits 0\n\n**Expected outcome:** Exact counts: 198 pass, 0 fail. No test in any file regresses due to the new security sections.\n\n---\n\n### Test Case 7: Refusal phrasing consistency check\n\n**Goal:** Confirm CLAUDE.md and prompt use consistent, spec-compliant refusal language.\n\n**Steps:**\n1. Run: `grep -r \"I can't help with that\" src/execution/`\n2. Run: `grep -r \"this falls outside the security policy\" src/execution/`\n\n**Expected outcome:** Both strings appear in `executor.ts` (CLAUDE.md content) and `review-prompt.ts` (security policy section). The exact phrasing is: `\"I can't help with that — this falls outside the security policy for this assistant.\"`\n\n---\n\n### Test Case 8: Security section placement in review prompt\n\n**Goal:** Verify security section follows epistemic section in buildReviewPrompt.\n\n**Steps:**\n1. Run a quick Node/Bun eval:\n   ```bash\n   cd /path/to/repo\n   bun -e \"import { buildReviewPrompt } from './src/execution/review-prompt.ts'; const r = buildReviewPrompt({diff: 'x', repoContext: {owner:'o', repo:'r', prNumber: 1, title: 't', author: 'a', headBranch: 'b', baseBranch: 'main', isFork: false, prBody: ''}, addonRepos:[]}); const ei = r.indexOf('Epistemic Boundaries'); const si = r.indexOf('## Security Policy'); console.log('epistemic at', ei, 'security at', si, 'order correct:', ei < si && si > 0);\"\n   ```\n2. Observe: `order correct: true`\n\n**Expected outcome:** Security policy appears after the epistemic section. Both are present at positive indices.\n\n---\n\n### Edge Cases\n\n- **Repo that already has CLAUDE.md:** The executor overwrites it. This is by design — the ephemeral workspace CLAUDE.md never touches the real repo on GitHub.\n- **CLAUDE.md with no writeFile error path:** If `writeFile` throws (e.g., workspace dir doesn't exist), the error propagates and the job fails before `query()` is called — no agent runs without the security policy in place.\n- **Agent receives prompt with no retrieval context:** Both `buildMentionPrompt` and `buildReviewPrompt` include the security section regardless of other optional fields (retrieval context, diff analysis, etc.).\n",
       "goal": "Inject a Security Policy section into both agent prompts (buildMentionPrompt and buildReviewPrompt) and write a CLAUDE.md containing security instructions to the ephemeral workspace directory immediately before the agent SDK query() call — so the security policy is present both as an inline prompt section and as a project-level CLAUDE.md instruction that the SDK reads via settingSources:[\"project\"].",
       "success_criteria": "bun test src/execution/mention-prompt.test.ts src/execution/review-prompt.test.ts src/execution/executor.test.ts exits 0. mention-prompt test asserts result includes '## Security Policy' and 'refuse'. review-prompt test asserts buildSecurityPolicySection() returns a non-empty string with 'refuse' and buildReviewPrompt() includes '## Security Policy'. executor test asserts buildSecurityClaudeMd() contains 'Security Policy' and 'refuse', and that writing to a tmpdir produces a CLAUDE.md file with that content.",
       "proof_level": "contract",
@@ -862,11 +862,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Write scripts/verify-m031.ts following the M029 harness pattern. Five pure-code checks: ENV-ALLOWLIST-BLOCKS-SECRETS, GIT-REMOTE-CLEAN, OUTGOING-SCAN-BLOCKS-CREDENTIALS, PROMPT-CONTAINS-SECURITY-POLICY, WORKSPACE-CLAUDE-MD-WRITTEN. Add 'verify:m031' to package.json scripts. Write companion test file.",
-      "success_criteria": "bun run verify:m031 exits 0. All five checks pass. JSON output matches M029 harness shape. bun test scripts/verify-m031.test.ts exits 0.",
-      "proof_level": "The harness itself is the proof artifact. It imports real production functions and asserts the security invariants directly — no mocks for the checks themselves.",
-      "integration_closure": "Harness imports buildAgentEnv from env.ts, scanOutgoingForSecrets from sanitizer.ts, buildMentionPrompt from mention-prompt.ts, buildReviewPrompt from review-prompt.ts. Calls real functions, not stubs. CLAUDE.md check verifies executor's write logic via unit test.",
-      "observability_impact": "Harness prints structured check results to stdout. --json flag emits machine-readable output. Exit code 0/1 for CI gating.",
+      "goal": "Write scripts/verify-m031.ts (proof harness with 5 pure-code checks) and scripts/verify-m031.test.ts (full test suite), and register verify:m031 in package.json, so bun run verify:m031 exits 0 with five green checks and bun test scripts/verify-m031.test.ts exits 0.",
+      "success_criteria": "- bun test scripts/verify-m031.test.ts exits 0 with all test groups passing\n- bun run verify:m031 exits 0 with five checks showing PASS\n- All five M031 security controls are proven by deterministic pure-code assertions",
+      "proof_level": "final-assembly — exercises exported functions from S01, S02, S03, S04 in a single runnable harness",
+      "integration_closure": "Imports buildAgentEnv/AGENT_ENV_ALLOWLIST (S01), buildAuthFetchUrl (S02), scanOutgoingForSecrets (S03), buildMentionPrompt (S04), buildSecurityClaudeMd (S04). package.json wired. No remaining steps before milestone is complete.",
+      "observability_impact": "bun run verify:m031 provides a runnable audit surface for all five M031 security controls; --json flag enables machine-readable output for CI consumption",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -1582,6 +1582,58 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M031",
+      "slice_id": "S05",
+      "id": "T01",
+      "title": "Wrote scripts/verify-m031.ts (5 pure-code checks), scripts/verify-m031.test.ts (23 pass), and registered verify:m031 in package.json — bun run verify:m031 exits 0 with five green checks",
+      "status": "complete",
+      "one_liner": "Wrote scripts/verify-m031.ts (5 pure-code checks), scripts/verify-m031.test.ts (23 pass), and registered verify:m031 in package.json — bun run verify:m031 exits 0 with five green checks",
+      "narrative": "Implemented the M031 proof harness following verify-m029-s04.ts as canonical template. All five checks are pure-code: ENV-ALLOWLIST (buildAgentEnv strips DATABASE_URL), GIT-URL-CLEAN (buildAuthFetchUrl returns 'origin' with no token), OUTGOING-SCAN-BLOCKS (scanOutgoingForSecrets blocks github-pat), PROMPT-HAS-SECURITY (buildMentionPrompt includes Security Policy section and refusal phrase), CLAUDEMD-HAS-SECURITY (buildSecurityClaudeMd includes same). Test suite has 23 tests covering pass/fail cases for each check, envelope semantics, and harness output modes. Added verify:m031 to package.json scripts.",
+      "verification_result": "bun test ./scripts/verify-m031.test.ts: 23 pass, 0 fail. bun run verify:m031: exits 0 with five PASS checks.",
+      "duration": "",
+      "completed_at": "2026-03-28T17:57:56.325Z",
+      "blocker_discovered": false,
+      "deviations": "Task plan test token 'ghp_abc123AAABBBCCC' is only 15 chars after the prefix; padded to exactly 36 chars to match the github-pat regex.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m031.ts",
+        "scripts/verify-m031.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "ghp_ test token constructed with exactly 36 chars after prefix to satisfy the regex",
+        "ENV-ALLOWLIST check saves/restores DATABASE_URL and ANTHROPIC_API_KEY in finally block",
+        "_fn override pattern used across all 5 checks for clean fail-case testing"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S05\nmilestone: M031\nkey_files:\n  - scripts/verify-m031.ts\n  - scripts/verify-m031.test.ts\n  - package.json\nkey_decisions:\n  - ghp_ test token constructed with exactly 36 chars after prefix to satisfy the regex\n  - ENV-ALLOWLIST check saves/restores DATABASE_URL and ANTHROPIC_API_KEY in finally block\n  - _fn override pattern used across all 5 checks for clean fail-case testing\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-28T17:57:56.325Z\nblocker_discovered: false\n---\n\n# T01: Wrote scripts/verify-m031.ts (5 pure-code checks), scripts/verify-m031.test.ts (23 pass), and registered verify:m031 in package.json — bun run verify:m031 exits 0 with five green checks\n\n**Wrote scripts/verify-m031.ts (5 pure-code checks), scripts/verify-m031.test.ts (23 pass), and registered verify:m031 in package.json — bun run verify:m031 exits 0 with five green checks**\n\n## What Happened\n\nImplemented the M031 proof harness following verify-m029-s04.ts as canonical template. All five checks are pure-code: ENV-ALLOWLIST (buildAgentEnv strips DATABASE_URL), GIT-URL-CLEAN (buildAuthFetchUrl returns 'origin' with no token), OUTGOING-SCAN-BLOCKS (scanOutgoingForSecrets blocks github-pat), PROMPT-HAS-SECURITY (buildMentionPrompt includes Security Policy section and refusal phrase), CLAUDEMD-HAS-SECURITY (buildSecurityClaudeMd includes same). Test suite has 23 tests covering pass/fail cases for each check, envelope semantics, and harness output modes. Added verify:m031 to package.json scripts.\n\n## Verification\n\nbun test ./scripts/verify-m031.test.ts: 23 pass, 0 fail. bun run verify:m031: exits 0 with five PASS checks.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m031.test.ts` | 0 | ✅ pass | 95ms |\n| 2 | `bun run verify:m031` | 0 | ✅ pass | 3400ms |\n\n\n## Deviations\n\nTask plan test token 'ghp_abc123AAABBBCCC' is only 15 chars after the prefix; padded to exactly 36 chars to match the github-pat regex.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m031.ts`\n- `scripts/verify-m031.test.ts`\n- `package.json`\n",
+      "description": "Write scripts/verify-m031.ts implementing five pure-code proof checks covering all M031 security controls, write scripts/verify-m031.test.ts with full coverage, and add verify:m031 to package.json scripts.\n\nAll five checks are pure-code — no DB or GitHub gating. overallPassed = conjunction of all five.\n\nCheck details:\n1. M031-ENV-ALLOWLIST: Set process.env.DATABASE_URL = 'postgres://secret', call buildAgentEnv(), assert DATABASE_URL absent. Also assert ANTHROPIC_API_KEY present when set in env.\n2. M031-GIT-URL-CLEAN: Call buildAuthFetchUrl('', undefined) — the token-absent fast-return path returns 'origin' without reading the filesystem. Assert result === 'origin' and !result.includes('x-access-token').\n3. M031-OUTGOING-SCAN-BLOCKS: Call scanOutgoingForSecrets('ghp_abc123AAABBBCCC') assert { blocked: true, matchedPattern: 'github-pat' }.\n4. M031-PROMPT-HAS-SECURITY: Call buildMentionPrompt with the minimal MentionEvent params below, assert result includes '## Security Policy' and \"I can't help with that\".\n5. M031-CLAUDEMD-HAS-SECURITY: Call buildSecurityClaudeMd(), assert result includes '# Security Policy' and \"I can't help with that\".\n\nMinimal MentionEvent for check 4:\n```ts\n{\n  surface: 'pr_comment',\n  owner: 'xbmc',\n  repo: 'kodiai',\n  issueNumber: 3,\n  prNumber: 3,\n  commentId: 123,\n  commentBody: '@kodiai help',\n  commentAuthor: 'alice',\n  commentCreatedAt: '2026-01-01T00:00:00Z',\n  headRef: 'main',\n  baseRef: 'main',\n  headRepoOwner: 'xbmc',\n  headRepoName: 'kodiai',\n  diffHunk: undefined,\n  filePath: undefined,\n  fileLine: undefined,\n  inReplyToId: undefined,\n  issueBody: 'body',\n  issueTitle: 'title',\n}\n```\n\nHarness structure (follow scripts/verify-m029-s04.ts as the canonical template):\n- Export M031_CHECK_IDS tuple, Check type, EvaluationReport type\n- One async runXxx() function per check — returns { id, passed, skipped, status_code, detail? }\n- evaluateM031(opts?) — runs all five in Promise.all, overallPassed = non-skipped all-pass, returns report\n- buildM031ProofHarness(opts?) — renders output, returns { exitCode }\n- if (import.meta.main) CLI entry point\n\nTest suite structure:\n- describe per check: pass case + fail case using _fn override pattern where applicable\n- describe('envelope'): check_ids length, overallPassed semantics\n- describe('buildM031ProofHarness'): stdout output, JSON mode, exit codes\n- Process.env isolation for M031-ENV-ALLOWLIST check: save/restore in beforeEach/afterEach\n\nNOTE: buildAuthFetchUrl is async — the harness runner function must await it.\nNOTE: JSDoc block comments must NOT contain bare :emoji: colon notation (Bun parser bug — see KNOWLEDGE.md). Use plain text.\nNOTE: S04 confirmed refusal phrase is \"I can't help with that\", not \"refuse\" — use this exact string in assertions.",
+      "estimate": "1h",
+      "files": [
+        "scripts/verify-m031.ts",
+        "scripts/verify-m031.test.ts",
+        "package.json"
+      ],
+      "verify": "bun test scripts/verify-m031.test.ts && bun run verify:m031",
+      "inputs": [
+        "src/execution/env.ts",
+        "src/jobs/workspace.ts",
+        "src/lib/sanitizer.ts",
+        "src/execution/mention-prompt.ts",
+        "src/execution/executor.ts",
+        "src/execution/mention-prompt.test.ts",
+        "scripts/verify-m029-s04.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m031.ts",
+        "scripts/verify-m031.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2016,6 +2068,28 @@
       "verdict": "✅ pass",
       "duration_ms": 118,
       "created_at": "2026-03-28T17:47:47.555Z"
+    },
+    {
+      "id": 27,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M031",
+      "command": "bun test ./scripts/verify-m031.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 95,
+      "created_at": "2026-03-28T17:57:56.325Z"
+    },
+    {
+      "id": 28,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M031",
+      "command": "bun run verify:m031",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3400,
+      "created_at": "2026-03-28T17:57:56.325Z"
     }
   ]
 }

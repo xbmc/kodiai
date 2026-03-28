@@ -1,10 +1,12 @@
-# S05: End-to-End Proof Harness (verify:m031)
+---
+estimated_steps: 46
+estimated_files: 3
+skills_used: []
+---
 
-**Goal:** Write scripts/verify-m031.ts (proof harness with 5 pure-code checks) and scripts/verify-m031.test.ts (full test suite), and register verify:m031 in package.json, so bun run verify:m031 exits 0 with five green checks and bun test scripts/verify-m031.test.ts exits 0.
-**Demo:** After this: bun run verify:m031 output shows five green checks. bun test scripts/verify-m031.test.ts exits 0.
+# T01: Write verify-m031 harness, test suite, and register package.json entry
 
-## Tasks
-- [x] **T01: Wrote scripts/verify-m031.ts (5 pure-code checks), scripts/verify-m031.test.ts (23 pass), and registered verify:m031 in package.json — bun run verify:m031 exits 0 with five green checks** — Write scripts/verify-m031.ts implementing five pure-code proof checks covering all M031 security controls, write scripts/verify-m031.test.ts with full coverage, and add verify:m031 to package.json scripts.
+Write scripts/verify-m031.ts implementing five pure-code proof checks covering all M031 security controls, write scripts/verify-m031.test.ts with full coverage, and add verify:m031 to package.json scripts.
 
 All five checks are pure-code — no DB or GitHub gating. overallPassed = conjunction of all five.
 
@@ -56,6 +58,24 @@ Test suite structure:
 NOTE: buildAuthFetchUrl is async — the harness runner function must await it.
 NOTE: JSDoc block comments must NOT contain bare :emoji: colon notation (Bun parser bug — see KNOWLEDGE.md). Use plain text.
 NOTE: S04 confirmed refusal phrase is "I can't help with that", not "refuse" — use this exact string in assertions.
-  - Estimate: 1h
-  - Files: scripts/verify-m031.ts, scripts/verify-m031.test.ts, package.json
-  - Verify: bun test scripts/verify-m031.test.ts && bun run verify:m031
+
+## Inputs
+
+- `src/execution/env.ts`
+- `src/jobs/workspace.ts`
+- `src/lib/sanitizer.ts`
+- `src/execution/mention-prompt.ts`
+- `src/execution/executor.ts`
+- `src/execution/mention-prompt.test.ts`
+- `scripts/verify-m029-s04.ts`
+- `package.json`
+
+## Expected Output
+
+- `scripts/verify-m031.ts`
+- `scripts/verify-m031.test.ts`
+- `package.json`
+
+## Verification
+
+bun test scripts/verify-m031.test.ts && bun run verify:m031
