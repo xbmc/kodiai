@@ -2,401 +2,170 @@
 
 This file is the explicit capability and coverage contract for the project.
 
+## Active
+
+### R001 — Addon repo detection
+- Class: core-capability
+- Status: active
+- Description: PRs to configured addon repos (`xbmc/repo-plugins`, `xbmc/repo-scripts`, `xbmc/repo-scrapers`, extensible) must trigger the addon-check handler
+- Why it matters: enforcement only fires where it's needed; non-addon repos are unaffected
+- Source: user
+- Primary owning slice: M030/S01
+- Supporting slices: none
+- Validation: unmapped
+- Notes: repo list must be configurable via env var or AppConfig, not hardcoded
+
+### R002 — kodi-addon-checker subprocess execution
+- Class: core-capability
+- Status: active
+- Description: The official `kodi-addon-checker` tool (pip package `kodi-addon-checker`) must run as a subprocess against the cloned addon directory within the existing workspace
+- Why it matters: re-implementing the rule logic in TypeScript would drift from the authoritative checker; running the real tool guarantees parity with what CI enforces
+- Source: user
+- Primary owning slice: M030/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: requires Python 3 + pip in Dockerfile (base image is Debian); checker installed at image build time
+
+### R003 — Branch → Kodi version mapping
+- Class: core-capability
+- Status: active
+- Description: The `--branch` argument to `kodi-addon-checker` must be derived from the PR's base branch name (e.g. `nexus`, `matrix`, `leia`)
+- Why it matters: checker validates version-specific rules; wrong branch gives wrong results
+- Source: inferred
+- Primary owning slice: M030/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: PR base branch in addon repos is the Kodi version name; `ValidKodiVersions` in the checker tool defines the valid set
+
+### R004 — Output parsing (ERROR/WARN/INFO)
+- Class: core-capability
+- Status: active
+- Description: stdout lines from `kodi-addon-checker` in `LEVEL: message` format must be parsed into structured findings with severity mapped to Kodiai's severity tiers
+- Why it matters: raw tool output can't be posted directly; needs structure for filtering, dedup, and rendering
+- Source: inferred
+- Primary owning slice: M030/S02
+- Supporting slices: M030/S03
+- Validation: unmapped
+- Notes: tool exits 1 on errors, 0 on warnings-only or clean; both cases need output captured
+
+### R005 — PR comment posting in Kodiai style
+- Class: primary-user-loop
+- Status: active
+- Description: Violations must be posted as a PR comment matching Kodiai's existing comment formatting style, including severity indicators
+- Why it matters: maintainers see a consistent interface regardless of whether a finding came from code review or addon rule enforcement
+- Source: user
+- Primary owning slice: M030/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: user confirmed "following these rules" — use existing comment format conventions
+
+### R006 — Configurable addon repo list
+- Class: operability
+- Status: active
+- Description: The list of repos that trigger addon enforcement must be configurable (env var or AppConfig entry), not hardcoded
+- Why it matters: more repos may be added later without a code change
+- Source: user
+- Primary owning slice: M030/S01
+- Supporting slices: none
+- Validation: unmapped
+- Notes: default to `xbmc/repo-plugins,xbmc/repo-scripts,xbmc/repo-scrapers`
+
+### R007 — Python + tool installed in Dockerfile
+- Class: constraint
+- Status: active
+- Description: Python 3 and `kodi-addon-checker` must be installed in the production Dockerfile
+- Why it matters: subprocess execution fails silently or crashes if tool not present at runtime
+- Source: inferred
+- Primary owning slice: M030/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: base image is `oven/bun:1-debian`; Python 3 + pip available via apt; install at image build time
+
+### R008 — Multi-addon support per PR
+- Class: core-capability
+- Status: active
+- Description: A single PR may touch multiple addons (each in its own subdirectory); all affected addons must be checked
+- Why it matters: repo-plugins contains hundreds of addons; a PR touching two addons should produce findings for both
+- Source: inferred
+- Primary owning slice: M030/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: detect affected addons by finding top-level subdirs in the changed file list that contain `addon.xml`
+
+### R009 — Idempotent re-run on synchronize
+- Class: continuity
+- Status: active
+- Description: Each push to a PR must re-run the check; the previous comment must be updated or replaced, not appended
+- Why it matters: stale findings from a prior commit create noise and false signals
+- Source: inferred
+- Primary owning slice: M030/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: use a comment marker (same pattern as existing handlers) to find and update the previous comment
+
+### R010 — Non-addon repos unaffected
+- Class: constraint
+- Status: active
+- Description: Handler must be a no-op for repos not in the addon repo list; existing review pipeline must be unaffected
+- Why it matters: regression risk — the existing review flow must not change
+- Source: inferred
+- Primary owning slice: M030/S01
+- Supporting slices: none
+- Validation: unmapped
+- Notes: enforce via early return on repo check before any workspace or subprocess work
+
 ## Validated
 
-### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
-- Class: quality-attribute
-- Status: validated
-- Description: `bunx tsc --noEmit` produces zero errors across the entire codebase
-- Why it matters: 474 TS errors undermine refactoring confidence and IDE support; strict types prevent runtime nullability bugs
-- Source: execution
-- Primary owning slice: M026/S02
-- Supporting slices: none
-- Validation: S02 — `bunx tsc --noEmit` exits 0 with zero errors across all 474 original error sites
-- Notes: Fixed via null assertions, tx casts, type union additions, and mock type corrections
-
-### R002 — Deprecated files (db-path.ts, SQLite databases in data/, root-level test-delta-verification.ts), stale SQLite references in comments, and orphaned code are removed
-- Class: quality-attribute
-- Status: validated
-- Description: Deprecated files (db-path.ts, SQLite databases in data/, root-level test-delta-verification.ts), stale SQLite references in comments, and orphaned code are removed
-- Why it matters: Dead code confuses contributors and agents; stale references mislead about the actual storage backend
-- Source: execution
-- Primary owning slice: M026/S01
-- Supporting slices: none
-- Validation: S01 — all deprecated files deleted, SQLite refs in telemetry/types.ts at 0, also removed kodiai-stats.ts and kodiai-trends.ts
-- Notes: 5 files deleted total; .gitignore now covers data/
-
-### R003 — .env.example lists every environment variable the app reads with required/optional status and description
-- Class: operability
-- Status: validated
-- Description: .env.example lists every environment variable the app reads with required/optional status and description
-- Why it matters: Current .env.example has 7 vars; production uses 22+. New contributors cannot set up the project
-- Source: execution
-- Primary owning slice: M026/S01
-- Supporting slices: none
-- Validation: S01 — 26 vars documented in 9 categories with required/optional markers
-- Notes: GITHUB_PRIVATE_KEY and GITHUB_PRIVATE_KEY_BASE64 listed as separate alternative entries
-
-### R004 — data/, .planning/ (after archive), and any other generated directories are properly gitignored
-- Class: quality-attribute
-- Status: validated
-- Description: data/, .planning/ (after archive), and any other generated directories are properly gitignored
-- Why it matters: SQLite files in data/ could get committed; .planning/ is 11MB of legacy planning tracked in git
-- Source: execution
-- Primary owning slice: M026/S01
-- Supporting slices: none
-- Validation: S01 — data/ and .planning/ entries verified in .gitignore
-- Notes: Both entries present with descriptive comments
-
-### R005 — Merged local branches are deleted; only main and active feature branches remain
-- Class: quality-attribute
-- Status: validated
-- Description: Merged local branches are deleted; only main and active feature branches remain
-- Why it matters: 36 local branches, 5+ already merged into main — confusing for anyone running `git branch`
-- Source: execution
-- Primary owning slice: M026/S01
-- Supporting slices: none
-- Validation: S01 — 7 merged local branches + 1 remote branch deleted; git branch --merged main returns 0 non-main/gsd branches
-- Notes: Also removed 2 stale worktrees and pruned 28 stale remote tracking refs
-
-### R006 — Production source files use pino logger instead of console.log/warn/error (scripts/migrations excluded)
-- Class: quality-attribute
-- Status: validated
-- Description: Production source files use pino logger instead of console.log/warn/error (scripts/migrations excluded)
-- Why it matters: console.log bypasses structured logging, making production debugging harder
-- Source: execution
-- Primary owning slice: M026/S02
-- Supporting slices: none
-- Validation: S02 — grep -c 'console\.(log|warn|error)' returns 0 for all 7 targeted production files
-- Notes: Uses optional logger injection pattern (logger?: Logger) for backward compatibility
-
-### R007 — README covers architecture overview, complete setup instructions, configuration reference, and links to in-depth docs
-- Class: quality-attribute
-- Status: validated
-- Description: README covers architecture overview, complete setup instructions, configuration reference, and links to in-depth docs
-- Why it matters: Current README lists features but is light on architecture, contributor guidance, and complete config reference
-- Source: user
-- Primary owning slice: M026/S05
-- Supporting slices: M026/S03, M026/S04
-- Validation: S05 — README rewritten to 105 lines with contributor-first structure; links to docs/architecture.md, docs/configuration.md, docs/README.md, CONTRIBUTING.md, CHANGELOG.md, .env.example all resolve
-- Notes: Target audience is open-source contributors
-
-### R008 — docs/architecture.md explains the system design, module boundaries, data flow, and key abstractions
-- Class: quality-attribute
-- Status: validated
-- Description: docs/architecture.md explains the system design, module boundaries, data flow, and key abstractions
-- Why it matters: 212 source files across 20+ directories with no architectural documentation; contributors must read code to understand structure
-- Source: user
-- Primary owning slice: M026/S03
-- Supporting slices: none
-- Validation: S03 — docs/architecture.md created with 22 sections covering system overview, 20-entry module map, review lifecycle (12-step), mention lifecycle, data layer (13 stores), key abstractions, knowledge system overview, and HTTP API surface
-- Notes: Forward link to knowledge-system.md (S04 creates that file)
-
-### R009 — docs/configuration.md documents every .kodiai.yml option with types, defaults, and examples
-- Class: quality-attribute
-- Status: validated
-- Description: docs/configuration.md documents every .kodiai.yml option with types, defaults, and examples
-- Why it matters: Users have no reference for config options; only way to learn is reading config.ts (911 lines)
-- Source: user
-- Primary owning slice: M026/S03
-- Supporting slices: none
-- Validation: S03 — docs/configuration.md created with 81 sections documenting all 14 top-level config keys and ~80 fields with types, ranges, defaults from Zod schema
-- Notes: Hand-written from config.ts schema; includes quick-start YAML example and two-pass safeParse behavior
-
-### R010 — docs/knowledge-system.md documents the 5-corpus retrieval pipeline, embedding strategy, hybrid search, and RRF merging
-- Class: quality-attribute
-- Status: validated
-- Description: docs/knowledge-system.md documents the 5-corpus retrieval pipeline, embedding strategy, hybrid search, and RRF merging
-- Why it matters: The knowledge system is the crown jewel — 63 files in src/knowledge/ with zero external docs
-- Source: user
-- Primary owning slice: M026/S04
-- Supporting slices: none
-- Validation: S04 — docs/knowledge-system.md created with 18 sections covering all 5 corpora, chunking strategies, embedding models, 9-step unified retrieval pipeline, two-stage RRF, dedup, adaptive thresholds, language-aware reranking, and background systems
-- Notes: Also produced docs/issue-intelligence.md (24 sections) and docs/guardrails.md (16 sections) as supporting feature docs
-
-### R011 — docs/deployment.md consolidates deployment instructions; existing runbooks are linked from a docs index
-- Class: operability
-- Status: validated
-- Description: docs/deployment.md consolidates deployment instructions; existing runbooks are linked from a docs index
-- Why it matters: deployment.md is orphaned at project root; runbooks exist but aren't discoverable from README
-- Source: user
-- Primary owning slice: M026/S03
-- Supporting slices: none
-- Validation: S03 — docs/deployment.md updated with cross-links to architecture.md, configuration.md, GRACEFUL-RESTART-RUNBOOK.md; docs/README.md created indexing all 17 docs files across 5 sections including 6 runbooks
-- Notes: deployment.md moved to docs/ by S01; S03 added cross-links and created the index
-
-### R012 — CONTRIBUTING.md covers development setup, testing, code style, PR process, and module ownership
-- Class: quality-attribute
-- Status: validated
-- Description: CONTRIBUTING.md covers development setup, testing, code style, PR process, and module ownership
-- Why it matters: Open-source contributor audience needs onboarding guide
-- Source: user
-- Primary owning slice: M026/S05
-- Supporting slices: none
-- Validation: S05 — CONTRIBUTING.md created with prerequisites, dev setup, testing (including describe.skipIf pattern), code style, PR process, and architecture.md reference
-- Notes: Does not reference LICENSE file (none exists)
-
-### R013 — CHANGELOG.md backfilled with entries for v0.17 through v0.25
-- Class: quality-attribute
-- Status: validated
-- Description: CHANGELOG.md backfilled with entries for v0.17 through v0.25
-- Why it matters: Current CHANGELOG stops at v0.16; 9 milestones of work are undocumented in the changelog
-- Source: user
-- Primary owning slice: M026/S05
-- Supporting slices: none
-- Validation: S05 — v0.25 entry added with 7 Wiki Content Updates deliverables sourced from PROJECT.md
-- Notes: v0.17–v0.24 were backfilled in prior milestones; S05 added v0.25
-
-### R014 — Extract obvious helper functions from review.ts (4,415 lines) and mention.ts (2,677 lines) without restructuring handler flow
-- Class: quality-attribute
-- Status: validated
-- Description: Extract obvious helper functions from review.ts (4,415 lines) and mention.ts (2,677 lines) without restructuring handler flow
-- Why it matters: These files are too large for effective code review and agent comprehension
-- Source: user
-- Primary owning slice: M026/S02
-- Supporting slices: none
-- Validation: S02 — review-utils.ts (451 lines, 19 functions) and mention-utils.ts (106 lines, 2 functions) extracted; review.ts reduced by 386 lines, mention.ts by 90 lines; all tests pass
-- Notes: Deep restructuring deferred to R017
-
-### R015 — All tests pass or DB-dependent tests are properly skipped when Postgres is unavailable
-- Class: quality-attribute
-- Status: validated
-- Description: All tests pass or DB-dependent tests are properly skipped when Postgres is unavailable
-- Why it matters: 4 failing tests (pgvector stores + telemetry purge) fail on every local run without Postgres
-- Source: execution
-- Primary owning slice: M026/S02
-- Supporting slices: none
-- Validation: S02 — bun test → 2181 pass, 45 skip, 0 fail; DB tests use describe.skipIf(!TEST_DATABASE_URL)
-- Notes: Uses TEST_DATABASE_URL (not DATABASE_URL) for skip guards
-
-### R016 — .planning/ directory (11MB, 1028 files) removed from git tracking and added to .gitignore
-- Class: quality-attribute
-- Status: validated
-- Description: .planning/ directory (11MB, 1028 files) removed from git tracking and added to .gitignore
-- Why it matters: Superseded by .gsd/; adds bulk to clone and confuses the two planning systems
-- Source: user
-- Primary owning slice: M026/S01
-- Supporting slices: none
-- Validation: S01 — git ls-files .planning/ returns 0; README .planning/ references replaced with CHANGELOG.md
-- Notes: Local .planning/ directory preserved on disk; .gitignore prevents re-tracking
-
-### R019 — A deterministic audit reports embedding completeness and integrity for learning memories, PR review comments, wiki pages, code snippets, issues, and issue comments, including null/missing/stale/model-mismatch counts.
-- Class: operability
-- Status: validated
-- Description: A deterministic audit reports embedding completeness and integrity for learning memories, PR review comments, wiki pages, code snippets, issues, and issue comments, including null/missing/stale/model-mismatch counts.
-- Why it matters: The system currently has corpus-specific backfills and smoke checks but no end-to-end proof that embeddings are actually present across production data.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S01 — `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures instead of hiding them; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-FULL-AUDIT` passing against the preserved six-corpus `s01.audit` envelope, including the audited-only `issue_comments` boundary.
-- Notes: Production-first scope; audit is read-only and machine-checkable.
-
-### R020 — Operators can repair missing/stale embeddings without downtime using resumable, rate-limited tooling for all persisted corpora.
-- Class: operability
-- Status: validated
-- Description: Operators can repair missing/stale embeddings without downtime using resumable, rate-limited tooling for all persisted corpora.
-- Why it matters: Silent fail-open embedding behavior preserves uptime but can leave production data degraded indefinitely unless repair is safe and practical.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S03 — `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` proved resumable live repair for the degraded corpus plus truthful no-op handling for another corpus through the shared contract; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-NON-WIKI-REPAIR-STATE=repair_completed`, interpreting the idempotent `review_comments` rerun truthfully from durable status evidence rather than requiring fresh mutations.
-- Notes: Repair mode is now explicit, observable, resumable, and shared across wiki plus all remaining non-wiki corpora.
-
-### R021 — Verification proves that query-time embedding generation and retrieval actually use the persisted corpora after repair, not just that rows exist in tables.
-- Class: correctness
-- Status: validated
-- Description: Verification proves that query-time embedding generation and retrieval actually use the persisted corpora after repair, not just that rows exist in tables.
-- Why it matters: Row completeness alone does not prove the retrieval pipeline is healthy.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S01 — `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from no-hit states, and returns attributed live hits; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-RETRIEVER=retrieval_hits`, preserving `s01.retriever.not_in_retriever=["issue_comments"]` so end-to-end proof stays truthful about live scope.
-- Notes: Verified through the real production retrieval pipeline, not table-only checks.
-
-### R022 — The script/backfill timeout failure is identified at the root cause and fixed with bounded batching, retries, resume behavior, and/or control-flow changes as needed.
-- Class: reliability
-- Status: validated
-- Description: The script/backfill timeout failure is identified at the root cause and fixed with bounded batching, retries, resume behavior, and/or control-flow changes as needed.
-- Why it matters: Repair tooling that times out is not operationally usable, especially against production data.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with both repair-state checks passing from durable status-backed evidence (`JSON-RPC API/v8` still `repair_completed`; `review_comments` healthy idempotent rerun still backed by `repair_completed`).
-- Notes: The hardened repair story now covers the prior wiki timeout path plus the live non-wiki `review_comments` degradation through the same bounded, resumable operational model.
-
-### R023 — The audit verifies that each corpus uses the intended embedding model and path, especially wiki `voyage-context-3` versus `voyage-code-3` for other corpora.
-- Class: correctness
-- Status: validated
-- Description: The audit verifies that each corpus uses the intended embedding model and path, especially wiki `voyage-context-3` versus `voyage-code-3` for other corpora.
-- Why it matters: Mixed or incorrect vector spaces can degrade retrieval even when embeddings are present.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone from the preserved all-green `s01.audit` envelope, confirming `wiki_pages` remained on `voyage-context-3` while the other audited corpora, including the audited-only `issue_comments`, remained on the non-wiki model boundary.
-- Notes: Presence is insufficient; model alignment is now audited explicitly.
-
-### R024 — Tests and/or deterministic operator verifiers catch future embedding completeness drift and timeout regressions before they become silent production degradation.
-- Class: quality-attribute
-- Status: validated
-- Description: Tests and/or deterministic operator verifiers catch future embedding completeness drift and timeout regressions before they become silent production degradation.
-- Why it matters: This class of failure will recur if it relies only on one-time manual inspection.
-- Source: user
-- Primary owning slice: M027
-- Supporting slices: none
-- Validation: M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes; M027/S04 — `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` close the milestone with a repeatable machine-checkable final proof that preserves nested S01/S02/S03 evidence and stable milestone-level check IDs.
-- Notes: Guardrails now cover both live repair families and preserve raw audit/repair/status evidence with stable check IDs for machine re-verification.
-
-### R025 — The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
-- Class: correctness
-- Status: validated
-- Description: The wiki update pipeline generates concrete page modification artifacts rather than suggestion/rationale-oriented prose.
-- Why it matters: The current output contract publishes advice about what should change instead of directly usable wiki modifications.
-- Source: user
-- Primary owning slice: M028/S01
-- Supporting slices: M028/S03, M028/S04
-- Validation: S01–S04 — Modification-only artifact contract proven end-to-end: WikiUpdateGroup type carries mode/scope (section|page), formatPageComment emits replacement text only, formatSummaryTable emits Wiki Modification Artifacts title and Modifications posted stat. bun run verify:m028:s04 --json overallPassed:true with NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all passing. 104 rows in DB with real comment IDs confirming full pipeline is modification-first.
-- Notes: Replaces the current suggestion-style contract introduced in M025.
-
-### R026 — Published `xbmc/wiki` tracking issue comments contain replacement content and only minimal citations/metadata, with no `WHY:` blocks or opinionated explanatory prose.
-- Class: correctness
-- Status: validated
-- Description: Published `xbmc/wiki` tracking issue comments contain replacement content and only minimal citations/metadata, with no `WHY:` blocks or opinionated explanatory prose.
-- Why it matters: The user wants actionable wiki updates, not commentary.
-- Source: user
-- Primary owning slice: M028/S03
-- Supporting slices: none
-- Validation: S03 — Live publish to xbmc/wiki issue #5 confirmed: 3 comments posted with modification-only content and <!-- kodiai:wiki-modification:{pageId} --> markers, no **Why:** or voice-mismatch prose. formatPageComment fixed. bun run verify:m028:s03 --json → overallPassed: true with LIVE-MARKER count=80.
-- Notes: Section headings and PR links may remain if they are purely navigational/traceable metadata.
-
-### R027 — The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
-- Class: product-capability
-- Status: validated
-- Description: The wiki update system can publish section replacements by default and full-page replacement artifacts when broader changes make section-only output awkward or incomplete.
-- Why it matters: Some stale pages need focused edits; others need a coherent page-wide rewrite.
-- Source: user
-- Primary owning slice: M028/S01
-- Supporting slices: M028/S03, M028/S04
-- Validation: S01 — WikiUpdateGroup type carries explicit mode field (section|page) with replacement text and scope metadata. Section vs page mode is deterministically chosen and machine-checkable in stored artifacts and verifier output. S04 regression harness confirms mode field present in all formatPageComment mock renders.
-- Notes: Planning must define the deterministic threshold or rule for switching modes.
-
-### R028 — Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
-- Class: operability
-- Status: validated
-- Description: Already-published suggestion-style wiki issue comments can be updated, superseded, or regenerated so the live workflow no longer presents the old contract as current output.
-- Why it matters: The user explicitly called out a live published comment as unacceptable; fixing only future output leaves the visible workflow inconsistent.
-- Source: user
-- Primary owning slice: M028/S02
-- Supporting slices: M028/S03, M028/S04
-- Validation: S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104).
-- Notes: Externally visible GitHub history must be handled safely and reproducibly.
-
-### R029 — Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
-- Class: quality-attribute
-- Status: validated
-- Description: Tests and/or deterministic verifiers fail if the wiki generation/publishing pipeline reintroduces `WHY:` blocks, opinionated framing, or suggestion-style issue output.
-- Why it matters: This is a contract change, not just a one-off formatting tweak.
-- Source: user
-- Primary owning slice: M028/S04
-- Supporting slices: M028/S01, M028/S02, M028/S03
-- Validation: S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears.
-- Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
-
-### R030 — `@kodiai` mention on a PR review surface must never trigger write mode when the user is requesting a code review
-- Class: correctness
-- Status: validated
-- Description: When a user posts a comment like "please do a full review of this PR" or any explicit review request on a PR surface, the bot must classify it as read-only and never enter write mode (branch creation, commits, PR creation).
-- Why it matters: A production failure caused the bot to open an unsolicited PR (#28043 on xbmc/xbmc) in response to a review request comment on PR #27402. External contributors saw this as intrusive and confusing.
-- Source: user (override 2026-03-18)
-- Primary owning slice: hotfix (pre-M029)
-- Supporting slices: none
-- Validation: Hotfix branch `fix/mention-review-write-mode` merged to main 2026-03-18 — `isReviewRequest()` guard added to `mention.ts` short-circuits `detectImplicitPrPatchIntent` for review-request phrasings; `please` removed from `confirmationAction` list in `isConversationalConfirmation`; 140-line regression test in `mention.test.ts` covers "please do a full review of this PR" and three other phrasings, all producing `writeMode=false`; PR #28043 on xbmc/xbmc closed immediately after the incident.
-- Notes: Fix was delivered as an immediate out-of-band hotfix, not part of M029 slice work. Supersedes the prior write-intent detection behavior that treated `please` as a universal write confirmation.
+(none yet — M030 not started)
 
 ## Deferred
 
-### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
-- Class: quality-attribute
-- Status: deferred
-- Description: Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
-- Why it matters: Would improve maintainability significantly
-- Source: inferred
-- Primary owning slice: none
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Deferred — high-risk refactor that warrants its own milestone with comprehensive testing
+(none)
 
-### R018 — Tooling to detect unused exports, unreachable code, and orphaned modules
-- Class: quality-attribute
-- Status: deferred
-- Description: Tooling to detect unused exports, unreachable code, and orphaned modules
-- Why it matters: Manual audit found some; automated tooling would catch ongoing drift
-- Source: inferred
+## Out of Scope
+
+### R020 — Inline annotations per finding
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Posting `kodi-addon-checker` findings as inline PR review annotations (line-level comments)
+- Why it matters: prevents scope creep; checker output is file-level or addon-level, not always line-mapped
+- Source: user
 - Primary owning slice: none
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Deferred — investigate ts-prune or knip in a future milestone
+- Validation: n/a
+- Notes: user confirmed PR comment (not PR review with inline annotations)
+
+### R021 — Status check / CI gate
+- Class: anti-feature
+- Status: out-of-scope
+- Description: Setting a GitHub commit status or check run to block merging
+- Why it matters: distinguishes informational enforcement (comment) from blocking gate
+- Source: user
+- Primary owning slice: none
+- Supporting slices: none
+- Validation: n/a
+- Notes: user chose PR comment only
 
 ## Traceability
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | quality-attribute | validated | M026/S02 | none | S02 — `bunx tsc --noEmit` exits 0 with zero errors across all 474 original error sites |
-| R002 | quality-attribute | validated | M026/S01 | none | S01 — all deprecated files deleted, SQLite refs in telemetry/types.ts at 0, also removed kodiai-stats.ts and kodiai-trends.ts |
-| R003 | operability | validated | M026/S01 | none | S01 — 26 vars documented in 9 categories with required/optional markers |
-| R004 | quality-attribute | validated | M026/S01 | none | S01 — data/ and .planning/ entries verified in .gitignore |
-| R005 | quality-attribute | validated | M026/S01 | none | S01 — 7 merged local branches + 1 remote branch deleted; git branch --merged main returns 0 non-main/gsd branches |
-| R006 | quality-attribute | validated | M026/S02 | none | S02 — grep -c 'console\.(log|warn|error)' returns 0 for all 7 targeted production files |
-| R007 | quality-attribute | validated | M026/S05 | M026/S03, M026/S04 | S05 — README rewritten to 105 lines with contributor-first structure; links to docs/architecture.md, docs/configuration.md, docs/README.md, CONTRIBUTING.md, CHANGELOG.md, .env.example all resolve |
-| R008 | quality-attribute | validated | M026/S03 | none | S03 — docs/architecture.md created with 22 sections covering system overview, 20-entry module map, review lifecycle (12-step), mention lifecycle, data layer (13 stores), key abstractions, knowledge system overview, and HTTP API surface |
-| R009 | quality-attribute | validated | M026/S03 | none | S03 — docs/configuration.md created with 81 sections documenting all 14 top-level config keys and ~80 fields with types, ranges, defaults from Zod schema |
-| R010 | quality-attribute | validated | M026/S04 | none | S04 — docs/knowledge-system.md created with 18 sections covering all 5 corpora, chunking strategies, embedding models, 9-step unified retrieval pipeline, two-stage RRF, dedup, adaptive thresholds, language-aware reranking, and background systems |
-| R011 | operability | validated | M026/S03 | none | S03 — docs/deployment.md updated with cross-links to architecture.md, configuration.md, GRACEFUL-RESTART-RUNBOOK.md; docs/README.md created indexing all 17 docs files across 5 sections including 6 runbooks |
-| R012 | quality-attribute | validated | M026/S05 | none | S05 — CONTRIBUTING.md created with prerequisites, dev setup, testing (including describe.skipIf pattern), code style, PR process, and architecture.md reference |
-| R013 | quality-attribute | validated | M026/S05 | none | S05 — v0.25 entry added with 7 Wiki Content Updates deliverables sourced from PROJECT.md |
-| R014 | quality-attribute | validated | M026/S02 | none | S02 — review-utils.ts (451 lines, 19 functions) and mention-utils.ts (106 lines, 2 functions) extracted; review.ts reduced by 386 lines, mention.ts by 90 lines; all tests pass |
-| R015 | quality-attribute | validated | M026/S02 | none | S02 — bun test → 2181 pass, 45 skip, 0 fail; DB tests use describe.skipIf(!TEST_DATABASE_URL) |
-| R016 | quality-attribute | validated | M026/S01 | none | S01 — git ls-files .planning/ returns 0; README .planning/ references replaced with CHANGELOG.md |
-| R017 | quality-attribute | deferred | none | none | unmapped |
-| R018 | quality-attribute | deferred | none | none | unmapped |
-| R019 | operability | validated | M027 | none | M027/S01 — `bun run audit:embeddings --json` emits deterministic six-corpus integrity/model-status JSON from a read-only transaction and truthfully reports live failures instead of hiding them; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-FULL-AUDIT` passing against the preserved six-corpus `s01.audit` envelope, including the audited-only `issue_comments` boundary. |
-| R020 | operability | validated | M027 | none | M027/S03 — `bun run repair:embeddings -- --corpus review_comments --json`, `bun run repair:embeddings -- --corpus review_comments --status --json`, `bun run repair:embeddings -- --corpus review_comments --resume --json`, `bun run repair:embeddings -- --corpus issues --dry-run --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` proved resumable live repair for the degraded corpus plus truthful no-op handling for another corpus through the shared contract; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-NON-WIKI-REPAIR-STATE=repair_completed`, interpreting the idempotent `review_comments` rerun truthfully from durable status evidence rather than requiring fresh mutations. |
-| R021 | correctness | validated | M027 | none | M027/S01 — `bun run verify:retriever --repo xbmc/xbmc --query "json-rpc subtitle delay" --json` exercises the real `createRetriever(...).retrieve(...)` path, distinguishes query-embedding failure from no-hit states, and returns attributed live hits; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with `M027-S04-RETRIEVER=retrieval_hits`, preserving `s01.retriever.not_in_retriever=["issue_comments"]` so end-to-end proof stays truthful about live scope. |
-| R022 | reliability | validated | M027 | none | M027/S02/S03 — wiki proof (`bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`) and non-wiki proof (`bun run repair:embeddings -- --corpus review_comments --json` plus `bun run verify:m027:s03 -- --corpus review_comments --json`) both completed representative live bounded repairs without timeout-class failure while preserving resume/status evidence; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone with both repair-state checks passing from durable status-backed evidence (`JSON-RPC API/v8` still `repair_completed`; `review_comments` healthy idempotent rerun still backed by `repair_completed`). |
-| R023 | correctness | validated | M027 | none | M027/S01 — `bun run audit:embeddings --json` locks wiki=`voyage-context-3` vs non-wiki=`voyage-code-3`, reports actual model sets per corpus, and surfaces live wiki model mismatch counts; M027/S04 — `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` closed the milestone from the preserved all-green `s01.audit` envelope, confirming `wiki_pages` remained on `voyage-context-3` while the other audited corpora, including the audited-only `issue_comments`, remained on the non-wiki model boundary. |
-| R024 | quality-attribute | validated | M027 | none | M027/S01/S02/S03 — contract tests plus `audit:embeddings`, `verify:retriever`, `verify:m027:s01`, `bun test ./scripts/verify-m027-s02.test.ts`, `bun test ./scripts/verify-m027-s03.test.ts`, `bun run verify:m027:s02 -- --page-title "JSON-RPC API/v8" --json`, and `bun run verify:m027:s03 -- --corpus review_comments --json` now cover audit drift, live retriever truth, wiki repair proof, and non-wiki repair/no-op proof envelopes; M027/S04 — `bun test ./scripts/verify-m027-s04.test.ts` plus `bun run verify:m027:s04 -- --repo xbmc/xbmc --query "json-rpc subtitle delay" --page-title "JSON-RPC API/v8" --corpus review_comments --json` close the milestone with a repeatable machine-checkable final proof that preserves nested S01/S02/S03 evidence and stable milestone-level check IDs. |
-| R025 | correctness | validated | M028/S01 | M028/S03, M028/S04 | S01–S04 — Modification-only artifact contract proven end-to-end: WikiUpdateGroup type carries mode/scope (section|page), formatPageComment emits replacement text only, formatSummaryTable emits Wiki Modification Artifacts title and Modifications posted stat. bun run verify:m028:s04 --json overallPassed:true with NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all passing. 104 rows in DB with real comment IDs confirming full pipeline is modification-first. |
-| R026 | correctness | validated | M028/S03 | none | S03 — Live publish to xbmc/wiki issue #5 confirmed: 3 comments posted with modification-only content and <!-- kodiai:wiki-modification:{pageId} --> markers, no **Why:** or voice-mismatch prose. formatPageComment fixed. bun run verify:m028:s03 --json → overallPassed: true with LIVE-MARKER count=80. |
-| R027 | product-capability | validated | M028/S01 | M028/S03, M028/S04 | S01 — WikiUpdateGroup type carries explicit mode field (section|page) with replacement text and scope metadata. Section vs page mode is deterministically chosen and machine-checkable in stored artifacts and verifier output. S04 regression harness confirms mode field present in all formatPageComment mock renders. |
-| R028 | operability | validated | M028/S02 | M028/S03, M028/S04 | S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104). |
-| R029 | quality-attribute | validated | M028/S04 | M028/S01, M028/S02, M028/S03 | S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears. |
-
-| R030 | correctness | validated | hotfix (pre-M029) | none | Hotfix branch `fix/mention-review-write-mode` merged 2026-03-18 — `isReviewRequest()` guard + removal of `please` from write-confirmation signals; 140-line regression test; PR #28043 on xbmc/xbmc closed. |
-| R033 | correctness | validated | M029/S01 | M029/S04 | S01 — `isReasoningProse("I'll analyze the evidence from PR #27909")` returns true; valid MediaWiki content returns false. S04 proof harness CONTENT-FILTER-REJECTS passes in CI (pure-code, no infra). NO-REASONING-IN-DB check provides live DB gate post-operation. 51-test harness suite passes 0 failures. |
-| R034 | correctness | validated | M029/S02 | none | S02 — `bun test src/knowledge/wiki-update-generator.test.ts` passes 26/26: `MIN_HEURISTIC_SCORE > is set to 3` asserts constant value; `createUpdateGenerator page selection > includes heuristic_score >= MIN_HEURISTIC_SCORE` verifies clause and parameter wired into page-selection query. |
+| R001 | core-capability | active | M030/S01 | none | unmapped |
+| R002 | core-capability | active | M030/S02 | none | unmapped |
+| R003 | core-capability | active | M030/S02 | none | unmapped |
+| R004 | core-capability | active | M030/S02 | M030/S03 | unmapped |
+| R005 | primary-user-loop | active | M030/S03 | none | unmapped |
+| R006 | operability | active | M030/S01 | none | unmapped |
+| R007 | constraint | active | M030/S02 | none | unmapped |
+| R008 | core-capability | active | M030/S02 | none | unmapped |
+| R009 | continuity | active | M030/S03 | none | unmapped |
+| R010 | constraint | active | M030/S01 | none | unmapped |
+| R020 | anti-feature | out-of-scope | none | none | n/a |
+| R021 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated: 30 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R033, R034)
+- Active requirements: 10
+- Mapped to slices: 10
+- Validated: 0
 - Unmapped active requirements: 0
-
-### R033 — Generation output is pattern-verified before storage (deterministic content filter)
-- Class: correctness
-- Status: validated
-- Description: Generated wiki suggestions are checked against a deterministic pattern filter (`isReasoningProse()`) before being stored. Suggestions that begin with or primarily consist of reasoning starters ("I'll", "Let me", "I will", "I need to", "Looking at") are dropped, not stored.
-- Why it matters: The LLM defaults to narrating its reasoning when not explicitly constrained. The voice validation pipeline cannot reliably catch this — an LLM validator may score reasoning prose as voice-matching. A deterministic pattern gate is the reliable enforcement contract.
-- Source: M029/CONTEXT.md
-- Primary owning slice: M029/S01
-- Supporting slices: M029/S04
-- Validation: S01 — `isReasoningProse("I'll analyze the evidence from PR #27909")` returns true; valid MediaWiki content returns false. S04 proof harness CONTENT-FILTER-REJECTS check passes in CI (pure-code, no infra) confirming the deterministic gate is wired. NO-REASONING-IN-DB check provides live DB gate post-operation. 51-test harness suite passes 0 failures.
-
-### R034 — Page selection enforces minimum evidence quality threshold (heuristic_score >= 3)
-- Class: correctness
-- Status: validated
-- Description: The page-selection query in `createUpdateGenerator()` includes `AND wpe.heuristic_score >= 3`, ensuring only pages with high-quality PR evidence are targeted for generation. Pages matched by superficial token overlap (score < 3) are excluded.
-- Why it matters: The current query includes any page with any PR evidence record regardless of match quality, producing false positives (e.g., C++ source changes triggering updates to unrelated wiki pages like "Music Library").
-- Source: M029/CONTEXT.md
-- Primary owning slice: M029/S02
-- Supporting slices: none
-- Validation: S02 — `bun test src/knowledge/wiki-update-generator.test.ts` passes 26/26: `MIN_HEURISTIC_SCORE > is set to 3` asserts constant value; `createUpdateGenerator page selection > includes heuristic_score >= MIN_HEURISTIC_SCORE` uses SQL-capture mock to verify the clause and parameter value are wired into the page-selection query. All 24 pre-existing tests remain green.

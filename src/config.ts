@@ -27,6 +27,15 @@ const configSchema = z.object({
   wikiGithubRepo: z.string().default("xbmc"),
   botUserPat: z.string().default(""),
   botUserLogin: z.string().default(""),
+  addonRepos: z
+    .string()
+    .default("xbmc/repo-plugins,xbmc/repo-scripts,xbmc/repo-scrapers")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean),
+    ),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -93,6 +102,7 @@ export async function loadConfig(): Promise<AppConfig> {
     wikiGithubRepo: process.env.WIKI_GITHUB_REPO,
     botUserPat: process.env.BOT_USER_PAT,
     botUserLogin: process.env.BOT_USER_LOGIN,
+    addonRepos: process.env.ADDON_REPOS,
   });
 
   if (!result.success) {
