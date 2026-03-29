@@ -10,7 +10,9 @@ Automated review and rule enforcement that reduces maintainer burden on high-vol
 
 26 milestones shipped (M001–M030). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles, addon rule enforcement.
 
-M030 (Addon Rule Enforcement) complete — PRs to xbmc/repo-plugins, xbmc/repo-scripts, and xbmc/repo-scrapers now trigger kodi-addon-checker against all affected addon directories. Findings are posted as an idempotent PR comment (marker-based upsert). Fork PRs handled via base-branch clone + fetchAndCheckoutPullRequestHeadRef. kodi-addon-checker installed in the production Dockerfile via python3 + pip3. All 10 active requirements validated.
+M031 (Security Hardening) complete — env allowlist (`src/execution/env.ts`), git remote sanitization, outgoing secret scan at MCP layer, CLAUDE.md injection, prompt refusal instructions.
+
+M032 (Agent Process Isolation) complete — agent subprocess moved to ephemeral Azure Container Apps Job with zero application secrets in its environment. `buildAcaJobSpec` enforces `APPLICATION_SECRET_NAMES` contract (9 forbidden names, throws at build time if any appear). MCP servers remain in orchestrator and are exposed over authenticated HTTP (`createMcpJobRegistry` + `createMcpHttpRoutes`; per-job 32-byte bearer token). Workspace shared via Azure Files mount (`createAzureFilesWorkspaceDir`). `src/execution/agent-entrypoint.ts` is the job container entry point. `createExecutor()` fully refactored to ACA dispatch path. `Dockerfile.agent` created. `bun run verify:m032` exits 0 (3 security contract checks). Closes the `/proc/<ppid>/environ` prompt-injection-to-exfiltration attack path structurally.
 
 ## Architecture / Key Patterns
 
@@ -18,7 +20,9 @@ M030 (Addon Rule Enforcement) complete — PRs to xbmc/repo-plugins, xbmc/repo-s
 - **Webhook dispatch:** Map-keyed handler registry (`webhook/router.ts`); handlers register by `"event.action"` key
 - **Job queue:** Per-installation concurrency control via `jobs/queue.ts`; handlers enqueue jobs, not execute inline
 - **Workspace manager:** Ephemeral git clones per job (`jobs/workspace.ts`); stale workspaces cleaned on boot
-- **Executor:** Claude Agent SDK wrapper with model routing, MCP tools, cost tracking (`execution/executor.ts`)
+- **Executor:** Claude Agent SDK wrapper dispatches ACA Job; per-job bearer token registered in MCP registry; Azure Files workspace; CLAUDE.md injected; result.json polled on job completion (`execution/executor.ts`)
+- **Agent entrypoint:** ACA job container script; env validation, CLAUDE.md write, 7 MCP server configs (HTTP transport), SDK invocation, result.json write (`execution/agent-entrypoint.ts`)
+- **MCP HTTP server:** Per-job bearer token registry + Hono routes at `/internal/mcp/:serverName`; stateless (per-request fresh transport+server instances); mounted at root in orchestrator (`execution/mcp/http-server.ts`)
 - **Knowledge system:** 5-corpus retrieval (learning memories, review comments, wiki, code snippets, issues) with cross-corpus RRF merging (`knowledge/retrieval.ts`)
 - **Wiki sync:** MediaWiki RecentChanges-based incremental sync on 24h schedule; embeddings via voyage-context-3
 - **Guardrail pipeline:** Post-processing on all LLM output for epistemic quality (`lib/guardrail/pipeline.ts`)
@@ -32,7 +36,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 - ✅ M001–M030: Core platform through addon rule enforcement (see CHANGELOG.md)
 - ✅ M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)
-- [ ] M032: Agent Process Isolation — ephemeral ACA Job sandbox (agent subprocess moved to secrets-free container; MCP servers exposed over authenticated HTTP from orchestrator; workspace on Azure Files share)
-  - ✅ S01: ACA Job + Azure Files Infrastructure — `buildAcaJobSpec` with APPLICATION_SECRET_NAMES security contract (9 forbidden names), `launchAcaJob`/`pollUntilComplete`/`readJobResult` in `src/jobs/aca-launcher.ts`; `createAzureFilesWorkspaceDir` in workspace.ts; `scripts/test-aca-job.ts` contract check + live smoke test; `deploy.sh` extended with Storage Account, Azure Files share, ACA env storage mount, and ACA Job create/update
-  - ✅ S02: MCP HTTP Server in Orchestrator — `createMcpJobRegistry()` (per-job bearer token registry with TTL) and `createMcpHttpRoutes()` (Hono app at `/internal/mcp/:serverName`) in `src/execution/mcp/http-server.ts`; per-request fresh transport+server instances (stateless mode); mounted in `index.ts`; `MCP_BASE_URL` injected into ACA job env; `mcpInternalBaseUrl`/`acaJobImage` config fields added
-  - ✅ S03: Agent Job Entrypoint + Executor Refactor — `src/execution/agent-entrypoint.ts` (ACA job container script: env validation, CLAUDE.md write, MCP config for 7 servers, SDK invocation, result.json write); `createExecutor()` refactored to ACA dispatch path (generate bearer token → register in registry → create workspace dir → write prompt/config → launch job → poll → cancel on timeout → read result → unregister); `cancelAcaJob()` added to aca-launcher.ts; `Dockerfile.agent` created (CMD: agent-entrypoint.ts, no EXPOSE); `acaResourceGroup`/`acaJobName` config fields added; `mcpJobRegistry` wired in index.ts
+- ✅ M032: Agent Process Isolation — ephemeral ACA Job sandbox complete. Agent subprocess moved to a secrets-free ACA Job container; MCP servers exposed over per-job bearer-token authenticated HTTP from orchestrator; workspace on Azure Files share. APPLICATION_SECRET_NAMES security contract enforced at build time. `bun run verify:m032` exits 0.

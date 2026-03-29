@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M032/S04/T01",
+  "timestamp": 1774812371034,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m032.test.ts",
+      "exitCode": 0,
+      "durationMs": 102,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m032",
+      "exitCode": 0,
+      "durationMs": 87,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 8258,
+      "verdict": "pass"
+    },
+    {
+      "command": "bash -n deploy.sh",
+      "exitCode": 0,
+      "durationMs": 7,
+      "verdict": "pass"
+    }
+  ]
+}

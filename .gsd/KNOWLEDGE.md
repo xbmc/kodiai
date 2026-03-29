@@ -441,3 +441,91 @@ const executor = createExecutor(deps, {
 **Why not module mocking:** Bun's `mock.module` replaces a module globally for the test file, which causes test interference when multiple tests need different behaviors from the same function. The injectable pattern is per-invocation and inherently isolated.
 
 **Established in:** M032/S03/T03 (`src/execution/executor.ts`, `src/execution/executor.test.ts`).
+
+---
+
+## MCP Stateless Transport: Per-Request Fresh Transport+Server Required (M032/S02)
+
+**Context:** `WebStandardStreamableHTTPServerTransport` has a `_hasHandledRequest` flag that is set to `true` after the first request. Any attempt to reuse the same transport instance for a second request silently fails — the transport rejects it. Similarly, `McpServer.connect()` registers tool handlers and cannot be called again on the same server instance.
+
+**Rule:** In stateless MCP HTTP mode, always call `factory()` inside the HTTP handler for every request — produce a fresh `McpSdkServerConfigWithInstance` (transport + server) per request. Never reuse transport or server instances across requests.
+
+```ts
+app.all("/internal/mcp/:serverName", async (c) => {
+  const serverConfig = getFactory(serverName)(); // fresh instance every request
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
+  await serverConfig.instance.connect(transport);
+  return transport.handleRequest(c.req.raw, c.env);
+});
+```
+
+**Established in:** M032/S02/T01 (`src/execution/mcp/http-server.ts`).
+
+---
+
+## MCP HTTP Requests Require `Accept: application/json, text/event-stream` (M032/S02)
+
+**Context:** The MCP spec requires clients to send `Accept: application/json, text/event-stream`. Omitting this header produces a `406 Not Acceptable` from the `WebStandardStreamableHTTPServerTransport` handler. This is not prominently documented in the SDK but is enforced at the transport layer.
+
+**Rule:** Any test or client calling the MCP HTTP server must include `Accept: application/json, text/event-stream` in the request headers.
+
+**Established in:** M032/S02/T01 (`src/execution/mcp/http-server.test.ts` test helper).
+
+---
+
+## Hono Sub-App Prefix Ownership: Mount at Root (M032/S02)
+
+**Context:** `createMcpHttpRoutes()` returns a Hono sub-app with routes already prefixed `/internal/mcp/:serverName`. Mounting at `app.route("/internal", sub)` would produce `/internal/internal/mcp/:serverName` — all requests return 404 with no error.
+
+**Rule:** If a sub-app returned by `createFooRoutes()` already owns its full URL prefix, mount it at root: `app.route("/", createFooRoutes(...))`. Never add a prefix at the mount site if the sub-app has already baked the prefix into its routes.
+
+**Established in:** M032/S02/T02 (`src/index.ts`).
+
+---
+
+## Per-Job Bearer Token Lifecycle Pattern (M032/S03)
+
+**Context:** Each ACA job dispatch in `createExecutor()` needs an isolated authentication scope for MCP server access. The token must be alive only during the job's execution window and cleaned up regardless of success/failure/timeout.
+
+**Pattern:**
+```ts
+const mcpBearerToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("hex");
+const ttlMs = (timeoutSeconds + 60) * 1000;
+registry.register(mcpBearerToken, mcpServerFactories, Date.now() + ttlMs);
+try {
+  // launch job, poll, read result...
+} finally {
+  registry.unregister(mcpBearerToken);
+}
+```
+
+**Rule:** Always unregister in a `finally` block — the token must be released on timeout, failure, and success paths. TTL = (job timeout + 60s) acts as a secondary safety net if the `finally` path has a bug.
+
+**Established in:** M032/S03/T03 (`src/execution/executor.ts`, `createExecutor()`).
+
+---
+
+## `EntrypointDeps` Injectable Pattern for Process-Exit Code Testing (M032/S03)
+
+**Context:** `src/execution/agent-entrypoint.ts` calls `process.exit(1)` on validation failures. Testing these paths without the injectable pattern would require Bun module mocking, which is fragile.
+
+**Pattern:** Define a `Partial<EntrypointDeps>` parameter with `exitFn: (code: number) => never`. Tests inject a throwing stub; production uses `(code) => process.exit(code)`. The return type `never` ensures TypeScript understands the function does not return, which is required for branching analysis.
+
+```ts
+type EntrypointDeps = {
+  queryFn: (...) => ...,
+  writeFileFn: (...) => ...,
+  readFileFn: (...) => ...,
+  exitFn: (code: number) => never,
+};
+
+// Test stub:
+const exitFn = (code: number): never => { throw new Error(`exit(${code})`); };
+```
+
+**Rule:** The `_` prefix is not used here — `EntrypointDeps` is a proper type, not a test-only override. Use this pattern whenever a module has a `process.exit` call that needs to be exercised in tests.
+
+**Established in:** M032/S03/T02 (`src/execution/agent-entrypoint.ts` + `agent-entrypoint.test.ts`).
