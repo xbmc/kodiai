@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T18:38:45.418Z",
+  "exported_at": "2026-03-29T18:43:51.605Z",
   "milestones": [
     {
       "id": "M001",
@@ -1987,19 +1987,28 @@
       "milestone_id": "M032",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Wire mcpBaseUrl into aca-launcher, add config fields, mount routes in index.ts",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired MCP_BASE_URL into ACA job specs, added mcpInternalBaseUrl/acaJobImage config fields, and mounted MCP HTTP routes in index.ts",
+      "status": "complete",
+      "one_liner": "Wired MCP_BASE_URL into ACA job specs, added mcpInternalBaseUrl/acaJobImage config fields, and mounted MCP HTTP routes in index.ts",
+      "narrative": "Added mcpBaseUrl: string to BuildAcaJobSpecOpts and injected MCP_BASE_URL into the job env array. Added two new aca-launcher tests. Added mcpInternalBaseUrl and acaJobImage to configSchema and loadConfig. In index.ts, imported createMcpJobRegistry/createMcpHttpRoutes, created mcpJobRegistry after the executor, and mounted routes at app.route(\"/\", createMcpHttpRoutes(mcpJobRegistry, logger)) — root mount required because the sub-app already owns the /internal prefix. Fixed 10 AppConfig literal stubs across scripts and test files (Zod .default fills runtime defaults but TypeScript structural types still require all fields in literal objects), plus two BuildAcaJobSpecOpts call sites in scripts/test-aca-job.ts.",
+      "verification_result": "bun test ./src/jobs/aca-launcher.test.ts: 18 pass, 0 fail. bun run tsc --noEmit: exits 0 (clean).",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-29T18:43:51.584Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Mounted routes at app.route(\\\"/\\\", ...) not app.route(\\\"/internal\\\", ...) — sub-app already owns /internal prefix. Fixed 10 AppConfig stubs across scripts/tests (plan predicted Zod defaults would prevent this). Fixed two call sites in test-aca-job.ts, not one.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/aca-launcher.ts",
+        "src/jobs/aca-launcher.test.ts",
+        "src/config.ts",
+        "src/index.ts",
+        "scripts/test-aca-job.ts"
+      ],
+      "key_decisions": [
+        "Mount createMcpHttpRoutes at app.route(\"/\", ...) not \"/internal\" — sub-app already defines routes with /internal prefix",
+        "AppConfig stubs in scripts/tests need explicit mcpInternalBaseUrl and acaJobImage fields — Zod .default fills env-parsed output but TypeScript literal stubs must include all fields"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M032\nkey_files:\n  - src/jobs/aca-launcher.ts\n  - src/jobs/aca-launcher.test.ts\n  - src/config.ts\n  - src/index.ts\n  - scripts/test-aca-job.ts\nkey_decisions:\n  - Mount createMcpHttpRoutes at app.route(\"/\", ...) not \"/internal\" — sub-app already defines routes with /internal prefix\n  - AppConfig stubs in scripts/tests need explicit mcpInternalBaseUrl and acaJobImage fields — Zod .default fills env-parsed output but TypeScript literal stubs must include all fields\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T18:43:51.584Z\nblocker_discovered: false\n---\n\n# T02: Wired MCP_BASE_URL into ACA job specs, added mcpInternalBaseUrl/acaJobImage config fields, and mounted MCP HTTP routes in index.ts\n\n**Wired MCP_BASE_URL into ACA job specs, added mcpInternalBaseUrl/acaJobImage config fields, and mounted MCP HTTP routes in index.ts**\n\n## What Happened\n\nAdded mcpBaseUrl: string to BuildAcaJobSpecOpts and injected MCP_BASE_URL into the job env array. Added two new aca-launcher tests. Added mcpInternalBaseUrl and acaJobImage to configSchema and loadConfig. In index.ts, imported createMcpJobRegistry/createMcpHttpRoutes, created mcpJobRegistry after the executor, and mounted routes at app.route(\"/\", createMcpHttpRoutes(mcpJobRegistry, logger)) — root mount required because the sub-app already owns the /internal prefix. Fixed 10 AppConfig literal stubs across scripts and test files (Zod .default fills runtime defaults but TypeScript structural types still require all fields in literal objects), plus two BuildAcaJobSpecOpts call sites in scripts/test-aca-job.ts.\n\n## Verification\n\nbun test ./src/jobs/aca-launcher.test.ts: 18 pass, 0 fail. bun run tsc --noEmit: exits 0 (clean).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/jobs/aca-launcher.test.ts` | 0 | ✅ pass | 23ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 8000ms |\n\n\n## Deviations\n\nMounted routes at app.route(\\\"/\\\", ...) not app.route(\\\"/internal\\\", ...) — sub-app already owns /internal prefix. Fixed 10 AppConfig stubs across scripts/tests (plan predicted Zod defaults would prevent this). Fixed two call sites in test-aca-job.ts, not one.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/aca-launcher.ts`\n- `src/jobs/aca-launcher.test.ts`\n- `src/config.ts`\n- `src/index.ts`\n- `scripts/test-aca-job.ts`\n",
       "description": "Integrate the MCP HTTP server into the orchestrator startup and the ACA job spec builder.\n\n**Steps:**\n\n1. **`src/jobs/aca-launcher.ts`** — add `mcpBaseUrl: string` to `BuildAcaJobSpecOpts` and inject it into the job env array as `{ name: \"MCP_BASE_URL\", value: opts.mcpBaseUrl }`. Place it between the existing required env entries. Note: `MCP_BASE_URL` is NOT in `APPLICATION_SECRET_NAMES`, so the runtime guard will not fire.\n\n2. **`src/jobs/aca-launcher.test.ts`** — update the `BASE_OPTS` fixture (and any other test fixtures that construct `BuildAcaJobSpecOpts`) to include `mcpBaseUrl: \"http://ca-kodiai.internal.env.eastus.azurecontainerapps.io\"`. Add a test: `MCP_BASE_URL env var present in spec` asserting `spec.env.find(e => e.name === 'MCP_BASE_URL')?.value === opts.mcpBaseUrl`. Also verify `MCP_BASE_URL` is not in `APPLICATION_SECRET_NAMES` (it shouldn't be — confirm the guard doesn't fire).\n\n3. **`src/config.ts`** — add two optional fields to `configSchema`:\n```ts\nmcpInternalBaseUrl: z.string().default(\"\"),\nacaJobImage: z.string().default(\"\"),\n```\nAnd in `loadConfig`'s parse input:\n```ts\nmcpInternalBaseUrl: process.env.MCP_INTERNAL_BASE_URL,\nacaJobImage: process.env.ACA_JOB_IMAGE,\n```\nUsing `.default(\"\")` means existing test stubs that construct `AppConfig` directly don't need updating (Zod fills the default).\n\n4. **`src/index.ts`** — add:\n```ts\nimport { createMcpJobRegistry } from \"./execution/mcp/http-server.ts\";\nimport { createMcpHttpRoutes } from \"./execution/mcp/http-server.ts\";\n```\nNear the start of the app section, create the registry:\n```ts\nconst mcpJobRegistry = createMcpJobRegistry();\n```\nMount the routes on the Hono app (before the catch-all error handler):\n```ts\napp.route(\"/internal\", createMcpHttpRoutes(mcpJobRegistry, logger));\n```\nThe registry is module-level so S03 can import it or receive it via dependency injection.\n\n5. Export `mcpJobRegistry` from `src/index.ts` is NOT necessary — S03 will wire it via the executor factory. Just create it as a local variable passed to `createMcpHttpRoutes`.\n\n6. Run `bun test ./src/jobs/aca-launcher.test.ts` and fix until all pass.\n7. Run `bun run tsc --noEmit` — fix any errors (particularly AppConfig stubs in test files that may need the new optional fields, though `.default(\"\")` in Zod should make them optional in parsed output).",
       "estimate": "1h",
       "files": [
@@ -2628,6 +2637,28 @@
       "verdict": "✅ pass",
       "duration_ms": 7400,
       "created_at": "2026-03-29T18:38:45.404Z"
+    },
+    {
+      "id": 38,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M032",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 23,
+      "created_at": "2026-03-29T18:43:51.584Z"
+    },
+    {
+      "id": 39,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M032",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8000,
+      "created_at": "2026-03-29T18:43:51.584Z"
     }
   ]
 }

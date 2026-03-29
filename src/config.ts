@@ -36,6 +36,8 @@ const configSchema = z.object({
         .map((r) => r.trim())
         .filter(Boolean),
     ),
+  mcpInternalBaseUrl: z.string().default(""),
+  acaJobImage: z.string().default(""),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -103,6 +105,8 @@ export async function loadConfig(): Promise<AppConfig> {
     botUserPat: process.env.BOT_USER_PAT,
     botUserLogin: process.env.BOT_USER_LOGIN,
     addonRepos: process.env.ADDON_REPOS,
+    mcpInternalBaseUrl: process.env.MCP_INTERNAL_BASE_URL,
+    acaJobImage: process.env.ACA_JOB_IMAGE,
   });
 
   if (!result.success) {

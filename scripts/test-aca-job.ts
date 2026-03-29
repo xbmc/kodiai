@@ -34,6 +34,7 @@ const testSpec = buildAcaJobSpec({
   image: "kodiairegistry.azurecr.io/kodiai:latest",
   workspaceDir: "/mnt/kodiai-workspaces/test-job",
   mcpBearerToken: "test-token",
+  mcpBaseUrl: "http://ca-kodiai.internal.env.eastus.azurecontainerapps.io",
 });
 
 let contractPassed = true;
@@ -91,6 +92,7 @@ const liveSpec = buildAcaJobSpec({
   image: "kodiairegistry.azurecr.io/kodiai:latest",
   workspaceDir: azureWorkspaceMount!,
   mcpBearerToken: "smoke-test-token",
+  mcpBaseUrl: process.env["MCP_INTERNAL_BASE_URL"] ?? "",
   anthropicApiKey: process.env["ANTHROPIC_API_KEY"],
 });
 

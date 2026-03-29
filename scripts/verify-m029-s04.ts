@@ -492,6 +492,8 @@ export async function buildM029S04ProofHarness(opts?: {
           botUserPat: "",
           botUserLogin: "",
           addonRepos: [],
+          mcpInternalBaseUrl: "",
+          acaJobImage: "",
         };
 
         const githubApp = createGitHubApp(appConfig as Parameters<typeof createGitHubApp>[0], logger);

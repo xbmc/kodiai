@@ -158,6 +158,8 @@ async function main() {
       botUserPat: "",
       botUserLogin: "",
       addonRepos: [],
+      mcpInternalBaseUrl: "",
+      acaJobImage: "",
     },
     logger,
   );

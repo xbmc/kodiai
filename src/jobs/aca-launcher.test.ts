@@ -46,6 +46,7 @@ describe("buildAcaJobSpec", () => {
     image: "kodiairegistry.azurecr.io/kodiai-agent:latest",
     workspaceDir: "/mnt/kodiai-workspaces/test-job",
     mcpBearerToken: "test-mcp-bearer-token",
+    mcpBaseUrl: "http://ca-kodiai.internal.env.eastus.azurecontainerapps.io",
   };
 
   test("no APPLICATION_SECRET_NAMES in env array", () => {
@@ -69,6 +70,18 @@ describe("buildAcaJobSpec", () => {
     const spec = buildAcaJobSpec(BASE_OPTS);
     const entry = spec.env.find((e) => e.name === "MCP_BEARER_TOKEN");
     expect(entry?.value).toBe("test-mcp-bearer-token");
+  });
+
+  test("MCP_BASE_URL env var present in spec", () => {
+    const spec = buildAcaJobSpec(BASE_OPTS);
+    const entry = spec.env.find((e) => e.name === "MCP_BASE_URL");
+    expect(entry?.value).toBe(BASE_OPTS.mcpBaseUrl);
+  });
+
+  test("MCP_BASE_URL is not in APPLICATION_SECRET_NAMES", () => {
+    expect(APPLICATION_SECRET_NAMES).not.toContain("MCP_BASE_URL");
+    // Confirm the runtime guard does not fire — buildAcaJobSpec must not throw
+    expect(() => buildAcaJobSpec(BASE_OPTS)).not.toThrow();
   });
 
   test("WORKSPACE_DIR value matches input", () => {

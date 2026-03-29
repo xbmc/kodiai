@@ -174,6 +174,8 @@ async function main() {
     botUserPat: "",
     botUserLogin: "",
     addonRepos: [],
+    mcpInternalBaseUrl: "",
+    acaJobImage: "",
   } satisfies AppConfig;
 
   const githubApp = createGitHubApp(appConfig, logger);

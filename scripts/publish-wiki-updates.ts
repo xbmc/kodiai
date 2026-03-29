@@ -164,6 +164,8 @@ async function main() {
       botUserPat: "",
       botUserLogin: "",
       addonRepos: [],
+      mcpInternalBaseUrl: "",
+      acaJobImage: "",
     };
     githubApp = createGitHubApp(config, logger);
     await githubApp.initialize();

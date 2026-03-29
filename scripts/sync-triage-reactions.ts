@@ -145,6 +145,8 @@ async function main(): Promise<void> {
       botUserPat: "",
       botUserLogin: "",
       addonRepos: [],
+      mcpInternalBaseUrl: "",
+      acaJobImage: "",
       },
       logger,
     );

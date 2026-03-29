@@ -58,6 +58,7 @@ export interface BuildAcaJobSpecOpts {
   workspaceDir: string;
   anthropicApiKey?: string;
   mcpBearerToken: string;
+  mcpBaseUrl: string;
   githubInstallationToken?: string;
   timeoutSeconds?: number;
 }
@@ -75,6 +76,7 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
   }
 
   env.push({ name: "MCP_BEARER_TOKEN", value: opts.mcpBearerToken });
+  env.push({ name: "MCP_BASE_URL", value: opts.mcpBaseUrl });
   env.push({ name: "WORKSPACE_DIR", value: opts.workspaceDir });
 
   if (opts.githubInstallationToken !== undefined) {

@@ -42,6 +42,8 @@ function createTestConfig(): AppConfig {
     botUserLogin: "",
     botUserPat: "",
     addonRepos: [],
+    mcpInternalBaseUrl: "",
+    acaJobImage: "",
   };
 }
 

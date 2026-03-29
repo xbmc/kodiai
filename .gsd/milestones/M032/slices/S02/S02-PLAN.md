@@ -88,7 +88,7 @@ export function createMcpHttpRoutes(registry: McpJobRegistry, logger?: Logger): 
   - Estimate: 2h
   - Files: src/execution/mcp/http-server.ts, src/execution/mcp/http-server.test.ts
   - Verify: bun test ./src/execution/mcp/http-server.test.ts && bun run tsc --noEmit
-- [ ] **T02: Wire mcpBaseUrl into aca-launcher, add config fields, mount routes in index.ts** — Integrate the MCP HTTP server into the orchestrator startup and the ACA job spec builder.
+- [x] **T02: Wired MCP_BASE_URL into ACA job specs, added mcpInternalBaseUrl/acaJobImage config fields, and mounted MCP HTTP routes in index.ts** — Integrate the MCP HTTP server into the orchestrator startup and the ACA job spec builder.
 
 **Steps:**
 

@@ -15,6 +15,7 @@ import { createBotUserClient } from "./auth/bot-user.ts";
 import { createForkManager } from "./jobs/fork-manager.ts";
 import { createGistPublisher } from "./jobs/gist-publisher.ts";
 import { createExecutor } from "./execution/executor.ts";
+import { createMcpJobRegistry, createMcpHttpRoutes } from "./execution/mcp/http-server.ts";
 import { createReviewHandler } from "./handlers/review.ts";
 import { createMentionHandler } from "./handlers/mention.ts";
 import { createFeedbackSyncHandler } from "./handlers/feedback-sync.ts";
@@ -178,6 +179,9 @@ const eventRouter = createEventRouter(botFilter, logger);
 // Execution engine
 const taskRouter = createTaskRouter({ models: {} }, logger);
 const executor = createExecutor({ githubApp, logger, taskRouter, costTracker });
+
+// MCP HTTP server — per-job bearer-token registry for isolated ACA agent jobs
+const mcpJobRegistry = createMcpJobRegistry();
 
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
 const slackInstallationCache = createInMemoryCache<string, { installationId: number; defaultBranch: string }>({
@@ -584,6 +588,9 @@ app.route("/webhooks/slack/commands", createSlackCommandRoutes({
   profileStore: contributorProfileStore,
 }));
 app.route("/", createHealthRoutes({ githubApp, logger, sql }));
+
+// MCP HTTP routes — internal endpoint for ACA agent jobs to call MCP tools
+app.route("/", createMcpHttpRoutes(mcpJobRegistry, logger));
 
 // Global error handler
 app.onError((err, c) => {
