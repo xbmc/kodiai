@@ -176,12 +176,12 @@ if (knowledgeStore) {
 const botFilter = createBotFilter(githubApp.getAppSlug(), config.botAllowList, logger);
 const eventRouter = createEventRouter(botFilter, logger);
 
-// Execution engine
-const taskRouter = createTaskRouter({ models: {} }, logger);
-const executor = createExecutor({ githubApp, logger, taskRouter, costTracker });
-
 // MCP HTTP server — per-job bearer-token registry for isolated ACA agent jobs
 const mcpJobRegistry = createMcpJobRegistry();
+
+// Execution engine
+const taskRouter = createTaskRouter({ models: {} }, logger);
+const executor = createExecutor({ githubApp, logger, config, mcpJobRegistry, taskRouter, costTracker });
 
 const slackClient = createSlackClient({ botToken: config.slackBotToken });
 const slackInstallationCache = createInMemoryCache<string, { installationId: number; defaultBranch: string }>({

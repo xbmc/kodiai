@@ -31,7 +31,7 @@ Create src/execution/agent-entrypoint.test.ts with tests:
   - Estimate: 1h
   - Files: src/execution/agent-entrypoint.ts, src/execution/agent-entrypoint.test.ts
   - Verify: bun test ./src/execution/agent-entrypoint.test.ts && bun run tsc --noEmit
-- [ ] **T03: Executor refactor and registry DI** — Replace the query() SDK loop in createExecutor() with the ACA job dispatch path, and thread mcpJobRegistry as a dependency.
+- [x] **T03: Refactored createExecutor() to dispatch ACA jobs instead of running Agent SDK in-process, and wired mcpJobRegistry as dependency** — Replace the query() SDK loop in createExecutor() with the ACA job dispatch path, and thread mcpJobRegistry as a dependency.
 
 **1. config.ts additions (if not done in T01):** acaResourceGroup and acaJobName should already be present from T01.
 

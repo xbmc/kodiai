@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M032/S03/T02",
+  "timestamp": 1774811381842,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/execution/agent-entrypoint.test.ts",
+      "exitCode": 0,
+      "durationMs": 126,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 8459,
+      "verdict": "pass"
+    }
+  ]
+}

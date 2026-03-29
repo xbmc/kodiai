@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T19:09:30.887Z",
+  "exported_at": "2026-03-29T19:15:47.133Z",
   "milestones": [
     {
       "id": "M001",
@@ -2138,19 +2138,28 @@
       "milestone_id": "M032",
       "slice_id": "S03",
       "id": "T03",
-      "title": "Executor refactor and registry DI",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Refactored createExecutor() to dispatch ACA jobs instead of running Agent SDK in-process, and wired mcpJobRegistry as dependency",
+      "status": "complete",
+      "one_liner": "Refactored createExecutor() to dispatch ACA jobs instead of running Agent SDK in-process, and wired mcpJobRegistry as dependency",
+      "narrative": "Rewrote createExecutor() in executor.ts: replaced the SDK query() streaming loop with the full ACA job dispatch path (generate bearer token → register MCP servers in registry → create Azure Files workspace dir → write prompt.txt/agent-config.json → buildAcaJobSpec → launchAcaJob → pollUntilComplete → cancelAcaJob on timeout → readJobResult → merge published/publishEvents → unregister token). Removed AbortController/setTimeout timeout mechanism and buildAgentEnv import. Added config: AppConfig and mcpJobRegistry: McpJobRegistry to deps signature. Updated index.ts to declare mcpJobRegistry before createExecutor and pass both config and mcpJobRegistry. Wrote 14 new tests using a createTestableExecutor injectable pattern covering all dispatch paths; kept 8 existing buildSecurityClaudeMd tests.",
+      "verification_result": "bun test ./src/execution/executor.test.ts — 22 pass, 0 fail, 50 expect() calls. bun run tsc --noEmit — exit 0. bun test ./src/jobs/aca-launcher.test.ts ./src/execution/agent-entrypoint.test.ts — 34 pass, 0 fail (no regressions).",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-29T19:15:47.117Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used createTestableExecutor inline pattern with injectable fns instead of module mocking — avoids Bun module mock fragility. AppConfig passed as dep to createExecutor rather than reading process.env at execute time.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/execution/executor.ts",
+        "src/execution/executor.test.ts",
+        "src/index.ts"
+      ],
+      "key_decisions": [
+        "createTestableExecutor pattern: injectable launchFn/pollFn/cancelFn/readResultFn/createWorkspaceDirFn avoids module mocking fragility",
+        "config passed as AppConfig dep to createExecutor (not read from env at execute time)",
+        "AbortController/setTimeout removed — pollUntilComplete+cancelAcaJob own timeout now",
+        "mcpBearerToken = 32 bytes via crypto.getRandomValues → 64 hex chars"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S03\nmilestone: M032\nkey_files:\n  - src/execution/executor.ts\n  - src/execution/executor.test.ts\n  - src/index.ts\nkey_decisions:\n  - createTestableExecutor pattern: injectable launchFn/pollFn/cancelFn/readResultFn/createWorkspaceDirFn avoids module mocking fragility\n  - config passed as AppConfig dep to createExecutor (not read from env at execute time)\n  - AbortController/setTimeout removed — pollUntilComplete+cancelAcaJob own timeout now\n  - mcpBearerToken = 32 bytes via crypto.getRandomValues → 64 hex chars\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T19:15:47.118Z\nblocker_discovered: false\n---\n\n# T03: Refactored createExecutor() to dispatch ACA jobs instead of running Agent SDK in-process, and wired mcpJobRegistry as dependency\n\n**Refactored createExecutor() to dispatch ACA jobs instead of running Agent SDK in-process, and wired mcpJobRegistry as dependency**\n\n## What Happened\n\nRewrote createExecutor() in executor.ts: replaced the SDK query() streaming loop with the full ACA job dispatch path (generate bearer token → register MCP servers in registry → create Azure Files workspace dir → write prompt.txt/agent-config.json → buildAcaJobSpec → launchAcaJob → pollUntilComplete → cancelAcaJob on timeout → readJobResult → merge published/publishEvents → unregister token). Removed AbortController/setTimeout timeout mechanism and buildAgentEnv import. Added config: AppConfig and mcpJobRegistry: McpJobRegistry to deps signature. Updated index.ts to declare mcpJobRegistry before createExecutor and pass both config and mcpJobRegistry. Wrote 14 new tests using a createTestableExecutor injectable pattern covering all dispatch paths; kept 8 existing buildSecurityClaudeMd tests.\n\n## Verification\n\nbun test ./src/execution/executor.test.ts — 22 pass, 0 fail, 50 expect() calls. bun run tsc --noEmit — exit 0. bun test ./src/jobs/aca-launcher.test.ts ./src/execution/agent-entrypoint.test.ts — 34 pass, 0 fail (no regressions).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/execution/executor.test.ts` | 0 | ✅ pass | 276ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 123500ms |\n| 3 | `bun test ./src/jobs/aca-launcher.test.ts ./src/execution/agent-entrypoint.test.ts` | 0 | ✅ pass | 128ms |\n\n\n## Deviations\n\nUsed createTestableExecutor inline pattern with injectable fns instead of module mocking — avoids Bun module mock fragility. AppConfig passed as dep to createExecutor rather than reading process.env at execute time.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/execution/executor.ts`\n- `src/execution/executor.test.ts`\n- `src/index.ts`\n",
       "description": "Replace the query() SDK loop in createExecutor() with the ACA job dispatch path, and thread mcpJobRegistry as a dependency.\n\n**1. config.ts additions (if not done in T01):** acaResourceGroup and acaJobName should already be present from T01.\n\n**2. createExecutor() signature:** Add mcpJobRegistry: McpJobRegistry to the deps type.\n\n**3. New dispatch flow in execute():**\n\na. Keep all existing setup up to and including buildMcpServers() — model resolution, timeout config, MCP server config, allowed tools, prompt building, workspace CLAUDE.md write.\n\nb. Instead of calling query() directly, do:\n   - Generate per-job bearer token: `const mcpBearerToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');`\n   - Build factory map: for each (name, server) in Object.entries(mcpServers), wrap in a factory `() => server as McpSdkServerConfigWithInstance`. Register all factories in the registry under mcpBearerToken with TTL = (timeoutSeconds + 60) * 1000.\n   - Create workspace dir on Azure Files: `const workspaceDir = await createAzureFilesWorkspaceDir({ mountBase: '/mnt/kodiai-workspaces', jobId: context.deliveryId ?? crypto.randomUUID() });`\n   - Write agent-config.json and prompt.txt to workspaceDir:\n     ```ts\n     await writeFile(join(workspaceDir, 'prompt.txt'), prompt);\n     await writeFile(join(workspaceDir, 'agent-config.json'), JSON.stringify({ model, maxTurns, allowedTools, taskType }));\n     ```\n   - Build job spec: `buildAcaJobSpec({ jobName: config.acaJobName, image: config.acaJobImage, workspaceDir, anthropicApiKey: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY, mcpBearerToken, mcpBaseUrl: config.mcpInternalBaseUrl, githubInstallationToken: await githubApp.getInstallationToken(context.installationId), timeoutSeconds })`\n   - Launch: `const { executionName } = await launchAcaJob({ resourceGroup: config.acaResourceGroup, jobName: config.acaJobName, spec, logger });`\n   - Poll with timeout: `const { status, durationMs } = await pollUntilComplete({ resourceGroup: config.acaResourceGroup, jobName: config.acaJobName, executionName, timeoutMs, logger });`\n   - If status === 'timed-out': call cancelAcaJob(), clear registry, return timeout ExecutionResult.\n   - If status === 'failed': clear registry, return failure ExecutionResult.\n   - Read result: `const rawResult = await readJobResult(workspaceDir); const jobResult = rawResult as ExecutionResult;`\n   - Clear registry: `registry.unregister(mcpBearerToken);`\n   - Return jobResult with durationMs filled from the poll.\n\n**4. published flag:** The onPublish/onPublishEvent callbacks are closures registered in buildMcpServers() and called by the orchestrator's MCP HTTP server when the agent job invokes a tool. This works because those callbacks close over mutable `published` and `publishEvents` variables in the executor. Keep those variables and callbacks — they still fire during pollUntilComplete(). After readJobResult(), merge `published` and `publishEvents` into the returned result.\n\n**5. AbortController:** Remove the AbortController/setTimeout timeout mechanism — timeout is now managed by pollUntilComplete() + cancelAcaJob(). Remove buildAgentEnv() import if it's no longer used.\n\n**6. index.ts:** Pass `mcpJobRegistry` to `createExecutor()`. Check that mcpJobRegistry is declared before createExecutor() call (already the case per current index.ts order — executor is line 181, mcpJobRegistry is line 184; swap the order).\n\n**Tests in executor.test.ts:** Mock launchAcaJob, pollUntilComplete, readJobResult, createAzureFilesWorkspaceDir. Test:\n- Happy path: poll returns succeeded, readJobResult returns valid result → ExecutionResult returned\n- Timeout path: poll returns timed-out → cancelAcaJob called, timeout ExecutionResult returned\n- Failed path: poll returns failed → failure ExecutionResult returned\n- Registry: token registered before launch, unregistered after completion\n- published flag propagation: onPublish callback fires (simulated by calling it directly), result has published: true",
       "estimate": "2h",
       "files": [
@@ -2879,6 +2888,39 @@
       "verdict": "✅ pass",
       "duration_ms": 8300,
       "created_at": "2026-03-29T19:09:30.860Z"
+    },
+    {
+      "id": 45,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun test ./src/execution/executor.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 276,
+      "created_at": "2026-03-29T19:15:47.117Z"
+    },
+    {
+      "id": 46,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 123500,
+      "created_at": "2026-03-29T19:15:47.117Z"
+    },
+    {
+      "id": 47,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts ./src/execution/agent-entrypoint.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 128,
+      "created_at": "2026-03-29T19:15:47.117Z"
     }
   ]
 }
