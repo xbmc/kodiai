@@ -22,7 +22,7 @@
   - Estimate: 2h
   - Files: src/jobs/aca-launcher.ts, src/jobs/aca-launcher.test.ts, src/jobs/workspace.ts
   - Verify: bun test ./src/jobs/aca-launcher.test.ts
-- [ ] **T02: test-aca-job.ts script + deploy.sh Azure infrastructure additions** — Create `scripts/test-aca-job.ts` and add the Azure infrastructure provisioning steps to `deploy.sh`.
+- [x] **T02: Create scripts/test-aca-job.ts with pure-code contract check + --live smoke test; add Storage Account, Azure Files, ACA env storage mount, and ACA Job sections to deploy.sh** — Create `scripts/test-aca-job.ts` and add the Azure infrastructure provisioning steps to `deploy.sh`.
 
 **test-aca-job.ts steps:**
 1. Import `buildAcaJobSpec`, `APPLICATION_SECRET_NAMES`, `launchAcaJob`, `pollUntilComplete`, `readJobResult` from `../src/jobs/aca-launcher.ts`.

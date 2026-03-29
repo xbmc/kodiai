@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T18:23:16.744Z",
+  "exported_at": "2026-03-29T18:26:32.700Z",
   "milestones": [
     {
       "id": "M001",
@@ -1899,19 +1899,26 @@
       "milestone_id": "M032",
       "slice_id": "S01",
       "id": "T02",
-      "title": "test-aca-job.ts script + deploy.sh Azure infrastructure additions",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Create scripts/test-aca-job.ts with pure-code contract check + --live smoke test; add Storage Account, Azure Files, ACA env storage mount, and ACA Job sections to deploy.sh",
+      "status": "complete",
+      "one_liner": "Create scripts/test-aca-job.ts with pure-code contract check + --live smoke test; add Storage Account, Azure Files, ACA env storage mount, and ACA Job sections to deploy.sh",
+      "narrative": "Created scripts/test-aca-job.ts with a two-phase approach: a pure-code contract check that always runs (calls buildAcaJobSpec and verifies no APPLICATION_SECRET_NAMES appear in the env array), and a --live mode that dispatches a real ACA Job, polls for completion, prints cold start timing and executionName for portal audit trail lookup, and optionally reads result.json. Updated deploy.sh with idempotent Azure Storage Account provisioning, Azure Files share creation, ACA env storage mount, agent image build (kodiai-agent:latest), and ACA Job create/update sections. Added --volume flag to the orchestrator az containerapp update command for shared workspace access.",
+      "verification_result": "bun run scripts/test-aca-job.ts → contract check passes, exits 0. bun run tsc --noEmit → exits 0. bash -n deploy.sh → exits 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-29T18:26:32.685Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "buildAcaJobSpec requires jobName parameter (not listed in task plan inputs); used caj-kodiai-agent to match deploy.sh. readJobResult failure in live mode treated as warning-only since smoke-test container may not write result.json.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/test-aca-job.ts",
+        "deploy.sh"
+      ],
+      "key_decisions": [
+        "readJobResult failure in live mode is non-fatal — smoke-test container may not write result.json",
+        "volume flag added to orchestrator az containerapp update using --volume name=...,storage-name=...,storage-type=AzureFile",
+        "STORAGE_KEY captured once in storage section and reused by both the ACA env storage set and ACA Job create commands"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M032\nkey_files:\n  - scripts/test-aca-job.ts\n  - deploy.sh\nkey_decisions:\n  - readJobResult failure in live mode is non-fatal — smoke-test container may not write result.json\n  - volume flag added to orchestrator az containerapp update using --volume name=...,storage-name=...,storage-type=AzureFile\n  - STORAGE_KEY captured once in storage section and reused by both the ACA env storage set and ACA Job create commands\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T18:26:32.685Z\nblocker_discovered: false\n---\n\n# T02: Create scripts/test-aca-job.ts with pure-code contract check + --live smoke test; add Storage Account, Azure Files, ACA env storage mount, and ACA Job sections to deploy.sh\n\n**Create scripts/test-aca-job.ts with pure-code contract check + --live smoke test; add Storage Account, Azure Files, ACA env storage mount, and ACA Job sections to deploy.sh**\n\n## What Happened\n\nCreated scripts/test-aca-job.ts with a two-phase approach: a pure-code contract check that always runs (calls buildAcaJobSpec and verifies no APPLICATION_SECRET_NAMES appear in the env array), and a --live mode that dispatches a real ACA Job, polls for completion, prints cold start timing and executionName for portal audit trail lookup, and optionally reads result.json. Updated deploy.sh with idempotent Azure Storage Account provisioning, Azure Files share creation, ACA env storage mount, agent image build (kodiai-agent:latest), and ACA Job create/update sections. Added --volume flag to the orchestrator az containerapp update command for shared workspace access.\n\n## Verification\n\nbun run scripts/test-aca-job.ts → contract check passes, exits 0. bun run tsc --noEmit → exits 0. bash -n deploy.sh → exits 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun run scripts/test-aca-job.ts` | 0 | ✅ pass | 500ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 7600ms |\n| 3 | `bash -n deploy.sh` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nbuildAcaJobSpec requires jobName parameter (not listed in task plan inputs); used caj-kodiai-agent to match deploy.sh. readJobResult failure in live mode treated as warning-only since smoke-test container may not write result.json.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/test-aca-job.ts`\n- `deploy.sh`\n",
       "description": "Create `scripts/test-aca-job.ts` and add the Azure infrastructure provisioning steps to `deploy.sh`.\n\n**test-aca-job.ts steps:**\n1. Import `buildAcaJobSpec`, `APPLICATION_SECRET_NAMES`, `launchAcaJob`, `pollUntilComplete`, `readJobResult` from `../src/jobs/aca-launcher.ts`.\n2. **Pure-code contract check (always runs):** Call `buildAcaJobSpec` with test inputs (image: `kodiairegistry.azurecr.io/kodiai:latest`, workspaceDir: `/mnt/kodiai-workspaces/test-job`, mcpBearerToken: `test-token`). Iterate over all env entries in the resulting spec. Assert that none of the env var names appear in `APPLICATION_SECRET_NAMES`. Print `✅ CONTRACT: no application secrets in job spec env array` on pass, `❌ CONTRACT FAILED: <name> found in env array` on fail. Exit 1 if failed.\n3. **Live mode (`--live` flag):** Read required env vars (`RESOURCE_GROUP`, `ACA_JOB_NAME`, `AZURE_WORKSPACE_MOUNT`) — skip live test with a clear message if any are absent. If present: dispatch a real job via `launchAcaJob`, poll until complete via `pollUntilComplete(timeoutMs: 120_000)`, read result.json via `readJobResult`. Print cold start timing in ms. Exit 1 if job failed or timed out.\n4. Exit 0 when the pure-code check passes (regardless of live mode skip/pass).\n\n**deploy.sh additions:**\nInsert a new section after the ACR build and before the Container Apps Environment section:\n```\n# -- Azure Storage Account (for Azure Files workspace share) --------------------\nSTORAGE_ACCOUNT_NAME=\"kodiaistg\"   # globally unique, lowercase alphanumeric\nFILE_SHARE_NAME=\"workspaces\"\n\nif ! az storage account show --name \"$STORAGE_ACCOUNT_NAME\" --resource-group \"$RESOURCE_GROUP\" --output none 2>/dev/null; then\n  az storage account create --name \"$STORAGE_ACCOUNT_NAME\" --resource-group \"$RESOURCE_GROUP\" --location \"$LOCATION\" --sku Standard_LRS --kind StorageV2 --output none\nfi\nSTORAGE_KEY=$(az storage account keys list --account-name \"$STORAGE_ACCOUNT_NAME\" --resource-group \"$RESOURCE_GROUP\" --query '[0].value' --output tsv)\nif ! az storage share exists --name \"$FILE_SHARE_NAME\" --account-name \"$STORAGE_ACCOUNT_NAME\" --account-key \"$STORAGE_KEY\" --query exists --output tsv | grep -q true 2>/dev/null; then\n  az storage share create --name \"$FILE_SHARE_NAME\" --account-name \"$STORAGE_ACCOUNT_NAME\" --account-key \"$STORAGE_KEY\" --output none\nfi\n```\nAfter the Container Apps Environment creation, add:\n```\n# -- Storage mount on ACA environment -----------------------------------------\naz containerapp env storage set --name \"$ENVIRONMENT\" --resource-group \"$RESOURCE_GROUP\" \\\n  --storage-name kodiai-workspaces \\\n  --azure-file-account-name \"$STORAGE_ACCOUNT_NAME\" \\\n  --azure-file-account-key \"$STORAGE_KEY\" \\\n  --azure-file-share-name \"$FILE_SHARE_NAME\" \\\n  --access-mode ReadWrite --output none 2>/dev/null || true\n\n# -- Build agent image ---------------------------------------------------------\naz acr build --registry \"$ACR_NAME\" --image kodiai-agent:latest .\n\n# -- ACA Job (agent runner) ----------------------------------------------------\nACA_JOB_NAME=\"caj-kodiai-agent\"\nif az containerapp job show --name \"$ACA_JOB_NAME\" --resource-group \"$RESOURCE_GROUP\" --output none 2>/dev/null; then\n  az containerapp job update --name \"$ACA_JOB_NAME\" --resource-group \"$RESOURCE_GROUP\" \\\n    --image \"$ACR_NAME.azurecr.io/kodiai-agent:latest\" --output none\nelse\n  az containerapp job create --name \"$ACA_JOB_NAME\" --resource-group \"$RESOURCE_GROUP\" \\\n    --environment \"$ENVIRONMENT\" --trigger-type Manual \\\n    --replica-timeout 600 --replica-retry-limit 0 \\\n    --image \"$ACR_NAME.azurecr.io/kodiai-agent:latest\" \\\n    --user-assigned \"$IDENTITY_RESOURCE_ID\" \\\n    --registry-server \"$ACR_NAME.azurecr.io\" --registry-identity \"$IDENTITY_RESOURCE_ID\" \\\n    --volume-mount-path /mnt/kodiai-workspaces \\\n    --output none\nfi\n```\nAdd also the volume-mount-path configuration to the orchestrator container app update section (add `--volume` flag pointing at the same Azure Files share).",
       "estimate": "1.5h",
       "files": [
@@ -2479,6 +2486,39 @@
       "verdict": "✅ pass",
       "duration_ms": 8100,
       "created_at": "2026-03-29T18:23:16.727Z"
+    },
+    {
+      "id": 33,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M032",
+      "command": "bun run scripts/test-aca-job.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 500,
+      "created_at": "2026-03-29T18:26:32.685Z"
+    },
+    {
+      "id": 34,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M032",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7600,
+      "created_at": "2026-03-29T18:26:32.685Z"
+    },
+    {
+      "id": 35,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M032",
+      "command": "bash -n deploy.sh",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-29T18:26:32.685Z"
     }
   ]
 }

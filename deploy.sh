@@ -149,6 +149,41 @@ az acr build \
   --image kodiai:latest \
   .
 
+# -- Azure Storage Account (for Azure Files workspace share) ------------------
+STORAGE_ACCOUNT_NAME="kodiaistg"   # globally unique, lowercase alphanumeric
+FILE_SHARE_NAME="workspaces"
+
+echo "==> Provisioning Azure Storage Account: $STORAGE_ACCOUNT_NAME..."
+if ! az storage account show --name "$STORAGE_ACCOUNT_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  az storage account create \
+    --name "$STORAGE_ACCOUNT_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --location "$LOCATION" \
+    --sku Standard_LRS \
+    --kind StorageV2 \
+    --output none
+fi
+
+STORAGE_KEY=$(az storage account keys list \
+  --account-name "$STORAGE_ACCOUNT_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query '[0].value' \
+  --output tsv)
+
+echo "==> Provisioning Azure Files share: $FILE_SHARE_NAME..."
+if ! az storage share exists \
+    --name "$FILE_SHARE_NAME" \
+    --account-name "$STORAGE_ACCOUNT_NAME" \
+    --account-key "$STORAGE_KEY" \
+    --query exists \
+    --output tsv 2>/dev/null | grep -q true; then
+  az storage share create \
+    --name "$FILE_SHARE_NAME" \
+    --account-name "$STORAGE_ACCOUNT_NAME" \
+    --account-key "$STORAGE_KEY" \
+    --output none
+fi
+
 # -- Container Apps Environment -----------------------------------------------
 echo "==> Creating Container Apps environment: $ENVIRONMENT..."
 if ! az containerapp env show --name "$ENVIRONMENT" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
@@ -156,6 +191,50 @@ if ! az containerapp env show --name "$ENVIRONMENT" --resource-group "$RESOURCE_
     --name "$ENVIRONMENT" \
     --resource-group "$RESOURCE_GROUP" \
     --location "$LOCATION" \
+    --output none
+fi
+
+# -- Storage mount on ACA environment -----------------------------------------
+echo "==> Mounting Azure Files share on Container Apps environment..."
+az containerapp env storage set \
+  --name "$ENVIRONMENT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --storage-name kodiai-workspaces \
+  --azure-file-account-name "$STORAGE_ACCOUNT_NAME" \
+  --azure-file-account-key "$STORAGE_KEY" \
+  --azure-file-share-name "$FILE_SHARE_NAME" \
+  --access-mode ReadWrite \
+  --output none 2>/dev/null || true
+
+# -- Build agent image ---------------------------------------------------------
+echo "==> Building and pushing agent image via ACR (remote build)..."
+az acr build \
+  --registry "$ACR_NAME" \
+  --image kodiai-agent:latest \
+  .
+
+# -- ACA Job (agent runner) ---------------------------------------------------
+echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
+ACA_JOB_NAME="caj-kodiai-agent"
+if az containerapp job show --name "$ACA_JOB_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
+  az containerapp job update \
+    --name "$ACA_JOB_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --image "$ACR_NAME.azurecr.io/kodiai-agent:latest" \
+    --output none
+else
+  az containerapp job create \
+    --name "$ACA_JOB_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --environment "$ENVIRONMENT" \
+    --trigger-type Manual \
+    --replica-timeout 600 \
+    --replica-retry-limit 0 \
+    --image "$ACR_NAME.azurecr.io/kodiai-agent:latest" \
+    --user-assigned "$IDENTITY_RESOURCE_ID" \
+    --registry-server "$ACR_NAME.azurecr.io" \
+    --registry-identity "$IDENTITY_RESOURCE_ID" \
+    --volume-mount-path /mnt/kodiai-workspaces \
     --output none
 fi
 
@@ -200,6 +279,7 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
     --min-replicas 1 \
     --max-replicas 1 \
     --termination-grace-period 600 \
+    --volume name=kodiai-workspaces,storage-name=kodiai-workspaces,storage-type=AzureFile \
     --output none
 else
   echo "==> Creating container app: $APP_NAME..."
