@@ -25,3 +25,9 @@
 - Added: 2026-03-28
 - Summary: Defense-in-depth against credential exfiltration: agent env allowlist, git remote token sanitization, outgoing secret scan on all publish paths, prompt-level refusal instructions, CLAUDE.md security policy in workspace.
 - Context: `.gsd/milestones/M031/M031-CONTEXT.md`
+
+### M032 — Agent Process Isolation
+- Status: queued
+- Added: 2026-03-29
+- Summary: Move Claude agent subprocess into an ephemeral Azure Container Apps Job with zero application secrets. MCP servers exposed over authenticated HTTP from the orchestrator. Workspace shared via Azure Files mount. Orchestrator polls ACA Job API for completion and reads result.json. Closes the /proc/<ppid>/environ attack path confirmed in post-M031 security testing.
+- Context: `.gsd/milestones/M032/M032-CONTEXT.md`

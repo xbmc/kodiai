@@ -31,4 +31,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - ✅ M001–M030: Core platform through addon rule enforcement (see CHANGELOG.md)
-- [ ] M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)
+- ✅ M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)
+- [ ] M032: Agent Process Isolation — ephemeral ACA Job sandbox (agent subprocess moved to secrets-free container; MCP servers exposed over authenticated HTTP from orchestrator; workspace on Azure Files share)

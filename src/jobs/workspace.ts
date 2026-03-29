@@ -1,4 +1,4 @@
-import { mkdtemp, rm, readdir, stat } from "node:fs/promises";
+import { mkdtemp, rm, readdir, stat, mkdir } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -694,4 +694,21 @@ export function shouldUseGist(intent: { keyword?: string }, changedFiles: string
   // 2-3 files: check if all in same directory
   const dirs = new Set(changedFiles.map((f) => dirname(f)));
   return dirs.size === 1;
+}
+
+/**
+ * Create an Azure Files-backed workspace directory for a single ACA Job execution.
+ * Returns the absolute path to the created directory.
+ *
+ * The mount base is the path where the Azure Files share is mounted inside the
+ * orchestrator container (e.g. `/mnt/kodiai-workspaces`). Each job gets its own
+ * subdirectory keyed by jobId so concurrent jobs don't share state.
+ */
+export async function createAzureFilesWorkspaceDir(opts: {
+  mountBase: string;
+  jobId: string;
+}): Promise<string> {
+  const dir = join(opts.mountBase, opts.jobId);
+  await mkdir(dir, { recursive: true });
+  return dir;
 }

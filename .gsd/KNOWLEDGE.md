@@ -312,3 +312,13 @@ Use `file://${bareDir}` for URLs. For URL-strip tests, set the remote to a crede
 **Rule:** Do not standardize error format across servers — preserve local convention. The `scanOutgoingForSecrets` call is always the same; only the blocked-response differs.
 
 **Established in:** M031/S03/T02.
+
+---
+
+## `bun test` Requires `./` Prefix for Path-Based Filters (M031/S05)
+
+**Context:** `bun test scripts/verify-m031.test.ts` (without `./`) treats the argument as a **filter substring** rather than a filesystem path. Bun responds with "The following filters did not match any test files" even when the file exists. This cost one full verification-gate round trip.
+
+**Rule:** Always invoke `bun test` with a `./`-prefixed path when targeting a specific file: `bun test ./scripts/verify-m031.test.ts`. This applies to any file path passed to `bun test` — the `./` prefix is what tells Bun to treat the argument as a path.
+
+**Established in:** M031/S05 (verification gate failure, auto-fix round 1).
