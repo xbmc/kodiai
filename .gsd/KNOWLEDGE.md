@@ -385,3 +385,59 @@ This is an MCP spec requirement (client must accept both content types because t
 **Related:** Use `enableJsonResponse: true` in the transport constructor to force JSON responses (never SSE) — useful for test environments and simple RPC clients that don't need streaming.
 
 **Established in:** M032/S02/T01 (`src/execution/mcp/http-server.test.ts`).
+
+---
+
+## Injectable Deps Pattern for Testing Process-Exit Code Without Module Mocking (M032/S03)
+
+**Context:** `agent-entrypoint.ts` calls `process.exit(1)` on validation failures. Spying on `process.exit` in Bun tests is fragile — the spy may actually terminate the test process. Module mocking (`mock.module`) is not available in all Bun versions.
+
+**Pattern:** Accept an optional `Partial<EntrypointDeps>` parameter where `EntrypointDeps` includes `queryFn`, `writeFileFn`, `readFileFn`, and `exitFn: (code: number) => never`. Production callers pass nothing (defaults apply). Test stubs inject directly:
+
+```ts
+const captured: { code?: number } = {};
+const deps: Partial<EntrypointDeps> = {
+  exitFn: (code: number) => { captured.code = code; return undefined as never; },
+  readFileFn: async () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); },
+};
+await runEntrypoint(deps);
+expect(captured.code).toBe(1);
+```
+
+**Key detail:** `exitFn` must have return type `never`. Test stubs satisfy this with `return undefined as never` — the TypeScript compiler accepts this cast, and the stub doesn't actually call `process.exit`.
+
+**Why not process.exit spy:** Spying on `process.exit` can terminate the test runner if the spy is inadvertently called before the spy takes effect, or if an assertion error propagates past the spy boundary.
+
+**Established in:** M032/S03/T02 (`src/execution/agent-entrypoint.ts`, `src/execution/agent-entrypoint.test.ts`).
+
+---
+
+## createTestableExecutor Pattern for ACA-Dispatching Unit Tests (M032/S03)
+
+**Context:** `createExecutor()` in executor.ts calls `launchAcaJob`, `pollUntilComplete`, `cancelAcaJob`, `readJobResult`, and `createAzureFilesWorkspaceDir` — all I/O-bound functions that would require live Azure resources in tests.
+
+**Pattern:** Accept optional injectable overrides as a second parameter to the executor factory (or expose `createTestableExecutor` as a named export):
+
+```ts
+export function createExecutor(deps: ExecutorDeps, fns?: Partial<ExecutorFns>) {
+  const launchFn = fns?.launchFn ?? launchAcaJob;
+  const pollFn   = fns?.pollFn   ?? pollUntilComplete;
+  // ... etc
+}
+```
+
+Tests inject stubs inline:
+
+```ts
+const executor = createExecutor(deps, {
+  launchFn: async () => ({ executionName: "exec-123" }),
+  pollFn:   async () => ({ status: "succeeded", durationMs: 5000 }),
+  readResultFn: async () => ({ conclusion: "success", ...rest }),
+  cancelFn: mock(),
+  createWorkspaceDirFn: async () => "/mnt/workspaces/test-dir",
+});
+```
+
+**Why not module mocking:** Bun's `mock.module` replaces a module globally for the test file, which causes test interference when multiple tests need different behaviors from the same function. The injectable pattern is per-invocation and inherently isolated.
+
+**Established in:** M032/S03/T03 (`src/execution/executor.ts`, `src/execution/executor.test.ts`).

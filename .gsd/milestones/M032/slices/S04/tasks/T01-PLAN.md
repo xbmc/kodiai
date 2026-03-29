@@ -1,10 +1,12 @@
-# S04: verify:m032 Proof Harness + Deploy Updates
+---
+estimated_steps: 17
+estimated_files: 3
+skills_used: []
+---
 
-**Goal:** Add the verify:m032 proof harness (scripts/verify-m032.ts + scripts/verify-m032.test.ts) and wire it into package.json, proving the three core M032 security contracts: job spec has no application secrets, MCP HTTP rejects unauthenticated requests, and Azure Files workspace paths are correctly namespaced per job.
-**Demo:** After this: After S04: bun run verify:m032 → all checks pass, exits 0. ./deploy.sh run against existing env → all Azure resources verified/created, exits 0 (idempotent re-run succeeds).
+# T01: Write verify-m032 proof harness + tests + package.json entry
 
-## Tasks
-- [x] **T01: Add scripts/verify-m032.ts proof harness with 3 security checks, 19 passing tests, and package.json entry; bun run verify:m032 exits 0, tsc --noEmit exits 0** — Create scripts/verify-m032.ts with 3 pure-code checks following the verify-m031 pattern exactly:
+Create scripts/verify-m032.ts with 3 pure-code checks following the verify-m031 pattern exactly:
 
 **Check 1: M032-JOB-SPEC-NO-SECRETS** — Call `buildAcaJobSpec({ jobName: 'test-job', image: 'test-image', workspaceDir: '/tmp/test', mcpBearerToken: 'tok', mcpBaseUrl: 'http://localhost', timeoutSeconds: 600 })`. Assert that none of `APPLICATION_SECRET_NAMES` appear in `spec.env.map(e => e.name)`. Pass if the array contains zero forbidden names; fail with detail listing which names were found.
 
@@ -28,6 +30,22 @@ Create scripts/verify-m032.test.ts following verify-m031.test.ts structure:
 Add `"verify:m032": "bun scripts/verify-m032.ts"` to package.json scripts (after verify:m031 entry).
 
 Note on WORKSPACE check: the real `createAzureFilesWorkspaceDir` calls `mkdir` which needs a real path. Tests must always pass `_workspaceFn` stub. The harness default (no opts) calls the real function only from CLI — for the pure-code test gate, the check is injectable.
-  - Estimate: 45m
-  - Files: scripts/verify-m032.ts, scripts/verify-m032.test.ts, package.json
-  - Verify: bun test ./scripts/verify-m032.test.ts && bun run verify:m032 && bun run tsc --noEmit && bash -n deploy.sh
+
+## Inputs
+
+- `scripts/verify-m031.ts`
+- `scripts/verify-m031.test.ts`
+- `src/jobs/aca-launcher.ts`
+- `src/execution/mcp/http-server.ts`
+- `src/jobs/workspace.ts`
+- `package.json`
+
+## Expected Output
+
+- `scripts/verify-m032.ts`
+- `scripts/verify-m032.test.ts`
+- `package.json`
+
+## Verification
+
+bun test ./scripts/verify-m032.test.ts && bun run verify:m032 && bun run tsc --noEmit && bash -n deploy.sh
