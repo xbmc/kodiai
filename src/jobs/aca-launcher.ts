@@ -108,8 +108,66 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 // ---------------------------------------------------------------------------
 
 /**
+ * Get an Azure management API access token.
+ *
+ * In ACA (production): uses the managed identity IMDS endpoint.
+ * Outside ACA (local dev / CI): falls back to `az account get-access-token`.
+ */
+async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
+  // Try IMDS first (available in ACA with managed identity)
+  try {
+    const imdsResp = await fetch(
+      "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/",
+      { headers: { Metadata: "true" } },
+    );
+    if (imdsResp.ok) {
+      const imds = (await imdsResp.json()) as { access_token?: string };
+      const token = imds.access_token ?? "";
+      if (token) {
+        // Get subscription ID from IMDS instance metadata
+        const instanceResp = await fetch(
+          "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+          { headers: { Metadata: "true" } },
+        );
+        let subscriptionId = "";
+        if (instanceResp.ok) {
+          const instance = (await instanceResp.json()) as {
+            compute?: { subscriptionId?: string };
+          };
+          subscriptionId = instance.compute?.subscriptionId ?? "";
+        }
+        if (!subscriptionId) {
+          throw new Error("launchAcaJob: IMDS did not return subscriptionId");
+        }
+        return { token, subscriptionId };
+      }
+    }
+  } catch {
+    // IMDS not available — fall through to az CLI
+  }
+
+  // Fallback: az CLI (local dev / CI)
+  const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
+  const token = tokenResult.text().trim();
+  if (!token) throw new Error("launchAcaJob: failed to get Azure access token via az CLI");
+
+  const subResult = await $`az account show --query id -o tsv`.quiet();
+  const subscriptionId = subResult.text().trim();
+  if (!subscriptionId) throw new Error("launchAcaJob: failed to get Azure subscription ID via az CLI");
+
+  return { token, subscriptionId };
+}
+
+/**
  * Launch an ACA Job execution and return the execution name.
- * Uses `az containerapp job execution start` with JSON env overrides.
+ *
+ * Uses the Azure Management REST API directly because `az containerapp job
+ * execution start` does not exist in containerapp CLI extension ≤1.3.0b2, and
+ * `az containerapp job start --env-vars` does not pass env overrides into the
+ * running container (it modifies the job template permanently instead).
+ *
+ * The REST endpoint POST /jobs/{name}/start accepts per-execution env overrides
+ * in the request body and is available in API version 2024-03-01+.
  */
 export async function launchAcaJob(opts: {
   resourceGroup: string;
@@ -119,22 +177,41 @@ export async function launchAcaJob(opts: {
 }): Promise<{ executionName: string }> {
   const { resourceGroup, jobName, spec, logger } = opts;
 
-  // Build the env-override JSON for --container-args or --env-vars
-  // az containerapp job execution start accepts --env-vars KEY=VALUE pairs
-  const envArgs: string[] = spec.env.flatMap((e) => ["--env-vars", `${e.name}=${e.value}`]);
+  const { token: accessToken, subscriptionId } = await getAzureAccessToken();
 
-  const result = await $`az containerapp job execution start \
-    --name ${jobName} \
-    --resource-group ${resourceGroup} \
-    --image ${spec.image} \
-    ${envArgs} \
-    --output json`.quiet();
+  const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/start?api-version=2024-03-01`;
 
-  const parsed = JSON.parse(result.text()) as { name?: string };
+  const body = {
+    containers: [
+      {
+        name: jobName,
+        image: spec.image,
+        env: spec.env.map((e) => ({ name: e.name, value: e.value })),
+      },
+    ],
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `launchAcaJob: REST API returned ${response.status}: ${text.slice(0, 500)}`,
+    );
+  }
+
+  const parsed = (await response.json()) as { name?: string; id?: string };
   const executionName = parsed.name ?? "";
   if (!executionName) {
     throw new Error(
-      `launchAcaJob: az returned no execution name. Output: ${result.text().slice(0, 500)}`,
+      `launchAcaJob: API returned no execution name. Body: ${JSON.stringify(parsed).slice(0, 500)}`,
     );
   }
 

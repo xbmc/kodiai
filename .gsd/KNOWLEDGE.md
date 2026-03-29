@@ -529,3 +529,74 @@ const exitFn = (code: number): never => { throw new Error(`exit(${code})`); };
 **Rule:** The `_` prefix is not used here — `EntrypointDeps` is a proper type, not a test-only override. Use this pattern whenever a module has a `process.exit` call that needs to be exercised in tests.
 
 **Established in:** M032/S03/T02 (`src/execution/agent-entrypoint.ts` + `agent-entrypoint.test.ts`).
+
+---
+
+## `az containerapp` CLI Has No `--volume` Flag — Use YAML Patch (M032/deploy)
+
+**Context:** Both `az containerapp update` and `az containerapp job create/update` lack a `--volume` flag for Azure Files volume mounts. Passing `--volume name=...,storage-name=...,storage-type=AzureFile` produces `ERROR: unrecognized arguments`.
+
+**Critical:** The YAML patch must include BOTH `template.volumes` AND `template.containers[].volumeMounts`. Setting only `volumes` registers the volume on the template but does NOT mount it in the container — the filesystem path will not exist, producing `EACCES: permission denied, mkdir '/mnt/...'` at runtime.
+
+**Pattern:** Two-step approach:
+1. Create/update the resource with all non-volume config via normal CLI flags.
+2. Apply volume mount via a YAML patch using `--yaml` that includes both volumes and volumeMounts:
+
+```yaml
+# For container app (both volumes AND volumeMounts required):
+properties:
+  template:
+    containers:
+      - name: ca-kodiai
+        image: kodiairegistry.azurecr.io/kodiai:latest
+        volumeMounts:
+          - volumeName: kodiai-workspaces
+            mountPath: /mnt/kodiai-workspaces
+    volumes:
+      - name: kodiai-workspaces
+        storageName: kodiai-workspaces
+        storageType: AzureFile
+
+# For ACA Job (same — both containers[].volumeMounts and volumes required):
+properties:
+  template:
+    containers:
+      - name: "caj-kodiai-agent"
+        image: "kodiairegistry.azurecr.io/kodiai-agent:latest"
+        volumeMounts:
+          - volumeName: kodiai-workspaces
+            mountPath: /mnt/kodiai-workspaces
+    volumes:
+      - name: kodiai-workspaces
+        storageName: kodiai-workspaces
+        storageType: AzureFile
+```
+```
+
+**Rule:** The storage name (`storageName`) must match the name used in `az containerapp env storage set` (the environment-level Azure Files registration). The volume name (`name`) is arbitrary but must match the `volumeName` in `volumeMounts`.
+
+**Established in:** M032 deploy (deploy.sh YAML patch sections).
+
+---
+
+## ACA Job Dispatch Requires REST API — `az containerapp job execution start` Doesn't Exist (M032/post-deploy)
+
+**Context:** `az containerapp job execution start` does not exist in containerapp CLI extension ≤1.3.0b2. `az containerapp job start --env-vars` exists but does NOT pass env vars as per-execution overrides — it modifies the job template permanently and the container still boots with the job's base env (empty). Both approaches result in the container seeing no env vars.
+
+**Fix:** Use the Azure Management REST API directly via `fetch()`:
+```
+POST https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.App/jobs/{jobName}/start?api-version=2024-03-01
+{
+  "containers": [{
+    "name": "caj-kodiai-agent",
+    "image": "...",
+    "env": [{"name": "KEY", "value": "VALUE"}, ...]
+  }]
+}
+```
+
+**Token acquisition:** In ACA (production), use the managed identity IMDS endpoint: `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/`. Fall back to `az account get-access-token` for local dev. The managed identity needs `Contributor` role on the resource group (or at minimum `Microsoft.App/jobs/start/action`).
+
+**Verified:** REST API correctly passes env vars to the running container. Job Succeeded with WORKSPACE_DIR, CLAUDE.md written, result.json written.
+
+**Established in:** M032 post-deploy fix (`src/jobs/aca-launcher.ts`, `getAzureAccessToken()` + updated `launchAcaJob()`).
