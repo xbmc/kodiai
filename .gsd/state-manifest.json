@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T19:04:40.049Z",
+  "exported_at": "2026-03-29T19:09:30.887Z",
   "milestones": [
     {
       "id": "M001",
@@ -2094,19 +2094,26 @@
       "milestone_id": "M032",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Agent job entrypoint script",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Created agent-entrypoint.ts (ACA job container script) and 13 passing unit tests covering all env-var, config, SDK, and error paths",
+      "status": "complete",
+      "one_liner": "Created agent-entrypoint.ts (ACA job container script) and 13 passing unit tests covering all env-var, config, SDK, and error paths",
+      "narrative": "Implemented src/execution/agent-entrypoint.ts with all 7 responsibilities from the task plan: env-var validation with exit(1), agent-config.json read/parse with exit(1), CLAUDE.md write via buildSecurityClaudeMd(), McpHttpServerConfig construction for all 7 MCP server names, SDK query() invocation with bypassPermissions + settingSources:['project'], SDKResultMessage collection, and result.json write with the ExecutionResult shape (including error fallback). Used an injectable EntrypointDeps pattern (optional partial parameter) so tests inject queryFn/writeFileFn/readFileFn/exitFn stubs without module mocking. Wrote 13 unit tests covering missing env vars (4 cases including CLAUDE_CODE_OAUTH_TOKEN fallback), missing/invalid config (2 cases), happy path (4 cases asserting CLAUDE.md ordering, MCP server construction, SDK params, result.json fields), and SDK error paths (2 cases). Fixed 6 tsc nullability errors in test file with non-null assertions following toBeDefined() guards.",
+      "verification_result": "bun test ./src/execution/agent-entrypoint.test.ts — 13 pass, 0 fail, 60 expect() calls. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-03-29T19:09:30.860Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used EntrypointDeps injection pattern rather than process.exit spy — functionally equivalent but cleaner and avoids Bun module-mock fragility. exitFn is a first-class injectable with return type never.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/execution/agent-entrypoint.ts",
+        "src/execution/agent-entrypoint.test.ts"
+      ],
+      "key_decisions": [
+        "EntrypointDeps injection pattern: queryFn, writeFileFn, readFileFn, exitFn injectable via Partial<EntrypointDeps>; production callers pass nothing; test stubs inject directly",
+        "exitFn return type is never; test stubs use return undefined as never to avoid actually calling process.exit",
+        "MCP_SERVER_NAMES exported as readonly const so tests can assert against the canonical list without duplication"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M032\nkey_files:\n  - src/execution/agent-entrypoint.ts\n  - src/execution/agent-entrypoint.test.ts\nkey_decisions:\n  - EntrypointDeps injection pattern: queryFn, writeFileFn, readFileFn, exitFn injectable via Partial<EntrypointDeps>; production callers pass nothing; test stubs inject directly\n  - exitFn return type is never; test stubs use return undefined as never to avoid actually calling process.exit\n  - MCP_SERVER_NAMES exported as readonly const so tests can assert against the canonical list without duplication\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T19:09:30.860Z\nblocker_discovered: false\n---\n\n# T02: Created agent-entrypoint.ts (ACA job container script) and 13 passing unit tests covering all env-var, config, SDK, and error paths\n\n**Created agent-entrypoint.ts (ACA job container script) and 13 passing unit tests covering all env-var, config, SDK, and error paths**\n\n## What Happened\n\nImplemented src/execution/agent-entrypoint.ts with all 7 responsibilities from the task plan: env-var validation with exit(1), agent-config.json read/parse with exit(1), CLAUDE.md write via buildSecurityClaudeMd(), McpHttpServerConfig construction for all 7 MCP server names, SDK query() invocation with bypassPermissions + settingSources:['project'], SDKResultMessage collection, and result.json write with the ExecutionResult shape (including error fallback). Used an injectable EntrypointDeps pattern (optional partial parameter) so tests inject queryFn/writeFileFn/readFileFn/exitFn stubs without module mocking. Wrote 13 unit tests covering missing env vars (4 cases including CLAUDE_CODE_OAUTH_TOKEN fallback), missing/invalid config (2 cases), happy path (4 cases asserting CLAUDE.md ordering, MCP server construction, SDK params, result.json fields), and SDK error paths (2 cases). Fixed 6 tsc nullability errors in test file with non-null assertions following toBeDefined() guards.\n\n## Verification\n\nbun test ./src/execution/agent-entrypoint.test.ts — 13 pass, 0 fail, 60 expect() calls. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/execution/agent-entrypoint.test.ts` | 0 | ✅ pass | 132ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 8300ms |\n\n\n## Deviations\n\nUsed EntrypointDeps injection pattern rather than process.exit spy — functionally equivalent but cleaner and avoids Bun module-mock fragility. exitFn is a first-class injectable with return type never.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/execution/agent-entrypoint.ts`\n- `src/execution/agent-entrypoint.test.ts`\n",
       "description": "Create src/execution/agent-entrypoint.ts — the script the ACA Job container runs.\n\nResponsibilities:\n1. Read required env vars: WORKSPACE_DIR, MCP_BASE_URL, MCP_BEARER_TOKEN, ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN as fallback). Exit 1 with a clear message if any required var is missing.\n2. Read agent-config.json from WORKSPACE_DIR. Shape: { prompt: string, model: string, maxTurns: number, allowedTools: string[], taskType?: string }. Exit 1 if file is missing or JSON is invalid.\n3. Write CLAUDE.md to WORKSPACE_DIR by calling buildSecurityClaudeMd() (imported from ./executor.ts).\n4. Build mcpServers as McpHttpServerConfig entries — one for each of the 7 server names (github_comment, reviewCommentThread, github_inline_comment, github_ci, review_checkpoint, github_issue_label, github_issue_comment). All point at `${MCP_BASE_URL}/internal/mcp/${serverName}` with `Authorization: Bearer ${MCP_BEARER_TOKEN}` header.\n5. Call query() from @anthropic-ai/claude-agent-sdk with: prompt from agent-config.json, model from agent-config.json, maxTurns from agent-config.json, allowedTools from agent-config.json, mcpServers object, cwd: WORKSPACE_DIR, permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, settingSources: ['project'].\n6. Collect messages from the async iterator. Capture the SDKResultMessage when message.type === 'result'.\n7. Write result.json to WORKSPACE_DIR with the ExecutionResult shape: { conclusion, costUsd, numTurns, durationMs, sessionId, resultText, model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, stopReason }. On any error, write { conclusion: 'error', errorMessage: string }.\n\nCreate src/execution/agent-entrypoint.test.ts with tests:\n- Missing env vars → console.error + process.exit(1) (spy on process.exit)\n- Missing agent-config.json → exits with error\n- Happy path: mock query() to yield one result message → result.json written with conclusion: 'success'\n- SDK iterator throws → result.json written with conclusion: 'error'",
       "estimate": "1h",
       "files": [
@@ -2850,6 +2857,28 @@
       "verdict": "✅ pass",
       "duration_ms": 50,
       "created_at": "2026-03-29T19:04:40.035Z"
+    },
+    {
+      "id": 43,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun test ./src/execution/agent-entrypoint.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 132,
+      "created_at": "2026-03-29T19:09:30.860Z"
+    },
+    {
+      "id": 44,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8300,
+      "created_at": "2026-03-29T19:09:30.860Z"
     }
   ]
 }

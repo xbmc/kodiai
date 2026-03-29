@@ -12,7 +12,7 @@
   - Estimate: 45m
   - Files: src/jobs/aca-launcher.ts, src/jobs/aca-launcher.test.ts, src/config.ts, src/routes/slack-events.test.ts, src/routes/slack-commands.test.ts, Dockerfile.agent, deploy.sh
   - Verify: bun test ./src/jobs/aca-launcher.test.ts && bun run tsc --noEmit && bash -n Dockerfile.agent
-- [ ] **T02: Agent job entrypoint script** — Create src/execution/agent-entrypoint.ts — the script the ACA Job container runs.
+- [x] **T02: Created agent-entrypoint.ts (ACA job container script) and 13 passing unit tests covering all env-var, config, SDK, and error paths** — Create src/execution/agent-entrypoint.ts — the script the ACA Job container runs.
 
 Responsibilities:
 1. Read required env vars: WORKSPACE_DIR, MCP_BASE_URL, MCP_BEARER_TOKEN, ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN as fallback). Exit 1 with a clear message if any required var is missing.
