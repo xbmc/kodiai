@@ -116,8 +116,10 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
   // Try IMDS first (available in ACA with managed identity)
   try {
+    // Include client_id for user-assigned managed identity (id-kodiai)
+    const clientId = "2956d96a-b618-498d-a021-6bb3196fdcdf";
     const imdsResp = await fetch(
-      "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/",
+      `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/&client_id=${clientId}`,
       { headers: { Metadata: "true" } },
     );
     if (imdsResp.ok) {
