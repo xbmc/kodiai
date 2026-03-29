@@ -1,10 +1,12 @@
-# S02: MCP HTTP Server in Orchestrator
+---
+estimated_steps: 70
+estimated_files: 2
+skills_used: []
+---
 
-**Goal:** Build an authenticated MCP HTTP server in the orchestrator that lets the isolated ACA agent job call MCP tools over HTTP. The server uses per-request fresh transports (stateless mode), validates a per-job bearer token, and exposes a registry API for registering/unregistering job sessions.
-**Demo:** After this: After S02: curl -H 'Authorization: Bearer <valid-token>' http://localhost:PORT/internal/mcp/github_comment → MCP JSON response; same curl without token → 401; wrong token → 401. All 7 server routes respond.
+# T01: Create src/execution/mcp/http-server.ts — registry, Hono routes, and tests
 
-## Tasks
-- [x] **T01: Built MCP HTTP server module: per-job bearer-token registry and stateless Hono route handler using fresh per-request transport+server instances** — Build the MCP HTTP server module: a per-job registry keyed by bearer token and a Hono app that handles stateless MCP requests per-request.
+Build the MCP HTTP server module: a per-job registry keyed by bearer token and a Hono app that handles stateless MCP requests per-request.
 
 The critical constraint: `WebStandardStreamableHTTPServerTransport` in stateless mode (no `sessionIdGenerator`) cannot be reused across requests — the SDK throws if `_hasHandledRequest` is already set. So every HTTP request must create a fresh transport AND a fresh server instance (because `McpServer.connect()` registers tool handlers on the Server object which can't be re-registered after connecting).
 
@@ -85,48 +87,22 @@ export function createMcpHttpRoutes(registry: McpJobRegistry, logger?: Logger): 
 
 5. Run `bun test ./src/execution/mcp/http-server.test.ts` and fix until all pass.
 6. Run `bun run tsc --noEmit` and fix any type errors introduced.
-  - Estimate: 2h
-  - Files: src/execution/mcp/http-server.ts, src/execution/mcp/http-server.test.ts
-  - Verify: bun test ./src/execution/mcp/http-server.test.ts && bun run tsc --noEmit
-- [ ] **T02: Wire mcpBaseUrl into aca-launcher, add config fields, mount routes in index.ts** — Integrate the MCP HTTP server into the orchestrator startup and the ACA job spec builder.
 
-**Steps:**
+## Inputs
 
-1. **`src/jobs/aca-launcher.ts`** — add `mcpBaseUrl: string` to `BuildAcaJobSpecOpts` and inject it into the job env array as `{ name: "MCP_BASE_URL", value: opts.mcpBaseUrl }`. Place it between the existing required env entries. Note: `MCP_BASE_URL` is NOT in `APPLICATION_SECRET_NAMES`, so the runtime guard will not fire.
+- `src/execution/mcp/comment-server.ts`
+- `src/execution/mcp/index.ts`
+- `src/routes/health.ts`
 
-2. **`src/jobs/aca-launcher.test.ts`** — update the `BASE_OPTS` fixture (and any other test fixtures that construct `BuildAcaJobSpecOpts`) to include `mcpBaseUrl: "http://ca-kodiai.internal.env.eastus.azurecontainerapps.io"`. Add a test: `MCP_BASE_URL env var present in spec` asserting `spec.env.find(e => e.name === 'MCP_BASE_URL')?.value === opts.mcpBaseUrl`. Also verify `MCP_BASE_URL` is not in `APPLICATION_SECRET_NAMES` (it shouldn't be — confirm the guard doesn't fire).
+## Expected Output
 
-3. **`src/config.ts`** — add two optional fields to `configSchema`:
-```ts
-mcpInternalBaseUrl: z.string().default(""),
-acaJobImage: z.string().default(""),
-```
-And in `loadConfig`'s parse input:
-```ts
-mcpInternalBaseUrl: process.env.MCP_INTERNAL_BASE_URL,
-acaJobImage: process.env.ACA_JOB_IMAGE,
-```
-Using `.default("")` means existing test stubs that construct `AppConfig` directly don't need updating (Zod fills the default).
+- `src/execution/mcp/http-server.ts`
+- `src/execution/mcp/http-server.test.ts`
 
-4. **`src/index.ts`** — add:
-```ts
-import { createMcpJobRegistry } from "./execution/mcp/http-server.ts";
-import { createMcpHttpRoutes } from "./execution/mcp/http-server.ts";
-```
-Near the start of the app section, create the registry:
-```ts
-const mcpJobRegistry = createMcpJobRegistry();
-```
-Mount the routes on the Hono app (before the catch-all error handler):
-```ts
-app.route("/internal", createMcpHttpRoutes(mcpJobRegistry, logger));
-```
-The registry is module-level so S03 can import it or receive it via dependency injection.
+## Verification
 
-5. Export `mcpJobRegistry` from `src/index.ts` is NOT necessary — S03 will wire it via the executor factory. Just create it as a local variable passed to `createMcpHttpRoutes`.
+bun test ./src/execution/mcp/http-server.test.ts && bun run tsc --noEmit
 
-6. Run `bun test ./src/jobs/aca-launcher.test.ts` and fix until all pass.
-7. Run `bun run tsc --noEmit` — fix any errors (particularly AppConfig stubs in test files that may need the new optional fields, though `.default("")` in Zod should make them optional in parsed output).
-  - Estimate: 1h
-  - Files: src/jobs/aca-launcher.ts, src/jobs/aca-launcher.test.ts, src/config.ts, src/index.ts
-  - Verify: bun test ./src/jobs/aca-launcher.test.ts && bun run tsc --noEmit
+## Observability Impact
+
+Route handler logs 401/404 at warn level with tokenPrefix (first 8 chars) and serverName. Registry register/unregister log at info level with tokenPrefix and factory count for future debugging.

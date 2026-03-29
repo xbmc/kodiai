@@ -322,3 +322,66 @@ Use `file://${bareDir}` for URLs. For URL-strip tests, set the remote to a crede
 **Rule:** Always invoke `bun test` with a `./`-prefixed path when targeting a specific file: `bun test ./scripts/verify-m031.test.ts`. This applies to any file path passed to `bun test` — the `./` prefix is what tells Bun to treat the argument as a path.
 
 **Established in:** M031/S05 (verification gate failure, auto-fix round 1).
+
+---
+
+## ACA Job Env-Var Passing Convention — `--env-vars KEY=VALUE` pairs (M032/S01)
+
+**Context:** `az containerapp job execution start` accepts env var overrides via `--env-vars KEY=VALUE KEY2=VALUE2` (space-separated pairs). The `--env-vars` flag is NOT a JSON string — passing `--env-vars '[{"name":"K","value":"V"}]'` fails with an argument parse error.
+
+**Pattern:**
+```ts
+const envArgs: string[] = spec.env.flatMap((e) => ["--env-vars", `${e.name}=${e.value}`]);
+// Produces: ["--env-vars", "KEY1=val1", "--env-vars", "KEY2=val2"]
+// Which Bun $ template-literal spreads correctly as separate arguments
+```
+
+**Bun $ spread:** When using `${envArgs}` in a Bun tagged-template shell expression, Bun spreads the array as separate arguments automatically. No manual `join(" ")` needed.
+
+**Established in:** M032/S01/T01 (`src/jobs/aca-launcher.ts`, `launchAcaJob`).
+
+---
+
+## ACA Job Execution Status — Dual-Field Parsing (M032/S01)
+
+**Context:** `az containerapp job execution show --output json` returns execution status in `properties.status` in some API versions and at the top-level `status` field in others.
+
+**Rule:** Always parse both fields and prefer `properties.status` first:
+```ts
+const status = parsed.properties?.status ?? parsed.status ?? undefined;
+```
+
+This ensures forward compatibility when the az CLI or ACA API changes how it surfaces execution state. The normalized comparison uses `.toLowerCase()` to handle both `Succeeded` and `succeeded` variants.
+
+**Established in:** M032/S01/T01 (`src/jobs/aca-launcher.ts`, `parseExecutionStatus`).
+
+---
+
+## ACA Job Contract Check Script Pattern (M032/S01)
+
+**Context:** `scripts/test-aca-job.ts` establishes a two-phase smoke-test pattern for infrastructure scripts that require live Azure resources.
+
+**Phase 1 — Pure-code contract check (always runs, exits 1 on failure):** Calls `buildAcaJobSpec` with synthetic inputs and asserts no `APPLICATION_SECRET_NAMES` appear in the env array. This is runnable in CI with no Azure credentials.
+
+**Phase 2 — Live mode (skips gracefully when env vars absent):** Reads `RESOURCE_GROUP`, `ACA_JOB_NAME`, `AZURE_WORKSPACE_MOUNT` from env. If any are absent, prints a diagnostic skip message and exits 0. If all present, dispatches a real ACA Job, polls for completion, prints cold start timing in ms, and attempts to read `result.json` (non-fatal if absent — smoke-test container may not write it).
+
+**Pattern:** Pure-code gate → live gate behind missing-env guard → non-fatal optional artifact read. Exit 0 on either pass path; exit 1 only on contract failure or live job failure.
+
+**Established in:** M032/S01/T02 (`scripts/test-aca-job.ts`).
+
+---
+
+## MCP POST Requests Require `Accept: application/json, text/event-stream` Header
+
+**Context:** `WebStandardStreamableHTTPServerTransport.handleRequest` guards POST requests against a missing or incomplete `Accept` header. If the header doesn't include both `application/json` AND `text/event-stream`, the transport returns 406 Not Acceptable immediately — before any tool dispatch.
+
+**Rule:** When writing tests or clients that POST to a Hono+MCP route, always include:
+```
+Accept: application/json, text/event-stream
+```
+
+This is an MCP spec requirement (client must accept both content types because the server may respond with either JSON or SSE depending on the request type). The 406 is easy to misread as a route problem.
+
+**Related:** Use `enableJsonResponse: true` in the transport constructor to force JSON responses (never SSE) — useful for test environments and simple RPC clients that don't need streaming.
+
+**Established in:** M032/S02/T01 (`src/execution/mcp/http-server.test.ts`).
