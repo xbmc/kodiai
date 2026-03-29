@@ -1,0 +1,27 @@
+# Stage 1: Install production dependencies
+FROM oven/bun:1-debian AS deps
+WORKDIR /app
+COPY package.json bun.lock ./
+RUN bun install --production --frozen-lockfile
+
+# Stage 2: Agent job image
+FROM oven/bun:1-debian
+
+# git is required for workspace manager (git clone)
+# python3 + kodi-addon-checker required for addon lint checks
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir --break-system-packages kodi-addon-checker && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy production dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy application source
+COPY package.json bun.lock tsconfig.json ./
+COPY src/ ./src/
+
+# Run as non-root user (oven/bun images include 'bun' user)
+USER bun
+
+# No EXPOSE — agent jobs have no incoming ports
+CMD ["bun", "run", "src/execution/agent-entrypoint.ts"]

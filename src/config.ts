@@ -38,6 +38,8 @@ const configSchema = z.object({
     ),
   mcpInternalBaseUrl: z.string().default(""),
   acaJobImage: z.string().default(""),
+  acaResourceGroup: z.string().default("rg-kodiai"),
+  acaJobName: z.string().default("caj-kodiai-agent"),
 });
 
 export type AppConfig = z.infer<typeof configSchema>;
@@ -107,6 +109,8 @@ export async function loadConfig(): Promise<AppConfig> {
     addonRepos: process.env.ADDON_REPOS,
     mcpInternalBaseUrl: process.env.MCP_INTERNAL_BASE_URL,
     acaJobImage: process.env.ACA_JOB_IMAGE,
+    acaResourceGroup: process.env.ACA_RESOURCE_GROUP,
+    acaJobName: process.env.ACA_JOB_NAME,
   });
 
   if (!result.success) {

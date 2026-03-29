@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T18:43:51.605Z",
+  "exported_at": "2026-03-29T19:04:40.049Z",
   "milestones": [
     {
       "id": "M001",
@@ -987,16 +987,16 @@
       "milestone_id": "M032",
       "id": "S02",
       "title": "MCP HTTP Server in Orchestrator",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S01"
       ],
       "demo": "After S02: curl -H 'Authorization: Bearer <valid-token>' http://localhost:PORT/internal/mcp/github_comment → MCP JSON response; same curl without token → 401; wrong token → 401. All 7 server routes respond.",
       "created_at": "2026-03-29T16:56:17.550Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-03-29T18:46:28.832Z",
+      "full_summary_md": "---\nid: S02\nparent: M032\nmilestone: M032\nprovides:\n  - createMcpJobRegistry() — per-job bearer token registry with TTL, ready for S03 to call .register(token, factories) before job dispatch and .unregister(token) on completion\n  - createMcpHttpRoutes(registry, logger?) — Hono app at /internal/mcp/:serverName, mounted and listening in orchestrator\n  - MCP_BASE_URL in ACA job env — job can call http://{MCP_BASE_URL}/internal/mcp/{serverName} with Authorization: Bearer {token}\n  - mcpInternalBaseUrl and acaJobImage in AppConfig — S03 can read config.mcpInternalBaseUrl to pass to buildAcaJobSpec\nrequires:\n  []\naffects:\n  - S03 — must wire MCP server factories into registry before job dispatch, expose registry to executor path\nkey_files:\n  - src/execution/mcp/http-server.ts\n  - src/execution/mcp/http-server.test.ts\n  - src/jobs/aca-launcher.ts\n  - src/jobs/aca-launcher.test.ts\n  - src/config.ts\n  - src/index.ts\nkey_decisions:\n  - Per-request fresh transport+server pattern required by MCP stateless mode invariant (_hasHandledRequest flag)\n  - enableJsonResponse:true forces JSON vs SSE — simpler for RPC clients and test assertions\n  - MCP sub-app mounted at root (app.route('/')) because it owns its own /internal prefix\n  - MCP_BASE_URL is not in APPLICATION_SECRET_NAMES — it is a non-secret URL, no security guard fires\n  - AppConfig Zod .default() fills runtime-parsed output but TypeScript structural types require explicit fields in literal stubs\npatterns_established:\n  - Per-request fresh MCP transport+server: always call factory() inside the HTTP handler, never reuse transport or server instances across requests in stateless mode\n  - Hono sub-app prefix ownership: if createFooRoutes() mounts at /prefix/..., call app.route('/', createFooRoutes(...)) at root, not app.route('/prefix', ...)\nobservability_surfaces:\n  - logger.warn({ tokenPrefix: token?.slice(0, 8) }, 'MCP HTTP: unauthorized') — logged on every 401, includes first 8 chars of token for tracing without exposing full token\n  - logger.warn({ serverName, tokenPrefix }, 'MCP HTTP: server not found') — logged on 404\ndrill_down_paths:\n  - milestones/M032/slices/S02/tasks/T01-SUMMARY.md\n  - milestones/M032/slices/S02/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T18:46:28.833Z\nblocker_discovered: false\n---\n\n# S02: MCP HTTP Server in Orchestrator\n\n**Built authenticated MCP HTTP server (per-job bearer token registry + stateless Hono routes) and integrated it into the orchestrator startup and ACA job spec builder.**\n\n## What Happened\n\nS02 delivered the internal MCP HTTP server that lets the isolated ACA agent job call MCP tools without holding application secrets.\n\n**T01 — http-server.ts:** Created `src/execution/mcp/http-server.ts` with two exports. `createMcpJobRegistry()` is a `Map<string, McpJobEntry>`-backed registry keyed by per-job bearer token. Each entry holds a `Record<string, () => McpSdkServerConfigWithInstance>` (server name → factory) and an `expiresAt` timestamp for lazy TTL expiry. `createMcpHttpRoutes(registry, logger?)` returns a Hono app with a single `app.all(\"/internal/mcp/:serverName\", ...)` handler. The handler validates the `Authorization: Bearer` token against the registry, looks up the factory by server name, then creates a **fresh** `WebStandardStreamableHTTPServerTransport` (sessionIdGenerator: undefined, enableJsonResponse: true) and calls `serverConfig.instance.connect(transport)` on each request. The per-request fresh-instance pattern is required by the SDK: the `_hasHandledRequest` flag on the transport prevents reuse, and `McpServer.connect()` registers tool handlers that can't be re-registered on an existing server instance. `enableJsonResponse: true` forces JSON responses (vs SSE) for simpler RPC clients. Tests discovered that MCP POST requests require `Accept: application/json, text/event-stream` per the MCP spec — the test helper includes this header. 10 tests pass: registry lifecycle (hasToken, register, unregister, getFactory, TTL expiry) and all 5 HTTP scenarios (no auth, wrong token, unknown server, valid MCP initialize → 200 with result, unregister → subsequent 401).\n\n**T02 — Integration:** Added `mcpBaseUrl: string` to `BuildAcaJobSpecOpts` and injected `MCP_BASE_URL` into the ACA job env array (not in APPLICATION_SECRET_NAMES — not a secret, no guard fires). Added `mcpInternalBaseUrl` and `acaJobImage` to `configSchema` with Zod `.default(\"\")` and `loadConfig` reads from `MCP_INTERNAL_BASE_URL`/`ACA_JOB_IMAGE` env vars. In `index.ts`, the registry is created after the executor and mounted at `app.route(\"/\", createMcpHttpRoutes(mcpJobRegistry, logger))` — root mount is required because the sub-app already owns the `/internal` prefix (mounting at `/internal` would double the prefix). Fixed 10 AppConfig literal stubs across scripts/test files where Zod defaults fill runtime-parsed output but TypeScript structural typing still requires all fields in object literals. 18 aca-launcher tests pass.\n\n## Verification\n\nSlice-level verification: `bun test ./src/execution/mcp/http-server.test.ts` → 10 pass, 0 fail. `bun test ./src/jobs/aca-launcher.test.ts` → 18 pass, 0 fail. `bun run tsc --noEmit` → exits 0 (clean).\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT01: Added enableJsonResponse:true (not in plan sketch) — avoids SSE negotiation complexity for RPC clients. Added Accept: application/json, text/event-stream to test helper after hitting 406 from MCP spec guard (spec requirement, not in plan). T02: Root mount at app.route(\"/\", ...) rather than app.route(\"/internal\", ...) — sub-app owns its own prefix. Fixed 10 AppConfig stubs across codebase (plan predicted Zod defaults would prevent this — they do at runtime but not in TypeScript literal types). Fixed two call sites in test-aca-job.ts, not one.\n\n## Known Limitations\n\nmcpJobRegistry in index.ts is local variable — S03 must wire MCP server factories via the registry reference passed to createMcpHttpRoutes. The registry is not exported from index.ts; S03 should receive it via dependency injection or module-level export (to be decided in S03 planning).\n\n## Follow-ups\n\nS03 needs to: (1) register MCP server factories into mcpJobRegistry before dispatching each ACA job, (2) pass MCP_BASE_URL from config.mcpInternalBaseUrl to buildAcaJobSpec, (3) generate per-job bearer token (crypto.randomBytes(32).hex()) and register/unregister it around the job lifetime. The registry reference must be exposed to the executor/job-dispatch path.\n\n## Files Created/Modified\n\n- `src/execution/mcp/http-server.ts` — New file: createMcpJobRegistry() and createMcpHttpRoutes() — core MCP HTTP server module\n- `src/execution/mcp/http-server.test.ts` — New file: 10 tests for registry lifecycle and HTTP auth/routing scenarios\n- `src/jobs/aca-launcher.ts` — Added mcpBaseUrl to BuildAcaJobSpecOpts; injects MCP_BASE_URL into job env\n- `src/jobs/aca-launcher.test.ts` — Added MCP_BASE_URL presence test and MCP_BASE_URL-not-in-APPLICATION_SECRET_NAMES test\n- `src/config.ts` — Added mcpInternalBaseUrl and acaJobImage to configSchema with Zod defaults; reads from MCP_INTERNAL_BASE_URL and ACA_JOB_IMAGE env vars\n- `src/index.ts` — Imports createMcpJobRegistry/createMcpHttpRoutes; creates mcpJobRegistry; mounts routes at app.route('/', ...)\n- `scripts/test-aca-job.ts` — Fixed two BuildAcaJobSpecOpts call sites to include mcpBaseUrl; fixed AppConfig stub\n",
+      "full_uat_md": "# S02: MCP HTTP Server in Orchestrator — UAT\n\n**Milestone:** M032\n**Written:** 2026-03-29T18:46:28.833Z\n\n# S02 UAT: MCP HTTP Server in Orchestrator\n\n## Preconditions\n\n1. Orchestrator is running locally: `bun run src/index.ts` (or test harness)\n2. `PORT` env var set (e.g. 3000)\n3. A bearer token has been registered via `mcpJobRegistry.register(token, { github_comment: factory }, ttlMs)`\n4. The token is known as `VALID_TOKEN` for the test steps below\n5. An invalid token `WRONG_TOKEN` is any 32-char hex string not in the registry\n\n---\n\n## Test Cases\n\n### TC-01: No Authorization header → 401\n\n**Steps:**\n```\ncurl -s -o /dev/null -w \"%{http_code}\" \\\n  http://localhost:PORT/internal/mcp/github_comment\n```\n**Expected:** HTTP 401\n\n---\n\n### TC-02: Wrong token → 401\n\n**Steps:**\n```\ncurl -s -o /dev/null -w \"%{http_code}\" \\\n  -H \"Authorization: Bearer WRONG_TOKEN\" \\\n  http://localhost:PORT/internal/mcp/github_comment\n```\n**Expected:** HTTP 401\n\n---\n\n### TC-03: Valid token + unknown server name → 404\n\n**Steps:**\n```\ncurl -s -o /dev/null -w \"%{http_code}\" \\\n  -H \"Authorization: Bearer VALID_TOKEN\" \\\n  http://localhost:PORT/internal/mcp/nonexistent_server\n```\n**Expected:** HTTP 404\n\n---\n\n### TC-04: Valid token + registered server + MCP initialize → 200 with MCP result\n\n**Steps:**\n```\ncurl -s \\\n  -H \"Authorization: Bearer VALID_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -X POST \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"0.1\"}}}' \\\n  http://localhost:PORT/internal/mcp/github_comment\n```\n**Expected:** HTTP 200. Response body is JSON containing `\"result\"` and `\"capabilities\"` keys.\n\n---\n\n### TC-05: All 7 registered MCP server names respond (not 404)\n\n**Steps:** For each of the 7 MCP server names registered in S03 (e.g., `github_comment`, `inline_review`, `review_comment_thread`, `issue_comment`, `ci_status`, `issue_label`, `checkpoint`), send an MCP initialize request with valid token.\n\n**Expected:** Each returns HTTP 200 (not 404). Individual tool schemas may vary.\n\n---\n\n### TC-06: Token expiry — expired token → 401\n\n**Steps:**\n1. Register a token with `ttlMs = 100` (100ms TTL)\n2. Wait 200ms\n3. Send request with the expired token\n**Expected:** HTTP 401 (lazy expiry removes the entry on first access after expiry)\n\n---\n\n### TC-07: Unregister removes access\n\n**Steps:**\n1. Register `VALID_TOKEN` with factories\n2. Verify TC-04 passes (200 response)\n3. Call `mcpJobRegistry.unregister(VALID_TOKEN)`\n4. Re-send the same request\n**Expected:** HTTP 401\n\n---\n\n### TC-08: MCP_BASE_URL present in ACA job spec\n\n**Steps:**\n```ts\nimport { buildAcaJobSpec } from \"./src/jobs/aca-launcher.ts\";\nconst spec = buildAcaJobSpec({ mcpBaseUrl: \"http://ca-kodiai.internal.env.eastus.azurecontainerapps.io\", ... });\nconst entry = spec.env.find(e => e.name === \"MCP_BASE_URL\");\nconsole.assert(entry?.value === \"http://ca-kodiai.internal.env.eastus.azurecontainerapps.io\");\n```\n**Expected:** `MCP_BASE_URL` env entry is present with the supplied value. No APPLICATION_SECRET_NAMES guard throws.\n\n---\n\n### TC-09: Automated test suite passes\n\n```\nbun test ./src/execution/mcp/http-server.test.ts\nbun test ./src/jobs/aca-launcher.test.ts\nbun run tsc --noEmit\n```\n**Expected:** 10 pass + 18 pass, 0 fail total; tsc exits 0.\n\n",
       "goal": "Build an authenticated MCP HTTP server in the orchestrator that lets the isolated ACA agent job call MCP tools over HTTP. The server uses per-request fresh transports (stateless mode), validates a per-job bearer token, and exposes a registry API for registering/unregistering job sessions.",
       "success_criteria": "- `createMcpJobRegistry()` manages per-job token → factory map with register/unregister/hasToken/getFactory\n- `createMcpHttpRoutes(registry)` returns a Hono app handling `app.all(\"/internal/mcp/:serverName\", ...)`\n- No/wrong bearer token → 401; valid token + unknown server name → 404; valid token + known server → MCP response\n- Per-request: fresh `WebStandardStreamableHTTPServerTransport` + `server.connect()` + `transport.handleRequest(c.req.raw)`\n- `BuildAcaJobSpecOpts` includes `mcpBaseUrl: string` injected as `MCP_BASE_URL` env var in the job spec\n- `src/index.ts` creates `mcpJobRegistry` at startup and mounts routes at `/internal`\n- `src/config.ts` has `mcpInternalBaseUrl` and `acaJobImage` optional fields (Zod `.default(\"\")`)\n- `bun test ./src/execution/mcp/http-server.test.ts` passes\n- `bun test ./src/jobs/aca-launcher.test.ts` passes\n- `bun run tsc --noEmit` exits 0",
       "proof_level": "contract — unit tests exercise the auth/routing/MCP response contract against a Hono test server; no live ACA Job required",
@@ -1020,11 +1020,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Agent job entrypoint src/execution/agent-job.ts reads job env and calls query() with McpHttpServerConfig. Refactor createExecutor() to dispatch ACA Job instead of in-process query(). Wire timeout to jobs.stop(). ExecutionResult type and all callers (mention.ts, review.ts) unchanged.",
-      "success_criteria": "bun run tsc --noEmit exits 0; mention.ts and review.ts callers compile unchanged; @kodiai mention dispatches ACA Job with correct restricted env (only ANTHROPIC_API_KEY, MCP_BEARER_TOKEN, WORKSPACE_DIR, GITHUB_INSTALLATION_TOKEN); job runs agent with McpHttpServerConfig; result.json read back and returned as ExecutionResult; timeout fires jobs.stop() within timeoutSeconds.",
-      "proof_level": "integration — end-to-end @kodiai mention through ACA Job path in real Azure environment",
-      "integration_closure": "Integration-complete milestone. After S03, the full isolation architecture works end-to-end. S04 adds formal verification harness and deploy script updates.",
-      "observability_impact": "Job dispatch logged with executionId, jobName, workspaceDir; MCP bearer token lifecycle (issued/revoked) logged; timeout cancellation logged with elapsed time; result.json read success/failure logged.",
+      "goal": "Wire S01 (ACA launcher) and S02 (MCP HTTP registry) into the orchestrator's execution path: add the agent job container entrypoint script, refactor createExecutor() to dispatch ACA jobs instead of running the SDK in-process, and add the supporting config fields, cancel helper, and Dockerfile.",
+      "success_criteria": "GitHub @kodiai mention triggers ACA Job dispatch. Job env inspection shows only ANTHROPIC_API_KEY, MCP_BEARER_TOKEN, MCP_BASE_URL, WORKSPACE_DIR, GITHUB_INSTALLATION_TOKEN — no application secrets. Agent job runs the entrypoint script, writes result.json, orchestrator reads it back and returns ExecutionResult with correct fields. bun run tsc --noEmit exits 0.",
+      "proof_level": "integration — ACA job dispatch is smoke-tested against Azure; unit tests cover entrypoint and executor dispatch logic with mocks.",
+      "integration_closure": "Upstream: S01 buildAcaJobSpec/launchAcaJob/pollUntilComplete/readJobResult (src/jobs/aca-launcher.ts), S02 McpJobRegistry (src/execution/mcp/http-server.ts), AppConfig (src/config.ts). New wiring: createExecutor() receives mcpJobRegistry dep; index.ts passes it in; agent-entrypoint.ts is the new ACA job CMD. After S03: full end-to-end dispatch path is live; S04 only adds verification harness and deploy.sh finalisation.",
+      "observability_impact": "Executor logs: job dispatched (executionName, workspaceDir), poll status (per-attempt debug + terminal info), timeout cancellation (warn). Agent entrypoint logs: startup (env vars present), query() start, result write. All via pino structured logger passed as dep.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -2034,6 +2034,140 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M032",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Add cancelAcaJob(), acaResourceGroup/acaJobName config fields, Dockerfile.agent, and fix deploy.sh agent build target",
+      "status": "complete",
+      "one_liner": "Add cancelAcaJob(), acaResourceGroup/acaJobName config fields, Dockerfile.agent, and fix deploy.sh agent build target",
+      "narrative": "Added cancelAcaJob() to aca-launcher.ts wrapping `az containerapp job execution stop`. Added acaResourceGroup (default 'rg-kodiai') and acaJobName (default 'caj-kodiai-agent') to configSchema and loadConfig. Created Dockerfile.agent with agent-entrypoint.ts CMD and no EXPOSE. Updated deploy.sh agent build to use --file Dockerfile.agent. Fixed AppConfig stubs in 2 test files and 8 scripts to include the new fields.",
+      "verification_result": "bun test ./src/jobs/aca-launcher.test.ts — 21 pass, 0 fail. bun run tsc --noEmit — exit 0. bash -n Dockerfile.agent — exit 0.",
+      "duration": "",
+      "completed_at": "2026-03-29T19:04:40.035Z",
+      "blocker_discovered": false,
+      "deviations": "Updated 8 additional script-level AppConfig stubs beyond the 2 test files in the plan — required by the tsc --noEmit gate (KNOWLEDGE.md pattern).",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/aca-launcher.ts",
+        "src/jobs/aca-launcher.test.ts",
+        "src/config.ts",
+        "Dockerfile.agent",
+        "deploy.sh",
+        "src/routes/slack-events.test.ts",
+        "src/routes/slack-commands.test.ts"
+      ],
+      "key_decisions": [
+        "cancelAcaJob wraps az --output none and returns void, logs at info after completion",
+        "acaResourceGroup/acaJobName default to deploy.sh provisioned names so zero-config deployments work",
+        "Dockerfile.agent is structurally identical to Dockerfile except no EXPOSE and different CMD"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M032\nkey_files:\n  - src/jobs/aca-launcher.ts\n  - src/jobs/aca-launcher.test.ts\n  - src/config.ts\n  - Dockerfile.agent\n  - deploy.sh\n  - src/routes/slack-events.test.ts\n  - src/routes/slack-commands.test.ts\nkey_decisions:\n  - cancelAcaJob wraps az --output none and returns void, logs at info after completion\n  - acaResourceGroup/acaJobName default to deploy.sh provisioned names so zero-config deployments work\n  - Dockerfile.agent is structurally identical to Dockerfile except no EXPOSE and different CMD\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-29T19:04:40.035Z\nblocker_discovered: false\n---\n\n# T01: Add cancelAcaJob(), acaResourceGroup/acaJobName config fields, Dockerfile.agent, and fix deploy.sh agent build target\n\n**Add cancelAcaJob(), acaResourceGroup/acaJobName config fields, Dockerfile.agent, and fix deploy.sh agent build target**\n\n## What Happened\n\nAdded cancelAcaJob() to aca-launcher.ts wrapping `az containerapp job execution stop`. Added acaResourceGroup (default 'rg-kodiai') and acaJobName (default 'caj-kodiai-agent') to configSchema and loadConfig. Created Dockerfile.agent with agent-entrypoint.ts CMD and no EXPOSE. Updated deploy.sh agent build to use --file Dockerfile.agent. Fixed AppConfig stubs in 2 test files and 8 scripts to include the new fields.\n\n## Verification\n\nbun test ./src/jobs/aca-launcher.test.ts — 21 pass, 0 fail. bun run tsc --noEmit — exit 0. bash -n Dockerfile.agent — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/jobs/aca-launcher.test.ts` | 0 | ✅ pass | 67ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 7700ms |\n| 3 | `bash -n Dockerfile.agent` | 0 | ✅ pass | 50ms |\n\n\n## Deviations\n\nUpdated 8 additional script-level AppConfig stubs beyond the 2 test files in the plan — required by the tsc --noEmit gate (KNOWLEDGE.md pattern).\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/aca-launcher.ts`\n- `src/jobs/aca-launcher.test.ts`\n- `src/config.ts`\n- `Dockerfile.agent`\n- `deploy.sh`\n- `src/routes/slack-events.test.ts`\n- `src/routes/slack-commands.test.ts`\n",
+      "description": "Three small additions that unblock T02 and T03:\n1. Add cancelAcaJob() to src/jobs/aca-launcher.ts — thin wrapper around `az containerapp job execution stop`. Signature: `{ resourceGroup, jobName, executionName, logger? }`. Logs at info level after cancellation.\n2. Add acaResourceGroup and acaJobName to configSchema in src/config.ts (Zod string with defaults 'rg-kodiai' and 'caj-kodiai-agent'). Add to loadConfig() input object reading from process.env.ACA_RESOURCE_GROUP and process.env.ACA_JOB_NAME. Update AppConfig stubs in test files that need the new fields (check src/routes/slack-events.test.ts and src/routes/slack-commands.test.ts).\n3. Create Dockerfile.agent — same base as Dockerfile (oven/bun:1-debian), same git/python3/kodi-addon-checker layer, same src/ copy pattern, but CMD is 'bun run src/execution/agent-entrypoint.ts' instead of 'src/index.ts'. No EXPOSE — the agent job has no incoming ports.\n4. Update deploy.sh: the agent image build section already targets kodiai-agent:latest but uses the main Dockerfile (or no --file flag). Change it to `az acr build ... --image kodiai-agent:latest --file Dockerfile.agent .` so the agent image gets the correct entrypoint.",
+      "estimate": "45m",
+      "files": [
+        "src/jobs/aca-launcher.ts",
+        "src/jobs/aca-launcher.test.ts",
+        "src/config.ts",
+        "src/routes/slack-events.test.ts",
+        "src/routes/slack-commands.test.ts",
+        "Dockerfile.agent",
+        "deploy.sh"
+      ],
+      "verify": "bun test ./src/jobs/aca-launcher.test.ts && bun run tsc --noEmit && bash -n Dockerfile.agent",
+      "inputs": [
+        "`src/jobs/aca-launcher.ts` — add cancelAcaJob() export",
+        "`src/config.ts` — add acaResourceGroup and acaJobName fields"
+      ],
+      "expected_output": [
+        "`src/jobs/aca-launcher.ts` — cancelAcaJob() export added",
+        "`src/config.ts` — acaResourceGroup and acaJobName in configSchema and loadConfig",
+        "`Dockerfile.agent` — new file with agent entrypoint CMD",
+        "`deploy.sh` — agent image build uses --file Dockerfile.agent"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M032",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Agent job entrypoint script",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Create src/execution/agent-entrypoint.ts — the script the ACA Job container runs.\n\nResponsibilities:\n1. Read required env vars: WORKSPACE_DIR, MCP_BASE_URL, MCP_BEARER_TOKEN, ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN as fallback). Exit 1 with a clear message if any required var is missing.\n2. Read agent-config.json from WORKSPACE_DIR. Shape: { prompt: string, model: string, maxTurns: number, allowedTools: string[], taskType?: string }. Exit 1 if file is missing or JSON is invalid.\n3. Write CLAUDE.md to WORKSPACE_DIR by calling buildSecurityClaudeMd() (imported from ./executor.ts).\n4. Build mcpServers as McpHttpServerConfig entries — one for each of the 7 server names (github_comment, reviewCommentThread, github_inline_comment, github_ci, review_checkpoint, github_issue_label, github_issue_comment). All point at `${MCP_BASE_URL}/internal/mcp/${serverName}` with `Authorization: Bearer ${MCP_BEARER_TOKEN}` header.\n5. Call query() from @anthropic-ai/claude-agent-sdk with: prompt from agent-config.json, model from agent-config.json, maxTurns from agent-config.json, allowedTools from agent-config.json, mcpServers object, cwd: WORKSPACE_DIR, permissionMode: 'bypassPermissions', allowDangerouslySkipPermissions: true, settingSources: ['project'].\n6. Collect messages from the async iterator. Capture the SDKResultMessage when message.type === 'result'.\n7. Write result.json to WORKSPACE_DIR with the ExecutionResult shape: { conclusion, costUsd, numTurns, durationMs, sessionId, resultText, model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, stopReason }. On any error, write { conclusion: 'error', errorMessage: string }.\n\nCreate src/execution/agent-entrypoint.test.ts with tests:\n- Missing env vars → console.error + process.exit(1) (spy on process.exit)\n- Missing agent-config.json → exits with error\n- Happy path: mock query() to yield one result message → result.json written with conclusion: 'success'\n- SDK iterator throws → result.json written with conclusion: 'error'",
+      "estimate": "1h",
+      "files": [
+        "src/execution/agent-entrypoint.ts",
+        "src/execution/agent-entrypoint.test.ts"
+      ],
+      "verify": "bun test ./src/execution/agent-entrypoint.test.ts && bun run tsc --noEmit",
+      "inputs": [
+        "`src/execution/executor.ts` — import buildSecurityClaudeMd()",
+        "`src/execution/types.ts` — ExecutionResult shape to write to result.json",
+        "`src/jobs/aca-launcher.ts` — T01 must be complete (config fields used for defaults)"
+      ],
+      "expected_output": [
+        "`src/execution/agent-entrypoint.ts` — new file, the ACA job container script",
+        "`src/execution/agent-entrypoint.test.ts` — unit tests for happy path and error paths"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M032",
+      "slice_id": "S03",
+      "id": "T03",
+      "title": "Executor refactor and registry DI",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Replace the query() SDK loop in createExecutor() with the ACA job dispatch path, and thread mcpJobRegistry as a dependency.\n\n**1. config.ts additions (if not done in T01):** acaResourceGroup and acaJobName should already be present from T01.\n\n**2. createExecutor() signature:** Add mcpJobRegistry: McpJobRegistry to the deps type.\n\n**3. New dispatch flow in execute():**\n\na. Keep all existing setup up to and including buildMcpServers() — model resolution, timeout config, MCP server config, allowed tools, prompt building, workspace CLAUDE.md write.\n\nb. Instead of calling query() directly, do:\n   - Generate per-job bearer token: `const mcpBearerToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');`\n   - Build factory map: for each (name, server) in Object.entries(mcpServers), wrap in a factory `() => server as McpSdkServerConfigWithInstance`. Register all factories in the registry under mcpBearerToken with TTL = (timeoutSeconds + 60) * 1000.\n   - Create workspace dir on Azure Files: `const workspaceDir = await createAzureFilesWorkspaceDir({ mountBase: '/mnt/kodiai-workspaces', jobId: context.deliveryId ?? crypto.randomUUID() });`\n   - Write agent-config.json and prompt.txt to workspaceDir:\n     ```ts\n     await writeFile(join(workspaceDir, 'prompt.txt'), prompt);\n     await writeFile(join(workspaceDir, 'agent-config.json'), JSON.stringify({ model, maxTurns, allowedTools, taskType }));\n     ```\n   - Build job spec: `buildAcaJobSpec({ jobName: config.acaJobName, image: config.acaJobImage, workspaceDir, anthropicApiKey: process.env.CLAUDE_CODE_OAUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY, mcpBearerToken, mcpBaseUrl: config.mcpInternalBaseUrl, githubInstallationToken: await githubApp.getInstallationToken(context.installationId), timeoutSeconds })`\n   - Launch: `const { executionName } = await launchAcaJob({ resourceGroup: config.acaResourceGroup, jobName: config.acaJobName, spec, logger });`\n   - Poll with timeout: `const { status, durationMs } = await pollUntilComplete({ resourceGroup: config.acaResourceGroup, jobName: config.acaJobName, executionName, timeoutMs, logger });`\n   - If status === 'timed-out': call cancelAcaJob(), clear registry, return timeout ExecutionResult.\n   - If status === 'failed': clear registry, return failure ExecutionResult.\n   - Read result: `const rawResult = await readJobResult(workspaceDir); const jobResult = rawResult as ExecutionResult;`\n   - Clear registry: `registry.unregister(mcpBearerToken);`\n   - Return jobResult with durationMs filled from the poll.\n\n**4. published flag:** The onPublish/onPublishEvent callbacks are closures registered in buildMcpServers() and called by the orchestrator's MCP HTTP server when the agent job invokes a tool. This works because those callbacks close over mutable `published` and `publishEvents` variables in the executor. Keep those variables and callbacks — they still fire during pollUntilComplete(). After readJobResult(), merge `published` and `publishEvents` into the returned result.\n\n**5. AbortController:** Remove the AbortController/setTimeout timeout mechanism — timeout is now managed by pollUntilComplete() + cancelAcaJob(). Remove buildAgentEnv() import if it's no longer used.\n\n**6. index.ts:** Pass `mcpJobRegistry` to `createExecutor()`. Check that mcpJobRegistry is declared before createExecutor() call (already the case per current index.ts order — executor is line 181, mcpJobRegistry is line 184; swap the order).\n\n**Tests in executor.test.ts:** Mock launchAcaJob, pollUntilComplete, readJobResult, createAzureFilesWorkspaceDir. Test:\n- Happy path: poll returns succeeded, readJobResult returns valid result → ExecutionResult returned\n- Timeout path: poll returns timed-out → cancelAcaJob called, timeout ExecutionResult returned\n- Failed path: poll returns failed → failure ExecutionResult returned\n- Registry: token registered before launch, unregistered after completion\n- published flag propagation: onPublish callback fires (simulated by calling it directly), result has published: true",
+      "estimate": "2h",
+      "files": [
+        "src/execution/executor.ts",
+        "src/execution/executor.test.ts",
+        "src/index.ts"
+      ],
+      "verify": "bun test ./src/execution/executor.test.ts && bun run tsc --noEmit",
+      "inputs": [
+        "`src/execution/executor.ts` — the file being refactored",
+        "`src/jobs/aca-launcher.ts` — cancelAcaJob (T01), launchAcaJob, pollUntilComplete, readJobResult",
+        "`src/jobs/workspace.ts` — createAzureFilesWorkspaceDir",
+        "`src/execution/mcp/http-server.ts` — McpJobRegistry type",
+        "`src/config.ts` — acaResourceGroup, acaJobName, mcpInternalBaseUrl, acaJobImage (T01)",
+        "`src/index.ts` — wire mcpJobRegistry dep"
+      ],
+      "expected_output": [
+        "`src/execution/executor.ts` — createExecutor() uses ACA job dispatch instead of query() loop",
+        "`src/execution/executor.test.ts` — tests for new dispatch path (happy, timeout, failed, registry lifecycle)",
+        "`src/index.ts` — mcpJobRegistry passed to createExecutor(); mcpJobRegistry declared before executor"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2225,6 +2359,30 @@
       "decision": "How MCP server per-invocation state (onPublish callback, reviewOutputKey, published flag) is managed in the new HTTP MCP architecture",
       "choice": "Per-job MCP server instances in the orchestrator — each job dispatch creates a fresh McpServer instance with its own callback closures, registered under that job's bearer token scope",
       "rationale": "The current in-process MCP servers carry per-invocation state that cannot be serialized or sent to a remote process. Moving to HTTP transport does not change where this state lives — it stays in the orchestrator process. The change is that server instances are keyed by jobId rather than being globally shared. This prevents concurrent job executions from cross-contaminating callback contexts. Cleanup on job completion removes the Map entry and its server instances.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 50,
+      "id": "D017",
+      "when_context": "M032/S02/T01",
+      "scope": "implementation",
+      "decision": "How to configure WebStandardStreamableHTTPServerTransport for stateless MCP HTTP in orchestrator",
+      "choice": "enableJsonResponse: true with sessionIdGenerator: undefined; fresh transport + fresh server instance per HTTP request via factory()",
+      "rationale": "Stateless transport invariant: _hasHandledRequest flag prevents transport reuse — factory must be called on every request to produce a new McpSdkServerConfigWithInstance too (McpServer.connect() registers tool handlers that can't be re-registered). enableJsonResponse:true produces predictable JSON for RPC clients and tests, avoiding SSE negotiation complexity.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 51,
+      "id": "D018",
+      "when_context": "M032/S02/T02",
+      "scope": "implementation",
+      "decision": "How to mount the MCP HTTP sub-app on the main Hono app in index.ts",
+      "choice": "app.route(\"/\", createMcpHttpRoutes(mcpJobRegistry, logger)) — root mount on the top-level Hono app",
+      "rationale": "createMcpHttpRoutes returns a Hono sub-app with routes already prefixed with /internal/mcp/:serverName. Mounting at /internal would produce /internal/internal/mcp/:serverName. Root mount preserves the correct path. Future sub-apps that own their own prefix must also be mounted at root.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -2659,6 +2817,39 @@
       "verdict": "✅ pass",
       "duration_ms": 8000,
       "created_at": "2026-03-29T18:43:51.584Z"
+    },
+    {
+      "id": 40,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 67,
+      "created_at": "2026-03-29T19:04:40.035Z"
+    },
+    {
+      "id": 41,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7700,
+      "created_at": "2026-03-29T19:04:40.035Z"
+    },
+    {
+      "id": 42,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M032",
+      "command": "bash -n Dockerfile.agent",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-03-29T19:04:40.035Z"
     }
   ]
 }

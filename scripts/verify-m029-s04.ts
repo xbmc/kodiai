@@ -494,6 +494,8 @@ export async function buildM029S04ProofHarness(opts?: {
           addonRepos: [],
           mcpInternalBaseUrl: "",
           acaJobImage: "",
+          acaResourceGroup: "rg-kodiai",
+          acaJobName: "caj-kodiai-agent",
         };
 
         const githubApp = createGitHubApp(appConfig as Parameters<typeof createGitHubApp>[0], logger);

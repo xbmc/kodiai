@@ -211,6 +211,7 @@ echo "==> Building and pushing agent image via ACR (remote build)..."
 az acr build \
   --registry "$ACR_NAME" \
   --image kodiai-agent:latest \
+  --file Dockerfile.agent \
   .
 
 # -- ACA Job (agent runner) ---------------------------------------------------

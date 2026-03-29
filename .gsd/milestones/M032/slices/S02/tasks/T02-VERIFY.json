@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M032/S02/T02",
+  "timestamp": 1774809839180,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/jobs/aca-launcher.test.ts",
+      "exitCode": 0,
+      "durationMs": 45,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 8130,
+      "verdict": "pass"
+    }
+  ]
+}

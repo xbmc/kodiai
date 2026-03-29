@@ -245,6 +245,31 @@ export async function pollUntilComplete(opts: {
 }
 
 // ---------------------------------------------------------------------------
+// Cancel
+// ---------------------------------------------------------------------------
+
+/**
+ * Cancel a running ACA Job execution.
+ * Calls `az containerapp job execution stop` and logs after completion.
+ */
+export async function cancelAcaJob(opts: {
+  resourceGroup: string;
+  jobName: string;
+  executionName: string;
+  logger?: Logger;
+}): Promise<void> {
+  const { resourceGroup, jobName, executionName, logger } = opts;
+
+  await $`az containerapp job execution stop \
+    --name ${jobName} \
+    --resource-group ${resourceGroup} \
+    --job-execution-name ${executionName} \
+    --output none`.quiet();
+
+  logger?.info({ executionName, jobName }, "ACA Job execution cancelled");
+}
+
+// ---------------------------------------------------------------------------
 // Result reader
 // ---------------------------------------------------------------------------
 

@@ -147,6 +147,8 @@ async function main(): Promise<void> {
       addonRepos: [],
       mcpInternalBaseUrl: "",
       acaJobImage: "",
+      acaResourceGroup: "rg-kodiai",
+      acaJobName: "caj-kodiai-agent",
       },
       logger,
     );
