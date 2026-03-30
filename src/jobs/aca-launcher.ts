@@ -116,32 +116,41 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
 async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
   // Subscription ID for rg-kodiai
   const subscriptionId = "ca35c409-cc4f-4072-ac43-c50a426f62a4";
+  // Client ID for user-assigned managed identity (id-kodiai)
+  const clientId = "2956d96a-b618-498d-a021-6bb3196fdcdf";
 
-  // Try IMDS first (available in ACA with managed identity)
-  try {
-    // Include client_id for user-assigned managed identity (id-kodiai)
-    const clientId = "2956d96a-b618-498d-a021-6bb3196fdcdf";
-    const imdsResp = await fetch(
-      `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/&client_id=${clientId}`,
-      { headers: { Metadata: "true" } },
-    );
-    if (imdsResp.ok) {
-      const imds = (await imdsResp.json()) as { access_token?: string; error?: string };
-      const token = imds.access_token ?? "";
-      if (token) {
-        return { token, subscriptionId };
-      }
+  // ACA injects IDENTITY_ENDPOINT + IDENTITY_HEADER for managed identity auth
+  // (different from VM IMDS at 169.254.169.254 — ACA uses a sidecar proxy)
+  const identityEndpoint = process.env["IDENTITY_ENDPOINT"];
+  const identityHeader = process.env["IDENTITY_HEADER"];
+
+  if (identityEndpoint && identityHeader) {
+    const url = `${identityEndpoint}?resource=https://management.azure.com/&api-version=2019-08-01&client_id=${clientId}`;
+    const resp = await fetch(url, { headers: { "X-IDENTITY-HEADER": identityHeader } });
+    const body = await resp.text();
+    if (!resp.ok) {
+      throw new Error(`getAzureAccessToken: MSI endpoint returned ${resp.status}: ${body.slice(0, 300)}`);
     }
-  } catch {
-    // IMDS not available — fall through to az CLI
+    const parsed = JSON.parse(body) as { access_token?: string };
+    const token = parsed.access_token ?? "";
+    if (!token) {
+      throw new Error(`getAzureAccessToken: MSI endpoint returned no access_token: ${body.slice(0, 300)}`);
+    }
+    return { token, subscriptionId };
   }
 
-  // Fallback: az CLI (local dev / CI)
-  const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
-  const token = tokenResult.text().trim();
-  if (!token) throw new Error("launchAcaJob: failed to get Azure access token via az CLI");
+  // Fallback: az CLI (local dev only — not available in container)
+  try {
+    const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
+    const token = tokenResult.text().trim();
+    if (token) return { token, subscriptionId };
+  } catch {
+    // az not available
+  }
 
-  return { token, subscriptionId };
+  throw new Error(
+    "getAzureAccessToken: IDENTITY_ENDPOINT not set (managed identity not configured?) and az CLI not available",
+  );
 }
 
 /**
