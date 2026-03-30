@@ -114,6 +114,9 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
  * Outside ACA (local dev / CI): falls back to `az account get-access-token`.
  */
 async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: string }> {
+  // Subscription ID for rg-kodiai
+  const subscriptionId = "ca35c409-cc4f-4072-ac43-c50a426f62a4";
+
   // Try IMDS first (available in ACA with managed identity)
   try {
     // Include client_id for user-assigned managed identity (id-kodiai)
@@ -123,24 +126,9 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
       { headers: { Metadata: "true" } },
     );
     if (imdsResp.ok) {
-      const imds = (await imdsResp.json()) as { access_token?: string };
+      const imds = (await imdsResp.json()) as { access_token?: string; error?: string };
       const token = imds.access_token ?? "";
       if (token) {
-        // Get subscription ID from IMDS instance metadata
-        const instanceResp = await fetch(
-          "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
-          { headers: { Metadata: "true" } },
-        );
-        let subscriptionId = "";
-        if (instanceResp.ok) {
-          const instance = (await instanceResp.json()) as {
-            compute?: { subscriptionId?: string };
-          };
-          subscriptionId = instance.compute?.subscriptionId ?? "";
-        }
-        if (!subscriptionId) {
-          throw new Error("launchAcaJob: IMDS did not return subscriptionId");
-        }
         return { token, subscriptionId };
       }
     }
@@ -152,10 +140,6 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
   const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
   const token = tokenResult.text().trim();
   if (!token) throw new Error("launchAcaJob: failed to get Azure access token via az CLI");
-
-  const subResult = await $`az account show --query id -o tsv`.quiet();
-  const subscriptionId = subResult.text().trim();
-  if (!subscriptionId) throw new Error("launchAcaJob: failed to get Azure subscription ID via az CLI");
 
   return { token, subscriptionId };
 }
