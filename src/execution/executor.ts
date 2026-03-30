@@ -4,13 +4,12 @@ import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { ExecutionContext, ExecutionResult, ExecutionPublishEvent } from "./types.ts";
 import { loadRepoConfig } from "./config.ts";
-import { buildMcpServers, buildAllowedMcpTools } from "./mcp/index.ts";
+import { buildAllowedMcpTools, buildMcpServerFactories } from "./mcp/index.ts";
 import { buildPrompt } from "./prompt.ts";
 import type { CostTracker } from "../llm/cost-tracker.ts";
 import type { ResolvedModel } from "../llm/task-router.ts";
 import type { AppConfig } from "../config.ts";
 import type { McpJobRegistry } from "./mcp/http-server.ts";
-import type { McpSdkServerConfigWithInstance } from "@anthropic-ai/claude-agent-sdk";
 import {
   buildAcaJobSpec,
   launchAcaJob,
@@ -131,7 +130,9 @@ export function createExecutor(deps: {
             }
           : undefined;
 
-        const mcpServers = buildMcpServers({
+        // Build MCP server factories — each factory creates a fresh McpServer
+        // instance on every call (required by stateless MCP HTTP transport).
+        const mcpServerDeps = {
           getOctokit,
           owner: context.owner,
           repo: context.repo,
@@ -144,7 +145,7 @@ export function createExecutor(deps: {
           onPublish: () => {
             published = true;
           },
-          onPublishEvent: (event) => {
+          onPublishEvent: (event: ExecutionPublishEvent) => {
             publishEvents.push(event);
           },
           enableInlineTools,
@@ -154,7 +155,7 @@ export function createExecutor(deps: {
           enableCheckpointTool: context.enableCheckpointTool,
           enableIssueTools,
           triageConfig,
-        });
+        };
 
         // Build allowed tools list
         const isReadOnlyPrMention = isMentionEvent && !isWriteMode && context.prNumber !== undefined;
@@ -176,7 +177,9 @@ export function createExecutor(deps: {
             ];
 
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
-        const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
+        // Compute server names from the same deps (no instance construction yet)
+        const mcpServerNames = Object.keys(buildMcpServerFactories(mcpServerDeps));
+        const mcpTools = buildAllowedMcpTools(mcpServerNames);
         const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
 
         // Build prompt
@@ -192,12 +195,11 @@ export function createExecutor(deps: {
           crypto.getRandomValues(new Uint8Array(32)),
         ).toString("hex");
 
-        // Register all MCP servers in the registry under this token
-        const factories: Record<string, () => McpSdkServerConfigWithInstance> = {};
-        for (const [name, server] of Object.entries(mcpServers)) {
-          const captured = server;
-          factories[name] = () => captured as McpSdkServerConfigWithInstance;
-        }
+        // Register MCP server factories in the registry under this token.
+        // Each factory re-calls the server creator on every invocation so the
+        // HTTP handler gets a fresh McpServer per request — required because
+        // McpServer.connect() can only be called once per instance.
+        const factories = buildMcpServerFactories(mcpServerDeps);
         mcpJobRegistry.register(mcpBearerToken, factories, (timeoutSeconds + 60) * 1000);
 
         // Create workspace dir on Azure Files
@@ -210,7 +212,7 @@ export function createExecutor(deps: {
         await writeFile(join(workspaceDir, "prompt.txt"), prompt);
         await writeFile(
           join(workspaceDir, "agent-config.json"),
-          JSON.stringify({ model, maxTurns, allowedTools, taskType, mcpServerNames: Object.keys(mcpServers) }),
+          JSON.stringify({ model, maxTurns, allowedTools, taskType, mcpServerNames }),
         );
 
         // Build and launch the ACA job
