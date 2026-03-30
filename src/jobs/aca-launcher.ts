@@ -7,7 +7,6 @@
  */
 
 import { join } from "node:path";
-import { $ } from "bun";
 import type { Logger } from "pino";
 
 // ---------------------------------------------------------------------------
@@ -146,14 +145,10 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
     return { token, subscriptionId };
   }
 
-  // Fallback: az CLI (local dev only — not available in container)
-  try {
-    const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
-    const token = tokenResult.text().trim();
-    if (token) return { token, subscriptionId };
-  } catch {
-    // az not available
-  }
+  // Fallback: az CLI (local dev only — not available in orchestrator container)
+  // Note: az CLI is not installed in the ACA container. For local dev, set
+  // IDENTITY_ENDPOINT and IDENTITY_HEADER manually, or use a service principal.
+  // This path is only reached when IDENTITY_ENDPOINT is not set.
 
   throw new Error(
     "getAzureAccessToken: IDENTITY_ENDPOINT not set (managed identity not configured?) and az CLI not available",
@@ -252,8 +247,11 @@ function parseExecutionStatus(raw: string): string | undefined {
 }
 
 /**
- * Poll `az containerapp job execution show` until terminal state or timeout.
- * Returns the final status and duration in milliseconds.
+ * Poll the Azure Management REST API for execution status until terminal state
+ * or timeout. Returns the final status and duration in milliseconds.
+ *
+ * Uses REST API (not az CLI) — az is not installed in the orchestrator container.
+ * GET /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.App/jobs/{job}/executions/{exec}
  */
 export async function pollUntilComplete(opts: {
   resourceGroup: string;
@@ -272,6 +270,9 @@ export async function pollUntilComplete(opts: {
     logger,
   } = opts;
 
+  const { token: accessToken, subscriptionId } = await getAzureAccessToken();
+  const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/executions/${executionName}?api-version=2024-03-01`;
+
   const startMs = Date.now();
   let attempt = 0;
 
@@ -284,22 +285,27 @@ export async function pollUntilComplete(opts: {
     }
 
     attempt++;
-    let rawOutput = "";
+    let rawBody = "";
     try {
-      const result = await $`az containerapp job execution show \
-        --name ${jobName} \
-        --resource-group ${resourceGroup} \
-        --job-execution-name ${executionName} \
-        --output json`.quiet();
-      rawOutput = result.text();
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      rawBody = await resp.text();
+      if (!resp.ok) {
+        logger?.debug(
+          { attempt, executionName, httpStatus: resp.status, body: rawBody.slice(0, 200) },
+          "ACA Job poll: REST API error, will retry",
+        );
+        rawBody = "";
+      }
     } catch (err) {
       logger?.debug(
         { attempt, executionName, err },
-        "ACA Job poll: az command failed, will retry",
+        "ACA Job poll: fetch failed, will retry",
       );
     }
 
-    const status = parseExecutionStatus(rawOutput);
+    const status = parseExecutionStatus(rawBody);
     logger?.debug({ attempt, executionName, status }, "ACA Job poll attempt");
 
     if (status) {
@@ -328,8 +334,10 @@ export async function pollUntilComplete(opts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Cancel a running ACA Job execution.
- * Calls `az containerapp job execution stop` and logs after completion.
+ * Cancel a running ACA Job execution via the Azure Management REST API.
+ *
+ * Uses REST API (not az CLI) — az is not installed in the orchestrator container.
+ * POST /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.App/jobs/{job}/executions/{exec}/stop
  */
 export async function cancelAcaJob(opts: {
   resourceGroup: string;
@@ -339,11 +347,21 @@ export async function cancelAcaJob(opts: {
 }): Promise<void> {
   const { resourceGroup, jobName, executionName, logger } = opts;
 
-  await $`az containerapp job execution stop \
-    --name ${jobName} \
-    --resource-group ${resourceGroup} \
-    --job-execution-name ${executionName} \
-    --output none`.quiet();
+  const { token: accessToken, subscriptionId } = await getAzureAccessToken();
+  const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/executions/${executionName}/stop?api-version=2024-03-01`;
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Length": "0",
+    },
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`cancelAcaJob: REST API returned ${resp.status}: ${text.slice(0, 300)}`);
+  }
 
   logger?.info({ executionName, jobName }, "ACA Job execution cancelled");
 }
