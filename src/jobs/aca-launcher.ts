@@ -7,6 +7,7 @@
  */
 
 import { join } from "node:path";
+import { $ } from "bun";
 import type { Logger } from "pino";
 
 // ---------------------------------------------------------------------------
@@ -146,9 +147,13 @@ async function getAzureAccessToken(): Promise<{ token: string; subscriptionId: s
   }
 
   // Fallback: az CLI (local dev only — not available in orchestrator container)
-  // Note: az CLI is not installed in the ACA container. For local dev, set
-  // IDENTITY_ENDPOINT and IDENTITY_HEADER manually, or use a service principal.
-  // This path is only reached when IDENTITY_ENDPOINT is not set.
+  try {
+    const tokenResult = await $`az account get-access-token --query accessToken -o tsv`.quiet();
+    const token = tokenResult.text().trim();
+    if (token) return { token, subscriptionId };
+  } catch {
+    // az not available
+  }
 
   throw new Error(
     "getAzureAccessToken: IDENTITY_ENDPOINT not set (managed identity not configured?) and az CLI not available",
