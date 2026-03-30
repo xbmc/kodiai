@@ -19,6 +19,10 @@ export function createCommentServer(
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
 
+  // One-shot publish guard: only one create_comment call succeeds per server instance.
+  // Prevents the agent from double-posting when it retries a tool call within a turn.
+  let createCommentPublished = false;
+
   function sanitizeKodiaiDecisionResponse(body: string): string {
     // Only enforce structure for the mention decision wrapper.
     if (!body.includes("<summary>kodiai response</summary>")) {
@@ -538,6 +542,12 @@ export function createCommentServer(
           body: z.string().describe("Comment body (markdown)"),
         },
         async ({ issueNumber, body }) => {
+          if (createCommentPublished) {
+            return {
+              content: [{ type: "text" as const, text: JSON.stringify({ success: false, error: "Comment already posted — create_comment can only be called once per execution." }) }],
+              isError: true,
+            };
+          }
           try {
             const octokit = await getOctokit();
             const sanitized = sanitizeOutgoingMentions(
@@ -568,6 +578,7 @@ export function createCommentServer(
                 body: sanitized,
               });
               onPublish?.();
+              createCommentPublished = true;
               return {
                 content: [
                   {
@@ -584,6 +595,7 @@ export function createCommentServer(
               issue_number: issueNumber,
               body: sanitized,
             });
+            createCommentPublished = true;
             onPublish?.();
             onPublishEvent?.({
               type: "comment",
