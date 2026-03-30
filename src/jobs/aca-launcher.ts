@@ -71,8 +71,15 @@ export interface BuildAcaJobSpecOpts {
 export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
   const env: AcaJobEnvVar[] = [];
 
-  if (opts.anthropicApiKey !== undefined) {
-    env.push({ name: "ANTHROPIC_API_KEY", value: opts.anthropicApiKey });
+  const rawAuthToken = opts.anthropicApiKey;
+  if (rawAuthToken !== undefined) {
+    // OAuth tokens (sk-ant-oat01-...) must be passed as CLAUDE_CODE_OAUTH_TOKEN;
+    // API keys (sk-ant-api03-...) use ANTHROPIC_API_KEY
+    if (rawAuthToken.startsWith("sk-ant-oat")) {
+      env.push({ name: "CLAUDE_CODE_OAUTH_TOKEN", value: rawAuthToken });
+    } else {
+      env.push({ name: "ANTHROPIC_API_KEY", value: rawAuthToken });
+    }
   }
 
   env.push({ name: "MCP_BEARER_TOKEN", value: opts.mcpBearerToken });
