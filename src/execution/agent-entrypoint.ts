@@ -28,6 +28,7 @@ interface AgentConfig {
   maxTurns: number;
   allowedTools: string[];
   taskType?: string;
+  mcpServerNames?: string[]; // server names actually registered in orchestrator
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +117,11 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   // 3. Write CLAUDE.md security policy
   await writeFileFn(join(workspaceDir!, "CLAUDE.md"), buildSecurityClaudeMd());
 
-  // 4. Build mcpServers
+  // 4. Build mcpServers — use only names registered in orchestrator (from agent-config.json)
+  // Fall back to MCP_SERVER_NAMES if not specified (for backward compat)
+  const serverNamesToUse = agentConfig.mcpServerNames ?? [...MCP_SERVER_NAMES];
   const mcpServers: Record<string, McpHttpServerConfig> = {};
-  for (const serverName of MCP_SERVER_NAMES) {
+  for (const serverName of serverNamesToUse) {
     mcpServers[serverName] = {
       type: "http",
       url: `${mcpBaseUrl!}/internal/mcp/${serverName}`,

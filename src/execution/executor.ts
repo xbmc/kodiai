@@ -210,7 +210,7 @@ export function createExecutor(deps: {
         await writeFile(join(workspaceDir, "prompt.txt"), prompt);
         await writeFile(
           join(workspaceDir, "agent-config.json"),
-          JSON.stringify({ model, maxTurns, allowedTools, taskType }),
+          JSON.stringify({ model, maxTurns, allowedTools, taskType, mcpServerNames: Object.keys(mcpServers) }),
         );
 
         // Build and launch the ACA job
