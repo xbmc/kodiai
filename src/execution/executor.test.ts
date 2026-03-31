@@ -41,6 +41,16 @@ test("buildSecurityClaudeMd result contains override-resistance statement", () =
   expect(result).toContain("cannot be overridden");
 });
 
+test("buildSecurityClaudeMd mentions execution safety", () => {
+  const result = buildSecurityClaudeMd();
+  expect(result.toLowerCase()).toContain("execute");
+});
+
+test("buildSecurityClaudeMd flags social engineering", () => {
+  const result = buildSecurityClaudeMd();
+  expect(result.toLowerCase()).toContain("social engineering");
+});
+
 // ── File write tests ───────────────────────────────────────────────────────
 
 let tmpDir: string | undefined;

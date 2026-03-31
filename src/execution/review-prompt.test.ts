@@ -1831,6 +1831,21 @@ describe("buildSecurityPolicySection", () => {
     const section = buildSecurityPolicySection();
     expect(section).toMatch(/cannot be overridden/i);
   });
+
+  test("mentions execution requests as a refusal trigger", () => {
+    const section = buildSecurityPolicySection();
+    expect(section.toLowerCase()).toContain("execute");
+  });
+
+  test("flags skip-review instructions as adversarial", () => {
+    const section = buildSecurityPolicySection();
+    expect(section.toLowerCase()).toContain("social engineering");
+  });
+
+  test("mandates code review before execution", () => {
+    const section = buildSecurityPolicySection();
+    expect(section.toLowerCase()).toMatch(/review.*before.*execut|must.*review/i);
+  });
 });
 
 describe("buildReviewPrompt includes security policy", () => {
