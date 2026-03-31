@@ -513,4 +513,26 @@ describe("scanOutgoingForSecrets", () => {
     expect(result.blocked).toBe(true);
     expect(result.matchedPattern).toBe("private-key");
   });
+
+  test("detects anthropic-api-key (sk-ant-oat01- OAuth token)", () => {
+    const text = "sk-ant-oat01-" + "AbCdEfGhIjKlMnOpQrStUvWxYz01234567";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("anthropic-api-key");
+  });
+
+  test("detects anthropic-api-key (sk-ant-api03- API key)", () => {
+    const text = "sk-ant-api03-" + "Xy9zAbCdEfGhIjKlMnOpQrStUvWxYz0123456789-A";
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("anthropic-api-key");
+  });
+
+  test("detects anthropic-api-key embedded in prose", () => {
+    const token = "sk-ant-api03-" + "Xy9zAbCdEfGhIjKlMnOpQrStUvWxYz01234";
+    const text = `Here is my token: ${token} please keep it safe`;
+    const result = scanOutgoingForSecrets(text);
+    expect(result.blocked).toBe(true);
+    expect(result.matchedPattern).toBe("anthropic-api-key");
+  });
 });

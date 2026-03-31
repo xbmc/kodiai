@@ -1,10 +1,12 @@
-# S02: Add Anthropic token patterns to outgoing secret scan
+---
+estimated_steps: 17
+estimated_files: 2
+skills_used: []
+---
 
-**Goal:** Add an `anthropic-api-key` pattern to `scanOutgoingForSecrets` so that `sk-ant-oat01-*` (Claude Code OAuth) and `sk-ant-api03-*` (Anthropic API key) tokens are blocked before leaving the system.
-**Demo:** After this: bun test ./src/lib/sanitizer.test.ts passes with new pattern assertions.
+# T01: Add anthropic-api-key pattern and test cases
 
-## Tasks
-- [x] **T01: Added anthropic-api-key as 7th pattern in scanOutgoingForSecrets, blocking sk-ant-oat01-* and sk-ant-api03-* tokens from leaving the system** — Add one new pattern entry to `scanOutgoingForSecrets` in `src/lib/sanitizer.ts`, update the JSDoc comment count (6 → 7) and list, then add three test cases to the `scanOutgoingForSecrets` describe block in `src/lib/sanitizer.test.ts`.
+Add one new pattern entry to `scanOutgoingForSecrets` in `src/lib/sanitizer.ts`, update the JSDoc comment count (6 → 7) and list, then add three test cases to the `scanOutgoingForSecrets` describe block in `src/lib/sanitizer.test.ts`.
 
 ### Steps
 
@@ -27,6 +29,17 @@ Pattern breakdown: `sk-ant-` (fixed prefix) + `[a-z0-9]+-` (type slug + version,
 Use realistic token lengths (≥30 chars body) to match real tokens.
 
 4. Run `bun test ./src/lib/sanitizer.test.ts` and confirm all tests pass.
-  - Estimate: 20m
-  - Files: src/lib/sanitizer.ts, src/lib/sanitizer.test.ts
-  - Verify: bun test ./src/lib/sanitizer.test.ts
+
+## Inputs
+
+- ``src/lib/sanitizer.ts` — existing `scanOutgoingForSecrets` function with 6-pattern array and JSDoc`
+- ``src/lib/sanitizer.test.ts` — existing `scanOutgoingForSecrets` describe block to extend`
+
+## Expected Output
+
+- ``src/lib/sanitizer.ts` — updated with 7-pattern array including `anthropic-api-key` entry and updated JSDoc`
+- ``src/lib/sanitizer.test.ts` — updated with 3 new test cases for `anthropic-api-key` pattern`
+
+## Verification
+
+bun test ./src/lib/sanitizer.test.ts

@@ -223,13 +223,14 @@ export interface SecretScanResult {
  * Returns { blocked: true, matchedPattern: name } on the first match, or
  * { blocked: false, matchedPattern: undefined } if no pattern matches.
  *
- * Patterns included (6 total):
+ * Patterns included (7 total):
  * - private-key:                   PEM private key headers
  * - aws-access-key:                AWS AKIA access key IDs (4+16 chars)
  * - github-pat:                    Classic GitHub PATs (ghp_ prefix + 36 chars)
  * - slack-token:                   Slack OAuth tokens (xox* prefix)
  * - github-token:                  Other GitHub token types (gho_, gpu_, ghs_, ghu_)
  * - github-x-access-token-url:     x-access-token in GitHub clone URLs
+ * - anthropic-api-key:             Anthropic API keys and OAuth tokens (sk-ant- prefix)
  *
  * Note: high-entropy token detection is intentionally excluded — false positive
  * risk is too high for outgoing prose text.
@@ -259,6 +260,10 @@ export function scanOutgoingForSecrets(text: string): SecretScanResult {
     {
       name: "github-x-access-token-url",
       regex: /https:\/\/x-access-token:[^@]+@github\.com(\/|$)/,
+    },
+    {
+      name: "anthropic-api-key",
+      regex: /sk-ant-[a-z0-9]+-[A-Za-z0-9_\-]{20,}/,
     },
   ];
 
