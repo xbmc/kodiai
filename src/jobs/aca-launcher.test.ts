@@ -30,6 +30,7 @@ describe("APPLICATION_SECRET_NAMES", () => {
       "SLACK_SIGNING_SECRET",
       "VOYAGE_API_KEY",
       "BOT_USER_PAT",
+      "GITHUB_INSTALLATION_TOKEN",
     ];
     for (const name of expected) {
       expect(APPLICATION_SECRET_NAMES).toContain(name);
@@ -103,13 +104,11 @@ describe("buildAcaJobSpec", () => {
     expect(envNames).not.toContain("ANTHROPIC_API_KEY");
   });
 
-  test("GITHUB_INSTALLATION_TOKEN included when provided", () => {
-    const spec = buildAcaJobSpec({ ...BASE_OPTS, githubInstallationToken: "ghs_test" });
-    const entry = spec.env.find((e) => e.name === "GITHUB_INSTALLATION_TOKEN");
-    expect(entry?.value).toBe("ghs_test");
+  test("GITHUB_INSTALLATION_TOKEN is in APPLICATION_SECRET_NAMES", () => {
+    expect(APPLICATION_SECRET_NAMES).toContain("GITHUB_INSTALLATION_TOKEN");
   });
 
-  test("GITHUB_INSTALLATION_TOKEN absent when not provided", () => {
+  test("GITHUB_INSTALLATION_TOKEN always absent from spec env array", () => {
     const spec = buildAcaJobSpec(BASE_OPTS);
     const envNames = spec.env.map((e) => e.name);
     expect(envNames).not.toContain("GITHUB_INSTALLATION_TOKEN");

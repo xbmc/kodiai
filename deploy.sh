@@ -215,13 +215,38 @@ az acr build \
   .
 
 # -- ACA Job (agent runner) ---------------------------------------------------
-echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
 ACA_JOB_NAME="caj-kodiai-agent"
+echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
+
+ACA_JOB_YAML=$(mktemp --suffix=.yaml)
+cat > "$ACA_JOB_YAML" <<ACAYAML
+properties:
+  environmentId: /subscriptions/$(az account show --query id -o tsv)/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${ENVIRONMENT}
+  configuration:
+    triggerType: Manual
+    replicaTimeout: 600
+    replicaRetryLimit: 0
+    registries:
+      - server: "${ACR_NAME}.azurecr.io"
+        identity: "${IDENTITY_RESOURCE_ID}"
+  template:
+    containers:
+      - name: "${ACA_JOB_NAME}"
+        image: "${ACR_NAME}.azurecr.io/kodiai-agent:latest"
+        volumeMounts:
+          - volumeName: kodiai-workspaces
+            mountPath: /mnt/kodiai-workspaces
+    volumes:
+      - name: kodiai-workspaces
+        storageName: kodiai-workspaces
+        storageType: AzureFile
+ACAYAML
+
 if az containerapp job show --name "$ACA_JOB_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
   az containerapp job update \
     --name "$ACA_JOB_NAME" \
     --resource-group "$RESOURCE_GROUP" \
-    --image "$ACR_NAME.azurecr.io/kodiai-agent:latest" \
+    --yaml "$ACA_JOB_YAML" \
     --output none
 else
   az containerapp job create \
@@ -235,9 +260,16 @@ else
     --user-assigned "$IDENTITY_RESOURCE_ID" \
     --registry-server "$ACR_NAME.azurecr.io" \
     --registry-identity "$IDENTITY_RESOURCE_ID" \
-    --volume-mount-path /mnt/kodiai-workspaces \
+    --output none
+
+  # Apply volume mount via YAML update (az containerapp job create lacks --volume flags)
+  az containerapp job update \
+    --name "$ACA_JOB_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --yaml "$ACA_JOB_YAML" \
     --output none
 fi
+rm -f "$ACA_JOB_YAML"
 
 # -- Deploy Container App -----------------------------------------------------
 echo "==> Deploying container app: $APP_NAME..."
@@ -280,8 +312,30 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
     --min-replicas 1 \
     --max-replicas 1 \
     --termination-grace-period 600 \
-    --volume name=kodiai-workspaces,storage-name=kodiai-workspaces,storage-type=AzureFile \
     --output none
+
+  # Apply Azure Files volume mount via YAML (--volume flag not supported in az containerapp update)
+  APP_VOLUME_YAML=$(mktemp --suffix=.yaml)
+  cat > "$APP_VOLUME_YAML" <<APPYAML
+properties:
+  template:
+    containers:
+      - name: ${APP_NAME}
+        image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        volumeMounts:
+          - volumeName: kodiai-workspaces
+            mountPath: /mnt/kodiai-workspaces
+    volumes:
+      - name: kodiai-workspaces
+        storageName: kodiai-workspaces
+        storageType: AzureFile
+APPYAML
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --yaml "$APP_VOLUME_YAML" \
+    --output none
+  rm -f "$APP_VOLUME_YAML"
 else
   echo "==> Creating container app: $APP_NAME..."
   az containerapp create \

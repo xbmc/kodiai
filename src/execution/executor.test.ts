@@ -424,7 +424,6 @@ function createTestableExecutor(deps: {
           anthropicApiKey: "test-api-key",
           mcpBearerToken,
           mcpBaseUrl: config.mcpInternalBaseUrl,
-          githubInstallationToken: await githubApp.getInstallationToken(context.installationId),
           timeoutSeconds,
         });
 

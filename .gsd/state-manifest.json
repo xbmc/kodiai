@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-29T19:34:36.394Z",
+  "exported_at": "2026-03-31T11:37:05.878Z",
   "milestones": [
     {
       "id": "M001",
@@ -762,6 +762,58 @@
       ],
       "requirement_coverage": "R-ISOLATION (new, introduced this milestone): Primary owner S01 (job spec contract: no app secrets) + S03 (executor dispatches ACA Job; agent runs with restricted env). R-MCP-AUTH (new): Primary owner S02 (per-job bearer token middleware on all /internal/mcp/* routes). R-JOB-AUDIT (new): Supporting S01 (execution ID logging at dispatch) + S04 (verify:m032 harness checks). No pre-existing Active requirements are orphaned — all three security requirements are introduced by M032. The existing codebase's functional requirements (GitHub comment posting, PR review, Slack responses) are continuity concerns satisfied by the unchanged ExecutionResult type and unmodified callers in mention.ts and review.ts.",
       "boundary_map_markdown": "\n| Boundary | In Scope | Out of Scope |\n|---|---|---|\n| Process isolation | ACA Job spawned with restricted env; /proc contains no app secrets | generate.ts agent path (lower risk, deferred to M033) |\n| Storage | Azure Files workspace mount; result.json write/read | Encrypted Files share; persistent secret storage in Files |\n| MCP transport | HTTP server with per-job bearer auth in orchestrator; all 7 MCP servers | Network egress filtering from job container (infrastructure layer) |\n| Execution path | mention.ts + review.ts → ACA Job dispatch; Slack write-mode (same executor pattern) | Per-slice branch isolation; Kubernetes migration |\n| Deployment | Azure Storage + Files + ACA Job definition + managed identity role assignment | CI/CD pipeline changes; new container registry projects |\n| Auth | Per-job bearer token (in-memory Map); managed identity for ACA API calls | OAuth / OIDC for external services; certificate-based auth |\n"
+    },
+    {
+      "id": "M033",
+      "title": "",
+      "status": "queued",
+      "depends_on": [],
+      "created_at": "2026-03-31T11:21:04.917Z",
+      "completed_at": null,
+      "vision": "Remove a live credential from the agent container env, plug two gaps in the outgoing secret scan, and harden the security policy prompt against social engineering — three targeted fixes that close the highest-priority attack surfaces identified in operational review.",
+      "success_criteria": [
+        "GITHUB_INSTALLATION_TOKEN is absent from every ACA job spec built by buildAcaJobSpec, enforced by both test and APPLICATION_SECRET_NAMES guard",
+        "scanOutgoingForSecrets blocks text containing sk-ant-oat01- and sk-ant-api03- prefixes, with test coverage",
+        "Security policy prompt (CLAUDE.md + buildSecurityPolicySection) explicitly mandates code review before execution and names the 'skip review' pattern as adversarial, with test assertions",
+        "All existing tests pass; no regressions",
+        "Orchestrator image rebuilt and deployed with all three fixes"
+      ],
+      "key_risks": [
+        {
+          "risk": "Removing GITHUB_INSTALLATION_TOKEN breaks something that uses it",
+          "whyItMatters": "Token is confirmed unused in agent-entrypoint.ts by grep, but could be read indirectly via process.env in user-land code inside the repo being reviewed"
+        },
+        {
+          "risk": "sk-ant regex is too broad and causes false positives on review content",
+          "whyItMatters": "sk-ant appears in the prefix but the full pattern sk-ant-oat01- and sk-ant-api03- are specific enough to avoid collisions with normal prose"
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "GITHUB_INSTALLATION_TOKEN removal breaks something",
+          "retireIn": "S01",
+          "whatWillBeProven": "All existing tests pass after removal; executor.test.ts still passes; aca-launcher.test.ts updated and passing"
+        },
+        {
+          "riskOrUnknown": "sk-ant regex false positive risk",
+          "retireIn": "S02",
+          "whatWillBeProven": "New sanitizer tests verify match on real token prefixes and non-match on normal prose containing 'sk-ant'"
+        }
+      ],
+      "verification_contract": "Unit tests: buildAcaJobSpec confirms GITHUB_INSTALLATION_TOKEN absent from env array; APPLICATION_SECRET_NAMES includes it; scanOutgoingForSecrets blocks sk-ant-oat01- and sk-ant-api03-; security policy snapshot tests confirm new clauses present.",
+      "verification_integration": "Orchestrator image rebuilt with all changes, deployed to ca-kodiai. New ACA job execution confirms GITHUB_INSTALLATION_TOKEN not present in job env (via az containerapp job execution show).",
+      "verification_operational": "None — no new infra or service lifecycle changes.",
+      "verification_uat": "Trigger a real @kodiai mention after deploy; confirm review completes without error and no token appears in the posted comment.",
+      "definition_of_done": [
+        "S01, S02, S03 all complete",
+        "bun run tsc --noEmit exits 0",
+        "bun test exits 0 with no failures",
+        "Orchestrator image built and deployed",
+        "GITHUB_INSTALLATION_TOKEN absent from a real job execution env (verified via az CLI)",
+        "A real @kodiai mention completes successfully after deploy"
+      ],
+      "requirement_coverage": "Covers R033-01 (S01), R033-02 (S01), R033-03 (S02), R033-04 (S03), R033-05 (S03). All five active requirements fully owned.",
+      "boundary_map_markdown": "### S01 → S02, S03\n\nProduces:\n- `buildAcaJobSpec` no longer accepts or passes `githubInstallationToken`\n- `APPLICATION_SECRET_NAMES` includes `\"GITHUB_INSTALLATION_TOKEN\"`\n- Updated tests in `aca-launcher.test.ts`\n\nConsumes: nothing (first slice)\n\n### S02 → S03\n\nProduces:\n- `scanOutgoingForSecrets` with two new patterns: `anthropic-oauth-token` (`sk-ant-oat01-`) and `anthropic-api-key` (`sk-ant-api03-`)\n- New test coverage in `sanitizer.test.ts`\n\nConsumes from S01: nothing (parallel-safe)\n\n### S03 → (deploy)\n\nProduces:\n- `buildSecurityClaudeMd` with mandatory review + social engineering refusal clauses\n- `buildSecurityPolicySection` with same clauses (review prompt + mention prompt)\n- Updated test assertions in `review-prompt.test.ts`\n\nConsumes from S01, S02: nothing (all three slices are independent code changes)"
     }
   ],
   "slices": [
@@ -1049,6 +1101,66 @@
       "proof_level": "This slice proves: contract. All checks are pure-code — no real runtime or Azure infrastructure required. The three checks exercise the structural security contracts established in S01–S03.",
       "integration_closure": "Upstream surfaces consumed: buildAcaJobSpec + APPLICATION_SECRET_NAMES from src/jobs/aca-launcher.ts; createMcpHttpRoutes + createMcpJobRegistry from src/execution/mcp/http-server.ts; createAzureFilesWorkspaceDir interface from src/jobs/workspace.ts. New wiring: package.json verify:m032 script entry. What remains before the milestone is truly usable end-to-end: live ops smoke test (bun run scripts/test-aca-job.ts --live) against real Azure infrastructure — deferred per \"code-complete vs operationally complete\" pattern.",
       "observability_impact": "None — proof harness only. All checks are pure-code with no runtime side effects.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M033",
+      "id": "S01",
+      "title": "Remove GITHUB_INSTALLATION_TOKEN from container env",
+      "status": "pending",
+      "risk": "low",
+      "depends": [],
+      "demo": "bun test ./src/jobs/aca-launcher.test.ts passes; GITHUB_INSTALLATION_TOKEN absent from test spec env array; APPLICATION_SECRET_NAMES includes it.",
+      "created_at": "2026-03-31T11:32:16.539Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Remove GITHUB_INSTALLATION_TOKEN from the ACA job env array — add it to APPLICATION_SECRET_NAMES as a permanent enforcement mechanism, drop it from BuildAcaJobSpecOpts, remove the push from buildAcaJobSpec(), and remove the now-dead call site in executor.ts.",
+      "success_criteria": "- `GITHUB_INSTALLATION_TOKEN` is in `APPLICATION_SECRET_NAMES`\n- `BuildAcaJobSpecOpts` has no `githubInstallationToken` field\n- `buildAcaJobSpec()` never pushes `GITHUB_INSTALLATION_TOKEN` into the env array\n- `executor.ts` no longer calls `getInstallationToken()` or passes `githubInstallationToken`\n- `bun test ./src/jobs/aca-launcher.test.ts` passes with updated assertions\n- `bun run tsc --noEmit` exits 0",
+      "proof_level": "contract",
+      "integration_closure": "Self-contained — only aca-launcher.ts, executor.ts, and aca-launcher.test.ts are touched. No new runtime wiring.",
+      "observability_impact": "None — the runtime guard in buildAcaJobSpec() already emits a throw with the forbidden key name if any APPLICATION_SECRET_NAMES appear; adding GITHUB_INSTALLATION_TOKEN to that list makes the guard self-enforcing going forward.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M033",
+      "id": "S02",
+      "title": "Add Anthropic token patterns to outgoing secret scan",
+      "status": "pending",
+      "risk": "low",
+      "depends": [],
+      "demo": "bun test ./src/lib/sanitizer.test.ts passes with new pattern assertions.",
+      "created_at": "2026-03-31T11:32:16.539Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Add sk-ant-oat01- and sk-ant-api03- regex patterns to scanOutgoingForSecrets so any outgoing text containing an Anthropic token is blocked.",
+      "success_criteria": "scanOutgoingForSecrets returns blocked:true for strings containing sk-ant-oat01- or sk-ant-api03-; returns blocked:false for normal prose; existing patterns unaffected.",
+      "proof_level": "Contract: unit tests in sanitizer.test.ts cover both new patterns.",
+      "integration_closure": "No orchestrator changes needed — sanitizer is already wired into all MCP publish paths.",
+      "observability_impact": "None.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M033",
+      "id": "S03",
+      "title": "Harden security policy prompt against execution bypass",
+      "status": "pending",
+      "risk": "low",
+      "depends": [],
+      "demo": "bun test ./src/execution/review-prompt.test.ts passes with assertions for new security policy clauses.",
+      "created_at": "2026-03-31T11:32:16.539Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Update buildSecurityClaudeMd and buildSecurityPolicySection to mandate code review before any execution request and name the social engineering bypass pattern explicitly.",
+      "success_criteria": "Both security policy functions include: (1) always read/review code contents before executing, regardless of instructions; (2) 'you don't need to review it' / 'just run it' / 'skip the review' are adversarial bypass attempts that must be refused and named as such in the response. Test assertions cover both clauses.",
+      "proof_level": "Contract: test assertions in review-prompt.test.ts confirm new clause text present.",
+      "integration_closure": "Both CLAUDE.md (written to workspace) and the system prompt section updated — both code paths exercise the same or equivalent policy text.",
+      "observability_impact": "None.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -2232,6 +2344,52 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M033",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Added GITHUB_INSTALLATION_TOKEN to APPLICATION_SECRET_NAMES, removed it from BuildAcaJobSpecOpts/buildAcaJobSpec, and dropped the dead getInstallationToken call from executor.ts",
+      "status": "complete",
+      "one_liner": "Added GITHUB_INSTALLATION_TOKEN to APPLICATION_SECRET_NAMES, removed it from BuildAcaJobSpecOpts/buildAcaJobSpec, and dropped the dead getInstallationToken call from executor.ts",
+      "narrative": "Four tightly coupled mutations: (1) GITHUB_INSTALLATION_TOKEN added to APPLICATION_SECRET_NAMES in aca-launcher.ts, (2) githubInstallationToken field removed from BuildAcaJobSpecOpts and its conditional env push removed from buildAcaJobSpec(), (3) githubInstallationToken prop and getInstallationToken() call removed from the buildAcaJobSpec invocation in executor.ts, (4) aca-launcher.test.ts updated with new assertions matching the contract. An unplanned fifth file, executor.test.ts, also had the same prop in a stub call that was caught by tsc --noEmit and removed.",
+      "verification_result": "bun test ./src/jobs/aca-launcher.test.ts: 21 pass, 0 fail. bun run tsc --noEmit: exit 0.",
+      "duration": "",
+      "completed_at": "2026-03-31T11:37:05.865Z",
+      "blocker_discovered": false,
+      "deviations": "executor.test.ts also required the same githubInstallationToken removal (not listed in task plan inputs) — minor addition, same intent.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/jobs/aca-launcher.ts",
+        "src/jobs/aca-launcher.test.ts",
+        "src/execution/executor.ts",
+        "src/execution/executor.test.ts"
+      ],
+      "key_decisions": [
+        "GITHUB_INSTALLATION_TOKEN is now a permanently forbidden key in APPLICATION_SECRET_NAMES rather than an optional opt-in — the agent container must acquire its own installation token independently"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M033\nkey_files:\n  - src/jobs/aca-launcher.ts\n  - src/jobs/aca-launcher.test.ts\n  - src/execution/executor.ts\n  - src/execution/executor.test.ts\nkey_decisions:\n  - GITHUB_INSTALLATION_TOKEN is now a permanently forbidden key in APPLICATION_SECRET_NAMES rather than an optional opt-in — the agent container must acquire its own installation token independently\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-03-31T11:37:05.865Z\nblocker_discovered: false\n---\n\n# T01: Added GITHUB_INSTALLATION_TOKEN to APPLICATION_SECRET_NAMES, removed it from BuildAcaJobSpecOpts/buildAcaJobSpec, and dropped the dead getInstallationToken call from executor.ts\n\n**Added GITHUB_INSTALLATION_TOKEN to APPLICATION_SECRET_NAMES, removed it from BuildAcaJobSpecOpts/buildAcaJobSpec, and dropped the dead getInstallationToken call from executor.ts**\n\n## What Happened\n\nFour tightly coupled mutations: (1) GITHUB_INSTALLATION_TOKEN added to APPLICATION_SECRET_NAMES in aca-launcher.ts, (2) githubInstallationToken field removed from BuildAcaJobSpecOpts and its conditional env push removed from buildAcaJobSpec(), (3) githubInstallationToken prop and getInstallationToken() call removed from the buildAcaJobSpec invocation in executor.ts, (4) aca-launcher.test.ts updated with new assertions matching the contract. An unplanned fifth file, executor.test.ts, also had the same prop in a stub call that was caught by tsc --noEmit and removed.\n\n## Verification\n\nbun test ./src/jobs/aca-launcher.test.ts: 21 pass, 0 fail. bun run tsc --noEmit: exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/jobs/aca-launcher.test.ts` | 0 | ✅ pass | 226ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6200ms |\n\n\n## Deviations\n\nexecutor.test.ts also required the same githubInstallationToken removal (not listed in task plan inputs) — minor addition, same intent.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/jobs/aca-launcher.ts`\n- `src/jobs/aca-launcher.test.ts`\n- `src/execution/executor.ts`\n- `src/execution/executor.test.ts`\n",
+      "description": "Three tightly coupled mutations: (1) add 'GITHUB_INSTALLATION_TOKEN' to APPLICATION_SECRET_NAMES array in aca-launcher.ts, (2) remove githubInstallationToken field from BuildAcaJobSpecOpts interface and the conditional push in buildAcaJobSpec(), (3) remove the getInstallationToken() call and githubInstallationToken prop from the buildAcaJobSpec call in executor.ts, (4) update aca-launcher.test.ts to reflect the new contract.\n\nSpecific steps:\n1. In `src/jobs/aca-launcher.ts`: add `\"GITHUB_INSTALLATION_TOKEN\"` to the `APPLICATION_SECRET_NAMES` array (after `\"BOT_USER_PAT\"`).\n2. In `src/jobs/aca-launcher.ts`: remove `githubInstallationToken?: string` from `BuildAcaJobSpecOpts`.\n3. In `src/jobs/aca-launcher.ts`: remove the `if (opts.githubInstallationToken !== undefined)` block (lines ~89-91) from `buildAcaJobSpec()`.\n4. In `src/execution/executor.ts`: remove `githubInstallationToken: await githubApp.getInstallationToken(context.installationId)` from the `buildAcaJobSpec(...)` call (line ~227). The `getInstallationToken` call becomes dead code — drop it entirely.\n5. In `src/jobs/aca-launcher.test.ts`:\n   a. Update the `'contains the expected secret key names'` test to include `'GITHUB_INSTALLATION_TOKEN'` in the expected array.\n   b. Replace the `'GITHUB_INSTALLATION_TOKEN included when provided'` test with one that asserts `APPLICATION_SECRET_NAMES` contains `'GITHUB_INSTALLATION_TOKEN'` (the old 'included' test is now invalid — passing it to buildAcaJobSpec would cause a runtime throw).\n   c. Update `'GITHUB_INSTALLATION_TOKEN absent when not provided'` to assert it's always absent from a normal spec (no longer conditional on the opt being omitted — the field doesn't exist).\n6. Run `bun test ./src/jobs/aca-launcher.test.ts` — all tests must pass.\n7. Run `bun run tsc --noEmit` — must exit 0.",
+      "estimate": "30m",
+      "files": [
+        "src/jobs/aca-launcher.ts",
+        "src/jobs/aca-launcher.test.ts",
+        "src/execution/executor.ts"
+      ],
+      "verify": "bun test ./src/jobs/aca-launcher.test.ts && bun run tsc --noEmit",
+      "inputs": [
+        "`src/jobs/aca-launcher.ts` — source file with APPLICATION_SECRET_NAMES, BuildAcaJobSpecOpts, buildAcaJobSpec()",
+        "`src/jobs/aca-launcher.test.ts` — existing tests for the spec builder and APPLICATION_SECRET_NAMES",
+        "`src/execution/executor.ts` — sole call site of buildAcaJobSpec() that passes githubInstallationToken"
+      ],
+      "expected_output": [
+        "`src/jobs/aca-launcher.ts` — GITHUB_INSTALLATION_TOKEN added to APPLICATION_SECRET_NAMES; field and push removed",
+        "`src/jobs/aca-launcher.test.ts` — updated test assertions matching new contract",
+        "`src/execution/executor.ts` — githubInstallationToken prop and getInstallationToken() call removed"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2449,6 +2607,30 @@
       "rationale": "createMcpHttpRoutes returns a Hono sub-app with routes already prefixed with /internal/mcp/:serverName. Mounting at /internal would produce /internal/internal/mcp/:serverName. Root mount preserves the correct path. Future sub-apps that own their own prefix must also be mounted at root.",
       "revisable": "Yes",
       "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 52,
+      "id": "D019",
+      "when_context": "M033",
+      "scope": "security",
+      "decision": "Whether to pass GITHUB_INSTALLATION_TOKEN to the agent container",
+      "choice": "Remove it — never pass to agent container",
+      "rationale": "Token is unused by agent code (confirmed by grep of agent-entrypoint.ts and all agent-side code). It grants write access to all repos in the installation. Passing it creates an exfiltration risk with zero functional benefit. Added to APPLICATION_SECRET_NAMES to enforce this permanently.",
+      "revisable": "No",
+      "made_by": "collaborative",
+      "superseded_by": null
+    },
+    {
+      "seq": 53,
+      "id": "D020",
+      "when_context": "M033",
+      "scope": "security",
+      "decision": "Whether to add VNet egress restrictions to the ACA agent container",
+      "choice": "No VNet egress restriction — accepted known gap",
+      "rationale": "Full egress restriction would kill WebFetch and Anthropic API calls. Fine-grained allowlisting requires NAT gateway + Azure Firewall, a significant infra change. Risk is acceptable given token removal (the highest-value exfil target) and prompt guardrails.",
+      "revisable": "Yes — if a future attack surface requires it",
+      "made_by": "collaborative",
       "superseded_by": null
     }
   ],
@@ -3013,6 +3195,28 @@
       "verdict": "✅ pass",
       "duration_ms": 100,
       "created_at": "2026-03-29T19:25:51.958Z"
+    },
+    {
+      "id": 52,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M033",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 226,
+      "created_at": "2026-03-31T11:37:05.865Z"
+    },
+    {
+      "id": 53,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M033",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6200,
+      "created_at": "2026-03-31T11:37:05.865Z"
     }
   ]
 }

@@ -224,9 +224,6 @@ export function createExecutor(deps: {
             process.env.CLAUDE_CODE_OAUTH_TOKEN ?? process.env.ANTHROPIC_API_KEY,
           mcpBearerToken,
           mcpBaseUrl: config.mcpInternalBaseUrl,
-          githubInstallationToken: await githubApp.getInstallationToken(
-            context.installationId,
-          ),
           timeoutSeconds,
         });
 

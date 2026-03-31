@@ -11,6 +11,11 @@ FROM oven/bun:1-debian
 # python3 + kodi-addon-checker required for addon lint checks
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 python3-pip && pip3 install --no-cache-dir --break-system-packages kodi-addon-checker && rm -rf /var/lib/apt/lists/*
 
+# Pre-accept bypassPermissions mode so the SDK CLI doesn't prompt/fail non-interactively
+RUN mkdir -p /home/bun/.claude && \
+    echo '{"bypassPermissionsModeAccepted":true,"hasTrustDialogAccepted":true}' > /home/bun/.claude/settings.json && \
+    chown -R bun:bun /home/bun/.claude
+
 WORKDIR /app
 
 # Copy production dependencies from deps stage

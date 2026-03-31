@@ -46,6 +46,7 @@ export const APPLICATION_SECRET_NAMES: readonly string[] = [
   "SLACK_SIGNING_SECRET",
   "VOYAGE_API_KEY",
   "BOT_USER_PAT",
+  "GITHUB_INSTALLATION_TOKEN",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -59,7 +60,6 @@ export interface BuildAcaJobSpecOpts {
   anthropicApiKey?: string;
   mcpBearerToken: string;
   mcpBaseUrl: string;
-  githubInstallationToken?: string;
   timeoutSeconds?: number;
 }
 
@@ -85,10 +85,6 @@ export function buildAcaJobSpec(opts: BuildAcaJobSpecOpts): AcaJobSpec {
   env.push({ name: "MCP_BEARER_TOKEN", value: opts.mcpBearerToken });
   env.push({ name: "MCP_BASE_URL", value: opts.mcpBaseUrl });
   env.push({ name: "WORKSPACE_DIR", value: opts.workspaceDir });
-
-  if (opts.githubInstallationToken !== undefined) {
-    env.push({ name: "GITHUB_INSTALLATION_TOKEN", value: opts.githubInstallationToken });
-  }
 
   // Runtime guard: verify the contract — no application secrets in the env
   const forbidden = env.filter((e) =>
