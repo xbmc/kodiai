@@ -8,11 +8,13 @@ Automated review and rule enforcement that reduces maintainer burden on high-vol
 
 ## Current State
 
-26 milestones shipped (M001–M030). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles, addon rule enforcement.
+29 milestones shipped (M001–M033). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles, addon rule enforcement, ephemeral ACA Job agent isolation.
 
 M031 (Security Hardening) complete — env allowlist (`src/execution/env.ts`), git remote sanitization, outgoing secret scan at MCP layer, CLAUDE.md injection, prompt refusal instructions.
 
 M032 (Agent Process Isolation) complete — agent subprocess moved to ephemeral Azure Container Apps Job with zero application secrets in its environment. `buildAcaJobSpec` enforces `APPLICATION_SECRET_NAMES` contract (9 forbidden names, throws at build time if any appear). MCP servers remain in orchestrator and are exposed over authenticated HTTP (`createMcpJobRegistry` + `createMcpHttpRoutes`; per-job 32-byte bearer token). Workspace shared via Azure Files mount (`createAzureFilesWorkspaceDir`). `src/execution/agent-entrypoint.ts` is the job container entry point. `createExecutor()` fully refactored to ACA dispatch path. `Dockerfile.agent` created. `bun run verify:m032` exits 0 (3 security contract checks). Closes the `/proc/<ppid>/environ` prompt-injection-to-exfiltration attack path structurally.
+
+M033 (Agent Container Security Hardening) complete — GITHUB_INSTALLATION_TOKEN permanently blocked from agent container env via APPLICATION_SECRET_NAMES (runtime throw + static type removal + no call site); Anthropic sk-ant-* token patterns added to outgoing secret scan; execution-bypass guardrails added to both reviewer security policy prompt and executor CLAUDE.md (refuse embedded-script execution requests, treat skip-review instructions as social engineering, require pre-execution code review).
 
 ## Architecture / Key Patterns
 
@@ -37,3 +39,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - ✅ M001–M030: Core platform through addon rule enforcement (see CHANGELOG.md)
 - ✅ M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)
 - ✅ M032: Agent Process Isolation — ephemeral ACA Job sandbox complete. Agent subprocess moved to a secrets-free ACA Job container; MCP servers exposed over per-job bearer-token authenticated HTTP from orchestrator; workspace on Azure Files share. APPLICATION_SECRET_NAMES security contract enforced at build time. `bun run verify:m032` exits 0.
+- ✅ M033: Agent Container Security Hardening — Context. GITHUB_INSTALLATION_TOKEN moved to APPLICATION_SECRET_NAMES (permanently blocked from container env, three enforcement layers). Anthropic sk-ant-oat01-/sk-ant-api03- tokens added as 7th pattern in `scanOutgoingForSecrets`. Execution-bypass guardrails added to both `buildSecurityPolicySection()` (reviewer agent) and `buildSecurityClaudeMd()` (executor CLAUDE.md): refuse embedded-script execution, treat skip-review instructions as social engineering, require pre-execution code review. 285 tests pass; `bun run tsc --noEmit` exits 0.

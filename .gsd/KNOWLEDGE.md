@@ -600,3 +600,38 @@ POST https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/provid
 **Verified:** REST API correctly passes env vars to the running container. Job Succeeded with WORKSPACE_DIR, CLAUDE.md written, result.json written.
 
 **Established in:** M032 post-deploy fix (`src/jobs/aca-launcher.ts`, `getAzureAccessToken()` + updated `launchAcaJob()`).
+
+---
+
+## Three-Layer Enforcement Pattern for Permanently Blocked Env Keys (M033)
+
+**Context:** `GITHUB_INSTALLATION_TOKEN` was being passed to the agent container via a `githubInstallationToken` field on `BuildAcaJobSpecOpts`. It grants write access to all repos in the installation — an exfiltration risk with zero functional benefit to the agent.
+
+**Pattern:** To permanently and verifiably block a key from reaching the agent container, apply all three enforcement layers:
+1. **Runtime guard:** Add the key string to `APPLICATION_SECRET_NAMES` in `aca-launcher.ts`. The existing `buildAcaJobSpec` throw guard covers it immediately — no additional code needed.
+2. **Static type removal:** Remove the optional field from `BuildAcaJobSpecOpts`. Any future caller that re-adds it gets a TypeScript compile error. Run `bun run tsc --noEmit` after removal — it will surface stale prop references in test files.
+3. **No call site:** Remove the fetch that produced the value (e.g., `getInstallationToken()`) from the executor. If there is no call site that fetches the token, it genuinely cannot reach the container.
+
+**Test pattern:** Replace `'included when provided'` tests with:
+- `'is in APPLICATION_SECRET_NAMES'` — positive assertion on the constant itself
+- `'always absent from spec env array'` — unconditional, not opt-dependent
+
+**Decision D019:** This decision is marked non-revisable. If the agent ever needs an installation token, it must acquire one independently inside the container — it cannot inherit one from the orchestrator.
+
+**Established in:** M033/S01.
+
+---
+
+## Security Policy Mirroring Across Two Agent Surfaces (M033/S03)
+
+**Context:** Kodiai has two agent surfaces that carry security policy: `buildSecurityPolicySection()` in `review-prompt.ts` (for the reviewer agent) and `buildSecurityClaudeMd()` in `executor.ts` (for the executor agent via CLAUDE.md). These agents run in different processes with different context — each must carry its own policy signal independently.
+
+**Rule:** When adding security policy language (e.g., execution-bypass guardrails), always update **both** surfaces:
+- `src/execution/review-prompt.ts` → `buildSecurityPolicySection()` — bullets in the security policy array
+- `src/execution/executor.ts` → `buildSecurityClaudeMd()` — section in the CLAUDE.md content
+
+Centralizing in one surface and relying on the other to "inherit" it does not work — the review prompt is never read by the executor agent, and CLAUDE.md is never read by the reviewer.
+
+**Test coverage:** Add tests to both `review-prompt.test.ts` and `executor.test.ts`. The `executor.test.ts` tests check `buildSecurityClaudeMd()` output directly; the review-prompt tests check `buildSecurityPolicySection()`. Tests should assert on specific signal words (e.g., `'execute'`, `'social engineering'`) rather than exact sentence text, to remain stable across phrasing tweaks.
+
+**Established in:** M033/S03.
