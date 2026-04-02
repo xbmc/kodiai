@@ -211,6 +211,16 @@ export function formatReviewDetailsSummary(params: {
     topScore: number | null;
     thresholdScore: number | null;
   };
+  usageLimit?: {
+    utilization: number | undefined;
+    rateLimitType: string | undefined;
+    resetsAt: number | undefined;
+  };
+  tokenUsage?: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+    costUsd: number | undefined;
+  };
 }): string {
   const {
     reviewOutputKey,
@@ -224,6 +234,8 @@ export function formatReviewDetailsSummary(params: {
     profileSelection,
     authorTier,
     prioritization,
+    usageLimit,
+    tokenUsage,
   } = params;
 
   const profileLine = profileSelection.source === "auto"
@@ -243,6 +255,22 @@ export function formatReviewDetailsSummary(params: {
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];
+
+  if (usageLimit?.utilization !== undefined) {
+    const pct = Math.round(usageLimit.utilization * 100);
+    const type = usageLimit.rateLimitType ?? 'usage';
+    const resetStr = usageLimit.resetsAt !== undefined
+      ? ` | resets ${new Date(usageLimit.resetsAt * 1000).toISOString()}`
+      : '';
+    sections.push(`- Claude Code usage: ${pct}% of ${type} limit${resetStr}`);
+  }
+
+  if (tokenUsage?.inputTokens !== undefined || tokenUsage?.outputTokens !== undefined) {
+    const inp = tokenUsage?.inputTokens ?? 0;
+    const out = tokenUsage?.outputTokens ?? 0;
+    const costStr = tokenUsage?.costUsd !== undefined ? ` | ${tokenUsage.costUsd.toFixed(4)}` : '';
+    sections.push(`- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${costStr}`);
+  }
 
   if (largePRTriage) {
     const reviewedCount = largePRTriage.fullCount + largePRTriage.abbreviatedCount;

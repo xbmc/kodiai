@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-02T20:15:15.910Z",
+  "exported_at": "2026-04-02T20:22:50.488Z",
   "milestones": [
     {
       "id": "M001",
@@ -1221,14 +1221,14 @@
       "milestone_id": "M034",
       "id": "S01",
       "title": "Capture Claude Code usage events",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [],
       "demo": "After this, `result.json` includes Claude Code usage-limit data when the SDK emits a rate-limit event, and tests prove the last event wins.",
       "created_at": "2026-04-02T16:16:04.664Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-02T20:16:25.925Z",
+      "full_summary_md": "---\nid: S01\nparent: M034\nmilestone: M034\nprovides:\n  - usageLimit field on ExecutionResult (types.ts) with utilization, rateLimitType, resetsAt\n  - result.json includes usageLimit when the SDK emits a rate_limit_event during the run\n  - 4 tests prove last-wins semantics and absent-when-no-event contract\nrequires:\n  []\naffects:\n  - S02\nkey_files:\n  - src/execution/types.ts\n  - src/execution/agent-entrypoint.ts\n  - src/execution/agent-entrypoint.test.ts\nkey_decisions:\n  - usageLimit only set on the successful result path; absent by default in error cases so S02 knows no event was emitted\n  - Spread-conditional (not optional assignment) used so the usageLimit key is fully absent in JSON when no rate_limit_event was seen — avoids null/undefined noise in the output artifact\n  - last-wins semantics: each rate_limit_event overwrites the previous, giving the most recent snapshot of limit state\npatterns_established:\n  - makeRateLimitEvent() helper pattern for injecting synthetic SDKRateLimitEvent messages into agent-entrypoint tests — reusable for future event types\n  - Spread-conditional to make a field key absent vs present based on runtime data: `...(cond ? { field: val } : {})` — keeps JSON artifacts clean\nobservability_surfaces:\n  - none\ndrill_down_paths:\n  - .gsd/milestones/M034/slices/S01/tasks/T01-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-02T20:16:25.926Z\nblocker_discovered: false\n---\n\n# S01: Capture Claude Code usage events\n\n**Added optional usageLimit field to ExecutionResult and wired up last-wins SDKRateLimitEvent capture in the agent SDK stream loop, with 4 targeted tests proving the contract.**\n\n## What Happened\n\nSingle task, three surgical changes across three files. (1) `src/execution/types.ts` gained an optional `usageLimit` field on `ExecutionResult` with three sub-fields: `utilization`, `rateLimitType`, and `resetsAt` (all `number | string | undefined`). (2) `src/execution/agent-entrypoint.ts` imported `SDKRateLimitEvent`, declared `let lastRateLimitEvent: SDKRateLimitEvent | undefined` before the for-await loop, added an `else if (message.type === \"rate_limit_event\")` branch that overwrites the variable on every matching message (last-wins), and added a spread-conditional after the loop that populates `usageLimit` only when `lastRateLimitEvent !== undefined`. The error paths (no-result and catch block) were intentionally left untouched — the field is absent there by design. (3) `src/execution/agent-entrypoint.test.ts` gained a `makeRateLimitEvent()` helper and a `describe('rate_limit_event capture')` block with 4 tests covering every contract condition: single event captured, last event wins, absent when no event, and sub-fields undefined when the event omits them. All 17 tests pass; TypeScript emits 0 errors.\n\n## Verification\n\nbun test src/execution/agent-entrypoint.test.ts — 17/17 pass (114ms). bun tsc --noEmit — 0 errors. All 4 new rate_limit_event tests exercised the exact scenarios called out in the slice plan.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nNone. The usageLimit field is only populated on the successful result path; error paths leave it absent, which is the intended contract.\n\n## Follow-ups\n\nS02 can now read result.json and render usageLimit fields in the GitHub PR comment Review Details section without any further plumbing.\n\n## Files Created/Modified\n\n- `src/execution/types.ts` — Added optional usageLimit field to ExecutionResult type\n- `src/execution/agent-entrypoint.ts` — Imported SDKRateLimitEvent, added last-wins capture variable and else-if branch in for-await loop, populated usageLimit via spread-conditional on successful result\n- `src/execution/agent-entrypoint.test.ts` — Added makeRateLimitEvent helper and 4 new tests in rate_limit_event capture describe block\n",
+      "full_uat_md": "# S01: Capture Claude Code usage events — UAT\n\n**Milestone:** M034\n**Written:** 2026-04-02T20:16:25.926Z\n\n# S01 UAT: Capture Claude Code usage events\n\n## Preconditions\n- Repo checked out, `bun install` complete\n- `bun test` and `bun tsc --noEmit` available in PATH\n\n---\n\n## TC-01 — Single rate_limit_event populates usageLimit\n\n**Precondition:** agent-entrypoint.test.ts contains the `makeRateLimitEvent` helper.\n\n**Steps:**\n1. Run `bun test src/execution/agent-entrypoint.test.ts --test-name-pattern \"single event captured\"`\n\n**Expected outcome:**\n- Test passes: `parsedResult.usageLimit` equals `{ utilization: 0.75, rateLimitType: 'seven_day', resetsAt: 9999 }`\n- Exit 0\n\n---\n\n## TC-02 — Last rate_limit_event wins when multiple emitted\n\n**Steps:**\n1. Run `bun test src/execution/agent-entrypoint.test.ts --test-name-pattern \"last event wins\"`\n\n**Expected outcome:**\n- Test passes: `usageLimit.utilization === 0.9`, `usageLimit.rateLimitType === 'seven_day_sonnet'`\n- The first event's `utilization: 0.5` is overwritten\n- Exit 0\n\n---\n\n## TC-03 — usageLimit absent when no rate_limit_event emitted\n\n**Steps:**\n1. Run `bun test src/execution/agent-entrypoint.test.ts --test-name-pattern \"usageLimit absent\"`\n\n**Expected outcome:**\n- Test passes: `parsedResult.usageLimit === undefined`\n- The key is fully absent from the result JSON (not null, not `{}`)\n- Exit 0\n\n---\n\n## TC-04 — usageLimit defined but sub-fields undefined when event omits optional fields\n\n**Steps:**\n1. Run `bun test src/execution/agent-entrypoint.test.ts --test-name-pattern \"sub-fields undefined\"`\n\n**Expected outcome:**\n- Test passes: `usageLimit` is defined, but `usageLimit.utilization === undefined && usageLimit.rateLimitType === undefined && usageLimit.resetsAt === undefined`\n- Exit 0\n\n---\n\n## TC-05 — Full suite regression\n\n**Steps:**\n1. Run `bun test src/execution/agent-entrypoint.test.ts`\n\n**Expected outcome:**\n- 17 tests pass, 0 fail\n- All 4 `rate_limit_event capture` tests listed in output\n\n---\n\n## TC-06 — TypeScript clean\n\n**Steps:**\n1. Run `bun tsc --noEmit`\n\n**Expected outcome:**\n- 0 errors, 0 warnings\n- Exit 0\n\n---\n\n## TC-07 — usageLimit field accessible on ExecutionResult type\n\n**Precondition:** TypeScript type check passes (TC-06).\n\n**Steps:**\n1. Inspect `src/execution/types.ts` for the `usageLimit` field definition.\n\n**Expected outcome:**\n- Field present as optional: `usageLimit?: { utilization: number | undefined; rateLimitType: string | undefined; resetsAt: number | undefined; }`\n- S02 code can access `result.usageLimit?.utilization` etc. without casting\n\n---\n\n## Edge Cases\n\n- **No rate_limit_event at all** → `usageLimit` key absent in result.json (TC-03)\n- **Multiple rate_limit_events** → only the last one is reflected (TC-02)\n- **Event with no optional fields** → `usageLimit` present but all sub-fields `undefined` (TC-04)\n- **Error path (SDK throws or no result)** → `usageLimit` never set; error-path result objects unchanged\n\n",
       "goal": "Capture `SDKRateLimitEvent` messages during agent execution and persist the last-seen event as a structured `usageLimit` field on `ExecutionResult` / `result.json`, so downstream code (S02) can render usage data without re-parsing the SDK stream.",
       "success_criteria": "`bun test src/execution/agent-entrypoint.test.ts` passes with 4 new test cases covering: (1) single rate-limit event captured in result.json, (2) last-event-wins when two events fire, (3) `usageLimit` absent when no event fires, (4) graceful handling when all `SDKRateLimitInfo` sub-fields are absent. `bun tsc --noEmit` exits 0.",
       "proof_level": "contract — unit tests with mock SDK stream prove correct capture, last-wins semantics, and absence behavior. No real runtime required for S01; S02 exercises the field in real output.",
@@ -1251,11 +1251,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Thread usage data into the existing Review Details builder and format it inside the current `<details>` block.",
-      "success_criteria": "- Review Details contains a usage line when usage data exists.\n- Review Details contains token and cost summary.\n- Missing usage data omits the line cleanly.",
-      "proof_level": "Integration test at the review-handler level plus formatter coverage.",
-      "integration_closure": "The stitched result payload from S01 reaches the posted GitHub comment body.",
-      "observability_impact": "Operators can inspect usage and token load without leaving GitHub.",
+      "goal": "Render `usageLimit` and token usage in the Review Details GitHub comment section by extending `formatReviewDetailsSummary` with two optional params and wiring them from the call site in `review.ts`.",
+      "success_criteria": "- `formatReviewDetailsSummary` accepts `usageLimit?` and `tokenUsage?` params and pushes the usage line and token line into `sections` when the fields are present\n- Both lines are absent when the fields are undefined (graceful omission contract)\n- `review.ts` call site passes `result.usageLimit` and `{ inputTokens, outputTokens, costUsd }` to the function\n- `bun test ./src/lib/review-utils.test.ts` — all new unit tests pass\n- `bun tsc --noEmit` — zero errors\n- `bun test ./src/handlers/review.test.ts --timeout 60000` — all tests pass including one new integration test asserting usage line in `detailsCommentBody`",
+      "proof_level": "Contract-level: unit tests on the pure formatter function and one integration test at the call site.",
+      "integration_closure": "S01 provides `usageLimit` on `ExecutionResult`. This slice wires it into the GitHub PR comment. After this slice, the full pipeline from SDK rate-limit event → PR comment is closed.",
+      "observability_impact": "None — `formatReviewDetailsSummary` is a pure formatting function with no logging or async I/O.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -2621,6 +2621,85 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M034",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Extended formatReviewDetailsSummary with optional usageLimit and tokenUsage params that render usage-percentage and token-count lines into the Review Details section, with 3 passing unit tests and zero type errors",
+      "status": "complete",
+      "one_liner": "Extended formatReviewDetailsSummary with optional usageLimit and tokenUsage params that render usage-percentage and token-count lines into the Review Details section, with 3 passing unit tests and zero type errors",
+      "narrative": "Added two optional params to formatReviewDetailsSummary in src/lib/review-utils.ts: usageLimit (utilization, rateLimitType, resetsAt) and tokenUsage (inputTokens, outputTokens, costUsd). Both shapes are inlined rather than imported from ExecutionResult. After the initial sections array literal, two conditional pushes render the usage-percentage line and token-count line when the respective fields are present. Created src/lib/review-utils.test.ts with three bun:test tests. A first tsc pass revealed that ResolvedReviewProfile requires autoBand, so added autoBand: null to BASE_PARAMS — after which all type errors cleared.",
+      "verification_result": "bun test ./src/lib/review-utils.test.ts — 3 pass, 0 fail, 8 expect() calls, 19ms. bun tsc --noEmit — exit 0, no type errors.",
+      "duration": "",
+      "completed_at": "2026-04-02T20:22:50.473Z",
+      "blocker_discovered": false,
+      "deviations": "BASE_PARAMS in test file required autoBand: null to satisfy ResolvedReviewProfile — not mentioned in task plan but trivial to fix.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts"
+      ],
+      "key_decisions": [
+        "Inlined usageLimit shape rather than importing from ExecutionResult to keep review-utils independent of execution types",
+        "Inserted conditional pushes after the initial sections array literal and before the largePRTriage block, consistent with the existing conditional-push pattern in the function"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M034\nkey_files:\n  - src/lib/review-utils.ts\n  - src/lib/review-utils.test.ts\nkey_decisions:\n  - Inlined usageLimit shape rather than importing from ExecutionResult to keep review-utils independent of execution types\n  - Inserted conditional pushes after the initial sections array literal and before the largePRTriage block, consistent with the existing conditional-push pattern in the function\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-02T20:22:50.473Z\nblocker_discovered: false\n---\n\n# T01: Extended formatReviewDetailsSummary with optional usageLimit and tokenUsage params that render usage-percentage and token-count lines into the Review Details section, with 3 passing unit tests and zero type errors\n\n**Extended formatReviewDetailsSummary with optional usageLimit and tokenUsage params that render usage-percentage and token-count lines into the Review Details section, with 3 passing unit tests and zero type errors**\n\n## What Happened\n\nAdded two optional params to formatReviewDetailsSummary in src/lib/review-utils.ts: usageLimit (utilization, rateLimitType, resetsAt) and tokenUsage (inputTokens, outputTokens, costUsd). Both shapes are inlined rather than imported from ExecutionResult. After the initial sections array literal, two conditional pushes render the usage-percentage line and token-count line when the respective fields are present. Created src/lib/review-utils.test.ts with three bun:test tests. A first tsc pass revealed that ResolvedReviewProfile requires autoBand, so added autoBand: null to BASE_PARAMS — after which all type errors cleared.\n\n## Verification\n\nbun test ./src/lib/review-utils.test.ts — 3 pass, 0 fail, 8 expect() calls, 19ms. bun tsc --noEmit — exit 0, no type errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/lib/review-utils.test.ts` | 0 | ✅ pass | 19ms |\n| 2 | `bun tsc --noEmit` | 0 | ✅ pass | 8000ms |\n\n\n## Deviations\n\nBASE_PARAMS in test file required autoBand: null to satisfy ResolvedReviewProfile — not mentioned in task plan but trivial to fix.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/lib/review-utils.ts`\n- `src/lib/review-utils.test.ts`\n",
+      "description": "Add two optional params to `formatReviewDetailsSummary` in `src/lib/review-utils.ts` and push the usage line and token line into the `sections` array when fields are present. Create `src/lib/review-utils.test.ts` with unit tests covering: renders usage line when present, renders token line when present, omits both when absent.\n\nSteps:\n1. In `src/lib/review-utils.ts`, add two optional params to the `formatReviewDetailsSummary` params type:\n   - `usageLimit?: { utilization: number | undefined; rateLimitType: string | undefined; resetsAt: number | undefined; }` (matches `ExecutionResult['usageLimit']` exactly — do not import the type, inline the same shape)\n   - `tokenUsage?: { inputTokens: number | undefined; outputTokens: number | undefined; costUsd: number | undefined; }`\n2. Destructure the new params inside the function body alongside the existing destructuring.\n3. After the `Review completed:` line push (i.e., after the initial `sections` array literal is built) and before the `largePRTriage` block, insert two conditional pushes:\n   - If `usageLimit?.utilization !== undefined`: compute `pct = Math.round(utilization * 100)`, `type = rateLimitType ?? 'usage'`, `resetStr = resetsAt !== undefined ? ` | resets ${new Date(resetsAt * 1000).toISOString()}` : ''`, push `- Claude Code usage: ${pct}% of ${type} limit${resetStr}`\n   - If `tokenUsage?.inputTokens !== undefined || tokenUsage?.outputTokens !== undefined`: compute `inp = inputTokens ?? 0`, `out = outputTokens ?? 0`, `costStr = costUsd !== undefined ? ` | ${costUsd.toFixed(4)}` : ''`, push `- Tokens: ${inp.toLocaleString()} in / ${out.toLocaleString()} out${costStr}`\n4. Create `src/lib/review-utils.test.ts` with three tests under `describe('formatReviewDetailsSummary')` that call the function directly with a minimal valid params object:\n   - Test 1 ('renders usage line when usageLimit is present'): pass `usageLimit: { utilization: 0.75, rateLimitType: 'seven_day', resetsAt: 1735000000 }`. Assert result contains `75% of seven_day limit`. Assert result contains `resets `. Assert result does NOT contain `Claude Code usage` when called without usageLimit.\n   - Test 2 ('renders token line when tokenUsage is present'): pass `tokenUsage: { inputTokens: 1000, outputTokens: 500, costUsd: 0.0123 }`. Assert result contains `in /` and `out`. Assert result contains `0.0123`. Do NOT assert on the locale-formatted numbers themselves.\n   - Test 3 ('omits usage and token lines when fields absent'): call without `usageLimit` or `tokenUsage`. Assert result does NOT contain `Claude Code usage:` and does NOT contain `Tokens:`.\n5. Run `bun test ./src/lib/review-utils.test.ts` to verify all tests pass.\n6. Run `bun tsc --noEmit` to verify zero type errors.",
+      "estimate": "45m",
+      "files": [
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts"
+      ],
+      "verify": "bun test ./src/lib/review-utils.test.ts && bun tsc --noEmit",
+      "inputs": [
+        "`src/lib/review-utils.ts` — function to extend",
+        "`src/execution/types.ts` — reference for `ExecutionResult.usageLimit` shape (do not import; inline the same shape in the params type)"
+      ],
+      "expected_output": [
+        "`src/lib/review-utils.ts` — updated with `usageLimit?` and `tokenUsage?` params and conditional section pushes",
+        "`src/lib/review-utils.test.ts` — new test file with 3 unit tests"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M034",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Wire usageLimit and token fields into the review.ts call site and add integration test",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Pass `result.usageLimit` and token fields to `formatReviewDetailsSummary` at the single call site in `src/handlers/review.ts` (~line 2987). Add one integration test in `src/handlers/review.test.ts` asserting the usage line appears in `detailsCommentBody` when the executor returns `usageLimit`.\n\nSteps:\n1. In `src/handlers/review.ts` at the `formatReviewDetailsSummary({...})` call (~line 2987), add two new fields after `prioritization: prioritizationStats`:\n   - `usageLimit: result.usageLimit,`\n   - `tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },`\n   `result` is already in scope from `const result = await executor.execute({...})`. Both fields are optional in the function signature so this is safe even if undefined.\n2. In `src/handlers/review.test.ts`, find an existing test that exercises the `detailsCommentBody` output path. Add a new `it` test (or `describe` block) that:\n   - Mocks the executor to return a result with `usageLimit: { utilization: 0.8, rateLimitType: 'seven_day', resetsAt: 9999 }` and `inputTokens: 2000, outputTokens: 1000`\n   - Asserts that `detailsCommentBody` contains `80% of seven_day limit`\n   - Asserts that `detailsCommentBody` contains `in /`\n3. Run `bun tsc --noEmit` to verify zero type errors.\n4. Run `bun test ./src/handlers/review.test.ts --timeout 60000` to verify all tests pass.",
+      "estimate": "30m",
+      "files": [
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun tsc --noEmit && bun test ./src/handlers/review.test.ts --timeout 60000",
+      "inputs": [
+        "`src/lib/review-utils.ts` — updated function signature from T01",
+        "`src/handlers/review.ts` — call site to wire",
+        "`src/handlers/review.test.ts` — existing integration tests to extend"
+      ],
+      "expected_output": [
+        "`src/handlers/review.ts` — call site updated with `usageLimit` and `tokenUsage` fields",
+        "`src/handlers/review.test.ts` — new integration test asserting usage line in `detailsCommentBody`"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -3515,6 +3594,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6600,
       "created_at": "2026-04-02T20:15:15.897Z"
+    },
+    {
+      "id": 59,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M034",
+      "command": "bun test ./src/lib/review-utils.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 19,
+      "created_at": "2026-04-02T20:22:50.473Z"
+    },
+    {
+      "id": 60,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M034",
+      "command": "bun tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8000,
+      "created_at": "2026-04-02T20:22:50.473Z"
     }
   ]
 }
