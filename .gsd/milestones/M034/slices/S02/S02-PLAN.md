@@ -23,7 +23,7 @@ Steps:
   - Estimate: 45m
   - Files: src/lib/review-utils.ts, src/lib/review-utils.test.ts
   - Verify: bun test ./src/lib/review-utils.test.ts && bun tsc --noEmit
-- [ ] **T02: Wire usageLimit and token fields into the review.ts call site and add integration test** — Pass `result.usageLimit` and token fields to `formatReviewDetailsSummary` at the single call site in `src/handlers/review.ts` (~line 2987). Add one integration test in `src/handlers/review.test.ts` asserting the usage line appears in `detailsCommentBody` when the executor returns `usageLimit`.
+- [x] **T02: Wired result.usageLimit and token fields into formatReviewDetailsSummary call site in review.ts and added integration test confirming usage line in detailsCommentBody** — Pass `result.usageLimit` and token fields to `formatReviewDetailsSummary` at the single call site in `src/handlers/review.ts` (~line 2987). Add one integration test in `src/handlers/review.test.ts` asserting the usage line appears in `detailsCommentBody` when the executor returns `usageLimit`.
 
 Steps:
 1. In `src/handlers/review.ts` at the `formatReviewDetailsSummary({...})` call (~line 2987), add two new fields after `prioritization: prioritizationStats`:

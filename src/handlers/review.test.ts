@@ -5921,6 +5921,112 @@ describe("createReviewHandler finding prioritization", () => {
   });
 });
 
+describe("createReviewHandler usageLimit and token wiring", () => {
+  test("Review Details includes usage percentage and token counts when executor returns usageLimit", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let detailsCommentBody: string | undefined;
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          deleteReviewComment: async () => ({ data: {} }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            detailsCommentBody = params.body;
+            return { data: {} };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0.0042,
+          inputTokens: 2000,
+          outputTokens: 1000,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-usage-wiring",
+          usageLimit: {
+            utilization: 0.8,
+            rateLimitType: "seven_day",
+            resetsAt: 9999,
+          },
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub(),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(detailsCommentBody).toBeDefined();
+    expect(detailsCommentBody).toContain("80% of seven_day limit");
+    expect(detailsCommentBody).toContain("in /");
+  });
+});
+
 describe("createReviewHandler dep bump analysis wiring (Phase 57)", () => {
   let previousFetch: typeof globalThis.fetch | undefined;
   let fetchMock: ReturnType<typeof mock>;

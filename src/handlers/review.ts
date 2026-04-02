@@ -3001,6 +3001,8 @@ export function createReviewHandler(deps: {
               profileSelection,
               authorTier: authorClassification.tier,
               prioritization: prioritizationStats,
+              usageLimit: result.usageLimit,
+              tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
             });
 
             // Append suppressed-findings section if any findings were filtered (FILT-02)
