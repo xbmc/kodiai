@@ -635,3 +635,55 @@ Centralizing in one surface and relying on the other to "inherit" it does not wo
 **Test coverage:** Add tests to both `review-prompt.test.ts` and `executor.test.ts`. The `executor.test.ts` tests check `buildSecurityClaudeMd()` output directly; the review-prompt tests check `buildSecurityPolicySection()`. Tests should assert on specific signal words (e.g., `'execute'`, `'social engineering'`) rather than exact sentence text, to remain stable across phrasing tweaks.
 
 **Established in:** M033/S03.
+
+---
+
+## SDKRateLimitEvent Emitted During Streaming, Not in Final Result (M034/S01)
+
+**Context:** `SDKRateLimitEvent` arrives as a streaming message during the for-await loop in `agent-entrypoint.ts`, not in the final `ResultMessage`. To capture it, you must accumulate it inside the loop (not extract it from the result) and use a spread-conditional to populate the field only when an event was actually seen.
+
+**Pattern:**
+```ts
+let lastRateLimitEvent: SDKRateLimitEvent | undefined;
+for await (const message of sdk.stream(...)) {
+  if (message.type === "result") { ... }
+  else if (message.type === "rate_limit_event") {
+    lastRateLimitEvent = message; // last-wins
+  }
+}
+const result = {
+  ...,
+  ...(lastRateLimitEvent ? { usageLimit: { ... } } : {}), // absent when no event
+};
+```
+
+**Rule:** Any future SDK event type that provides run-level metadata should be checked for this same streaming-vs-result-envelope distinction before assuming it appears in the final `ResultMessage`.
+
+**Established in:** M034/S01.
+
+---
+
+## Spread-Conditional for Absent-vs-Present JSON Keys (M034/S01)
+
+**Context:** Optional fields on JSON artifacts (like `result.json`) should be fully absent when not applicable — not present as `null` or `undefined`. TypeScript's optional assignment (`obj.field = value`) leaves the key present with `undefined` value; JSON.stringify then drops it, but the TypeScript type still widens to include `undefined`, creating type noise.
+
+**Pattern:** Use spread-conditional to make the key structurally absent at the object literal level:
+```ts
+const obj = {
+  required: "value",
+  ...(condition ? { optionalField: value } : {}),
+};
+```
+This keeps the TypeScript type narrower and avoids null/undefined noise in downstream consumers and test assertions.
+
+**Established in:** M034/S01.
+
+---
+
+## Inline usageLimit Shape at Function Boundaries to Avoid Cross-Module Coupling (M034/S02)
+
+**Context:** `formatReviewDetailsSummary` in `review-utils.ts` needs to accept a `usageLimit` param that mirrors the shape on `ExecutionResult`. Importing `ExecutionResult` from `src/execution/types.ts` into `src/lib/review-utils.ts` would create a coupling from lib → execution — acceptable today, but fragile as the modules evolve.
+
+**Rule:** When a rendering utility needs a subset of an execution type's fields, inline the shape at the function parameter boundary rather than importing the full type. The minor duplication is worth the decoupling. Document the mapping in the call site comment if the shapes diverge.
+
+**Established in:** M034/S02.
