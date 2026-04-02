@@ -94,4 +94,10 @@ export type ExecutionResult = {
   resultText?: string;
   /** Structured GitHub publish metadata emitted by MCP tools during execution. */
   publishEvents?: ExecutionPublishEvent[];
+  /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */
+  usageLimit?: {
+    utilization: number | undefined;
+    rateLimitType: string | undefined;
+    resetsAt: number | undefined;
+  };
 };

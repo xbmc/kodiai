@@ -12,7 +12,7 @@
  */
 
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKResultMessage, McpHttpServerConfig, Query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
 import { readFile, writeFile as fsWriteFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildSecurityClaudeMd } from "./executor.ts";
@@ -153,10 +153,13 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     });
 
     let resultMessage: SDKResultMessage | undefined;
+    let lastRateLimitEvent: SDKRateLimitEvent | undefined;
 
     for await (const message of sdkQueryResult) {
       if (message.type === "result") {
         resultMessage = message as SDKResultMessage;
+      } else if (message.type === "rate_limit_event") {
+        lastRateLimitEvent = message as SDKRateLimitEvent;
       }
     }
 
@@ -207,6 +210,13 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       stopReason: resultMessage.stop_reason ?? undefined,
       resultText:
         resultMessage.subtype === "success" ? resultMessage.result : undefined,
+      ...(lastRateLimitEvent !== undefined ? {
+        usageLimit: {
+          utilization: lastRateLimitEvent.rate_limit_info.utilization,
+          rateLimitType: lastRateLimitEvent.rate_limit_info.rateLimitType,
+          resetsAt: lastRateLimitEvent.rate_limit_info.resetsAt,
+        },
+      } : {}),
     };
 
     await writeFileFn(resultJson, JSON.stringify(result, null, 2));

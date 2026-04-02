@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { main, MCP_SERVER_NAMES } from "./agent-entrypoint.ts";
 import type { EntrypointDeps } from "./agent-entrypoint.ts";
-import type { Query, SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Query, SDKResultMessage, SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,6 +68,16 @@ function makeResultSuccess(): SDKResultMessage {
     },
     permission_denials: [],
     uuid: "uuid-1" as never,
+  };
+}
+
+/** Build a minimal SDKRateLimitEvent message */
+function makeRateLimitEvent(info: Partial<SDKRateLimitInfo> = {}): object {
+  return {
+    type: 'rate_limit_event',
+    uuid: 'uuid-rl',
+    session_id: 'sess-rl',
+    rate_limit_info: { status: 'allowed', ...info },
   };
 }
 
@@ -423,5 +433,104 @@ describe("SDK error handling", () => {
     const result = JSON.parse(resultJson!) as Record<string, unknown>;
     expect(result.conclusion).toBe("error");
     expect(result.errorMessage).toContain("No result message");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rate_limit_event capture
+// ---------------------------------------------------------------------------
+
+describe("rate_limit_event capture", () => {
+  beforeEach(() => {
+    setEnv({
+      WORKSPACE_DIR: "/tmp/ws",
+      MCP_BASE_URL: "https://api.example.com",
+      MCP_BEARER_TOKEN: "bearer-tok",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    });
+  });
+
+  test("single event captured — usageLimit populated from the event", async () => {
+    const written: Record<string, string> = {};
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => VALID_AGENT_CONFIG,
+      writeFileFn: async (path, content) => { written[path] = content; },
+      queryFn: () =>
+        makeAsyncIterable([
+          makeRateLimitEvent({ utilization: 0.75, rateLimitType: "seven_day", resetsAt: 9999 }),
+          makeResultSuccess(),
+        ]),
+    };
+
+    await main(deps);
+
+    const parsedResult = JSON.parse(written["/tmp/ws/result.json"]!) as Record<string, unknown>;
+    expect(parsedResult.usageLimit).toEqual({
+      utilization: 0.75,
+      rateLimitType: "seven_day",
+      resetsAt: 9999,
+    });
+  });
+
+  test("last event wins when multiple rate_limit_events are emitted", async () => {
+    const written: Record<string, string> = {};
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => VALID_AGENT_CONFIG,
+      writeFileFn: async (path, content) => { written[path] = content; },
+      queryFn: () =>
+        makeAsyncIterable([
+          makeRateLimitEvent({ utilization: 0.5 }),
+          makeRateLimitEvent({ utilization: 0.9, rateLimitType: "seven_day_sonnet", resetsAt: 1234 }),
+          makeResultSuccess(),
+        ]),
+    };
+
+    await main(deps);
+
+    const parsedResult = JSON.parse(written["/tmp/ws/result.json"]!) as Record<string, unknown>;
+    const ul = parsedResult.usageLimit as Record<string, unknown>;
+    expect(ul.utilization).toBe(0.9);
+    expect(ul.rateLimitType).toBe("seven_day_sonnet");
+    expect(ul.resetsAt).toBe(1234);
+  });
+
+  test("usageLimit absent when no rate_limit_event emitted", async () => {
+    const written: Record<string, string> = {};
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => VALID_AGENT_CONFIG,
+      writeFileFn: async (path, content) => { written[path] = content; },
+      queryFn: () => makeAsyncIterable([makeResultSuccess()]),
+    };
+
+    await main(deps);
+
+    const parsedResult = JSON.parse(written["/tmp/ws/result.json"]!) as Record<string, unknown>;
+    expect(parsedResult.usageLimit).toBeUndefined();
+  });
+
+  test("usageLimit defined but sub-fields undefined when event omits optional fields", async () => {
+    const written: Record<string, string> = {};
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => VALID_AGENT_CONFIG,
+      writeFileFn: async (path, content) => { written[path] = content; },
+      queryFn: () =>
+        makeAsyncIterable([
+          makeRateLimitEvent({ status: "allowed" }), // no utilization/rateLimitType/resetsAt
+          makeResultSuccess(),
+        ]),
+    };
+
+    await main(deps);
+
+    const parsedResult = JSON.parse(written["/tmp/ws/result.json"]!) as Record<string, unknown>;
+    const ul = parsedResult.usageLimit as Record<string, unknown> | undefined;
+    expect(ul).toBeDefined();
+    expect(ul!.utilization).toBeUndefined();
+    expect(ul!.rateLimitType).toBeUndefined();
+    expect(ul!.resetsAt).toBeUndefined();
   });
 });

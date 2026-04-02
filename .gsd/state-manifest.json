@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-03-31T11:50:53.898Z",
+  "exported_at": "2026-04-02T20:15:15.910Z",
   "milestones": [
     {
       "id": "M001",
@@ -814,6 +814,59 @@
       ],
       "requirement_coverage": "Covers R033-01 (S01), R033-02 (S01), R033-03 (S02), R033-04 (S03), R033-05 (S03). All five active requirements fully owned.",
       "boundary_map_markdown": "### S01 → S02, S03\n\nProduces:\n- `buildAcaJobSpec` no longer accepts or passes `githubInstallationToken`\n- `APPLICATION_SECRET_NAMES` includes `\"GITHUB_INSTALLATION_TOKEN\"`\n- Updated tests in `aca-launcher.test.ts`\n\nConsumes: nothing (first slice)\n\n### S02 → S03\n\nProduces:\n- `scanOutgoingForSecrets` with two new patterns: `anthropic-oauth-token` (`sk-ant-oat01-`) and `anthropic-api-key` (`sk-ant-api03-`)\n- New test coverage in `sanitizer.test.ts`\n\nConsumes from S01: nothing (parallel-safe)\n\n### S03 → (deploy)\n\nProduces:\n- `buildSecurityClaudeMd` with mandatory review + social engineering refusal clauses\n- `buildSecurityPolicySection` with same clauses (review prompt + mention prompt)\n- Updated test assertions in `review-prompt.test.ts`\n\nConsumes from S01, S02: nothing (all three slices are independent code changes)"
+    },
+    {
+      "id": "M034",
+      "title": "",
+      "status": "queued",
+      "depends_on": [],
+      "created_at": "2026-03-31T19:41:13.273Z",
+      "completed_at": null,
+      "vision": "Surface Claude Code usage context from the agent run itself so operators can see weekly limit utilization and token usage directly under the Review Details collapsible in GitHub comments. Slack is a later surface, not this milestone.",
+      "success_criteria": [
+        "Review Details shows usage percentage and reset timing when usage data exists.",
+        "Review Details shows token usage and cost context in the same block.",
+        "Missing usage data omits the usage line cleanly rather than breaking the comment."
+      ],
+      "key_risks": [
+        {
+          "risk": "SDKRateLimitEvent only appears on some auth paths.",
+          "whyItMatters": "The code must omit usage cleanly for API-key runs and other non-subscription flows."
+        },
+        {
+          "risk": "The agent entrypoint currently only captures result messages.",
+          "whyItMatters": "Adding stream-event capture must not disturb success/error result writing or serialization."
+        },
+        {
+          "risk": "Usage data is a stream signal, not part of SDKResultMessage.",
+          "whyItMatters": "It has to be threaded through result.json and then into the GitHub comment renderer."
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "SDKRateLimitEvent capture",
+          "retireIn": "S01",
+          "whatWillBeProven": "the agent entrypoint records the last seen usage event and writes it into result.json"
+        },
+        {
+          "riskOrUnknown": "Review Details rendering",
+          "retireIn": "S02",
+          "whatWillBeProven": "the review handler posts a comment body that includes usage percentage, reset timing, token usage, and cost, with graceful omission when usage data is absent"
+        }
+      ],
+      "verification_contract": "Unit tests prove the agent entrypoint captures the last rate-limit event and serializes it; handler-level tests prove the Review Details body renders the new fields without changing the existing comment structure.",
+      "verification_integration": "A stitched review-handler test exercises the result payload through to the posted GitHub comment body, including the usage line and token summary.",
+      "verification_operational": "No new runtime service or deployment surface is added; existing ACA job execution and GitHub comment publication remain the operational path.",
+      "verification_uat": "No manual UAT is required for this milestone; the acceptance is covered by deterministic tests and handler-level integration checks.",
+      "definition_of_done": [
+        "All slice deliverables are complete.",
+        "The agent job result carries usage-limit data when present.",
+        "The Review Details collapsible shows usage, token usage, and cost together.",
+        "Missing usage data is omitted cleanly.",
+        "Tests pass for both the capture path and the comment-rendering path."
+      ],
+      "requirement_coverage": "Covers R001 and R002. Leaves R003 (Slack usage visibility) for later.",
+      "boundary_map_markdown": "### S01 → S02\n\nProduces:\n- `ExecutionResult.usageLimit` — structured Claude Code usage metadata (`utilization`, `rateLimitType`, `resetsAt`) written by the agent entrypoint and serialized into `result.json`\n- `result.json` — host-readable execution payload with usage data available to the review handler\n\nConsumes:\n- nothing (first slice)\n\n### S02 → downstream surfaces\n\nProduces:\n- Review Details `<details>` block content that includes usage percentage, reset timing, token usage, and cost\n\nConsumes:\n- `ExecutionResult.usageLimit` and token/cost fields from `result.json`"
     }
   ],
   "slices": [
@@ -1161,6 +1214,48 @@
       "proof_level": "contract",
       "integration_closure": "Both prompt-building functions are already wired into `buildReviewPrompt()`, `buildMentionPrompt()`, and the CLAUDE.md writer in `executor.ts`. No new wiring needed — additions are purely additive to the returned strings.",
       "observability_impact": "None — pure string hardening with no runtime state changes.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M034",
+      "id": "S01",
+      "title": "Capture Claude Code usage events",
+      "status": "pending",
+      "risk": "high",
+      "depends": [],
+      "demo": "After this, `result.json` includes Claude Code usage-limit data when the SDK emits a rate-limit event, and tests prove the last event wins.",
+      "created_at": "2026-04-02T16:16:04.664Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Capture `SDKRateLimitEvent` messages during agent execution and persist the last-seen event as a structured `usageLimit` field on `ExecutionResult` / `result.json`, so downstream code (S02) can render usage data without re-parsing the SDK stream.",
+      "success_criteria": "`bun test src/execution/agent-entrypoint.test.ts` passes with 4 new test cases covering: (1) single rate-limit event captured in result.json, (2) last-event-wins when two events fire, (3) `usageLimit` absent when no event fires, (4) graceful handling when all `SDKRateLimitInfo` sub-fields are absent. `bun tsc --noEmit` exits 0.",
+      "proof_level": "contract — unit tests with mock SDK stream prove correct capture, last-wins semantics, and absence behavior. No real runtime required for S01; S02 exercises the field in real output.",
+      "integration_closure": "Upstream: `@anthropic-ai/claude-agent-sdk` exports `SDKRateLimitEvent` / `SDKRateLimitInfo`. New wiring: `agent-entrypoint.ts` loop branch + `usageLimit` field on `ExecutionResult`. `executor.ts` blindly casts `result.json` to `ExecutionResult` — no change needed. What remains before milestone is end-to-end usable: S02 must read `result.usageLimit` and render it in the GitHub PR comment.",
+      "observability_impact": "None — this is a pure data-capture change inside the existing SDK message loop. No new logs, metrics, or async boundaries introduced.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M034",
+      "id": "S02",
+      "title": "Render usage and tokens in Review Details",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S01"
+      ],
+      "demo": "After this, the GitHub PR comment's Review Details section shows usage percentage, reset timing, token usage, and cost.",
+      "created_at": "2026-04-02T16:16:04.664Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Thread usage data into the existing Review Details builder and format it inside the current `<details>` block.",
+      "success_criteria": "- Review Details contains a usage line when usage data exists.\n- Review Details contains token and cost summary.\n- Missing usage data omits the line cleanly.",
+      "proof_level": "Integration test at the review-handler level plus formatter coverage.",
+      "integration_closure": "The stitched result payload from S01 reaches the posted GitHub comment body.",
+      "observability_impact": "Operators can inspect usage and token load without leaving GitHub.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -2480,6 +2575,52 @@
       "observability_impact": "",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M034",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Added usageLimit to ExecutionResult and wired up last-wins SDKRateLimitEvent capture in the SDK stream loop with 4 new passing tests",
+      "status": "complete",
+      "one_liner": "Added usageLimit to ExecutionResult and wired up last-wins SDKRateLimitEvent capture in the SDK stream loop with 4 new passing tests",
+      "narrative": "Three surgical changes: (1) added optional usageLimit field to ExecutionResult in types.ts, (2) imported SDKRateLimitEvent in agent-entrypoint.ts and added a last-wins capture variable + else-if branch in the for-await loop, (3) populated usageLimit via spread-conditional in the successful result construction so the key is absent in JSON when no event was seen, (4) added makeRateLimitEvent helper and 4 new tests covering single event, last-wins, absent-when-no-event, and sub-fields-undefined cases.",
+      "verification_result": "bun test src/execution/agent-entrypoint.test.ts: 17/17 pass (356ms). bun tsc --noEmit: 0 errors (6.6s).",
+      "duration": "",
+      "completed_at": "2026-04-02T20:15:15.897Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/execution/types.ts",
+        "src/execution/agent-entrypoint.ts",
+        "src/execution/agent-entrypoint.test.ts"
+      ],
+      "key_decisions": [
+        "usageLimit only set on the successful result path; absent by default in error cases",
+        "Spread-conditional used so usageLimit key is absent (not null/undefined) in JSON when no rate_limit_event seen"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M034\nkey_files:\n  - src/execution/types.ts\n  - src/execution/agent-entrypoint.ts\n  - src/execution/agent-entrypoint.test.ts\nkey_decisions:\n  - usageLimit only set on the successful result path; absent by default in error cases\n  - Spread-conditional used so usageLimit key is absent (not null/undefined) in JSON when no rate_limit_event seen\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-02T20:15:15.897Z\nblocker_discovered: false\n---\n\n# T01: Added usageLimit to ExecutionResult and wired up last-wins SDKRateLimitEvent capture in the SDK stream loop with 4 new passing tests\n\n**Added usageLimit to ExecutionResult and wired up last-wins SDKRateLimitEvent capture in the SDK stream loop with 4 new passing tests**\n\n## What Happened\n\nThree surgical changes: (1) added optional usageLimit field to ExecutionResult in types.ts, (2) imported SDKRateLimitEvent in agent-entrypoint.ts and added a last-wins capture variable + else-if branch in the for-await loop, (3) populated usageLimit via spread-conditional in the successful result construction so the key is absent in JSON when no event was seen, (4) added makeRateLimitEvent helper and 4 new tests covering single event, last-wins, absent-when-no-event, and sub-fields-undefined cases.\n\n## Verification\n\nbun test src/execution/agent-entrypoint.test.ts: 17/17 pass (356ms). bun tsc --noEmit: 0 errors (6.6s).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test src/execution/agent-entrypoint.test.ts` | 0 | ✅ pass | 356ms |\n| 2 | `bun tsc --noEmit` | 0 | ✅ pass | 6600ms |\n\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/execution/types.ts`\n- `src/execution/agent-entrypoint.ts`\n- `src/execution/agent-entrypoint.test.ts`\n",
+      "description": "Three surgical changes: (1) add optional `usageLimit` field to `ExecutionResult` type, (2) import `SDKRateLimitEvent` and capture the last seen event during the SDK stream loop in `agent-entrypoint.ts`, (3) populate `usageLimit` when constructing the result, and (4) add 4 test cases to `agent-entrypoint.test.ts`.\n\nSteps:\n1. In `src/execution/types.ts`, add optional field to `ExecutionResult`:\n   ```typescript\n   /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */\n   usageLimit?: {\n     utilization: number | undefined;\n     rateLimitType: string | undefined;\n     resetsAt: number | undefined;\n   };\n   ```\n2. In `src/execution/agent-entrypoint.ts`, extend the import line to add `SDKRateLimitEvent`:\n   ```typescript\n   import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from \"@anthropic-ai/claude-agent-sdk\";\n   ```\n3. Before the `for await` loop, add: `let lastRateLimitEvent: SDKRateLimitEvent | undefined;`\n4. Inside the loop, add an `else if` branch:\n   ```typescript\n   } else if (message.type === \"rate_limit_event\") {\n     lastRateLimitEvent = message as SDKRateLimitEvent;\n   }\n   ```\n5. When constructing the successful `result: ExecutionResult` object (after the loop), add the `usageLimit` field — set it only when `lastRateLimitEvent` is defined:\n   ```typescript\n   ...(lastRateLimitEvent !== undefined ? {\n     usageLimit: {\n       utilization: lastRateLimitEvent.rate_limit_info.utilization,\n       rateLimitType: lastRateLimitEvent.rate_limit_info.rateLimitType,\n       resetsAt: lastRateLimitEvent.rate_limit_info.resetsAt,\n     }\n   } : {}),\n   ```\n   Note: Do NOT add `usageLimit` to the error-path `ExecutionResult` objects (the no-result case and catch block). The field is absent there by default, which is correct.\n6. In `src/execution/agent-entrypoint.test.ts`, add a `makeRateLimitEvent` helper near the top:\n   ```typescript\n   function makeRateLimitEvent(info: Partial<import('@anthropic-ai/claude-agent-sdk').SDKRateLimitInfo> = {}): object {\n     return {\n       type: 'rate_limit_event',\n       uuid: 'uuid-rl',\n       session_id: 'sess-rl',\n       rate_limit_info: { status: 'allowed', ...info },\n     };\n   }\n   ```\n7. Add a new `describe('rate_limit_event capture', () => { ... })` block with 4 tests:\n   - **single event captured**: feed `[makeRateLimitEvent({ utilization: 0.75, rateLimitType: 'seven_day', resetsAt: 9999 }), makeResultSuccess()]`, assert `parsedResult.usageLimit` equals `{ utilization: 0.75, rateLimitType: 'seven_day', resetsAt: 9999 }`\n   - **last event wins**: feed `[makeRateLimitEvent({ utilization: 0.5 }), makeRateLimitEvent({ utilization: 0.9, rateLimitType: 'seven_day_sonnet', resetsAt: 1234 }), makeResultSuccess()]`, assert `usageLimit.utilization === 0.9` and `usageLimit.rateLimitType === 'seven_day_sonnet'`\n   - **absent when no event**: feed `[makeResultSuccess()]`, assert `parsedResult.usageLimit === undefined`\n   - **all sub-fields optional/absent**: feed `[makeRateLimitEvent({ status: 'allowed' }), makeResultSuccess()]` (no utilization/rateLimitType/resetsAt), assert `usageLimit` is defined but `usageLimit.utilization === undefined && usageLimit.rateLimitType === undefined && usageLimit.resetsAt === undefined`\n   Each test uses the same env-setup pattern as the existing happy-path tests: set all 4 required env vars, mock `queryFn`, `writeFileFn`, `readFileFn`, `exitFn`, parse the written JSON to get `parsedResult`.",
+      "estimate": "45m",
+      "files": [
+        "src/execution/types.ts",
+        "src/execution/agent-entrypoint.ts",
+        "src/execution/agent-entrypoint.test.ts"
+      ],
+      "verify": "bun test src/execution/agent-entrypoint.test.ts && bun tsc --noEmit",
+      "inputs": [
+        "`src/execution/types.ts`",
+        "`src/execution/agent-entrypoint.ts`",
+        "`src/execution/agent-entrypoint.test.ts`"
+      ],
+      "expected_output": [
+        "`src/execution/types.ts`",
+        "`src/execution/agent-entrypoint.ts`",
+        "`src/execution/agent-entrypoint.test.ts`"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -2721,6 +2862,18 @@
       "rationale": "Full egress restriction would kill WebFetch and Anthropic API calls. Fine-grained allowlisting requires NAT gateway + Azure Firewall, a significant infra change. Risk is acceptable given token removal (the highest-value exfil target) and prompt guardrails.",
       "revisable": "Yes — if a future attack surface requires it",
       "made_by": "collaborative",
+      "superseded_by": null
+    },
+    {
+      "seq": 54,
+      "id": "D021",
+      "when_context": "M034 planning",
+      "scope": "architecture",
+      "decision": "How Claude Code usage data is represented and threaded through review execution",
+      "choice": "Capture the last SDKRateLimitEvent seen during a run and persist it on ExecutionResult as a structured usageLimit object containing utilization, rateLimitType, and resetsAt",
+      "rationale": "The rate-limit signal is emitted during streaming, not in the final result message, so the agent entrypoint must remember the last seen event. Keeping the data as a structured object preserves the source shape for downstream formatting and future surfaces like Slack without forcing duplicate parsing logic.",
+      "revisable": "Yes",
+      "made_by": "agent",
       "superseded_by": null
     }
   ],
@@ -3340,6 +3493,28 @@
       "verdict": "✅ pass",
       "duration_ms": 190,
       "created_at": "2026-03-31T11:46:55.922Z"
+    },
+    {
+      "id": 57,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M034",
+      "command": "bun test src/execution/agent-entrypoint.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 356,
+      "created_at": "2026-04-02T20:15:15.897Z"
+    },
+    {
+      "id": 58,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M034",
+      "command": "bun tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6600,
+      "created_at": "2026-04-02T20:15:15.897Z"
     }
   ]
 }

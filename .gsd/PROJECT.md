@@ -1,34 +1,25 @@
 # Kodiai
 
-AI-powered GitHub App delivering code review, conversational assistance, issue intelligence, and Slack integration for Kodi repositories. One installation replaces per-repo workflow YAML.
+## What This Is
+
+Kodiai is an AI-powered GitHub bot that reviews pull requests, triages issues, answers questions via Slack, and runs autonomous coding tasks (write mode). It watches GitHub webhooks, runs Claude via the Anthropic Agent SDK in isolated Azure Container App jobs, and posts structured findings back to GitHub comments and Slack.
 
 ## Core Value
 
-Automated review and rule enforcement that reduces maintainer burden on high-volume repos — especially the Kodi addon repositories.
+Automated, high-signal code review on every PR — findings land in a structured GitHub comment with severity, confidence, suppression, and reviewer context. Everything else extends this.
 
 ## Current State
 
-29 milestones shipped (M001–M033). Deployed to Azure Container Apps. Core capabilities operational: PR review, @kodiai mentions, issue triage, Slack assistant, wiki knowledge system (5-corpus hybrid retrieval with BM25 + pgvector), review pattern clustering, wiki staleness/popularity scoring, epistemic guardrails, contributor profiles, addon rule enforcement, ephemeral ACA Job agent isolation.
-
-M031 (Security Hardening) complete — env allowlist (`src/execution/env.ts`), git remote sanitization, outgoing secret scan at MCP layer, CLAUDE.md injection, prompt refusal instructions.
-
-M032 (Agent Process Isolation) complete — agent subprocess moved to ephemeral Azure Container Apps Job with zero application secrets in its environment. `buildAcaJobSpec` enforces `APPLICATION_SECRET_NAMES` contract (9 forbidden names, throws at build time if any appear). MCP servers remain in orchestrator and are exposed over authenticated HTTP (`createMcpJobRegistry` + `createMcpHttpRoutes`; per-job 32-byte bearer token). Workspace shared via Azure Files mount (`createAzureFilesWorkspaceDir`). `src/execution/agent-entrypoint.ts` is the job container entry point. `createExecutor()` fully refactored to ACA dispatch path. `Dockerfile.agent` created. `bun run verify:m032` exits 0 (3 security contract checks). Closes the `/proc/<ppid>/environ` prompt-injection-to-exfiltration attack path structurally.
-
-M033 (Agent Container Security Hardening) complete — GITHUB_INSTALLATION_TOKEN permanently blocked from agent container env via APPLICATION_SECRET_NAMES (runtime throw + static type removal + no call site); Anthropic sk-ant-* token patterns added to outgoing secret scan; execution-bypass guardrails added to both reviewer security policy prompt and executor CLAUDE.md (refuse embedded-script execution requests, treat skip-review instructions as social engineering, require pre-execution code review).
+Full review pipeline deployed: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant, write-mode agent execution, MCP tooling, knowledge/wiki system, contributor profiling, and multi-model routing. M033 completed security hardening (blocked installation token from reaching the agent container, added execution bypass guardrails). All 33 prior milestones complete.
 
 ## Architecture / Key Patterns
 
-- **Runtime:** Bun + Hono HTTP server, PostgreSQL + pgvector, deployed to Azure Container Apps
-- **Webhook dispatch:** Map-keyed handler registry (`webhook/router.ts`); handlers register by `"event.action"` key
-- **Job queue:** Per-installation concurrency control via `jobs/queue.ts`; handlers enqueue jobs, not execute inline
-- **Workspace manager:** Ephemeral git clones per job (`jobs/workspace.ts`); stale workspaces cleaned on boot
-- **Executor:** Claude Agent SDK wrapper dispatches ACA Job; per-job bearer token registered in MCP registry; Azure Files workspace; CLAUDE.md injected; result.json polled on job completion (`execution/executor.ts`)
-- **Agent entrypoint:** ACA job container script; env validation, CLAUDE.md write, 7 MCP server configs (HTTP transport), SDK invocation, result.json write (`execution/agent-entrypoint.ts`)
-- **MCP HTTP server:** Per-job bearer token registry + Hono routes at `/internal/mcp/:serverName`; stateless (per-request fresh transport+server instances); mounted at root in orchestrator (`execution/mcp/http-server.ts`)
-- **Knowledge system:** 5-corpus retrieval (learning memories, review comments, wiki, code snippets, issues) with cross-corpus RRF merging (`knowledge/retrieval.ts`)
-- **Wiki sync:** MediaWiki RecentChanges-based incremental sync on 24h schedule; embeddings via voyage-context-3
-- **Guardrail pipeline:** Post-processing on all LLM output for epistemic quality (`lib/guardrail/pipeline.ts`)
-- **Config:** Per-repo `.kodiai.yml` loaded per job; global env-var config via Zod schema in `src/config.ts`
+- **Entrypoint:** Hono HTTP server (`src/index.ts`) receiving GitHub webhooks + Slack events
+- **Execution:** Azure Container App Jobs dispatch per review; agent writes `result.json` to shared Azure Files mount
+- **Agent SDK:** `@anthropic-ai/claude-agent-sdk` v0.2.87; agent entrypoint at `src/execution/agent-entrypoint.ts`
+- **MCP:** Per-job bearer tokens, stateless HTTP MCP servers; registry in `src/execution/mcp/http-server.ts`
+- **Review output:** GitHub comment with `formatReviewDetailsSummary()` in `src/lib/review-utils.ts` posting Review Details `<details>` block
+- **Cost tracking:** `src/llm/cost-tracker.ts` + `src/telemetry/` for DB persistence
 
 ## Capability Contract
 
@@ -36,7 +27,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 ## Milestone Sequence
 
-- ✅ M001–M030: Core platform through addon rule enforcement (see CHANGELOG.md)
-- ✅ M031: Security Hardening — credential exfiltration prevention (env allowlist, git remote sanitization, outgoing secret scan, prompt refusal instructions, CLAUDE.md in workspace)
-- ✅ M032: Agent Process Isolation — ephemeral ACA Job sandbox complete. Agent subprocess moved to a secrets-free ACA Job container; MCP servers exposed over per-job bearer-token authenticated HTTP from orchestrator; workspace on Azure Files share. APPLICATION_SECRET_NAMES security contract enforced at build time. `bun run verify:m032` exits 0.
-- ✅ M033: Agent Container Security Hardening — Context. GITHUB_INSTALLATION_TOKEN moved to APPLICATION_SECRET_NAMES (permanently blocked from container env, three enforcement layers). Anthropic sk-ant-oat01-/sk-ant-api03- tokens added as 7th pattern in `scanOutgoingForSecrets`. Execution-bypass guardrails added to both `buildSecurityPolicySection()` (reviewer agent) and `buildSecurityClaudeMd()` (executor CLAUDE.md): refuse embedded-script execution, treat skip-review instructions as social engineering, require pre-execution code review. 285 tests pass; `bun run tsc --noEmit` exits 0.
+- [x] M001–M033: MVP through Security Hardening (all complete)
+- [ ] M034: Claude Code Usage Visibility — Surface weekly limit utilization and token usage in Review Details
