@@ -91,6 +91,7 @@ export const KODI_LIB_REPO_MAP: Record<string, { owner: string; repo: string }> 
   crossguid: { owner: "nicenightcc", repo: "crossguid" },
   rapidjson: { owner: "Tencent", repo: "rapidjson" },
   pcre2: { owner: "PCRE2Project", repo: "pcre2" },
+  shairplay: { owner: "juhovh", repo: "shairplay" },
 };
 
 /** Lowercase lookup index built once at module load */
@@ -429,6 +430,16 @@ function buildFallbackResult(
 ): DependsChangelogContext {
   const urlDisplay = upstreamUrl ?? "upstream repository";
 
+  // If both versions look like short git hashes, generate a commit/compare link
+  const GIT_HASH_RE = /^[0-9a-f]{7,12}$/i;
+  const newIsHash = versionFileDiff?.newVersion && GIT_HASH_RE.test(versionFileDiff.newVersion);
+  const oldIsHash = versionFileDiff?.oldVersion && GIT_HASH_RE.test(versionFileDiff.oldVersion);
+  const gitCommitUrl = newIsHash && upstreamUrl
+    ? oldIsHash
+      ? `${upstreamUrl}/compare/${versionFileDiff!.oldVersion}...${versionFileDiff!.newVersion}`
+      : `${upstreamUrl}/commit/${versionFileDiff!.newVersion}`
+    : null;
+
   if (versionFileDiff) {
     const highlights: string[] = [];
 
@@ -461,22 +472,29 @@ function buildFallbackResult(
     }
 
     if (highlights.length > 0) {
+      const noteUrl = gitCommitUrl ?? urlDisplay;
+      const noteLabel = gitCommitUrl
+        ? `[commits](${gitCommitUrl})`
+        : `[upstream](${urlDisplay})`;
       return {
         source: "diff-analysis",
         highlights,
         breakingChanges: [],
-        url: upstreamUrl,
-        degradationNote: `Changelog unavailable \u2014 analysis derived from PR diff. Check [upstream](${urlDisplay}) for full release notes.`,
+        url: gitCommitUrl ?? upstreamUrl,
+        degradationNote: `Changelog unavailable \u2014 analysis derived from PR diff. Check ${noteLabel} for full release notes.`,
       };
     }
   }
 
+  const fallbackLabel = gitCommitUrl
+    ? `[commits](${gitCommitUrl})`
+    : `[upstream](${urlDisplay})`;
   return {
     source: "unavailable",
     highlights: [],
     breakingChanges: [],
-    url: upstreamUrl,
-    degradationNote: `Changelog unavailable -- check [upstream](${urlDisplay}) manually`,
+    url: gitCommitUrl ?? upstreamUrl,
+    degradationNote: `Changelog unavailable \u2014 check ${fallbackLabel} manually`,
   };
 }
 

@@ -1730,7 +1730,7 @@ export function createReviewHandler(deps: {
             }
 
             // 7. Retrieval context (past reviews/wiki about this dependency)
-            let dependsRetrievalContext: string | null = null;
+            let dependsRetrievalContext: import("../knowledge/cross-corpus-rrf.ts").UnifiedRetrievalChunk[] | null = null;
             if (retriever) {
               try {
                 const primaryPkg = dependsBumpInfo.packages[0];
@@ -1745,11 +1745,7 @@ export function createReviewHandler(deps: {
                     triggerType: "pr_review",
                   });
                   if (result && result.unifiedResults && result.unifiedResults.length > 0) {
-                    dependsRetrievalContext = result.unifiedResults
-                      .slice(0, 3)
-                      .map(r => `- ${r.text ?? ""}`)
-                      .filter(s => s.length > 2)
-                      .join("\n");
+                    dependsRetrievalContext = result.unifiedResults.slice(0, 3);
                   }
                 }
               } catch (err) {

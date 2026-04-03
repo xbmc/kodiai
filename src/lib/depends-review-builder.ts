@@ -16,6 +16,7 @@ import type {
   PatchChange,
 } from "./depends-bump-enrichment.ts";
 import type { ImpactResult, TransitiveResult } from "./depends-impact-analyzer.ts";
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ export type DependsReviewData = {
   patchChanges: PatchChange[];
   impact: ImpactResult | null;
   transitive: TransitiveResult | null;
-  retrievalContext: string | null;
+  retrievalContext: UnifiedRetrievalChunk[] | null;
   platform: string | null;
 };
 
@@ -328,11 +329,47 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
   }
 
   // 7. Past Context (historical)
-  if (data.retrievalContext) {
-    sections.push("### Historical Context");
+  if (data.retrievalContext && data.retrievalContext.length > 0) {
+    sections.push("### Past Discussion");
     sections.push("");
-    sections.push(data.retrievalContext);
-    sections.push("");
+
+    for (const chunk of data.retrievalContext) {
+      const authorLogin = chunk.metadata?.authorLogin as string | undefined;
+      const prNumber = chunk.metadata?.prNumber as number | undefined;
+      const date = chunk.createdAt
+        ? new Date(chunk.createdAt).toISOString().slice(0, 10)
+        : null;
+
+      // Build the attribution line: clickable author + date + source link
+      const authorPart = authorLogin
+        ? `[@${authorLogin}](https://github.com/${authorLogin})`
+        : chunk.sourceLabel;
+      const datePart = date ? ` (${date})` : "";
+      const sourceLinkPart = chunk.sourceUrl
+        ? ` · [view comment](${chunk.sourceUrl})`
+        : "";
+
+      // Summary: first sentence or first 140 chars, whichever is shorter
+      const text = chunk.text.trim();
+      const firstSentenceEnd = text.search(/[.!?]\s/);
+      const summary = firstSentenceEnd > 0 && firstSentenceEnd < 140
+        ? text.slice(0, firstSentenceEnd + 1)
+        : text.slice(0, 140) + (text.length > 140 ? "…" : "");
+
+      sections.push(`**${authorPart}**${datePart}${sourceLinkPart}: ${summary}`);
+
+      // Full text in a collapsible if it's longer than the summary
+      if (text.length > summary.length + 5) {
+        sections.push("");
+        sections.push("<details><summary>Full comment</summary>");
+        sections.push("");
+        sections.push(`> ${text.replace(/\n/g, "\n> ")}`);
+        sections.push("");
+        sections.push("</details>");
+      }
+
+      sections.push("");
+    }
   }
 
   // 8. Platform note

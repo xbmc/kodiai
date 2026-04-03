@@ -272,12 +272,28 @@ describe("buildDependsReviewComment", () => {
     expect(comment).toContain("02-new.patch");
   });
 
-  test("includes historical context when available", () => {
+  test("includes past discussion when available", () => {
     const data = makeSafeData({
-      retrievalContext: "Previous zlib bump in PR #1234 caused build issues on Windows.",
+      retrievalContext: [
+        {
+          id: "review:xbmc/xbmc:1234:0.1",
+          text: "Previous zlib bump in PR #1234 caused build issues on Windows.",
+          source: "review_comment",
+          sourceLabel: "[review: PR #1234]",
+          sourceUrl: "https://github.com/xbmc/xbmc/pull/1234#issuecomment-999",
+          vectorDistance: 0.1,
+          rrfScore: 0.9,
+          createdAt: "2025-10-11T00:00:00Z",
+          metadata: { authorLogin: "neo1973", prNumber: 1234 },
+        },
+      ],
     });
     const comment = buildDependsReviewComment(data);
-    expect(comment).toContain("### Historical Context");
+    expect(comment).toContain("### Past Discussion");
+    expect(comment).toContain("@neo1973");
+    expect(comment).toContain("https://github.com/neo1973");
+    expect(comment).toContain("view comment");
+    expect(comment).toContain("2025-10-11");
     expect(comment).toContain("Previous zlib bump");
   });
 
