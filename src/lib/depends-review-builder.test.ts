@@ -60,6 +60,7 @@ function makeSafeData(overrides: Partial<DependsReviewData> = {}): DependsReview
     },
     transitive: { dependents: [], newDependencies: [], circular: [] },
     retrievalContext: null,
+    contextSummary: null,
     platform: null,
     ...overrides,
   };
@@ -287,14 +288,47 @@ describe("buildDependsReviewComment", () => {
           metadata: { authorLogin: "neo1973", prNumber: 1234 },
         },
       ],
+      contextSummary: "A reviewer previously flagged build issues on Windows when bumping this library.",
     });
     const comment = buildDependsReviewComment(data);
     expect(comment).toContain("### Past Discussion");
+    // summary appears above the collapsible
+    expect(comment).toContain("A reviewer previously flagged build issues");
+    // all items inside a single <details>
+    expect(comment).toContain("<details><summary>Show context</summary>");
+    expect(comment).toContain("</details>");
     expect(comment).toContain("@neo1973");
     expect(comment).toContain("https://github.com/neo1973");
     expect(comment).toContain("view comment");
     expect(comment).toContain("2025-10-11");
     expect(comment).toContain("Previous zlib bump");
+    // summary appears before the <details> block
+    const summaryPos = comment.indexOf("A reviewer previously");
+    const detailsPos = comment.indexOf("<details>");
+    expect(summaryPos).toBeLessThan(detailsPos);
+  });
+
+  test("renders past discussion without summary when contextSummary is null", () => {
+    const data = makeSafeData({
+      retrievalContext: [
+        {
+          id: "r1",
+          text: "Short comment.",
+          source: "review_comment",
+          sourceLabel: "[review: PR #1]",
+          sourceUrl: "https://github.com/xbmc/xbmc/pull/1#issuecomment-1",
+          vectorDistance: 0.1,
+          rrfScore: 0.9,
+          createdAt: "2025-01-01T00:00:00Z",
+          metadata: { authorLogin: "someone", prNumber: 1 },
+        },
+      ],
+      contextSummary: null,
+    });
+    const comment = buildDependsReviewComment(data);
+    expect(comment).toContain("### Past Discussion");
+    expect(comment).toContain("<details><summary>Show context</summary>");
+    expect(comment).toContain("Short comment");
   });
 
   test("includes Windows platform note", () => {

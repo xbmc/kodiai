@@ -41,6 +41,8 @@ export type DependsReviewData = {
   impact: ImpactResult | null;
   transitive: TransitiveResult | null;
   retrievalContext: UnifiedRetrievalChunk[] | null;
+  /** AI-generated 1–2 line summary of why the past discussion chunks were pulled. Null when unavailable. */
+  contextSummary: string | null;
   platform: string | null;
 };
 
@@ -333,6 +335,16 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
     sections.push("### Past Discussion");
     sections.push("");
 
+    // AI-generated summary of why these were pulled
+    if (data.contextSummary) {
+      sections.push(data.contextSummary);
+      sections.push("");
+    }
+
+    // All items collapsed under a single <details>
+    sections.push("<details><summary>Show context</summary>");
+    sections.push("");
+
     for (const chunk of data.retrievalContext) {
       const authorLogin = chunk.metadata?.authorLogin as string | undefined;
       const prNumber = chunk.metadata?.prNumber as number | undefined;
@@ -358,18 +370,17 @@ export function buildDependsReviewComment(data: DependsReviewData): string {
 
       sections.push(`**${authorPart}**${datePart}${sourceLinkPart}: ${summary}`);
 
-      // Full text in a collapsible if it's longer than the summary
+      // Full text as blockquote if it's longer than the summary
       if (text.length > summary.length + 5) {
         sections.push("");
-        sections.push("<details><summary>Full comment</summary>");
-        sections.push("");
         sections.push(`> ${text.replace(/\n/g, "\n> ")}`);
-        sections.push("");
-        sections.push("</details>");
       }
 
       sections.push("");
     }
+
+    sections.push("</details>");
+    sections.push("");
   }
 
   // 8. Platform note

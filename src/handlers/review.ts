@@ -128,6 +128,9 @@ import {
   computeDependsVerdict,
   type DependsReviewData,
 } from "../lib/depends-review-builder.ts";
+import { generateWithFallback } from "../llm/generate.ts";
+import { createTaskRouter } from "../llm/task-router.ts";
+import { TASK_TYPES } from "../llm/task-types.ts";
 import { linkPRToIssues, type LinkResult } from "../knowledge/issue-linker.ts";
 import type { IssueStore } from "../knowledge/issue-types.ts";
 
@@ -1753,6 +1756,35 @@ export function createReviewHandler(deps: {
               }
             }
 
+            // 7b. Generate context summary (fail-open: null on error)
+            let dependsContextSummary: string | null = null;
+            if (dependsRetrievalContext && dependsRetrievalContext.length > 0) {
+              try {
+                const taskRouter = createTaskRouter({ models: {} });
+                const resolved = taskRouter.resolve(TASK_TYPES.DEPENDS_CONTEXT_SUMMARY);
+                const pkg = dependsBumpInfo.packages[0]?.name ?? "this dependency";
+                const snippets = dependsRetrievalContext
+                  .map((c, i) => {
+                    const author = (c.metadata?.authorLogin as string | undefined) ?? "unknown";
+                    const date = c.createdAt ? new Date(c.createdAt).toISOString().slice(0, 10) : "?";
+                    return `${i + 1}. @${author} (${date}): ${c.text.trim().slice(0, 200)}`;
+                  })
+                  .join("\n");
+                const summaryResult = await generateWithFallback({
+                  taskType: TASK_TYPES.DEPENDS_CONTEXT_SUMMARY,
+                  resolved,
+                  system: "You summarize past PR discussion snippets into 1–2 plain sentences explaining why they are relevant context for a dependency bump review. No bullet points. No headers. Output only the summary sentences.",
+                  prompt: `Dependency being bumped: ${pkg}\n\nPast discussion snippets:\n${snippets}\n\nSummarize in 1–2 sentences why these past comments are relevant to this bump.`,
+                  logger,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  deliveryId: String(pr.number),
+                });
+                dependsContextSummary = summaryResult.text.trim() || null;
+              } catch (err) {
+                logger.warn({ ...baseLog, err, gate: "depends-context-summary" }, "Context summary generation failed (fail-open)");
+              }
+            }
+
             // 8. Build and post the deep-review comment
             const reviewData: DependsReviewData = {
               info: dependsBumpInfo,
@@ -1763,6 +1795,7 @@ export function createReviewHandler(deps: {
               impact: dependsImpact,
               transitive: dependsTransitive,
               retrievalContext: dependsRetrievalContext,
+              contextSummary: dependsContextSummary,
               platform: dependsBumpInfo.platform,
             };
 

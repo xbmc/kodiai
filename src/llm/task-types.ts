@@ -29,6 +29,8 @@ export const TASK_TYPES = {
   SECTION_UPDATE: "section.update",
   /** Guardrail claim classification via Haiku (non-agentic, Phase 126). */
   GUARDRAIL_CLASSIFICATION: "guardrail.classification",
+  /** Depends past-discussion context summary (non-agentic). */
+  DEPENDS_CONTEXT_SUMMARY: "depends.context_summary",
 } as const;
 
 /** Union type of all valid task type strings. */
