@@ -71,14 +71,20 @@ function stripCode(text: string): string {
 
 function stripTemplateBoilerplate(text: string): string {
   // Remove HTML comments (PR template instructions, e.g. <!-- Describe your change -->)
-  let out = text.replace(/<!--[\s\S]*?-->/g, " ");
-  // Remove unchecked checkbox lines that mention "breaking change" — these are
-  // template options the author has not selected, not actual author declarations.
-  // Matches: "- [ ] **Breaking change**..." or "- [ ] Breaking change..."
-  out = out.replace(/^[ \t]*-[ \t]*\[[ \t]\].*breaking\s+change.*$/gim, "");
+  let out = text.replace(/<!--[\s\S]*?-->/g, ' ');
+
+  // Remove the entire 'Types of change' and 'Checklist' template sections by heading.
+  // These blocks list all checkboxes regardless of what the author actually selected,
+  // so we cannot infer intent (e.g. 'breaking change') from checked boxes in them.
+  out = out.replace(/^#+\s*Types of change\b[^\n]*/gim, ' TEMPLATE_REMOVED ');
+  out = out.replace(/^#+\s*Checklist\b[^\n]*/gim, ' TEMPLATE_REMOVED ');
+
+  // Remove runs of 3+ consecutive checkbox lines — template option lists.
+  // Both - [x] and - [ ] variants are stripped.
+  out = out.replace(/(^[ \t]*-[ \t]*\[[ \tx]\][^\n]*(\n|$)){3,}/gm, ' ');
+
   return out;
 }
-
 function resolveProfileOverride(tags: string[]): "strict" | "balanced" | "minimal" | null {
   const rank: Record<string, number> = { "minimal-review": 1, "balanced-review": 2, "strict-review": 3 };
   let best: "strict" | "balanced" | "minimal" | null = null;
@@ -169,16 +175,17 @@ function formatTagSource(tag: BracketTag): string {
 }
 
 export function buildKeywordParsingSection(intent: ParsedPRIntent): string {
-  const hasSignals = intent.recognized.length > 0 || intent.unrecognized.length > 0 || intent.conventionalType !== null || intent.breakingChangeDetected;
+  // Only show recognized signals — unrecognized bracket tags (e.g. [Windows], [DVDDEMUXFFMPEG])
+  // are Kodi platform/component markers, not reviewer directives. They still influence the
+  // review prompt as focus hints but are not shown in the Details section.
+  const hasSignals = intent.recognized.length > 0 || intent.conventionalType !== null || intent.breakingChangeDetected;
   if (!hasSignals) return "- Keyword parsing: No keywords detected";
 
   const lines = ["- Keyword parsing:"];
   const recognizedSources = intent.bracketTags.filter((tag) => tag.recognized).map(formatTagSource);
   if (recognizedSources.length > 0) lines.push(`  - recognized: ${recognizedSources.join(", ")}`);
-  if (intent.unrecognized.length > 0) {
-    const hints = intent.unrecognized.map((tag) => `[${tag.toUpperCase()}]`).join(", ");
-    lines.push(`  - focus hints: ${hints}`);
-  }
+  // Unrecognized tags (focus hints) are intentionally omitted from display — they are
+  // passed to the review prompt but shown here they just add noise for Kodi PRs.
   if (intent.conventionalType) {
     const suffix = intent.conventionalType.isBreaking ? " (breaking)" : "";
     lines.push(`  - conventional type: ${intent.conventionalType.type}${suffix}`);

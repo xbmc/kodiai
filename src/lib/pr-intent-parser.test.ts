@@ -159,7 +159,9 @@ describe("breaking change detection", () => {
     expect(intent.breakingChangeDetected).toBe(false);
   });
 
-  test("still detects checked breaking change checkbox", () => {
+  test("does not detect breaking change from body checkbox template (any checked state)", () => {
+    // The entire Types-of-change block is stripped regardless of checked/unchecked state —
+    // use the PR title or commit messages to signal breaking changes, not template checkboxes.
     const templateBody = [
       "## Types of change",
       "- [ ] **Bug fix** (non-breaking change which fixes an issue)",
@@ -167,7 +169,7 @@ describe("breaking change detection", () => {
       "- [ ] **New feature** (non-breaking change which adds functionality)",
     ].join("\n");
     const intent = parsePRIntent("Remove deprecated auth endpoint", templateBody);
-    expect(intent.breakingChangeDetected).toBe(true);
+    expect(intent.breakingChangeDetected).toBe(false);
   });
 
   test("still detects 'breaking change' in plain body prose", () => {
@@ -246,7 +248,7 @@ describe("buildKeywordParsingSection", () => {
 
     const section = buildKeywordParsingSection(intent);
     expect(section).toContain("[WIP] in title");
-    expect(section).toContain("focus hints: [FOOBAR]");
+    // Unrecognized tags are not shown in display (they are passed to prompt but not rendered)
     expect(section).toContain("conventional type: feat (breaking)");
     expect(section).toContain("breaking change in commit abc1234");
   });
