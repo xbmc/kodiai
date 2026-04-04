@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T16:03:06.172Z",
+  "exported_at": "2026-04-04T16:06:01.192Z",
   "milestones": [
     {
       "id": "M001",
@@ -6203,19 +6203,26 @@
       "milestone_id": "M035",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Add RerankProvider type and implement createRerankProvider with unit tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added RerankProvider type to types.ts, implemented createRerankProvider in embeddings.ts following voyageFetch fail-open pattern, and created embeddings.test.ts with 9 passing unit tests (TSC clean)",
+      "status": "complete",
+      "one_liner": "Added RerankProvider type to types.ts, implemented createRerankProvider in embeddings.ts following voyageFetch fail-open pattern, and created embeddings.test.ts with 9 passing unit tests (TSC clean)",
+      "narrative": "Added RerankProvider type export to src/knowledge/types.ts immediately after EmbeddingProvider. Updated embeddings.ts import, added VOYAGE_RERANK_URL constant, VoyageRerankResponse interface, and createRerankProvider factory following the established voyageFetch pattern: no-op on empty apiKey, fail-open on null/empty response with structured logger.warn on non-null empty data. Created embeddings.test.ts with 9 unit tests covering no-op path, model getter, happy-path index extraction, API 500 fail-open, network-throw fail-open, empty data array fail-open, top_k inclusion, top_k omission. Fixed TSC error where Bun Mock<...> lacks preconnect vs typeof fetch by casting assignments as unknown as typeof globalThis.fetch.",
+      "verification_result": "bun test ./src/knowledge/embeddings.test.ts — 9/9 pass. bun run tsc --noEmit — clean exit, no errors.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T16:06:01.174Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Added one extra test (does not include top_k when topK is undefined) beyond the 7 specified — trivial addition that covers the complementary path.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/types.ts",
+        "src/knowledge/embeddings.ts",
+        "src/knowledge/embeddings.test.ts"
+      ],
+      "key_decisions": [
+        "Bun Mock<...> type lacks preconnect vs typeof fetch — cast each globalThis.fetch assignment as unknown as typeof globalThis.fetch to satisfy TSC without affecting runtime",
+        "Used _input parameter name in fetch mocks that only inspect init to avoid unused-param TS noise"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M035\nkey_files:\n  - src/knowledge/types.ts\n  - src/knowledge/embeddings.ts\n  - src/knowledge/embeddings.test.ts\nkey_decisions:\n  - Bun Mock<...> type lacks preconnect vs typeof fetch — cast each globalThis.fetch assignment as unknown as typeof globalThis.fetch to satisfy TSC without affecting runtime\n  - Used _input parameter name in fetch mocks that only inspect init to avoid unused-param TS noise\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T16:06:01.174Z\nblocker_discovered: false\n---\n\n# T02: Added RerankProvider type to types.ts, implemented createRerankProvider in embeddings.ts following voyageFetch fail-open pattern, and created embeddings.test.ts with 9 passing unit tests (TSC clean)\n\n**Added RerankProvider type to types.ts, implemented createRerankProvider in embeddings.ts following voyageFetch fail-open pattern, and created embeddings.test.ts with 9 passing unit tests (TSC clean)**\n\n## What Happened\n\nAdded RerankProvider type export to src/knowledge/types.ts immediately after EmbeddingProvider. Updated embeddings.ts import, added VOYAGE_RERANK_URL constant, VoyageRerankResponse interface, and createRerankProvider factory following the established voyageFetch pattern: no-op on empty apiKey, fail-open on null/empty response with structured logger.warn on non-null empty data. Created embeddings.test.ts with 9 unit tests covering no-op path, model getter, happy-path index extraction, API 500 fail-open, network-throw fail-open, empty data array fail-open, top_k inclusion, top_k omission. Fixed TSC error where Bun Mock<...> lacks preconnect vs typeof fetch by casting assignments as unknown as typeof globalThis.fetch.\n\n## Verification\n\nbun test ./src/knowledge/embeddings.test.ts — 9/9 pass. bun run tsc --noEmit — clean exit, no errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/embeddings.test.ts` | 0 | ✅ pass | 2100ms |\n| 2 | `bun run tsc --noEmit 2>&1 | tail -5` | 0 | ✅ pass | 7000ms |\n\n## Deviations\n\nAdded one extra test (does not include top_k when topK is undefined) beyond the 7 specified — trivial addition that covers the complementary path.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/types.ts`\n- `src/knowledge/embeddings.ts`\n- `src/knowledge/embeddings.test.ts`\n",
       "description": "Add the RerankProvider type to types.ts, implement createRerankProvider in embeddings.ts following the established voyageFetch pattern, and create embeddings.test.ts with full unit test coverage.\n\nSteps:\n1. In src/knowledge/types.ts, after the EmbeddingProvider type (around line 359), add:\n```ts\nexport type RerankProvider = {\n  rerank(opts: { query: string; documents: string[]; topK?: number }): Promise<number[] | null>;\n  readonly model: string;\n};\n```\n\n2. In src/knowledge/embeddings.ts, add:\n   a. Near the top constants: `const VOYAGE_RERANK_URL = \"https://api.voyageai.com/v1/rerank\";`\n   b. New interface after the existing Voyage response interfaces:\n   ```ts\n   interface VoyageRerankResponse {\n     data?: Array<{ index: number; relevance_score: number }>;\n     model?: string;\n   }\n   ```\n   c. At the end of the file (or near the other provider factories), add `createRerankProvider`:\n   ```ts\n   export function createRerankProvider(opts: {\n     apiKey: string;\n     logger: Logger;\n   }): RerankProvider {\n     const { apiKey, logger } = opts;\n     if (!apiKey) {\n       logger.info(\"Rerank provider disabled -- using no-op provider (no apiKey)\");\n       return {\n         async rerank(_opts) { return null; },\n         get model() { return \"rerank-2.5\"; },\n       };\n     }\n     return {\n       async rerank({ query, documents, topK }: { query: string; documents: string[]; topK?: number }): Promise<number[] | null> {\n         const body: Record<string, unknown> = { query, documents, model: \"rerank-2.5\" };\n         if (topK !== undefined) body.top_k = topK;\n         const response = await voyageFetch<VoyageRerankResponse>({\n           url: VOYAGE_RERANK_URL,\n           apiKey,\n           body,\n           timeoutMs: 30_000,\n           maxRetries: 1,\n           logger,\n         });\n         if (!response?.data?.length) {\n           if (response !== null) {\n             logger.warn({ model: \"rerank-2.5\" }, \"Rerank response missing data (fail-open)\");\n           }\n           return null;\n         }\n         return response.data.map(item => item.index);\n       },\n       get model() { return \"rerank-2.5\"; },\n     };\n   }\n   ```\n   Add `RerankProvider` to the import from \"./types.ts\" at the top of embeddings.ts.\n\n3. Create src/knowledge/embeddings.test.ts with the following test cases using Bun's built-in test runner (import { test, expect, mock } from 'bun:test'):\n   - \"returns null when apiKey is empty\" — createRerankProvider with empty string apiKey, calls rerank, expects null\n   - \"happy path: returns ordered indices\" — mock voyageFetch (via global fetch mock) to return { data: [{index:1,relevance_score:0.9},{index:0,relevance_score:0.7}] }, expects [1, 0]\n   - \"fail-open on API 500\" — mock fetch to return { ok: false, status: 500 }, expects null\n   - \"fail-open on network error\" — mock fetch to throw, expects null\n   - \"fail-open on empty data array\" — mock fetch to return { ok: true, json: { data: [] } }, expects null\n   - \"includes top_k in request body when topK provided\" — capture request body, assert top_k is set\n   - \"model getter returns rerank-2.5\" — check .model property\n\n   Use mock fetch approach: import the function, then use globalThis.fetch = mock(...) before each test, restore after. Use a no-op logger (pino with silent level or a minimal stub with info/warn no-ops).\n\n4. Run bun run tsc --noEmit and fix any type errors.",
       "estimate": "1h",
       "files": [
@@ -7220,6 +7227,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6600,
       "created_at": "2026-04-04T16:03:06.153Z"
+    },
+    {
+      "id": 65,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M035",
+      "command": "bun test ./src/knowledge/embeddings.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2100,
+      "created_at": "2026-04-04T16:06:01.175Z"
+    },
+    {
+      "id": 66,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M035",
+      "command": "bun run tsc --noEmit 2>&1 | tail -5",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7000,
+      "created_at": "2026-04-04T16:06:01.175Z"
     }
   ]
 }

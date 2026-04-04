@@ -22,7 +22,7 @@ Steps:
   - Estimate: 45m
   - Files: src/knowledge/runtime.ts, src/knowledge/embedding-repair.ts, src/knowledge/review-comment-store.ts, src/knowledge/code-snippet-store.ts, src/knowledge/wiki-store.ts, src/knowledge/memory-store.ts, src/knowledge/review-comment-embedding-sweep.ts, src/knowledge/issue-store.ts, src/knowledge/embedding-audit.ts, src/execution/config.ts, src/knowledge/cluster-matcher.ts
   - Verify: grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '\.test\.ts' | grep -c '' || true  # must print 0
-- [ ] **T02: Add RerankProvider type and implement createRerankProvider with unit tests** — Add the RerankProvider type to types.ts, implement createRerankProvider in embeddings.ts following the established voyageFetch pattern, and create embeddings.test.ts with full unit test coverage.
+- [x] **T02: Added RerankProvider type to types.ts, implemented createRerankProvider in embeddings.ts following voyageFetch fail-open pattern, and created embeddings.test.ts with 9 passing unit tests (TSC clean)** — Add the RerankProvider type to types.ts, implement createRerankProvider in embeddings.ts following the established voyageFetch pattern, and create embeddings.test.ts with full unit test coverage.
 
 Steps:
 1. In src/knowledge/types.ts, after the EmbeddingProvider type (around line 359), add:

@@ -1,10 +1,11 @@
 import type { Logger } from "pino";
-import type { EmbeddingProvider, EmbeddingResult } from "./types.ts";
+import type { EmbeddingProvider, EmbeddingResult, RerankProvider } from "./types.ts";
 
 // ── Voyage AI REST API types ────────────────────────────────────────────────
 
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 const VOYAGE_CONTEXTUALIZED_URL = "https://api.voyageai.com/v1/contextualizedembeddings";
+const VOYAGE_RERANK_URL = "https://api.voyageai.com/v1/rerank";
 
 interface VoyageEmbedResponse {
   data?: Array<{ embedding?: number[]; index?: number }>;
@@ -18,6 +19,11 @@ interface VoyageContextualizedResponse {
   }>;
   model?: string;
   usage?: { total_tokens: number };
+}
+
+interface VoyageRerankResponse {
+  data?: Array<{ index: number; relevance_score: number }>;
+  model?: string;
 }
 
 export type RepairEmbeddingFailureClass =
@@ -440,5 +446,45 @@ export async function contextualizedEmbedChunksForRepair(opts: {
     retryable: false,
     should_split: false,
     retry_count: maxRetries,
+  };
+}
+
+/**
+ * Create a Voyage AI rerank provider with fail-open semantics.
+ * On any error (API failure, timeout, empty response), returns null instead of throwing.
+ */
+export function createRerankProvider(opts: {
+  apiKey: string;
+  logger: Logger;
+}): RerankProvider {
+  const { apiKey, logger } = opts;
+  if (!apiKey) {
+    logger.info("Rerank provider disabled -- using no-op provider (no apiKey)");
+    return {
+      async rerank(_opts: { query: string; documents: string[]; topK?: number }) { return null; },
+      get model() { return "rerank-2.5"; },
+    };
+  }
+  return {
+    async rerank({ query, documents, topK }: { query: string; documents: string[]; topK?: number }): Promise<number[] | null> {
+      const body: Record<string, unknown> = { query, documents, model: "rerank-2.5" };
+      if (topK !== undefined) body.top_k = topK;
+      const response = await voyageFetch<VoyageRerankResponse>({
+        url: VOYAGE_RERANK_URL,
+        apiKey,
+        body,
+        timeoutMs: 30_000,
+        maxRetries: 1,
+        logger,
+      });
+      if (!response?.data?.length) {
+        if (response !== null) {
+          logger.warn({ model: "rerank-2.5" }, "Rerank response missing data (fail-open)");
+        }
+        return null;
+      }
+      return response.data.map(item => item.index);
+    },
+    get model() { return "rerank-2.5"; },
   };
 }

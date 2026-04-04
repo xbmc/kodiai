@@ -357,3 +357,8 @@ export type EmbeddingProvider = {
   readonly model: string;
   readonly dimensions: number;
 };
+
+export type RerankProvider = {
+  rerank(opts: { query: string; documents: string[]; topK?: number }): Promise<number[] | null>;
+  readonly model: string;
+};
