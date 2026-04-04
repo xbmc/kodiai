@@ -687,3 +687,69 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 **Rule:** When a rendering utility needs a subset of an execution type's fields, inline the shape at the function parameter boundary rather than importing the full type. The minor duplication is worth the decoupling. Document the mapping in the call site comment if the shapes diverge.
 
 **Established in:** M034/S02.
+
+---
+
+## Generated-Rule Lifecycle Module Pattern (M036)
+
+**Context:** M036 added four coordinated modules implementing the pending→active→retired lifecycle for generated rules. The pattern is now established and should be followed exactly when adding future policy stages.
+
+**Pattern — pure predicate + env config + fail-open orchestrator:**
+```ts
+// Pure predicate (no I/O, trivially testable)
+export function shouldRetireRule(signalScore: number, memberCount: number, opts?: { floor?: number; minMemberCount?: number }): { retire: boolean; reason?: string } { ... }
+
+// Env config read at call time (not module load), explicit param override
+export function getRetirementFloor(): number { return parseFloat(process.env.GENERATED_RULE_RETIREMENT_FLOOR ?? "0.3"); }
+
+// Fail-open orchestrator: counts transitions, logs per-decision + run-summary, wraps each store call in try/catch
+export async function applyRetirementPolicy({ store, logger, repo }: RetirementPolicyOpts): Promise<RetirementPolicyResult> { ... }
+```
+
+**Rule:** The `shouldAutoActivate` / `shouldRetireRule` pattern is the canonical shape for any future lifecycle predicate. Keep predicates free of I/O so they are unit-testable without stubs. Orchestrators are always fail-open — each store call in its own try/catch, failures increment a counter and log warn, never throw.
+
+**Established in:** M036/S02 (activation), M036/S03 (retirement).
+
+---
+
+## LifecycleNotifyHook — Extension Point for External Push (M036/S03)
+
+**Context:** `generated-rule-notify.ts` exposes a `LifecycleNotifyHook` callback that the caller can inject to receive lifecycle events. This is the extension point for Slack/GitHub notifications.
+
+**Pattern:**
+```ts
+type LifecycleNotifyHook = (events: LifecycleEvent[]) => Promise<void> | void;
+
+// Hook is skipped when event count is 0
+// Hook failures are caught, surface as notifyHookFailed: true on result, no throw
+// Hook receives all events in a single batch call
+```
+
+**Rule:** When implementing a concrete Slack hook, wrap the Slack API call inside the hook callback — do not add Slack API calls directly into the notify functions. The fail-open catch isolation and hookCallCount assertion pattern in tests must be preserved when extending. Future hooks (GitHub, PagerDuty, etc.) follow the same shape.
+
+**Established in:** M036/S03/T02.
+
+---
+
+## Non-Downgrading Upsert for Lifecycle-Tracked Records (M036/S01)
+
+**Context:** Proposal sweeps re-run over evolving learning-memory clusters. If a rule was manually activated or retired, a subsequent sweep run should not regress it back to pending.
+
+**SQL Pattern:**
+```sql
+INSERT INTO generated_rules (repo, title, ..., status, ...)
+VALUES ($1, $2, ..., 'pending', ...)
+ON CONFLICT (repo, title) DO UPDATE SET
+  rule_text = EXCLUDED.rule_text,
+  signal_score = EXCLUDED.signal_score,
+  -- status: only update if currently pending — never downgrade active or retired
+  status = CASE
+    WHEN generated_rules.status = 'pending' THEN EXCLUDED.status
+    ELSE generated_rules.status
+  END,
+  updated_at = NOW()
+```
+
+**Rule:** Any table that has a `pending/active/retired` (or similar) lifecycle column and is populated by an automated sweep must use this CASE guard on the status column. Never UPDATE status unconditionally from a sweep upsert.
+
+**Established in:** M036/S01/T01 (035-generated-rules.sql, GeneratedRuleStore.savePendingRule).
