@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-Full review pipeline deployed: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant, write-mode agent execution, MCP tooling, knowledge/wiki system, contributor profiling, and multi-model routing. M034 completed Claude Code usage visibility — the Review Details GitHub comment section now shows weekly limit utilization percentage, reset timing, and token counts (in/out/cost) when the agent run emits a rate-limit event. All 34 milestones complete.
+Full review pipeline deployed. M034 completed Claude Code usage visibility. M035 is in progress: S01 complete — all non-wiki embedding constants upgraded to voyage-4 (swept 25 hardcoded voyage-code-3 literals from 11 source files) and createRerankProvider with rerank-2.5 model is implemented and unit-tested. S02 (reranker pipeline wiring) is next.
 
 ## Architecture / Key Patterns
 
@@ -21,6 +21,7 @@ Full review pipeline deployed: webhook ingestion, PR review (full + retry + inli
 - **Review output:** GitHub comment with `formatReviewDetailsSummary()` in `src/lib/review-utils.ts` posting Review Details `<details>` block (includes usage/token lines when present)
 - **Cost tracking:** `src/llm/cost-tracker.ts` + `src/telemetry/` for DB persistence
 - **Usage visibility:** `ExecutionResult.usageLimit` captures last `SDKRateLimitEvent` from the agent run; rendered in Review Details via optional `usageLimit` and `tokenUsage` params on `formatReviewDetailsSummary`
+- **Embeddings:** Non-wiki corpora use voyage-4 (`DEFAULT_EMBEDDING_MODEL` in runtime.ts, `NON_WIKI_TARGET_EMBEDDING_MODEL` in embedding-repair.ts). Wiki pages use voyage-context-3. `createRerankProvider` in embeddings.ts provides a rerank-2.5 client with fail-open semantics for post-RRF neural reranking.
 
 ## Capability Contract
 
@@ -30,3 +31,11 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 - [x] M001–M033: MVP through Security Hardening (all complete)
 - [x] M034: Claude Code Usage Visibility — Surface weekly limit utilization and token usage in Review Details
+- [ ] M035: Voyage AI Model Upgrades — voyage-4 + rerank-2.5
+  - [x] S01: voyage-4 Embedding Upgrade + Reranker Client
+  - [ ] S02: Reranker Pipeline Wiring + Runtime Integration
+- [ ] M039: Review Output Hardening — tighten breaking-change keyword parsing, restore truthful Claude usage visibility, and add real regression fixtures
+- [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
+- [ ] M036: Auto Rule Generation from Feedback — cluster learning memories → propose/auto-activate rules → inject into review prompt
+- [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning — k-means cluster model, dual positive/negative signal, thematic suppression/boosting
+- [ ] M038: AST Call-Graph Impact Analysis — ts-morph-based call graph extraction, structural impact context in review prompt, breaking-change detection
