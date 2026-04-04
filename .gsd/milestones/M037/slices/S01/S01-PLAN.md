@@ -4,7 +4,7 @@
 **Demo:** After this: After this, Kodiai can build and cache a per-repo positive/negative cluster model from learning memories instead of recomputing it on every review.
 
 ## Tasks
-- [ ] **T01: Create cluster-model schema and store** — - Add cluster-model schema and store surfaces for positive/negative centroids and freshness metadata.
+- [x] **T01: Added suggestion_cluster_models table migration, SuggestionClusterStore factory, and 29 unit tests for cluster model persistence and retrieval** — - Add cluster-model schema and store surfaces for positive/negative centroids and freshness metadata.
 - Keep model storage separate from durable generated rules.
 - Add tests for model persistence and retrieval.
   - Estimate: 0.5-1d

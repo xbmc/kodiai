@@ -35,6 +35,22 @@
       "doneMilestones": 35,
       "totalMilestones": 40,
       "phase": "pre-planning"
+    },
+    {
+      "filename": "M036-2026-04-04T23-21-45.html",
+      "generatedAt": "2026-04-04T23:21:45.969Z",
+      "milestoneId": "M036",
+      "milestoneTitle": "Auto Rule Generation from Feedback",
+      "label": "M036: Auto Rule Generation from Feedback",
+      "kind": "milestone",
+      "totalCost": 344.4068152499997,
+      "totalTokens": 739718865,
+      "totalDuration": 110907006,
+      "doneSlices": 178,
+      "totalSlices": 190,
+      "doneMilestones": 37,
+      "totalMilestones": 41,
+      "phase": "evaluating-gates"
     }
   ]
 }
