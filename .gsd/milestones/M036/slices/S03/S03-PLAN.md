@@ -16,7 +16,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/generated-rule-notify.ts, src/knowledge/generated-rule-notify.test.ts, src/knowledge/generated-rule-sweep.ts
   - Verify: bun test ./src/knowledge/generated-rule-notify.test.ts
-- [ ] **T03: Add lifecycle verifier** — - Add the milestone-level verifier for proposal, activation, retirement, and fail-open behavior.
+- [x] **T03: Added lifecycle verifier for M036 S03 with 3 proof checks (retirement, notify-lifecycle, notify-fail-open) and 21 passing tests** — - Add the milestone-level verifier for proposal, activation, retirement, and fail-open behavior.
 - Keep proof output stable enough to close M036 without hand inspection.
 - Cover notification failure as a non-blocking path.
   - Estimate: 0.5-1d

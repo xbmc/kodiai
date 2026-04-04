@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T23:10:38.159Z",
+  "exported_at": "2026-04-04T23:13:54.484Z",
   "milestones": [
     {
       "id": "M001",
@@ -7488,19 +7488,28 @@
       "milestone_id": "M036",
       "slice_id": "S03",
       "id": "T03",
-      "title": "Add lifecycle verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added lifecycle verifier for M036 S03 with 3 proof checks (retirement, notify-lifecycle, notify-fail-open) and 21 passing tests",
+      "status": "complete",
+      "one_liner": "Added lifecycle verifier for M036 S03 with 3 proof checks (retirement, notify-lifecycle, notify-fail-open) and 21 passing tests",
+      "narrative": "Created scripts/verify-m036-s03.ts following the S02 verifier pattern. Three checks prove the S03 slice contract: RETIREMENT (applyRetirementPolicy retires a below-floor rule, predicate boundary semantics verified), NOTIFY-LIFECYCLE (notifyLifecycleRun emits activation+retirement events, hook receives both), NOTIFY-FAIL-OPEN (hook throw sets notifyHookFailed=true, warn emitted, result returned). All checks use injectable _runFn overrides for deterministic negative testing. Added verify:m036:s03 to package.json.",
+      "verification_result": "bun test ./scripts/verify-m036-s03.test.ts — 21/21 pass. bun run verify:m036:s03 -- --json — exit 0, overallPassed=true, all three checks with stable detail fields. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T23:13:54.461Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m036-s03.ts",
+        "scripts/verify-m036-s03.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Three checks mirror S03 slice contract — RETIREMENT, NOTIFY-LIFECYCLE, NOTIFY-FAIL-OPEN",
+        "Injectable _runFn overrides on all three checks — same pattern as S01/S02 verifiers",
+        "hookCallCount field counts events received by hook to validate batch delivery",
+        "NOTIFY-FAIL-OPEN uses notifyRetirement (retirement-only) for targeted fail-open coverage"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S03\nmilestone: M036\nkey_files:\n  - scripts/verify-m036-s03.ts\n  - scripts/verify-m036-s03.test.ts\n  - package.json\nkey_decisions:\n  - Three checks mirror S03 slice contract — RETIREMENT, NOTIFY-LIFECYCLE, NOTIFY-FAIL-OPEN\n  - Injectable _runFn overrides on all three checks — same pattern as S01/S02 verifiers\n  - hookCallCount field counts events received by hook to validate batch delivery\n  - NOTIFY-FAIL-OPEN uses notifyRetirement (retirement-only) for targeted fail-open coverage\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T23:13:54.461Z\nblocker_discovered: false\n---\n\n# T03: Added lifecycle verifier for M036 S03 with 3 proof checks (retirement, notify-lifecycle, notify-fail-open) and 21 passing tests\n\n**Added lifecycle verifier for M036 S03 with 3 proof checks (retirement, notify-lifecycle, notify-fail-open) and 21 passing tests**\n\n## What Happened\n\nCreated scripts/verify-m036-s03.ts following the S02 verifier pattern. Three checks prove the S03 slice contract: RETIREMENT (applyRetirementPolicy retires a below-floor rule, predicate boundary semantics verified), NOTIFY-LIFECYCLE (notifyLifecycleRun emits activation+retirement events, hook receives both), NOTIFY-FAIL-OPEN (hook throw sets notifyHookFailed=true, warn emitted, result returned). All checks use injectable _runFn overrides for deterministic negative testing. Added verify:m036:s03 to package.json.\n\n## Verification\n\nbun test ./scripts/verify-m036-s03.test.ts — 21/21 pass. bun run verify:m036:s03 -- --json — exit 0, overallPassed=true, all three checks with stable detail fields. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m036-s03.test.ts` | 0 | ✅ pass | 2200ms |\n| 2 | `bun run verify:m036:s03 -- --json` | 0 | ✅ pass | 1600ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 6400ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m036-s03.ts`\n- `scripts/verify-m036-s03.test.ts`\n- `package.json`\n",
       "description": "- Add the milestone-level verifier for proposal, activation, retirement, and fail-open behavior.\n- Keep proof output stable enough to close M036 without hand inspection.\n- Cover notification failure as a non-blocking path.",
       "estimate": "0.5-1d",
       "files": [
@@ -10477,6 +10486,39 @@
       "verdict": "✅ pass",
       "duration_ms": 6600,
       "created_at": "2026-04-04T23:10:38.135Z"
+    },
+    {
+      "id": 94,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun test ./scripts/verify-m036-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2200,
+      "created_at": "2026-04-04T23:13:54.461Z"
+    },
+    {
+      "id": 95,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun run verify:m036:s03 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1600,
+      "created_at": "2026-04-04T23:13:54.461Z"
+    },
+    {
+      "id": 96,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6400,
+      "created_at": "2026-04-04T23:13:54.461Z"
     }
   ]
 }
