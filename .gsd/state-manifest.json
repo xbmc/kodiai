@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T23:24:50.406Z",
+  "exported_at": "2026-04-04T23:28:35.367Z",
   "milestones": [
     {
       "id": "M001",
@@ -7584,19 +7584,29 @@
       "milestone_id": "M037",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Build positive/negative cluster models",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Add buildClusterModel function with HDBSCAN-based positive/negative centroid generation from learning memories",
+      "status": "complete",
+      "one_liner": "Add buildClusterModel function with HDBSCAN-based positive/negative centroid generation from learning memories",
+      "narrative": "Created src/knowledge/suggestion-cluster-builder.ts with buildClusterModel(opts) that queries learning_memories, splits by outcome class (positive=accepted/thumbs_up, negative=suppressed/thumbs_down), runs HDBSCAN independently on each class, computes mean centroids per cluster (dropping clusters below MIN_CLUSTER_MEMBERS=3), and saves a SuggestionClusterModel via SuggestionClusterStore. Fail-open: never throws, unknown outcomes silently skipped. Model saved even when one class has zero centroids for cold-start support. Added 26 unit tests covering centroid generation, outcome splitting, min-member thresholds, embedding parsing, and all error paths.",
+      "verification_result": "bun test ./src/knowledge/suggestion-cluster-builder.test.ts → 26 pass, 0 fail; bun run tsc --noEmit → exit 0",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T23:28:35.343Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Only hdbscan.ts reused directly (not cluster-pipeline.ts/cluster-matcher.ts) — meanEmbedding and HDBSCAN wiring implemented locally to avoid coupling cache-management module to review pipeline.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/suggestion-cluster-builder.ts",
+        "src/knowledge/suggestion-cluster-builder.test.ts"
+      ],
+      "key_decisions": [
+        "Builder queries learning_memories directly via sql — avoids coupling to LearningMemoryStore interface",
+        "Outcome classification via closed Set at module scope — unknown outcomes silently skipped",
+        "Two independent HDBSCAN runs per outcome class — positive/negative clustering fully decoupled",
+        "MIN_CLUSTER_MEMBERS threshold applied post-HDBSCAN to filter small clusters",
+        "Model saved even with zero centroids — supports cold-start where only one class has data",
+        "Fail-open pattern: buildClusterModel never throws, errors returned as built=false with skipReason"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M037\nkey_files:\n  - src/knowledge/suggestion-cluster-builder.ts\n  - src/knowledge/suggestion-cluster-builder.test.ts\nkey_decisions:\n  - Builder queries learning_memories directly via sql — avoids coupling to LearningMemoryStore interface\n  - Outcome classification via closed Set at module scope — unknown outcomes silently skipped\n  - Two independent HDBSCAN runs per outcome class — positive/negative clustering fully decoupled\n  - MIN_CLUSTER_MEMBERS threshold applied post-HDBSCAN to filter small clusters\n  - Model saved even with zero centroids — supports cold-start where only one class has data\n  - Fail-open pattern: buildClusterModel never throws, errors returned as built=false with skipReason\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T23:28:35.342Z\nblocker_discovered: false\n---\n\n# T02: Add buildClusterModel function with HDBSCAN-based positive/negative centroid generation from learning memories\n\n**Add buildClusterModel function with HDBSCAN-based positive/negative centroid generation from learning memories**\n\n## What Happened\n\nCreated src/knowledge/suggestion-cluster-builder.ts with buildClusterModel(opts) that queries learning_memories, splits by outcome class (positive=accepted/thumbs_up, negative=suppressed/thumbs_down), runs HDBSCAN independently on each class, computes mean centroids per cluster (dropping clusters below MIN_CLUSTER_MEMBERS=3), and saves a SuggestionClusterModel via SuggestionClusterStore. Fail-open: never throws, unknown outcomes silently skipped. Model saved even when one class has zero centroids for cold-start support. Added 26 unit tests covering centroid generation, outcome splitting, min-member thresholds, embedding parsing, and all error paths.\n\n## Verification\n\nbun test ./src/knowledge/suggestion-cluster-builder.test.ts → 26 pass, 0 fail; bun run tsc --noEmit → exit 0\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/suggestion-cluster-builder.test.ts` | 0 | ✅ pass | 21ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6500ms |\n\n## Deviations\n\nOnly hdbscan.ts reused directly (not cluster-pipeline.ts/cluster-matcher.ts) — meanEmbedding and HDBSCAN wiring implemented locally to avoid coupling cache-management module to review pipeline.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/suggestion-cluster-builder.ts`\n- `src/knowledge/suggestion-cluster-builder.test.ts`\n",
       "description": "- Build per-repo positive/negative cluster model generation from learning memories.\n- Reuse existing clustering helpers and enforce minimum-member thresholds.\n- Add tests for centroid generation and bounded model shape.",
       "estimate": "1d",
       "files": [
@@ -10550,6 +10560,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6500,
       "created_at": "2026-04-04T23:24:50.378Z"
+    },
+    {
+      "id": 99,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M037",
+      "command": "bun test ./src/knowledge/suggestion-cluster-builder.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 21,
+      "created_at": "2026-04-04T23:28:35.343Z"
+    },
+    {
+      "id": 100,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M037",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6500,
+      "created_at": "2026-04-04T23:28:35.343Z"
     }
   ]
 }

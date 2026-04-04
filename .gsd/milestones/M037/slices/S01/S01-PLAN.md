@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/db/migrations/036-suggestion-cluster-models.sql, src/knowledge/suggestion-cluster-store.ts, src/knowledge/suggestion-cluster-store.test.ts
   - Verify: bun test ./src/knowledge/suggestion-cluster-store.test.ts && bun run tsc --noEmit
-- [ ] **T02: Build positive/negative cluster models** — - Build per-repo positive/negative cluster model generation from learning memories.
+- [x] **T02: Add buildClusterModel function with HDBSCAN-based positive/negative centroid generation from learning memories** — - Build per-repo positive/negative cluster model generation from learning memories.
 - Reuse existing clustering helpers and enforce minimum-member thresholds.
 - Add tests for centroid generation and bounded model shape.
   - Estimate: 1d
