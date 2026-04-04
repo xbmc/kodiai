@@ -16,6 +16,16 @@ export { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./embeddin
 // Memory store
 export { createLearningMemoryStore } from "./memory-store.ts";
 
+// Generated rule store
+export {
+  createGeneratedRuleStore,
+  type GeneratedRuleStore,
+  type GeneratedRuleRecord,
+  type GeneratedRuleProposal,
+  type GeneratedRuleStatus,
+  type GeneratedRuleLifecycleCounts,
+} from "./generated-rule-store.ts";
+
 // Isolation
 export { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 

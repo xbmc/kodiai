@@ -23,6 +23,8 @@ export type UnifiedRetrievalChunk = {
   vectorDistance: number | null;
   /** Computed RRF score (higher is better). */
   rrfScore: number;
+  /** Optional rank position assigned by the neural reranker (0 = highest). */
+  rerankScore?: number;
   /** Creation/modification date for recency boost. */
   createdAt: string | null;
   /** Corpus-specific metadata preserved for downstream use. */

@@ -35,7 +35,8 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: voyage-4 Embedding Upgrade + Reranker Client
   - [ ] S02: Reranker Pipeline Wiring + Runtime Integration
 - [ ] M039: Review Output Hardening — tighten breaking-change keyword parsing, restore truthful Claude usage visibility, and add real regression fixtures
-- [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
 - [ ] M036: Auto Rule Generation from Feedback — cluster learning memories → propose/auto-activate rules → inject into review prompt
 - [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning — k-means cluster model, dual positive/negative signal, thematic suppression/boosting
-- [ ] M038: AST Call-Graph Impact Analysis — ts-morph-based call graph extraction, structural impact context in review prompt, breaking-change detection
+- [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
+- [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
+- [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection

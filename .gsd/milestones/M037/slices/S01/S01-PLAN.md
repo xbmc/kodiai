@@ -1,0 +1,24 @@
+# S01: Cluster Model Build and Cache
+
+**Goal:** Build the cluster-model substrate: model schema, builder, cache, and bounded background refresh entrypoint.
+**Demo:** After this: After this, Kodiai can build and cache a per-repo positive/negative cluster model from learning memories instead of recomputing it on every review.
+
+## Tasks
+- [ ] **T01: Create cluster-model schema and store** — - Add cluster-model schema and store surfaces for positive/negative centroids and freshness metadata.
+- Keep model storage separate from durable generated rules.
+- Add tests for model persistence and retrieval.
+  - Estimate: 0.5-1d
+  - Files: src/db/migrations/036-suggestion-cluster-models.sql, src/knowledge/suggestion-cluster-store.ts, src/knowledge/suggestion-cluster-store.test.ts
+  - Verify: bun test ./src/knowledge/suggestion-cluster-store.test.ts && bun run tsc --noEmit
+- [ ] **T02: Build positive/negative cluster models** — - Build per-repo positive/negative cluster model generation from learning memories.
+- Reuse existing clustering helpers and enforce minimum-member thresholds.
+- Add tests for centroid generation and bounded model shape.
+  - Estimate: 1d
+  - Files: src/knowledge/suggestion-cluster-builder.ts, src/knowledge/suggestion-cluster-builder.test.ts, src/knowledge/cluster-matcher.ts, src/knowledge/cluster-pipeline.ts
+  - Verify: bun test ./src/knowledge/suggestion-cluster-builder.test.ts
+- [ ] **T03: Add model refresh entrypoint and proof harness** — - Add the bounded background refresh entrypoint for cluster models.
+- Keep refresh decoupled from the live review path.
+- Add a verifier proving cached models are built and read without per-review rebuilds.
+  - Estimate: 0.5-1d
+  - Files: src/knowledge/suggestion-cluster-refresh.ts, src/knowledge/suggestion-cluster-refresh.test.ts, scripts/verify-m037-s01.ts, scripts/verify-m037-s01.test.ts
+  - Verify: bun test ./src/knowledge/suggestion-cluster-refresh.test.ts && bun test ./scripts/verify-m037-s01.test.ts

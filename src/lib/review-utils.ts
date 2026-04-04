@@ -258,11 +258,12 @@ export function formatReviewDetailsSummary(params: {
 
   if (usageLimit?.utilization !== undefined) {
     const pct = Math.round(usageLimit.utilization * 100);
+    const pctLeft = 100 - pct;
     const type = usageLimit.rateLimitType ?? 'usage';
     const resetStr = usageLimit.resetsAt !== undefined
       ? ` | resets ${new Date(usageLimit.resetsAt * 1000).toISOString()}`
       : '';
-    sections.push(`- Claude Code usage: ${pct}% of ${type} limit${resetStr}`);
+    sections.push(`- Claude Code usage: ${pctLeft}% of ${type} limit remaining${resetStr}`);
   }
 
   if (tokenUsage?.inputTokens !== undefined || tokenUsage?.outputTokens !== undefined) {

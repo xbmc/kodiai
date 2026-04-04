@@ -1,12 +1,17 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import type { EmbeddingProvider, LearningMemoryStore } from "./types.ts";
+import type { EmbeddingProvider, LearningMemoryStore, RerankProvider } from "./types.ts";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { WikiPageStore } from "./wiki-types.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import type { IssueStore } from "./issue-types.ts";
 import { createLearningMemoryStore } from "./memory-store.ts";
-import { createEmbeddingProvider, createNoOpEmbeddingProvider, createContextualizedEmbeddingProvider } from "./embeddings.ts";
+import {
+  createEmbeddingProvider,
+  createNoOpEmbeddingProvider,
+  createContextualizedEmbeddingProvider,
+  createRerankProvider,
+} from "./embeddings.ts";
 import { createReviewCommentStore } from "./review-comment-store.ts";
 import { createWikiPageStore } from "./wiki-store.ts";
 import { createCodeSnippetStore } from "./code-snippet-store.ts";
@@ -43,6 +48,7 @@ export type KnowledgeRuntime = {
   isolationLayer: IsolationLayer | undefined;
   retriever: ReturnType<typeof createRetriever> | undefined;
   wikiCitationLogger: ReturnType<typeof createWikiPopularityStore>;
+  rerankProvider: RerankProvider;
 };
 
 export function createKnowledgeRuntime(opts: {
@@ -96,6 +102,9 @@ export function createKnowledgeRuntime(opts: {
     );
   }
 
+  const rerankProvider = createRerankProvider({ apiKey: voyageApiKey, logger });
+  logger.info({ model: rerankProvider.model }, "Rerank provider initialized");
+
   const reviewCommentStore = createReviewCommentStore({ sql, logger });
   logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 
@@ -132,6 +141,7 @@ export function createKnowledgeRuntime(opts: {
         codeSnippetStore,
         issueStore,
         wikiCitationLogger,
+        rerankProvider,
       })
     : undefined;
 
@@ -146,6 +156,7 @@ export function createKnowledgeRuntime(opts: {
     isolationLayer,
     retriever,
     wikiCitationLogger,
+    rerankProvider,
   };
 }
 

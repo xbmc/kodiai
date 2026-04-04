@@ -27,7 +27,7 @@ describe("formatReviewDetailsSummary", () => {
       },
     });
 
-    expect(result).toContain("75% of seven_day limit");
+    expect(result).toContain("25% of seven_day limit remaining");
     expect(result).toContain("resets ");
 
     // Calling without usageLimit should not contain the usage line

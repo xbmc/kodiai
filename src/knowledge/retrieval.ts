@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { EmbeddingProvider, LearningMemoryStore, RetrievalResult } from "./types.ts";
+import type { EmbeddingProvider, LearningMemoryStore, RetrievalResult, RerankProvider } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { MergedRetrievalResult, MultiQueryVariantType } from "./multi-query-retrieval.ts";
 import type { SnippetAnchor } from "./retrieval-snippets.ts";
@@ -73,6 +73,7 @@ export type RetrieveResult = {
     snippetCount: number;
     issueCount: number;
     unifiedResultCount: number;
+    rerankApplied: boolean;
     hybridSearchUsed: boolean;
     rrfK: number;
     dedupThreshold: number;
@@ -360,6 +361,7 @@ export function createRetriever(deps: {
   codeSnippetStore?: CodeSnippetStore;
   issueStore?: IssueStore;
   wikiCitationLogger?: { logCitations(pageIds: number[]): Promise<void> };
+  rerankProvider?: RerankProvider;
 }): { retrieve: (opts: RetrieveOptions) => Promise<RetrieveResult | null> } {
   const { embeddingProvider, isolationLayer, config } = deps;
   const wikiProvider = deps.wikiEmbeddingProvider ?? deps.embeddingProvider;
@@ -808,6 +810,45 @@ export function createRetriever(deps: {
         mode: "cross-corpus",
       });
 
+      let rerankApplied = false;
+
+      // 6g: Neural rerank (fail-open)
+      if (deps.rerankProvider && unifiedResults.length > 0) {
+        try {
+          const preRerankResults = unifiedResults;
+          const rankedIndices = await deps.rerankProvider.rerank({
+            query: intentQuery,
+            documents: preRerankResults.map((chunk) => chunk.text),
+            topK: preRerankResults.length,
+          });
+
+          if (rankedIndices !== null) {
+            const rerankedResults = rankedIndices
+              .filter((index: number): index is number => Number.isInteger(index) && index >= 0 && index < preRerankResults.length)
+              .map((originalIndex: number, rank: number) => ({
+                ...preRerankResults[originalIndex]!,
+                rerankScore: rank,
+              }));
+
+            if (rerankedResults.length === preRerankResults.length) {
+              unifiedResults = rerankedResults;
+              rerankApplied = true;
+            } else {
+              logger.warn(
+                {
+                  returnedCount: rankedIndices.length,
+                  validCount: rerankedResults.length,
+                  expectedCount: preRerankResults.length,
+                },
+                "Reranker returned malformed indices (fail-open)",
+              );
+            }
+          }
+        } catch (err) {
+          logger.warn({ err }, "Reranker failed (fail-open)");
+        }
+      }
+
       // Citation tracking: log wiki pages that appeared in retrieval results (POP-02)
       const wikiPageIds = unifiedResults
         .filter((c) => c.source === "wiki")
@@ -821,7 +862,7 @@ export function createRetriever(deps: {
         });
       }
 
-      // 6g: Context assembly
+      // 6h: Context assembly
       const contextWindow = assembleContextWindow(unifiedResults, maxContextChars);
 
       // Compute provenance
@@ -851,6 +892,7 @@ export function createRetriever(deps: {
           snippetCount: snippetResults.length,
           issueCount: issueResults.length,
           unifiedResultCount: unifiedResults.length,
+          rerankApplied,
           hybridSearchUsed: true,
           rrfK: RRF_K,
           dedupThreshold: DEDUP_THRESHOLD,

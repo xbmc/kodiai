@@ -4,15 +4,89 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Active
 
-### R030 — Non-wiki corpora use voyage-4 embeddings and the retrieval pipeline uses rerank-2.5 as a post-RRF neural reranking step
+### R031 — Review Details must report breaking-change intent only from genuine title/body/commit signals after template/checklist stripping, not from leaked PR boilerplate.
+- Class: correctness
+- Status: active
+- Description: Review Details must report breaking-change intent only from genuine title/body/commit signals after template/checklist stripping, not from leaked PR boilerplate.
+- Why it matters: False breaking-change signals erode trust in Review Details and mis-scope the review prompt.
+- Source: user
+- Primary owning slice: M039
+- Supporting slices: none
+- Validation: Regression fixture derived from xbmc/xbmc PR 28127 body/output does not render 'breaking change in body' unless a real author-authored signal remains after stripping.
+- Notes: Introduced by M039 after false 'breaking change in body' output on a live xbmc PR. The parser may still use real body prose, but template/checklist sections must be stripped first.
+
+### R032 — Review Details must show Claude weekly usage percent left and reset timing when rate-limit data is available, and degrade truthfully when the SDK omits that data.
+- Class: correctness
+- Status: active
+- Description: Review Details must show Claude weekly usage percent left and reset timing when rate-limit data is available, and degrade truthfully when the SDK omits that data.
+- Why it matters: Missing or misleading Claude usage telemetry makes the shipped Review Details surface untrustworthy.
+- Source: user
+- Primary owning slice: M039
+- Supporting slices: none
+- Validation: Handler and formatter regression tests prove Review Details renders percent-left when usageLimit is present and follows the documented unavailable-state contract when it is absent.
+- Notes: Introduced by M039 as a follow-up to M034. The display contract changes from utilization shown to percent remaining shown. Truthful degradation means Kodiai must not invent or imply captured usage when the underlying SDK signal is absent.
+
+### R033 — Kodiai must use persistent structural graph context to improve coverage and context selection for extensive PR reviews, including blast-radius and likely affected tests/dependents.
+- Class: functional
+- Status: active
+- Description: Kodiai must use persistent structural graph context to improve coverage and context selection for extensive PR reviews, including blast-radius and likely affected tests/dependents.
+- Why it matters: File-level heuristics and semantic retrieval alone are not enough for extensive code review on structurally-coupled changes and large PRs.
+- Source: user
+- Primary owning slice: M040
+- Supporting slices: none
+- Validation: Fixture-based proof shows graph-aware review selection identifies impacted files/tests/dependents beyond file-level triage alone, while keeping context bounded on large PRs.
+- Notes: Introduced by M040 after comparing Kodiai with code-review-graph and Octopus. The graph augments existing large-PR triage and retrieval; it does not replace cross-corpus retrieval.
+
+### R034 — Graph-backed review context must fail open and avoid regressing small PR latency/cost through bounded context ranking and trivial-change bypass.
 - Class: quality-attribute
 - Status: active
-- Description: Non-wiki corpora use voyage-4 embeddings and the retrieval pipeline uses rerank-2.5 as a post-RRF neural reranking step
-- Why it matters: voyage-4 provides better retrieval quality than voyage-code-3; rerank-2.5 adds a neural cross-encoder pass that significantly improves final ranking accuracy over heuristic RRF alone
+- Description: Graph-backed review context must fail open and avoid regressing small PR latency/cost through bounded context ranking and trivial-change bypass.
+- Why it matters: A graph substrate only helps if it improves extensive reviews without making normal reviews slower or noisier.
 - Source: user
-- Primary owning slice: M035/S01
-- Supporting slices: M035/S02
-- Validation: unmapped
+- Primary owning slice: M040
+- Supporting slices: none
+- Validation: Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews.
+- Notes: Also introduced by M040. code-review-graph's own benchmarks show graph context can be more expensive than naive reads on tiny single-file changes, so Kodiai must explicitly guard against that failure mode.
+
+### R035 — Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
+- Class: operational
+- Status: active
+- Description: Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
+- Why it matters: Event-driven freshness plus repair keeps cost, lag, and provenance drift bounded while preserving truthful current-code retrieval.
+- Source: M041
+- Primary owning slice: M041
+- Supporting slices: S03
+- Validation: Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds.
+
+### R036 — Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
+- Class: functional
+- Status: active
+- Description: Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
+- Why it matters: Historical diff-hunk embeddings are not a canonical snapshot of repo code and cannot serve as the source of truth for unchanged-code review context.
+- Source: M041
+- Primary owning slice: M041
+- Supporting slices: S01,S02
+- Validation: Backfill persists current-code chunks with provenance; retrieval returns current unchanged code from the canonical corpus for review-style queries.
+
+### R037 — Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
+- Class: functional
+- Status: active
+- Description: Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
+- Why it matters: Diff text and historical retrieval alone cannot show who depends on a changed symbol or which unchanged code is semantically relevant right now.
+- Source: M038
+- Primary owning slice: M038
+- Supporting slices: S01,S02
+- Validation: For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041.
+
+### R038 — Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
+- Class: correctness
+- Status: active
+- Description: Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
+- Why it matters: Heuristic breaking-change output is less trustworthy than evidence-backed structural impact, but the review pipeline must remain non-blocking when substrate data is unavailable.
+- Source: M038
+- Primary owning slice: M038
+- Supporting slices: S02,S03
+- Validation: For a production-like C++ or Python review scenario, breaking-change output cites caller/dependent evidence when available; timeout or substrate failure degrades cleanly without blocking review completion.
 
 ## Validated
 
@@ -313,6 +387,16 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears.
 - Notes: Should cover both stored generation artifacts and final published issue-comment formatting.
 
+### R030 — Non-wiki corpora use voyage-4 embeddings and the retrieval pipeline uses rerank-2.5 as a post-RRF neural reranking step
+- Class: quality-attribute
+- Status: validated
+- Description: Non-wiki corpora use voyage-4 embeddings and the retrieval pipeline uses rerank-2.5 as a post-RRF neural reranking step
+- Why it matters: voyage-4 provides better retrieval quality than voyage-code-3; rerank-2.5 adds a neural cross-encoder pass that significantly improves final ranking accuracy over heuristic RRF alone
+- Source: user
+- Primary owning slice: M035/S01
+- Supporting slices: M035/S02
+- Validation: S01 — grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '.test.ts' returns 0 hits; DEFAULT_EMBEDDING_MODEL and NON_WIKI_TARGET_EMBEDDING_MODEL are "voyage-4"; createRerankProvider with rerank-2.5 model is implemented in embeddings.ts; 9 unit tests pass; tsc --noEmit exits clean.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -370,11 +454,19 @@ This file is the explicit capability and coverage contract for the project.
 | R027 | product-capability | validated | M028/S01 | M028/S03, M028/S04 | S01 — WikiUpdateGroup type carries explicit mode field (section|page) with replacement text and scope metadata. Section vs page mode is deterministically chosen and machine-checkable in stored artifacts and verifier output. S04 regression harness confirms mode field present in all formatPageComment mock renders. |
 | R028 | operability | validated | M028/S02 | M028/S03, M028/S04 | S02–S04 — Durable comment identity via published_comment_id column (migration 031). upsertWikiPageComment scans existing comments by marker and updates in place rather than creating duplicates. 21 legacy sentinel rows (published_comment_id=0) re-published via live upsert in S04; all acquired real GitHub comment IDs. bun run verify:m028:s04 --json SENTINEL-SUPERSEDED=pass (sentinel_rows=0). LIVE-PUBLISHED=pass (count=104). |
 | R029 | quality-attribute | validated | M028/S04 | M028/S01, M028/S02, M028/S03 | S04 — 5-check machine-verifiable harness (verify-m028-s04.ts) with negative guards: NO-WHY-IN-RENDER, NO-WHY-IN-SUMMARY, DRY-RUN-CLEAN all assert absence of **Why:**, :warning:, Wiki Update Suggestions. wiki-publisher.test.ts has does-not-contain-suggestion-style-labels test (5 negative guards). Full regression sweep verify:m028:s02, s03, s04 all exit 0. Tests fail immediately if any banned string reappears. |
-| R030 | quality-attribute | active | M035/S01 | M035/S02 | unmapped |
+| R030 | quality-attribute | validated | M035/S01 | M035/S02 | S01 — grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '.test.ts' returns 0 hits; DEFAULT_EMBEDDING_MODEL and NON_WIKI_TARGET_EMBEDDING_MODEL are "voyage-4"; createRerankProvider with rerank-2.5 model is implemented in embeddings.ts; 9 unit tests pass; tsc --noEmit exits clean. |
+| R031 | correctness | active | M039 | none | Regression fixture derived from xbmc/xbmc PR 28127 body/output does not render 'breaking change in body' unless a real author-authored signal remains after stripping. |
+| R032 | correctness | active | M039 | none | Handler and formatter regression tests prove Review Details renders percent-left when usageLimit is present and follows the documented unavailable-state contract when it is absent. |
+| R033 | functional | active | M040 | none | Fixture-based proof shows graph-aware review selection identifies impacted files/tests/dependents beyond file-level triage alone, while keeping context bounded on large PRs. |
+| R034 | quality-attribute | active | M040 | none | Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews. |
+| R035 | operational | active | M041 | S03 | Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds. |
+| R036 | functional | active | M041 | S01,S02 | Backfill persists current-code chunks with provenance; retrieval returns current unchanged code from the canonical corpus for review-style queries. |
+| R037 | functional | active | M038 | S01,S02 | For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041. |
+| R038 | correctness | active | M038 | S02,S03 | For a production-like C++ or Python review scenario, breaking-change output cites caller/dependent evidence when available; timeout or substrate failure degrades cleanly without blocking review completion. |
 
 ## Coverage Summary
 
-- Active requirements: 1
-- Mapped to slices: 1
-- Validated: 27 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029)
+- Active requirements: 8
+- Mapped to slices: 8
+- Validated: 28 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030)
 - Unmapped active requirements: 0

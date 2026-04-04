@@ -6022,7 +6022,7 @@ describe("createReviewHandler usageLimit and token wiring", () => {
     await workspaceFixture.cleanup();
 
     expect(detailsCommentBody).toBeDefined();
-    expect(detailsCommentBody).toContain("80% of seven_day limit");
+    expect(detailsCommentBody).toContain("20% of seven_day limit remaining");
     expect(detailsCommentBody).toContain("in /");
   });
 });

@@ -73,13 +73,29 @@ function stripTemplateBoilerplate(text: string): string {
   // Remove HTML comments (PR template instructions, e.g. <!-- Describe your change -->)
   let out = text.replace(/<!--[\s\S]*?-->/g, ' ');
 
-  // Remove the entire 'Types of change' and 'Checklist' template sections by heading.
-  // These blocks list all checkboxes regardless of what the author actually selected,
-  // so we cannot infer intent (e.g. 'breaking change') from checked boxes in them.
-  out = out.replace(/^#+\s*Types of change\b[^\n]*/gim, ' TEMPLATE_REMOVED ');
-  out = out.replace(/^#+\s*Checklist\b[^\n]*/gim, ' TEMPLATE_REMOVED ');
+  // Remove entire template heading sections (heading line + all content through next same-or-higher-level heading).
+  // Targets common boilerplate section names that list checkboxes regardless of author selection.
+  // E.g. "## Types of change" followed by checkbox options must not be read as author intent.
+  const TEMPLATE_SECTION_RE = /^(#+)\s*(Types of change|Checklist|Checks|PR type|Change type)\b[^\n]*/gim;
+  const ranges: Array<{ start: number; end: number }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = TEMPLATE_SECTION_RE.exec(out)) !== null) {
+    const level = match[1]!.length;
+    const sectionStart = match.index;
+    // Find the next heading of equal or greater level (fewer or equal # characters) after this one
+    const nextHeadingRe = new RegExp(`^#{1,${level}}\\s+\\S`, 'gm');
+    nextHeadingRe.lastIndex = sectionStart + match[0].length + 1;
+    const nextMatch = nextHeadingRe.exec(out);
+    const sectionEnd = nextMatch ? nextMatch.index : out.length;
+    ranges.push({ start: sectionStart, end: sectionEnd });
+  }
+  // Replace in reverse order to preserve string indices
+  for (const r of [...ranges].reverse()) {
+    out = out.slice(0, r.start) + ' TEMPLATE_REMOVED ' + out.slice(r.end);
+  }
 
-  // Remove runs of 3+ consecutive checkbox lines — template option lists.
+  // Secondary guard: remove runs of 3+ consecutive checkbox lines that were not already
+  // covered by section stripping (e.g. standalone checkbox blocks without a heading).
   // Both - [x] and - [ ] variants are stripped.
   out = out.replace(/(^[ \t]*-[ \t]*\[[ \tx]\][^\n]*(\n|$)){3,}/gm, ' ');
 
