@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T22:49:35.174Z",
+  "exported_at": "2026-04-04T23:07:44.910Z",
   "milestones": [
     {
       "id": "M001",
@@ -5063,16 +5063,16 @@
       "milestone_id": "M036",
       "id": "S02",
       "title": "Rule Activation and Prompt Injection",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [
         "S01"
       ],
       "demo": "After this slice, high-confidence proposals can auto-activate and appear as sanitized active rules in the review prompt.",
       "created_at": "2026-04-04T22:00:18.085Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-04T23:02:58.114Z",
+      "full_summary_md": "---\nid: S02\nparent: M036\nmilestone: M036\nprovides:\n  - applyActivationPolicy: orchestrator for pending→active transitions, consumed by S03 sweep scheduler\n  - shouldAutoActivate: pure threshold predicate, consumed by S03 and any policy-override paths\n  - getActiveRulesForPrompt + formatActiveRulesSection: production-ready active-rule retrieval and formatting pipeline, already wired into buildReviewPrompt\n  - verify-m036-s02.ts: proof harness covering activation, prompt injection, and fail-open — consumed by S03 verifier as upstream evidence\nrequires:\n  []\naffects:\n  - S03 — consumes applyActivationPolicy, getActiveRulesForPrompt, formatActiveRulesSection, and the S02 proof harness for end-to-end lifecycle coverage\nkey_files:\n  - src/knowledge/generated-rule-activation.ts\n  - src/knowledge/generated-rule-activation.test.ts\n  - src/knowledge/active-rules.ts\n  - src/knowledge/active-rules.test.ts\n  - src/execution/review-prompt.ts\n  - src/execution/review-prompt.test.ts\n  - scripts/verify-m036-s02.ts\n  - scripts/verify-m036-s02.test.ts\nkey_decisions:\n  - shouldAutoActivate is a pure predicate (no I/O) separated from applyActivationPolicy orchestrator — keeps threshold logic trivially testable without store stubs\n  - Threshold reads from env var at call time (not module load) so tests can inject threshold directly via parameter override\n  - Active-rules retrieval is fail-open — store errors log a warn and return empty result so reviews proceed without generated rules\n  - Absolute cap of 20 rules guards against prompt overload regardless of caller-configured limit\n  - Rules section placed before custom instructions so repo-specific instructions retain recency-bias position\n  - sanitizeRule delegates to the existing sanitizeContent pipeline — no custom sanitization logic\npatterns_established:\n  - SpyLogger pattern: createSpyLogger() that records _warnCalls array is the harness-level pattern for asserting warn emissions from fail-open paths\n  - Explicit threshold parameter overrides env lookup — enables test isolation without process.env mutation\n  - formatActiveRulesSection([]) returning empty string is the canonical signal that no rules are active (used at both test and harness level)\nobservability_surfaces:\n  - applyActivationPolicy emits per-decision structured logs: threshold-hit (info), skipped (debug), activated (info), failure (warn), run-complete summary (info) with activated/skipped/failures/durationMs\n  - getActiveRulesForPrompt emits info log with rules.length, truncatedCount, durationMs on every call\n  - Fail-open path in getActiveRulesForPrompt emits warn log with error message on store errors\ndrill_down_paths:\n  - .gsd/milestones/M036/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M036/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M036/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-04T23:02:58.115Z\nblocker_discovered: false\n---\n\n# S02: Rule Activation and Prompt Injection\n\n**Implemented auto-activation policy, sanitized active-rule retrieval, bounded prompt injection, and a 3-check proof harness covering the full pending→active→prompt pipeline with fail-open guarantees.**\n\n## What Happened\n\nS02 delivered three focused tasks that complete the activation-to-prompt path for generated rules.\n\n**T01 — Activation logic (generated-rule-activation.ts)**\nCreated `src/knowledge/generated-rule-activation.ts` with two surfaces: `shouldAutoActivate(signalScore, threshold)` — a pure predicate with no I/O — and `applyActivationPolicy({ store, logger, repo, limit?, threshold? })` — an orchestrator that fetches pending rules, evaluates each against the threshold, and calls `store.activateRule`. The threshold defaults to 0.7, overrideable via `GENERATED_RULE_ACTIVATION_THRESHOLD` env var, with the explicit parameter taking priority over env. Null returns from `activateRule` are counted as `activationFailures` to handle concurrent-delete races gracefully. Every decision emits structured pino logging (threshold-hit, skipped as debug, activated as info, failure as warn, run-complete summary). 25 tests covering predicate boundary conditions, env-var parsing, fail-open error handling, and the pending→active transition contract.\n\n**T02 — Active-rule retrieval and prompt injection (active-rules.ts + review-prompt.ts)**\nCreated `src/knowledge/active-rules.ts` with three surfaces: `sanitizeRule` (runs the full `sanitizeContent` pipeline plus `MAX_RULE_TEXT_CHARS` truncation), `getActiveRulesForPrompt` (fail-open bounded retrieval with absolute cap of 20 rules, per-call observability), and `formatActiveRulesSection` (pure markdown formatter returning `## Generated Review Rules` section or empty string). Extended `buildReviewPrompt` context to accept `activeRules?: SanitizedActiveRule[]` and injected the formatted section before custom instructions, preserving recency-bias position for repo config. 19 tests in `active-rules.test.ts` and 11 new injection tests in `review-prompt.test.ts` (178 total passing).\n\n**T03 — Proof harness (verify-m036-s02.ts)**\nCreated `scripts/verify-m036-s02.ts` with 3 checks using pure in-process stubs: ACTIVATION (applyActivationPolicy with a high-signal pending rule, verifies activated=1 and shouldAutoActivate boundary predicate), PROMPT-INJECTION (getActiveRulesForPrompt + formatActiveRulesSection, verifies section header, title, text, signal label), FAIL-OPEN (store throws, verifies empty result + warn emitted + empty section string). 18 harness tests in `verify-m036-s02.test.ts`. All 240 slice tests pass, harness exits 0 with `overallPassed: true`.\n\n## Verification\n\nFull slice verification run: `bun test ./src/knowledge/generated-rule-activation.test.ts ./src/knowledge/active-rules.test.ts ./src/execution/review-prompt.test.ts ./scripts/verify-m036-s02.test.ts` → 240 pass, 0 fail. `bun run verify:m036:s02 -- --json` → 3/3 checks PASS, overallPassed:true, exit 0. `bun run tsc --noEmit` → exit 0 (verified at T01, T02, and T03 completion).\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThe activation policy runs synchronously against the store interface but has no DB-connected integration tests — the proof harness uses in-process stubs only. Live DB integration testing is deferred to S03, which adds retirement and lifecycle verification against the real store.\n\n## Follow-ups\n\nS03 needs to wire `applyActivationPolicy` into the periodic sweep scheduler and exercise the full lifecycle (pending→active→retired) against the real DB store. The `GENERATED_RULE_ACTIVATION_THRESHOLD` env var is not yet surfaced in the AppConfig Zod schema — add it when hooking into the production sweep path.\n\n## Files Created/Modified\n\n- `src/knowledge/generated-rule-activation.ts` — New — activation logic: shouldAutoActivate predicate + applyActivationPolicy orchestrator with fail-open error handling and structured logging\n- `src/knowledge/generated-rule-activation.test.ts` — New — 25 tests covering predicate boundaries, env-var parsing, fail-open, and pending→active transition contract\n- `src/knowledge/active-rules.ts` — New — sanitizeRule, getActiveRulesForPrompt (fail-open bounded retrieval), formatActiveRulesSection (pure formatter)\n- `src/knowledge/active-rules.test.ts` — New — 19 tests covering sanitization, retrieval limits/caps, fail-open, and section formatting\n- `src/execution/review-prompt.ts` — Extended buildReviewPrompt context to accept activeRules; injected Generated Review Rules section before custom instructions\n- `src/execution/review-prompt.test.ts` — Added 11 active-rules injection tests (178 total passing)\n- `scripts/verify-m036-s02.ts` — New — 3-check proof harness: ACTIVATION, PROMPT-INJECTION, FAIL-OPEN\n- `scripts/verify-m036-s02.test.ts` — New — 18 harness tests covering all check pass/fail paths and JSON output shape\n- `package.json` — Added verify:m036:s02 script\n",
+      "full_uat_md": "# S02: Rule Activation and Prompt Injection — UAT\n\n**Milestone:** M036\n**Written:** 2026-04-04T23:02:58.115Z\n\n# S02 UAT: Rule Activation and Prompt Injection\n\n## Preconditions\n- Repo checked out, `bun install` complete\n- No `DATABASE_URL` needed — all checks use pure in-process stubs\n- `bun run tsc --noEmit` exits 0 (confirms no type regressions)\n\n---\n\n## TC-01: Activation policy — high-signal pending rule auto-activates\n\n**Goal:** A pending rule with `signalScore = 0.85` (above default threshold 0.7) is promoted to `active` by `applyActivationPolicy`.\n\n**Steps:**\n1. Import `applyActivationPolicy`, `shouldAutoActivate`, `DEFAULT_ACTIVATION_THRESHOLD` from `src/knowledge/generated-rule-activation.ts`\n2. Construct a `GeneratedRuleStore` stub with:\n   - `listRulesForRepo(repo, { status: 'pending' })` returning one rule with `signalScore: 0.85`\n   - `activateRule(id)` returning a copy of the rule with `status: 'active'`\n3. Call `applyActivationPolicy({ store, logger, repo: 'xbmc/xbmc' })`\n4. Assert `result.activated === 1`\n5. Assert `result.activatedRules[0].status === 'active'`\n6. Assert `result.activationFailures === 0`\n\n**Expected:** Policy result reports 1 activation, 0 failures.\n\n**Automated coverage:** `bun test ./src/knowledge/generated-rule-activation.test.ts` — test: `applyActivationPolicy > activates rules that meet the threshold`\n\n---\n\n## TC-02: Activation policy — below-threshold rule is skipped\n\n**Goal:** A pending rule with `signalScore` below the threshold is NOT activated.\n\n**Steps:**\n1. Construct store stub returning a rule with `signalScore: 0.65` (below default 0.7)\n2. Confirm `activateRule` is never called\n3. Assert `result.activated === 0`, `result.skipped === 1`\n\n**Expected:** Policy result reports 0 activations.\n\n**Automated coverage:** `generated-rule-activation.test.ts` — `applyActivationPolicy > skips rules below the threshold`\n\n---\n\n## TC-03: Activation policy — boundary condition at exact threshold\n\n**Goal:** `shouldAutoActivate` returns `true` at exactly the threshold value.\n\n**Steps:**\n1. Call `shouldAutoActivate(DEFAULT_ACTIVATION_THRESHOLD, DEFAULT_ACTIVATION_THRESHOLD)`\n2. Assert return value is `true`\n3. Call `shouldAutoActivate(DEFAULT_ACTIVATION_THRESHOLD - 0.01, DEFAULT_ACTIVATION_THRESHOLD)`\n4. Assert return value is `false`\n\n**Expected:** Boundary is inclusive (≥ threshold activates).\n\n**Automated coverage:** `generated-rule-activation.test.ts` — `shouldAutoActivate > returns true when score equals threshold`\n\n---\n\n## TC-04: Activation policy — fail-open on store error\n\n**Goal:** When `store.activateRule` throws, `applyActivationPolicy` catches the error and counts it as `activationFailures` without propagating.\n\n**Steps:**\n1. Construct store stub where `activateRule` throws `new Error('DB timeout')`\n2. Run `applyActivationPolicy` against a rule that meets the threshold\n3. Assert the call does NOT throw\n4. Assert `result.activationFailures === 1`, `result.activated === 0`\n\n**Expected:** Fail-open: activation failure counted, no exception propagated.\n\n**Automated coverage:** `generated-rule-activation.test.ts` — `applyActivationPolicy > counts activation failures without throwing (fail-open)`\n\n---\n\n## TC-05: Active-rule retrieval — sanitized rules returned\n\n**Goal:** `getActiveRulesForPrompt` returns rules sanitized through the content pipeline.\n\n**Steps:**\n1. Construct store returning one active rule with ruleText containing an HTML comment: `<!-- hidden -->`\n2. Call `getActiveRulesForPrompt({ store, repo: 'xbmc/xbmc', logger })`\n3. Assert `result.rules.length === 1`\n4. Assert `result.rules[0].ruleText` does NOT contain `<!-- hidden -->`\n\n**Expected:** HTML comment is stripped from sanitized output.\n\n**Automated coverage:** `active-rules.test.ts` — `sanitizeRule > strips HTML comments from title and ruleText`\n\n---\n\n## TC-06: Active-rule retrieval — absolute cap of 20 enforced\n\n**Goal:** Even when the store returns more than 20 rules, `getActiveRulesForPrompt` caps at 20.\n\n**Steps:**\n1. Construct store returning 25 active rules\n2. Call `getActiveRulesForPrompt({ store, repo, logger, limit: 100 })`\n3. Assert `result.rules.length === 20`\n4. Assert `result.truncatedCount === 5`\n\n**Expected:** Cap enforced regardless of caller-configured limit.\n\n**Automated coverage:** `active-rules.test.ts` — `getActiveRulesForPrompt > applies absolute cap of 20 when limit exceeds it`\n\n---\n\n## TC-07: Active-rule retrieval — fail-open on store error\n\n**Goal:** When `store.getActiveRulesForRepo` throws, `getActiveRulesForPrompt` returns an empty result and emits a warn log.\n\n**Steps:**\n1. Construct store where `getActiveRulesForRepo` always throws\n2. Provide a spy logger\n3. Call `getActiveRulesForPrompt({ store, repo, logger })`\n4. Assert `result.rules.length === 0`, `result.totalActive === 0`\n5. Assert spy logger received at least one `warn` call\n\n**Expected:** Empty result returned, warn emitted, no exception propagated.\n\n**Automated coverage:** `active-rules.test.ts` — `getActiveRulesForPrompt > fail-open: returns empty result when store throws`\n\n---\n\n## TC-08: Prompt section formatting — rules present\n\n**Goal:** `formatActiveRulesSection` produces a `## Generated Review Rules` markdown block containing rule title, text excerpt, and signal score.\n\n**Steps:**\n1. Provide one `SanitizedActiveRule` with `title: 'Always guard pointers'`, `ruleText: 'Add an explicit null check...'`, `signalScore: 0.85`\n2. Call `formatActiveRulesSection([rule])`\n3. Assert section contains `## Generated Review Rules`\n4. Assert section contains the rule title\n5. Assert section contains `signal:` label with `0.85` formatted to 2 decimal places\n\n**Expected:** Formatted markdown section with all required fields.\n\n**Automated coverage:** `active-rules.test.ts` — `formatActiveRulesSection > includes section header and each rule title`\n\n---\n\n## TC-09: Prompt section formatting — empty rules returns empty string\n\n**Goal:** `formatActiveRulesSection([])` returns an empty string (no section header emitted).\n\n**Steps:**\n1. Call `formatActiveRulesSection([])`\n2. Assert result is `''`\n\n**Expected:** Empty string — section is completely absent when no rules.\n\n**Automated coverage:** `active-rules.test.ts` — `formatActiveRulesSection > returns empty string for empty rules array`\n\n---\n\n## TC-10: Review prompt injection — active rules appear before custom instructions\n\n**Goal:** When `activeRules` is provided to `buildReviewPrompt`, the Generated Review Rules section appears before any custom instructions.\n\n**Steps:**\n1. Call `buildReviewPrompt` with `activeRules: [rule]` and `customInstructions: 'Focus on X'`\n2. Find the index of `## Generated Review Rules` in the output\n3. Find the index of `'Focus on X'` in the output\n4. Assert rules section index < custom instructions index\n\n**Expected:** Rules section precedes custom instructions (rules section placed before custom instructions for recency bias).\n\n**Automated coverage:** `review-prompt.test.ts` — `buildReviewPrompt active rules injection > active rules section appears before custom instructions`\n\n---\n\n## TC-11: Review prompt injection — absent when no rules provided\n\n**Goal:** When `activeRules` is absent or empty, the Generated Review Rules section does not appear in the prompt.\n\n**Steps:**\n1. Call `buildReviewPrompt` without `activeRules` field\n2. Assert prompt does NOT contain `## Generated Review Rules`\n3. Call `buildReviewPrompt` with `activeRules: []`\n4. Assert prompt does NOT contain `## Generated Review Rules`\n\n**Expected:** Section completely omitted — backward-compatible behavior.\n\n**Automated coverage:** `review-prompt.test.ts` — `buildReviewPrompt active rules injection > omits Generated Review Rules section when activeRules is absent`\n\n---\n\n## TC-12: Proof harness — full pipeline end-to-end\n\n**Goal:** `bun run verify:m036:s02 -- --json` exits 0 with all three checks passing.\n\n**Steps:**\n1. Run: `bun run verify:m036:s02 -- --json`\n2. Parse JSON output\n3. Assert `overallPassed === true`\n4. Assert all 3 check IDs present: `M036-S02-ACTIVATION`, `M036-S02-PROMPT-INJECTION`, `M036-S02-FAIL-OPEN`\n5. Assert each check has `passed: true`, `skipped: false`\n\n**Expected:** 3/3 PASS, exit code 0.\n\n**Automated coverage:** `verify-m036-s02.test.ts` — `buildM036S02ProofHarness > prints valid JSON in json mode`\n\n---\n\n## Edge Cases\n\n| Case | Expected behavior |\n|------|-------------------|\n| `signalScore` exactly at threshold | Rule activates (boundary is inclusive ≥) |\n| `activateRule` returns `null` | Counted as `activationFailures`, not `activated` |\n| Store throws during rule listing | `applyActivationPolicy` propagates error (only `activateRule` per-rule errors are caught) |\n| `ruleText` exceeds `MAX_RULE_TEXT_CHARS` | Truncated with `truncated: true` flag set on sanitized rule |\n| GitHub token in `ruleText` | Redacted by `sanitizeContent` pipeline before entering prompt |\n| 25 rules in store, limit=100 | Exactly 20 returned, `truncatedCount=5` |\n\n",
       "goal": "Turn rule proposals into active prompt behavior through activation logic and bounded prompt injection.",
       "success_criteria": "- High-confidence proposals auto-activate according to bounded thresholds.\n- Active rules are sanitized and injected into the prompt through a bounded custom-instructions surface.\n- Review-path integration remains fail-open when rule lookup or sanitization fails.",
       "proof_level": "Fixture-based activation and prompt-injection verification.",
@@ -7351,19 +7351,27 @@
       "milestone_id": "M036",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add activation and prompt-injection verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added scripts/verify-m036-s02.ts and scripts/verify-m036-s02.test.ts proving the full activation-to-prompt pipeline: high-signal pending rule activates, active rule appears in formatted prompt section, store errors are fail-open.",
+      "status": "complete",
+      "one_liner": "Added scripts/verify-m036-s02.ts and scripts/verify-m036-s02.test.ts proving the full activation-to-prompt pipeline: high-signal pending rule activates, active rule appears in formatted prompt section, store errors are fail-open.",
+      "narrative": "Created scripts/verify-m036-s02.ts following the S01 verifier pattern. Three checks: ACTIVATION (applyActivationPolicy with a store stub containing one high-signal pending rule, verifies activated=1 and shouldAutoActivate boundary predicate), PROMPT-INJECTION (getActiveRulesForPrompt + formatActiveRulesSection with an active-rule stub, verifies section header, title, text, and signal label), FAIL-OPEN (store always throws, verifies empty result + warn log + formatActiveRulesSection([]) returns empty string). All fixtures use pure in-process stubs. buildM036S02ProofHarness supports --json flag and stdout/stderr injection. Added verify:m036:s02 script to package.json.",
+      "verification_result": "bun test ./scripts/verify-m036-s02.test.ts — 18 tests, 64 assertions, 0 fail. bun run verify:m036:s02 -- --json — 3/3 checks PASS, overallPassed:true, exit 0. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T22:57:29.494Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m036-s02.ts",
+        "scripts/verify-m036-s02.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Three checks cover the full activation-to-prompt pipeline using pure in-process stubs",
+        "shouldAutoActivate boundary predicate validated inside ACTIVATION check to prove threshold semantics mechanically",
+        "Fail-open check uses SpyLogger to verify warn was emitted before returning empty results"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M036\nkey_files:\n  - scripts/verify-m036-s02.ts\n  - scripts/verify-m036-s02.test.ts\n  - package.json\nkey_decisions:\n  - Three checks cover the full activation-to-prompt pipeline using pure in-process stubs\n  - shouldAutoActivate boundary predicate validated inside ACTIVATION check to prove threshold semantics mechanically\n  - Fail-open check uses SpyLogger to verify warn was emitted before returning empty results\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T22:57:29.494Z\nblocker_discovered: false\n---\n\n# T03: Added scripts/verify-m036-s02.ts and scripts/verify-m036-s02.test.ts proving the full activation-to-prompt pipeline: high-signal pending rule activates, active rule appears in formatted prompt section, store errors are fail-open.\n\n**Added scripts/verify-m036-s02.ts and scripts/verify-m036-s02.test.ts proving the full activation-to-prompt pipeline: high-signal pending rule activates, active rule appears in formatted prompt section, store errors are fail-open.**\n\n## What Happened\n\nCreated scripts/verify-m036-s02.ts following the S01 verifier pattern. Three checks: ACTIVATION (applyActivationPolicy with a store stub containing one high-signal pending rule, verifies activated=1 and shouldAutoActivate boundary predicate), PROMPT-INJECTION (getActiveRulesForPrompt + formatActiveRulesSection with an active-rule stub, verifies section header, title, text, and signal label), FAIL-OPEN (store always throws, verifies empty result + warn log + formatActiveRulesSection([]) returns empty string). All fixtures use pure in-process stubs. buildM036S02ProofHarness supports --json flag and stdout/stderr injection. Added verify:m036:s02 script to package.json.\n\n## Verification\n\nbun test ./scripts/verify-m036-s02.test.ts — 18 tests, 64 assertions, 0 fail. bun run verify:m036:s02 -- --json — 3/3 checks PASS, overallPassed:true, exit 0. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m036-s02.test.ts` | 0 | ✅ pass | 14ms |\n| 2 | `bun run verify:m036:s02 -- --json` | 0 | ✅ pass | 200ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 9700ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m036-s02.ts`\n- `scripts/verify-m036-s02.test.ts`\n- `package.json`\n",
       "description": "- Add a verifier showing a high-confidence proposal becomes active and appears in the next review prompt.\n- Keep proof output machine-checkable and bounded.\n- Cover fail-open behavior when rule lookup fails.",
       "estimate": "0.5-1d",
       "files": [
@@ -7390,19 +7398,27 @@
       "milestone_id": "M036",
       "slice_id": "S03",
       "id": "T01",
-      "title": "Implement rule retirement policy",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added generated-rule-retirement module with signal-floor and member-decay criteria, plus 35 passing tests",
+      "status": "complete",
+      "one_liner": "Added generated-rule-retirement module with signal-floor and member-decay criteria, plus 35 passing tests",
+      "narrative": "Created src/knowledge/generated-rule-retirement.ts mirroring the activation module pattern. Exports shouldRetireRule (pure predicate returning RuleRetirementDecision with shouldRetire and reason), env-var-sourced config via getRetirementFloor/getMinMemberCount, and applyRetirementPolicy which iterates active rules, evaluates each with the predicate, retires qualifying rules fail-open, and returns structured counts. Two retirement criteria: signalScore below floor (default 0.3, env GENERATED_RULE_RETIREMENT_FLOOR) and memberCount below minimum (default 3, env GENERATED_RULE_MIN_MEMBER_COUNT). Boundary semantics are strict less-than — exactly at floor/min is kept. Observability follows the established pattern: per-rule info decisions plus run-complete summary.",
+      "verification_result": "bun test ./src/knowledge/generated-rule-retirement.test.ts — 35/35 pass. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T23:07:44.888Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/generated-rule-retirement.ts",
+        "src/knowledge/generated-rule-retirement.test.ts"
+      ],
+      "key_decisions": [
+        "Mirrored activation module pattern: pure predicate + env-sourced config + fail-open policy runner",
+        "Two criteria: below-floor (primary) and member-decay; below-floor takes precedence in reason when both apply",
+        "Boundary semantics strict less-than — exactly at floor/min is NOT retired",
+        "GENERATED_RULE_RETIREMENT_FLOOR env var (default 0.3), GENERATED_RULE_MIN_MEMBER_COUNT env var (default 3, positive integer only)"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M036\nkey_files:\n  - src/knowledge/generated-rule-retirement.ts\n  - src/knowledge/generated-rule-retirement.test.ts\nkey_decisions:\n  - Mirrored activation module pattern: pure predicate + env-sourced config + fail-open policy runner\n  - Two criteria: below-floor (primary) and member-decay; below-floor takes precedence in reason when both apply\n  - Boundary semantics strict less-than — exactly at floor/min is NOT retired\n  - GENERATED_RULE_RETIREMENT_FLOOR env var (default 0.3), GENERATED_RULE_MIN_MEMBER_COUNT env var (default 3, positive integer only)\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T23:07:44.887Z\nblocker_discovered: false\n---\n\n# T01: Added generated-rule-retirement module with signal-floor and member-decay criteria, plus 35 passing tests\n\n**Added generated-rule-retirement module with signal-floor and member-decay criteria, plus 35 passing tests**\n\n## What Happened\n\nCreated src/knowledge/generated-rule-retirement.ts mirroring the activation module pattern. Exports shouldRetireRule (pure predicate returning RuleRetirementDecision with shouldRetire and reason), env-var-sourced config via getRetirementFloor/getMinMemberCount, and applyRetirementPolicy which iterates active rules, evaluates each with the predicate, retires qualifying rules fail-open, and returns structured counts. Two retirement criteria: signalScore below floor (default 0.3, env GENERATED_RULE_RETIREMENT_FLOOR) and memberCount below minimum (default 3, env GENERATED_RULE_MIN_MEMBER_COUNT). Boundary semantics are strict less-than — exactly at floor/min is kept. Observability follows the established pattern: per-rule info decisions plus run-complete summary.\n\n## Verification\n\nbun test ./src/knowledge/generated-rule-retirement.test.ts — 35/35 pass. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/generated-rule-retirement.test.ts` | 0 | ✅ pass | 2000ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6400ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/generated-rule-retirement.ts`\n- `src/knowledge/generated-rule-retirement.test.ts`\n",
       "description": "- Implement retirement policy for active rules when recent negative signal or decay crosses the configured floor.\n- Keep retirement state explicit and reversible only through future regeneration.\n- Add tests for active -> retired transitions.",
       "estimate": "0.5-1d",
       "files": [
@@ -10376,6 +10392,61 @@
       "verdict": "✅ pass",
       "duration_ms": 10000,
       "created_at": "2026-04-04T22:49:35.151Z"
+    },
+    {
+      "id": 87,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M036",
+      "command": "bun test ./scripts/verify-m036-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 14,
+      "created_at": "2026-04-04T22:57:29.494Z"
+    },
+    {
+      "id": 88,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M036",
+      "command": "bun run verify:m036:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 200,
+      "created_at": "2026-04-04T22:57:29.494Z"
+    },
+    {
+      "id": 89,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M036",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9700,
+      "created_at": "2026-04-04T22:57:29.494Z"
+    },
+    {
+      "id": 90,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun test ./src/knowledge/generated-rule-retirement.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2000,
+      "created_at": "2026-04-04T23:07:44.888Z"
+    },
+    {
+      "id": 91,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6400,
+      "created_at": "2026-04-04T23:07:44.888Z"
     }
   ]
 }

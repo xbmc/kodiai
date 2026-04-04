@@ -4,7 +4,7 @@
 **Demo:** After this: After this slice, generated rules can retire when their signal decays, operators can see activation/retirement events, and the verifier proves the lifecycle end to end.
 
 ## Tasks
-- [ ] **T01: Implement rule retirement policy** — - Implement retirement policy for active rules when recent negative signal or decay crosses the configured floor.
+- [x] **T01: Added generated-rule-retirement module with signal-floor and member-decay criteria, plus 35 passing tests** — - Implement retirement policy for active rules when recent negative signal or decay crosses the configured floor.
 - Keep retirement state explicit and reversible only through future regeneration.
 - Add tests for active -> retired transitions.
   - Estimate: 0.5-1d

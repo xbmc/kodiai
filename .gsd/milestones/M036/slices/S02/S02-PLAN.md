@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/knowledge/active-rules.ts, src/knowledge/active-rules.test.ts, src/execution/review-prompt.ts, src/execution/review-prompt.test.ts, src/handlers/review.ts
   - Verify: bun test ./src/execution/review-prompt.test.ts
-- [ ] **T03: Add activation and prompt-injection verifier** — - Add a verifier showing a high-confidence proposal becomes active and appears in the next review prompt.
+- [x] **T03: Added scripts/verify-m036-s02.ts and scripts/verify-m036-s02.test.ts proving the full activation-to-prompt pipeline: high-signal pending rule activates, active rule appears in formatted prompt section, store errors are fail-open.** — - Add a verifier showing a high-confidence proposal becomes active and appears in the next review prompt.
 - Keep proof output machine-checkable and bounded.
 - Cover fail-open behavior when rule lookup fails.
   - Estimate: 0.5-1d

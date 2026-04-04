@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-Full review pipeline deployed. M034 completed Claude Code usage visibility. M035 is in progress: S01 complete — all non-wiki embedding constants upgraded to voyage-4 (swept 25 hardcoded voyage-code-3 literals from 11 source files) and createRerankProvider with rerank-2.5 model is implemented and unit-tested. S02 (reranker pipeline wiring) is next.
+M036 S02 complete. The activation-to-prompt pipeline for generated rules is fully implemented: `applyActivationPolicy` promotes pending rules meeting the signal threshold to active, `getActiveRulesForPrompt` retrieves sanitized active rules fail-openly, and `buildReviewPrompt` now injects a `## Generated Review Rules` section when rules are present. S03 (retirement, notification, and lifecycle proof) is next.
 
 ## Architecture / Key Patterns
 
@@ -22,6 +22,7 @@ Full review pipeline deployed. M034 completed Claude Code usage visibility. M035
 - **Cost tracking:** `src/llm/cost-tracker.ts` + `src/telemetry/` for DB persistence
 - **Usage visibility:** `ExecutionResult.usageLimit` captures last `SDKRateLimitEvent` from the agent run; rendered in Review Details via optional `usageLimit` and `tokenUsage` params on `formatReviewDetailsSummary`
 - **Embeddings:** Non-wiki corpora use voyage-4 (`DEFAULT_EMBEDDING_MODEL` in runtime.ts, `NON_WIKI_TARGET_EMBEDDING_MODEL` in embedding-repair.ts). Wiki pages use voyage-context-3. `createRerankProvider` in embeddings.ts provides a rerank-2.5 client with fail-open semantics for post-RRF neural reranking.
+- **Generated rules:** `src/knowledge/generated-rule-activation.ts` — activation policy (shouldAutoActivate predicate + applyActivationPolicy orchestrator). `src/knowledge/active-rules.ts` — sanitized retrieval + formatActiveRulesSection formatter. Rules injected into `buildReviewPrompt` before custom instructions via `activeRules?: SanitizedActiveRule[]` context field.
 
 ## Capability Contract
 
@@ -36,6 +37,9 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [ ] S02: Reranker Pipeline Wiring + Runtime Integration
 - [ ] M039: Review Output Hardening — tighten breaking-change keyword parsing, restore truthful Claude usage visibility, and add real regression fixtures
 - [ ] M036: Auto Rule Generation from Feedback — cluster learning memories → propose/auto-activate rules → inject into review prompt
+  - [x] S01: Generated Rule Schema, Store, and Proposal Candidates
+  - [x] S02: Rule Activation and Prompt Injection
+  - [ ] S03: Retirement, Notification, and Lifecycle Proof
 - [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning — k-means cluster model, dual positive/negative signal, thematic suppression/boosting
 - [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
