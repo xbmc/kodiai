@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T23:07:44.910Z",
+  "exported_at": "2026-04-04T23:10:38.159Z",
   "milestones": [
     {
       "id": "M001",
@@ -7443,19 +7443,27 @@
       "milestone_id": "M036",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Add lifecycle notifications",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added generated-rule-notify module with fail-open activation/retirement notification and 25 passing tests",
+      "status": "complete",
+      "one_liner": "Added generated-rule-notify module with fail-open activation/retirement notification and 25 passing tests",
+      "narrative": "Created src/knowledge/generated-rule-notify.ts with three public functions: notifyLifecycleRun (combined activation + retirement), notifyActivation (activation-only), and notifyRetirement (retirement-only). Each takes the corresponding policy result type, emits one structured info log per lifecycle event, emits a run-summary log, and optionally calls a LifecycleNotifyHook callback. Hook failures are caught in a try/catch and surface only as notifyHookFailed: true in the returned result — the function never throws. The hook is skipped when event count is zero. Followed the same module pattern as generated-rule-activation.ts and generated-rule-retirement.ts throughout.",
+      "verification_result": "bun test ./src/knowledge/generated-rule-notify.test.ts — 25/25 pass. bun run tsc --noEmit — exit 0. Tests cover event counts, event shapes, hook call/skip behavior, fail-open on throw and rejection, concurrent calls, flat-logger compatibility.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T23:10:38.135Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None. sweep.ts was listed as an input reference only — no changes to it were needed.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/generated-rule-notify.ts",
+        "src/knowledge/generated-rule-notify.test.ts"
+      ],
+      "key_decisions": [
+        "Notification module consumes policy result types as inputs — no direct store dependency",
+        "LifecycleNotifyHook is fail-open: caught, sets notifyHookFailed=true, never throws",
+        "Hook skipped when event count is zero to avoid empty external calls",
+        "Three public functions (combined/activation-only/retirement-only) matching activation and retirement module pattern"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M036\nkey_files:\n  - src/knowledge/generated-rule-notify.ts\n  - src/knowledge/generated-rule-notify.test.ts\nkey_decisions:\n  - Notification module consumes policy result types as inputs — no direct store dependency\n  - LifecycleNotifyHook is fail-open: caught, sets notifyHookFailed=true, never throws\n  - Hook skipped when event count is zero to avoid empty external calls\n  - Three public functions (combined/activation-only/retirement-only) matching activation and retirement module pattern\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T23:10:38.135Z\nblocker_discovered: false\n---\n\n# T02: Added generated-rule-notify module with fail-open activation/retirement notification and 25 passing tests\n\n**Added generated-rule-notify module with fail-open activation/retirement notification and 25 passing tests**\n\n## What Happened\n\nCreated src/knowledge/generated-rule-notify.ts with three public functions: notifyLifecycleRun (combined activation + retirement), notifyActivation (activation-only), and notifyRetirement (retirement-only). Each takes the corresponding policy result type, emits one structured info log per lifecycle event, emits a run-summary log, and optionally calls a LifecycleNotifyHook callback. Hook failures are caught in a try/catch and surface only as notifyHookFailed: true in the returned result — the function never throws. The hook is skipped when event count is zero. Followed the same module pattern as generated-rule-activation.ts and generated-rule-retirement.ts throughout.\n\n## Verification\n\nbun test ./src/knowledge/generated-rule-notify.test.ts — 25/25 pass. bun run tsc --noEmit — exit 0. Tests cover event counts, event shapes, hook call/skip behavior, fail-open on throw and rejection, concurrent calls, flat-logger compatibility.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/generated-rule-notify.test.ts` | 0 | ✅ pass | 12ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6600ms |\n\n## Deviations\n\nNone. sweep.ts was listed as an input reference only — no changes to it were needed.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/generated-rule-notify.ts`\n- `src/knowledge/generated-rule-notify.test.ts`\n",
       "description": "- Add bounded activation/retirement notifications and logs for operator visibility.\n- Reuse existing background-sweep patterns and keep notifications fail-open.\n- Add tests or stubs proving notification does not block lifecycle transitions.",
       "estimate": "0.5-1d",
       "files": [
@@ -10447,6 +10455,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6400,
       "created_at": "2026-04-04T23:07:44.888Z"
+    },
+    {
+      "id": 92,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun test ./src/knowledge/generated-rule-notify.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 12,
+      "created_at": "2026-04-04T23:10:38.135Z"
+    },
+    {
+      "id": 93,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M036",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6600,
+      "created_at": "2026-04-04T23:10:38.135Z"
     }
   ]
 }

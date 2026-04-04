@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/generated-rule-retirement.ts, src/knowledge/generated-rule-retirement.test.ts, src/knowledge/generated-rule-store.ts
   - Verify: bun test ./src/knowledge/generated-rule-retirement.test.ts && bun run tsc --noEmit
-- [ ] **T02: Add lifecycle notifications** — - Add bounded activation/retirement notifications and logs for operator visibility.
+- [x] **T02: Added generated-rule-notify module with fail-open activation/retirement notification and 25 passing tests** — - Add bounded activation/retirement notifications and logs for operator visibility.
 - Reuse existing background-sweep patterns and keep notifications fail-open.
 - Add tests or stubs proving notification does not block lifecycle transitions.
   - Estimate: 0.5-1d
