@@ -1,7 +1,7 @@
 # M038: AST Call-Graph Impact Analysis
 
 ## Vision
-Consume M040's graph substrate and M041's canonical current-code corpus at review time so Kodiai can show bounded Structural Impact evidence, semantically relevant unchanged-code context, and more truthful breaking-change output for C++ and Python PRs.
+Consume M040's graph substrate and M041's canonical current-code corpus at review time so Kodiai can show bounded, structurally-grounded impact evidence and more truthful breaking-change output for C++ and Python PRs.
 
 ## Slice Overview
 | ID | Slice | Risk | Depends | Done | After this |

@@ -1,7 +1,7 @@
 # M041: Canonical Repo-Code Corpus
 
 ## Vision
-Build a canonical default-branch code corpus for current unchanged code — C++ and Python first, TS/JS secondary — separate from historical diff hunks, with truthful provenance, selective upkeep, and semantic retrieval that downstream review systems can trust.
+Build a canonical default-branch code corpus for current unchanged code — separate from historical diff hunks — with truthful provenance, selective upkeep, and semantic retrieval that downstream review systems can trust.
 
 ## Slice Overview
 | ID | Slice | Risk | Depends | Done | After this |

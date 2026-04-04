@@ -4,7 +4,7 @@
 **Demo:** After this: After this slice, high-confidence proposals can auto-activate and appear as sanitized active rules in the review prompt.
 
 ## Tasks
-- [ ] **T01: Implement auto-activation policy** — - Implement activation logic for pending rules based on configurable positive-signal thresholds.
+- [x] **T01: Added applyActivationPolicy and shouldAutoActivate — pending rules with signalScore ≥ threshold auto-activate with fail-open error handling and structured per-decision logging** — - Implement activation logic for pending rules based on configurable positive-signal thresholds.
 - Keep activation policy explicit and testable.
 - Add store tests for pending -> active transitions.
   - Estimate: 0.5-1d

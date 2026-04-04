@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M036/S01/T02",
+  "timestamp": 1775341650660,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/knowledge/generated-rule-proposals.test.ts",
+      "exitCode": 0,
+      "durationMs": 177,
+      "verdict": "pass"
+    }
+  ]
+}

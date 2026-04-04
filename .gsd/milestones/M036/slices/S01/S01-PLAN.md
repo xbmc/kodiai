@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/knowledge/generated-rule-proposals.ts, src/knowledge/generated-rule-proposals.test.ts, src/knowledge/cluster-matcher.ts, src/knowledge/cluster-pipeline.ts
   - Verify: bun test ./src/knowledge/generated-rule-proposals.test.ts
-- [ ] **T03: Add proposal sweep and proof harness** — - Add the sweep entrypoint that reads learning memories, produces proposal candidates, and persists pending rules.
+- [x] **T03: Added a fail-open generated-rule proposal sweep plus a pure-code proof harness for representative positive-cluster proposals.** — - Add the sweep entrypoint that reads learning memories, produces proposal candidates, and persists pending rules.
 - Keep the sweep fail-open and background-oriented.
 - Add a verifier proving proposals are created from representative positive clusters.
   - Estimate: 0.5-1d

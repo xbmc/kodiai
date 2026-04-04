@@ -33,6 +33,15 @@ export {
   type GeneratePendingRuleProposalsOptions,
 } from "./generated-rule-proposals.ts";
 
+// Generated rule sweep
+export {
+  createGeneratedRuleSweep,
+  type GeneratedRuleSweepOptions,
+  type GeneratedRuleSweepRunOptions,
+  type GeneratedRuleSweepRepoResult,
+  type GeneratedRuleSweepResult,
+} from "./generated-rule-sweep.ts";
+
 // Isolation
 export { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 

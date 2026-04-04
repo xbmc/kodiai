@@ -1,4 +1,4 @@
-# M039: Review Output Hardening — Intent Parsing + Claude Usage Visibility
+# M039: Review Output Hardening - Intent Parsing + Claude Usage Visibility
 
 ## Vision
 Harden two already-shipped review output surfaces so they reflect real signals truthfully: fix PR body template stripping so boilerplate cannot trigger false breaking-change intent, and change the Claude usage display to show percent-left with a truthful fallback when the SDK does not emit rate-limit data.
