@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M036/S01/T01",
+  "timestamp": 1775341143722,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/knowledge/generated-rule-store.test.ts",
+      "exitCode": 0,
+      "durationMs": 31,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 6555,
+      "verdict": "pass"
+    }
+  ]
+}

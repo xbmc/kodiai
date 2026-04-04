@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-04T22:18:54.457Z",
+  "exported_at": "2026-04-04T22:27:26.110Z",
   "milestones": [
     {
       "id": "M001",
@@ -7156,19 +7156,27 @@
       "milestone_id": "M036",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Generate pending rule proposals from clustered feedback",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added deterministic pending-rule proposal generation from clustered learning-memory feedback.",
+      "status": "complete",
+      "one_liner": "Added deterministic pending-rule proposal generation from clustered learning-memory feedback.",
+      "narrative": "Added a deterministic generated-rule proposal layer that reads recent repo-scoped learning memories, clusters them by cosine similarity, filters out sparse or noisy clusters, and emits bounded pending-rule proposal candidates from representative positive samples. The generator now logs cluster-size, proposal-count, and skipped-cluster signals, exports its public types through the knowledge index, and records the proposal signal-score formula for downstream activation work. Tests cover strong positive clusters, noisy negative-heavy clusters, sanitization bounds, proposal-count caps, and fail-open query failures.",
+      "verification_result": "Ran the task verification gate and a compatibility typecheck. `bun test ./src/knowledge/generated-rule-proposals.test.ts` passed, covering strong-cluster proposal generation, noisy-cluster rejection, text sanitization bounds, max-proposal capping, and fail-open query handling. `bun run tsc --noEmit` also passed, confirming the new generator and exports typecheck cleanly.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-04T22:27:26.089Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/generated-rule-proposals.ts",
+        "src/knowledge/generated-rule-proposals.test.ts",
+        "src/knowledge/index.ts",
+        ".gsd/DECISIONS.md"
+      ],
+      "key_decisions": [
+        "Score proposal signal as positive-ratio × support so minimum-size clusters stay pending while larger, cleaner clusters can cross later activation thresholds.",
+        "Build pending-rule proposals from repo-scoped learning_memories directly, reusing cosineSimilarity from the cluster pipeline and deterministic representative-sample extraction rather than depending on persisted review-comment clusters."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M036\nkey_files:\n  - src/knowledge/generated-rule-proposals.ts\n  - src/knowledge/generated-rule-proposals.test.ts\n  - src/knowledge/index.ts\n  - .gsd/DECISIONS.md\nkey_decisions:\n  - Score proposal signal as positive-ratio × support so minimum-size clusters stay pending while larger, cleaner clusters can cross later activation thresholds.\n  - Build pending-rule proposals from repo-scoped learning_memories directly, reusing cosineSimilarity from the cluster pipeline and deterministic representative-sample extraction rather than depending on persisted review-comment clusters.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-04T22:27:26.088Z\nblocker_discovered: false\n---\n\n# T02: Added deterministic pending-rule proposal generation from clustered learning-memory feedback.\n\n**Added deterministic pending-rule proposal generation from clustered learning-memory feedback.**\n\n## What Happened\n\nAdded a deterministic generated-rule proposal layer that reads recent repo-scoped learning memories, clusters them by cosine similarity, filters out sparse or noisy clusters, and emits bounded pending-rule proposal candidates from representative positive samples. The generator now logs cluster-size, proposal-count, and skipped-cluster signals, exports its public types through the knowledge index, and records the proposal signal-score formula for downstream activation work. Tests cover strong positive clusters, noisy negative-heavy clusters, sanitization bounds, proposal-count caps, and fail-open query failures.\n\n## Verification\n\nRan the task verification gate and a compatibility typecheck. `bun test ./src/knowledge/generated-rule-proposals.test.ts` passed, covering strong-cluster proposal generation, noisy-cluster rejection, text sanitization bounds, max-proposal capping, and fail-open query handling. `bun run tsc --noEmit` also passed, confirming the new generator and exports typecheck cleanly.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/generated-rule-proposals.test.ts` | 0 | ✅ pass | 216ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6797ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/generated-rule-proposals.ts`\n- `src/knowledge/generated-rule-proposals.test.ts`\n- `src/knowledge/index.ts`\n- `.gsd/DECISIONS.md`\n",
       "description": "- Build proposal-candidate generation from clustered positive learning-memory patterns.\n- Reuse existing cluster-matcher and cluster-pipeline helpers where they fit.\n- Bound cluster minimums and proposal text inputs so sparse/noisy patterns do not generate rules.",
       "estimate": "1d",
       "files": [
@@ -9380,6 +9388,18 @@
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
+    },
+    {
+      "seq": 63,
+      "id": "D030",
+      "when_context": "M036/S01/T02",
+      "scope": "architecture",
+      "decision": "How generated-rule proposal signal_score should be computed from clustered learning memories",
+      "choice": "Score generated-rule proposals as positive-ratio × support, where support ramps from 0 to 1 as positive-member count grows from the minimum threshold to twice that threshold.",
+      "rationale": "The sweep and later auto-activation logic need a deterministic score that reflects both cleanliness and support. Using positive ratio alone would overrate minimum-size clusters; multiplying by a support factor keeps small but valid clusters pending while allowing larger, cleaner clusters to rise toward activation thresholds.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
     }
   ],
   "verification_evidence": [
@@ -10207,6 +10227,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6404,
       "created_at": "2026-04-04T22:18:54.433Z"
+    },
+    {
+      "id": 76,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M036",
+      "command": "bun test ./src/knowledge/generated-rule-proposals.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 216,
+      "created_at": "2026-04-04T22:27:26.089Z"
+    },
+    {
+      "id": 77,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M036",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6797,
+      "created_at": "2026-04-04T22:27:26.089Z"
     }
   ]
 }

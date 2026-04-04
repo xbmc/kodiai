@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/db/migrations/035-generated-rules.sql, src/knowledge/generated-rule-store.ts, src/knowledge/generated-rule-store.test.ts
   - Verify: bun test ./src/knowledge/generated-rule-store.test.ts && bun run tsc --noEmit
-- [ ] **T02: Generate pending rule proposals from clustered feedback** — - Build proposal-candidate generation from clustered positive learning-memory patterns.
+- [x] **T02: Added deterministic pending-rule proposal generation from clustered learning-memory feedback.** — - Build proposal-candidate generation from clustered positive learning-memory patterns.
 - Reuse existing cluster-matcher and cluster-pipeline helpers where they fit.
 - Bound cluster minimums and proposal text inputs so sparse/noisy patterns do not generate rules.
   - Estimate: 1d

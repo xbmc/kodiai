@@ -26,6 +26,13 @@ export {
   type GeneratedRuleLifecycleCounts,
 } from "./generated-rule-store.ts";
 
+// Generated rule proposals
+export {
+  generatePendingRuleProposals,
+  type GeneratedRuleProposalCandidate,
+  type GeneratePendingRuleProposalsOptions,
+} from "./generated-rule-proposals.ts";
+
 // Isolation
 export { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 
