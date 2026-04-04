@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/generated-rule-activation.ts, src/knowledge/generated-rule-activation.test.ts, src/knowledge/generated-rule-store.ts
   - Verify: bun test ./src/knowledge/generated-rule-activation.test.ts && bun run tsc --noEmit
-- [ ] **T02: Inject sanitized active rules into the review prompt** — - Add sanitization and bounded retrieval of active rules for prompt injection.
+- [x] **T02: Added active-rules retrieval module with fail-open sanitized fetch and wired activeRules into buildReviewPrompt for bounded prompt injection** — - Add sanitization and bounded retrieval of active rules for prompt injection.
 - Integrate active-rule lookup into the review prompt path without bypassing existing custom-instructions behavior.
 - Add formatter/prompt tests for bounded rule injection.
   - Estimate: 1d

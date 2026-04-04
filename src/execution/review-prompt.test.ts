@@ -1859,3 +1859,103 @@ describe("buildReviewPrompt includes security policy", () => {
     expect(prompt.toLowerCase()).toContain("refuse");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Active rules injection (M036/S02)
+// ---------------------------------------------------------------------------
+
+import type { SanitizedActiveRule } from "../knowledge/active-rules.ts";
+
+function makeActiveRule(overrides: Partial<SanitizedActiveRule> = {}): SanitizedActiveRule {
+  return {
+    id: 1,
+    title: "Test Rule",
+    ruleText: "Always verify return values.",
+    signalScore: 0.85,
+    memberCount: 5,
+    ...overrides,
+  };
+}
+
+describe("buildReviewPrompt active rules injection", () => {
+  test("omits Generated Review Rules section when activeRules is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Generated Review Rules");
+  });
+
+  test("omits Generated Review Rules section when activeRules is empty array", () => {
+    const prompt = buildReviewPrompt(baseContext({ activeRules: [] }));
+    expect(prompt).not.toContain("## Generated Review Rules");
+  });
+
+  test("includes Generated Review Rules section when rules provided", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({ activeRules: [makeActiveRule()] })
+    );
+    expect(prompt).toContain("## Generated Review Rules");
+  });
+
+  test("includes rule title in prompt", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ title: "Null dereference guard pattern" })],
+      })
+    );
+    expect(prompt).toContain("Null dereference guard pattern");
+  });
+
+  test("includes rule text in prompt", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ ruleText: "Check for null before accessing .value" })],
+      })
+    );
+    expect(prompt).toContain("Check for null before accessing .value");
+  });
+
+  test("includes signal score formatted to 2 decimal places", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({ activeRules: [makeActiveRule({ signalScore: 0.876 })] })
+    );
+    expect(prompt).toContain("0.88");
+  });
+
+  test("includes all provided active rules", () => {
+    const rules = [
+      makeActiveRule({ id: 1, title: "Rule Alpha", ruleText: "Alpha guidance." }),
+      makeActiveRule({ id: 2, title: "Rule Beta", ruleText: "Beta guidance." }),
+      makeActiveRule({ id: 3, title: "Rule Gamma", ruleText: "Gamma guidance." }),
+    ];
+    const prompt = buildReviewPrompt(baseContext({ activeRules: rules }));
+    expect(prompt).toContain("Rule Alpha");
+    expect(prompt).toContain("Rule Beta");
+    expect(prompt).toContain("Rule Gamma");
+    expect(prompt).toContain("Alpha guidance.");
+    expect(prompt).toContain("Beta guidance.");
+    expect(prompt).toContain("Gamma guidance.");
+  });
+
+  test("active rules section appears before custom instructions", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ title: "My Active Rule" })],
+        customInstructions: "My custom instruction text.",
+      })
+    );
+    const rulesPos = prompt.indexOf("## Generated Review Rules");
+    const customPos = prompt.indexOf("## Custom instructions");
+    expect(rulesPos).toBeGreaterThan(-1);
+    expect(customPos).toBeGreaterThan(-1);
+    expect(rulesPos).toBeLessThan(customPos);
+  });
+
+  test("active rules section does not appear when no rules provided even with other context", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        customInstructions: "Some instructions.",
+        activeRules: undefined,
+      })
+    );
+    expect(prompt).not.toContain("Generated Review Rules");
+  });
+});

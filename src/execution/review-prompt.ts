@@ -1171,6 +1171,7 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 // ---------------------------------------------------------------------------
 
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
+import { formatActiveRulesSection, type SanitizedActiveRule } from "../knowledge/active-rules.ts";
 
 const MAX_UNIFIED_CITATIONS = 8;
 
@@ -1654,6 +1655,8 @@ export function buildReviewPrompt(context: {
   clusterPatterns?: ClusterPatternMatch[];
   // PR-issue linking (PRLINK-03)
   linkedIssues?: LinkResult;
+  // Generated active rules (M036/S02)
+  activeRules?: SanitizedActiveRule[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -2175,6 +2178,12 @@ export function buildReviewPrompt(context: {
       "If you found issues: post the summary comment (wrapped in <details>) first, then post inline comments.",
       "If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.",
     );
+  }
+
+  // --- Generated active rules (M036/S02) ---
+  if (context.activeRules && context.activeRules.length > 0) {
+    const activeRulesSection = formatActiveRulesSection(context.activeRules);
+    if (activeRulesSection) lines.push("", activeRulesSection);
   }
 
   // --- Custom instructions ---
