@@ -89,3 +89,6 @@ coverage/
 
 # ── GSD baseline (auto-generated) ──
 .gsd/forensics/
+
+# ── GSD baseline (auto-generated) ──
+.gsd-id

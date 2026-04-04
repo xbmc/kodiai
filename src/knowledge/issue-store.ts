@@ -185,7 +185,7 @@ export function createIssueStore(opts: {
       const embeddingValue = issue.embedding
         ? float32ArrayToVectorString(issue.embedding)
         : null;
-      const embeddingModel = issue.embedding ? "voyage-code-3" : null;
+      const embeddingModel = issue.embedding ? "voyage-4" : null;
 
       await sql`
         INSERT INTO issues (
@@ -342,7 +342,7 @@ export function createIssueStore(opts: {
       const embeddingValue = comment.embedding
         ? float32ArrayToVectorString(comment.embedding)
         : null;
-      const embeddingModel = comment.embedding ? "voyage-code-3" : null;
+      const embeddingModel = comment.embedding ? "voyage-4" : null;
 
       await sql`
         INSERT INTO issue_comments (
@@ -413,7 +413,7 @@ export function createIssueStore(opts: {
           SELECT id, title, body, embedding, embedding_model
           FROM issues
           WHERE embedding IS NULL
-             OR embedding_model IS DISTINCT FROM ${"voyage-code-3"}
+             OR embedding_model IS DISTINCT FROM ${"voyage-4"}
           ORDER BY id ASC
         `;
         return rows.map((row) => ({
@@ -433,7 +433,7 @@ export function createIssueStore(opts: {
           ON i.repo = ic.repo
          AND i.issue_number = ic.issue_number
         WHERE ic.embedding IS NULL
-           OR ic.embedding_model IS DISTINCT FROM ${"voyage-code-3"}
+           OR ic.embedding_model IS DISTINCT FROM ${"voyage-4"}
         ORDER BY ic.id ASC
       `;
       return rows.map((row) => ({
@@ -476,7 +476,7 @@ export function createIssueStore(opts: {
           failure_counts, last_failure_class, last_failure_message,
           updated_at
         ) VALUES (
-          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-code-3"},
+          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-4"},
           ${state.dry_run ?? false}, ${state.resumed ?? false}, ${state.status ?? "running"}, ${state.resume_ready ?? false},
           ${state.batch_index}, ${state.batches_total}, ${state.last_row_id},
           ${state.processed}, ${state.repaired}, ${state.skipped}, ${state.failed},

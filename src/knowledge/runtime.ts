@@ -15,7 +15,7 @@ import { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 import { createRetriever, type RetrieverConfig } from "./retrieval.ts";
 import { createWikiPopularityStore } from "./wiki-popularity-store.ts";
 
-export const DEFAULT_EMBEDDING_MODEL = "voyage-code-3";
+export const DEFAULT_EMBEDDING_MODEL = "voyage-4";
 export const DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3";
 export const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
 

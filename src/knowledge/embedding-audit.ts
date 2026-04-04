@@ -17,12 +17,12 @@ export type AuditStatus = "pass" | "warn" | "fail";
 export type AuditSeverity = "info" | "warning" | "critical";
 
 export const EXPECTED_CORPUS_MODELS: Record<AuditedCorpus, string> = {
-  learning_memories: "voyage-code-3",
-  review_comments: "voyage-code-3",
+  learning_memories: "voyage-4",
+  review_comments: "voyage-4",
   wiki_pages: "voyage-context-3",
-  code_snippets: "voyage-code-3",
-  issues: "voyage-code-3",
-  issue_comments: "voyage-code-3",
+  code_snippets: "voyage-4",
+  issues: "voyage-4",
+  issue_comments: "voyage-4",
 };
 
 export type EmbeddingAuditInputRow = {

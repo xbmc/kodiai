@@ -142,7 +142,7 @@ export type EmbeddingRepairStore = {
   }) => Promise<void>;
 };
 
-export const NON_WIKI_TARGET_EMBEDDING_MODEL = "voyage-code-3";
+export const NON_WIKI_TARGET_EMBEDDING_MODEL = "voyage-4";
 export const NON_WIKI_REPAIR_CORPORA = [
   "review_comments",
   "learning_memories",

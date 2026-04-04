@@ -76,7 +76,7 @@ function rowToRecord(row: MemoryRow): LearningMemoryRecord {
     filePath: row.file_path,
     language: row.language ?? undefined,
     outcome: row.outcome as LearningMemoryRecord["outcome"],
-    embeddingModel: row.embedding_model ?? "voyage-code-3",
+    embeddingModel: row.embedding_model ?? "voyage-4",
     embeddingDim: row.embedding_dim,
     stale: row.stale,
     createdAt: row.created_at,
@@ -289,7 +289,7 @@ export function createLearningMemoryStore(opts: {
         FROM learning_memories
         WHERE embedding IS NULL
            OR stale = true
-           OR embedding_model IS DISTINCT FROM ${"voyage-code-3"}
+           OR embedding_model IS DISTINCT FROM ${"voyage-4"}
         ORDER BY id ASC
       `;
       return rows.map((row) => ({
@@ -335,7 +335,7 @@ export function createLearningMemoryStore(opts: {
           failure_counts, last_failure_class, last_failure_message,
           updated_at
         ) VALUES (
-          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-code-3"},
+          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-4"},
           ${state.dry_run ?? false}, ${state.resumed ?? false}, ${state.status ?? "running"}, ${state.resume_ready ?? false},
           ${state.batch_index}, ${state.batches_total}, ${state.last_row_id},
           ${state.processed}, ${state.repaired}, ${state.skipped}, ${state.failed},

@@ -111,7 +111,7 @@ export function createWikiPageStore(opts: {
       for (const chunk of chunks) {
         try {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-code-3") : null;
+          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-4") : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
           const languageTags = chunk.languageTags ?? ["general"];
           await sql`
@@ -155,7 +155,7 @@ export function createWikiPageStore(opts: {
 
         for (const chunk of chunks) {
           const embeddingValue = chunk.embedding ? float32ArrayToVectorString(chunk.embedding) : null;
-          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-code-3") : null;
+          const embeddingModel = chunk.embedding ? (opts.embeddingModel ?? "voyage-4") : null;
           const sectionAnchor = chunk.sectionAnchor ?? "";
           const languageTags = chunk.languageTags ?? ["general"];
           await (tx as unknown as Sql)`
