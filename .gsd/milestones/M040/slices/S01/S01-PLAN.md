@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/db/migrations/034-review-graph.sql, src/review-graph/types.ts, src/review-graph/store.ts, src/review-graph/store.test.ts
   - Verify: bun test ./src/review-graph/store.test.ts && bun run tsc --noEmit
-- [ ] **T02: Implement C++ and Python structural extraction** — - Implement Tree-sitter-backed extractors for C++ and Python first; TS/JS support remains secondary.
+- [x] **T02: Added C++ and Python review-graph extraction with fixture tests and stable no-DB store-test behavior.** — - Implement Tree-sitter-backed extractors for C++ and Python first; TS/JS support remains secondary.
 - Capture files, symbols, imports/includes, call edges, and probable test relationships with explicit confidence where needed.
 - Add fixture-driven tests that prove extraction shape on C++ and Python examples.
   - Estimate: 1-1.5d

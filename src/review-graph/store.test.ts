@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import postgres from "postgres";
-import type { Sql } from "../db/client.ts";
+import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import { createReviewGraphStore } from "./store.ts";
 import type { ReviewGraphStore } from "./types.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
+const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
 const mockLogger = {
   info: () => {},
@@ -18,29 +17,33 @@ const mockLogger = {
   level: "silent",
 } as unknown as import("pino").Logger;
 
-let sql: Sql;
-let store: ReviewGraphStore;
+describe.skipIf(!TEST_DB_URL)("createReviewGraphStore", () => {
+  let sql: Sql;
+  let store: ReviewGraphStore;
 
-async function truncateAll(): Promise<void> {
-  await sql`TRUNCATE
-    review_graph_edges,
-    review_graph_nodes,
-    review_graph_files,
-    review_graph_builds
-    RESTART IDENTITY CASCADE`;
-}
+  async function truncateAll(): Promise<void> {
+    await sql`TRUNCATE
+      review_graph_edges,
+      review_graph_nodes,
+      review_graph_files,
+      review_graph_builds
+      RESTART IDENTITY CASCADE`;
+  }
 
-beforeAll(async () => {
-  sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
-  await runMigrations(sql);
-  store = createReviewGraphStore({ sql, logger: mockLogger });
-});
+  beforeAll(async () => {
+    const client = createDbClient({
+      connectionString: TEST_DB_URL!,
+      logger: mockLogger,
+    });
+    sql = client.sql;
+    await runMigrations(sql);
+    store = createReviewGraphStore({ sql, logger: mockLogger });
+  });
 
-afterAll(async () => {
-  await sql.end();
-});
+  afterAll(async () => {
+    await sql.end();
+  });
 
-describe("createReviewGraphStore", () => {
   beforeEach(async () => {
     await truncateAll();
   });
