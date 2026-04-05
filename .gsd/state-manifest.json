@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T16:37:43.571Z",
+  "exported_at": "2026-04-05T16:42:24.113Z",
   "milestones": [
     {
       "id": "M001",
@@ -9295,19 +9295,27 @@
       "milestone_id": "M041",
       "slice_id": "S03",
       "id": "T03",
-      "title": "Add selective-update and repair verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a four-check proof harness (verify-m041-s03) that closes M041 S03 by verifying unchanged-file preservation, drift detection, selective repair, and no-drift early exit — all in-memory without a live database",
+      "status": "complete",
+      "one_liner": "Added a four-check proof harness (verify-m041-s03) that closes M041 S03 by verifying unchanged-file preservation, drift detection, selective repair, and no-drift early exit — all in-memory without a live database",
+      "narrative": "Created scripts/verify-m041-s03.ts following the established S02 proof-harness pattern, wiring the real module APIs (updateCanonicalCodeSnapshot, buildEmbeddingAuditReport, buildEmbeddingRepairPlan, runEmbeddingRepair) against controlled in-memory stubs. The four checks cover the three core S03 invariants: (1) unchanged-file preservation with two sub-fixtures (fully unchanged → zero upserts; partially changed → one upsert, one unchanged preserved); (2) drift detected by audit using buildEmbeddingAuditReport directly with a drifted corpus (missing+stale+model-mismatch → audit_failed) and a clean corpus (audit_ok); (3) selective repair that touches only the 3 drifted rows out of 4 total, asserting exactly 3 embed calls; (4) no-drift early exit reporting repair_not_needed with zero embed calls. Created scripts/verify-m041-s03.test.ts with 28 tests covering happy-path and all negative failure branches via injectable fixture overrides. Added verify:m041:s03 to package.json scripts.",
+      "verification_result": "Ran bun test ./scripts/verify-m041-s03.test.ts (28/28 pass, 87 expects, 74ms) and bun run verify:m041:s03 -- --json (exits 0, overallPassed: true, all 4 checks passed). Also confirmed bun run tsc --noEmit is clean with no type errors.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T16:42:24.088Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m041-s03.ts",
+        "scripts/verify-m041-s03.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Verifier is purely in-memory so it closes the milestone without requiring a live repo rebuild.",
+        "Four checks map 1:1 to S03 slice invariants; each supports injectable fixture overrides for negative-path tests.",
+        "Audit check exercises buildEmbeddingAuditReport + finalizeEmbeddingAuditReport directly rather than through the DB path."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S03\nmilestone: M041\nkey_files:\n  - scripts/verify-m041-s03.ts\n  - scripts/verify-m041-s03.test.ts\n  - package.json\nkey_decisions:\n  - Verifier is purely in-memory so it closes the milestone without requiring a live repo rebuild.\n  - Four checks map 1:1 to S03 slice invariants; each supports injectable fixture overrides for negative-path tests.\n  - Audit check exercises buildEmbeddingAuditReport + finalizeEmbeddingAuditReport directly rather than through the DB path.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T16:42:24.088Z\nblocker_discovered: false\n---\n\n# T03: Added a four-check proof harness (verify-m041-s03) that closes M041 S03 by verifying unchanged-file preservation, drift detection, selective repair, and no-drift early exit — all in-memory without a live database\n\n**Added a four-check proof harness (verify-m041-s03) that closes M041 S03 by verifying unchanged-file preservation, drift detection, selective repair, and no-drift early exit — all in-memory without a live database**\n\n## What Happened\n\nCreated scripts/verify-m041-s03.ts following the established S02 proof-harness pattern, wiring the real module APIs (updateCanonicalCodeSnapshot, buildEmbeddingAuditReport, buildEmbeddingRepairPlan, runEmbeddingRepair) against controlled in-memory stubs. The four checks cover the three core S03 invariants: (1) unchanged-file preservation with two sub-fixtures (fully unchanged → zero upserts; partially changed → one upsert, one unchanged preserved); (2) drift detected by audit using buildEmbeddingAuditReport directly with a drifted corpus (missing+stale+model-mismatch → audit_failed) and a clean corpus (audit_ok); (3) selective repair that touches only the 3 drifted rows out of 4 total, asserting exactly 3 embed calls; (4) no-drift early exit reporting repair_not_needed with zero embed calls. Created scripts/verify-m041-s03.test.ts with 28 tests covering happy-path and all negative failure branches via injectable fixture overrides. Added verify:m041:s03 to package.json scripts.\n\n## Verification\n\nRan bun test ./scripts/verify-m041-s03.test.ts (28/28 pass, 87 expects, 74ms) and bun run verify:m041:s03 -- --json (exits 0, overallPassed: true, all 4 checks passed). Also confirmed bun run tsc --noEmit is clean with no type errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m041-s03.test.ts` | 0 | ✅ pass | 74ms |\n| 2 | `bun run verify:m041:s03 -- --json` | 0 | ✅ pass | 5ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 1800ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m041-s03.ts`\n- `scripts/verify-m041-s03.test.ts`\n- `package.json`\n",
       "description": "- Add the milestone-level verifier for selective updates and repair.\n- Cover unchanged-file preservation, drift detection, and selective repair outcomes.\n- Emit machine-checkable proof output that can close the milestone without requiring a full live repo rebuild.",
       "estimate": "0.5-1d",
       "files": [
@@ -11518,6 +11526,39 @@
       "verdict": "✅ pass",
       "duration_ms": 800,
       "created_at": "2026-04-05T16:37:43.545Z"
+    },
+    {
+      "id": 158,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M041",
+      "command": "bun test ./scripts/verify-m041-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 74,
+      "created_at": "2026-04-05T16:42:24.088Z"
+    },
+    {
+      "id": 159,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M041",
+      "command": "bun run verify:m041:s03 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5,
+      "created_at": "2026-04-05T16:42:24.088Z"
+    },
+    {
+      "id": 160,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M041",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1800,
+      "created_at": "2026-04-05T16:42:24.088Z"
     }
   ]
 }

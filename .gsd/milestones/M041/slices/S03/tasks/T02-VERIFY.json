@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M041/S03/T02",
+  "timestamp": 1775407071493,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/embedding-audit.test.ts",
+      "exitCode": 0,
+      "durationMs": 53,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test ./scripts/embedding-repair.test.ts",
+      "exitCode": 0,
+      "durationMs": 58,
+      "verdict": "pass"
+    }
+  ]
+}

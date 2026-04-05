@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/knowledge/embedding-audit.ts, src/knowledge/embedding-repair.ts, scripts/embedding-audit.ts, scripts/embedding-repair.ts, src/knowledge/canonical-code-store.ts
   - Verify: bun test ./scripts/embedding-audit.test.ts && bun test ./scripts/embedding-repair.test.ts
-- [ ] **T03: Add selective-update and repair verifier** — - Add the milestone-level verifier for selective updates and repair.
+- [x] **T03: Added a four-check proof harness (verify-m041-s03) that closes M041 S03 by verifying unchanged-file preservation, drift detection, selective repair, and no-drift early exit — all in-memory without a live database** — - Add the milestone-level verifier for selective updates and repair.
 - Cover unchanged-file preservation, drift detection, and selective repair outcomes.
 - Emit machine-checkable proof output that can close the milestone without requiring a full live repo rebuild.
   - Estimate: 0.5-1d
