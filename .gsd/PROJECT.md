@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M040 is complete. M041/S01 and M041/S02 are now complete. The canonical current-code corpus now has both substrate and workflow: dedicated canonical corpus schema/tables, canonical chunk identity/provenance types, a separate canonical chunker and ingest path, a resumable default-branch backfill pipeline, and unified semantic retrieval that returns provenance-rich `canonical_code` results without collapsing them into historical diff-hunk evidence. Next active work is M041/S03 (incremental refresh and audit/repair), then M038 consuming both M040 and M041.
+M041 is now complete (all three slices done). The canonical current-code corpus has a full lifecycle: dedicated schema/tables, canonical chunk identity/provenance types, a separate canonical chunker and ingest path, a resumable default-branch backfill pipeline, unified semantic retrieval that returns provenance-rich `canonical_code` results, selective changed-file refresh that skips unchanged rows via content-hash comparison, and audit/repair coverage that detects and repairs stale/missing/model-mismatched rows in bounded passes. Next active work is M038, which consumes both M040 (persistent structural graph + blast-radius) and M041 (canonical current-code corpus) substrates.
 
 ## Architecture / Key Patterns
 
@@ -22,17 +22,21 @@ M040 is complete. M041/S01 and M041/S02 are now complete. The canonical current-
 - **Cost tracking:** `src/llm/cost-tracker.ts` + `src/telemetry/` for DB persistence
 - **Usage visibility:** `ExecutionResult.usageLimit` captures last `SDKRateLimitEvent` from the agent run; rendered in Review Details via optional `usageLimit` and `tokenUsage` params on `formatReviewDetailsSummary`
 - **Embeddings:** Non-wiki corpora use voyage-4 (`DEFAULT_EMBEDDING_MODEL` in runtime.ts, `NON_WIKI_TARGET_EMBEDDING_MODEL` in embedding-repair.ts). Wiki pages use voyage-context-3. `createRerankProvider` in embeddings.ts provides a rerank-2.5 client with fail-open semantics for post-RRF neural reranking.
-- **Canonical current-code corpus (M041/S01 + S02 complete):**
+- **Canonical current-code corpus (M041 complete — all three slices):**
   - `src/db/migrations/033-canonical-code-corpus.sql` — dedicated `canonical_code_chunks` and `canonical_corpus_backfill_state` tables with indexes and SQL CHECK constraints for chunk/backfill invariants
   - `src/knowledge/canonical-code-types.ts` — canonical chunk identity, provenance, search result, and backfill-state contracts kept separate from historical diff-hunk types
-  - `src/knowledge/canonical-code-store.ts` — separate Postgres/pgvector store with inserted/replaced/dedup upsert outcomes, file soft-delete replacement semantics, semantic/full-text search, stale repair helpers, and backfill-state persistence
+  - `src/knowledge/canonical-code-store.ts` — separate Postgres/pgvector store with inserted/replaced/dedup upsert outcomes, file soft-delete replacement semantics, semantic/full-text search, stale repair helpers, backfill-state persistence, and `listChunksForFile()` for per-file identity lookup during selective refresh
   - `src/knowledge/canonical-code-chunker.ts` — dedicated current-code chunker with auditable exclusion reasons, Python/class/function/module boundaries, brace-language symbol chunking, and block fallback only for symbol-free files
   - `src/knowledge/canonical-code-ingest.ts` — dedicated snapshot ingest orchestrator that chunks files, skips excluded paths, soft-deletes prior live rows per file, embeds chunks, and upserts through the canonical store without touching historical `code_snippets` tables; per-chunk embedding failures fail open
-  - `src/knowledge/canonical-code-backfill.ts` — one-time/resumable default-branch backfill pipeline that resolves the repo’s actual default branch, clones via the existing workspace path, persists progress in `canonical_corpus_backfill_state`, and records bounded warnings/counters instead of aborting on single-file or single-chunk failures
+  - `src/knowledge/canonical-code-backfill.ts` — one-time/resumable default-branch backfill pipeline that resolves the repo's actual default branch, clones via the existing workspace path, persists progress in `canonical_corpus_backfill_state`, and records bounded warnings/counters instead of aborting on single-file or single-chunk failures
+  - `src/knowledge/canonical-code-update.ts` — steady-state selective refresh: loads live chunk identities per touched file, compares new chunk content hashes against existing rows, skips unchanged chunks (no DB write), re-embeds only changed/new chunks, and soft-deletes-and-restores on identity shrink; fail-open on embedding errors; reports per-file and aggregate counters (removed/updated/unchanged/failed)
   - `src/knowledge/canonical-code-retrieval.ts` — provenance-rich canonical current-code semantic search returning canonical ref, commit SHA, file path, line span, chunk type, symbol name, content hash, and embedding model
   - `src/knowledge/retrieval.ts` — unified retriever now accepts `canonicalRef` and surfaces canonical current-code as distinct `canonical_code` chunks alongside historical snippets, wiki, issue, review-comment, and learning-memory corpora
+  - `src/knowledge/embedding-audit.ts` — extended with `canonical_code` in `AUDITED_CORPORA`/`EXPECTED_CORPUS_MODELS` (voyage-4); `auditCanonicalCode()` queries `canonical_code_chunks` globally for total/missing/stale/model-mismatch counts
+  - `src/knowledge/embedding-repair.ts` — extended with `canonical_code` corpus support; `createCanonicalCodeRepairStore()` bridges bigint PKs into the generic number-keyed repair interface; `runCanonicalCodeEmbeddingRepair()` bounded per-pass repair (CANONICAL_CODE_REPAIR_LIMIT=2000); no persistent checkpoint
   - `scripts/verify-m041-s02.ts` — deterministic proof harness covering backfill persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation end to end
-  - `src/knowledge/index.ts` — exports canonical chunker, ingest, retrieval, and backfill surfaces for downstream slices
+  - `scripts/verify-m041-s03.ts` — four-check in-memory proof harness: UNCHANGED-FILE-PRESERVATION, DRIFT-DETECTED-BY-AUDIT, SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS, REPAIR-SKIPS-WHEN-NO-DRIFT; all pass with `overallPassed:true`
+  - `src/knowledge/index.ts` — exports canonical chunker, ingest, retrieval, backfill, and update surfaces for downstream slices
 - **Generated rules lifecycle (M036):**
   - `src/knowledge/generated-rule-store.ts` — persistence (pending/active/retired states, non-downgrading upsert, activate, retire, list, getLifecycleCounts)
   - `src/knowledge/generated-rule-proposals.ts` — deterministic proposal generation: cosine-similarity clustering, multi-gate filtering, `positive_ratio × support` signal score
@@ -91,8 +95,8 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Graph Schema and C++/Python Structural Extraction
   - [x] S02: Blast-Radius Queries and Graph-Aware Review Selection
   - [x] S03: Bounded Prompt Integration, Bypass, and Validation Gate
-- [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
+- [x] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
   - [x] S01: Canonical Schema, Chunking, and Storage
   - [x] S02: Default-Branch Backfill and Semantic Retrieval
-  - [ ] S03: Incremental Refresh and Audit/Repair
+  - [x] S03: Incremental Refresh and Audit/Repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection

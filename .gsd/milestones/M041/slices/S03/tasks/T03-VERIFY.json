@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M041/S03/T03",
+  "timestamp": 1775407352440,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m041-s03.test.ts",
+      "exitCode": 0,
+      "durationMs": 86,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m041:s03 -- --json",
+      "exitCode": 0,
+      "durationMs": 70,
+      "verdict": "pass"
+    }
+  ]
+}

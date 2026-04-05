@@ -48,16 +48,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews.
 - Notes: Also introduced by M040. code-review-graph's own benchmarks show graph context can be more expensive than naive reads on tiny single-file changes, so Kodiai must explicitly guard against that failure mode.
 
-### R035 — Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
-- Class: operational
-- Status: active
-- Description: Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
-- Why it matters: Event-driven freshness plus repair keeps cost, lag, and provenance drift bounded while preserving truthful current-code retrieval.
-- Source: M041
-- Primary owning slice: M041
-- Supporting slices: S03
-- Validation: Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds.
-
 ### R037 — Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
 - Class: functional
 - Status: active
@@ -377,6 +367,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M035/S02
 - Validation: S01 — grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '.test.ts' returns 0 hits; DEFAULT_EMBEDDING_MODEL and NON_WIKI_TARGET_EMBEDDING_MODEL are "voyage-4"; createRerankProvider with rerank-2.5 model is implemented in embeddings.ts; 9 unit tests pass; tsc --noEmit exits clean.
 
+### R035 — Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
+- Class: operational
+- Status: validated
+- Description: Kodiai shall keep the canonical code corpus fresh through selective changed-file updates and bounded audit/repair sweeps rather than periodic full-repo re-embedding.
+- Why it matters: Event-driven freshness plus repair keeps cost, lag, and provenance drift bounded while preserving truthful current-code retrieval.
+- Source: M041
+- Primary owning slice: M041
+- Supporting slices: S03
+- Validation: verify:m041:s03 --json exits 0 with overallPassed:true. All four checks pass: UNCHANGED-FILE-PRESERVATION (upsertCallCount=0 for fully unchanged file, upsertCallCount=1 for partially changed file), DRIFT-DETECTED-BY-AUDIT (audit_failed on drifted corpus, audit_ok on clean), SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS (repaired=3 embedCallCount=3 writeCallCount=3 on 3-drifted/1-fresh corpus), REPAIR-SKIPS-WHEN-NO-DRIFT (status_code=repair_not_needed embedCallCount=0).
+- Notes: Validated by M041/S03. updateCanonicalCodeSnapshot() re-embeds only changed/new chunks via content-hash comparison; auditCanonicalCode() + runCanonicalCodeEmbeddingRepair() detect and repair stale/missing/model-mismatch rows in bounded passes (CANONICAL_CODE_REPAIR_LIMIT=2000).
+
 ### R036 — Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
 - Class: functional
 - Status: validated
@@ -460,14 +461,14 @@ This file is the explicit capability and coverage contract for the project.
 | R032 | correctness | active | M039 | none | Handler and formatter regression tests prove Review Details renders percent-left when usageLimit is present and follows the documented unavailable-state contract when it is absent. |
 | R033 | functional | active | M040 | none | Fixture-based proof shows graph-aware review selection identifies impacted files/tests/dependents beyond file-level triage alone, while keeping context bounded on large PRs. |
 | R034 | quality-attribute | active | M040 | none | Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews. |
-| R035 | operational | active | M041 | S03 | Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds. |
+| R035 | operational | validated | M041 | S03 | verify:m041:s03 --json exits 0 with overallPassed:true. All four checks pass: UNCHANGED-FILE-PRESERVATION (upsertCallCount=0 for fully unchanged file, upsertCallCount=1 for partially changed file), DRIFT-DETECTED-BY-AUDIT (audit_failed on drifted corpus, audit_ok on clean), SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS (repaired=3 embedCallCount=3 writeCallCount=3 on 3-drifted/1-fresh corpus), REPAIR-SKIPS-WHEN-NO-DRIFT (status_code=repair_not_needed embedCallCount=0). |
 | R036 | functional | validated | M041 | S01,S02 | S01 established the canonical current-code substrate: dedicated canonical_code_chunks/canonical_corpus_backfill_state schema, explicit chunk identity and provenance types, canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with inserted/replaced/dedup semantics proven by canonical-code store/chunker/ingest tests plus clean tsc. This validates the storage/chunking half of the requirement; retrieval/backfill workflow is advanced further in later slices. |
 | R037 | functional | active | M038 | S01,S02 | For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041. |
 | R038 | correctness | validated | M038 | S02,S03 | Validated by M040/S03. Proof check M040-S03-FAIL-OPEN-VALIDATION confirms neverThrew=true, succeeded=false, originalFindingsPreserved=true when LLM validation gate throws. buildGraphContextSection(null) returns empty text (fail-open). applyGraphAwareSelection() returns usedGraph=false on null graph. queryBlastRadiusFromSnapshot() provides caller/dependent evidence with explicit confidence scores and reason strings. bun run verify:m040:s03 --json exits 0 with overallPassed:true. |
 
 ## Coverage Summary
 
-- Active requirements: 6
-- Mapped to slices: 6
-- Validated: 30 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R036, R038)
+- Active requirements: 5
+- Mapped to slices: 5
+- Validated: 31 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R038)
 - Unmapped active requirements: 0

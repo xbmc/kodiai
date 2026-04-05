@@ -990,3 +990,39 @@ The default threshold is 3 files. Line threshold is opt-in (default 0 = disabled
 **Rule:** When adding new optional LLM gates to the review handler that use task routers, use dynamic imports inside the gate block to prevent circular dependencies. The `GUARDRAIL_CLASSIFICATION` task type is the correct choice for lightweight validation passes matching existing non-agentic usage patterns.
 
 **Established in:** M040/S03/T02 (`src/handlers/review.ts`, graph validation gate block).
+
+---
+
+## Canonical Code Selective Update: File-Level Soft-Delete on Identity Shrink (M041/S03)
+
+**Context:** `updateCanonicalCodeSnapshot()` in `src/knowledge/canonical-code-update.ts` handles the case where a changed file drops one or more chunk identities (e.g., a function was deleted). The store only supports file-level soft-delete (`deleteChunksForFile`), so when any identity disappears the updater must delete all live rows for that file and then re-upsert the surviving identities.
+
+**Implication:** If a file loses exactly one chunk but retains others, all rows for that file are deleted and the survivors are re-upserted. Normal steady-state refresh (no identity changes) still preserves unchanged rows via hash comparison without any deletes. The file-level delete path fires only when `existingChunks.some(id => !nextIdentityKeys.has(id))`.
+
+**Rule:** Do not treat the file-level delete-and-restore as evidence that unchanged rows are being unnecessarily rewritten — it only fires when the chunk identity set actually shrinks. Tests asserting "zero deletes" are valid for truly unchanged files but must use fixtures where the identity set is stable.
+
+**Established in:** M041/S03/T01 (`src/knowledge/canonical-code-update.ts`, `updateCanonicalCodeSnapshot`).
+
+---
+
+## number→bigint ID Bridge for Canonical Code Repair (M041/S03)
+
+**Context:** The generic `EmbeddingRepairStore` interface uses `number` for row IDs (matching the `id` column type across most corpora). `canonical_code_chunks` uses a `bigint` PK. `createCanonicalCodeRepairStore()` in `src/knowledge/embedding-repair.ts` bridges this mismatch by reading the bigint PK into a JS `number` via `Number(row.id)` and converting back via `BigInt(id)` on write.
+
+**When this is safe:** All chunk IDs inserted during normal operation are sequential starting from 1. PostgreSQL bigint can hold values up to 9,223,372,036,854,775,807; JS `Number.MAX_SAFE_INTEGER` is 9,007,199,254,740,991. For typical corpus sizes (millions, not billions), the conversion is loss-free.
+
+**Rule:** If the corpus ever grows into the billions of rows (extremely unlikely), revisit the bridge and update `EmbeddingRepairStore` to support `bigint` IDs natively. Until then, the `Number(bigint)` bridge is the established pattern for canonical code repair integration.
+
+**Established in:** M041/S03/T02 (`src/knowledge/embedding-repair.ts`, `createCanonicalCodeRepairStore`).
+
+---
+
+## Canonical Code Repair Has No Persistent Checkpoint (M041/S03)
+
+**Context:** The canonical code repair runner (`runCanonicalCodeEmbeddingRepair()` in `src/knowledge/embedding-repair.ts`) does not use a persistent checkpoint table — unlike some other repair flows. Each run calls `listStaleChunks` as the implicit progress signal; if a run is interrupted, re-running will pick up all remaining stale/missing/model-mismatch rows from scratch.
+
+**Why:** Canonical code chunks are identified by `(repo, owner, canonical_ref, file_path, chunk_type, symbol_name)` and are individually idempotent on re-embed. The 2000-row `CANONICAL_CODE_REPAIR_LIMIT` bounds per-pass exposure so run-to-completion is typically fast enough that a checkpoint would add complexity without meaningful benefit.
+
+**Rule:** If repair jobs regularly time out before completion (i.e., the corpus consistently has >2000 drifted rows per pass), consider adding a cursor/checkpoint column on `canonical_code_chunks`. Until then, stateless repair with a bounded per-pass limit is the correct operating pattern.
+
+**Established in:** M041/S03/T02 (`src/knowledge/embedding-repair.ts`, `CANONICAL_CODE_REPAIR_LIMIT`).
