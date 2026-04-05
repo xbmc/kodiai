@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/handlers/review.ts, src/execution/review-prompt.ts, src/execution/review-prompt.test.ts, src/lib/review-utils.ts
   - Verify: bun test ./src/execution/review-prompt.test.ts
-- [ ] **T03: Add Structural Impact rendering verifier** — - Add a fixture-based verifier for C++ and Python review scenarios.
+- [x] **T03: Added a fixture-based structural-impact verifier for C++ and Python review rendering with stable JSON proof output and a new verify:m038:s02 script.** — - Add a fixture-based verifier for C++ and Python review scenarios.
 - Prove Review Details shows a bounded Structural Impact section and uses structural evidence for breaking-change wording when available.
 - Keep proof output stable and machine-checkable.
   - Estimate: 0.5-1d

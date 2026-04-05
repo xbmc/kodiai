@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T19:30:18.733Z",
+  "exported_at": "2026-04-05T19:35:01.667Z",
   "milestones": [
     {
       "id": "M001",
@@ -8205,19 +8205,27 @@
       "milestone_id": "M038",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add Structural Impact rendering verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a fixture-based structural-impact verifier for C++ and Python review rendering with stable JSON proof output and a new verify:m038:s02 script.",
+      "status": "complete",
+      "one_liner": "Added a fixture-based structural-impact verifier for C++ and Python review rendering with stable JSON proof output and a new verify:m038:s02 script.",
+      "narrative": "Built scripts/verify-m038-s02.ts as a deterministic proof harness that exercises the real buildReviewPrompt() and formatReviewDetailsSummary() rendering seams with language-priority C++ and Python structural-impact fixtures. The harness evaluates a fixed pair of checks proving that Review Details renders a bounded Structural Impact section and that breaking-change wording is strengthened from structural evidence when present. Added scripts/verify-m038-s02.test.ts to cover the real fixtures, check evaluation behavior, JSON round-tripping, and stable failure-contract rendering. Also added the verify:m038:s02 package script and reran the exact task verification command after fixing an initial ESM-readonly export mutation bug in one test.",
+      "verification_result": "Ran the task-plan verification command exactly: bun test ./scripts/verify-m038-s02.test.ts && bun run verify:m038:s02 -- --json. The tests passed 8/8, and the verifier emitted a passing JSON envelope with both M038-S02 check IDs green for the real C++ and Python scenarios.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T19:35:01.641Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "The verifier is fixture-based and hermetic; it proves the real prompt/review-details rendering contract but does not call live graph or corpus adapters.",
+      "key_files": [
+        "scripts/verify-m038-s02.ts",
+        "scripts/verify-m038-s02.test.ts",
+        "package.json",
+        ".gsd/milestones/M038/slices/S02/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Verified structural-impact rendering through the real prompt and Review Details integration seams instead of duplicating formatter internals.",
+        "Used a small fixed JSON proof envelope with explicit per-scenario booleans and stable status codes to keep the verifier machine-checkable."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M038\nkey_files:\n  - scripts/verify-m038-s02.ts\n  - scripts/verify-m038-s02.test.ts\n  - package.json\n  - .gsd/milestones/M038/slices/S02/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Verified structural-impact rendering through the real prompt and Review Details integration seams instead of duplicating formatter internals.\n  - Used a small fixed JSON proof envelope with explicit per-scenario booleans and stable status codes to keep the verifier machine-checkable.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T19:35:01.641Z\nblocker_discovered: false\n---\n\n# T03: Added a fixture-based structural-impact verifier for C++ and Python review rendering with stable JSON proof output and a new verify:m038:s02 script.\n\n**Added a fixture-based structural-impact verifier for C++ and Python review rendering with stable JSON proof output and a new verify:m038:s02 script.**\n\n## What Happened\n\nBuilt scripts/verify-m038-s02.ts as a deterministic proof harness that exercises the real buildReviewPrompt() and formatReviewDetailsSummary() rendering seams with language-priority C++ and Python structural-impact fixtures. The harness evaluates a fixed pair of checks proving that Review Details renders a bounded Structural Impact section and that breaking-change wording is strengthened from structural evidence when present. Added scripts/verify-m038-s02.test.ts to cover the real fixtures, check evaluation behavior, JSON round-tripping, and stable failure-contract rendering. Also added the verify:m038:s02 package script and reran the exact task verification command after fixing an initial ESM-readonly export mutation bug in one test.\n\n## Verification\n\nRan the task-plan verification command exactly: bun test ./scripts/verify-m038-s02.test.ts && bun run verify:m038:s02 -- --json. The tests passed 8/8, and the verifier emitted a passing JSON envelope with both M038-S02 check IDs green for the real C++ and Python scenarios.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m038-s02.test.ts && bun run ./scripts/verify-m038-s02.ts --json` | 0 | ✅ pass | 45ms |\n| 2 | `bun test ./scripts/verify-m038-s02.test.ts && bun run verify:m038:s02 -- --json` | 0 | ✅ pass | 45ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe verifier is fixture-based and hermetic; it proves the real prompt/review-details rendering contract but does not call live graph or corpus adapters.\n\n## Files Created/Modified\n\n- `scripts/verify-m038-s02.ts`\n- `scripts/verify-m038-s02.test.ts`\n- `package.json`\n- `.gsd/milestones/M038/slices/S02/tasks/T03-SUMMARY.md`\n",
       "description": "- Add a fixture-based verifier for C++ and Python review scenarios.\n- Prove Review Details shows a bounded Structural Impact section and uses structural evidence for breaking-change wording when available.\n- Keep proof output stable and machine-checkable.",
       "estimate": "0.5-1d",
       "files": [
@@ -11724,6 +11732,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6200,
       "created_at": "2026-04-05T19:30:18.708Z"
+    },
+    {
+      "id": 171,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M038",
+      "command": "bun test ./scripts/verify-m038-s02.test.ts && bun run ./scripts/verify-m038-s02.ts --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 45,
+      "created_at": "2026-04-05T19:35:01.641Z"
+    },
+    {
+      "id": 172,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M038",
+      "command": "bun test ./scripts/verify-m038-s02.test.ts && bun run verify:m038:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 45,
+      "created_at": "2026-04-05T19:35:01.641Z"
     }
   ]
 }
