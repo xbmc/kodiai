@@ -16,7 +16,7 @@
   - Estimate: 0.5-1d
   - Files: src/structural-impact/degradation.ts, src/structural-impact/degradation.test.ts, src/handlers/review.ts, src/lib/structural-impact-formatter.ts
   - Verify: bun test ./src/structural-impact/degradation.test.ts
-- [ ] **T03: Add fail-open and cache-reuse verifier** — - Add the milestone-level verifier covering success, cache reuse, timeout, and substrate-failure paths.
+- [x] **T03: Added milestone-level verifier proving cache reuse, timeout fail-open, substrate failure truthfulness, and partial degradation correctness for the structural-impact consumer path** — - Add the milestone-level verifier covering success, cache reuse, timeout, and substrate-failure paths.
 - Prove the review completes without blocking, Structural Impact stays bounded, and breaking-change output only claims what the evidence supports.
 - Keep proof output stable enough to close M038 without hand inspection.
   - Estimate: 0.5-1d
