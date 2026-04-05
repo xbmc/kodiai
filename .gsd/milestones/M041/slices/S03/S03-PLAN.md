@@ -4,7 +4,7 @@
 **Demo:** After this: After this slice, Kodiai keeps the canonical corpus fresh via changed-file updates and can prove drift detection and selective repair without full-repo rebuilds.
 
 ## Tasks
-- [ ] **T01: Implement selective changed-file refresh** — - Implement a changed-file refresh path that reprocesses only touched files or changed chunks.
+- [x] **T01: Added a dedicated canonical-code selective refresh path that preserves unchanged rows, updates changed chunks, and reports steady-state counters.** — - Implement a changed-file refresh path that reprocesses only touched files or changed chunks.
 - Reuse canonical chunk identity and content hashes to avoid rewriting unchanged rows.
 - Keep the normal update path separate from one-time backfill semantics.
   - Estimate: 1d

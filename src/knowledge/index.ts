@@ -126,6 +126,15 @@ export type {
   CanonicalCodeIngestResult,
 } from "./canonical-code-ingest.ts";
 
+// Canonical code update
+export { updateCanonicalCodeSnapshot } from "./canonical-code-update.ts";
+export type {
+  CanonicalCodeUpdateFile,
+  CanonicalCodeUpdateFileResult,
+  CanonicalCodeUpdateRequest,
+  CanonicalCodeUpdateResult,
+} from "./canonical-code-update.ts";
+
 // Canonical code backfill
 export { backfillCanonicalCodeSnapshot } from "./canonical-code-backfill.ts";
 export type {

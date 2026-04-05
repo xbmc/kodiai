@@ -409,6 +409,42 @@ export function createCanonicalCodeStore(opts: {
       return row?.total ?? 0;
     },
 
+    // ── listChunksForFile ────────────────────────────────────────────────────
+
+    async listChunksForFile(params: {
+      repo: string;
+      owner: string;
+      canonicalRef: string;
+      filePath: string;
+    }): Promise<Array<Pick<CanonicalCodeChunk, "id" | "filePath" | "chunkType" | "symbolName" | "contentHash">>> {
+      const rows = await sql`
+        SELECT id, file_path, chunk_type, symbol_name, content_hash
+        FROM canonical_code_chunks
+        WHERE repo = ${params.repo}
+          AND owner = ${params.owner}
+          AND canonical_ref = ${params.canonicalRef}
+          AND file_path = ${params.filePath}
+          AND deleted_at IS NULL
+        ORDER BY id ASC
+      `;
+      return rows.map((row) => {
+        const typed = row as {
+          id: string | bigint;
+          file_path: string;
+          chunk_type: string;
+          symbol_name: string | null;
+          content_hash: string;
+        };
+        return {
+          id: BigInt(typed.id),
+          filePath: typed.file_path,
+          chunkType: typed.chunk_type as CanonicalChunkType,
+          symbolName: typed.symbol_name,
+          contentHash: typed.content_hash,
+        };
+      });
+    },
+
     // ── listStaleChunks ───────────────────────────────────────────────────────
 
     async listStaleChunks(params: {

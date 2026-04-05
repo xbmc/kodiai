@@ -205,6 +205,17 @@ export type CanonicalCodeStore = {
   }): Promise<number>;
 
   /**
+   * List active (non-deleted) chunk identities for a specific file.
+   * Used by the steady-state update path to delete only removed identities.
+   */
+  listChunksForFile(params: {
+    repo: string;
+    owner: string;
+    canonicalRef: string;
+    filePath: string;
+  }): Promise<Array<Pick<CanonicalCodeChunk, "id" | "filePath" | "chunkType" | "symbolName" | "contentHash">>>;
+
+  /**
    * Read chunks that need re-embedding (stale=true or model mismatch).
    * Used by the repair/audit pipeline.
    */

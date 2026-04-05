@@ -261,6 +261,18 @@ function createMockLoggerWithArrays() {
 
 ---
 
+## Full-Shape Fixture Overrides for Proof-Harness Tests (M041/S02)
+
+**Context:** `scripts/verify-m041-s02.test.ts` uses `makeFixtureResult()` plus nested `Partial<M041S02ProofFixtureResult>` overrides. TypeScript accepts the top-level partial, but nested objects like `backfill` and `retrieval` are still checked against the full concrete field set when passed inline.
+
+**Rule:** When overriding nested proof-fixture objects in tests, provide the **full nested shape**, not just the changed fields. For example, a retrieval override that only wants `canonicalRefRequested: "main"` must still include `canonicalCodeCount`, `snippetCount`, `unifiedSources`, `topUnifiedSource`, `topUnifiedLabel`, `topCanonicalFilePath`, `topSnippetFilePath`, and `contextWindow`.
+
+**Pattern:** Keep `makeFixtureResult()` responsible for merging, but make each inline nested override structurally complete. This avoids repeated TS2739/TS2740 errors in Bun/tsc without introducing a custom deep-partial helper type.
+
+**Established in:** M041/S02 slice closure (`scripts/verify-m041-s02.test.ts`).
+
+---
+
 ## Ephemeral Auth URL Pattern for Git Network Operations (M031/S02)
 
 **Context:** After workspace.create() strips the installation token from git remote URLs, push/fetch functions no longer read credentials from `.git/config`. Instead they construct an ephemeral auth URL per command.

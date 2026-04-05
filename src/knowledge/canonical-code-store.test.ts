@@ -92,6 +92,7 @@ describe("createCanonicalCodeStore", () => {
     expect(store.searchByEmbedding).toBeDefined();
     expect(store.searchByFullText).toBeDefined();
     expect(store.countChunks).toBeDefined();
+    expect(store.listChunksForFile).toBeDefined();
     expect(store.listStaleChunks).toBeDefined();
     expect(store.markStale).toBeDefined();
     expect(store.updateEmbeddingsBatch).toBeDefined();
@@ -389,6 +390,55 @@ describe("countChunks", () => {
 
     const count = await store.countChunks({ repo: "kodi", canonicalRef: "main" });
     expect(count).toBe(0);
+  });
+});
+
+// ── listChunksForFile ────────────────────────────────────────────────────────
+
+describe("listChunksForFile", () => {
+  it("returns active chunk identities for a specific file", async () => {
+    const rows = [[
+      {
+        id: "7",
+        file_path: "xbmc/Application.cpp",
+        chunk_type: "function",
+        symbol_name: "CApplication::Boot",
+        content_hash: "sha256:boot",
+      },
+      {
+        id: "8",
+        file_path: "xbmc/Application.cpp",
+        chunk_type: "module",
+        symbol_name: null,
+        content_hash: "sha256:module",
+      },
+    ]];
+    const { sql } = createMockSql(rows);
+    const store = createCanonicalCodeStore({ sql, logger: createMockLogger() });
+
+    const result = await store.listChunksForFile({
+      repo: "kodi",
+      owner: "xbmc",
+      canonicalRef: "main",
+      filePath: "xbmc/Application.cpp",
+    });
+
+    expect(result).toEqual([
+      {
+        id: 7n,
+        filePath: "xbmc/Application.cpp",
+        chunkType: "function",
+        symbolName: "CApplication::Boot",
+        contentHash: "sha256:boot",
+      },
+      {
+        id: 8n,
+        filePath: "xbmc/Application.cpp",
+        chunkType: "module",
+        symbolName: null,
+        contentHash: "sha256:module",
+      },
+    ]);
   });
 });
 

@@ -69,7 +69,7 @@ describe("M041-S02-BACKFILL-STORES-CANONICAL-CHUNKS", () => {
 
   test("fails when backfill is partial", async () => {
     const result = await runBackfillStoresCanonicalChunksCheck(async () =>
-      makeFixtureResult({ backfill: { status: "partial", chunksFailed: 1 } }),
+      makeFixtureResult({ backfill: { status: "partial", chunksFailed: 1, canonicalRef: "trunk", commitSha: "abc123", filesDone: 3, chunksDone: 3, warnings: 0 } }),
     );
 
     expect(result.passed).toBe(false);
@@ -102,10 +102,14 @@ describe("M041-S02-RETRIEVAL-RETURNS-CANONICAL-CURRENT-CODE", () => {
     const result = await runRetrievalReturnsCanonicalCurrentCodeCheck(async () =>
       makeFixtureResult({
         retrieval: {
+          canonicalRefRequested: "trunk",
           canonicalCodeCount: 0,
+          snippetCount: 1,
           unifiedSources: ["snippet"],
+          topUnifiedSource: "snippet",
           topUnifiedLabel: "[snippet] PR #41: old diff",
           topCanonicalFilePath: null,
+          topSnippetFilePath: "src/legacy/token-rotation.patch.ts",
           contextWindow: "[snippet] PR #41: old diff",
         },
       }),
@@ -117,7 +121,7 @@ describe("M041-S02-RETRIEVAL-RETURNS-CANONICAL-CURRENT-CODE", () => {
 
   test("fails when canonical count is zero", async () => {
     const result = await runRetrievalReturnsCanonicalCurrentCodeCheck(async () =>
-      makeFixtureResult({ retrieval: { canonicalCodeCount: 0 } }),
+      makeFixtureResult({ retrieval: { canonicalRefRequested: "trunk", canonicalCodeCount: 0, snippetCount: 1, unifiedSources: ["canonical_code", "snippet"], topUnifiedSource: "canonical_code", topUnifiedLabel: "[canonical: src/auth/token.ts:1-4 @ trunk]", topCanonicalFilePath: "src/auth/token.ts", topSnippetFilePath: "src/legacy/token-rotation.patch.ts", contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code\n\n[snippet] PR #41: old diff" } }),
     );
 
     expect(result.passed).toBe(false);
@@ -139,10 +143,15 @@ describe("M041-S02-RETRIEVAL-PRESERVES-CORPUS-SEPARATION", () => {
     const result = await runRetrievalPreservesCorpusSeparationCheck(async () =>
       makeFixtureResult({
         retrieval: {
+          canonicalRefRequested: "trunk",
+          canonicalCodeCount: 1,
           snippetCount: 0,
           unifiedSources: ["canonical_code"],
-          contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code",
+          topUnifiedSource: "canonical_code",
+          topUnifiedLabel: "[canonical: src/auth/token.ts:1-4 @ trunk]",
+          topCanonicalFilePath: "src/auth/token.ts",
           topSnippetFilePath: null,
+          contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code",
         },
       }),
     );
@@ -165,7 +174,7 @@ describe("M041-S02-NONMAIN-DEFAULT-BRANCH-IS-RESPECTED", () => {
 
   test("fails when retrieval still asks for main", async () => {
     const result = await runNonMainDefaultBranchCheck(async () =>
-      makeFixtureResult({ retrieval: { canonicalRefRequested: "main" } }),
+      makeFixtureResult({ retrieval: { canonicalRefRequested: "main", canonicalCodeCount: 1, snippetCount: 1, unifiedSources: ["canonical_code", "snippet"], topUnifiedSource: "canonical_code", topUnifiedLabel: "[canonical: src/auth/token.ts:1-4 @ trunk]", topCanonicalFilePath: "src/auth/token.ts", topSnippetFilePath: "src/legacy/token-rotation.patch.ts", contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code\n\n[snippet] PR #41: old diff" } }),
     );
 
     expect(result.passed).toBe(false);
@@ -186,7 +195,20 @@ describe("evaluateM041S02", () => {
 
   test("overallPassed is false when a check fails", async () => {
     const report = await evaluateM041S02({
-      _runFixture: async () => makeFixtureResult({ retrieval: { canonicalRefRequested: "main" } }),
+      _runFixture: async () =>
+        makeFixtureResult({
+          retrieval: {
+            canonicalRefRequested: "main",
+            canonicalCodeCount: 1,
+            snippetCount: 1,
+            unifiedSources: ["canonical_code", "snippet"],
+            topUnifiedSource: "canonical_code",
+            topUnifiedLabel: "[canonical: src/auth/token.ts:1-4 @ trunk]",
+            topCanonicalFilePath: "src/auth/token.ts",
+            topSnippetFilePath: "src/legacy/token-rotation.patch.ts",
+            contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code\n\n[snippet] PR #41: old diff",
+          },
+        }),
     });
 
     expect(report.overallPassed).toBe(false);
@@ -234,7 +256,20 @@ describe("buildM041S02ProofHarness", () => {
     const { exitCode } = await buildM041S02ProofHarness({
       stdout,
       stderr,
-      _runFixture: async () => makeFixtureResult({ retrieval: { canonicalRefRequested: "main" } }),
+      _runFixture: async () =>
+        makeFixtureResult({
+          retrieval: {
+            canonicalRefRequested: "main",
+            canonicalCodeCount: 1,
+            snippetCount: 1,
+            unifiedSources: ["canonical_code", "snippet"],
+            topUnifiedSource: "canonical_code",
+            topUnifiedLabel: "[canonical: src/auth/token.ts:1-4 @ trunk]",
+            topCanonicalFilePath: "src/auth/token.ts",
+            topSnippetFilePath: "src/legacy/token-rotation.patch.ts",
+            contextWindow: "[canonical: src/auth/token.ts:1-4 @ trunk]: current code\n\n[snippet] PR #41: old diff",
+          },
+        }),
     });
 
     expect(exitCode).toBe(1);

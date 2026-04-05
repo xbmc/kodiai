@@ -277,7 +277,7 @@ function createInMemoryCanonicalStore(): InMemoryCanonicalStore {
   };
 }
 
-function createSnippetStore(query: string): Pick<CodeSnippetStore, "searchByEmbedding" | "searchByFullText" | "close"> {
+function createSnippetStore(query: string): CodeSnippetStore {
   const snippetResults: CodeSnippetSearchResult[] = [
     {
       contentHash: "snippet-legacy-1",
@@ -295,6 +295,8 @@ function createSnippetStore(query: string): Pick<CodeSnippetStore, "searchByEmbe
   ];
 
   return {
+    async writeSnippet() {},
+    async writeOccurrence() {},
     async searchByEmbedding() {
       return snippetResults;
     },
