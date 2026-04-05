@@ -10,7 +10,7 @@
   - Estimate: 1d
   - Files: src/review-graph/query.ts, src/review-graph/query.test.ts, src/review-graph/store.ts
   - Verify: bun test ./src/review-graph/query.test.ts && bun run tsc --noEmit
-- [ ] **T02: Integrate graph signals into extensive-review selection** — - Extend large-PR review selection to consume graph signals alongside current file-risk scoring.
+- [x] **T02: Added graph-aware reranking to extensive-review file selection and logged graph-hit selection counters for large PRs.** — - Extend large-PR review selection to consume graph signals alongside current file-risk scoring.
 - Keep the existing non-graph path as the fallback and preserve bounded ranking behavior.
 - Wire graph-aware selection into the review handler before prompt packing.
   - Estimate: 1d

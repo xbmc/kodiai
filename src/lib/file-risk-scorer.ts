@@ -3,6 +3,11 @@ import {
   classifyFileLanguage,
   type PerFileStats,
 } from "../execution/diff-analysis.ts";
+import type {
+  ReviewGraphBlastRadiusResult,
+  ReviewGraphRankedFile,
+  ReviewGraphLikelyTest,
+} from "../review-graph/query.ts";
 
 export type RiskWeights = {
   linesChanged: number;
@@ -33,6 +38,15 @@ export type TieredFiles = {
   totalFiles: number;
   threshold: number;
   isLargePR: boolean;
+};
+
+export type GraphAwareSelectionResult = {
+  riskScores: FileRiskScore[];
+  usedGraph: boolean;
+  graphHits: number;
+  graphRankedSelections: number;
+  graphImpactedFiles: string[];
+  graphLikelyTests: string[];
 };
 
 export const DEFAULT_RISK_WEIGHTS: RiskWeights = {
@@ -157,6 +171,104 @@ const EXECUTABLE_EXTENSIONS = new Set([
   "exs",
   "zig",
 ]);
+
+const GRAPH_IMPACT_SCORE_SCALE = 35;
+const GRAPH_TEST_SCORE_SCALE = 35;
+
+function clamp(value: number, min = 0, max = 100): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizePath(filePath: string): string {
+  return filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+function buildGraphBoostMap(items: ReviewGraphRankedFile[], scale: number): Map<string, number> {
+  return new Map(
+    items.map((item) => {
+      const weighted = Math.round(item.score * item.confidence * scale);
+      return [normalizePath(item.path), weighted];
+    }),
+  );
+}
+
+function mergeGraphScores(params: {
+  riskScores: FileRiskScore[];
+  graph: ReviewGraphBlastRadiusResult;
+}): GraphAwareSelectionResult {
+  const { riskScores, graph } = params;
+  const impactedBoosts = buildGraphBoostMap(graph.impactedFiles, GRAPH_IMPACT_SCORE_SCALE);
+  const testBoosts = buildGraphBoostMap(graph.likelyTests, GRAPH_TEST_SCORE_SCALE);
+  const boostablePaths = new Set([...impactedBoosts.keys(), ...testBoosts.keys()]);
+
+  if (boostablePaths.size === 0) {
+    return {
+      riskScores,
+      usedGraph: false,
+      graphHits: 0,
+      graphRankedSelections: 0,
+      graphImpactedFiles: graph.impactedFiles.map((item) => normalizePath(item.path)),
+      graphLikelyTests: graph.likelyTests.map((item) => normalizePath(item.path)),
+    };
+  }
+
+  const originalOrder = new Map(riskScores.map((score, index) => [normalizePath(score.filePath), index]));
+  const mergedEntries = riskScores
+    .map((score) => {
+      const normalizedPath = normalizePath(score.filePath);
+      const impactedBoost = impactedBoosts.get(normalizedPath) ?? 0;
+      const testBoost = testBoosts.get(normalizedPath) ?? 0;
+      return {
+        normalizedPath,
+        originalIndex: originalOrder.get(normalizedPath) ?? 0,
+        mergedScore: clamp(score.score + impactedBoost + testBoost),
+        original: score,
+      };
+    })
+    .sort((a, b) => {
+      if (b.mergedScore !== a.mergedScore) return b.mergedScore - a.mergedScore;
+      return a.originalIndex - b.originalIndex;
+    });
+
+  const graphRankedSelections = mergedEntries.reduce((count, entry, index) => {
+    return boostablePaths.has(entry.normalizedPath) && index < entry.originalIndex
+      ? count + 1
+      : count;
+  }, 0);
+
+  const merged = mergedEntries.map((entry) => ({
+    ...entry.original,
+    score: entry.mergedScore,
+  }));
+
+  return {
+    riskScores: merged,
+    usedGraph: true,
+    graphHits: boostablePaths.size,
+    graphRankedSelections,
+    graphImpactedFiles: graph.impactedFiles.map((item) => normalizePath(item.path)),
+    graphLikelyTests: graph.likelyTests.map((item) => normalizePath(item.path)),
+  };
+}
+
+export function applyGraphAwareSelection(params: {
+  riskScores: FileRiskScore[];
+  graph?: ReviewGraphBlastRadiusResult | null;
+}): GraphAwareSelectionResult {
+  const { riskScores, graph } = params;
+  if (!graph) {
+    return {
+      riskScores,
+      usedGraph: false,
+      graphHits: 0,
+      graphRankedSelections: 0,
+      graphImpactedFiles: [],
+      graphLikelyTests: [],
+    };
+  }
+
+  return mergeGraphScores({ riskScores, graph });
+}
 
 export function isExecutableExtension(filePath: string): boolean {
   const ext = filePath.split(".").pop()?.toLowerCase() ?? "";

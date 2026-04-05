@@ -24,7 +24,14 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
-import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
+import {
+  computeFileRiskScores,
+  triageFilesByRisk,
+  applyGraphAwareSelection,
+  type TieredFiles,
+  type FileRiskScore,
+} from "../lib/file-risk-scorer.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -959,6 +966,13 @@ export function createReviewHandler(deps: {
   clusterMatcher?: (opts: { prEmbedding: Float32Array | null; prFilePaths: string[]; repo: string }) => Promise<ClusterPatternMatch[]>;
   /** Optional issue store for PR-issue linking (Phase 108: PRLINK). */
   issueStore?: IssueStore;
+  /** Optional review-graph blast-radius query for graph-aware large-PR selection. */
+  reviewGraphQuery?: (input: {
+    repo: string;
+    workspaceKey: string;
+    changedPaths: string[];
+    limit?: number;
+  }) => Promise<ReviewGraphBlastRadiusResult>;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
   /** Optional cluster model store for thematic finding scoring (M037/S02). */
@@ -985,6 +999,7 @@ export function createReviewHandler(deps: {
     slackBotToken,
     clusterMatcher,
     issueStore,
+    reviewGraphQuery,
     sql,
     clusterModelStore,
     logger,
@@ -2081,11 +2096,32 @@ export function createReviewHandler(deps: {
           weights: config.largePR.riskWeights,
         });
 
+        let graphSelection = applyGraphAwareSelection({ riskScores });
+        if (reviewGraphQuery) {
+          try {
+            const graph = await reviewGraphQuery({
+              repo: `${apiOwner}/${apiRepo}`,
+              workspaceKey: pr.head.sha,
+              changedPaths: reviewFiles,
+              limit: Math.max(
+                config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
+                20,
+              ),
+            });
+            graphSelection = applyGraphAwareSelection({ riskScores, graph });
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, gate: "graph-aware-selection", err },
+              "Review graph query failed (fail-open, continuing with file-risk selection)",
+            );
+          }
+        }
+
         // Triage uses changedFiles.length (full PR size) for threshold check,
         // not reviewFiles.length (which may be filtered for incremental mode).
         // Per pitfall 3 in research: check full PR, triage review set.
         const tieredFiles = triageFilesByRisk({
-          riskScores,
+          riskScores: graphSelection.riskScores,
           fileThreshold: config.largePR.fileThreshold,
           fullReviewCount: config.largePR.fullReviewCount,
           abbreviatedCount: config.largePR.abbreviatedCount,
@@ -2106,6 +2142,9 @@ export function createReviewHandler(deps: {
             abbreviated: tieredFiles.abbreviated.length,
             mentionOnly: tieredFiles.mentionOnly.length,
             threshold: config.largePR.fileThreshold,
+            graphHitCount: graphSelection.graphHits,
+            graphRankedSelections: graphSelection.graphRankedSelections,
+            graphAwareSelectionApplied: graphSelection.usedGraph,
           }, "Large PR file triage applied");
         }
 
