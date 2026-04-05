@@ -2,7 +2,7 @@
   "version": 1,
   "projectName": "kodiai",
   "projectPath": "/home/keith/src/kodiai",
-  "gsdVersion": "2.60.0",
+  "gsdVersion": "2.63.0",
   "entries": [
     {
       "filename": "M030-2026-03-28T16-28-40.html",
@@ -49,6 +49,22 @@
       "doneSlices": 178,
       "totalSlices": 190,
       "doneMilestones": 37,
+      "totalMilestones": 41,
+      "phase": "evaluating-gates"
+    },
+    {
+      "filename": "M037-2026-04-05T09-53-16.html",
+      "generatedAt": "2026-04-05T09:53:16.200Z",
+      "milestoneId": "M037",
+      "milestoneTitle": "Embedding-Based Suggestion Clustering & Reinforcement Learning",
+      "label": "M037: Embedding-Based Suggestion Clustering & Reinforcement Learning",
+      "kind": "milestone",
+      "totalCost": 359.76683254999966,
+      "totalTokens": 770666843,
+      "totalDuration": 114755603,
+      "doneSlices": 181,
+      "totalSlices": 190,
+      "doneMilestones": 38,
       "totalMilestones": 41,
       "phase": "evaluating-gates"
     }

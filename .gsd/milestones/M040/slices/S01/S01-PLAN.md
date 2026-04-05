@@ -4,7 +4,7 @@
 **Demo:** After this: After this, Kodiai can index a fixture C++ or Python repo into dedicated graph tables and inspect persisted nodes/edges for files, symbols, imports/includes, calls, and probable test relationships.
 
 ## Tasks
-- [ ] **T01: Create graph schema and store contract** — - Add graph persistence schema for files, symbols, edges, and graph-build bookkeeping.
+- [x] **T01: Added persistent review-graph schema, typed store contracts, and transactional file-scoped graph replacement.** — - Add graph persistence schema for files, symbols, edges, and graph-build bookkeeping.
 - Define graph node/edge types and a store module separate from retrieval and prompt code.
 - Keep the storage model tuned for incremental replacement instead of full graph rebuilds.
   - Estimate: 0.5-1d
