@@ -78,16 +78,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: S01,S02
 - Validation: For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041.
 
-### R038 — Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
-- Class: correctness
-- Status: active
-- Description: Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
-- Why it matters: Heuristic breaking-change output is less trustworthy than evidence-backed structural impact, but the review pipeline must remain non-blocking when substrate data is unavailable.
-- Source: M038
-- Primary owning slice: M038
-- Supporting slices: S02,S03
-- Validation: For a production-like C++ or Python review scenario, breaking-change output cites caller/dependent evidence when available; timeout or substrate failure degrades cleanly without blocking review completion.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -397,6 +387,16 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M035/S02
 - Validation: S01 — grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '.test.ts' returns 0 hits; DEFAULT_EMBEDDING_MODEL and NON_WIKI_TARGET_EMBEDDING_MODEL are "voyage-4"; createRerankProvider with rerank-2.5 model is implemented in embeddings.ts; 9 unit tests pass; tsc --noEmit exits clean.
 
+### R038 — Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
+- Class: correctness
+- Status: validated
+- Description: Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
+- Why it matters: Heuristic breaking-change output is less trustworthy than evidence-backed structural impact, but the review pipeline must remain non-blocking when substrate data is unavailable.
+- Source: M038
+- Primary owning slice: M038
+- Supporting slices: S02,S03
+- Validation: Validated by M040/S03. Proof check M040-S03-FAIL-OPEN-VALIDATION confirms neverThrew=true, succeeded=false, originalFindingsPreserved=true when LLM validation gate throws. buildGraphContextSection(null) returns empty text (fail-open). applyGraphAwareSelection() returns usedGraph=false on null graph. queryBlastRadiusFromSnapshot() provides caller/dependent evidence with explicit confidence scores and reason strings. bun run verify:m040:s03 --json exits 0 with overallPassed:true.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -462,11 +462,11 @@ This file is the explicit capability and coverage contract for the project.
 | R035 | operational | active | M041 | S03 | Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds. |
 | R036 | functional | active | M041 | S01,S02 | Backfill persists current-code chunks with provenance; retrieval returns current unchanged code from the canonical corpus for review-style queries. |
 | R037 | functional | active | M038 | S01,S02 | For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041. |
-| R038 | correctness | active | M038 | S02,S03 | For a production-like C++ or Python review scenario, breaking-change output cites caller/dependent evidence when available; timeout or substrate failure degrades cleanly without blocking review completion. |
+| R038 | correctness | validated | M038 | S02,S03 | Validated by M040/S03. Proof check M040-S03-FAIL-OPEN-VALIDATION confirms neverThrew=true, succeeded=false, originalFindingsPreserved=true when LLM validation gate throws. buildGraphContextSection(null) returns empty text (fail-open). applyGraphAwareSelection() returns usedGraph=false on null graph. queryBlastRadiusFromSnapshot() provides caller/dependent evidence with explicit confidence scores and reason strings. bun run verify:m040:s03 --json exits 0 with overallPassed:true. |
 
 ## Coverage Summary
 
-- Active requirements: 8
-- Mapped to slices: 8
-- Validated: 28 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030)
+- Active requirements: 7
+- Mapped to slices: 7
+- Validated: 29 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R038)
 - Unmapped active requirements: 0

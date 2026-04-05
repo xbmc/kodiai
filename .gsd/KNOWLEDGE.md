@@ -910,3 +910,59 @@ This keeps the staleness policy centralized while still distinguishing "DB/store
 **Rule:** When a proof harness needs to demonstrate that graph reranking *promotes* a file to a higher rank (not just that it is present in a larger selection), use `TOP_N=1` or the minimum N that creates a visible gap. "Impacted file present in top-N" and "impacted file promoted into top-1" are two distinct claims — only the second proves the ranking signal is meaningful.
 
 **Established in:** M040/S02/T03 (`scripts/verify-m040-s02.ts`, MISSED-FILES check, TOP_N=1 design decision).
+
+---
+
+## Bounded Prompt Section Pattern — Hard Item Caps + Char Budget Loop (M040/S03)
+
+**Context:** `buildGraphContextSection()` in `src/review-graph/prompt-context.ts` converts a `ReviewGraphBlastRadiusResult` into a bounded Markdown prompt section. Two independent caps apply:
+
+1. **Hard item caps** (applied first, O(cap × max_line_len) worst-case): `maxImpactedFiles` (default 10, capped at 20), `maxLikelyTests` (default 5, capped at 10), `maxDependents` (default 5, capped at 10). Items are rank-ordered before capping.
+2. **Char budget loop** (applied second): the assembled section is truncated and a truncation note is appended when it would exceed `maxChars` (default 2500).
+
+The function returns empty text when blast radius is null/empty — this is the fail-open path for backward compatibility with callers that don't pass a graph result.
+
+**Return value carries observability stats:** `charCount`, `impactedFilesIncluded`, `likelyTestsIncluded`, `dependentsIncluded`, and `truncated` are returned alongside `text` so callers can log graph context size without re-parsing the section.
+
+**Rule:** Hard item caps must be applied before the char budget loop — the cap loop is O(N) worst-case per item dropped; the hard cap bounds N so the loop terminates quickly. Do not rely on the budget loop alone to cap item count.
+
+**Established in:** M040/S03/T01 (`src/review-graph/prompt-context.ts`, `buildGraphContextSection`).
+
+---
+
+## Trivial-Change Bypass — Fail-Closed on Zero Files (M040/S03)
+
+**Context:** `isTrivialChange()` in `src/review-graph/validation.ts` returns `bypass: false` when `changedFileCount === 0` (fail-closed), not `bypass: true`. This is intentional: zero changed files is an unexpected input that may indicate a data problem — running the graph is safer than silently skipping it.
+
+The default threshold is 3 files. Line threshold is opt-in (default 0 = disabled). The function is configurable via `TrivialChangeOptions` and always returns a `reason` string for structured logging.
+
+**Rule:** Do not treat zero changed files as "trivially small". The fail-closed behavior on zero files is a deliberate invariant — a proof harness check (`M040-S03-TRIVIAL-BYPASS`) enforces it explicitly.
+
+**Established in:** M040/S03/T02 (`src/review-graph/validation.ts`, `isTrivialChange`).
+
+---
+
+## Non-Destructive Validation Annotation — Never Suppress, Always Fail-Open (M040/S03)
+
+**Context:** `validateGraphAmplifiedFindings()` in `src/review-graph/validation.ts` is a second-pass LLM gate for findings on graph-amplified (not directly changed) files. Its design invariants are:
+
+- **Non-destructive:** Adds `graphValidated` and `graphValidationVerdict` metadata to output findings — never removes or suppresses findings regardless of verdict.
+- **Graph-scoped:** Only validates findings on files in `impactedFiles`/`probableDependents` that are NOT in the changed-file set. Findings on directly changed files pass through with `graphValidated: false, graphValidationVerdict: "skipped"`.
+- **Fail-open:** Any LLM error, unparseable response, or unexpected exception returns the original findings unmodified with `succeeded: false`. The review pipeline is never blocked.
+- **Configurable:** Validation only runs when `enabled: true` (default false) and when `llm` and `blastRadius` are provided.
+
+**Rule:** Future extensions to this gate must preserve all four invariants. In particular, adding verdict-based suppression logic would violate the non-destructive contract — callers choose how to act on verdicts; the gate only annotates.
+
+**Established in:** M040/S03/T02 (`src/review-graph/validation.ts`, `validateGraphAmplifiedFindings`).
+
+---
+
+## Dynamic Import Pattern for Optional LLM Gate in Review Handler (M040/S03)
+
+**Context:** The optional graph validation gate in `src/handlers/review.ts` uses a dynamic `import()` to load the `GUARDRAIL_CLASSIFICATION` task router at the point of use rather than a top-level static import. This avoids circular dependency issues between the handler and the task router.
+
+**Pattern:** The gate is guarded by `config.review.graphValidation?.enabled` (accessed via type assertion, not Zod schema — the config schema addition was deferred). Because the gate is inert by default (requires explicit opt-in), the dynamic import only executes in enabled deployments.
+
+**Rule:** When adding new optional LLM gates to the review handler that use task routers, use dynamic imports inside the gate block to prevent circular dependencies. The `GUARDRAIL_CLASSIFICATION` task type is the correct choice for lightweight validation passes matching existing non-agentic usage patterns.
+
+**Established in:** M040/S03/T02 (`src/handlers/review.ts`, graph validation gate block).
