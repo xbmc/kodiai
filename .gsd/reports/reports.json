@@ -67,6 +67,22 @@
       "doneMilestones": 38,
       "totalMilestones": 41,
       "phase": "evaluating-gates"
+    },
+    {
+      "filename": "M040-2026-04-05T12-41-50.html",
+      "generatedAt": "2026-04-05T12:41:50.477Z",
+      "milestoneId": "M040",
+      "milestoneTitle": "Graph-Backed Extensive Review Context",
+      "label": "M040: Graph-Backed Extensive Review Context",
+      "kind": "milestone",
+      "totalCost": 374.87113204999963,
+      "totalTokens": 802292228,
+      "totalDuration": 119012930,
+      "doneSlices": 184,
+      "totalSlices": 190,
+      "doneMilestones": 39,
+      "totalMilestones": 41,
+      "phase": "evaluating-gates"
     }
   ]
 }

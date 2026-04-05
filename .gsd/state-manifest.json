@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T12:40:28.225Z",
+  "exported_at": "2026-04-05T14:00:53.980Z",
   "milestones": [
     {
       "id": "M001",
@@ -8905,19 +8905,28 @@
       "milestone_id": "M041",
       "slice_id": "S01",
       "id": "T01",
-      "title": "Create canonical corpus schema and store contract",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Validated and tightened the canonical code corpus schema and store contract, including SQL-enforced chunk/backfill invariants and passing store/type verification.",
+      "status": "complete",
+      "one_liner": "Validated and tightened the canonical code corpus schema and store contract, including SQL-enforced chunk/backfill invariants and passing store/type verification.",
+      "narrative": "Verified that the planned canonical corpus artifacts already existed locally: a dedicated migration, explicit canonical chunk/backfill types, a separate canonical code store, and focused store tests. Read the task inputs and canonical files to confirm they matched the slice contract of keeping current-code storage separate from historical diff-hunk snippet storage. Found one contract gap in src/db/migrations/033-canonical-code-corpus.sql: documented chunk_type and backfill status enums were described in comments and reflected in TypeScript types but were not enforced by SQL. Updated the migration to add CHECK constraints for canonical chunk types (function, class, method, module, block) and backfill statuses (running, completed, failed, partial). Then ran the task verification commands; the canonical store test suite passed in full and the workspace TypeScript check passed with no errors.",
+      "verification_result": "Ran the task-defined verification commands exactly: bun test ./src/knowledge/canonical-code-store.test.ts and bun run tsc --noEmit. The canonical store tests passed 34/34, covering insertion, dedup, replacement, vector/full-text search, stale-row handling, backfill state persistence, and negative/boundary cases. The full TypeScript typecheck passed with no errors.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T14:00:53.946Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None. The planned artifacts were already present locally, so execution became a contract-validation and schema-hardening pass rather than initial file creation.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/db/migrations/033-canonical-code-corpus.sql",
+        "src/knowledge/canonical-code-types.ts",
+        "src/knowledge/canonical-code-store.ts",
+        "src/knowledge/canonical-code-store.test.ts",
+        ".gsd/milestones/M041/slices/S01/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Keep canonical current-code storage in dedicated canonical_code_chunks/canonical_corpus_backfill_state tables instead of reusing historical code_snippets tables.",
+        "Use SQL CHECK constraints to enforce documented canonical chunk_type and backfill status invariants at the schema boundary."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M041\nkey_files:\n  - src/db/migrations/033-canonical-code-corpus.sql\n  - src/knowledge/canonical-code-types.ts\n  - src/knowledge/canonical-code-store.ts\n  - src/knowledge/canonical-code-store.test.ts\n  - .gsd/milestones/M041/slices/S01/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Keep canonical current-code storage in dedicated canonical_code_chunks/canonical_corpus_backfill_state tables instead of reusing historical code_snippets tables.\n  - Use SQL CHECK constraints to enforce documented canonical chunk_type and backfill status invariants at the schema boundary.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T14:00:53.945Z\nblocker_discovered: false\n---\n\n# T01: Validated and tightened the canonical code corpus schema and store contract, including SQL-enforced chunk/backfill invariants and passing store/type verification.\n\n**Validated and tightened the canonical code corpus schema and store contract, including SQL-enforced chunk/backfill invariants and passing store/type verification.**\n\n## What Happened\n\nVerified that the planned canonical corpus artifacts already existed locally: a dedicated migration, explicit canonical chunk/backfill types, a separate canonical code store, and focused store tests. Read the task inputs and canonical files to confirm they matched the slice contract of keeping current-code storage separate from historical diff-hunk snippet storage. Found one contract gap in src/db/migrations/033-canonical-code-corpus.sql: documented chunk_type and backfill status enums were described in comments and reflected in TypeScript types but were not enforced by SQL. Updated the migration to add CHECK constraints for canonical chunk types (function, class, method, module, block) and backfill statuses (running, completed, failed, partial). Then ran the task verification commands; the canonical store test suite passed in full and the workspace TypeScript check passed with no errors.\n\n## Verification\n\nRan the task-defined verification commands exactly: bun test ./src/knowledge/canonical-code-store.test.ts and bun run tsc --noEmit. The canonical store tests passed 34/34, covering insertion, dedup, replacement, vector/full-text search, stale-row handling, backfill state persistence, and negative/boundary cases. The full TypeScript typecheck passed with no errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/canonical-code-store.test.ts` | 0 | ✅ pass | 17ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6817ms |\n\n## Deviations\n\nNone. The planned artifacts were already present locally, so execution became a contract-validation and schema-hardening pass rather than initial file creation.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/db/migrations/033-canonical-code-corpus.sql`\n- `src/knowledge/canonical-code-types.ts`\n- `src/knowledge/canonical-code-store.ts`\n- `src/knowledge/canonical-code-store.test.ts`\n- `.gsd/milestones/M041/slices/S01/tasks/T01-SUMMARY.md`\n",
       "description": "- Add the first canonical-corpus migration with dedicated tables and indexes.\n- Define explicit types for canonical chunk identity, provenance, and replacement semantics.\n- Implement a store module that is clearly separate from historical snippet storage.",
       "estimate": "0.5-1d",
       "files": [
@@ -9675,6 +9684,18 @@
       "decision": "How to prove graph-aware selection surfaces impacted files beyond file-risk triage alone",
       "choice": "Use TOP_N=1 for the MISSED-FILES fixture check so rank promotion (not just presence in a wider top-K set) is the machine-checkable property.",
       "rationale": "With TOP_N=2 the impacted file was already in the risk-only top-2 at rank 2, so graphSurfacedExtra was empty and the check would wrongly fail. TOP_N=1 precisely captures the rank-promotion claim: graph-aware selection places the impacted file first while risk-only places an unrelated auth-path file first.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 70,
+      "id": "D036",
+      "when_context": "M041/S01/T01",
+      "scope": "architecture",
+      "decision": "How canonical code chunks are upserted — identity conflict key + content-hash dedup",
+      "choice": "Chunk identity = (repo, owner, canonical_ref, file_path, chunk_type, COALESCE(symbol_name, '')) as a partial unique index (WHERE deleted_at IS NULL). A separate read-then-write approach (SELECT then UPDATE or INSERT) handles three outcomes: inserted / replaced / dedup based on content_hash match.",
+      "rationale": "A direct ON CONFLICT upsert was not viable because we need to differentiate dedup (no-op, no re-embedding) from replaced (changed content, must re-embed). PostgreSQL ON CONFLICT DO UPDATE cannot return which branch was taken. The read-then-write pattern makes the outcome explicit, enabling accurate progress counters during backfill.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -11253,6 +11274,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6800,
       "created_at": "2026-04-05T12:30:46.434Z"
+    },
+    {
+      "id": 144,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M041",
+      "command": "bun test ./src/knowledge/canonical-code-store.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 17,
+      "created_at": "2026-04-05T14:00:53.946Z"
+    },
+    {
+      "id": 145,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M041",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6817,
+      "created_at": "2026-04-05T14:00:53.946Z"
     }
   ]
 }

@@ -4,7 +4,7 @@
 **Demo:** After this: After this slice, Kodiai can ingest a fixture repo snapshot into dedicated canonical-corpus tables and show current-code chunks with explicit repo/ref/commit provenance.
 
 ## Tasks
-- [ ] **T01: Create canonical corpus schema and store contract** — - Add the first canonical-corpus migration with dedicated tables and indexes.
+- [x] **T01: Validated and tightened the canonical code corpus schema and store contract, including SQL-enforced chunk/backfill invariants and passing store/type verification.** — - Add the first canonical-corpus migration with dedicated tables and indexes.
 - Define explicit types for canonical chunk identity, provenance, and replacement semantics.
 - Implement a store module that is clearly separate from historical snippet storage.
   - Estimate: 0.5-1d
