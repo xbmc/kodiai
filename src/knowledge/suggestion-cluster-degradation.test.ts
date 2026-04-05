@@ -66,6 +66,8 @@ function makeModel(opts: {
   negativeCentroids?: Float32Array[];
   positiveMemberCount?: number;
   negativeMemberCount?: number;
+  builtAt?: string;
+  expiresAt?: string;
 } = {}): SuggestionClusterModel {
   return {
     id: 1,
@@ -75,30 +77,39 @@ function makeModel(opts: {
     memberCount: (opts.positiveMemberCount ?? 10) + (opts.negativeMemberCount ?? 10),
     positiveMemberCount: opts.positiveMemberCount ?? 10,
     negativeMemberCount: opts.negativeMemberCount ?? 10,
-    builtAt: new Date().toISOString(),
-    expiresAt: new Date(Date.now() + 86400_000).toISOString(),
+    builtAt: opts.builtAt ?? new Date().toISOString(),
+    expiresAt: opts.expiresAt ?? new Date(Date.now() + 86400_000).toISOString(),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
 }
 
+function makeExpiredModel(expiredByMs: number): SuggestionClusterModel {
+  const expiresAt = new Date(Date.now() - expiredByMs);
+  const builtAt = new Date(expiresAt.getTime() - 86400_000);
+  return makeModel({
+    builtAt: builtAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+  });
+}
+
 function makeStore(model: SuggestionClusterModel | null): SuggestionClusterStore {
   return {
-    getModel: async () => model,
-    getModelIncludingStale: async () => model,
-    saveModel: async () => model!,
-    deleteModel: async () => {},
-    listExpiredModelRepos: async () => [],
+    getModel: mock(async () => model),
+    getModelIncludingStale: mock(async () => model),
+    saveModel: mock(async () => model!),
+    deleteModel: mock(async () => {}),
+    listExpiredModelRepos: mock(async () => []),
   };
 }
 
 function makeThrowingStore(err: Error): SuggestionClusterStore {
   return {
-    getModel: async () => { throw err; },
-    getModelIncludingStale: async () => { throw err; },
-    saveModel: async () => { throw err; },
-    deleteModel: async () => {},
-    listExpiredModelRepos: async () => [],
+    getModel: mock(async () => { throw err; }),
+    getModelIncludingStale: mock(async () => { throw err; }),
+    saveModel: mock(async () => { throw err; }),
+    deleteModel: mock(async () => {}),
+    listExpiredModelRepos: mock(async () => []),
   };
 }
 
@@ -278,9 +289,10 @@ describe("applyClusterScoringWithDegradation — no-model", () => {
     const { logger, debugCalls } = createMockLogger();
     const findings = makeFindings();
 
+    const store = makeStore(null);
     const result = await applyClusterScoringWithDegradation(
       findings,
-      makeStore(null),
+      store,
       makeEmbeddingProvider(HIGH_SIM_CENTROID),
       REPO,
       logger,
@@ -294,6 +306,28 @@ describe("applyClusterScoringWithDegradation — no-model", () => {
 
     const debugLog = debugCalls.find(c =>
       (c.args[0] as Record<string, unknown>)?.degradationReason === "no-model",
+    );
+    expect(debugLog).toBeDefined();
+    expect(store.getModelIncludingStale).toHaveBeenCalledWith(REPO);
+    expect(store.getModel).not.toHaveBeenCalled();
+  });
+
+  it("returns no-model when the cached model is beyond the stale grace window", async () => {
+    const { logger, debugCalls } = createMockLogger();
+    const findings = makeFindings();
+
+    const result = await applyClusterScoringWithDegradation(
+      findings,
+      makeStore(makeExpiredModel(5 * 60 * 60 * 1000)),
+      makeEmbeddingProvider(HIGH_SIM_CENTROID),
+      REPO,
+      logger,
+    );
+
+    expect(result.degradationReason).toBe("no-model");
+    expect(result.modelUsed).toBe(false);
+    const debugLog = debugCalls.find(c =>
+      (c.args[0] as Record<string, unknown>)?.stalenessStatus === "very-stale",
     );
     expect(debugLog).toBeDefined();
   });
@@ -439,6 +473,33 @@ describe("applyClusterScoringWithDegradation — suppression happy path", () => 
     expect(result.degradationReason).toBeNull();
     expect(result.suppressedCount).toBe(1);
     expect(result.findings[0]!.suppressed).toBe(true);
+  });
+
+  it("uses stale-but-graceful cached models for scoring via getModelIncludingStale", async () => {
+    const { logger } = createMockLogger();
+    const staleModel = makeExpiredModel(60_000);
+    const store = makeStore(staleModel);
+    const findings: ClusterScoringFinding[] = [{
+      title: "Grace-window cache reuse",
+      severity: "medium",
+      category: "style",
+      confidence: 55,
+      suppressed: false,
+    }];
+
+    const result = await applyClusterScoringWithDegradation(
+      findings,
+      store,
+      makeEmbeddingProvider(HIGH_SIM_CENTROID),
+      REPO,
+      logger,
+    );
+
+    expect(result.modelUsed).toBe(true);
+    expect(result.degradationReason).toBeNull();
+    expect(result.findings[0]!.suppressed).toBe(true);
+    expect(store.getModelIncludingStale).toHaveBeenCalledWith(REPO);
+    expect(store.getModel).not.toHaveBeenCalled();
   });
 
   it("does not suppress findings below the threshold", async () => {

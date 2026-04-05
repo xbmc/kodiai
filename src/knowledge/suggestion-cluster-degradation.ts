@@ -9,8 +9,8 @@
  * Degradation reasons (exhaustive):
  *   no-store            — clusterModelStore not configured (optional dep)
  *   no-embedding        — embeddingProvider not configured (optional dep)
- *   model-load-error    — store.getModel threw an unexpected error
- *   no-model            — store returned null (repo has no cached model)
+ *   model-load-error    — staleness-aware store read failed unexpectedly
+ *   no-model            — no usable cached model after staleness policy
  *   model-not-eligible  — model exists but insufficient centroid members
  *   scoring-error       — scoreFindings threw an unexpected error
  *   (absent)            — scoring ran successfully; degradationReason is null
@@ -22,6 +22,7 @@
 import type { Logger } from "pino";
 import type { FindingSeverity, FindingCategory, EmbeddingProvider } from "./types.ts";
 import type { SuggestionClusterStore, SuggestionClusterModel } from "./suggestion-cluster-store.ts";
+import { resolveModelForScoring } from "./suggestion-cluster-staleness.ts";
 import { scoreFindings, isModelEligibleForScoring } from "./suggestion-cluster-scoring.ts";
 import { applyClusterScoreAdjustment } from "../feedback/confidence-adjuster.ts";
 
@@ -120,8 +121,8 @@ function noOpResult<T extends ClusterScoringFinding>(
  * Degradation paths:
  * 1. `no-store`           — clusterModelStore is null/undefined
  * 2. `no-embedding`       — embeddingProvider is null/undefined
- * 3. `model-load-error`   — store.getModel rejected (warn log)
- * 4. `no-model`           — store returned null (debug log — normal for new repos)
+ * 3. `model-load-error`   — staleness-aware model load failed (warn log)
+ * 4. `no-model`           — no usable cached model after staleness policy (debug log)
  * 5. `model-not-eligible` — model has insufficient centroid members (info log)
  * 6. `scoring-error`      — scoreFindings rejected (warn log)
  *
@@ -156,23 +157,28 @@ export async function applyClusterScoringWithDegradation<T extends ClusterScorin
     return noOpResult(findings, "no-embedding");
   }
 
-  // ── Model load ────────────────────────────────────────────────────
-  let model: SuggestionClusterModel | null = null;
+  // ── Model load + staleness policy ────────────────────────────────
+  const resolvedModel = await resolveModelForScoring(repo, clusterModelStore, logger);
 
-  try {
-    model = await clusterModelStore.getModel(repo);
-  } catch (err) {
+  if (resolvedModel.storeReadFailed) {
     logger.warn(
-      { repo, err, gate: "cluster-model-load", degradationReason: "model-load-error" },
+      { repo, gate: "cluster-model-load", degradationReason: "model-load-error" },
       "Cluster model load failed; proceeding without thematic scoring (fail-open)",
     );
     return noOpResult(findings, "model-load-error");
   }
 
+  const model = resolvedModel.model;
+
   if (!model) {
     logger.debug(
-      { repo, gate: "cluster-model-load", degradationReason: "no-model" },
-      "No cluster model found for repo; scoring will be skipped",
+      {
+        repo,
+        gate: "cluster-model-load",
+        degradationReason: "no-model",
+        stalenessStatus: resolvedModel.staleness.status,
+      },
+      "No usable cluster model found for repo; scoring will be skipped",
     );
     return noOpResult(findings, "no-model");
   }
@@ -204,6 +210,7 @@ export async function applyClusterScoringWithDegradation<T extends ClusterScorin
       positiveMemberCount: model.positiveMemberCount,
       negativeMemberCount: model.negativeMemberCount,
       builtAt: model.builtAt,
+      stalenessStatus: resolvedModel.staleness.status,
     },
     "Cluster model loaded for thematic scoring",
   );

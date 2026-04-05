@@ -68,6 +68,12 @@ export type ResolveModelForScoringResult = {
    */
   model: SuggestionClusterModel | null;
   staleness: ModelStalenessResult;
+  /**
+   * True when the underlying store read failed and the resolver degraded
+   * to the missing-model path. Callers that distinguish store failure from
+   * ordinary cache miss can use this to preserve a more specific reason code.
+   */
+  storeReadFailed: boolean;
 };
 
 // ── Pure evaluation ───────────────────────────────────────────────────
@@ -147,6 +153,7 @@ export async function resolveModelForScoring(
     return {
       model: null,
       staleness: { status: "missing", modelAgeMs: null, expiredByMs: null },
+      storeReadFailed: true,
     };
   }
 
@@ -164,7 +171,7 @@ export async function resolveModelForScoring(
         },
         "Cluster model fresh; using for scoring",
       );
-      return { model, staleness };
+      return { model, staleness, storeReadFailed: false };
     }
 
     case "stale": {
@@ -179,7 +186,7 @@ export async function resolveModelForScoring(
         },
         "Cluster model stale but within grace period; using with stale-use warning",
       );
-      return { model, staleness };
+      return { model, staleness, storeReadFailed: false };
     }
 
     case "very-stale": {
@@ -194,7 +201,7 @@ export async function resolveModelForScoring(
         },
         "Cluster model very stale (beyond grace period); degrading to no-scoring",
       );
-      return { model: null, staleness };
+      return { model: null, staleness, storeReadFailed: false };
     }
 
     case "missing": {
@@ -202,7 +209,7 @@ export async function resolveModelForScoring(
         { repo, noModelFallback: true },
         "No cluster model found for repo; scoring will be skipped",
       );
-      return { model: null, staleness };
+      return { model: null, staleness, storeReadFailed: false };
     }
   }
 }

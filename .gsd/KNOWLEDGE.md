@@ -825,3 +825,21 @@ const provider: EmbeddingProvider = {
 **Return null to simulate embedding failure:** returning `null` from the mock causes `scoreFindings()` to apply the fail-open path (no signal, `clusterModelUsed` still true but individual finding gets zero adjustment).
 
 **Established in:** M037/S02/T03 (`verify-m037-s02.test.ts`, sequential embedding fixture pattern).
+
+---
+
+## Staleness-Aware Cluster Scoring Must Preserve Degradation Reason Codes (M037/S03)
+
+**Context:** `resolveModelForScoring()` is the only place that applies the cluster-model grace-period policy (`fresh` / `stale` / `very-stale` / `missing`). But `applyClusterScoringWithDegradation()` also needs to preserve the coarser review-surface reason codes (`model-load-error` vs `no-model`) used by runtime logs, tests, and proof harnesses.
+
+**Pattern:** Route the live scoring wrapper through `resolveModelForScoring()` rather than calling `store.getModel()` directly, and carry a small sentinel on the resolver result:
+```ts
+const resolved = await resolveModelForScoring(repo, store, logger);
+if (resolved.storeReadFailed) return noOpResult(findings, "model-load-error");
+if (!resolved.model) return noOpResult(findings, "no-model");
+```
+This keeps the staleness policy centralized while still distinguishing "DB/store read failed" from "no usable model after policy".
+
+**Rule:** Any caller that wants stale-grace behavior must go through `resolveModelForScoring()` (or `evaluateModelStaleness()` + equivalent policy logic). Do not call `store.getModel()` from live scoring code — that bypasses the grace window and silently drops stale-but-still-usable models.
+
+**Established in:** M037/S03/T03 (`suggestion-cluster-staleness.ts`, `suggestion-cluster-degradation.ts`, `verify-m037-s03.ts`).

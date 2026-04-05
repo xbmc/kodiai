@@ -16,7 +16,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/suggestion-cluster-degradation.ts, src/knowledge/suggestion-cluster-degradation.test.ts, src/handlers/review.ts
   - Verify: bun test ./src/knowledge/suggestion-cluster-degradation.test.ts
-- [ ] **T03: Add refresh and fail-open verifier** — - Add the milestone-level verifier covering cache reuse, refresh, staleness, and fail-open review completion.
+- [x] **T03: Added the M037 S03 proof harness and wired live cluster scoring through the stale-model resolver so cache reuse, stale-grace handling, refresh, and naive fail-open fallback are executable and verified.** — - Add the milestone-level verifier covering cache reuse, refresh, staleness, and fail-open review completion.
 - Keep proof output stable enough to close M037 without hand inspection.
 - Cover the path where the review falls back to the naive behavior.
   - Estimate: 0.5-1d
