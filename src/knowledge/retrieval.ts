@@ -34,6 +34,8 @@ export type RetrieveOptions = {
   owner: string;
   /** Raw text queries -- multi-query is first-class. Single query: pass ['query']. */
   queries: string[];
+  /** Canonical ref to query for current-code retrieval. Defaults to "main" for backward compatibility. */
+  canonicalRef?: string;
   /** Workspace dir for snippet anchoring. If omitted, skip snippet building. */
   workspaceDir?: string;
   /** PR languages for language-based reranking. Default: [] */
@@ -411,6 +413,7 @@ export function createRetriever(deps: {
     const maxContextChars = opts.maxContextChars ?? config.retrieval.maxContextChars;
     const prLanguages = opts.prLanguages ?? [];
     const triggerType = opts.triggerType ?? "pr_review";
+    const canonicalRef = opts.canonicalRef ?? "main";
     const intentQuery = opts.queries[0]!;
 
     try {
@@ -522,7 +525,7 @@ export function createRetriever(deps: {
               embeddingProvider: deps.embeddingProvider,
               query: intentQuery,
               repo: opts.repo,
-              canonicalRef: "main",
+              canonicalRef,
               topK: 5,
               logger: opts.logger,
             })

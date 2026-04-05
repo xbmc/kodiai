@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T14:23:01.180Z",
+  "exported_at": "2026-04-05T14:30:09.279Z",
   "milestones": [
     {
       "id": "M001",
@@ -9145,19 +9145,28 @@
       "milestone_id": "M041",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add end-to-end backfill and retrieval verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a deterministic end-to-end verifier for canonical default-branch backfill and retrieval, including non-`main` default-branch propagation and corpus-separation proof output.",
+      "status": "complete",
+      "one_liner": "Added a deterministic end-to-end verifier for canonical default-branch backfill and retrieval, including non-`main` default-branch propagation and corpus-separation proof output.",
+      "narrative": "Implemented `scripts/verify-m041-s02.ts` as a deterministic proof harness that creates a production-like fixture repository on a non-`main` default branch, runs the real `backfillCanonicalCodeSnapshot(...)` path, then exercises the real unified retriever against both canonical current-code rows and a historical diff-hunk snippet fixture. The harness emits four stable checks covering canonical backfill persistence, canonical retrieval evidence, preserved separation between canonical and historical corpora, and end-to-end propagation of a non-`main` default branch. Added `scripts/verify-m041-s02.test.ts` to lock the harness contract, JSON/text output, failure signaling, and check semantics. While implementing the proof, found and fixed a real retrieval orchestration bug in `src/knowledge/retrieval.ts`: canonical retrieval was hard-coded to `main` instead of using the resolved canonical ref. Added the `verify:m041:s02` script entrypoint to `package.json`.",
+      "verification_result": "Ran the task verification command from the plan: `bun test ./scripts/verify-m041-s02.test.ts && bun run verify:m041:s02 -- --json`. The test suite passed all 15 assertions, and the verifier returned `overallPassed: true` with four passing checks proving canonical snapshot persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T14:30:09.239Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Updated `src/knowledge/retrieval.ts` and `package.json` in addition to the planned new verifier files because the end-to-end proof exposed a real canonical-ref propagation bug in the existing retrieval orchestration and required a runnable script entrypoint.",
+      "known_issues": "The deterministic verifier proves that canonical current-code is returned with correct provenance and preserved corpus boundaries, but its fixture does not require canonical results to outrank every historical snippet globally. That stricter ranking policy would require a more opinionated scoring contract than this slice committed to. None.",
+      "key_files": [
+        "scripts/verify-m041-s02.ts",
+        "scripts/verify-m041-s02.test.ts",
+        "src/knowledge/retrieval.ts",
+        "package.json",
+        ".gsd/milestones/M041/slices/S02/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Extended unified retrieval to accept a caller-supplied canonical ref so canonical current-code search follows the repo's actual default branch instead of assuming `main`.",
+        "Verified canonical retrieval with a non-`main` fixture branch and explicit historical snippet corpus so the proof catches provenance or corpus-boundary regressions."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M041\nkey_files:\n  - scripts/verify-m041-s02.ts\n  - scripts/verify-m041-s02.test.ts\n  - src/knowledge/retrieval.ts\n  - package.json\n  - .gsd/milestones/M041/slices/S02/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Extended unified retrieval to accept a caller-supplied canonical ref so canonical current-code search follows the repo's actual default branch instead of assuming `main`.\n  - Verified canonical retrieval with a non-`main` fixture branch and explicit historical snippet corpus so the proof catches provenance or corpus-boundary regressions.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T14:30:09.238Z\nblocker_discovered: false\n---\n\n# T03: Added a deterministic end-to-end verifier for canonical default-branch backfill and retrieval, including non-`main` default-branch propagation and corpus-separation proof output.\n\n**Added a deterministic end-to-end verifier for canonical default-branch backfill and retrieval, including non-`main` default-branch propagation and corpus-separation proof output.**\n\n## What Happened\n\nImplemented `scripts/verify-m041-s02.ts` as a deterministic proof harness that creates a production-like fixture repository on a non-`main` default branch, runs the real `backfillCanonicalCodeSnapshot(...)` path, then exercises the real unified retriever against both canonical current-code rows and a historical diff-hunk snippet fixture. The harness emits four stable checks covering canonical backfill persistence, canonical retrieval evidence, preserved separation between canonical and historical corpora, and end-to-end propagation of a non-`main` default branch. Added `scripts/verify-m041-s02.test.ts` to lock the harness contract, JSON/text output, failure signaling, and check semantics. While implementing the proof, found and fixed a real retrieval orchestration bug in `src/knowledge/retrieval.ts`: canonical retrieval was hard-coded to `main` instead of using the resolved canonical ref. Added the `verify:m041:s02` script entrypoint to `package.json`.\n\n## Verification\n\nRan the task verification command from the plan: `bun test ./scripts/verify-m041-s02.test.ts && bun run verify:m041:s02 -- --json`. The test suite passed all 15 assertions, and the verifier returned `overallPassed: true` with four passing checks proving canonical snapshot persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m041-s02.test.ts` | 0 | ✅ pass | 213ms |\n| 2 | `bun run verify:m041:s02 -- --json` | 0 | ✅ pass | 93ms |\n\n## Deviations\n\nUpdated `src/knowledge/retrieval.ts` and `package.json` in addition to the planned new verifier files because the end-to-end proof exposed a real canonical-ref propagation bug in the existing retrieval orchestration and required a runnable script entrypoint.\n\n## Known Issues\n\nThe deterministic verifier proves that canonical current-code is returned with correct provenance and preserved corpus boundaries, but its fixture does not require canonical results to outrank every historical snippet globally. That stricter ranking policy would require a more opinionated scoring contract than this slice committed to. None.\n\n## Files Created/Modified\n\n- `scripts/verify-m041-s02.ts`\n- `scripts/verify-m041-s02.test.ts`\n- `src/knowledge/retrieval.ts`\n- `package.json`\n- `.gsd/milestones/M041/slices/S02/tasks/T03-SUMMARY.md`\n",
       "description": "- Add an end-to-end verifier for M041/S02 covering one-time backfill plus review-style retrieval.\n- Use a production-like fixture repo snapshot or equivalent fixture package.\n- Prove retrieval hits canonical current-code rows rather than historical diff-hunk rows.",
       "estimate": "0.5-1d",
       "files": [
@@ -11421,6 +11430,28 @@
       "verdict": "✅ pass",
       "duration_ms": 1000,
       "created_at": "2026-04-05T14:23:01.157Z"
+    },
+    {
+      "id": 153,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M041",
+      "command": "bun test ./scripts/verify-m041-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 213,
+      "created_at": "2026-04-05T14:30:09.239Z"
+    },
+    {
+      "id": 154,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M041",
+      "command": "bun run verify:m041:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 93,
+      "created_at": "2026-04-05T14:30:09.239Z"
     }
   ]
 }

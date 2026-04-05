@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/knowledge/canonical-code-retrieval.ts, src/knowledge/canonical-code-retrieval.test.ts, src/knowledge/retrieval.ts, src/knowledge/code-snippet-retrieval.ts
   - Verify: bun test ./src/knowledge/canonical-code-retrieval.test.ts
-- [ ] **T03: Add end-to-end backfill and retrieval verifier** — - Add an end-to-end verifier for M041/S02 covering one-time backfill plus review-style retrieval.
+- [x] **T03: Added a deterministic end-to-end verifier for canonical default-branch backfill and retrieval, including non-`main` default-branch propagation and corpus-separation proof output.** — - Add an end-to-end verifier for M041/S02 covering one-time backfill plus review-style retrieval.
 - Use a production-like fixture repo snapshot or equivalent fixture package.
 - Prove retrieval hits canonical current-code rows rather than historical diff-hunk rows.
   - Estimate: 0.5-1d
