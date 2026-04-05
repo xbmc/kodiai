@@ -1172,6 +1172,8 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 
 import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { formatActiveRulesSection, type SanitizedActiveRule } from "../knowledge/active-rules.ts";
+import { buildGraphContextSection, type GraphContextOptions } from "../review-graph/prompt-context.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 
 const MAX_UNIFIED_CITATIONS = 8;
 
@@ -1657,6 +1659,9 @@ export function buildReviewPrompt(context: {
   linkedIssues?: LinkResult;
   // Generated active rules (M036/S02)
   activeRules?: SanitizedActiveRule[];
+  // Graph-derived review context (M040/S03): blast-radius result + packing options
+  graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
+  graphContextOptions?: GraphContextOptions;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1731,6 +1736,17 @@ export function buildReviewPrompt(context: {
   // --- Incremental review context ---
   if (context.incrementalContext) {
     lines.push("", buildIncrementalReviewSection(context.incrementalContext));
+  }
+
+  // --- Graph-derived review context (M040/S03) ---
+  if (context.graphBlastRadius) {
+    const graphSection = buildGraphContextSection(
+      context.graphBlastRadius,
+      context.graphContextOptions,
+    );
+    if (graphSection.text) {
+      lines.push("", graphSection.text);
+    }
   }
 
   // --- Knowledge context (unified cross-corpus or legacy) ---

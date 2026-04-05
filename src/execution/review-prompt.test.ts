@@ -1959,3 +1959,269 @@ describe("buildReviewPrompt active rules injection", () => {
     expect(prompt).not.toContain("Generated Review Rules");
   });
 });
+
+// ---------------------------------------------------------------------------
+// M040/S03: Graph-context prompt rendering and bounded packing
+// ---------------------------------------------------------------------------
+
+import { buildGraphContextSection } from "../review-graph/prompt-context.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+
+function makeBlastRadius(overrides: Partial<ReviewGraphBlastRadiusResult> = {}): ReviewGraphBlastRadiusResult {
+  return {
+    changedFiles: ["src/auth.cpp"],
+    seedSymbols: [
+      { stableKey: "sym:auth:verifyToken", symbolName: "verifyToken", qualifiedName: "Auth::verifyToken", filePath: "src/auth.cpp" },
+    ],
+    impactedFiles: [
+      { path: "src/session.cpp", score: 0.92, confidence: 0.85, reasons: ["calls changed symbol Auth::verifyToken"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"] },
+      { path: "src/api/handler.cpp", score: 0.72, confidence: 0.70, reasons: ["imports changed file src/auth.cpp"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"] },
+    ],
+    probableDependents: [
+      { stableKey: "sym:session:create", symbolName: "create", qualifiedName: "Session::create", filePath: "src/session.cpp", score: 0.85, confidence: 0.80, reasons: ["calls changed symbol Auth::verifyToken"], relatedChangedPaths: ["src/auth.cpp"] },
+    ],
+    likelyTests: [
+      { path: "tests/auth_test.cpp", score: 0.88, confidence: 0.90, reasons: ["test heuristic matches changed symbol verifyToken"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"], testSymbols: ["test_verifyToken"] },
+    ],
+    graphStats: { files: 120, nodes: 840, edges: 2100, changedFilesFound: 1 },
+    ...overrides,
+  };
+}
+
+describe("buildGraphContextSection", () => {
+  test("returns empty section for null blast radius", () => {
+    const result = buildGraphContextSection(null);
+    expect(result.text).toBe("");
+    expect(result.truncated).toBe(false);
+    expect(result.stats.impactedFilesIncluded).toBe(0);
+  });
+
+  test("returns empty section for undefined blast radius", () => {
+    const result = buildGraphContextSection(undefined);
+    expect(result.text).toBe("");
+  });
+
+  test("returns empty section when all sub-lists are empty", () => {
+    const result = buildGraphContextSection(makeBlastRadius({
+      impactedFiles: [],
+      likelyTests: [],
+      probableDependents: [],
+    }));
+    expect(result.text).toBe("");
+  });
+
+  test("returns empty section when maxChars is 0", () => {
+    const result = buildGraphContextSection(makeBlastRadius(), { maxChars: 0 });
+    expect(result.text).toBe("");
+  });
+
+  test("includes section header", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("## Graph-Derived Review Context");
+  });
+
+  test("includes graph stats in header", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("120 files");
+    expect(result.text).toContain("840 nodes");
+    expect(result.text).toContain("2100 edges");
+  });
+
+  test("includes impacted files with score and confidence", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Impacted Files");
+    expect(result.text).toContain("`src/session.cpp`");
+    expect(result.text).toContain("score: 0.920");
+    expect(result.text).toContain("confidence: high");
+  });
+
+  test("includes likely tests section", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Likely Affected Tests");
+    expect(result.text).toContain("`tests/auth_test.cpp`");
+  });
+
+  test("includes probable dependents section", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Probable Dependents");
+    expect(result.text).toContain("Session::create");
+    expect(result.text).toContain("`src/session.cpp`");
+  });
+
+  test("impacted file entry includes first reason", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("calls changed symbol Auth::verifyToken");
+  });
+
+  test("stats reflect included counts", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.stats.impactedFilesIncluded).toBe(2);
+    expect(result.stats.likelyTestsIncluded).toBe(1);
+    expect(result.stats.dependentsIncluded).toBe(1);
+  });
+
+  test("no truncation flag on small result", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.truncated).toBe(false);
+  });
+
+  test("caps impacted files at maxImpactedFiles option", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 15 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.05,
+        confidence: 0.8,
+        reasons: [`edge ${i}`],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const result = buildGraphContextSection(radius, { maxImpactedFiles: 5 });
+    expect(result.stats.impactedFilesIncluded).toBe(5);
+    expect(result.text).toContain("`src/file_0.cpp`");
+    // File 5 onwards should not be included
+    expect(result.text).not.toContain("`src/file_5.cpp`");
+  });
+
+  test("hard cap on impacted files is 20 regardless of option", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 25 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.03,
+        confidence: 0.8,
+        reasons: ["edge"],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const result = buildGraphContextSection(radius, { maxImpactedFiles: 50 });
+    // Hard cap is 20
+    expect(result.stats.impactedFilesIncluded).toBeLessThanOrEqual(20);
+  });
+
+  test("truncation note appears when char budget is exceeded", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 20 }, (_, i) => ({
+        path: `src/very_long_filename_that_uses_lots_of_characters_${i}.cpp`,
+        score: 1 - i * 0.04,
+        confidence: 0.8,
+        reasons: [`calls changed symbol LongClassName::longMethodNameThatIsVeryDescriptive_${i}`],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    // Small budget to force truncation
+    const result = buildGraphContextSection(radius, { maxChars: 600 });
+    expect(result.truncated).toBe(true);
+    expect(result.text).toContain("truncated");
+  });
+
+  test("total char count stays at or under maxChars", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 20 }, (_, i) => ({
+        path: `src/component_${i}.cpp`,
+        score: 1 - i * 0.04,
+        confidence: 0.9,
+        reasons: ["calls changed symbol"],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const MAX = 1200;
+    const result = buildGraphContextSection(radius, { maxChars: MAX });
+    expect(result.stats.charCount).toBeLessThanOrEqual(MAX);
+  });
+
+  test("confidence label is 'high' for >= 0.8, 'medium' for 0.5-0.79, 'low' below 0.5", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: [
+        { path: "src/high.cpp", score: 0.9, confidence: 0.95, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+        { path: "src/medium.cpp", score: 0.7, confidence: 0.6, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+        { path: "src/low.cpp", score: 0.5, confidence: 0.3, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+      ],
+      likelyTests: [],
+      probableDependents: [],
+    });
+    const result = buildGraphContextSection(radius);
+    expect(result.text).toContain("confidence: high");
+    expect(result.text).toContain("confidence: medium");
+    expect(result.text).toContain("confidence: low");
+  });
+
+  test("charCount in stats matches actual text length", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.stats.charCount).toBe(result.text.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M040/S03: buildReviewPrompt graph context integration
+// ---------------------------------------------------------------------------
+
+describe("buildReviewPrompt graph context integration", () => {
+  test("includes graph context section when graphBlastRadius is provided", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
+    expect(prompt).toContain("## Graph-Derived Review Context");
+    expect(prompt).toContain("`src/session.cpp`");
+  });
+
+  test("omits graph context section when graphBlastRadius is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Graph-Derived Review Context");
+  });
+
+  test("omits graph context section when graphBlastRadius is null", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: null }));
+    expect(prompt).not.toContain("## Graph-Derived Review Context");
+  });
+
+  test("graph context section appears after incremental review context and before knowledge context", () => {
+    const incrementalContext = {
+      lastReviewedHeadSha: "abc1234",
+      changedFilesSinceLastReview: ["src/auth.cpp"],
+      unresolvedPriorFindings: [],
+    };
+    const prompt = buildReviewPrompt(baseContext({
+      graphBlastRadius: makeBlastRadius(),
+      incrementalContext,
+    }));
+    const incrementalIdx = prompt.indexOf("## Incremental Review Mode");
+    const graphIdx = prompt.indexOf("## Graph-Derived Review Context");
+    expect(incrementalIdx).toBeGreaterThan(-1);
+    expect(graphIdx).toBeGreaterThan(-1);
+    expect(graphIdx).toBeGreaterThan(incrementalIdx);
+  });
+
+  test("graph context options are threaded through to the section builder", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 10 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.05,
+        confidence: 0.8,
+        reasons: ["edge"],
+        relatedChangedPaths: [],
+        languages: ["C++"],
+      })),
+    });
+    // Cap at 3 with options
+    const prompt = buildReviewPrompt(baseContext({
+      graphBlastRadius: radius,
+      graphContextOptions: { maxImpactedFiles: 3 },
+    }));
+    expect(prompt).toContain("`src/file_0.cpp`");
+    expect(prompt).toContain("`src/file_2.cpp`");
+    expect(prompt).not.toContain("`src/file_3.cpp`");
+  });
+
+  test("backward compatible: existing prompt structure unchanged without graph context", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("Changed files:");
+    expect(prompt).toContain("## What to look for");
+    expect(prompt).not.toContain("Graph-Derived");
+  });
+
+  test("graph context section mentions impacted file count and changed file resolution", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
+    expect(prompt).toContain("1/1 changed files resolved in graph");
+  });
+});

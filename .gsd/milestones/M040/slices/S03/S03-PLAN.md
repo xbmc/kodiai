@@ -4,7 +4,7 @@
 **Demo:** After this: After this, a large C++ or Python PR gets a bounded graph context section and optional second-pass validation for graph-amplified findings, while a trivial PR bypasses graph overhead cleanly.
 
 ## Tasks
-- [ ] **T01: Add bounded graph prompt context** — - Add a bounded graph-context section to the review prompt for impacted files, tests, and dependency chains.
+- [x] **T01: Add buildGraphContextSection() for bounded graph prompt packing and wire it into buildReviewPrompt() via graphBlastRadius param; 203 tests pass** — - Add a bounded graph-context section to the review prompt for impacted files, tests, and dependency chains.
 - Pack graph evidence by rank and cap size so blast radius never becomes a raw dump.
 - Add tests for prompt rendering and bounded packing behavior.
   - Estimate: 0.5-1d

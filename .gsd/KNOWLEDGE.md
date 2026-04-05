@@ -867,3 +867,46 @@ This keeps the staleness policy centralized while still distinguishing "DB/store
 **Pattern:** Verify real code exists, verify slice artifacts exist, then rerun the milestone's slice-level proof commands and cite concrete check IDs/status codes in the milestone summary. If the harness exposes a mismatch, fix the live path rather than weakening the verifier.
 
 **Established in:** M037 milestone closure (`verify:m037:s01`, `verify:m037:s02`, `verify:m037:s03`).
+
+---
+
+## `queryBlastRadiusFromSnapshot` Edge Weight + Confidence Scoring Model (M040/S02)
+
+**Context:** `queryBlastRadiusFromSnapshot` in `src/review-graph/query.ts` walks workspace graph edges to produce ranked impacted files, probable dependents, and likely tests. Edge weights are empirically tuned to reflect impact probability:
+- `calls`: 0.92 (highest — symbol-level call dependency)
+- `tests`: 0.88 (explicit test→symbol edge)
+- `references`: 0.55
+- `imports`/`includes`: 0.42
+- `declares`: 0.15 / `contains`: 0.2
+
+**Score formula:** `EDGE_WEIGHT[edgeKind] × edgeConfidence × seedConfidence × (1 + KIND_BONUS[nodeKind])`. Node-kind bonuses are: symbol: 0.15, test: 0.1, callsite: 0.05, import: 0.03. Multiple signals for the same file accumulate additively.
+
+**Bounded heuristic fallback:** When no direct graph edges exist, the query also scans import nodes (score: 0.38×conf), callsite nodes (0.62×conf), and test nodes (0.7×conf) for name-based matches to changed symbols. This keeps results useful on current extractor fidelity without requiring full cross-file edge resolution.
+
+**Rule:** When extending the query (e.g., adding new edge kinds or heuristic passes), preserve the confidence×weight layering so rank order reflects structural certainty, not just edge count. The `sortRanked` tiebreak is: score desc, confidence desc, JSON.stringify(a).localeCompare(b) for determinism.
+
+**Established in:** M040/S02/T01 (`src/review-graph/query.ts`, `queryBlastRadiusFromSnapshot`).
+
+---
+
+## Optional Graph-Query DI Seam Pattern in Review Handler (M040/S02)
+
+**Context:** `src/handlers/review.ts` accepts an optional `reviewGraphQuery` parameter (typed as `(input: {...}) => Promise<ReviewGraphBlastRadiusResult>`). When the parameter is absent, the review handler falls back to risk-only file selection. When present, it calls the query before large-PR triage, fail-opens on errors, and feeds the result into `applyGraphAwareSelection`.
+
+**Pattern:** The seam is injected at call time rather than wired through config or a global store. Production callers pass the query provider when they have a graph store; tests pass `undefined` to exercise the fallback path without DB access.
+
+**Log fields:** On large PRs, the handler logs `graphHitCount`, `graphRankedSelections`, and `graphAwareSelectionApplied` at the large-PR triage site, making graph influence observable in structured logs.
+
+**Rule:** The graph query injection point must remain optional and fail-open. Any future re-wiring that makes graph data mandatory for review execution breaks the fallback contract and blocks reviews when the graph substrate is unavailable.
+
+**Established in:** M040/S02/T02 (`src/handlers/review.ts`, `reviewGraphQuery` seam; `src/lib/file-risk-scorer.ts`, `applyGraphAwareSelection`).
+
+---
+
+## TOP_N=1 for Rank-Promotion Proof vs. TOP_N>1 for Presence Proof (M040/S02)
+
+**Context:** `verify-m040-s02.ts` MISSED-FILES check uses `TOP_N=1` to assert that the graph-impacted file occupies rank 1 after graph-aware reranking but ranks below 1 under risk-only scoring. Using `TOP_N=2` would include the impacted file in the risk-only top-2 at rank 2, leaving `graphSurfacedExtra` empty and causing the check to incorrectly fail.
+
+**Rule:** When a proof harness needs to demonstrate that graph reranking *promotes* a file to a higher rank (not just that it is present in a larger selection), use `TOP_N=1` or the minimum N that creates a visible gap. "Impacted file present in top-N" and "impacted file promoted into top-1" are two distinct claims — only the second proves the ranking signal is meaningful.
+
+**Established in:** M040/S02/T03 (`scripts/verify-m040-s02.ts`, MISSED-FILES check, TOP_N=1 design decision).

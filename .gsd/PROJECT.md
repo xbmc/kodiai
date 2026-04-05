@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M040/S01 complete. Kodiai now has the first persistent review-graph substrate needed for graph-backed extensive review context. The codebase includes a dedicated Postgres schema for `review_graph_builds`, `review_graph_files`, `review_graph_nodes`, and `review_graph_edges`; a typed `ReviewGraphStore` with transactional file-scoped replacement semantics; file-scoped C++ and Python structural extraction that emits files, symbols, imports/includes, callsites, and probable test relationships with explicit confidence; and an incremental workspace indexer that walks supported files, hashes content, skips unchanged files, upserts build state, and records indexed/updated/skipped/failed counters. DB-backed review-graph store tests now follow the repo’s `TEST_DATABASE_URL` gating contract, so auto-mode verification skips cleanly when no dedicated test DB is configured instead of probing an unrelated `DATABASE_URL`.
+M040/S02 complete. The blast-radius query layer is now built on top of the S01 graph substrate. `queryBlastRadiusFromSnapshot` in `src/review-graph/query.ts` walks persisted workspace graph edges to produce ranked impacted files, probable dependents, and likely tests for any set of changed paths. `applyGraphAwareSelection` in `src/lib/file-risk-scorer.ts` merges graph blast-radius signals with existing file-risk scores to rerank large-PR file selection. The review handler now has an optional `reviewGraphQuery` DI seam that feeds into this reranker and logs structured graph influence fields (`graphHitCount`, `graphRankedSelections`, `graphAwareSelectionApplied`). Four machine-verifiable proof harness checks in `scripts/verify-m040-s02.ts` confirm: impacted files are promoted above risk-only triage, likely tests are surfaced, probable dependents are reranked, and the null-graph fallback preserves risk ordering unchanged.
 
 ## Architecture / Key Patterns
 
@@ -42,13 +42,17 @@ M040/S01 complete. Kodiai now has the first persistent review-graph substrate ne
   - `src/feedback/confidence-adjuster.ts` — `applyClusterScoreAdjustment()` merges cluster-derived suppress/boost signals after feedback adjustment and applies the symmetric safety guard for CRITICAL and protected MAJOR findings
   - `src/handlers/review.ts` — review pipeline integration: already-suppressed findings skip cluster scoring; cluster scoring runs after feedback adjustment; stale/missing/unavailable models fall back to the naive path
   - `scripts/verify-m037-s01.ts`, `scripts/verify-m037-s02.ts`, `scripts/verify-m037-s03.ts` — machine-verifiable proof harnesses for substrate, scoring integration, stale-policy behavior, refresh closure, cached reuse, and fail-open behavior
-- **Review graph substrate (M040/S01 complete):**
+- **Review graph substrate and blast-radius queries (M040/S01+S02 complete):**
   - `src/db/migrations/034-review-graph.sql` — persistent review graph tables for builds, files, nodes, and edges with constraints and indexes tuned for file-scoped replacement
-  - `src/review-graph/types.ts` — typed node/edge/file/build contracts plus `ReviewGraphStore` interface
-  - `src/review-graph/store.ts` — Postgres-backed review graph store with `upsertBuild()`, `replaceFileGraph()`, and file/build lookup helpers; edge endpoints are resolved from stable keys inside the transaction
+  - `src/review-graph/types.ts` — typed node/edge/file/build contracts plus `ReviewGraphStore` interface with `listWorkspaceGraph()` snapshot API
+  - `src/review-graph/store.ts` — Postgres-backed review graph store with `upsertBuild()`, `replaceFileGraph()`, `listWorkspaceGraph()`, and file/build lookup helpers
   - `src/review-graph/extractors.ts` — file-scoped Python and C++ extraction for files, symbols, imports/includes, callsites, and probable test nodes/edges with explicit confidence
   - `src/review-graph/indexer.ts` — incremental workspace indexer using SHA-256 content hashes, supported-language filtering, structured counters, and build-state upserts
-  - `src/review-graph/*.test.ts` — fixture-driven extractor/indexer coverage plus DB-gated store integration tests following `TEST_DATABASE_URL` skip semantics
+  - `src/review-graph/query.ts` — `queryBlastRadiusFromSnapshot()` pure function + `createReviewGraphQuery()` store-backed wrapper; outputs ranked impacted files, probable dependents, likely tests, and seed symbols from persisted graph data; edge weight + confidence scoring with bounded heuristic fallback for incomplete cross-file edges
+  - `src/lib/file-risk-scorer.ts` — `applyGraphAwareSelection()` merges graph blast-radius signals into existing file-risk scores; preserves risk ordering when graph is absent (fail-open)
+  - `src/handlers/review.ts` — optional `reviewGraphQuery` DI seam fires before large-PR triage; logs `graphHitCount`/`graphRankedSelections`/`graphAwareSelectionApplied`
+  - `scripts/verify-m040-s02.ts` + `scripts/verify-m040-s02.test.ts` — four machine-checkable proof checks: GRAPH-SURFACES-MISSED-FILES, GRAPH-SURFACES-LIKELY-TESTS, GRAPH-RERANKS-DEPENDENTS, FALLBACK-PRESERVES-ORDER
+  - `src/review-graph/*.test.ts` — fixture-driven extractor/indexer/query coverage; DB-gated store integration tests follow `TEST_DATABASE_URL` skip semantics
 
 ## Capability Contract
 
@@ -72,7 +76,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Refresh, Staleness Handling, and Fail-Open Verification — stale grace policy, refresh closure, and fail-open verification complete
 - [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
   - [x] S01: Graph Schema and C++/Python Structural Extraction
-  - [ ] S02: Blast-Radius Queries and Graph-Aware Review Selection
+  - [x] S02: Blast-Radius Queries and Graph-Aware Review Selection
   - [ ] S03: Bounded Prompt Integration, Bypass, and Validation Gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
