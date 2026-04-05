@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T14:43:38.953Z",
+  "exported_at": "2026-04-05T16:37:43.571Z",
   "milestones": [
     {
       "id": "M001",
@@ -9243,19 +9243,29 @@
       "milestone_id": "M041",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Extend audit and repair for canonical corpus drift",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Extended embedding audit and repair to cover the canonical current-code corpus with stale/missing/model-mismatch detection and a per-repo×ref repair runner bridging bigint chunk IDs into the generic repair infrastructure.",
+      "status": "complete",
+      "one_liner": "Extended embedding audit and repair to cover the canonical current-code corpus with stale/missing/model-mismatch detection and a per-repo×ref repair runner bridging bigint chunk IDs into the generic repair infrastructure.",
+      "narrative": "Added canonical_code to AUDITED_CORPORA and EXPECTED_CORPUS_MODELS in embedding-audit.ts with voyage-4 as the expected model. Added auditCanonicalCode() which queries canonical_code_chunks globally for total, missing_or_null, and stale counts plus a model-counts breakdown. Added canonical_code to EmbeddingRepairCorpus, NON_WIKI_REPAIR_CORPORA, and STALE_SUPPORTED_CORPORA in embedding-repair.ts. Added CANONICAL_CODE_TARGET_EMBEDDING_MODEL and createCanonicalCodeRepairStore() which wraps CanonicalCodeStore into the EmbeddingRepairStore interface via a number→bigint ID bridge. Added runCanonicalCodeEmbeddingRepair() as the high-level runner. Updated scripts/embedding-repair.ts with --repo and --ref CLI flags required for canonical_code corpus. Added canonicalCodeStore to KnowledgeRuntime and createKnowledgeRuntime in runtime.ts.",
+      "verification_result": "Ran bun test ./scripts/embedding-audit.test.ts ./scripts/embedding-repair.test.ts — all 7 tests pass in ~59ms. Ran bun run tsc --noEmit — clean typecheck with no errors.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T16:37:43.545Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "The canonical code repair has no persistent checkpoint; if a run is interrupted the operator must re-run the full command. The 2000-row CANONICAL_CODE_REPAIR_LIMIT bounds exposure per pass.",
+      "key_files": [
+        "src/knowledge/embedding-audit.ts",
+        "src/knowledge/embedding-repair.ts",
+        "src/knowledge/runtime.ts",
+        "scripts/embedding-repair.ts"
+      ],
+      "key_decisions": [
+        "Canonical code audit aggregates stale/missing/model-mismatch at the table level rather than per-repo, matching the operator view of a single corpus.",
+        "Canonical code repair uses a number→bigint ID bridge in the store adapter because the generic repair infrastructure uses number IDs while canonical_code_chunks uses bigint PKs.",
+        "Canonical code repair has no persistent checkpoint table; repair is always a fresh pass with listStaleChunks as the implicit state.",
+        "Added canonicalCodeStore to KnowledgeRuntime as a non-optional field since the store requires only a DB connection."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M041\nkey_files:\n  - src/knowledge/embedding-audit.ts\n  - src/knowledge/embedding-repair.ts\n  - src/knowledge/runtime.ts\n  - scripts/embedding-repair.ts\nkey_decisions:\n  - Canonical code audit aggregates stale/missing/model-mismatch at the table level rather than per-repo, matching the operator view of a single corpus.\n  - Canonical code repair uses a number→bigint ID bridge in the store adapter because the generic repair infrastructure uses number IDs while canonical_code_chunks uses bigint PKs.\n  - Canonical code repair has no persistent checkpoint table; repair is always a fresh pass with listStaleChunks as the implicit state.\n  - Added canonicalCodeStore to KnowledgeRuntime as a non-optional field since the store requires only a DB connection.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T16:37:43.544Z\nblocker_discovered: false\n---\n\n# T02: Extended embedding audit and repair to cover the canonical current-code corpus with stale/missing/model-mismatch detection and a per-repo×ref repair runner bridging bigint chunk IDs into the generic repair infrastructure.\n\n**Extended embedding audit and repair to cover the canonical current-code corpus with stale/missing/model-mismatch detection and a per-repo×ref repair runner bridging bigint chunk IDs into the generic repair infrastructure.**\n\n## What Happened\n\nAdded canonical_code to AUDITED_CORPORA and EXPECTED_CORPUS_MODELS in embedding-audit.ts with voyage-4 as the expected model. Added auditCanonicalCode() which queries canonical_code_chunks globally for total, missing_or_null, and stale counts plus a model-counts breakdown. Added canonical_code to EmbeddingRepairCorpus, NON_WIKI_REPAIR_CORPORA, and STALE_SUPPORTED_CORPORA in embedding-repair.ts. Added CANONICAL_CODE_TARGET_EMBEDDING_MODEL and createCanonicalCodeRepairStore() which wraps CanonicalCodeStore into the EmbeddingRepairStore interface via a number→bigint ID bridge. Added runCanonicalCodeEmbeddingRepair() as the high-level runner. Updated scripts/embedding-repair.ts with --repo and --ref CLI flags required for canonical_code corpus. Added canonicalCodeStore to KnowledgeRuntime and createKnowledgeRuntime in runtime.ts.\n\n## Verification\n\nRan bun test ./scripts/embedding-audit.test.ts ./scripts/embedding-repair.test.ts — all 7 tests pass in ~59ms. Ran bun run tsc --noEmit — clean typecheck with no errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/embedding-audit.test.ts ./scripts/embedding-repair.test.ts` | 0 | ✅ pass | 59ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 800ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe canonical code repair has no persistent checkpoint; if a run is interrupted the operator must re-run the full command. The 2000-row CANONICAL_CODE_REPAIR_LIMIT bounds exposure per pass.\n\n## Files Created/Modified\n\n- `src/knowledge/embedding-audit.ts`\n- `src/knowledge/embedding-repair.ts`\n- `src/knowledge/runtime.ts`\n- `scripts/embedding-repair.ts`\n",
       "description": "- Extend audit and repair flows to cover the canonical current-code corpus.\n- Detect stale, missing, and model-mismatched canonical rows.\n- Repair only the affected rows or files, fail-open on per-file failures, and keep the existing audit/repair patterns intact.",
       "estimate": "1d",
       "files": [
@@ -11486,6 +11496,28 @@
       "verdict": "✅ pass",
       "duration_ms": 28,
       "created_at": "2026-04-05T14:43:38.925Z"
+    },
+    {
+      "id": 156,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M041",
+      "command": "bun test ./scripts/embedding-audit.test.ts ./scripts/embedding-repair.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 59,
+      "created_at": "2026-04-05T16:37:43.545Z"
+    },
+    {
+      "id": 157,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M041",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 800,
+      "created_at": "2026-04-05T16:37:43.545Z"
     }
   ]
 }

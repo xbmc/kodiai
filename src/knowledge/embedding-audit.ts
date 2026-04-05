@@ -9,6 +9,7 @@ export const AUDITED_CORPORA = [
   "code_snippets",
   "issues",
   "issue_comments",
+  "canonical_code",
 ] as const;
 
 export type AuditedCorpus = typeof AUDITED_CORPORA[number];
@@ -23,6 +24,7 @@ export const EXPECTED_CORPUS_MODELS: Record<AuditedCorpus, string> = {
   code_snippets: "voyage-4",
   issues: "voyage-4",
   issue_comments: "voyage-4",
+  canonical_code: "voyage-4",
 };
 
 export type EmbeddingAuditInputRow = {
@@ -427,6 +429,42 @@ async function auditIssueComments(sql: Sql): Promise<BaseCorpusCounts> {
   };
 }
 
+/**
+ * Audit the canonical_code_chunks table across all active repo/ref pairs.
+ *
+ * stale here includes: stale=true OR embedding IS NULL OR model mismatch
+ * aggregated to a single corpus-wide count. Because the canonical corpus spans
+ * many repo×ref pairs (unlike the single-tenant tables above), we query at the
+ * global level and surface the total counts.
+ *
+ * stale_support = "supported" because canonical_code_chunks.stale is a
+ * first-class column managed by the update/backfill pipelines.
+ */
+async function auditCanonicalCode(sql: Sql): Promise<BaseCorpusCounts> {
+  const [row] = await sql.unsafe(`
+    SELECT
+      COUNT(*) FILTER (WHERE deleted_at IS NULL)::int AS total,
+      COUNT(*) FILTER (WHERE deleted_at IS NULL AND (embedding IS NULL OR embedding_model IS NULL))::int AS missing_or_null,
+      COUNT(*) FILTER (WHERE deleted_at IS NULL AND stale = true)::int AS stale
+    FROM canonical_code_chunks
+  `);
+
+  return {
+    total: toInteger(row?.total),
+    missing_or_null: toInteger(row?.missing_or_null),
+    stale: toInteger(row?.stale),
+    stale_support: "supported",
+    actual_model_counts: await loadModelCounts(sql, `
+      SELECT embedding_model, COUNT(*)::int AS count
+      FROM canonical_code_chunks
+      WHERE deleted_at IS NULL
+        AND embedding IS NOT NULL
+        AND embedding_model IS NOT NULL
+      GROUP BY embedding_model
+    `),
+  };
+}
+
 export async function collectEmbeddingAuditData(sql: Sql): Promise<Record<AuditedCorpus, EmbeddingAuditInputRow>> {
   return {
     learning_memories: await auditLearningMemories(sql),
@@ -435,6 +473,7 @@ export async function collectEmbeddingAuditData(sql: Sql): Promise<Record<Audite
     code_snippets: await auditCodeSnippets(sql),
     issues: await auditIssues(sql),
     issue_comments: await auditIssueComments(sql),
+    canonical_code: await auditCanonicalCode(sql),
   };
 }
 

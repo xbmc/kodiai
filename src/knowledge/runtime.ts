@@ -16,6 +16,8 @@ import { createReviewCommentStore } from "./review-comment-store.ts";
 import { createWikiPageStore } from "./wiki-store.ts";
 import { createCodeSnippetStore } from "./code-snippet-store.ts";
 import { createIssueStore } from "./issue-store.ts";
+import { createCanonicalCodeStore } from "./canonical-code-store.ts";
+import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 import { createRetriever, type RetrieverConfig } from "./retrieval.ts";
 import { createWikiPopularityStore } from "./wiki-popularity-store.ts";
@@ -45,6 +47,7 @@ export type KnowledgeRuntime = {
   wikiPageStore: WikiPageStore;
   codeSnippetStore: CodeSnippetStore;
   issueStore: IssueStore;
+  canonicalCodeStore: CanonicalCodeStore;
   isolationLayer: IsolationLayer | undefined;
   retriever: ReturnType<typeof createRetriever> | undefined;
   wikiCitationLogger: ReturnType<typeof createWikiPopularityStore>;
@@ -121,6 +124,9 @@ export function createKnowledgeRuntime(opts: {
   const issueStore = createIssueStore({ sql, logger });
   logger.info("Issue store initialized (PostgreSQL + pgvector)");
 
+  const canonicalCodeStore = createCanonicalCodeStore({ sql, logger });
+  logger.info("Canonical code store initialized (PostgreSQL + pgvector)");
+
   let isolationLayer: IsolationLayer | undefined;
   if (learningMemoryStore) {
     isolationLayer = createIsolationLayer({ memoryStore: learningMemoryStore, logger });
@@ -153,6 +159,7 @@ export function createKnowledgeRuntime(opts: {
     wikiPageStore,
     codeSnippetStore,
     issueStore,
+    canonicalCodeStore,
     isolationLayer,
     retriever,
     wikiCitationLogger,

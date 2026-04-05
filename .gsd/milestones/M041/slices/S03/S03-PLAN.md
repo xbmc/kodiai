@@ -10,7 +10,7 @@
   - Estimate: 1d
   - Files: src/knowledge/canonical-code-update.ts, src/knowledge/canonical-code-update.test.ts, src/knowledge/canonical-code-store.ts, src/knowledge/canonical-code-backfill.ts
   - Verify: bun test ./src/knowledge/canonical-code-update.test.ts && bun run tsc --noEmit
-- [ ] **T02: Extend audit and repair for canonical corpus drift** — - Extend audit and repair flows to cover the canonical current-code corpus.
+- [x] **T02: Extended embedding audit and repair to cover the canonical current-code corpus with stale/missing/model-mismatch detection and a per-repo×ref repair runner bridging bigint chunk IDs into the generic repair infrastructure.** — - Extend audit and repair flows to cover the canonical current-code corpus.
 - Detect stale, missing, and model-mismatched canonical rows.
 - Repair only the affected rows or files, fail-open on per-file failures, and keep the existing audit/repair patterns intact.
   - Estimate: 1d

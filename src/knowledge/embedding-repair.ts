@@ -2,10 +2,11 @@ import type { EmbeddingProvider, LearningMemoryStore } from "./types.ts";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import type { IssueStore } from "./issue-types.ts";
+import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { buildEmbeddingText } from "./code-snippet-chunker.ts";
 import { buildCommentEmbeddingText, buildIssueEmbeddingText } from "./issue-comment-chunker.ts";
 
-export type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments";
+export type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments" | "canonical_code";
 
 export type RepairCandidateRow = {
   id: number;
@@ -143,17 +144,20 @@ export type EmbeddingRepairStore = {
 };
 
 export const NON_WIKI_TARGET_EMBEDDING_MODEL = "voyage-4";
+export const CANONICAL_CODE_TARGET_EMBEDDING_MODEL = "voyage-4";
 export const NON_WIKI_REPAIR_CORPORA = [
   "review_comments",
   "learning_memories",
   "code_snippets",
   "issues",
   "issue_comments",
+  "canonical_code",
 ] as const satisfies readonly EmbeddingRepairCorpus[];
 export const STALE_SUPPORTED_CORPORA = [
   "review_comments",
   "learning_memories",
   "code_snippets",
+  "canonical_code",
 ] as const satisfies readonly EmbeddingRepairCorpus[];
 
 const DEFAULT_BATCH_SIZE = 100;
@@ -214,6 +218,8 @@ export function buildRepairEmbeddingText(corpus: EmbeddingRepairCorpus, row: Rep
     }
     case "code_snippets":
       return assertString(row.embedded_text, "code_snippets repair requires embedded_text");
+    case "canonical_code":
+      return assertString(row.chunk_text, "canonical_code repair requires persisted chunk_text");
     case "issues":
       return buildIssueEmbeddingText(
         assertString(row.title, "issues repair requires title"),
@@ -920,5 +926,145 @@ export function buildCodeSnippetRepairTextFromParts(params: {
       addedLines: params.addedLines,
       language: params.language ?? "unknown",
     },
+  });
+}
+
+// ── Canonical code repair ─────────────────────────────────────────────────────
+
+/**
+ * Maximum number of canonical chunks to pull per repair pass.
+ * Keeps memory bounded; operator can run multiple passes for large corpora.
+ */
+const CANONICAL_CODE_REPAIR_LIMIT = 2000;
+
+/**
+ * Build an EmbeddingRepairStore adapter over CanonicalCodeStore.
+ *
+ * The adapter maps from the number-ID repair infrastructure to the bigint IDs
+ * used by canonical_code_chunks. Row IDs are stored as their string
+ * representation in the number-keyed maps to avoid precision loss for very
+ * large bigints; JavaScript Number is safe for IDs up to 2^53-1.
+ *
+ * listRepairCandidates: queries all chunks where stale=true OR embedding IS NULL
+ * OR model != targetModel, up to CANONICAL_CODE_REPAIR_LIMIT rows.
+ *
+ * writeRepairEmbeddingsBatch: maps number IDs back to bigints and calls
+ * CanonicalCodeStore.updateEmbeddingsBatch.
+ *
+ * The canonical corpus has no persistent checkpoint table — repair state
+ * is implicit (re-run until listStaleChunks returns empty). getRepairState /
+ * saveRepairState are therefore no-ops that keep the repair framework happy.
+ */
+export function createCanonicalCodeRepairStore(
+  store: CanonicalCodeStore,
+  opts: {
+    repo: string;
+    canonicalRef: string;
+    targetModel: string;
+  },
+): EmbeddingRepairStore {
+  // Number→bigint ID bridge. Using a Map avoids relying on JS number precision
+  // for very large bigints (though canonical IDs are typically sequential).
+  const idMap = new Map<number, bigint>();
+
+  return {
+    async listRepairCandidates(_corpus: EmbeddingRepairCorpus): Promise<RepairCandidateRow[]> {
+      const chunks = await store.listStaleChunks({
+        repo: opts.repo,
+        canonicalRef: opts.canonicalRef,
+        targetModel: opts.targetModel,
+        limit: CANONICAL_CODE_REPAIR_LIMIT,
+      });
+
+      idMap.clear();
+      return chunks.map((chunk, index) => {
+        // Use a sequential int key so the number→bigint bridge stays simple.
+        const numericId = index + 1;
+        idMap.set(numericId, chunk.id);
+        const row: RepairCandidateRow = {
+          id: numericId,
+          corpus: "canonical_code",
+          embedding_model: chunk.embeddingModel,
+          embedding: null, // not needed for repair — presence of chunk_text is sufficient
+          stale: chunk.stale,
+          chunk_text: chunk.chunkText,
+        };
+        return row;
+      });
+    },
+
+    async getRepairState(_corpus: EmbeddingRepairCorpus): Promise<EmbeddingRepairCheckpoint | null> {
+      // Canonical code repair has no persistent checkpoint — always starts fresh.
+      return null;
+    },
+
+    async saveRepairState(_state: EmbeddingRepairCheckpoint): Promise<void> {
+      // No-op: canonical code repair does not persist checkpoints.
+    },
+
+    async writeRepairEmbeddingsBatch(payload: {
+      corpus: EmbeddingRepairCorpus;
+      row_ids: number[];
+      target_model: string;
+      embeddings: Array<{ row_id: number; embedding: Float32Array }>;
+    }): Promise<void> {
+      const mapped = payload.embeddings.map((entry) => {
+        const bigId = idMap.get(entry.row_id);
+        if (!bigId) {
+          throw new Error(
+            `canonical_code repair: no bigint mapping for numeric ID ${entry.row_id}`,
+          );
+        }
+        return { id: bigId, embedding: entry.embedding };
+      });
+      await store.updateEmbeddingsBatch({
+        embeddings: mapped,
+        targetModel: payload.target_model,
+      });
+    },
+  };
+}
+
+/**
+ * Run embedding repair for a single canonical code repo×ref pair.
+ *
+ * Fail-open: per-batch failures are recorded in the repair report but do not
+ * propagate exceptions — the operator can re-run to repair remaining chunks.
+ * This matches the behaviour of other corpus repair runners.
+ */
+export async function runCanonicalCodeEmbeddingRepair(input: {
+  store: CanonicalCodeStore;
+  embeddingProvider: EmbeddingProvider;
+  repo: string;
+  canonicalRef: string;
+  resume?: boolean;
+  dryRun?: boolean;
+  batchSize?: number;
+  logger?: {
+    info?: (...args: unknown[]) => void;
+    warn?: (...args: unknown[]) => void;
+    error?: (...args: unknown[]) => void;
+    debug?: (...args: unknown[]) => void;
+  };
+}): Promise<EmbeddingRepairReport> {
+  const targetModel = CANONICAL_CODE_TARGET_EMBEDDING_MODEL;
+  const repairStore = createCanonicalCodeRepairStore(input.store, {
+    repo: input.repo,
+    canonicalRef: input.canonicalRef,
+    targetModel,
+  });
+
+  return await runEmbeddingRepair({
+    corpus: "canonical_code",
+    resume: input.resume,
+    dryRun: input.dryRun,
+    batchSize: input.batchSize,
+    logger: input.logger,
+    store: repairStore,
+    embedRows: async (rows) => await embedPersistedRepairRows({
+      rows,
+      embeddingProvider: input.embeddingProvider,
+      missingMessage: `Embedding provider returned null for canonical code chunk in ${input.repo}@${input.canonicalRef}`,
+    }),
   });
 }
