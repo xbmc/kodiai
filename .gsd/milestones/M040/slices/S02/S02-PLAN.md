@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/lib/file-risk-scorer.ts, src/handlers/review.ts, src/lib/file-risk-scorer.test.ts
   - Verify: bun test ./src/lib/file-risk-scorer.test.ts
-- [ ] **T03: Add graph-aware selection verifier** — - Add a fixture-based verifier comparing current file-level selection with graph-aware selection on a production-like large PR shape.
+- [x] **T03: Added scripts/verify-m040-s02.ts and test file — four machine-checkable checks proving graph-aware selection surfaces impacted files, promotes likely tests, and reranks dependents beyond file-risk triage alone** — - Add a fixture-based verifier comparing current file-level selection with graph-aware selection on a production-like large PR shape.
 - Prove graph-aware selection surfaces impacted files/tests that current triage alone would miss.
 - Keep proof output machine-checkable for later milestone closure.
   - Estimate: 0.5-1d
