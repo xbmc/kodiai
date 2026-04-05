@@ -40,9 +40,9 @@ import {
 import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
-import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback, applyClusterScoreAdjustment } from "../feedback/index.ts";
+import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
 import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
-import { scoreFindings } from "../knowledge/suggestion-cluster-scoring.ts";
+import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
@@ -2642,33 +2642,8 @@ export function createReviewHandler(deps: {
           );
         }
 
-        // Thematic cluster scoring: load cached model for this repo (M037/S02).
-        // Fail-open: missing store, missing model, or load error → null model → scoreFindings no-ops.
-        let clusterModel: import("../knowledge/suggestion-cluster-store.ts").SuggestionClusterModel | null = null;
-        if (clusterModelStore && embeddingProvider) {
-          try {
-            clusterModel = await clusterModelStore.getModel(`${apiOwner}/${apiRepo}`);
-            if (clusterModel) {
-              logger.debug(
-                {
-                  ...baseLog,
-                  gate: "cluster-model-load",
-                  positiveCentroidCount: clusterModel.positiveCentroids.length,
-                  negativeCentroidCount: clusterModel.negativeCentroids.length,
-                  positiveMemberCount: clusterModel.positiveMemberCount,
-                  negativeMemberCount: clusterModel.negativeMemberCount,
-                  builtAt: clusterModel.builtAt,
-                },
-                "Cluster model loaded for thematic scoring",
-              );
-            }
-          } catch (err) {
-            logger.warn(
-              { ...baseLog, err, gate: "cluster-model-load" },
-              "Cluster model load failed; proceeding without thematic scoring (fail-open)",
-            );
-          }
-        }
+        // Thematic cluster scoring placeholder — model resolved in the scoring step below (M037/S03).
+        // applyClusterScoringWithDegradation handles model load, eligibility, and scoring in one call.
 
         // Post-LLM abbreviated tier enforcement (LARGE-08)
         // Suppress medium/minor findings on abbreviated-tier files deterministically.
@@ -2806,61 +2781,28 @@ export function createReviewHandler(deps: {
           };
         });
 
-        // Thematic cluster scoring (M037/S02): score processed findings against
-        // positive/negative centroids. Adjusts confidence and suppression signals.
+        // Thematic cluster scoring (M037/S03): score processed findings against
+        // positive/negative centroids using the fail-open degradation wrapper.
         // Runs after feedback suppression so cluster signal applies to feedback-adjusted
-        // confidence values. Fail-open: any error leaves findings unchanged.
-        if (clusterModel && embeddingProvider) {
-          try {
-            // Map processedFindings to the ScoringFinding shape (title, severity, category, confidence)
-            const scoringInput = processedFindings.map(f => ({
-              title: f.title,
-              severity: f.severity,
-              category: f.category,
-              confidence: f.confidence,
-            }));
-            const clusterScoredResult = await scoreFindings(scoringInput, clusterModel, embeddingProvider, logger);
-
-            if (clusterScoredResult.modelUsed) {
-              // Apply cluster score adjustments to processed findings
-              processedFindings = processedFindings.map((f, i) => {
-                const clusterScore = clusterScoredResult.scores[i];
-                if (!clusterScore) return f;
-                // Skip already-suppressed findings — cluster cannot unsuppress
-                if (f.suppressed) return f;
-                const clusterAdj = applyClusterScoreAdjustment(
-                  { severity: f.severity, category: f.category },
-                  f.confidence,
-                  clusterScore.suppress,
-                  clusterScore.adjustedConfidence,
-                  true,
-                );
-                return {
-                  ...f,
-                  confidence: clusterAdj.confidence,
-                  suppressed: clusterAdj.suppressed,
-                };
-              });
-
-              if (clusterScoredResult.suppressedCount > 0 || clusterScoredResult.boostedCount > 0) {
-                logger.info(
-                  {
-                    ...baseLog,
-                    gate: "cluster-scoring",
-                    findingCount: processedFindings.length,
-                    clusterSuppressedCount: clusterScoredResult.suppressedCount,
-                    clusterBoostedCount: clusterScoredResult.boostedCount,
-                    clusterScoreSource: "suggestion_cluster_models",
-                  },
-                  "Thematic cluster scoring applied to review findings",
-                );
-              }
-            }
-          } catch (err) {
-            logger.warn(
-              { ...baseLog, err, gate: "cluster-scoring" },
-              "Thematic cluster scoring failed; findings unchanged (fail-open)",
-            );
+        // confidence values. All error paths degrade cleanly — review always completes.
+        {
+          const clusterResult = await applyClusterScoringWithDegradation(
+            processedFindings.map(f => ({
+              ...f,
+              // ClusterScoringFinding shape — extra fields preserved via spread
+            })),
+            clusterModelStore ?? null,
+            embeddingProvider ?? null,
+            `${apiOwner}/${apiRepo}`,
+            logger,
+          );
+          if (clusterResult.modelUsed) {
+            // Merge adjusted findings back (confidence and suppressed fields may have changed)
+            processedFindings = processedFindings.map((f, i) => {
+              const adj = clusterResult.findings[i];
+              if (!adj) return f;
+              return { ...f, confidence: adj.confidence, suppressed: adj.suppressed };
+            });
           }
         }
 

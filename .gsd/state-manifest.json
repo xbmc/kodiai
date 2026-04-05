@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T08:11:56.511Z",
+  "exported_at": "2026-04-05T08:24:29.719Z",
   "milestones": [
     {
       "id": "M001",
@@ -7871,19 +7871,28 @@
       "milestone_id": "M037",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Harden fail-open scoring degradation",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Extracted cluster scoring fail-open logic into suggestion-cluster-degradation.ts with exhaustive ScoringDegradationReason union and 24 passing degradation tests",
+      "status": "complete",
+      "one_liner": "Extracted cluster scoring fail-open logic into suggestion-cluster-degradation.ts with exhaustive ScoringDegradationReason union and 24 passing degradation tests",
+      "narrative": "Created src/knowledge/suggestion-cluster-degradation.ts implementing applyClusterScoringWithDegradation<T> — a generic fail-open wrapper consolidating cluster model load, eligibility check, scoring call, and adjustment application into a single function that never throws. Every skip path returns input findings unchanged with a typed ScoringDegradationReason code (no-store, no-embedding, model-load-error, no-model, model-not-eligible, scoring-error) and emits a structured log entry. Removed two inline try/catch blocks from review.ts and replaced with a single degradation call. Fixed two test issues during development: major/correctness is suppression-protected so suppression tests use medium/style; per-item embedding failures are handled inside scoreFindings returning modelUsed=true, not a scoring-error at this level.",
+      "verification_result": "bun test ./src/knowledge/suggestion-cluster-degradation.test.ts: 24/24 pass. bun run tsc --noEmit: exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T08:24:29.695Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used getModel (not getModelIncludingStale) in the degradation module's load path — staleness handling belongs in T01's resolveModelForScoring, not duplicated here.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/suggestion-cluster-degradation.ts",
+        "src/knowledge/suggestion-cluster-degradation.test.ts",
+        "src/handlers/review.ts"
+      ],
+      "key_decisions": [
+        "Consolidated inline cluster try/catch blocks in review.ts into applyClusterScoringWithDegradation",
+        "ScoringDegradationReason is an exhaustive string union (6 reasons); null means success",
+        "Degradation module uses getModel not getModelIncludingStale — staleness policy stays in the staleness module",
+        "major/correctness and critical/any are suppression-protected — test suppression paths must use non-protected severity/category"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M037\nkey_files:\n  - src/knowledge/suggestion-cluster-degradation.ts\n  - src/knowledge/suggestion-cluster-degradation.test.ts\n  - src/handlers/review.ts\nkey_decisions:\n  - Consolidated inline cluster try/catch blocks in review.ts into applyClusterScoringWithDegradation\n  - ScoringDegradationReason is an exhaustive string union (6 reasons); null means success\n  - Degradation module uses getModel not getModelIncludingStale — staleness policy stays in the staleness module\n  - major/correctness and critical/any are suppression-protected — test suppression paths must use non-protected severity/category\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T08:24:29.695Z\nblocker_discovered: false\n---\n\n# T02: Extracted cluster scoring fail-open logic into suggestion-cluster-degradation.ts with exhaustive ScoringDegradationReason union and 24 passing degradation tests\n\n**Extracted cluster scoring fail-open logic into suggestion-cluster-degradation.ts with exhaustive ScoringDegradationReason union and 24 passing degradation tests**\n\n## What Happened\n\nCreated src/knowledge/suggestion-cluster-degradation.ts implementing applyClusterScoringWithDegradation<T> — a generic fail-open wrapper consolidating cluster model load, eligibility check, scoring call, and adjustment application into a single function that never throws. Every skip path returns input findings unchanged with a typed ScoringDegradationReason code (no-store, no-embedding, model-load-error, no-model, model-not-eligible, scoring-error) and emits a structured log entry. Removed two inline try/catch blocks from review.ts and replaced with a single degradation call. Fixed two test issues during development: major/correctness is suppression-protected so suppression tests use medium/style; per-item embedding failures are handled inside scoreFindings returning modelUsed=true, not a scoring-error at this level.\n\n## Verification\n\nbun test ./src/knowledge/suggestion-cluster-degradation.test.ts: 24/24 pass. bun run tsc --noEmit: exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/suggestion-cluster-degradation.test.ts` | 0 | ✅ pass | 200ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 7000ms |\n\n## Deviations\n\nUsed getModel (not getModelIncludingStale) in the degradation module's load path — staleness handling belongs in T01's resolveModelForScoring, not duplicated here.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/suggestion-cluster-degradation.ts`\n- `src/knowledge/suggestion-cluster-degradation.test.ts`\n- `src/handlers/review.ts`\n",
       "description": "- Harden fail-open behavior so unavailable cluster models or scoring failures never block review completion.\n- Ensure user-visible output does not pretend a boost or suppression happened when scoring was skipped.\n- Add degradation tests across each failure mode.",
       "estimate": "0.5-1d",
       "files": [
@@ -10780,6 +10789,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6900,
       "created_at": "2026-04-05T08:11:56.485Z"
+    },
+    {
+      "id": 113,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M037",
+      "command": "bun test ./src/knowledge/suggestion-cluster-degradation.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 200,
+      "created_at": "2026-04-05T08:24:29.695Z"
+    },
+    {
+      "id": 114,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M037",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7000,
+      "created_at": "2026-04-05T08:24:29.695Z"
     }
   ]
 }

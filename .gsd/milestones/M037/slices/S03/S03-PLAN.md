@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/suggestion-cluster-staleness.ts, src/knowledge/suggestion-cluster-staleness.test.ts, src/knowledge/suggestion-cluster-refresh.ts
   - Verify: bun test ./src/knowledge/suggestion-cluster-staleness.test.ts && bun run tsc --noEmit
-- [ ] **T02: Harden fail-open scoring degradation** — - Harden fail-open behavior so unavailable cluster models or scoring failures never block review completion.
+- [x] **T02: Extracted cluster scoring fail-open logic into suggestion-cluster-degradation.ts with exhaustive ScoringDegradationReason union and 24 passing degradation tests** — - Harden fail-open behavior so unavailable cluster models or scoring failures never block review completion.
 - Ensure user-visible output does not pretend a boost or suppression happened when scoring was skipped.
 - Add degradation tests across each failure mode.
   - Estimate: 0.5-1d
