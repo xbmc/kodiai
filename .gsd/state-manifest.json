@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T07:59:21.857Z",
+  "exported_at": "2026-04-05T08:04:19.021Z",
   "milestones": [
     {
       "id": "M001",
@@ -7780,19 +7780,27 @@
       "milestone_id": "M037",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add scoring and review-path verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built verify-m037-s02.ts harness and 24-test suite proving cluster scoring changes the finding set relative to the naive path, CRITICAL findings are protected, and null-model fail-open preserves all findings unchanged",
+      "status": "complete",
+      "one_liner": "Built verify-m037-s02.ts harness and 24-test suite proving cluster scoring changes the finding set relative to the naive path, CRITICAL findings are protected, and null-model fail-open preserves all findings unchanged",
+      "narrative": "Created scripts/verify-m037-s02.ts with three machine-checkable proof checks: M037-S02-SCORING-CHANGES-FINDINGS (suppression and boosting vs naive path), M037-S02-SAFETY-GUARD-CRITICAL (CRITICAL findings protected at threshold boundary using scoreFindingEmbedding() directly), and M037-S02-FAIL-OPEN (null model preserves all findings). Harness follows the verify-m037-s01.ts pattern with injectable _runFn overrides, evaluateM037S02(), buildM037S02ProofHarness(), text/JSON output modes. Added both verify:m037:s01 and verify:m037:s02 to package.json. Fixed EmbeddingProvider type shape (requires model/dimensions on the object) and FindingSeverity (no 'suggestion' value).",
+      "verification_result": "bun test ./scripts/verify-m037-s02.test.ts — 24/24 pass (193ms). bun run verify:m037:s02 -- --json — exits 0, all three checks PASS with machine-readable JSON. bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T08:04:18.998Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Added verify:m037:s01 to package.json alongside verify:m037:s02 — it was missing.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m037-s02.ts",
+        "scripts/verify-m037-s02.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Safety guard proof uses scoreFindingEmbedding() directly (pure sync) to exercise the guard without embedding I/O",
+        "Sequential EmbeddingProvider pattern for multi-finding scoreFindings() tests — queue of pre-computed embeddings dispatched per call",
+        "EmbeddingProvider stub requires model and dimensions properties on the object itself matching full interface shape"
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M037\nkey_files:\n  - scripts/verify-m037-s02.ts\n  - scripts/verify-m037-s02.test.ts\n  - package.json\nkey_decisions:\n  - Safety guard proof uses scoreFindingEmbedding() directly (pure sync) to exercise the guard without embedding I/O\n  - Sequential EmbeddingProvider pattern for multi-finding scoreFindings() tests — queue of pre-computed embeddings dispatched per call\n  - EmbeddingProvider stub requires model and dimensions properties on the object itself matching full interface shape\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T08:04:18.997Z\nblocker_discovered: false\n---\n\n# T03: Built verify-m037-s02.ts harness and 24-test suite proving cluster scoring changes the finding set relative to the naive path, CRITICAL findings are protected, and null-model fail-open preserves all findings unchanged\n\n**Built verify-m037-s02.ts harness and 24-test suite proving cluster scoring changes the finding set relative to the naive path, CRITICAL findings are protected, and null-model fail-open preserves all findings unchanged**\n\n## What Happened\n\nCreated scripts/verify-m037-s02.ts with three machine-checkable proof checks: M037-S02-SCORING-CHANGES-FINDINGS (suppression and boosting vs naive path), M037-S02-SAFETY-GUARD-CRITICAL (CRITICAL findings protected at threshold boundary using scoreFindingEmbedding() directly), and M037-S02-FAIL-OPEN (null model preserves all findings). Harness follows the verify-m037-s01.ts pattern with injectable _runFn overrides, evaluateM037S02(), buildM037S02ProofHarness(), text/JSON output modes. Added both verify:m037:s01 and verify:m037:s02 to package.json. Fixed EmbeddingProvider type shape (requires model/dimensions on the object) and FindingSeverity (no 'suggestion' value).\n\n## Verification\n\nbun test ./scripts/verify-m037-s02.test.ts — 24/24 pass (193ms). bun run verify:m037:s02 -- --json — exits 0, all three checks PASS with machine-readable JSON. bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m037-s02.test.ts` | 0 | ✅ pass | 193ms |\n| 2 | `bun run verify:m037:s02 -- --json` | 0 | ✅ pass | 2700ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 6900ms |\n\n## Deviations\n\nAdded verify:m037:s01 to package.json alongside verify:m037:s02 — it was missing.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m037-s02.ts`\n- `scripts/verify-m037-s02.test.ts`\n- `package.json`\n",
       "description": "- Add a verifier showing cached cluster models change the final finding set or confidence compared with the naive path.\n- Keep proof output machine-checkable and bounded.\n- Cover safety-guarded CRITICAL finding behavior.",
       "estimate": "0.5-1d",
       "files": [
@@ -10710,6 +10718,39 @@
       "verdict": "✅ pass",
       "duration_ms": 6800,
       "created_at": "2026-04-05T07:59:21.829Z"
+    },
+    {
+      "id": 108,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun test ./scripts/verify-m037-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 193,
+      "created_at": "2026-04-05T08:04:18.998Z"
+    },
+    {
+      "id": 109,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun run verify:m037:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2700,
+      "created_at": "2026-04-05T08:04:18.998Z"
+    },
+    {
+      "id": 110,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6900,
+      "created_at": "2026-04-05T08:04:18.998Z"
     }
   ]
 }

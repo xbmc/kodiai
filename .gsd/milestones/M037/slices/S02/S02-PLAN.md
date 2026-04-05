@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/handlers/review.ts, src/feedback/confidence-adjuster.ts, src/feedback/confidence-adjuster.test.ts, src/feedback/safety-guard.ts
   - Verify: bun test ./src/feedback/confidence-adjuster.test.ts
-- [ ] **T03: Add scoring and review-path verifier** — - Add a verifier showing cached cluster models change the final finding set or confidence compared with the naive path.
+- [x] **T03: Built verify-m037-s02.ts harness and 24-test suite proving cluster scoring changes the finding set relative to the naive path, CRITICAL findings are protected, and null-model fail-open preserves all findings unchanged** — - Add a verifier showing cached cluster models change the final finding set or confidence compared with the naive path.
 - Keep proof output machine-checkable and bounded.
 - Cover safety-guarded CRITICAL finding behavior.
   - Estimate: 0.5-1d
