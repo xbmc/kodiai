@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/lib/structural-impact-formatter.ts, src/lib/structural-impact-formatter.test.ts, src/lib/review-utils.ts
   - Verify: bun test ./src/lib/structural-impact-formatter.test.ts && bun run tsc --noEmit
-- [ ] **T02: Integrate Structural Impact and breaking-change evidence** — - Wire structural-impact rendering into the main review flow and Review Details generation.
+- [x] **T02: Integrated Structural Impact into review prompts and Review Details with explicit breaking-change evidence and fallback guidance.** — - Wire structural-impact rendering into the main review flow and Review Details generation.
 - Use structural evidence to strengthen breaking-change output when caller/dependent data is present.
 - Preserve fallback behavior when structural-impact data is absent or partial.
   - Estimate: 1d

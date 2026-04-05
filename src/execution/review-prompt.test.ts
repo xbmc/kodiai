@@ -25,6 +25,7 @@ import {
   matchPathInstructions,
 } from "./review-prompt.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 function baseContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -37,6 +38,73 @@ function baseContext(overrides: Record<string, unknown> = {}) {
     baseBranch: "main",
     headBranch: "fix/bug",
     changedFiles: ["src/index.ts"],
+    ...overrides,
+  };
+}
+
+function makeStructuralImpact(overrides: Partial<StructuralImpactPayload> = {}): StructuralImpactPayload {
+  return {
+    status: "ok",
+    changedFiles: ["src/auth.ts"],
+    seedSymbols: [
+      {
+        stableKey: "auth.login",
+        symbolName: "login",
+        qualifiedName: "auth::login",
+        filePath: "src/auth.ts",
+      },
+    ],
+    probableCallers: [
+      {
+        stableKey: "session.requireLogin",
+        symbolName: "requireLogin",
+        qualifiedName: "session::requireLogin",
+        filePath: "src/session.ts",
+        score: 0.91,
+        confidence: 0.92,
+        reasons: ["calls changed symbol"],
+      },
+    ],
+    impactedFiles: [
+      {
+        path: "src/session.ts",
+        score: 0.91,
+        confidence: 0.92,
+        reasons: ["calls changed symbol"],
+        languages: ["TypeScript"],
+      },
+    ],
+    likelyTests: [
+      {
+        path: "src/auth.test.ts",
+        score: 0.72,
+        confidence: 0.75,
+        reasons: ["covers changed symbol"],
+        testSymbols: ["login succeeds"],
+      },
+    ],
+    canonicalEvidence: [
+      {
+        filePath: "src/session.ts",
+        startLine: 42,
+        endLine: 47,
+        language: "TypeScript",
+        chunkType: "function",
+        symbolName: "requireLogin",
+        chunkText: "if (!login(user)) throw new Error('auth failed');",
+        distance: 0.11,
+        commitSha: "abc1234",
+        canonicalRef: "main",
+      },
+    ],
+    graphStats: {
+      changedFilesRequested: 1,
+      changedFilesFound: 1,
+      files: 2,
+      nodes: 6,
+      edges: 8,
+    },
+    degradations: [],
     ...overrides,
   };
 }
@@ -2163,6 +2231,35 @@ describe("buildReviewPrompt graph context integration", () => {
     const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
     expect(prompt).toContain("## Graph-Derived Review Context");
     expect(prompt).toContain("`src/session.cpp`");
+  });
+
+  test("includes structural impact section when structuralImpact is provided", () => {
+    const prompt = buildReviewPrompt(baseContext({ structuralImpact: makeStructuralImpact() }));
+    expect(prompt).toContain("## Structural Impact Evidence");
+    expect(prompt).toContain("### Structural Impact");
+    expect(prompt).toContain("Structural evidence status: evidence-present");
+  });
+
+  test("breaking-change instructions use structural evidence when callers or impacted files are present", () => {
+    const prompt = buildReviewPrompt(baseContext({ structuralImpact: makeStructuralImpact() }));
+    expect(prompt).toContain("## Breaking-Change Evidence Handling");
+    expect(prompt).toContain("use the structural evidence above to explain who is likely affected and why");
+    expect(prompt).toContain("callers: 1, impacted files: 1, tests: 1");
+  });
+
+  test("breaking-change instructions fall back when structural impact is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("## Breaking-Change Evidence Handling");
+    expect(prompt).toContain("Fallback status: fallback-used.");
+    expect(prompt).toContain("Do not claim downstream callers, impacted files, or likely tests are affected unless this prompt includes concrete structural evidence.");
+  });
+
+  test("breaking-change instructions call out partial structural evidence truthfully", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      structuralImpact: makeStructuralImpact({ status: "partial" }),
+    }));
+    expect(prompt).toContain("Structural evidence status: partial-evidence.");
+    expect(prompt).toContain("If structural evidence is partial, say so and avoid overstating blast radius certainty.");
   });
 
   test("omits graph context section when graphBlastRadius is absent", () => {

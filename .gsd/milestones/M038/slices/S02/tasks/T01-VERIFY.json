@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M038/S02/T01",
+  "timestamp": 1775417069516,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/lib/structural-impact-formatter.test.ts",
+      "exitCode": 0,
+      "durationMs": 16,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 6969,
+      "verdict": "pass"
+    }
+  ]
+}

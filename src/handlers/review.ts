@@ -2100,6 +2100,7 @@ export function createReviewHandler(deps: {
 
         let graphSelection = applyGraphAwareSelection({ riskScores });
         let graphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
+        let structuralImpactForReview: import("../structural-impact/types.ts").StructuralImpactPayload | null = null;
         if (reviewGraphQuery) {
           // Trivial-change bypass: skip graph query overhead for small PRs.
           const trivialCheck = isTrivialChange({
@@ -2134,7 +2135,23 @@ export function createReviewHandler(deps: {
                   ),
                 },
               );
+              structuralImpactForReview = structuralImpact.payload;
               graphBlastRadius = structuralImpact.graphBlastRadius;
+              logger.info(
+                {
+                  ...baseLog,
+                  gate: "structural-impact",
+                  status: structuralImpact.payload.status,
+                  graphPresent: Boolean(structuralImpact.graphBlastRadius),
+                  probableCallers: structuralImpact.payload.probableCallers.length,
+                  impactedFiles: structuralImpact.payload.impactedFiles.length,
+                  likelyTests: structuralImpact.payload.likelyTests.length,
+                  canonicalEvidence: structuralImpact.payload.canonicalEvidence.length,
+                  breakingChangeEvidenceUsed: structuralImpact.payload.probableCallers.length > 0 || structuralImpact.payload.impactedFiles.length > 0,
+                  fallbackUsed: structuralImpact.payload.status === "unavailable",
+                },
+                "Review structural-impact payload collected",
+              );
               if (graphBlastRadius) {
                 graphSelection = applyGraphAwareSelection({ riskScores, graph: graphBlastRadius });
               }
@@ -2617,6 +2634,7 @@ export function createReviewHandler(deps: {
           linkedIssues: linkedIssueResult,
           // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
           graphBlastRadius: graphBlastRadius ?? undefined,
+          structuralImpact: structuralImpactForReview,
         });
 
         // Execute review via Claude
@@ -3211,6 +3229,7 @@ export function createReviewHandler(deps: {
               prioritization: prioritizationStats,
               usageLimit: result.usageLimit,
               tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+              structuralImpact: structuralImpactForReview,
             });
 
             // Append suppressed-findings section if any findings were filtered (FILT-02)
@@ -3898,6 +3917,7 @@ export function createReviewHandler(deps: {
                       clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
+                      structuralImpact: structuralImpactForReview,
                     });
 
                     const retryResult = await executor.execute({
