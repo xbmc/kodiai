@@ -4,7 +4,7 @@
 **Demo:** After this: After this, review-time findings can be scored against cached cluster models so persistently-negative themes are suppressed and persistently-positive themes boost confidence, subject to safety guards.
 
 ## Tasks
-- [ ] **T01: Score findings against thematic cluster models** — - Implement thematic scoring for draft findings against positive and negative cluster centroids.
+- [x] **T01: Implemented suggestion-cluster-scoring.ts with fail-open scoreFindings() pipeline, safety guards for CRITICAL/protected findings, and 36 passing tests** — - Implement thematic scoring for draft findings against positive and negative cluster centroids.
 - Return suppression and confidence-adjustment signals without mutating durable rule state.
 - Add scoring tests for conservative thresholds.
   - Estimate: 0.5-1d

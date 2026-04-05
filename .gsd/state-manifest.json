@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T07:46:58.990Z",
+  "exported_at": "2026-04-05T07:55:13.036Z",
   "milestones": [
     {
       "id": "M001",
@@ -5108,14 +5108,14 @@
       "milestone_id": "M037",
       "id": "S01",
       "title": "Cluster Model Build and Cache",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [],
       "demo": "After this, Kodiai can build and cache a per-repo positive/negative cluster model from learning memories instead of recomputing it on every review.",
       "created_at": "2026-04-04T22:01:46.636Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-05T07:50:17.541Z",
+      "full_summary_md": "---\nid: S01\nparent: M037\nmilestone: M037\nprovides:\n  - SuggestionClusterStore — persistence surface for S02 scoring and S03 staleness handling\n  - buildClusterModel — centroid generation function for S02 to invoke at refresh time or on-demand\n  - createClusterRefresh — background sweep entrypoint for S03 scheduler wiring\n  - verify-m037-s01.ts proof harness — three deterministic checks (BUILD-AND-CACHE, REFRESH-SWEEP, FAIL-OPEN)\nrequires:\n  []\naffects:\n  - S02\n  - S03\nkey_files:\n  - src/db/migrations/036-suggestion-cluster-models.sql\n  - src/knowledge/suggestion-cluster-store.ts\n  - src/knowledge/suggestion-cluster-store.test.ts\n  - src/knowledge/suggestion-cluster-builder.ts\n  - src/knowledge/suggestion-cluster-builder.test.ts\n  - src/knowledge/suggestion-cluster-refresh.ts\n  - src/knowledge/suggestion-cluster-refresh.test.ts\n  - scripts/verify-m037-s01.ts\n  - scripts/verify-m037-s01.test.ts\nkey_decisions:\n  - Centroids stored as JSONB number[][] (not pgvector) — ephemeral cache rows don't need ANN index\n  - SuggestionClusterStore is standalone, not part of KnowledgeStore interface — isolates ephemeral cache from durable record-keeping\n  - getModel filters stale; getModelIncludingStale omits TTL filter — two surfaces serve live consumers and refresh job respectively\n  - Builder queries learning_memories directly via sql, no LearningMemoryStore coupling — avoids coupling cache management to review-path interface evolution\n  - Builder avoids cluster-pipeline.ts/cluster-matcher.ts import — those modules are live-review-path coupled\n  - Fail-open in both builder (returns built=false, never throws) and refresh sweep (warn per crash, continue sweep)\n  - Sequential sweep in createClusterRefresh — background work, logs ordered per-repo, no thundering-herd risk\n  - Injectable _buildFn in createClusterRefresh — follows M032/S03 testable-executor pattern for unit testing without real DB\npatterns_established:\n  - SuggestionClusterStore dual-read surface (getModel TTL-filtered / getModelIncludingStale unfiltered) — use this pattern for any ephemeral cache table that has both live consumers and a background refresh job\n  - Float32Array → JSONB round-trip requires Array.from() before serialization and new Float32Array(row) on deserialization — covered by centroid serialization round-trip tests\n  - Injectable _buildFn on background sweep options for unit testing without DB — same pattern as M032/S03 createTestableExecutor\nobservability_surfaces:\n  - createClusterRefresh emits structured logger.info on sweep completion with reposBuilt/reposSkipped/reposFailed/durationMs totals\n  - createClusterRefresh emits logger.warn per failing repo with repo name and error message\n  - buildClusterModel returns structured result with built, skipReason, positiveCentroidCount, negativeCentroidCount, memberCount, skippedClusters — callers can log or surface these\ndrill_down_paths:\n  - .gsd/milestones/M037/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M037/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M037/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-05T07:50:17.541Z\nblocker_discovered: false\n---\n\n# S01: Cluster Model Build and Cache\n\n**Built the cluster-model substrate: migration, standalone store, HDBSCAN builder, background refresh entrypoint, and three-check proof harness — 95 tests passing, tsc clean.**\n\n## What Happened\n\nThree tasks delivered the complete cluster-model substrate from schema through background refresh.\n\n**T01 — Schema and Store:** Added `036-suggestion-cluster-models.sql` (ephemeral per-repo table with JSONB centroid columns and TTL expiry) and `SuggestionClusterStore` with five surface methods: `getModel` (TTL-filtered for live consumers), `getModelIncludingStale` (unfiltered for refresh job), `saveModel` (upsert with configurable TTL), `deleteModel`, and `listExpiredModelRepos`. Store is deliberately standalone — not added to `KnowledgeStore` — to isolate ephemeral cache concerns from durable record-keeping. Centroids stored as JSONB `number[][]` (not pgvector) because the scoring path reads a handful of centroids sequentially; no ANN index is needed. Float32Array serialization requires explicit `Array.from()` before JSON; the store handles this internally on both write and read paths. 29 unit tests.\n\n**T02 — Builder:** `buildClusterModel(opts)` in `suggestion-cluster-builder.ts` queries `learning_memories` directly via the tagged-template `sql` function (no LearningMemoryStore coupling), splits rows by outcome class (positive=accepted/thumbs_up, negative=suppressed/thumbs_down, unknown outcomes silently skipped), runs HDBSCAN independently on each class, computes mean centroids per cluster, drops clusters below `MIN_CLUSTER_MEMBERS=3`, and saves via `SuggestionClusterStore`. Fail-open: never throws — errors returned as `{ built: false, skipReason }`. Model is saved even when one class has zero centroids (cold-start support). Deliberately avoids importing `cluster-pipeline.ts` / `cluster-matcher.ts` from the live review path to prevent coupling cache management to review-time logic evolution. 26 unit tests.\n\n**T03 — Refresh and Proof Harness:** `createClusterRefresh(opts)` in `suggestion-cluster-refresh.ts` provides the bounded background sweep entrypoint. Sweeps either an explicit repo list or the store's expired-repo list (capped at `maxReposPerRun`, default 50). Sequential sweep (not parallel) keeps logs ordered and prevents DB thundering-herd on large expired lists. Fail-open: per-repo errors emit `logger.warn` and continue the sweep. Injectable `_buildFn` follows the M032/S03 testable-executor pattern for testing without a real DB or HDBSCAN. `scripts/verify-m037-s01.ts` provides a three-check proof harness (BUILD-AND-CACHE, REFRESH-SWEEP, FAIL-OPEN) with 20 deterministic unit tests. All 95 tests across 4 files pass; `bun run tsc --noEmit` exits 0.\n\n## Verification\n\nRan all slice test files in sequence: `bun test ./src/knowledge/suggestion-cluster-store.test.ts ./src/knowledge/suggestion-cluster-builder.test.ts ./src/knowledge/suggestion-cluster-refresh.test.ts ./scripts/verify-m037-s01.test.ts` → 95 pass, 0 fail, 255 expect() calls. `bun run tsc --noEmit` → exit 0 (no output). All task-level verification commands also previously confirmed exit 0 per task summary.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT02 did not reuse cluster-pipeline.ts/cluster-matcher.ts as the plan mentioned — those modules are wired to the live review path. meanEmbedding and HDBSCAN wiring were implemented locally to avoid coupling. This is the correct call and is documented in D031.\n\n## Known Limitations\n\nThe cluster builder produces centroids but the scoring path (S02) is not yet wired into reviews. The refresh entrypoint exists but is not connected to a scheduler or cron job — that wiring will happen in S03 or via operator invocation.\n\n## Follow-ups\n\nS02 needs to implement the scoring function that consumes `SuggestionClusterStore.getModel()` at review time. S03 needs to wire `createClusterRefresh` to a scheduler and prove stale/unavailable models degrade cleanly.\n\n## Files Created/Modified\n\n- `src/db/migrations/036-suggestion-cluster-models.sql` — New migration — ephemeral per-repo cluster model table with JSONB centroid columns, TTL expiry, and member counts\n- `src/knowledge/suggestion-cluster-store.ts` — New — SuggestionClusterStore factory with getModel/getModelIncludingStale/saveModel/deleteModel/listExpiredModelRepos\n- `src/knowledge/suggestion-cluster-store.test.ts` — New — 29 unit tests covering serialization, TTL filtering, error paths, Float32Array round-trips\n- `src/knowledge/suggestion-cluster-builder.ts` — New — buildClusterModel with HDBSCAN-based positive/negative centroid generation, fail-open semantics\n- `src/knowledge/suggestion-cluster-builder.test.ts` — New — 26 unit tests covering centroid generation, outcome splitting, min-member thresholds, embedding parsing, error paths\n- `src/knowledge/suggestion-cluster-refresh.ts` — New — createClusterRefresh bounded background sweep entrypoint with injectable _buildFn\n- `src/knowledge/suggestion-cluster-refresh.test.ts` — New — 20 unit tests covering explicit repos, store sweep, maxReposPerRun, fail-open, mixed outcomes, result shape\n- `scripts/verify-m037-s01.ts` — New — three-check proof harness (BUILD-AND-CACHE, REFRESH-SWEEP, FAIL-OPEN) with structured JSON/text output\n- `scripts/verify-m037-s01.test.ts` — New — 20 unit tests for all three harness checks and evaluateM037S01/buildM037S01ProofHarness\n- `.gsd/PROJECT.md` — Updated current state to M037/S01 complete; added cluster model substrate to architecture section\n- `.gsd/KNOWLEDGE.md` — Added Float32Array→JSONB round-trip pattern and injectable _buildFn background refresh pattern\n- `.gsd/DECISIONS.md` — Added D031 (builder isolation) and D032 (JSONB centroid storage)\n",
+      "full_uat_md": "# S01: Cluster Model Build and Cache — UAT\n\n**Milestone:** M037\n**Written:** 2026-04-05T07:50:17.541Z\n\n## UAT: M037/S01 — Cluster Model Build and Cache\n\n### Preconditions\n\n- Repo checked out, `bun install` complete\n- PostgreSQL not required — all tests are unit tests with SQL stubs\n\n---\n\n### Test Case 1: Migration file is present and idempotent\n\n**Steps:**\n1. `ls src/db/migrations/036-suggestion-cluster-models.sql`\n\n**Expected:** File exists with CREATE TABLE IF NOT EXISTS, expires_at column, positive_centroids/negative_centroids as JSONB, positive_member_count/negative_member_count as INTEGER.\n\n---\n\n### Test Case 2: Store unit tests pass — all 29 green\n\n**Steps:**\n1. `bun test ./src/knowledge/suggestion-cluster-store.test.ts`\n\n**Expected:** 29 pass, 0 fail. Tests cover: getModel (returns null on miss), getModel (TTL filter present in query), getModelIncludingStale (no TTL filter), saveModel (ON CONFLICT DO UPDATE), saveModel (default TTL applied), deleteModel, listExpiredModelRepos (limit default 50, clamped to min 1), centroid serialization round-trip (Float32Array values preserved), JSONB string parse.\n\n---\n\n### Test Case 3: Builder unit tests pass — all 26 green\n\n**Steps:**\n1. `bun test ./src/knowledge/suggestion-cluster-builder.test.ts`\n\n**Expected:** 26 pass, 0 fail. Tests cover: insufficient data returns built=false, outcome class splitting (accepted/thumbs_up=positive; suppressed/thumbs_down=negative; unknown skipped), centroid generation with sufficient data, independent positive/negative clustering, MIN_CLUSTER_MEMBERS=3 threshold filtering, saveModel called exactly once, fail-open on sql error and store error, embedding parsing (pgvector string format), unparseable embedding skipped.\n\n---\n\n### Test Case 4: Refresh unit tests pass — all 20 green\n\n**Steps:**\n1. `bun test ./src/knowledge/suggestion-cluster-refresh.test.ts`\n\n**Expected:** 20 pass, 0 fail. Tests cover: explicit repos sweep (correct totals, built=true on success, skipped on insufficient data), empty explicit repos returns zero without calling buildFn, store sweep (fetches expired repos, zero when none expired), maxReposPerRun respected (default 50), fail-open (continues after crash, failed=true in repoResults, warn log emitted, healthy repos still counted), mixed outcomes tallied correctly, durationMs non-negative, sum of built+skipped+failed equals repoCount, info log emitted on completion.\n\n---\n\n### Test Case 5: Proof harness tests pass — all 20 green\n\n**Steps:**\n1. `bun test ./scripts/verify-m037-s01.test.ts`\n\n**Expected:** 20 pass, 0 fail. Tests cover: BUILD-AND-CACHE passes with real deterministic fixture (built=true, positiveCentroidCount>0, saveModel called, correct repo), BUILD-AND-CACHE fails when built=false / positiveCentroidCount=0 / saveModel not called / wrong repo. REFRESH-SWEEP passes with real fixture (reposBuilt=repoCount, correct centroid count, reposFailed=0), fails when reposBuilt<repoCount / wrong centroid count / reposFailed>0. FAIL-OPEN passes with real fixture (sweep continues, warn log present, reposFailed=1), fails when sweep aborted / no warn log / reposFailed=0. evaluateM037S01 returns all three check IDs, overallPassed false on any failure. buildM037S01ProofHarness prints all three check IDs, valid JSON in json mode, exitCode=1 and stderr on failure.\n\n---\n\n### Test Case 6: Full slice suite in one command\n\n**Steps:**\n1. `bun test ./src/knowledge/suggestion-cluster-store.test.ts ./src/knowledge/suggestion-cluster-builder.test.ts ./src/knowledge/suggestion-cluster-refresh.test.ts ./scripts/verify-m037-s01.test.ts`\n\n**Expected:** 95 pass, 0 fail.\n\n---\n\n### Test Case 7: TypeScript compilation clean\n\n**Steps:**\n1. `bun run tsc --noEmit`\n\n**Expected:** Exit 0, no output.\n\n---\n\n### Test Case 8: Fail-open contract — builder never throws\n\n**Verified by:** `buildClusterModel — error handling > does not throw — always returns a result` test. Builder wraps all paths in try/catch and returns `{ built: false, skipReason: error.message }` on any failure. No uncaught rejection possible.\n\n---\n\n### Test Case 9: Store TTL contract — getModel filters stale, getModelIncludingStale does not\n\n**Verified by:** store tests `issues query with expires_at > now() filter (not stale)` and `issues query WITHOUT expires_at filter`. Live review consumers call `getModel` (stale rows invisible). Refresh job calls `getModelIncludingStale` to force rebuild even of stale rows.\n\n---\n\n### Test Case 10: Centroid serialization integrity\n\n**Verified by:** store test `preserves Float32Array values through save→read cycle`. saveModel calls `Array.from(c)` on each centroid before JSONB serialization. getModel calls `new Float32Array(c)` on each row entry after deserialization. Values survive the round-trip without corruption.\n\n",
       "goal": "Build the cluster-model substrate: model schema, builder, cache, and bounded background refresh entrypoint.",
       "success_criteria": "- Per-repo cluster model storage exists with positive and negative centroids plus freshness metadata.\n- Model build is bounded and background-oriented rather than per-review.\n- Cached model reads are available to the review pipeline through explicit interfaces.",
       "proof_level": "Deterministic model-build and cache tests.",
@@ -7683,19 +7683,27 @@
       "milestone_id": "M037",
       "slice_id": "S02",
       "id": "T01",
-      "title": "Score findings against thematic cluster models",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Implemented suggestion-cluster-scoring.ts with fail-open scoreFindings() pipeline, safety guards for CRITICAL/protected findings, and 36 passing tests",
+      "status": "complete",
+      "one_liner": "Implemented suggestion-cluster-scoring.ts with fail-open scoreFindings() pipeline, safety guards for CRITICAL/protected findings, and 36 passing tests",
+      "narrative": "Built the ephemeral thematic scoring layer (suggestion-cluster-scoring.ts) that scores draft findings against positive/negative cluster centroids without mutating any durable state. Three exported tiers: isModelEligibleForScoring() (cold-start guard), scoreFindingEmbedding() (pure sync scorer for testing), and scoreFindings<T>() (async batch scorer with full fail-open behavior). Reuses cosineSimilarity from cluster-pipeline.ts and isFeedbackSuppressionProtected from safety-guard.ts. Extended the safety guard to block both suppression AND boosting on CRITICAL/protected findings. Three fail-open layers: null model, ineligible model (member count below 5), and per-finding embedding failure. The noOpResult() helper produces structurally consistent output regardless of skip reason. 36 tests cover all boundary conditions, safety guards, and fail-open paths.",
+      "verification_result": "bun test ./src/knowledge/suggestion-cluster-scoring.test.ts — 36/36 pass (210ms). bun run tsc --noEmit — exit 0, no output.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T07:55:13.014Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Safety guard extended to block confidence boosting on CRITICAL/protected findings, not just suppression. The M037 context only mentioned suppression bypass, but inflating CRITICAL finding confidence via historical positive signal is equally undesirable.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/suggestion-cluster-scoring.ts",
+        "src/knowledge/suggestion-cluster-scoring.test.ts"
+      ],
+      "key_decisions": [
+        "CRITICAL findings bypass both suppression AND boosting (safety guard extended beyond just suppression)",
+        "scoreFindingEmbedding() exposed as pure export so tests exercise thresholds without I/O mocking",
+        "noOpResult() pattern produces consistent ScoredFindings<T> shape for all skip paths",
+        "Boosting and suppression are mutually exclusive: a finding being suppressed never gets its confidence boosted"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M037\nkey_files:\n  - src/knowledge/suggestion-cluster-scoring.ts\n  - src/knowledge/suggestion-cluster-scoring.test.ts\nkey_decisions:\n  - CRITICAL findings bypass both suppression AND boosting (safety guard extended beyond just suppression)\n  - scoreFindingEmbedding() exposed as pure export so tests exercise thresholds without I/O mocking\n  - noOpResult() pattern produces consistent ScoredFindings<T> shape for all skip paths\n  - Boosting and suppression are mutually exclusive: a finding being suppressed never gets its confidence boosted\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T07:55:13.013Z\nblocker_discovered: false\n---\n\n# T01: Implemented suggestion-cluster-scoring.ts with fail-open scoreFindings() pipeline, safety guards for CRITICAL/protected findings, and 36 passing tests\n\n**Implemented suggestion-cluster-scoring.ts with fail-open scoreFindings() pipeline, safety guards for CRITICAL/protected findings, and 36 passing tests**\n\n## What Happened\n\nBuilt the ephemeral thematic scoring layer (suggestion-cluster-scoring.ts) that scores draft findings against positive/negative cluster centroids without mutating any durable state. Three exported tiers: isModelEligibleForScoring() (cold-start guard), scoreFindingEmbedding() (pure sync scorer for testing), and scoreFindings<T>() (async batch scorer with full fail-open behavior). Reuses cosineSimilarity from cluster-pipeline.ts and isFeedbackSuppressionProtected from safety-guard.ts. Extended the safety guard to block both suppression AND boosting on CRITICAL/protected findings. Three fail-open layers: null model, ineligible model (member count below 5), and per-finding embedding failure. The noOpResult() helper produces structurally consistent output regardless of skip reason. 36 tests cover all boundary conditions, safety guards, and fail-open paths.\n\n## Verification\n\nbun test ./src/knowledge/suggestion-cluster-scoring.test.ts — 36/36 pass (210ms). bun run tsc --noEmit — exit 0, no output.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/suggestion-cluster-scoring.test.ts` | 0 | ✅ pass | 210ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6900ms |\n\n## Deviations\n\nSafety guard extended to block confidence boosting on CRITICAL/protected findings, not just suppression. The M037 context only mentioned suppression bypass, but inflating CRITICAL finding confidence via historical positive signal is equally undesirable.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/suggestion-cluster-scoring.ts`\n- `src/knowledge/suggestion-cluster-scoring.test.ts`\n",
       "description": "- Implement thematic scoring for draft findings against positive and negative cluster centroids.\n- Return suppression and confidence-adjustment signals without mutating durable rule state.\n- Add scoring tests for conservative thresholds.",
       "estimate": "0.5-1d",
       "files": [
@@ -9489,6 +9497,30 @@
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
+    },
+    {
+      "seq": 65,
+      "id": "D031",
+      "when_context": "M037/S01/T02",
+      "scope": "architecture",
+      "decision": "How suggestion-cluster-builder.ts couples to the rest of the knowledge stack",
+      "choice": "Builder queries learning_memories directly via sql tagged-template — no LearningMemoryStore dependency; meanEmbedding and HDBSCAN wiring implemented locally rather than reusing cluster-pipeline.ts/cluster-matcher.ts",
+      "rationale": "cluster-pipeline.ts and cluster-matcher.ts are wired to the live review path. Importing them from a background cache-management module would couple cache invalidation cycles to review-time logic changes. Local wiring is a small duplication in exchange for isolation that matters when the two paths evolve at different rates.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 66,
+      "id": "D032",
+      "when_context": "M037/S01/T01",
+      "scope": "architecture",
+      "decision": "How to store positive/negative cluster model centroids in the suggestion_cluster_models table",
+      "choice": "Centroids stored as JSONB number[][] (not pgvector columns)",
+      "rationale": "The cluster model table is an ephemeral per-repo cache with periodic full-row replacements. Scoring reads a handful of centroids sequentially — no ANN index is needed. Storing as JSONB avoids a pgvector column-type dependency and index overhead for a workload with no retrieval scaling requirement.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
     }
   ],
   "verification_evidence": [
@@ -10624,6 +10656,28 @@
       "verdict": "✅ pass",
       "duration_ms": 7400,
       "created_at": "2026-04-05T07:46:58.967Z"
+    },
+    {
+      "id": 104,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun test ./src/knowledge/suggestion-cluster-scoring.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 210,
+      "created_at": "2026-04-05T07:55:13.014Z"
+    },
+    {
+      "id": 105,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6900,
+      "created_at": "2026-04-05T07:55:13.014Z"
     }
   ]
 }

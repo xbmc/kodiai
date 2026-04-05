@@ -753,3 +753,37 @@ ON CONFLICT (repo, title) DO UPDATE SET
 **Rule:** Any table that has a `pending/active/retired` (or similar) lifecycle column and is populated by an automated sweep must use this CASE guard on the status column. Never UPDATE status unconditionally from a sweep upsert.
 
 **Established in:** M036/S01/T01 (035-generated-rules.sql, GeneratedRuleStore.savePendingRule).
+
+---
+
+## Float32Array → JSONB Centroid Round-Trip (M037/S01)
+
+**Context:** `suggestion_cluster_models` stores centroids as JSONB `number[][]`. `buildClusterModel` produces `Float32Array[]` from HDBSCAN output. JSON.stringify converts Float32Arrays to `{"0":…,"1":…}` objects, not arrays — the round-trip silently loses the array shape.
+
+**Fix:** Explicitly convert before serializing:
+```ts
+const positive_centroids = model.positiveCentroids.map(c => Array.from(c));
+const negative_centroids = model.negativeCentroids.map(c => Array.from(c));
+// JSON.stringify(positive_centroids) → [[0.1, 0.2, ...], ...]
+```
+
+And restore on read:
+```ts
+const positiveCentroids = (row.positive_centroids as number[][]).map(c => new Float32Array(c));
+```
+
+**Rule:** Any code that serializes typed arrays (Float32Array, Int32Array, etc.) to JSONB must call `Array.from(typedArray)` before stringification. The store tests cover this via the `centroid serialization round-trip` describe block.
+
+**Established in:** M037/S01/T01 (`suggestion-cluster-store.ts`, `saveModel`/`getModel`).
+
+---
+
+## Background Cluster Refresh: Injectable `_buildFn` + Sequential Sweep (M037/S01)
+
+**Context:** `createClusterRefresh` runs a background sweep that calls `buildClusterModel` for each expired repo. Tests need to exercise the sweep logic (maxReposPerRun cap, fail-open, mixed outcomes) without a real DB or HDBSCAN run.
+
+**Pattern:** Accept an optional `_buildFn?: typeof buildClusterModel` on the refresh options. Tests inject a synchronous stub. Production callers omit it (the real import is used). This is the same injectable-fn pattern as `createClusterRefresh`'s cousins in M032/S03 (`createTestableExecutor`) — use it whenever a background sweep calls a slow or side-effecting function.
+
+**Sequential over parallel:** The sweep is background work and there is no urgency to parallelize. Sequential iteration (for-of) is simpler, keeps logs ordered per-repo, and prevents thundering-herd DB load when the expired list is large. Do not parallelize unless latency benchmarks justify it.
+
+**Established in:** M037/S01/T03 (`suggestion-cluster-refresh.ts`, `createClusterRefresh`).

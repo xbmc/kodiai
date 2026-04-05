@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M037/S01/T03",
+  "timestamp": 1775375225954,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/knowledge/suggestion-cluster-refresh.test.ts",
+      "exitCode": 0,
+      "durationMs": 20,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test ./scripts/verify-m037-s01.test.ts",
+      "exitCode": 0,
+      "durationMs": 26,
+      "verdict": "pass"
+    }
+  ]
+}

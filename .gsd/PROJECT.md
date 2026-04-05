@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M036 complete. The generated-rule lifecycle is fully built: positive learning-memory clusters produce pending rule proposals via `createGeneratedRuleSweep`, high-signal proposals auto-activate via `applyActivationPolicy`, active rules inject into the review prompt via `formatActiveRulesSection` in `buildReviewPrompt`, and signal-decayed rules retire via `applyRetirementPolicy`. Operator notifications are wired via the fail-open `LifecycleNotifyHook` extension point. Three per-slice proof harnesses (`verify:m036:s01/s02/s03`) all exit 0.
+M037/S01 complete. The cluster-model substrate is built: `suggestion_cluster_models` migration (036), `SuggestionClusterStore` (getModel/getModelIncludingStale/saveModel/deleteModel/listExpiredModelRepos), `buildClusterModel` (HDBSCAN-based positive/negative centroid generation from learning memories with fail-open semantics), and `createClusterRefresh` (bounded background sweep entrypoint with injectable `_buildFn` for testing). Three-check proof harness (`verify:m037:s01`) passes. 95 tests across 4 files, tsc clean.
 
 ## Architecture / Key Patterns
 
@@ -31,6 +31,12 @@ M036 complete. The generated-rule lifecycle is fully built: positive learning-me
   - `src/knowledge/generated-rule-notify.ts` — operator notification (`notifyLifecycleRun`, `notifyActivation`, `notifyRetirement`; fail-open LifecycleNotifyHook extension point)
   - `src/knowledge/active-rules.ts` — sanitized retrieval + `formatActiveRulesSection` formatter; absolute cap of 20 rules; fail-open on store errors
   - Rules injected into `buildReviewPrompt` before custom instructions via `activeRules?: SanitizedActiveRule[]` context field
+- **Cluster model substrate (M037/S01):**
+  - `src/db/migrations/036-suggestion-cluster-models.sql` — ephemeral per-repo cluster model table; centroids as JSONB number[][]
+  - `src/knowledge/suggestion-cluster-store.ts` — standalone store (isolated from KnowledgeStore); TTL-filtered `getModel`; `getModelIncludingStale` for refresh job; `listExpiredModelRepos` for sweep targeting
+  - `src/knowledge/suggestion-cluster-builder.ts` — `buildClusterModel`: queries learning_memories directly, splits by outcome class (positive=accepted/thumbs_up, negative=suppressed/thumbs_down), runs HDBSCAN per class, computes mean centroids, enforces MIN_CLUSTER_MEMBERS=3; fail-open (never throws)
+  - `src/knowledge/suggestion-cluster-refresh.ts` — `createClusterRefresh`: bounded background sweep over expired or explicit repos; sequential; injectable `_buildFn` for tests
+  - `scripts/verify-m037-s01.ts` — three-check proof harness (BUILD-AND-CACHE, REFRESH-SWEEP, FAIL-OPEN)
 
 ## Capability Contract
 
@@ -48,7 +54,10 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Generated Rule Schema, Store, and Proposal Candidates
   - [x] S02: Rule Activation and Prompt Injection
   - [x] S03: Retirement, Notification, and Lifecycle Proof
-- [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning — k-means cluster model, dual positive/negative signal, thematic suppression/boosting
+- [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning
+  - [x] S01: Cluster Model Build and Cache — substrate complete (migration, store, builder, refresh, proof harness)
+  - [ ] S02: Thematic Finding Scoring and Review Integration
+  - [ ] S03: Refresh, Staleness Handling, and Fail-Open Verification
 - [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
