@@ -5,6 +5,7 @@ import type {
   StructuralImpactPayload,
   StructuralLikelyTest,
 } from "../structural-impact/types.ts";
+import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 
 export type StructuralImpactFormatterOptions = {
   maxCallers?: number;
@@ -128,26 +129,56 @@ function hasRenderableContent(payload: StructuralImpactPayload): boolean {
     || payload.canonicalEvidence.length > 0;
 }
 
+function buildTruthfulEvidenceQualityLine(payload: StructuralImpactPayload): string {
+  const degradation = summarizeStructuralImpactDegradation(payload);
+
+  if (degradation.status === "partial") {
+    const unavailableSources: string[] = [];
+    if (!degradation.availability.graphAvailable) unavailableSources.push("graph data");
+    if (!degradation.availability.corpusAvailable) unavailableSources.push("unchanged-code corpus data");
+
+    const unavailableNote = unavailableSources.length > 0
+      ? ` Missing ${unavailableSources.join(" and ")} is omitted rather than inferred.`
+      : "";
+
+    return `- Evidence quality: Partial structural evidence available; confidence claims below reflect only returned graph/corpus results.${unavailableNote}`;
+  }
+
+  if (degradation.status === "unavailable") {
+    return "";
+  }
+
+  return "- Evidence quality: Structural evidence includes graph-ranked dependencies and unchanged-code retrieval; confidence claims below distinguish probable vs stronger graph support.";
+}
+
 export function buildStructuralImpactSection(
   payload: StructuralImpactPayload | null | undefined,
   options: StructuralImpactFormatterOptions = {},
 ): StructuralImpactSection {
+  const degradation = summarizeStructuralImpactDegradation(payload);
+  const normalizedPayload = payload
+    ? {
+        ...payload,
+        status: degradation.status,
+        degradations: degradation.degradations,
+      }
+    : payload;
   const emptyStats: StructuralImpactRenderStats = {
     callersRendered: 0,
-    callersTotal: payload?.probableCallers.length ?? 0,
+    callersTotal: normalizedPayload?.probableCallers.length ?? 0,
     callersTruncated: false,
     filesRendered: 0,
-    filesTotal: payload?.impactedFiles.length ?? 0,
+    filesTotal: normalizedPayload?.impactedFiles.length ?? 0,
     filesTruncated: false,
     testsRendered: 0,
-    testsTotal: payload?.likelyTests.length ?? 0,
+    testsTotal: normalizedPayload?.likelyTests.length ?? 0,
     testsTruncated: false,
     evidenceRendered: 0,
-    evidenceTotal: payload?.canonicalEvidence.length ?? 0,
+    evidenceTotal: normalizedPayload?.canonicalEvidence.length ?? 0,
     evidenceTruncated: false,
   };
 
-  if (!payload || payload.status === "unavailable" || !hasRenderableContent(payload)) {
+  if (!normalizedPayload || normalizedPayload.status === "unavailable" || !hasRenderableContent(normalizedPayload)) {
     return { text: "", stats: emptyStats };
   }
 
@@ -158,49 +189,48 @@ export function buildStructuralImpactSection(
 
   const callerSection = buildBoundedSection({
     heading: "Probable callers / dependents",
-    items: payload.probableCallers,
+    items: normalizedPayload.probableCallers,
     maxItems: maxCallers,
     render: formatCaller,
   });
   const fileSection = buildBoundedSection({
     heading: "Impacted files",
-    items: payload.impactedFiles,
+    items: normalizedPayload.impactedFiles,
     maxItems: maxFiles,
     render: formatFile,
   });
   const testSection = buildBoundedSection({
     heading: "Likely affected tests",
-    items: payload.likelyTests,
+    items: normalizedPayload.likelyTests,
     maxItems: maxTests,
     render: formatTest,
   });
   const evidenceSection = buildBoundedSection({
     heading: "Unchanged-code evidence",
-    items: payload.canonicalEvidence,
+    items: normalizedPayload.canonicalEvidence,
     maxItems: maxEvidence,
     render: formatEvidence,
   });
 
   const lines = ["", "### Structural Impact", ""];
 
-  if (payload.seedSymbols.length > 0) {
-    const symbolNames = payload.seedSymbols
+  if (normalizedPayload.seedSymbols.length > 0) {
+    const symbolNames = normalizedPayload.seedSymbols
       .slice(0, 3)
       .map((item) => item.qualifiedName ?? item.symbolName ?? item.stableKey);
-    const overflow = payload.seedSymbols.length - symbolNames.length;
+    const overflow = normalizedPayload.seedSymbols.length - symbolNames.length;
     lines.push(`- Changed symbols: ${symbolNames.map((item) => `\`${item}\``).join(", ")}${overflow > 0 ? `, and ${overflow} more` : ""}`);
   }
 
-  if (payload.graphStats) {
+  if (normalizedPayload.graphStats) {
     lines.push(
-      `- Graph coverage: ${payload.graphStats.changedFilesFound}/${payload.graphStats.changedFilesRequested} changed files resolved in graph (${payload.graphStats.files} files, ${payload.graphStats.nodes} nodes, ${payload.graphStats.edges} edges).`,
+      `- Graph coverage: ${normalizedPayload.graphStats.changedFilesFound}/${normalizedPayload.graphStats.changedFilesRequested} changed files resolved in graph (${normalizedPayload.graphStats.files} files, ${normalizedPayload.graphStats.nodes} nodes, ${normalizedPayload.graphStats.edges} edges).`,
     );
   }
 
-  if (payload.status === "partial") {
-    lines.push("- Evidence quality: Partial structural evidence available; confidence claims below reflect only returned graph/corpus results.");
-  } else {
-    lines.push("- Evidence quality: Structural evidence includes graph-ranked dependencies and unchanged-code retrieval; confidence claims below distinguish probable vs stronger graph support.");
+  const evidenceQualityLine = buildTruthfulEvidenceQualityLine(normalizedPayload);
+  if (evidenceQualityLine) {
+    lines.push(evidenceQualityLine);
   }
 
   for (const section of [callerSection, fileSection, testSection, evidenceSection]) {

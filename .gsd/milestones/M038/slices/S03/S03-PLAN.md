@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/structural-impact/cache.ts, src/structural-impact/cache.test.ts, src/structural-impact/orchestrator.ts
   - Verify: bun test ./src/structural-impact/cache.test.ts && bun run tsc --noEmit
-- [ ] **T02: Harden fail-open degradation paths** — - Harden degradation behavior so missing graph data, missing corpus data, or total substrate failure never blocks review completion.
+- [x] **T02: Hardened structural-impact fail-open degradation so review output stays truthful when graph or corpus evidence is missing.** — - Harden degradation behavior so missing graph data, missing corpus data, or total substrate failure never blocks review completion.
 - Ensure the user-visible output stays truthful: no invented caller counts or fake structural certainty.
 - Add tests for graceful fallback across each failure mode.
   - Estimate: 0.5-1d

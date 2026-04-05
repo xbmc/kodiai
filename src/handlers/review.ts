@@ -35,6 +35,7 @@ import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
 import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import { createStructuralImpactCache } from "../structural-impact/cache.ts";
+import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -2138,20 +2139,28 @@ export function createReviewHandler(deps: {
                   ),
                 },
               );
-              structuralImpactForReview = structuralImpact.payload;
+              const structuralImpactDegradation = summarizeStructuralImpactDegradation(structuralImpact.payload);
+              structuralImpactForReview = {
+                ...structuralImpact.payload,
+                status: structuralImpactDegradation.status,
+                degradations: structuralImpactDegradation.degradations,
+              };
               graphBlastRadius = structuralImpact.graphBlastRadius;
               logger.info(
                 {
                   ...baseLog,
                   gate: "structural-impact",
-                  status: structuralImpact.payload.status,
+                  status: structuralImpactForReview.status,
                   graphPresent: Boolean(structuralImpact.graphBlastRadius),
-                  probableCallers: structuralImpact.payload.probableCallers.length,
-                  impactedFiles: structuralImpact.payload.impactedFiles.length,
-                  likelyTests: structuralImpact.payload.likelyTests.length,
-                  canonicalEvidence: structuralImpact.payload.canonicalEvidence.length,
-                  breakingChangeEvidenceUsed: structuralImpact.payload.probableCallers.length > 0 || structuralImpact.payload.impactedFiles.length > 0,
-                  fallbackUsed: structuralImpact.payload.status === "unavailable",
+                  probableCallers: structuralImpactForReview.probableCallers.length,
+                  impactedFiles: structuralImpactForReview.impactedFiles.length,
+                  likelyTests: structuralImpactForReview.likelyTests.length,
+                  canonicalEvidence: structuralImpactForReview.canonicalEvidence.length,
+                  breakingChangeEvidenceUsed: structuralImpactForReview.probableCallers.length > 0 || structuralImpactForReview.impactedFiles.length > 0,
+                  fallbackUsed: structuralImpactDegradation.fallbackUsed,
+                  degradationSignals: structuralImpactDegradation.truthfulnessSignals,
+                  graphAvailable: structuralImpactDegradation.availability.graphAvailable,
+                  corpusAvailable: structuralImpactDegradation.availability.corpusAvailable,
                 },
                 "Review structural-impact payload collected",
               );

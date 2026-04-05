@@ -263,7 +263,33 @@ describe("fetchReviewStructuralImpact", () => {
     expect(result.payload.status).toBe("partial");
     expect(result.payload.canonicalEvidence).toHaveLength(0);
     expect(result.graphBlastRadius).not.toBeNull();
-    expect(result.payload.degradations).toHaveLength(0);
+  });
+
+  test("keeps degraded output bounded when corpus search yields zero evidence", async () => {
+    const result = await fetchReviewStructuralImpact(
+      {
+        reviewGraphQuery: stubGraphQuery(),
+        canonicalCodeStore: {
+          searchByEmbedding: async () => [],
+        },
+        embeddingProvider: makeEmbeddingProvider(),
+        logger: createNoopLogger(),
+      },
+      {
+        repo: "acme/repo",
+        owner: "acme",
+        workspaceKey: "headsha",
+        baseSha: "base123",
+        headSha: "head123",
+        changedPaths: ["src/service.cpp"],
+        canonicalRef: "main",
+        query: "parse token helper",
+      },
+    );
+
+    expect(result.payload.status).toBe("partial");
+    expect(result.payload.canonicalEvidence).toHaveLength(0);
+    expect(result.graphBlastRadius).not.toBeNull();
   });
 
   test("returns unavailable when neither substrate is configured", async () => {

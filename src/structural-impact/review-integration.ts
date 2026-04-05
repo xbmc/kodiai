@@ -12,6 +12,7 @@ import {
   buildStructuralImpactCacheKey,
   type StructuralImpactCache,
 } from "./cache.ts";
+import { summarizeStructuralImpactDegradation } from "./degradation.ts";
 import type { StructuralImpactPayload } from "./types.ts";
 
 export type ReviewGraphQueryFn = (input: {
@@ -179,8 +180,15 @@ export async function fetchReviewStructuralImpact(
     onSignal: request.onSignal,
   });
 
+  const degradationSummary = summarizeStructuralImpactDegradation(payload);
+  const normalizedPayload: StructuralImpactPayload = {
+    ...payload,
+    status: degradationSummary.status,
+    degradations: degradationSummary.degradations,
+  };
+
   return {
-    payload,
+    payload: normalizedPayload,
     graphBlastRadius,
   };
 }

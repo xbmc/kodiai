@@ -177,8 +177,19 @@ describe("buildStructuralImpactSection", () => {
     }));
 
     expect(result.text).toContain("Partial structural evidence available");
+    expect(result.text).toContain("Missing graph data is omitted rather than inferred.");
     expect(result.text).toContain("Unchanged-code evidence: 1/1 shown");
     expect(result.text).not.toContain("Graph coverage:");
+  });
+
+  it("suppresses partial wording when corpus is available but returns zero matches", () => {
+    const result = buildStructuralImpactSection(makePayload({
+      status: "ok",
+      canonicalEvidence: [],
+    }));
+
+    expect(result.text).toContain("Structural evidence includes graph-ranked dependencies and unchanged-code retrieval");
+    expect(result.text).not.toContain("Partial structural evidence available");
   });
 
   it("returns empty text when payload has no renderable content", () => {

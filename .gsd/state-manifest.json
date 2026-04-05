@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T19:47:15.636Z",
+  "exported_at": "2026-04-05T19:53:14.316Z",
   "milestones": [
     {
       "id": "M001",
@@ -8300,19 +8300,30 @@
       "milestone_id": "M038",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Harden fail-open degradation paths",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Hardened structural-impact fail-open degradation so review output stays truthful when graph or corpus evidence is missing.",
+      "status": "complete",
+      "one_liner": "Hardened structural-impact fail-open degradation so review output stays truthful when graph or corpus evidence is missing.",
+      "narrative": "Added a dedicated structural-impact degradation normalizer, threaded it through review integration, formatter rendering, Review Details output, and handler logging, and expanded tests so graph/corpus failure paths degrade truthfully without inventing certainty or blocking review completion.",
+      "verification_result": "Verified the new degradation module, review-integration behavior, formatter output, and repo compilation with targeted bun tests plus `bun run tsc --noEmit`.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T19:53:14.279Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "`fetchReviewStructuralImpact` still reflects existing review-integration behavior when the corpus path returns zero evidence, so the dedicated degradation helper is the canonical truthfulness layer for status normalization rather than that function alone.",
+      "key_files": [
+        "src/structural-impact/degradation.ts",
+        "src/structural-impact/degradation.test.ts",
+        "src/structural-impact/review-integration.ts",
+        "src/lib/structural-impact-formatter.ts",
+        "src/lib/review-utils.ts",
+        "src/handlers/review.ts",
+        "src/structural-impact/review-integration.test.ts",
+        "src/lib/structural-impact-formatter.test.ts"
+      ],
+      "key_decisions": [
+        "Centralized structural-impact truthfulness and fallback classification in a dedicated degradation helper rather than duplicating partial/unavailable logic across the formatter and review handler."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M038\nkey_files:\n  - src/structural-impact/degradation.ts\n  - src/structural-impact/degradation.test.ts\n  - src/structural-impact/review-integration.ts\n  - src/lib/structural-impact-formatter.ts\n  - src/lib/review-utils.ts\n  - src/handlers/review.ts\n  - src/structural-impact/review-integration.test.ts\n  - src/lib/structural-impact-formatter.test.ts\nkey_decisions:\n  - Centralized structural-impact truthfulness and fallback classification in a dedicated degradation helper rather than duplicating partial/unavailable logic across the formatter and review handler.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T19:53:14.278Z\nblocker_discovered: false\n---\n\n# T02: Hardened structural-impact fail-open degradation so review output stays truthful when graph or corpus evidence is missing.\n\n**Hardened structural-impact fail-open degradation so review output stays truthful when graph or corpus evidence is missing.**\n\n## What Happened\n\nAdded a dedicated structural-impact degradation normalizer, threaded it through review integration, formatter rendering, Review Details output, and handler logging, and expanded tests so graph/corpus failure paths degrade truthfully without inventing certainty or blocking review completion.\n\n## Verification\n\nVerified the new degradation module, review-integration behavior, formatter output, and repo compilation with targeted bun tests plus `bun run tsc --noEmit`.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/structural-impact/degradation.test.ts ./src/structural-impact/review-integration.test.ts ./src/lib/structural-impact-formatter.test.ts` | 0 | ✅ pass | 28ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 1000ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`fetchReviewStructuralImpact` still reflects existing review-integration behavior when the corpus path returns zero evidence, so the dedicated degradation helper is the canonical truthfulness layer for status normalization rather than that function alone.\n\n## Files Created/Modified\n\n- `src/structural-impact/degradation.ts`\n- `src/structural-impact/degradation.test.ts`\n- `src/structural-impact/review-integration.ts`\n- `src/lib/structural-impact-formatter.ts`\n- `src/lib/review-utils.ts`\n- `src/handlers/review.ts`\n- `src/structural-impact/review-integration.test.ts`\n- `src/lib/structural-impact-formatter.test.ts`\n",
       "description": "- Harden degradation behavior so missing graph data, missing corpus data, or total substrate failure never blocks review completion.\n- Ensure the user-visible output stays truthful: no invented caller counts or fake structural certainty.\n- Add tests for graceful fallback across each failure mode.",
       "estimate": "0.5-1d",
       "files": [
@@ -11809,6 +11820,28 @@
       "verdict": "✅ pass",
       "duration_ms": 381,
       "created_at": "2026-04-05T19:47:15.610Z"
+    },
+    {
+      "id": 176,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M038",
+      "command": "bun test ./src/structural-impact/degradation.test.ts ./src/structural-impact/review-integration.test.ts ./src/lib/structural-impact-formatter.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 28,
+      "created_at": "2026-04-05T19:53:14.279Z"
+    },
+    {
+      "id": 177,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M038",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1000,
+      "created_at": "2026-04-05T19:53:14.279Z"
     }
   ]
 }
