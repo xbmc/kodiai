@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/handlers/review.ts, src/review-graph/validation.ts, src/review-graph/validation.test.ts
   - Verify: bun test ./src/review-graph/validation.test.ts && bun run tsc --noEmit
-- [ ] **T03: Add boundedness and fail-open verifier** — - Add the milestone-level verifier for large-PR graph use and small-PR bypass.
+- [x] **T03: Add M040 S03 proof harness with 40 tests covering bounded prompt context, trivial-change bypass, fail-open validation, and annotation; all 4 checks PASS, `bun run verify:m040:s03 -- --json` exits 0.** — - Add the milestone-level verifier for large-PR graph use and small-PR bypass.
 - Cover bounded prompt context, fail-open behavior, and optional validation outcomes.
 - Emit machine-checkable proof output that can close M040 without hand inspection.
   - Estimate: 0.5-1d
