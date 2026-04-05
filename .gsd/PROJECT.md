@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M037/S03 complete. The reinforcement layer now closes the loop around cached suggestion-cluster models: background refresh remains bounded and sequential, stale cached models stay usable only within a 4-hour grace window after the 24-hour TTL, very-stale or missing models degrade cleanly to no scoring, and the live review path routes through the staleness-aware resolver instead of bypassing it. `applyClusterScoringWithDegradation()` preserves truthful degradation reason codes (`model-load-error` vs `no-model`) while never blocking review completion. The M037 S03 proof harness (`verify:m037:s03`) proves four closure properties end to end: cached reuse through `getModelIncludingStale`, stale-grace behavior, refresh sweep totals, and naive fail-open fallback. Slice verification passed: 65 tests across staleness, degradation, and proof harness plus `bun run verify:m037:s03 -- --json` and `bun run tsc --noEmit`.
+M037 complete. Kodiai now has a full cached suggestion-cluster reinforcement layer for review findings: per-repo positive and negative cluster centroids are built from learning memories and stored in an ephemeral cache, review-time findings are scored thematically against those cached models, protected findings remain immune to both suppression and confidence boosting, and stale or unavailable models degrade cleanly without blocking review completion. The live review path now loads cluster models through a centralized stale-aware resolver with a bounded 4-hour grace window beyond the 24-hour TTL, and `applyClusterScoringWithDegradation()` preserves truthful degradation reasons (`model-load-error` vs `no-model`) while keeping the naive path intact. Milestone closure verification reran `verify:m037:s01`, `verify:m037:s02`, and `verify:m037:s03` successfully and confirmed real non-`.gsd/` code changes exist for the milestone.
 
 ## Architecture / Key Patterns
 
@@ -32,16 +32,16 @@ M037/S03 complete. The reinforcement layer now closes the loop around cached sug
   - `src/knowledge/active-rules.ts` — sanitized retrieval + `formatActiveRulesSection` formatter; absolute cap of 20 rules; fail-open on store errors
   - Rules injected into `buildReviewPrompt` before custom instructions via `activeRules?: SanitizedActiveRule[]` context field
 - **Cluster model substrate and scoring (M037 complete):**
-  - `src/db/migrations/036-suggestion-cluster-models.sql` — ephemeral per-repo cluster model table; centroids as JSONB number[][]
-  - `src/knowledge/suggestion-cluster-store.ts` — standalone store; TTL-filtered `getModel`; `getModelIncludingStale` for refresh and stale-aware scoring; `listExpiredModelRepos` for sweep targeting
-  - `src/knowledge/suggestion-cluster-builder.ts` — `buildClusterModel`: queries learning_memories directly, HDBSCAN per class, mean centroids, MIN_CLUSTER_MEMBERS=3; fail-open
-  - `src/knowledge/suggestion-cluster-refresh.ts` — `createClusterRefresh`: bounded background sweep; sequential; injectable `_buildFn` for tests; aggregate built/skipped/failed totals
-  - `src/knowledge/suggestion-cluster-staleness.ts` — centralized stale-model policy: 24h TTL + 4h grace window; four states (`fresh`, `stale`, `very-stale`, `missing`); `resolveModelForScoring()` emits structured observability and returns a `storeReadFailed` sentinel
-  - `src/knowledge/suggestion-cluster-scoring.ts` — ephemeral scoring layer: `isModelEligibleForScoring`, `scoreFindingEmbedding` (pure sync), `scoreFindings<T>()` (async batch); SUPPRESSION_THRESHOLD ≥ 0.80, BOOST_THRESHOLD < suppression; fail-open at model, eligibility, and per-finding levels
-  - `src/knowledge/suggestion-cluster-degradation.ts` — live fail-open wrapper: `applyClusterScoringWithDegradation()` routes through the stale-aware resolver, preserves exhaustive degradation reasons (`no-store`, `no-embedding`, `model-load-error`, `no-model`, `model-not-eligible`, `scoring-error`), and returns unchanged findings on every skip/error path
-  - `src/feedback/confidence-adjuster.ts` — `applyClusterScoreAdjustment()`: merges cluster suppress/boost signals into findings; safety guard blocks both signals for CRITICAL/MAJOR-security/MAJOR-correctness
-  - `src/handlers/review.ts` — cluster scoring wired after feedback-adjustment map; already-suppressed findings skip cluster pass; stale/missing/unavailable models degrade to the naive review path without blocking completion
-  - `scripts/verify-m037-s01.ts`, `verify-m037-s02.ts`, `verify-m037-s03.ts` — machine-verifiable proof harnesses for substrate, scoring integration, and stale/fail-open closure
+  - `src/db/migrations/036-suggestion-cluster-models.sql` — ephemeral per-repo cluster model table; centroids stored as JSONB `number[][]`
+  - `src/knowledge/suggestion-cluster-store.ts` — standalone store with TTL-filtered `getModel`, unfiltered `getModelIncludingStale`, `saveModel`, `deleteModel`, and `listExpiredModelRepos`
+  - `src/knowledge/suggestion-cluster-builder.ts` — `buildClusterModel()` queries `learning_memories` directly, clusters positive/negative outcomes independently, computes mean centroids, enforces minimum cluster size, and fails open
+  - `src/knowledge/suggestion-cluster-refresh.ts` — `createClusterRefresh()` performs bounded sequential refresh sweeps with aggregate built/skipped/failed totals and injectable `_buildFn` for tests
+  - `src/knowledge/suggestion-cluster-scoring.ts` — scoring core exposing `isModelEligibleForScoring()`, `scoreFindingEmbedding()`, and `scoreFindings<T>()`; conservative thresholds; fail-open on missing models, ineligible models, and embedding/scoring errors
+  - `src/knowledge/suggestion-cluster-staleness.ts` — centralized model freshness policy with four explicit states (`fresh`, `stale`, `very-stale`, `missing`) and a 24h TTL plus 4h grace window
+  - `src/knowledge/suggestion-cluster-degradation.ts` — `applyClusterScoringWithDegradation()` wraps the live review path with exhaustive degradation reasons (`no-store`, `no-embedding`, `model-load-error`, `no-model`, `model-not-eligible`, `scoring-error`) and never blocks completion
+  - `src/feedback/confidence-adjuster.ts` — `applyClusterScoreAdjustment()` merges cluster-derived suppress/boost signals after feedback adjustment and applies the symmetric safety guard for CRITICAL and protected MAJOR findings
+  - `src/handlers/review.ts` — review pipeline integration: already-suppressed findings skip cluster scoring; cluster scoring runs after feedback adjustment; stale/missing/unavailable models fall back to the naive path
+  - `scripts/verify-m037-s01.ts`, `scripts/verify-m037-s02.ts`, `scripts/verify-m037-s03.ts` — machine-verifiable proof harnesses for substrate, scoring integration, stale-policy behavior, refresh closure, cached reuse, and fail-open behavior
 
 ## Capability Contract
 
@@ -59,7 +59,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Generated Rule Schema, Store, and Proposal Candidates
   - [x] S02: Rule Activation and Prompt Injection
   - [x] S03: Retirement, Notification, and Lifecycle Proof
-- [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning
+- [x] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning
   - [x] S01: Cluster Model Build and Cache — substrate complete (migration, store, builder, refresh, proof harness)
   - [x] S02: Thematic Finding Scoring and Review Integration — scoring layer wired; safety guards; proof harness
   - [x] S03: Refresh, Staleness Handling, and Fail-Open Verification — stale grace policy, refresh closure, and fail-open verification complete

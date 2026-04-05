@@ -254,7 +254,7 @@ function createMockLoggerWithArrays() {
 **Context:** After workspace.create() strips the installation token from git remote URLs, push/fetch functions no longer read credentials from `.git/config`. Instead they construct an ephemeral auth URL per command.
 
 **Pattern:** A private `makeAuthUrl(strippedUrl, token)` helper injects `x-access-token:${token}@` into the URL for a single command, returning the URL unchanged when token is undefined. Push/fetch functions:
-1. Read the stripped remote URL: `await $\`git -C ${dir} remote get-url origin\`.quiet().text().trim()`
+1. Read the stripped remote URL: `await $`git -C ${dir} remote get-url origin`.quiet().text().trim()`
 2. Apply `makeAuthUrl(url, token)` inline to get the auth URL
 3. Pass the auth URL as the remote argument directly: `git push ${authUrl} HEAD:refs/heads/${branch}`
 
@@ -843,3 +843,15 @@ This keeps the staleness policy centralized while still distinguishing "DB/store
 **Rule:** Any caller that wants stale-grace behavior must go through `resolveModelForScoring()` (or `evaluateModelStaleness()` + equivalent policy logic). Do not call `store.getModel()` from live scoring code — that bypasses the grace window and silently drops stale-but-still-usable models.
 
 **Established in:** M037/S03/T03 (`suggestion-cluster-staleness.ts`, `suggestion-cluster-degradation.ts`, `verify-m037-s03.ts`).
+
+---
+
+## Verifier-Driven Milestone Closure Should Re-Run Slice Harnesses, Not Just Trust Prior Summaries (M037)
+
+**Context:** M037 milestone completion depended on three machine-verifiable slice harnesses (`verify:m037:s01`, `verify:m037:s02`, `verify:m037:s03`). Slice summaries were useful evidence, but milestone closure still needed a fresh rerun to prove the assembled system remained intact at close-out time.
+
+**Rule:** When a milestone ships explicit proof harnesses, the milestone closer should rerun them during closure instead of relying only on historical task or slice summaries. Milestone verification should treat fresh harness output as the authoritative closure signal and use summaries as supporting evidence.
+
+**Pattern:** Verify real code exists, verify slice artifacts exist, then rerun the milestone's slice-level proof commands and cite concrete check IDs/status codes in the milestone summary. If the harness exposes a mismatch, fix the live path rather than weakening the verifier.
+
+**Established in:** M037 milestone closure (`verify:m037:s01`, `verify:m037:s02`, `verify:m037:s03`).
