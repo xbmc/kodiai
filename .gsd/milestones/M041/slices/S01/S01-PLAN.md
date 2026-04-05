@@ -16,7 +16,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/canonical-code-chunker.ts, src/knowledge/canonical-code-chunker.test.ts, src/knowledge/code-snippet-chunker.ts
   - Verify: bun test ./src/knowledge/canonical-code-chunker.test.ts
-- [ ] **T03: Build fixture ingest and replacement semantics** — - Build a fixture-driven ingest path that turns parsed files into canonical rows.
+- [x] **T03: Added a dedicated canonical snapshot ingest path with fixture-proven replacement, dedup, exclusion, and historical-store separation semantics.** — - Build a fixture-driven ingest path that turns parsed files into canonical rows.
 - Prove idempotent replacement behavior using content hash and chunk identity.
 - Verify canonical ingest never writes into historical diff-hunk tables.
   - Estimate: 0.5-1d

@@ -117,6 +117,15 @@ export type {
   CanonicalExclusionReason,
 } from "./canonical-code-chunker.ts";
 
+// Canonical code ingest
+export { ingestCanonicalCodeSnapshot } from "./canonical-code-ingest.ts";
+export type {
+  CanonicalCodeIngestFile,
+  CanonicalCodeIngestFileResult,
+  CanonicalCodeIngestRequest,
+  CanonicalCodeIngestResult,
+} from "./canonical-code-ingest.ts";
+
 // Code snippet chunker
 export { parseDiffHunks, buildEmbeddingText, isExcludedPath, applyHunkCap, computeContentHash } from "./code-snippet-chunker.ts";
 export type { ParsedHunk } from "./code-snippet-chunker.ts";

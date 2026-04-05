@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M041/S01/T02",
+  "timestamp": 1775397876565,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/knowledge/canonical-code-chunker.test.ts",
+      "exitCode": 0,
+      "durationMs": 33,
+      "verdict": "pass"
+    }
+  ]
+}
