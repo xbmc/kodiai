@@ -26,6 +26,7 @@ export type CanonicalCodeIngestFileResult = {
   inserted: number;
   replaced: number;
   dedup: number;
+  failed: number;
 };
 
 export type CanonicalCodeIngestResult = {
@@ -40,6 +41,7 @@ export type CanonicalCodeIngestResult = {
   inserted: number;
   replaced: number;
   dedup: number;
+  failed: number;
   deleted: number;
   fileResults: CanonicalCodeIngestFileResult[];
 };
@@ -59,6 +61,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
   let inserted = 0;
   let replaced = 0;
   let dedup = 0;
+  let failed = 0;
   let deleted = 0;
 
   for (const file of request.files) {
@@ -77,6 +80,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
       inserted: 0,
       replaced: 0,
       dedup: 0,
+      failed: 0,
     };
 
     if (chunkResult.observability.excluded) {
@@ -109,9 +113,45 @@ export async function ingestCanonicalCodeSnapshot(params: {
     deleted += deletedCount;
 
     for (const chunk of chunkResult.chunks) {
-      const embeddingResult = await embeddingProvider.generate(chunk.chunkText, "document");
+      let embeddingResult;
+      try {
+        embeddingResult = await embeddingProvider.generate(chunk.chunkText, "document");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        failed += 1;
+        fileResult.failed += 1;
+        logger.warn(
+          {
+            repo: request.repo,
+            owner: request.owner,
+            canonicalRef: request.canonicalRef,
+            commitSha: request.commitSha,
+            filePath: file.filePath,
+            startLine: chunk.startLine,
+            endLine: chunk.endLine,
+            err: message,
+          },
+          "Canonical code ingest embedding failed (fail-open)",
+        );
+        continue;
+      }
+
       if (!embeddingResult) {
-        throw new Error(`Embedding unavailable for canonical chunk ${file.filePath}:${chunk.startLine}-${chunk.endLine}`);
+        failed += 1;
+        fileResult.failed += 1;
+        logger.warn(
+          {
+            repo: request.repo,
+            owner: request.owner,
+            canonicalRef: request.canonicalRef,
+            commitSha: request.commitSha,
+            filePath: file.filePath,
+            startLine: chunk.startLine,
+            endLine: chunk.endLine,
+          },
+          "Canonical code ingest embedding unavailable (fail-open)",
+        );
+        continue;
       }
 
       const outcome = await store.upsertChunk(
@@ -159,6 +199,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
         inserted: fileResult.inserted,
         replaced: fileResult.replaced,
         dedup: fileResult.dedup,
+        failed: fileResult.failed,
         excluded: false,
         boundaryDecisions: fileResult.boundaryDecisions,
       },
@@ -178,6 +219,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
     inserted,
     replaced,
     dedup,
+    failed,
     deleted,
     fileResults,
   };
@@ -195,6 +237,7 @@ export async function ingestCanonicalCodeSnapshot(params: {
       inserted: summary.inserted,
       replaced: summary.replaced,
       dedup: summary.dedup,
+      failed: summary.failed,
       deleted: summary.deleted,
     },
     "Canonical code ingest snapshot complete",

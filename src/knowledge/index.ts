@@ -126,6 +126,15 @@ export type {
   CanonicalCodeIngestResult,
 } from "./canonical-code-ingest.ts";
 
+// Canonical code backfill
+export { backfillCanonicalCodeSnapshot } from "./canonical-code-backfill.ts";
+export type {
+  CanonicalCodeBackfillDeps,
+  CanonicalCodeBackfillRequest,
+  CanonicalCodeBackfillResult,
+  CanonicalCodeBackfillWarning,
+} from "./canonical-code-backfill.ts";
+
 // Code snippet chunker
 export { parseDiffHunks, buildEmbeddingText, isExcludedPath, applyHunkCap, computeContentHash } from "./code-snippet-chunker.ts";
 export type { ParsedHunk } from "./code-snippet-chunker.ts";

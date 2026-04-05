@@ -58,16 +58,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: S03
 - Validation: Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds.
 
-### R036 — Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
-- Class: functional
-- Status: active
-- Description: Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
-- Why it matters: Historical diff-hunk embeddings are not a canonical snapshot of repo code and cannot serve as the source of truth for unchanged-code review context.
-- Source: M041
-- Primary owning slice: M041
-- Supporting slices: S01,S02
-- Validation: Backfill persists current-code chunks with provenance; retrieval returns current unchanged code from the canonical corpus for review-style queries.
-
 ### R037 — Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
 - Class: functional
 - Status: active
@@ -387,6 +377,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M035/S02
 - Validation: S01 — grep -r 'voyage-code-3' src/ --include='*.ts' | grep -v '.test.ts' returns 0 hits; DEFAULT_EMBEDDING_MODEL and NON_WIKI_TARGET_EMBEDDING_MODEL are "voyage-4"; createRerankProvider with rerank-2.5 model is implemented in embeddings.ts; 9 unit tests pass; tsc --noEmit exits clean.
 
+### R036 — Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
+- Class: functional
+- Status: validated
+- Description: Kodiai shall maintain a canonical default-branch code corpus of current code chunks with commit/ref provenance and semantic retrieval so review-time systems can retrieve truthful unchanged code.
+- Why it matters: Historical diff-hunk embeddings are not a canonical snapshot of repo code and cannot serve as the source of truth for unchanged-code review context.
+- Source: M041
+- Primary owning slice: M041
+- Supporting slices: S01,S02
+- Validation: S01 established the canonical current-code substrate: dedicated canonical_code_chunks/canonical_corpus_backfill_state schema, explicit chunk identity and provenance types, canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with inserted/replaced/dedup semantics proven by canonical-code store/chunker/ingest tests plus clean tsc. This validates the storage/chunking half of the requirement; retrieval/backfill workflow is advanced further in later slices.
+- Notes: Validated at the substrate level by M041/S01. Full end-to-end default-branch backfill + retrieval proof continues in M041/S02/S03.
+
 ### R038 — Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
 - Class: correctness
 - Status: validated
@@ -460,13 +461,13 @@ This file is the explicit capability and coverage contract for the project.
 | R033 | functional | active | M040 | none | Fixture-based proof shows graph-aware review selection identifies impacted files/tests/dependents beyond file-level triage alone, while keeping context bounded on large PRs. |
 | R034 | quality-attribute | active | M040 | none | Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews. |
 | R035 | operational | active | M041 | S03 | Merge/update flow only re-embeds changed files or changed chunks; audit/repair detects and repairs stale, missing, or model-mismatched rows without full rebuilds. |
-| R036 | functional | active | M041 | S01,S02 | Backfill persists current-code chunks with provenance; retrieval returns current unchanged code from the canonical corpus for review-style queries. |
+| R036 | functional | validated | M041 | S01,S02 | S01 established the canonical current-code substrate: dedicated canonical_code_chunks/canonical_corpus_backfill_state schema, explicit chunk identity and provenance types, canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with inserted/replaced/dedup semantics proven by canonical-code store/chunker/ingest tests plus clean tsc. This validates the storage/chunking half of the requirement; retrieval/backfill workflow is advanced further in later slices. |
 | R037 | functional | active | M038 | S01,S02 | For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041. |
 | R038 | correctness | validated | M038 | S02,S03 | Validated by M040/S03. Proof check M040-S03-FAIL-OPEN-VALIDATION confirms neverThrew=true, succeeded=false, originalFindingsPreserved=true when LLM validation gate throws. buildGraphContextSection(null) returns empty text (fail-open). applyGraphAwareSelection() returns usedGraph=false on null graph. queryBlastRadiusFromSnapshot() provides caller/dependent evidence with explicit confidence scores and reason strings. bun run verify:m040:s03 --json exits 0 with overallPassed:true. |
 
 ## Coverage Summary
 
-- Active requirements: 7
-- Mapped to slices: 7
-- Validated: 29 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R038)
+- Active requirements: 6
+- Mapped to slices: 6
+- Validated: 30 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R036, R038)
 - Unmapped active requirements: 0

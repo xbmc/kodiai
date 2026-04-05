@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M040 complete. The full graph-backed review pipeline is wired end-to-end: persistent structural graph tables (C++ and Python), incremental workspace indexer, blast-radius query layer, graph-aware file reranker, bounded graph context prompt section, trivial-change bypass, and optional non-destructive LLM annotation gate. All three slices passed with 311 tests (7 DB-gated skips), zero type errors, and both proof harnesses exiting 0. R038 is validated. Next milestone is M041 (canonical repo-code corpus).
+M040 is complete. M041/S01 is now complete and establishes the canonical current-code substrate for the next retrieval milestone: dedicated canonical corpus schema/tables, canonical chunk identity/provenance types, a separate canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with replacement/dedup semantics. Next active work is M041/S02 (default-branch backfill and semantic retrieval), then M041/S03 (incremental refresh and audit/repair), followed by M038 consuming both M040 and M041.
 
 ## Architecture / Key Patterns
 
@@ -22,6 +22,13 @@ M040 complete. The full graph-backed review pipeline is wired end-to-end: persis
 - **Cost tracking:** `src/llm/cost-tracker.ts` + `src/telemetry/` for DB persistence
 - **Usage visibility:** `ExecutionResult.usageLimit` captures last `SDKRateLimitEvent` from the agent run; rendered in Review Details via optional `usageLimit` and `tokenUsage` params on `formatReviewDetailsSummary`
 - **Embeddings:** Non-wiki corpora use voyage-4 (`DEFAULT_EMBEDDING_MODEL` in runtime.ts, `NON_WIKI_TARGET_EMBEDDING_MODEL` in embedding-repair.ts). Wiki pages use voyage-context-3. `createRerankProvider` in embeddings.ts provides a rerank-2.5 client with fail-open semantics for post-RRF neural reranking.
+- **Canonical current-code corpus substrate (M041/S01 complete):**
+  - `src/db/migrations/033-canonical-code-corpus.sql` — dedicated `canonical_code_chunks` and `canonical_corpus_backfill_state` tables with indexes and SQL CHECK constraints for chunk/backfill invariants
+  - `src/knowledge/canonical-code-types.ts` — canonical chunk identity, provenance, search result, and backfill-state contracts kept separate from historical diff-hunk types
+  - `src/knowledge/canonical-code-store.ts` — separate Postgres/pgvector store with inserted/replaced/dedup upsert outcomes, file soft-delete replacement semantics, semantic/full-text search, stale repair helpers, and backfill-state persistence
+  - `src/knowledge/canonical-code-chunker.ts` — dedicated current-code chunker with auditable exclusion reasons, Python/class/function/module boundaries, brace-language symbol chunking, and block fallback only for symbol-free files
+  - `src/knowledge/canonical-code-ingest.ts` — dedicated snapshot ingest orchestrator that chunks files, skips excluded paths, soft-deletes prior live rows per file, embeds chunks, and upserts through the canonical store without touching historical `code_snippets` tables
+  - `src/knowledge/index.ts` — exports the canonical chunker and ingest surfaces for downstream retrieval/backfill slices
 - **Generated rules lifecycle (M036):**
   - `src/knowledge/generated-rule-store.ts` — persistence (pending/active/retired states, non-downgrading upsert, activate, retire, list, getLifecycleCounts)
   - `src/knowledge/generated-rule-proposals.ts` — deterministic proposal generation: cosine-similarity clustering, multi-gate filtering, `positive_ratio × support` signal score
@@ -81,4 +88,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Blast-Radius Queries and Graph-Aware Review Selection
   - [x] S03: Bounded Prompt Integration, Bypass, and Validation Gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
+  - [x] S01: Canonical Schema, Chunking, and Storage
+  - [ ] S02: Default-Branch Backfill and Semantic Retrieval
+  - [ ] S03: Incremental Refresh and Audit/Repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection

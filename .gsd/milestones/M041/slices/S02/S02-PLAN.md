@@ -4,7 +4,7 @@
 **Demo:** After this: After this slice, Kodiai can backfill a repo's default branch once and answer review-style semantic queries from the canonical current-code corpus with provenance-preserving results.
 
 ## Tasks
-- [ ] **T01: Build default-branch backfill pipeline** — - Resolve the repo's canonical default-branch snapshot using existing workspace access patterns.
+- [x] **T01: Added a resumable default-branch canonical code backfill pipeline with fail-open per-file/per-chunk handling and explicit progress counters.** — - Resolve the repo's canonical default-branch snapshot using existing workspace access patterns.
 - Build a one-time backfill job that walks eligible files and writes canonical chunks.
 - Keep the path fail-open and bounded when parsing or embedding individual files fails.
   - Estimate: 1d

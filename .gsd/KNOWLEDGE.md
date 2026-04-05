@@ -249,6 +249,18 @@ function createMockLoggerWithArrays() {
 
 ---
 
+## Canonical C++ Chunking Uses Block Fallback Only When No Symbols Exist (M041/S01)
+
+**Context:** `chunkCanonicalCodeFile()` in `src/knowledge/canonical-code-chunker.ts` handles brace languages (C++, TypeScript, JavaScript) with two distinct fallback modes, and a first-pass test expectation got this wrong for symbol-poor C++ input.
+
+**Rule:** For brace languages, emit a `block` chunk **only when no function/class boundary is discovered at all**. If symbol chunks do exist, emit those symbol chunks plus a `module` remainder chunk for unconsumed lines. Do not collapse a partially-symbolic file into a single block chunk just because some lines remain outside symbols.
+
+**Implication for tests:** When validating symbol-poor C++ fixtures, assert `boundaryDecisions: ["block"]` only for files with zero detected class/function boundaries. For mixed files, expect symbol boundaries plus optional `module`, not `block`.
+
+**Established in:** M041/S01/T02 (`src/knowledge/canonical-code-chunker.ts`, `src/knowledge/canonical-code-chunker.test.ts`).
+
+---
+
 ## Ephemeral Auth URL Pattern for Git Network Operations (M031/S02)
 
 **Context:** After workspace.create() strips the installation token from git remote URLs, push/fetch functions no longer read credentials from `.git/config`. Instead they construct an ephemeral auth URL per command.

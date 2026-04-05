@@ -280,6 +280,7 @@ describe("ingestCanonicalCodeSnapshot", () => {
       inserted: 0,
       replaced: 0,
       dedup: 0,
+      failed: 0,
     });
     expect(harness.deleteCalls).toHaveLength(0);
     expect(harness.upsertCalls).toHaveLength(0);
@@ -313,32 +314,36 @@ describe("ingestCanonicalCodeSnapshot", () => {
     expect(harness.deleteCalls).toHaveLength(1);
   });
 
-  it("fails fast when embeddings are unavailable", async () => {
+  it("fails open when embeddings are unavailable", async () => {
     const harness = createStoreHarness();
     const logger = createMockLogger();
 
-    await expect(
-      ingestCanonicalCodeSnapshot({
-        store: harness.store,
-        embeddingProvider: {
-          async generate() {
-            return null;
+    const result = await ingestCanonicalCodeSnapshot({
+      store: harness.store,
+      embeddingProvider: {
+        async generate() {
+          return null;
+        },
+      },
+      logger: logger as never,
+      request: {
+        repo: "kodi",
+        owner: "xbmc",
+        canonicalRef: "main",
+        commitSha: "abc123",
+        files: [
+          {
+            filePath: "src/player.ts",
+            fileContent: "export function boot() {\n  return true;\n}\n",
           },
-        },
-        logger: logger as never,
-        request: {
-          repo: "kodi",
-          owner: "xbmc",
-          canonicalRef: "main",
-          commitSha: "abc123",
-          files: [
-            {
-              filePath: "src/player.ts",
-              fileContent: "export function boot() {\n  return true;\n}\n",
-            },
-          ],
-        },
-      }),
-    ).rejects.toThrow("Embedding unavailable for canonical chunk src/player.ts:1-3");
+        ],
+      },
+    });
+
+    expect(result.chunksAttempted).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(result.fileResults[0]?.failed).toBe(1);
+    expect(harness.upsertCalls).toHaveLength(0);
+    expect((logger.warn as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThan(0);
   });
 });

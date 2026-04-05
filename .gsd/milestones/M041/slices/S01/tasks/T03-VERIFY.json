@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M041/S01/T03",
+  "timestamp": 1775398086352,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/knowledge/canonical-code-ingest.test.ts",
+      "exitCode": 0,
+      "durationMs": 36,
+      "verdict": "pass"
+    }
+  ]
+}
