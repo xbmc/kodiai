@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/structural-impact/types.ts, src/structural-impact/adapters.ts, src/structural-impact/adapters.test.ts
   - Verify: bun test ./src/structural-impact/adapters.test.ts && bun run tsc --noEmit
-- [ ] **T02: Build structural-impact orchestration with cache and timeout** — - Implement orchestration that queries graph blast radius and canonical current-code evidence together.
+- [x] **T02: Built fetchStructuralImpact orchestrator with concurrent adapter execution, per-adapter timeout, write-through cache, and 12-event onSignal observability — 25 tests passing, tsc clean** — - Implement orchestration that queries graph blast radius and canonical current-code evidence together.
 - Add timeout, partial-result, and cache-reuse behavior at the orchestration boundary.
 - Keep the result bounded before any formatting logic runs.
   - Estimate: 1d

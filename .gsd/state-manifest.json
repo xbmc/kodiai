@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T16:57:03.617Z",
+  "exported_at": "2026-04-05T17:02:53.310Z",
   "milestones": [
     {
       "id": "M001",
@@ -8017,19 +8017,28 @@
       "milestone_id": "M038",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Build structural-impact orchestration with cache and timeout",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Built fetchStructuralImpact orchestrator with concurrent adapter execution, per-adapter timeout, write-through cache, and 12-event onSignal observability — 25 tests passing, tsc clean",
+      "status": "complete",
+      "one_liner": "Built fetchStructuralImpact orchestrator with concurrent adapter execution, per-adapter timeout, write-through cache, and 12-event onSignal observability — 25 tests passing, tsc clean",
+      "narrative": "Created src/structural-impact/orchestrator.ts with fetchStructuralImpact as the single orchestration entry point. Runs GraphAdapter and CorpusAdapter concurrently via Promise.all([withTimeout(graph), withTimeout(corpus)]) so neither adapter stalls the other. Adapter rejections are caught before entering withTimeout (.catch → Error value) so Promise.race never sees an unhandled rejection — this was discovered as a failure during initial testing. Timeout (30s default per M038 spec) produces a TIMEOUT_SENTINEL that becomes a degradation record. Both ok and partial results are written to cache keyed on (repo, baseSha, headSha); buildStructuralImpactCacheKey provides the canonical key. onSignal callback emits 12 typed signals (cache-hit, cache-miss, cache-write, graph-ok/timeout/error, corpus-ok/timeout/error, result-ok/partial/unavailable) with elapsedMs and optional detail. Observer errors are swallowed by emit() so a crashed logger never affects the review pipeline. The orchestrator calls boundStructuralImpactPayload from T01 for final assembly — no direct type imports from substrate modules.",
+      "verification_result": "bun test ./src/structural-impact/orchestrator.test.ts → 25 pass, 0 fail (348ms). bun run tsc --noEmit → clean exit 0. Tests cover: happy path, graph timeout, corpus timeout, both timeout, graph error, corpus error, both error, cache hit/miss/write, partial cached, no-cache no-error, all signal kinds with elapsedMs and detail, observer crash swallowed, concurrent execution timing.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T17:02:53.287Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "withTimeout propagates Promise rejections through Promise.race — adapter calls must be wrapped in .catch before passing to withTimeout. Fixed by adding reject-catch wrappers inside fetchStructuralImpact. The adapter interface contract from T01 is unchanged.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/structural-impact/orchestrator.ts",
+        "src/structural-impact/orchestrator.test.ts"
+      ],
+      "key_decisions": [
+        "Adapter rejections caught inside orchestrator (.catch → Error value) so withTimeout never sees unhandled rejection",
+        "Promise.all concurrent execution: neither adapter stalls the other",
+        "Cache write-through on both ok and partial results to avoid hammering down substrates on retry",
+        "onSignal observer errors swallowed unconditionally — observer crashes cannot affect review pipeline",
+        "TIMEOUT_SENTINEL is module-local Symbol to distinguish genuine null from timeout without leaking"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M038\nkey_files:\n  - src/structural-impact/orchestrator.ts\n  - src/structural-impact/orchestrator.test.ts\nkey_decisions:\n  - Adapter rejections caught inside orchestrator (.catch → Error value) so withTimeout never sees unhandled rejection\n  - Promise.all concurrent execution: neither adapter stalls the other\n  - Cache write-through on both ok and partial results to avoid hammering down substrates on retry\n  - onSignal observer errors swallowed unconditionally — observer crashes cannot affect review pipeline\n  - TIMEOUT_SENTINEL is module-local Symbol to distinguish genuine null from timeout without leaking\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T17:02:53.286Z\nblocker_discovered: false\n---\n\n# T02: Built fetchStructuralImpact orchestrator with concurrent adapter execution, per-adapter timeout, write-through cache, and 12-event onSignal observability — 25 tests passing, tsc clean\n\n**Built fetchStructuralImpact orchestrator with concurrent adapter execution, per-adapter timeout, write-through cache, and 12-event onSignal observability — 25 tests passing, tsc clean**\n\n## What Happened\n\nCreated src/structural-impact/orchestrator.ts with fetchStructuralImpact as the single orchestration entry point. Runs GraphAdapter and CorpusAdapter concurrently via Promise.all([withTimeout(graph), withTimeout(corpus)]) so neither adapter stalls the other. Adapter rejections are caught before entering withTimeout (.catch → Error value) so Promise.race never sees an unhandled rejection — this was discovered as a failure during initial testing. Timeout (30s default per M038 spec) produces a TIMEOUT_SENTINEL that becomes a degradation record. Both ok and partial results are written to cache keyed on (repo, baseSha, headSha); buildStructuralImpactCacheKey provides the canonical key. onSignal callback emits 12 typed signals (cache-hit, cache-miss, cache-write, graph-ok/timeout/error, corpus-ok/timeout/error, result-ok/partial/unavailable) with elapsedMs and optional detail. Observer errors are swallowed by emit() so a crashed logger never affects the review pipeline. The orchestrator calls boundStructuralImpactPayload from T01 for final assembly — no direct type imports from substrate modules.\n\n## Verification\n\nbun test ./src/structural-impact/orchestrator.test.ts → 25 pass, 0 fail (348ms). bun run tsc --noEmit → clean exit 0. Tests cover: happy path, graph timeout, corpus timeout, both timeout, graph error, corpus error, both error, cache hit/miss/write, partial cached, no-cache no-error, all signal kinds with elapsedMs and detail, observer crash swallowed, concurrent execution timing.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/structural-impact/orchestrator.test.ts` | 0 | ✅ pass | 348ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 900ms |\n\n## Deviations\n\nwithTimeout propagates Promise rejections through Promise.race — adapter calls must be wrapped in .catch before passing to withTimeout. Fixed by adding reject-catch wrappers inside fetchStructuralImpact. The adapter interface contract from T01 is unchanged.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/structural-impact/orchestrator.ts`\n- `src/structural-impact/orchestrator.test.ts`\n",
       "description": "- Implement orchestration that queries graph blast radius and canonical current-code evidence together.\n- Add timeout, partial-result, and cache-reuse behavior at the orchestration boundary.\n- Keep the result bounded before any formatting logic runs.",
       "estimate": "1d",
       "files": [
@@ -11602,6 +11611,28 @@
       "verdict": "✅ pass",
       "duration_ms": 800,
       "created_at": "2026-04-05T16:57:03.594Z"
+    },
+    {
+      "id": 163,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M038",
+      "command": "bun test ./src/structural-impact/orchestrator.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 348,
+      "created_at": "2026-04-05T17:02:53.287Z"
+    },
+    {
+      "id": 164,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M038",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 900,
+      "created_at": "2026-04-05T17:02:53.287Z"
     }
   ]
 }
