@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { GraphAdapter, GraphBlastRadiusResult, CorpusAdapter, CorpusCodeMatch } from "./adapters.ts";
 import type { StructuralImpactPayload } from "./types.ts";
-import type { StructuralImpactCache } from "./orchestrator.ts";
+import type { StructuralImpactCache } from "./cache.ts";
+import { buildStructuralImpactCacheKey } from "./cache.ts";
 import {
   fetchStructuralImpact,
-  buildStructuralImpactCacheKey,
   type StructuralImpactSignal,
 } from "./orchestrator.ts";
 import type { FetchStructuralImpactInput } from "./orchestrator.ts";

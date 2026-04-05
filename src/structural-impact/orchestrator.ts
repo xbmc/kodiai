@@ -34,6 +34,7 @@ import type {
   StructuralImpactPayload,
   StructuralImpactDegradation,
 } from "./types.ts";
+import type { StructuralImpactCache } from "./cache.ts";
 
 // ── Observability signals ─────────────────────────────────────────────────────
 
@@ -57,13 +58,6 @@ export type StructuralImpactSignal = {
   elapsedMs?: number;
   /** Short human-readable annotation (error message, cache key, etc.). */
   detail?: string;
-};
-
-// ── Cache contract ────────────────────────────────────────────────────────────
-
-export type StructuralImpactCache = {
-  get(key: string): StructuralImpactPayload | undefined;
-  set(key: string, value: StructuralImpactPayload): void;
 };
 
 // ── Orchestration input ───────────────────────────────────────────────────────
@@ -273,15 +267,3 @@ export async function fetchStructuralImpact(
 }
 
 // ── Cache key builder ─────────────────────────────────────────────────────────
-
-/**
- * Build the canonical structural-impact cache key from (repo, baseSha, headSha).
- * Stable across call-sites; callers should not build ad-hoc keys.
- */
-export function buildStructuralImpactCacheKey(params: {
-  repo: string;
-  baseSha: string;
-  headSha: string;
-}): string {
-  return `structural-impact:${params.repo.toLowerCase()}:${params.baseSha}:${params.headSha}`;
-}

@@ -4,7 +4,7 @@
 **Demo:** After this: After this, repeated reviews reuse cached structural-impact results, substrate failures degrade cleanly, and the verifier proves bounded fail-open structural output for both large-review and timeout paths.
 
 ## Tasks
-- [ ] **T01: Finalize cache and timeout behavior** — - Finalize structural-impact cache policy keyed by repo/base/head and integrate explicit timeout handling.
+- [x] **T01: Added bounded structural-impact cache reuse and verified timeout and partial-result behavior.** — - Finalize structural-impact cache policy keyed by repo/base/head and integrate explicit timeout handling.
 - Ensure repeated review requests reuse cached combined structural-impact results.
 - Add tests for timeout, cache-hit, and partial-result behavior.
   - Estimate: 0.5-1d

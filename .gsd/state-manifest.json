@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T19:35:01.667Z",
+  "exported_at": "2026-04-05T19:47:15.636Z",
   "milestones": [
     {
       "id": "M001",
@@ -5193,16 +5193,16 @@
       "milestone_id": "M038",
       "id": "S02",
       "title": "Structural Impact Rendering and Review Flow Integration",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [
         "S01"
       ],
       "demo": "After this, a large C++ or Python review shows a bounded Structural Impact section in Review Details and uses structural evidence to strengthen breaking-change output.",
       "created_at": "2026-04-04T21:50:51.316Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-05T19:39:18.772Z",
+      "full_summary_md": "---\nid: S02\nparent: M038\nmilestone: M038\nprovides:\n  - A stable `StructuralImpactPayload` → Review Details formatting contract for downstream timeout/cache verification work.\n  - Prompt-level breaking-change instructions that can consume truthful structural evidence without overstating certainty.\n  - A deterministic verifier (`verify:m038:s02`) that S03 can extend for cache reuse and degradation scenarios without redefining expected review output.\nrequires:\n  - slice: S01\n    provides: Bounded structural-impact payload orchestration, graph/corpus adapter seams, degradation records, and review-facing integration hooks that S02 could render without direct substrate coupling.\naffects:\n  - S03\nkey_files:\n  - src/lib/structural-impact-formatter.ts\n  - src/lib/review-utils.ts\n  - src/execution/review-prompt.ts\n  - src/handlers/review.ts\n  - scripts/verify-m038-s02.ts\n  - scripts/verify-m038-s02.test.ts\n  - package.json\n  - .gsd/KNOWLEDGE.md\n  - .gsd/PROJECT.md\nkey_decisions:\n  - Render Structural Impact in Review Details with hard per-list caps and explicit shown/total/truncated metadata rather than relying on an opaque character budget alone.\n  - Use stronger graph evidence wording only for full-confidence graph edges and probable graph evidence wording for all lower-confidence graph results.\n  - Thread the bounded structural-impact payload separately from raw graph blast-radius data so prompt/review rendering can evolve without coupling to substrate-native types.\n  - Strengthen breaking-change instructions only when truthful structural evidence is present; otherwise emit explicit fallback-used or partial-evidence guidance instead of overstating certainty.\n  - Verify the feature through real prompt and Review Details rendering seams using a small stable JSON proof envelope rather than duplicating formatter internals in the verifier.\npatterns_established:\n  - Bound user-visible structural sections with independent hard caps plus explicit shown/total/truncated metadata rather than a single silent truncation budget.\n  - Treat confidence wording as a contract: stronger claims require full-confidence graph evidence; lower-confidence graph paths must stay labeled probable.\n  - Use real prompt/rendering seams in proof harnesses so verifiers test the shipped contract instead of reimplementing formatter logic.\n  - Keep substrate payloads decoupled from prompt/review rendering via a bounded adapter-owned payload shape and optional fail-open integration.\nobservability_surfaces:\n  - `verify:m038:s02` deterministic JSON proof harness with explicit per-check status codes for C++ and Python rendering scenarios.\n  - `formatReviewDetailsSummary()` rendered-count line for callers/files/tests/unchanged evidence, making bounded output visible and machine-checkable.\n  - Existing structural-impact degradation/status fields remain surfaced through the bounded payload and prompt instructions, preserving fail-open observability for downstream runtime work.\ndrill_down_paths:\n  - .gsd/milestones/M038/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M038/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M038/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-05T19:39:18.772Z\nblocker_discovered: false\n---\n\n# S02: Structural Impact Rendering and Review Flow Integration\n\n**Structural Impact is now rendered as bounded review-visible evidence in Review Details and review prompts, with deterministic C++/Python proof coverage and structurally grounded breaking-change guidance.**\n\n## What Happened\n\nS02 turned the bounded structural-impact payload from S01 into review-visible output. T01 added a dedicated formatter that renders changed symbols, graph coverage, probable callers/dependents, impacted files, likely tests, and canonical unchanged-code evidence with truthful confidence language and explicit truncation metadata. T02 then threaded that payload into the main review flow: Review Details now shows a bounded Structural Impact subsection, and the main review prompt includes structural evidence plus breaking-change instructions that distinguish evidence-present, partial-evidence, and fallback-used cases. T03 closed the slice with a deterministic C++/Python verifier that exercises the real prompt and Review Details seams and emits stable JSON proof output. During slice closure, a full-repo typecheck exposed two proof-harness fixture drifts that task-level checks had not enforced: `ResolvedReviewProfile` fixtures needed the required `autoBand` field, and writable stream test stubs needed to return `boolean`. Fixing those issues kept the slice truthful and left the repo green under the full verification gate.\n\n## Verification\n\nExecuted the full slice verification contract and kept rerunning until all checks passed: `bun test ./src/lib/structural-impact-formatter.test.ts`, `bun test ./src/execution/review-prompt.test.ts`, `bun test ./scripts/verify-m038-s02.test.ts`, `bun run verify:m038:s02 -- --json`, and `bun run tsc --noEmit`. The first slice-level full gate exposed two real TypeScript issues in verifier fixtures/stubs; after fixing them, the entire chain passed cleanly. The verifier JSON reported `overallPassed: true` with both check IDs green: `M038-S02-CPP-REVIEW-DETAILS-STRUCTURAL-IMPACT` and `M038-S02-PYTHON-BREAKING-CHANGE-EVIDENCE`.\n\n## Requirements Advanced\n\n- R037 — Completed the user-visible validation target by rendering bounded Structural Impact evidence and unchanged-code context into Review Details and prompt output for production-like C++ and Python review scenarios.\n- R038 — Strengthened breaking-change guidance with caller/dependent/test evidence when structural evidence exists while preserving fallback behavior when it is absent or partial.\n\n## Requirements Validated\n\n- R037 — `bun run verify:m038:s02 -- --json` passed both the C++ Review Details Structural Impact check and the Python structurally grounded breaking-change evidence check, and Review Details now renders a bounded Structural Impact section with unchanged-code evidence.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nOne slice-level verification pass uncovered real TypeScript fixture drift outside the task-level green path: `ResolvedReviewProfile` test fixtures in `scripts/verify-m038-s02.ts` were missing the now-required `autoBand` field, and writable stream stubs in `scripts/verify-m038-s02.test.ts` returned `void` instead of `boolean`. The slice closer repaired both issues before rerunning the full verification contract. No functional scope was descoped.\n\n## Known Limitations\n\nThe new verifier is fixture-based and hermetic: it proves the user-visible rendering contract, but it does not hit live graph or canonical-corpus adapters. Cache reuse and timeout/fail-open execution paths are not validated until S03. Structural evidence remains bounded and summary-oriented rather than a full blast-radius dump by design.\n\n## Follow-ups\n\nS03 should verify timeout-driven degradation, stable cache reuse across repeated reviews, and end-to-end fail-open behavior when graph/corpus adapters partially or fully fail. It should reuse the S02 deterministic rendering harness as the user-visible contract while expanding proof coverage to runtime/cache paths.\n\n## Files Created/Modified\n\n- `src/lib/structural-impact-formatter.ts` — Added the bounded Structural Impact Review Details formatter with truthful confidence wording, hard caps, truncation metadata, and unchanged-code evidence rendering.\n- `src/lib/review-utils.ts` — Extended Review Details rendering to accept structural-impact payloads and append the Structural Impact subsection plus machine-usable rendered-count metadata.\n- `src/execution/review-prompt.ts` — Threaded structural-impact evidence into the main review prompt and breaking-change instructions with explicit evidence-present/partial/fallback guidance.\n- `src/handlers/review.ts` — Integrated structural-impact payload capture and propagation through the main review flow while preserving fail-open behavior.\n- `scripts/verify-m038-s02.ts` — Added a deterministic fixture-based verifier proving bounded Structural Impact rendering and structural breaking-change evidence for C++ and Python scenarios.\n- `scripts/verify-m038-s02.test.ts` — Added verifier tests and fixed type-safe writable stream stubs for the proof harness.\n- `package.json` — Registered the new `verify:m038:s02` package script.\n- `.gsd/KNOWLEDGE.md` — Recorded new reusable gotchas for full-shape `ResolvedReviewProfile` fixtures and writable stream test stubs.\n- `.gsd/PROJECT.md` — Refreshed project state to mark M038/S02 complete and describe the new structural-impact rendering layer.\n",
+      "full_uat_md": "# S02: Structural Impact Rendering and Review Flow Integration — UAT\n\n**Milestone:** M038\n**Written:** 2026-04-05T19:39:18.772Z\n\n# S02 UAT — Structural Impact Rendering and Review Flow Integration\n\n## Preconditions\n- Repository is at the M038/S02 completion state.\n- Bun dependencies are installed.\n- Run from repo root: `/home/keith/src/kodiai`.\n- No live graph/corpus services are required for this UAT; the verifier is fixture-based and deterministic.\n\n## Test Case 1 — Bounded Structural Impact formatter renders truthful Review Details output\n1. Run `bun test ./src/lib/structural-impact-formatter.test.ts`.\n   - Expected: all 8 tests pass.\n2. Inspect the passing cases named `renders bounded summaries`, `tracks rendered counts and truncation metadata`, and `uses truthful confidence language`.\n   - Expected: formatter behavior is covered for changed symbols, graph coverage, probable callers/dependents, impacted files, likely tests, unchanged-code evidence, hard caps, and truncation metadata.\n3. Confirm the test `renders partial-evidence wording when only degraded data is available` passes.\n   - Expected: partial structural-impact payloads are rendered with downgraded evidence wording instead of full-confidence language.\n\n## Test Case 2 — Review prompt includes structural evidence and breaking-change guidance\n1. Run `bun test ./src/execution/review-prompt.test.ts`.\n   - Expected: all tests pass.\n2. Verify the passing cases under `buildReviewPrompt graph context integration` include:\n   - `includes structural impact section when structuralImpact is provided`\n   - `breaking-change instructions use structural evidence when callers or impacted files are present`\n   - `breaking-change instructions fall back when structural impact is absent`\n   - `breaking-change instructions call out partial structural evidence truthfully`\n3. Open the generated prompt text via the verifier or unit-test fixtures if needed.\n   - Expected: prompt contains a single `## Structural Impact Evidence` heading and only strengthens breaking-change wording when evidence is actually present.\n\n## Test Case 3 — Deterministic C++ and Python proof harness validates shipped rendering contract\n1. Run `bun test ./scripts/verify-m038-s02.test.ts`.\n   - Expected: all 8 verifier tests pass.\n2. Run `bun run verify:m038:s02 -- --json`.\n   - Expected: command exits 0.\n   - Expected JSON contains:\n     - `overallPassed: true`\n     - check id `M038-S02-CPP-REVIEW-DETAILS-STRUCTURAL-IMPACT` with `passed: true`\n     - check id `M038-S02-PYTHON-BREAKING-CHANGE-EVIDENCE` with `passed: true`\n3. In the JSON `scenarios` array, confirm both `cpp` and `python` report:\n   - `promptIncludesStructuralSection: true`\n   - `reviewDetailsIncludesStructuralSection: true`\n   - `reviewDetailsIncludesRenderedCounts: true`\n   - `promptStructuralImpactHeadingCount: 1`\n   - `reviewDetailsStructuralImpactHeadingCount: 1`\n   - Expected: bounded Structural Impact appears exactly once in both prompt and Review Details.\n\n## Test Case 4 — Full slice verification gate stays green under typecheck\n1. Run:\n   `bun test ./src/lib/structural-impact-formatter.test.ts && bun test ./src/execution/review-prompt.test.ts && bun test ./scripts/verify-m038-s02.test.ts && bun run verify:m038:s02 -- --json && bun run tsc --noEmit`\n2. Expected:\n   - All tests pass.\n   - Verifier exits 0 with `overallPassed: true`.\n   - `tsc --noEmit` exits 0.\n3. Confirm there are no TypeScript errors involving:\n   - `ResolvedReviewProfile` fixture shape\n   - writable stream `write()` stub return types\n   - Expected: slice closure fixes remain in place and the repo-wide compile gate passes.\n\n## Edge Cases\n\n### Edge Case A — Partial structural evidence stays truthful\n1. Use the existing prompt/formatter tests that cover partial structural-impact payloads.\n2. Expected: output says evidence is partial and avoids overstating certainty.\n\n### Edge Case B — Bounded output stays machine-checkable when lists are long\n1. Use the formatter tests for truncation and hard-cap enforcement.\n2. Expected: output includes explicit shown/total counts and `truncated` behavior instead of silently dropping entries.\n\n### Edge Case C — Breaking-change guidance fails open when structural evidence is absent\n1. Use the prompt test `breaking-change instructions fall back when structural impact is absent`.\n2. Expected: review prompt still renders valid fallback guidance rather than requiring structural evidence to exist.\n\n",
       "goal": "Turn the combined structural-impact payload into user-visible review output and breaking-change evidence in the main review flow.",
       "success_criteria": "- Review Details gains a bounded Structural Impact section sourced from M040 and M041 outputs.\n- Breaking-change output uses caller/dependent evidence when available rather than pure heuristic wording.\n- C++ and Python fixture scenarios demonstrate useful structural-impact rendering.",
       "proof_level": "Fixture-based integration proof over Review Details formatting and handler wiring.",
@@ -8252,19 +8252,29 @@
       "milestone_id": "M038",
       "slice_id": "S03",
       "id": "T01",
-      "title": "Finalize cache and timeout behavior",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added bounded structural-impact cache reuse and verified timeout and partial-result behavior.",
+      "status": "complete",
+      "one_liner": "Added bounded structural-impact cache reuse and verified timeout and partial-result behavior.",
+      "narrative": "Extracted structural-impact caching into a dedicated module, wired the review consumer path to inject a shared handler-level cache, and kept orchestration focused on timeout, degradation, and observability behavior. Added direct cache tests for canonical keying, TTL expiry, bounded eviction, and truthful reuse of partial timeout payloads, then repaired affected imports in existing structural-impact test suites.",
+      "verification_result": "Verified the task-plan command `bun test ./src/structural-impact/cache.test.ts && bun run tsc --noEmit` passed, and additionally ran `bun test ./src/structural-impact/orchestrator.test.ts ./src/structural-impact/review-integration.test.ts` to confirm cache-hit, timeout, fail-open, and partial-result behavior remained correct after the cache extraction and handler wiring.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T19:47:15.610Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "The structural-impact cache is intentionally process-local and in-memory only. Cross-process reuse or persisted reuse was not part of this task.",
+      "key_files": [
+        "src/structural-impact/cache.ts",
+        "src/structural-impact/cache.test.ts",
+        "src/structural-impact/orchestrator.ts",
+        "src/structural-impact/review-integration.ts",
+        "src/handlers/review.ts",
+        "src/structural-impact/orchestrator.test.ts",
+        "src/structural-impact/review-integration.test.ts"
+      ],
+      "key_decisions": [
+        "Extracted structural-impact cache keying and storage into a dedicated cache module backed by the shared in-memory cache primitive instead of keeping cache policy embedded inside the orchestrator."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M038\nkey_files:\n  - src/structural-impact/cache.ts\n  - src/structural-impact/cache.test.ts\n  - src/structural-impact/orchestrator.ts\n  - src/structural-impact/review-integration.ts\n  - src/handlers/review.ts\n  - src/structural-impact/orchestrator.test.ts\n  - src/structural-impact/review-integration.test.ts\nkey_decisions:\n  - Extracted structural-impact cache keying and storage into a dedicated cache module backed by the shared in-memory cache primitive instead of keeping cache policy embedded inside the orchestrator.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T19:47:15.609Z\nblocker_discovered: false\n---\n\n# T01: Added bounded structural-impact cache reuse and verified timeout and partial-result behavior.\n\n**Added bounded structural-impact cache reuse and verified timeout and partial-result behavior.**\n\n## What Happened\n\nExtracted structural-impact caching into a dedicated module, wired the review consumer path to inject a shared handler-level cache, and kept orchestration focused on timeout, degradation, and observability behavior. Added direct cache tests for canonical keying, TTL expiry, bounded eviction, and truthful reuse of partial timeout payloads, then repaired affected imports in existing structural-impact test suites.\n\n## Verification\n\nVerified the task-plan command `bun test ./src/structural-impact/cache.test.ts && bun run tsc --noEmit` passed, and additionally ran `bun test ./src/structural-impact/orchestrator.test.ts ./src/structural-impact/review-integration.test.ts` to confirm cache-hit, timeout, fail-open, and partial-result behavior remained correct after the cache extraction and handler wiring.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/structural-impact/cache.test.ts` | 0 | ✅ pass | 8ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 1000ms |\n| 3 | `bun test ./src/structural-impact/orchestrator.test.ts ./src/structural-impact/review-integration.test.ts` | 0 | ✅ pass | 381ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe structural-impact cache is intentionally process-local and in-memory only. Cross-process reuse or persisted reuse was not part of this task.\n\n## Files Created/Modified\n\n- `src/structural-impact/cache.ts`\n- `src/structural-impact/cache.test.ts`\n- `src/structural-impact/orchestrator.ts`\n- `src/structural-impact/review-integration.ts`\n- `src/handlers/review.ts`\n- `src/structural-impact/orchestrator.test.ts`\n- `src/structural-impact/review-integration.test.ts`\n",
       "description": "- Finalize structural-impact cache policy keyed by repo/base/head and integrate explicit timeout handling.\n- Ensure repeated review requests reuse cached combined structural-impact results.\n- Add tests for timeout, cache-hit, and partial-result behavior.",
       "estimate": "0.5-1d",
       "files": [
@@ -9857,6 +9867,18 @@
       "decision": "R035",
       "choice": "validated",
       "rationale": "M041/S03 proves the selective changed-file update and bounded audit/repair sweeps requirement end-to-end: (1) updateCanonicalCodeSnapshot() reuses content hashes to skip unchanged rows and re-embeds only changed/new chunks without full-repo rebuilds; (2) auditCanonicalCode() detects stale/missing/model-mismatch rows without full rebuilds; (3) createCanonicalCodeRepairStore() + runCanonicalCodeEmbeddingRepair() repairs only the drifted rows within a bounded per-pass limit (CANONICAL_CODE_REPAIR_LIMIT=2000). All four M041-S03 proof checks passed (verify:m041:s03 --json overallPassed:true): UNCHANGED-FILE-PRESERVATION, DRIFT-DETECTED-BY-AUDIT, SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS, and REPAIR-SKIPS-WHEN-NO-DRIFT.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 74,
+      "id": "D040",
+      "when_context": "",
+      "scope": "requirement",
+      "decision": "R037",
+      "choice": "validated",
+      "rationale": "M038/S02 completed the user-visible contract for structural impact rendering: Review Details now includes a bounded Structural Impact section with changed symbols, probable callers/dependents, impacted files, likely tests, and canonical unchanged-code evidence, and the deterministic verify:m038:s02 harness passed for both C++ and Python scenarios. This satisfies the requirement's current validation text for production-like review output.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -11754,6 +11776,39 @@
       "verdict": "✅ pass",
       "duration_ms": 45,
       "created_at": "2026-04-05T19:35:01.641Z"
+    },
+    {
+      "id": 173,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M038",
+      "command": "bun test ./src/structural-impact/cache.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8,
+      "created_at": "2026-04-05T19:47:15.610Z"
+    },
+    {
+      "id": 174,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M038",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1000,
+      "created_at": "2026-04-05T19:47:15.610Z"
+    },
+    {
+      "id": 175,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M038",
+      "command": "bun test ./src/structural-impact/orchestrator.test.ts ./src/structural-impact/review-integration.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 381,
+      "created_at": "2026-04-05T19:47:15.610Z"
     }
   ]
 }

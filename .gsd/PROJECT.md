@@ -6,11 +6,11 @@ Kodiai is an AI-powered GitHub bot that reviews pull requests, triages issues, a
 
 ## Core Value
 
-Automated, high-signal code review on every PR — findings land in a structured GitHub comment with severity, confidence, suppression, and reviewer context. Everything else extends this.
+Automated, high-signal code review on every PR — findings land in a structured GitHub comment with severity, confidence, suppression, reviewer context, and bounded review details. Everything else extends this.
 
 ## Current State
 
-M041 is complete and M038/S01 is now complete. Kodiai now has the first consumer-side structural-impact layer for M038: explicit graph/corpus adapter seams, a bounded `StructuralImpactPayload` contract, concurrent graph+canonical retrieval orchestration with timeout/degradation handling, stable review-scoped cache keys, structured signal emission, and a review-facing integration seam that `src/handlers/review.ts` now uses for graph-aware file selection without direct substrate calls. The remaining M038 work is to render this bounded payload into Review Details and prompt context (S02), then prove cache reuse and fail-open behavior end to end (S03).
+M041 is complete. M038/S01 and M038/S02 are now complete. Kodiai can now consume M040 graph blast-radius data and M041 canonical current-code evidence at review time, render a bounded Structural Impact section inside Review Details, and inject structural evidence into the main review prompt so breaking-change wording is strengthened only when graph/corpus evidence actually exists. The remaining M038 work is S03: prove timeout behavior, cache reuse, and fail-open degradation end to end.
 
 ## Architecture / Key Patterns
 
@@ -37,12 +37,16 @@ M041 is complete and M038/S01 is now complete. Kodiai now has the first consumer
   - `scripts/verify-m041-s02.ts` — deterministic proof harness covering backfill persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation end to end
   - `scripts/verify-m041-s03.ts` — four-check in-memory proof harness: UNCHANGED-FILE-PRESERVATION, DRIFT-DETECTED-BY-AUDIT, SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS, REPAIR-SKIPS-WHEN-NO-DRIFT; all pass with `overallPassed:true`
   - `src/knowledge/index.ts` — exports canonical chunker, ingest, retrieval, backfill, and update surfaces for downstream slices
-- **Structural-impact consumer layer (M038/S01 complete):**
+- **Structural-impact consumer + rendering layer (M038/S01–S02 complete):**
   - `src/structural-impact/types.ts` — bounded consumer-facing structural-impact contract: `StructuralImpactPayload`, `StructuralImpactStatus`, graph stats, callers, likely tests, impacted files, canonical unchanged-code evidence, and degradation records
   - `src/structural-impact/adapters.ts` — local `GraphAdapter` and `CorpusAdapter` seams plus `boundStructuralImpactPayload()` assembly; M038 consumers stay decoupled from direct M040/M041 type imports
   - `src/structural-impact/orchestrator.ts` — `fetchStructuralImpact()` concurrent graph+corpus execution with per-adapter timeout handling, fail-open degradations, stable `(repo, baseSha, headSha)` cache keys, and 12-signal observability surface
   - `src/structural-impact/review-integration.ts` — review-facing wiring seam that builds concrete graph/corpus adapters, delegates to the orchestrator, and returns both the bounded payload and captured raw graph blast radius for incremental handler migration
-  - `src/handlers/review.ts` — large-PR graph-aware selection path now calls `fetchReviewStructuralImpact()` instead of calling the graph substrate directly
+  - `src/lib/structural-impact-formatter.ts` — bounded Review Details formatter for changed symbols, graph coverage, probable callers/dependents, impacted files, likely tests, unchanged-code evidence, and explicit rendered/truncated counts with truthful confidence wording
+  - `src/lib/review-utils.ts` — `formatReviewDetailsSummary()` now accepts optional `structuralImpact` and appends a dedicated Structural Impact subsection plus a machine-usable rendered-count line
+  - `src/execution/review-prompt.ts` — `buildReviewPrompt()` now renders a `## Structural Impact Evidence` section and breaking-change guidance that distinguishes evidence-present, partial-evidence, and fallback-used paths
+  - `src/handlers/review.ts` — review flow threads the bounded structural-impact payload through prompt generation and Review Details rendering while preserving fail-open behavior when the payload is absent or partial
+  - `scripts/verify-m038-s02.ts` — deterministic C++/Python fixture harness proving bounded Structural Impact rendering and structurally grounded breaking-change wording in prompt + Review Details
 - **Generated rules lifecycle (M036):**
   - `src/knowledge/generated-rule-store.ts` — persistence (pending/active/retired states, non-downgrading upsert, activate, retire, list, getLifecycleCounts)
   - `src/knowledge/generated-rule-proposals.ts` — deterministic proposal generation: cosine-similarity clustering, multi-gate filtering, `positive_ratio × support` signal score
@@ -107,5 +111,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Incremental Refresh and Audit/Repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
   - [x] S01: Graph/Corpus Consumer Adapters and Orchestration
-  - [ ] S02: Structural Impact Rendering and Review Flow Integration
+  - [x] S02: Structural Impact Rendering and Review Flow Integration
   - [ ] S03: Timeout, Cache Reuse, and Fail-Open Verification

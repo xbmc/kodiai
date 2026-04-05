@@ -127,8 +127,8 @@ describe("buildM038S02ProofHarness", () => {
 
     const result = await buildM038S02ProofHarness({
       json: true,
-      stdout: { write: (chunk: string) => void stdoutChunks.push(String(chunk)) },
-      stderr: { write: (chunk: string) => void stderrChunks.push(String(chunk)) },
+      stdout: { write: (chunk: string) => (stdoutChunks.push(String(chunk)), true) },
+      stderr: { write: (chunk: string) => (stderrChunks.push(String(chunk)), true) },
     });
 
     expect(result.exitCode).toBe(0);

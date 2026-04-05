@@ -48,16 +48,6 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews.
 - Notes: Also introduced by M040. code-review-graph's own benchmarks show graph context can be more expensive than naive reads on tiny single-file changes, so Kodiai must explicitly guard against that failure mode.
 
-### R037 — Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
-- Class: functional
-- Status: active
-- Description: Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
-- Why it matters: Diff text and historical retrieval alone cannot show who depends on a changed symbol or which unchanged code is semantically relevant right now.
-- Source: M038
-- Primary owning slice: M038
-- Supporting slices: S01,S02
-- Validation: For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -389,6 +379,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: S01 established the canonical current-code substrate: dedicated canonical_code_chunks/canonical_corpus_backfill_state schema, explicit chunk identity and provenance types, canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with inserted/replaced/dedup semantics proven by canonical-code store/chunker/ingest tests plus clean tsc. This validates the storage/chunking half of the requirement; retrieval/backfill workflow is advanced further in later slices.
 - Notes: Validated at the substrate level by M041/S01. Full end-to-end default-branch backfill + retrieval proof continues in M041/S02/S03.
 
+### R037 — Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
+- Class: functional
+- Status: validated
+- Description: Kodiai shall surface structurally-grounded impact context in reviews by combining graph blast-radius data with semantically relevant unchanged code from the canonical current-code corpus for changed symbols.
+- Why it matters: Diff text and historical retrieval alone cannot show who depends on a changed symbol or which unchanged code is semantically relevant right now.
+- Source: M038
+- Primary owning slice: M038
+- Supporting slices: S01,S02
+- Validation: Validated by M038/S02. Review Details now includes a bounded Structural Impact section with changed symbols, probable callers/dependents, impacted files, likely tests, and canonical unchanged-code evidence. The deterministic verifier `bun run verify:m038:s02 -- --json` passes both C++ and Python proof scenarios, including structurally grounded breaking-change wording when evidence is present.
+- Notes: M038/S01 established the consumer adapters/orchestrator substrate; M038/S02 completed the review-visible rendering and prompt integration contract. M038/S03 still advances timeout/cache/fail-open operability, but the requirement's stated validation target is now met.
+
 ### R038 — Breaking-change detection for exported or widely-used symbols shall be structurally grounded with caller/dependent evidence and fail open when graph or corpus context is unavailable.
 - Class: correctness
 - Status: validated
@@ -463,12 +464,12 @@ This file is the explicit capability and coverage contract for the project.
 | R034 | quality-attribute | active | M040 | none | Regression tests and milestone verifier demonstrate that trivial single-file PRs bypass or bound graph overhead, and graph build/query failures do not block reviews. |
 | R035 | operational | validated | M041 | S03 | verify:m041:s03 --json exits 0 with overallPassed:true. All four checks pass: UNCHANGED-FILE-PRESERVATION (upsertCallCount=0 for fully unchanged file, upsertCallCount=1 for partially changed file), DRIFT-DETECTED-BY-AUDIT (audit_failed on drifted corpus, audit_ok on clean), SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS (repaired=3 embedCallCount=3 writeCallCount=3 on 3-drifted/1-fresh corpus), REPAIR-SKIPS-WHEN-NO-DRIFT (status_code=repair_not_needed embedCallCount=0). |
 | R036 | functional | validated | M041 | S01,S02 | S01 established the canonical current-code substrate: dedicated canonical_code_chunks/canonical_corpus_backfill_state schema, explicit chunk identity and provenance types, canonical chunker with auditable exclusions/boundaries, and a dedicated ingest path with inserted/replaced/dedup semantics proven by canonical-code store/chunker/ingest tests plus clean tsc. This validates the storage/chunking half of the requirement; retrieval/backfill workflow is advanced further in later slices. |
-| R037 | functional | active | M038 | S01,S02 | For a production-like C++ or Python review scenario, Review Details includes a bounded Structural Impact section with impacted files/callers and current-code evidence sourced from M040 and M041. |
+| R037 | functional | validated | M038 | S01,S02 | Validated by M038/S02. Review Details now includes a bounded Structural Impact section with changed symbols, probable callers/dependents, impacted files, likely tests, and canonical unchanged-code evidence. The deterministic verifier `bun run verify:m038:s02 -- --json` passes both C++ and Python proof scenarios, including structurally grounded breaking-change wording when evidence is present. |
 | R038 | correctness | validated | M038 | S02,S03 | Validated by M040/S03. Proof check M040-S03-FAIL-OPEN-VALIDATION confirms neverThrew=true, succeeded=false, originalFindingsPreserved=true when LLM validation gate throws. buildGraphContextSection(null) returns empty text (fail-open). applyGraphAwareSelection() returns usedGraph=false on null graph. queryBlastRadiusFromSnapshot() provides caller/dependent evidence with explicit confidence scores and reason strings. bun run verify:m040:s03 --json exits 0 with overallPassed:true. |
 
 ## Coverage Summary
 
-- Active requirements: 5
-- Mapped to slices: 5
-- Validated: 31 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R038)
+- Active requirements: 4
+- Mapped to slices: 4
+- Validated: 32 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038)
 - Unmapped active requirements: 0

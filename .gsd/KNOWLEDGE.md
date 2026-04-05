@@ -273,6 +273,43 @@ function createMockLoggerWithArrays() {
 
 ---
 
+## ResolvedReviewProfile Fixtures Must Include `autoBand` (M038/S02)
+
+**Context:** `formatReviewDetailsSummary()` takes a `ResolvedReviewProfile`, whose shape now requires `autoBand` in addition to `selectedProfile`, `source`, and `linesChanged`. Proof harnesses and focused prompt/review tests that inline `profileSelection` fixtures can still pass Bun tests if the narrowed object is only exercised loosely, but `bun run tsc --noEmit` will fail with `TS2741` once a fixture omits `autoBand`.
+
+**Rule:** Any inline `ResolvedReviewProfile` fixture must supply the full shape. For auto-selected profiles, include the matching `autoBand` (`small`, `medium`, or `large`). For manual/keyword-driven selections, set `autoBand: null`.
+
+**Pattern:**
+```ts
+profileSelection: {
+  selectedProfile: "balanced",
+  source: "auto",
+  autoBand: "medium",
+  linesChanged: 120,
+}
+```
+
+**Established in:** M038/S02 slice closure (`scripts/verify-m038-s02.ts`).
+
+---
+
+## Writable Stream Test Stubs Must Return `boolean` (M038/S02)
+
+**Context:** `buildM038S02ProofHarness()` accepts `stdout`/`stderr` shims typed as writable streams. In `scripts/verify-m038-s02.test.ts`, arrow-function stubs that only pushed into arrays (`void stdoutChunks.push(...)`) satisfied Bun at runtime but failed TypeScript because `write()` on writable streams returns `boolean`, not `void`.
+
+**Rule:** When stubbing `stdout.write` / `stderr.write` (or other writable stream `write()` methods), return `true` after capturing the chunk.
+
+**Pattern:**
+```ts
+stdout: {
+  write: (chunk: string) => (stdoutChunks.push(String(chunk)), true),
+}
+```
+
+**Established in:** M038/S02 slice closure (`scripts/verify-m038-s02.test.ts`).
+
+---
+
 ## Ephemeral Auth URL Pattern for Git Network Operations (M031/S02)
 
 **Context:** After workspace.create() strips the installation token from git remote URLs, push/fetch functions no longer read credentials from `.git/config`. Instead they construct an ephemeral auth URL per command.

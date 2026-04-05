@@ -3,7 +3,8 @@ import type { Logger } from "pino";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 import type { CanonicalCodeStore } from "../knowledge/canonical-code-types.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-import type { StructuralImpactSignal, StructuralImpactCache } from "./orchestrator.ts";
+import type { StructuralImpactCache } from "./cache.ts";
+import type { StructuralImpactSignal } from "./orchestrator.ts";
 import {
   createReviewGraphAdapter,
   createCanonicalCorpusAdapter,

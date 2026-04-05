@@ -34,6 +34,7 @@ import {
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
 import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
+import { createStructuralImpactCache } from "../structural-impact/cache.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -1008,6 +1009,7 @@ export function createReviewHandler(deps: {
   } = deps;
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
+  const structuralImpactCache = createStructuralImpactCache();
 
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
@@ -2118,6 +2120,7 @@ export function createReviewHandler(deps: {
               const structuralImpact = await fetchReviewStructuralImpact(
                 {
                   reviewGraphQuery,
+                  cache: structuralImpactCache,
                   logger,
                 },
                 {

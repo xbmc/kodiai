@@ -281,6 +281,7 @@ export function renderM038S02Scenario(fixture: M038S02ScenarioFixture): {
       selectedProfile: "balanced",
       source: "auto",
       linesChanged: fixture.id === "cpp" ? 38 : 27,
+      autoBand: "small",
     },
     authorTier: "regular",
     structuralImpact: fixture.structuralImpact,

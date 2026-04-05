@@ -6,10 +6,12 @@ import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { GraphAdapter, GraphQueryInput, CorpusAdapter, CorpusQueryInput } from "./adapters.ts";
 import {
   fetchStructuralImpact,
-  buildStructuralImpactCacheKey,
-  type StructuralImpactCache,
   type StructuralImpactSignal,
 } from "./orchestrator.ts";
+import {
+  buildStructuralImpactCacheKey,
+  type StructuralImpactCache,
+} from "./cache.ts";
 import type { StructuralImpactPayload } from "./types.ts";
 
 export type ReviewGraphQueryFn = (input: {
