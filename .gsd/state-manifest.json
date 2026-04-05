@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T07:55:13.036Z",
+  "exported_at": "2026-04-05T07:59:21.857Z",
   "milestones": [
     {
       "id": "M001",
@@ -7729,19 +7729,29 @@
       "milestone_id": "M037",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Integrate thematic scoring into review generation",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired scoreFindings() into review pipeline; centralized applyClusterScoreAdjustment() in confidence-adjuster.ts; 22 tests pass",
+      "status": "complete",
+      "one_liner": "Wired scoreFindings() into review pipeline; centralized applyClusterScoreAdjustment() in confidence-adjuster.ts; 22 tests pass",
+      "narrative": "Added applyClusterScoreAdjustment() to confidence-adjuster.ts as the merge point for cluster-derived suppression and confidence signals. The function enforces the safety guard (CRITICAL/MAJOR security bypass) and handles the fail-open (clusterModelUsed=false) path. Wired clusterModelStore as an optional dep in createReviewHandler: loads the cluster model fail-open after evaluateFeedbackSuppressions, runs scoreFindings() after the initial processedFindings map (so boost applies to feedback-adjusted confidence), and applies applyClusterScoreAdjustment per-finding. Already-suppressed findings skip the cluster pass. Added structured log gates for model load (debug) and scoring outcomes (info with suppressed/boosted counts). Re-exported applyClusterScoreAdjustment from feedback/index.ts. 10 new tests cover CRITICAL bypass, MAJOR security bypass, lower-severity suppression, confidence boost, fail-open, no-op when confidence unchanged, boost-wins-over-lower, suppression-before-boost, and clamping.",
+      "verification_result": "bun test ./src/feedback/confidence-adjuster.test.ts — 22/22 pass (10ms). bun run tsc --noEmit — exit 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T07:59:21.829Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Cluster scoring applied after initial processedFindings map so boost applies to feedback-adjusted confidence. Plan was silent on ordering; this is the correct sequence.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/feedback/confidence-adjuster.ts",
+        "src/feedback/confidence-adjuster.test.ts",
+        "src/handlers/review.ts",
+        "src/feedback/index.ts"
+      ],
+      "key_decisions": [
+        "Cluster scoring runs AFTER processedFindings map so boost applies to feedback-adjusted confidence, not raw base",
+        "applyClusterScoreAdjustment centralized in confidence-adjuster.ts alongside feedback adjustment path",
+        "Already-suppressed findings skip cluster scoring — cluster cannot unsuppress",
+        "gate=cluster-scoring structured log with clusterSuppressedCount and clusterBoostedCount for ops observability"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M037\nkey_files:\n  - src/feedback/confidence-adjuster.ts\n  - src/feedback/confidence-adjuster.test.ts\n  - src/handlers/review.ts\n  - src/feedback/index.ts\nkey_decisions:\n  - Cluster scoring runs AFTER processedFindings map so boost applies to feedback-adjusted confidence, not raw base\n  - applyClusterScoreAdjustment centralized in confidence-adjuster.ts alongside feedback adjustment path\n  - Already-suppressed findings skip cluster scoring — cluster cannot unsuppress\n  - gate=cluster-scoring structured log with clusterSuppressedCount and clusterBoostedCount for ops observability\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T07:59:21.829Z\nblocker_discovered: false\n---\n\n# T02: Wired scoreFindings() into review pipeline; centralized applyClusterScoreAdjustment() in confidence-adjuster.ts; 22 tests pass\n\n**Wired scoreFindings() into review pipeline; centralized applyClusterScoreAdjustment() in confidence-adjuster.ts; 22 tests pass**\n\n## What Happened\n\nAdded applyClusterScoreAdjustment() to confidence-adjuster.ts as the merge point for cluster-derived suppression and confidence signals. The function enforces the safety guard (CRITICAL/MAJOR security bypass) and handles the fail-open (clusterModelUsed=false) path. Wired clusterModelStore as an optional dep in createReviewHandler: loads the cluster model fail-open after evaluateFeedbackSuppressions, runs scoreFindings() after the initial processedFindings map (so boost applies to feedback-adjusted confidence), and applies applyClusterScoreAdjustment per-finding. Already-suppressed findings skip the cluster pass. Added structured log gates for model load (debug) and scoring outcomes (info with suppressed/boosted counts). Re-exported applyClusterScoreAdjustment from feedback/index.ts. 10 new tests cover CRITICAL bypass, MAJOR security bypass, lower-severity suppression, confidence boost, fail-open, no-op when confidence unchanged, boost-wins-over-lower, suppression-before-boost, and clamping.\n\n## Verification\n\nbun test ./src/feedback/confidence-adjuster.test.ts — 22/22 pass (10ms). bun run tsc --noEmit — exit 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/feedback/confidence-adjuster.test.ts` | 0 | ✅ pass | 10ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 6800ms |\n\n## Deviations\n\nCluster scoring applied after initial processedFindings map so boost applies to feedback-adjusted confidence. Plan was silent on ordering; this is the correct sequence.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/feedback/confidence-adjuster.ts`\n- `src/feedback/confidence-adjuster.test.ts`\n- `src/handlers/review.ts`\n- `src/feedback/index.ts`\n",
       "description": "- Wire cluster scoring into the review pipeline before comment creation.\n- Reuse safety-guard and confidence-adjuster paths instead of inventing parallel logic.\n- Add tests proving CRITICAL findings bypass suppression and lower-severity findings can be adjusted.",
       "estimate": "1d",
       "files": [
@@ -10678,6 +10688,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6900,
       "created_at": "2026-04-05T07:55:13.014Z"
+    },
+    {
+      "id": 106,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun test ./src/feedback/confidence-adjuster.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10,
+      "created_at": "2026-04-05T07:59:21.829Z"
+    },
+    {
+      "id": 107,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M037",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6800,
+      "created_at": "2026-04-05T07:59:21.829Z"
     }
   ]
 }

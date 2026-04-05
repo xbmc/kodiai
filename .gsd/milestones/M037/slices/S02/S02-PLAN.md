@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/knowledge/suggestion-cluster-scoring.ts, src/knowledge/suggestion-cluster-scoring.test.ts, src/knowledge/suggestion-cluster-store.ts
   - Verify: bun test ./src/knowledge/suggestion-cluster-scoring.test.ts && bun run tsc --noEmit
-- [ ] **T02: Integrate thematic scoring into review generation** — - Wire cluster scoring into the review pipeline before comment creation.
+- [x] **T02: Wired scoreFindings() into review pipeline; centralized applyClusterScoreAdjustment() in confidence-adjuster.ts; 22 tests pass** — - Wire cluster scoring into the review pipeline before comment creation.
 - Reuse safety-guard and confidence-adjuster paths instead of inventing parallel logic.
 - Add tests proving CRITICAL findings bypass suppression and lower-severity findings can be adjusted.
   - Estimate: 1d

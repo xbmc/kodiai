@@ -40,7 +40,9 @@ import {
 import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
-import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
+import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback, applyClusterScoreAdjustment } from "../feedback/index.ts";
+import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
+import { scoreFindings } from "../knowledge/suggestion-cluster-scoring.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
@@ -959,6 +961,8 @@ export function createReviewHandler(deps: {
   issueStore?: IssueStore;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
+  /** Optional cluster model store for thematic finding scoring (M037/S02). */
+  clusterModelStore?: SuggestionClusterStore;
   logger: Logger;
 }): void {
   const {
@@ -982,6 +986,7 @@ export function createReviewHandler(deps: {
     clusterMatcher,
     issueStore,
     sql,
+    clusterModelStore,
     logger,
   } = deps;
 
@@ -2637,6 +2642,34 @@ export function createReviewHandler(deps: {
           );
         }
 
+        // Thematic cluster scoring: load cached model for this repo (M037/S02).
+        // Fail-open: missing store, missing model, or load error → null model → scoreFindings no-ops.
+        let clusterModel: import("../knowledge/suggestion-cluster-store.ts").SuggestionClusterModel | null = null;
+        if (clusterModelStore && embeddingProvider) {
+          try {
+            clusterModel = await clusterModelStore.getModel(`${apiOwner}/${apiRepo}`);
+            if (clusterModel) {
+              logger.debug(
+                {
+                  ...baseLog,
+                  gate: "cluster-model-load",
+                  positiveCentroidCount: clusterModel.positiveCentroids.length,
+                  negativeCentroidCount: clusterModel.negativeCentroids.length,
+                  positiveMemberCount: clusterModel.positiveMemberCount,
+                  negativeMemberCount: clusterModel.negativeMemberCount,
+                  builtAt: clusterModel.builtAt,
+                },
+                "Cluster model loaded for thematic scoring",
+              );
+            }
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, err, gate: "cluster-model-load" },
+              "Cluster model load failed; proceeding without thematic scoring (fail-open)",
+            );
+          }
+        }
+
         // Post-LLM abbreviated tier enforcement (LARGE-08)
         // Suppress medium/minor findings on abbreviated-tier files deterministically.
         const abbreviatedFileSet = tieredFiles.isLargePR
@@ -2772,6 +2805,64 @@ export function createReviewHandler(deps: {
             demotionReason: demotion?.demotionReason,
           };
         });
+
+        // Thematic cluster scoring (M037/S02): score processed findings against
+        // positive/negative centroids. Adjusts confidence and suppression signals.
+        // Runs after feedback suppression so cluster signal applies to feedback-adjusted
+        // confidence values. Fail-open: any error leaves findings unchanged.
+        if (clusterModel && embeddingProvider) {
+          try {
+            // Map processedFindings to the ScoringFinding shape (title, severity, category, confidence)
+            const scoringInput = processedFindings.map(f => ({
+              title: f.title,
+              severity: f.severity,
+              category: f.category,
+              confidence: f.confidence,
+            }));
+            const clusterScoredResult = await scoreFindings(scoringInput, clusterModel, embeddingProvider, logger);
+
+            if (clusterScoredResult.modelUsed) {
+              // Apply cluster score adjustments to processed findings
+              processedFindings = processedFindings.map((f, i) => {
+                const clusterScore = clusterScoredResult.scores[i];
+                if (!clusterScore) return f;
+                // Skip already-suppressed findings — cluster cannot unsuppress
+                if (f.suppressed) return f;
+                const clusterAdj = applyClusterScoreAdjustment(
+                  { severity: f.severity, category: f.category },
+                  f.confidence,
+                  clusterScore.suppress,
+                  clusterScore.adjustedConfidence,
+                  true,
+                );
+                return {
+                  ...f,
+                  confidence: clusterAdj.confidence,
+                  suppressed: clusterAdj.suppressed,
+                };
+              });
+
+              if (clusterScoredResult.suppressedCount > 0 || clusterScoredResult.boostedCount > 0) {
+                logger.info(
+                  {
+                    ...baseLog,
+                    gate: "cluster-scoring",
+                    findingCount: processedFindings.length,
+                    clusterSuppressedCount: clusterScoredResult.suppressedCount,
+                    clusterBoostedCount: clusterScoredResult.boostedCount,
+                    clusterScoreSource: "suggestion_cluster_models",
+                  },
+                  "Thematic cluster scoring applied to review findings",
+                );
+              }
+            }
+          } catch (err) {
+            logger.warn(
+              { ...baseLog, err, gate: "cluster-scoring" },
+              "Thematic cluster scoring failed; findings unchanged (fail-open)",
+            );
+          }
+        }
 
         // Output filtering: rewrite mixed findings, suppress primarily-external findings (FILT-01, FILT-02)
         const filterResult = filterExternalClaims(
