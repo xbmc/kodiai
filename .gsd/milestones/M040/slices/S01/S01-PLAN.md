@@ -16,7 +16,7 @@
   - Estimate: 1-1.5d
   - Files: src/review-graph/extractors/cpp.ts, src/review-graph/extractors/python.ts, src/review-graph/extractors/index.ts, src/review-graph/extractors.test.ts
   - Verify: bun test ./src/review-graph/extractors.test.ts
-- [ ] **T03: Build incremental graph indexer** — - Build the graph indexing and incremental-update path from workspace contents.
+- [x] **T03: Added an incremental review-graph indexer that walks workspaces, skips unchanged files by content hash, and records indexed/updated/skipped counts with fixture coverage.** — - Build the graph indexing and incremental-update path from workspace contents.
 - Re-index only changed files and replace their graph records atomically.
 - Add fixture tests proving incremental updates do not require full graph rebuilds.
   - Estimate: 0.5-1d

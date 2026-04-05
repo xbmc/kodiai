@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T10:05:19.714Z",
+  "exported_at": "2026-04-05T10:09:04.032Z",
   "milestones": [
     {
       "id": "M001",
@@ -8572,19 +8572,26 @@
       "milestone_id": "M040",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Build incremental graph indexer",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added an incremental review-graph indexer that walks workspaces, skips unchanged files by content hash, and records indexed/updated/skipped counts with fixture coverage.",
+      "status": "complete",
+      "one_liner": "Added an incremental review-graph indexer that walks workspaces, skips unchanged files by content hash, and records indexed/updated/skipped counts with fixture coverage.",
+      "narrative": "Added src/review-graph/indexer.ts as the workspace-level entrypoint for review-graph upkeep. The indexer walks a workspace deterministically when no changed-path list is provided, narrows to supported Python and C++ files, computes SHA-256 content hashes, checks persisted file state, skips unchanged files, and replaces graph records only for new or modified files. It also upserts review graph build state before and after the run, aggregates discovered/indexed/updated/skipped/failed plus node and edge totals, and emits structured logger events for per-file and whole-run observability. Added src/review-graph/indexer.test.ts with an in-memory ReviewGraphStore to prove mixed-language indexing, changed-file incremental behavior, unchanged-file skipping, and per-file failure handling without requiring a live database. A single failing assertion during verification was due to deterministic lexical ordering of discovered paths; I corrected the test expectation to match the implementation rather than changing runtime behavior.",
+      "verification_result": "Ran bun test ./src/review-graph/indexer.test.ts successfully, covering supported-language discovery, incremental changed-file updates, unchanged-file skipping, and per-file failure handling. Ran bun run tsc --noEmit successfully to confirm the new indexer integrates cleanly with the repository type surface.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T10:09:04.012Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used the existing src/review-graph/extractors.ts module instead of the planned src/review-graph/extractors/index.ts path because the local codebase still exposes extraction through the single-module surface.",
+      "known_issues": "The indexer does not yet remove persisted graph rows for files deleted from the workspace; it currently handles additions, updates, skips, and per-file failures only.",
+      "key_files": [
+        "src/review-graph/indexer.ts",
+        "src/review-graph/indexer.test.ts",
+        ".gsd/milestones/M040/slices/S01/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Keep incremental indexing file-scoped and use persisted content hashes to decide whether each candidate file should be skipped or replaced.",
+        "Expose graph upkeep observability through structured indexed/updated/skipped/failed counters in both logs and review_graph_build state."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M040\nkey_files:\n  - src/review-graph/indexer.ts\n  - src/review-graph/indexer.test.ts\n  - .gsd/milestones/M040/slices/S01/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Keep incremental indexing file-scoped and use persisted content hashes to decide whether each candidate file should be skipped or replaced.\n  - Expose graph upkeep observability through structured indexed/updated/skipped/failed counters in both logs and review_graph_build state.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T10:09:04.011Z\nblocker_discovered: false\n---\n\n# T03: Added an incremental review-graph indexer that walks workspaces, skips unchanged files by content hash, and records indexed/updated/skipped counts with fixture coverage.\n\n**Added an incremental review-graph indexer that walks workspaces, skips unchanged files by content hash, and records indexed/updated/skipped counts with fixture coverage.**\n\n## What Happened\n\nAdded src/review-graph/indexer.ts as the workspace-level entrypoint for review-graph upkeep. The indexer walks a workspace deterministically when no changed-path list is provided, narrows to supported Python and C++ files, computes SHA-256 content hashes, checks persisted file state, skips unchanged files, and replaces graph records only for new or modified files. It also upserts review graph build state before and after the run, aggregates discovered/indexed/updated/skipped/failed plus node and edge totals, and emits structured logger events for per-file and whole-run observability. Added src/review-graph/indexer.test.ts with an in-memory ReviewGraphStore to prove mixed-language indexing, changed-file incremental behavior, unchanged-file skipping, and per-file failure handling without requiring a live database. A single failing assertion during verification was due to deterministic lexical ordering of discovered paths; I corrected the test expectation to match the implementation rather than changing runtime behavior.\n\n## Verification\n\nRan bun test ./src/review-graph/indexer.test.ts successfully, covering supported-language discovery, incremental changed-file updates, unchanged-file skipping, and per-file failure handling. Ran bun run tsc --noEmit successfully to confirm the new indexer integrates cleanly with the repository type surface.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/review-graph/indexer.test.ts` | 0 | ✅ pass | 28ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 0ms |\n\n## Deviations\n\nUsed the existing src/review-graph/extractors.ts module instead of the planned src/review-graph/extractors/index.ts path because the local codebase still exposes extraction through the single-module surface.\n\n## Known Issues\n\nThe indexer does not yet remove persisted graph rows for files deleted from the workspace; it currently handles additions, updates, skips, and per-file failures only.\n\n## Files Created/Modified\n\n- `src/review-graph/indexer.ts`\n- `src/review-graph/indexer.test.ts`\n- `.gsd/milestones/M040/slices/S01/tasks/T03-SUMMARY.md`\n",
       "description": "- Build the graph indexing and incremental-update path from workspace contents.\n- Re-index only changed files and replace their graph records atomically.\n- Add fixture tests proving incremental updates do not require full graph rebuilds.",
       "estimate": "0.5-1d",
       "files": [
@@ -10971,6 +10978,28 @@
       "verdict": "✅ pass",
       "duration_ms": 0,
       "created_at": "2026-04-05T10:05:19.691Z"
+    },
+    {
+      "id": 127,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M040",
+      "command": "bun test ./src/review-graph/indexer.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 28,
+      "created_at": "2026-04-05T10:09:04.012Z"
+    },
+    {
+      "id": 128,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M040",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 0,
+      "created_at": "2026-04-05T10:09:04.012Z"
     }
   ]
 }
