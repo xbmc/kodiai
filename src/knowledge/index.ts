@@ -103,6 +103,20 @@ export type { WikiSyncSchedulerOptions, WikiSyncResult } from "./wiki-sync.ts";
 // Code snippet store
 export { createCodeSnippetStore } from "./code-snippet-store.ts";
 
+// Canonical code chunker
+export {
+  chunkCanonicalCodeFile,
+  getCanonicalChunkExclusionReason,
+  isCanonicalCodePathExcluded,
+} from "./canonical-code-chunker.ts";
+export type {
+  CanonicalChunk,
+  CanonicalChunkBoundary,
+  CanonicalChunkResult,
+  CanonicalChunkerObservability,
+  CanonicalExclusionReason,
+} from "./canonical-code-chunker.ts";
+
 // Code snippet chunker
 export { parseDiffHunks, buildEmbeddingText, isExcludedPath, applyHunkCap, computeContentHash } from "./code-snippet-chunker.ts";
 export type { ParsedHunk } from "./code-snippet-chunker.ts";

@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/db/migrations/033-canonical-code-corpus.sql, src/knowledge/canonical-code-types.ts, src/knowledge/canonical-code-store.ts, src/knowledge/canonical-code-store.test.ts
   - Verify: bun test ./src/knowledge/canonical-code-store.test.ts && bun run tsc --noEmit
-- [ ] **T02: Implement chunker and exclusion policy** — - Implement a canonical chunker for function/class/module fallback boundaries.
+- [x] **T02: Added a dedicated canonical code chunker with auditable exclusion reasons, function/class/module boundaries, and symbol-poor C++ block fallback.** — - Implement a canonical chunker for function/class/module fallback boundaries.
 - Add explicit exclusion rules for generated files, vendored code, lockfiles, and build outputs.
 - Keep chunking logic independent from historical diff-hunk chunking so semantics do not blur.
   - Estimate: 0.5-1d

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T14:00:53.980Z",
+  "exported_at": "2026-04-05T14:04:33.367Z",
   "milestones": [
     {
       "id": "M001",
@@ -8955,19 +8955,27 @@
       "milestone_id": "M041",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Implement chunker and exclusion policy",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a dedicated canonical code chunker with auditable exclusion reasons, function/class/module boundaries, and symbol-poor C++ block fallback.",
+      "status": "complete",
+      "one_liner": "Added a dedicated canonical code chunker with auditable exclusion reasons, function/class/module boundaries, and symbol-poor C++ block fallback.",
+      "narrative": "Built a separate canonical current-code chunker in src/knowledge/canonical-code-chunker.ts instead of extending the historical diff-hunk chunker. Added explicit exclusion rules for generated paths, vendored code, lockfiles, build outputs, and binary/assets; implemented Python class/function/module chunking; implemented brace-aware C++/TypeScript/JavaScript class/function chunking with module remainder support; and added an explicit block fallback for symbol-poor C++ files when no symbol boundary is detectable. Exposed observability through excluded/exclusionReason/boundaryDecisions on every result, exported the new API from src/knowledge/index.ts, and added focused tests covering exclusions, boundaries, fallback behavior, and content-hash stability.",
+      "verification_result": "Ran bun test ./src/knowledge/canonical-code-chunker.test.ts and bun run tsc --noEmit. The first test run exposed an incorrect module-vs-block fallback for symbol-poor C++ content; after tightening that branch, the canonical chunker test suite passed 7/7 and the workspace typecheck passed cleanly.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T14:04:33.336Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/knowledge/canonical-code-chunker.ts",
+        "src/knowledge/canonical-code-chunker.test.ts",
+        "src/knowledge/index.ts",
+        ".gsd/milestones/M041/slices/S01/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Keep canonical current-code chunking in a dedicated module with its own chunk/result types and exclusion helpers rather than reusing diff-hunk chunk structures.",
+        "Emit an explicit block fallback for symbol-poor C++ files only when no function/class boundary is discoverable, while preserving module context chunks when symbol chunks do exist."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M041\nkey_files:\n  - src/knowledge/canonical-code-chunker.ts\n  - src/knowledge/canonical-code-chunker.test.ts\n  - src/knowledge/index.ts\n  - .gsd/milestones/M041/slices/S01/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Keep canonical current-code chunking in a dedicated module with its own chunk/result types and exclusion helpers rather than reusing diff-hunk chunk structures.\n  - Emit an explicit block fallback for symbol-poor C++ files only when no function/class boundary is discoverable, while preserving module context chunks when symbol chunks do exist.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T14:04:33.335Z\nblocker_discovered: false\n---\n\n# T02: Added a dedicated canonical code chunker with auditable exclusion reasons, function/class/module boundaries, and symbol-poor C++ block fallback.\n\n**Added a dedicated canonical code chunker with auditable exclusion reasons, function/class/module boundaries, and symbol-poor C++ block fallback.**\n\n## What Happened\n\nBuilt a separate canonical current-code chunker in src/knowledge/canonical-code-chunker.ts instead of extending the historical diff-hunk chunker. Added explicit exclusion rules for generated paths, vendored code, lockfiles, build outputs, and binary/assets; implemented Python class/function/module chunking; implemented brace-aware C++/TypeScript/JavaScript class/function chunking with module remainder support; and added an explicit block fallback for symbol-poor C++ files when no symbol boundary is detectable. Exposed observability through excluded/exclusionReason/boundaryDecisions on every result, exported the new API from src/knowledge/index.ts, and added focused tests covering exclusions, boundaries, fallback behavior, and content-hash stability.\n\n## Verification\n\nRan bun test ./src/knowledge/canonical-code-chunker.test.ts and bun run tsc --noEmit. The first test run exposed an incorrect module-vs-block fallback for symbol-poor C++ content; after tightening that branch, the canonical chunker test suite passed 7/7 and the workspace typecheck passed cleanly.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/canonical-code-chunker.test.ts` | 0 | ✅ pass | 30ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 0ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/knowledge/canonical-code-chunker.ts`\n- `src/knowledge/canonical-code-chunker.test.ts`\n- `src/knowledge/index.ts`\n- `.gsd/milestones/M041/slices/S01/tasks/T02-SUMMARY.md`\n",
       "description": "- Implement a canonical chunker for function/class/module fallback boundaries.\n- Add explicit exclusion rules for generated files, vendored code, lockfiles, and build outputs.\n- Keep chunking logic independent from historical diff-hunk chunking so semantics do not blur.",
       "estimate": "0.5-1d",
       "files": [
@@ -11296,6 +11304,28 @@
       "verdict": "✅ pass",
       "duration_ms": 6817,
       "created_at": "2026-04-05T14:00:53.946Z"
+    },
+    {
+      "id": 146,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M041",
+      "command": "bun test ./src/knowledge/canonical-code-chunker.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 30,
+      "created_at": "2026-04-05T14:04:33.336Z"
+    },
+    {
+      "id": 147,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M041",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 0,
+      "created_at": "2026-04-05T14:04:33.336Z"
     }
   ]
 }
