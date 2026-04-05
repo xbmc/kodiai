@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M041 is now complete (all three slices done). The canonical current-code corpus has a full lifecycle: dedicated schema/tables, canonical chunk identity/provenance types, a separate canonical chunker and ingest path, a resumable default-branch backfill pipeline, unified semantic retrieval that returns provenance-rich `canonical_code` results, selective changed-file refresh that skips unchanged rows via content-hash comparison, and audit/repair coverage that detects and repairs stale/missing/model-mismatched rows in bounded passes. Next active work is M038, which consumes both M040 (persistent structural graph + blast-radius) and M041 (canonical current-code corpus) substrates.
+M041 is complete and M038/S01 is now complete. Kodiai now has the first consumer-side structural-impact layer for M038: explicit graph/corpus adapter seams, a bounded `StructuralImpactPayload` contract, concurrent graph+canonical retrieval orchestration with timeout/degradation handling, stable review-scoped cache keys, structured signal emission, and a review-facing integration seam that `src/handlers/review.ts` now uses for graph-aware file selection without direct substrate calls. The remaining M038 work is to render this bounded payload into Review Details and prompt context (S02), then prove cache reuse and fail-open behavior end to end (S03).
 
 ## Architecture / Key Patterns
 
@@ -37,6 +37,12 @@ M041 is now complete (all three slices done). The canonical current-code corpus 
   - `scripts/verify-m041-s02.ts` — deterministic proof harness covering backfill persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation end to end
   - `scripts/verify-m041-s03.ts` — four-check in-memory proof harness: UNCHANGED-FILE-PRESERVATION, DRIFT-DETECTED-BY-AUDIT, SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS, REPAIR-SKIPS-WHEN-NO-DRIFT; all pass with `overallPassed:true`
   - `src/knowledge/index.ts` — exports canonical chunker, ingest, retrieval, backfill, and update surfaces for downstream slices
+- **Structural-impact consumer layer (M038/S01 complete):**
+  - `src/structural-impact/types.ts` — bounded consumer-facing structural-impact contract: `StructuralImpactPayload`, `StructuralImpactStatus`, graph stats, callers, likely tests, impacted files, canonical unchanged-code evidence, and degradation records
+  - `src/structural-impact/adapters.ts` — local `GraphAdapter` and `CorpusAdapter` seams plus `boundStructuralImpactPayload()` assembly; M038 consumers stay decoupled from direct M040/M041 type imports
+  - `src/structural-impact/orchestrator.ts` — `fetchStructuralImpact()` concurrent graph+corpus execution with per-adapter timeout handling, fail-open degradations, stable `(repo, baseSha, headSha)` cache keys, and 12-signal observability surface
+  - `src/structural-impact/review-integration.ts` — review-facing wiring seam that builds concrete graph/corpus adapters, delegates to the orchestrator, and returns both the bounded payload and captured raw graph blast radius for incremental handler migration
+  - `src/handlers/review.ts` — large-PR graph-aware selection path now calls `fetchReviewStructuralImpact()` instead of calling the graph substrate directly
 - **Generated rules lifecycle (M036):**
   - `src/knowledge/generated-rule-store.ts` — persistence (pending/active/retired states, non-downgrading upsert, activate, retire, list, getLifecycleCounts)
   - `src/knowledge/generated-rule-proposals.ts` — deterministic proposal generation: cosine-similarity clustering, multi-gate filtering, `positive_ratio × support` signal score
@@ -100,3 +106,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Default-Branch Backfill and Semantic Retrieval
   - [x] S03: Incremental Refresh and Audit/Repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
+  - [x] S01: Graph/Corpus Consumer Adapters and Orchestration
+  - [ ] S02: Structural Impact Rendering and Review Flow Integration
+  - [ ] S03: Timeout, Cache Reuse, and Fail-Open Verification

@@ -14,6 +14,8 @@ import {
 import type { ResolvedReviewProfile } from "../lib/auto-profile.ts";
 import type { MergeConfidence } from "../lib/merge-confidence.ts";
 import { SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE } from "../execution/review-prompt.ts";
+import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,6 +223,7 @@ export function formatReviewDetailsSummary(params: {
     outputTokens: number | undefined;
     costUsd: number | undefined;
   };
+  structuralImpact?: StructuralImpactPayload | null;
 }): string {
   const {
     reviewOutputKey,
@@ -236,6 +239,7 @@ export function formatReviewDetailsSummary(params: {
     prioritization,
     usageLimit,
     tokenUsage,
+    structuralImpact,
   } = params;
 
   const profileLine = profileSelection.source === "auto"
@@ -314,6 +318,14 @@ export function formatReviewDetailsSummary(params: {
   if (prioritization) {
     sections.push(
       `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
+    );
+  }
+
+  const structuralImpactSection = buildStructuralImpactSection(structuralImpact);
+  if (structuralImpactSection.text) {
+    sections.push(structuralImpactSection.text);
+    sections.push(
+      `- Structural Impact rendered: callers ${structuralImpactSection.stats.callersRendered}/${structuralImpactSection.stats.callersTotal}${structuralImpactSection.stats.callersTruncated ? " truncated" : ""}; files ${structuralImpactSection.stats.filesRendered}/${structuralImpactSection.stats.filesTotal}${structuralImpactSection.stats.filesTruncated ? " truncated" : ""}; tests ${structuralImpactSection.stats.testsRendered}/${structuralImpactSection.stats.testsTotal}${structuralImpactSection.stats.testsTruncated ? " truncated" : ""}; unchanged evidence ${structuralImpactSection.stats.evidenceRendered}/${structuralImpactSection.stats.evidenceTotal}${structuralImpactSection.stats.evidenceTruncated ? " truncated" : ""}`,
     );
   }
 

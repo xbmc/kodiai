@@ -4,7 +4,7 @@
 **Demo:** After this: After this, a large C++ or Python review shows a bounded Structural Impact section in Review Details and uses structural evidence to strengthen breaking-change output.
 
 ## Tasks
-- [ ] **T01: Format bounded Structural Impact review output** — - Implement Structural Impact formatting for Review Details using bounded caller/dependent/file/test summaries plus unchanged-code evidence.
+- [x] **T01: Added a bounded Structural Impact formatter for Review Details with truthful confidence wording, truncation metadata, and focused formatter tests.** — - Implement Structural Impact formatting for Review Details using bounded caller/dependent/file/test summaries plus unchanged-code evidence.
 - Keep confidence language truthful for probable vs stronger graph evidence.
 - Add formatter tests for bounded output and truncation behavior.
   - Estimate: 0.5-1d
