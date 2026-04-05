@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/structural-impact/orchestrator.ts, src/structural-impact/orchestrator.test.ts, src/structural-impact/adapters.ts
   - Verify: bun test ./src/structural-impact/orchestrator.test.ts
-- [ ] **T03: Add review-path integration seam** — - Add a review-path integration seam that lets the handler request structural-impact data through the new orchestration layer.
+- [x] **T03: Added a review-facing structural-impact integration seam and wired review.ts to consume it for graph-aware file selection without direct substrate calls.** — - Add a review-path integration seam that lets the handler request structural-impact data through the new orchestration layer.
 - Keep the integration behind a single module boundary so later substrate API changes do not sprawl through `review.ts`.
 - Add tests using stubbed graph/corpus adapters.
   - Estimate: 0.5-1d

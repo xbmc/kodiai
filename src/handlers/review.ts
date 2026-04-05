@@ -33,6 +33,7 @@ import {
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
+import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -2113,21 +2114,34 @@ export function createReviewHandler(deps: {
             );
           } else {
             try {
-              const graph = await reviewGraphQuery({
-                repo: `${apiOwner}/${apiRepo}`,
-                workspaceKey: pr.head.sha,
-                changedPaths: reviewFiles,
-                limit: Math.max(
-                  config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
-                  20,
-                ),
-              });
-              graphBlastRadius = graph;
-              graphSelection = applyGraphAwareSelection({ riskScores, graph });
+              const structuralImpact = await fetchReviewStructuralImpact(
+                {
+                  reviewGraphQuery,
+                  logger,
+                },
+                {
+                  repo: `${apiOwner}/${apiRepo}`,
+                  owner: apiOwner,
+                  workspaceKey: pr.head.sha,
+                  baseSha: pr.base.sha,
+                  headSha: pr.head.sha,
+                  changedPaths: reviewFiles,
+                  canonicalRef: pr.base.ref,
+                  query: reviewFiles.join(" "),
+                  graphLimit: Math.max(
+                    config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
+                    20,
+                  ),
+                },
+              );
+              graphBlastRadius = structuralImpact.graphBlastRadius;
+              if (graphBlastRadius) {
+                graphSelection = applyGraphAwareSelection({ riskScores, graph: graphBlastRadius });
+              }
             } catch (err) {
               logger.warn(
                 { ...baseLog, gate: "graph-aware-selection", err },
-                "Review graph query failed (fail-open, continuing with file-risk selection)",
+                "Review structural-impact integration failed (fail-open, continuing with file-risk selection)",
               );
             }
           }
