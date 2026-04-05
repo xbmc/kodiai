@@ -325,6 +325,18 @@ Use `file://${bareDir}` for URLs. For URL-strip tests, set the remote to a crede
 
 ---
 
+## TEST_DATABASE_URL-Gated DB Suites Should Skip, Not Probe DATABASE_URL (M040/S01)
+
+**Context:** `src/review-graph/store.test.ts` originally behaved like a DB-backed integration suite but inherited environment behavior that still let verification fail in auto-mode when `DATABASE_URL` pointed at an unreachable host. The slice stabilized this by following the repo's explicit `TEST_DATABASE_URL` gating pattern already used by other Postgres-backed suites.
+
+**Rule:** For DB integration tests, gate the entire suite with `describe.skipIf(!process.env.TEST_DATABASE_URL)` and connect only through `TEST_DATABASE_URL`. Do not silently fall back to `DATABASE_URL` or attempt opportunistic live connections during verification.
+
+**Why:** Auto-mode and CI environments may carry a production-like `DATABASE_URL` that is intentionally unreachable or unsuitable for tests. An explicit `TEST_DATABASE_URL` contract keeps verification deterministic: configured test DB -> run the suite; no test DB -> clean skip.
+
+**Established in:** M040/S01 (`src/review-graph/store.test.ts`), matching existing patterns in `src/knowledge/*store.test.ts`.
+
+---
+
 ## ACA Job Env-Var Passing Convention — `--env-vars KEY=VALUE` pairs (M032/S01)
 
 **Context:** `az containerapp job execution start` accepts env var overrides via `--env-vars KEY=VALUE KEY2=VALUE2` (space-separated pairs). The `--env-vars` flag is NOT a JSON string — passing `--env-vars '[{"name":"K","value":"V"}]'` fails with an argument parse error.

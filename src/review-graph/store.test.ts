@@ -174,6 +174,50 @@ describe.skipIf(!TEST_DB_URL)("createReviewGraphStore", () => {
     expect(edges[1]?.attributes).toEqual({ heuristic: "name-match" });
   });
 
+  test("listWorkspaceGraph returns the workspace snapshot across files", async () => {
+    const build = await store.upsertBuild({
+      repo: "owner/repo",
+      workspaceKey: "workspace-a",
+      status: "running",
+    });
+
+    await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "src/a.py",
+        language: "python",
+        buildId: build.id,
+      },
+      nodes: [
+        { nodeKind: "file", stableKey: "file:src/a.py", language: "python" },
+        { nodeKind: "symbol", stableKey: "symbol:src/a.py:run", symbolName: "run", qualifiedName: "run", language: "python" },
+      ],
+      edges: [
+        { edgeKind: "declares", sourceStableKey: "file:src/a.py", targetStableKey: "symbol:src/a.py:run" },
+      ],
+    });
+
+    await store.replaceFileGraph({
+      file: {
+        repo: "owner/repo",
+        workspaceKey: "workspace-a",
+        path: "tests/test_a.py",
+        language: "python",
+        buildId: build.id,
+      },
+      nodes: [
+        { nodeKind: "file", stableKey: "file:tests/test_a.py", language: "python" },
+      ],
+      edges: [],
+    });
+
+    const snapshot = await store.listWorkspaceGraph("owner/repo", "workspace-a");
+    expect(snapshot.files.map((file) => file.path)).toEqual(["src/a.py", "tests/test_a.py"]);
+    expect(snapshot.nodes).toHaveLength(3);
+    expect(snapshot.edges).toHaveLength(1);
+  });
+
   test("replaceFileGraph atomically replaces prior file-scoped graph records without touching other files", async () => {
     const build = await store.upsertBuild({
       repo: "owner/repo",

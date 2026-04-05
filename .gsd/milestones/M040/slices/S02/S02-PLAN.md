@@ -4,7 +4,7 @@
 **Demo:** After this: After this, Kodiai can take a large fixture PR and show graph-ranked impacted files, probable dependents, and likely tests that today's file-risk scorer alone would miss.
 
 ## Tasks
-- [ ] **T01: Add blast-radius and likely-test queries** — - Implement graph query surfaces for blast radius, impacted files, probable dependents, and likely tests.
+- [x] **T01: Added persisted review-graph blast-radius queries that rank impacted files, probable dependents, and likely tests for C++ and Python fixtures.** — - Implement graph query surfaces for blast radius, impacted files, probable dependents, and likely tests.
 - Add confidence/ranking output instead of pretending every graph edge is equally certain.
 - Prove query usefulness against C++ and Python fixtures.
   - Estimate: 1d

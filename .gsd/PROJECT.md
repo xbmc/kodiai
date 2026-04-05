@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M037 complete. Kodiai now has a full cached suggestion-cluster reinforcement layer for review findings: per-repo positive and negative cluster centroids are built from learning memories and stored in an ephemeral cache, review-time findings are scored thematically against those cached models, protected findings remain immune to both suppression and confidence boosting, and stale or unavailable models degrade cleanly without blocking review completion. The live review path now loads cluster models through a centralized stale-aware resolver with a bounded 4-hour grace window beyond the 24-hour TTL, and `applyClusterScoringWithDegradation()` preserves truthful degradation reasons (`model-load-error` vs `no-model`) while keeping the naive path intact. Milestone closure verification reran `verify:m037:s01`, `verify:m037:s02`, and `verify:m037:s03` successfully and confirmed real non-`.gsd/` code changes exist for the milestone.
+M040/S01 complete. Kodiai now has the first persistent review-graph substrate needed for graph-backed extensive review context. The codebase includes a dedicated Postgres schema for `review_graph_builds`, `review_graph_files`, `review_graph_nodes`, and `review_graph_edges`; a typed `ReviewGraphStore` with transactional file-scoped replacement semantics; file-scoped C++ and Python structural extraction that emits files, symbols, imports/includes, callsites, and probable test relationships with explicit confidence; and an incremental workspace indexer that walks supported files, hashes content, skips unchanged files, upserts build state, and records indexed/updated/skipped/failed counters. DB-backed review-graph store tests now follow the repo’s `TEST_DATABASE_URL` gating contract, so auto-mode verification skips cleanly when no dedicated test DB is configured instead of probing an unrelated `DATABASE_URL`.
 
 ## Architecture / Key Patterns
 
@@ -42,6 +42,13 @@ M037 complete. Kodiai now has a full cached suggestion-cluster reinforcement lay
   - `src/feedback/confidence-adjuster.ts` — `applyClusterScoreAdjustment()` merges cluster-derived suppress/boost signals after feedback adjustment and applies the symmetric safety guard for CRITICAL and protected MAJOR findings
   - `src/handlers/review.ts` — review pipeline integration: already-suppressed findings skip cluster scoring; cluster scoring runs after feedback adjustment; stale/missing/unavailable models fall back to the naive path
   - `scripts/verify-m037-s01.ts`, `scripts/verify-m037-s02.ts`, `scripts/verify-m037-s03.ts` — machine-verifiable proof harnesses for substrate, scoring integration, stale-policy behavior, refresh closure, cached reuse, and fail-open behavior
+- **Review graph substrate (M040/S01 complete):**
+  - `src/db/migrations/034-review-graph.sql` — persistent review graph tables for builds, files, nodes, and edges with constraints and indexes tuned for file-scoped replacement
+  - `src/review-graph/types.ts` — typed node/edge/file/build contracts plus `ReviewGraphStore` interface
+  - `src/review-graph/store.ts` — Postgres-backed review graph store with `upsertBuild()`, `replaceFileGraph()`, and file/build lookup helpers; edge endpoints are resolved from stable keys inside the transaction
+  - `src/review-graph/extractors.ts` — file-scoped Python and C++ extraction for files, symbols, imports/includes, callsites, and probable test nodes/edges with explicit confidence
+  - `src/review-graph/indexer.ts` — incremental workspace indexer using SHA-256 content hashes, supported-language filtering, structured counters, and build-state upserts
+  - `src/review-graph/*.test.ts` — fixture-driven extractor/indexer coverage plus DB-gated store integration tests following `TEST_DATABASE_URL` skip semantics
 
 ## Capability Contract
 
@@ -64,5 +71,8 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Thematic Finding Scoring and Review Integration — scoring layer wired; safety guards; proof harness
   - [x] S03: Refresh, Staleness Handling, and Fail-Open Verification — stale grace policy, refresh closure, and fail-open verification complete
 - [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
+  - [x] S01: Graph Schema and C++/Python Structural Extraction
+  - [ ] S02: Blast-Radius Queries and Graph-Aware Review Selection
+  - [ ] S03: Bounded Prompt Integration, Bypass, and Validation Gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
 - [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection

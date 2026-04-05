@@ -149,6 +149,12 @@ export type ReviewGraphBuildUpsert = {
   edgesWritten?: number;
 };
 
+export type ReviewGraphWorkspaceSnapshot = {
+  files: ReviewGraphFileRecord[];
+  nodes: ReviewGraphNodeRecord[];
+  edges: ReviewGraphEdgeRecord[];
+};
+
 export type ReviewGraphStore = {
   upsertBuild(input: ReviewGraphBuildUpsert): Promise<ReviewGraphBuildRecord>;
   replaceFileGraph(input: ReplaceFileGraphInput): Promise<{
@@ -159,5 +165,6 @@ export type ReviewGraphStore = {
   getFile(repo: string, workspaceKey: string, path: string): Promise<ReviewGraphFileRecord | null>;
   listNodesForFile(fileId: number): Promise<ReviewGraphNodeRecord[]>;
   listEdgesForFile(fileId: number): Promise<ReviewGraphEdgeRecord[]>;
+  listWorkspaceGraph(repo: string, workspaceKey: string): Promise<ReviewGraphWorkspaceSnapshot>;
   getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null>;
 };

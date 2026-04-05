@@ -177,6 +177,23 @@ class InMemoryReviewGraphStore implements ReviewGraphStore {
     return this.edgesByFileId.get(fileId) ?? [];
   }
 
+  async listWorkspaceGraph(repo: string, workspaceKey: string) {
+    const files = Array.from(this.files.values())
+      .filter((file) => file.repo === repo && file.workspaceKey === workspaceKey)
+      .sort((a, b) => a.path.localeCompare(b.path));
+    const fileIds = new Set(files.map((file) => file.id));
+    const nodes = Array.from(this.nodesByFileId.entries())
+      .filter(([fileId]) => fileIds.has(fileId))
+      .flatMap(([, fileNodes]) => fileNodes)
+      .sort((a, b) => a.id - b.id);
+    const edges = Array.from(this.edgesByFileId.entries())
+      .filter(([fileId]) => fileIds.has(fileId))
+      .flatMap(([, fileEdges]) => fileEdges)
+      .sort((a, b) => a.id - b.id);
+
+    return { files, nodes, edges };
+  }
+
   async getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null> {
     return this.builds.get(`${repo}::${workspaceKey}`) ?? null;
   }

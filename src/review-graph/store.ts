@@ -411,6 +411,38 @@ export function createReviewGraphStore(opts: {
       return rows.map((row) => mapEdgeRow(row as unknown as EdgeRow));
     },
 
+    async listWorkspaceGraph(repo: string, workspaceKey: string) {
+      const [fileRows, nodeRows, edgeRows] = await Promise.all([
+        sql`
+          SELECT *
+          FROM review_graph_files
+          WHERE repo = ${repo}
+            AND workspace_key = ${workspaceKey}
+          ORDER BY path ASC
+        `,
+        sql`
+          SELECT *
+          FROM review_graph_nodes
+          WHERE repo = ${repo}
+            AND workspace_key = ${workspaceKey}
+          ORDER BY file_id ASC, id ASC
+        `,
+        sql`
+          SELECT *
+          FROM review_graph_edges
+          WHERE repo = ${repo}
+            AND workspace_key = ${workspaceKey}
+          ORDER BY file_id ASC, id ASC
+        `,
+      ]);
+
+      return {
+        files: fileRows.map((row) => mapFileRow(row as unknown as FileRow)),
+        nodes: nodeRows.map((row) => mapNodeRow(row as unknown as NodeRow)),
+        edges: edgeRows.map((row) => mapEdgeRow(row as unknown as EdgeRow)),
+      };
+    },
+
     async getBuild(repo: string, workspaceKey: string): Promise<ReviewGraphBuildRecord | null> {
       const rows = await sql`
         SELECT *
