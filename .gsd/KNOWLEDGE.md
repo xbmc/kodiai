@@ -787,3 +787,41 @@ const positiveCentroids = (row.positive_centroids as number[][]).map(c => new Fl
 **Sequential over parallel:** The sweep is background work and there is no urgency to parallelize. Sequential iteration (for-of) is simpler, keeps logs ordered per-repo, and prevents thundering-herd DB load when the expired list is large. Do not parallelize unless latency benchmarks justify it.
 
 **Established in:** M037/S01/T03 (`suggestion-cluster-refresh.ts`, `createClusterRefresh`).
+
+---
+
+## Safety-Guard Symmetry: Block Both Suppression AND Boosting for Protected Findings (M037/S02)
+
+**Context:** `isFeedbackSuppressionProtected` was originally used only to guard against suppressing CRITICAL/MAJOR-security/MAJOR-correctness findings. M037/S02 extended this guard to also block confidence boosting on those same findings.
+
+**Rule:** Any logic that reads cluster scoring signals (suppress or boost) must check `isFeedbackSuppressionProtected(severity, category)` and skip **both** the suppress path and the boost path when the guard fires. Raising confidence on a CRITICAL finding via historical positive signal is as unsafe as suppressing it — do not split the guard.
+
+**Pattern:** In `scoreFindingEmbedding` and `applyClusterScoreAdjustment`, the guard check comes before the suppress/boost branch, not inside each branch separately. This ensures the guard is a single checkpoint rather than two independent checks that could diverge.
+
+**Established in:** M037/S02/T01 (`suggestion-cluster-scoring.ts`, `scoreFindingEmbedding`) and M037/S02/T02 (`confidence-adjuster.ts`, `applyClusterScoreAdjustment`).
+
+---
+
+## Sequential EmbeddingProvider Stub for Multi-Finding scoreFindings() Tests (M037/S02)
+
+**Context:** `scoreFindings()` calls an EmbeddingProvider once per finding. Tests that exercise multi-finding scenarios need the stub to return different embeddings per call — a static single-return mock won't work.
+
+**Pattern:**
+```ts
+const embeddingQueue: (number[] | null)[] = [vec1, vec2, null];
+let embeddingCallIdx = 0;
+const provider: EmbeddingProvider = {
+  model: "voyage-4",
+  dimensions: 4,
+  embed: mock(async () => {
+    const v = embeddingQueue[embeddingCallIdx++];
+    return v ? { embeddings: [v] } : null;
+  }),
+};
+```
+
+**Rule:** The stub must satisfy the full `EmbeddingProvider` interface shape — `model` and `dimensions` are required properties on the object, not just the `embed` method. Omitting them produces a TypeScript compile error when the interface is strict.
+
+**Return null to simulate embedding failure:** returning `null` from the mock causes `scoreFindings()` to apply the fail-open path (no signal, `clusterModelUsed` still true but individual finding gets zero adjustment).
+
+**Established in:** M037/S02/T03 (`verify-m037-s02.test.ts`, sequential embedding fixture pattern).

@@ -4,7 +4,7 @@
 **Demo:** After this: After this, cluster models refresh in the background, stale/unavailable models degrade cleanly, and the verifier proves cached reuse plus non-blocking behavior.
 
 ## Tasks
-- [ ] **T01: Implement stale-model policy** — - Finalize refresh cadence and stale-model handling for cached cluster models.
+- [x] **T01: Added suggestion-cluster-staleness module with 4-hour grace-period policy, four staleness states, structured observability signals, and 22 passing tests** — - Finalize refresh cadence and stale-model handling for cached cluster models.
 - Keep stale models usable only within bounded policy, then degrade to no-scoring.
 - Add tests for fresh, stale, and missing-model paths.
   - Estimate: 0.5-1d

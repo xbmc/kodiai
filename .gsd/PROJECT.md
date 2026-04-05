@@ -10,7 +10,7 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M037/S01 complete. The cluster-model substrate is built: `suggestion_cluster_models` migration (036), `SuggestionClusterStore` (getModel/getModelIncludingStale/saveModel/deleteModel/listExpiredModelRepos), `buildClusterModel` (HDBSCAN-based positive/negative centroid generation from learning memories with fail-open semantics), and `createClusterRefresh` (bounded background sweep entrypoint with injectable `_buildFn` for testing). Three-check proof harness (`verify:m037:s01`) passes. 95 tests across 4 files, tsc clean.
+M037/S02 complete. The thematic scoring layer is live in the review pipeline: `suggestion-cluster-scoring.ts` scores draft findings against cached positive/negative cluster centroids, `applyClusterScoreAdjustment()` merges cluster signals into findings with safety guards, and the integration is wired into `createReviewHandler`. CRITICAL and protected (MAJOR security/correctness) findings bypass both suppression and boosting. Cluster scoring runs after feedback-adjustment so boosts apply to user-adjusted confidence. 82 tests across 3 files, machine-verifiable 3-check proof harness (`verify:m037:s02`), tsc clean.
 
 ## Architecture / Key Patterns
 
@@ -31,12 +31,15 @@ M037/S01 complete. The cluster-model substrate is built: `suggestion_cluster_mod
   - `src/knowledge/generated-rule-notify.ts` — operator notification (`notifyLifecycleRun`, `notifyActivation`, `notifyRetirement`; fail-open LifecycleNotifyHook extension point)
   - `src/knowledge/active-rules.ts` — sanitized retrieval + `formatActiveRulesSection` formatter; absolute cap of 20 rules; fail-open on store errors
   - Rules injected into `buildReviewPrompt` before custom instructions via `activeRules?: SanitizedActiveRule[]` context field
-- **Cluster model substrate (M037/S01):**
+- **Cluster model substrate and scoring (M037/S01+S02):**
   - `src/db/migrations/036-suggestion-cluster-models.sql` — ephemeral per-repo cluster model table; centroids as JSONB number[][]
-  - `src/knowledge/suggestion-cluster-store.ts` — standalone store (isolated from KnowledgeStore); TTL-filtered `getModel`; `getModelIncludingStale` for refresh job; `listExpiredModelRepos` for sweep targeting
-  - `src/knowledge/suggestion-cluster-builder.ts` — `buildClusterModel`: queries learning_memories directly, splits by outcome class (positive=accepted/thumbs_up, negative=suppressed/thumbs_down), runs HDBSCAN per class, computes mean centroids, enforces MIN_CLUSTER_MEMBERS=3; fail-open (never throws)
-  - `src/knowledge/suggestion-cluster-refresh.ts` — `createClusterRefresh`: bounded background sweep over expired or explicit repos; sequential; injectable `_buildFn` for tests
-  - `scripts/verify-m037-s01.ts` — three-check proof harness (BUILD-AND-CACHE, REFRESH-SWEEP, FAIL-OPEN)
+  - `src/knowledge/suggestion-cluster-store.ts` — standalone store; TTL-filtered `getModel`; `getModelIncludingStale` for refresh job; `listExpiredModelRepos` for sweep targeting
+  - `src/knowledge/suggestion-cluster-builder.ts` — `buildClusterModel`: queries learning_memories directly, HDBSCAN per class, mean centroids, MIN_CLUSTER_MEMBERS=3; fail-open
+  - `src/knowledge/suggestion-cluster-refresh.ts` — `createClusterRefresh`: bounded background sweep; sequential; injectable `_buildFn` for tests
+  - `src/knowledge/suggestion-cluster-scoring.ts` — ephemeral scoring layer: `isModelEligibleForScoring`, `scoreFindingEmbedding` (pure sync), `scoreFindings<T>()` (async batch); SUPPRESSION_THRESHOLD ≥ 0.80, BOOST_THRESHOLD < suppression; fail-open at model, eligibility, and per-finding levels
+  - `src/feedback/confidence-adjuster.ts` — `applyClusterScoreAdjustment()`: merges cluster suppress/boost signals into findings; safety guard blocks both signals for CRITICAL/MAJOR-security/MAJOR-correctness
+  - `src/handlers/review.ts` — cluster scoring wired after feedback-adjustment map; already-suppressed findings skip cluster pass; `gate=cluster-scoring` structured log
+  - `scripts/verify-m037-s01.ts` + `verify-m037-s02.ts` — machine-verifiable proof harnesses; all checks PASS
 
 ## Capability Contract
 
@@ -56,7 +59,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: Retirement, Notification, and Lifecycle Proof
 - [ ] M037: Embedding-Based Suggestion Clustering & Reinforcement Learning
   - [x] S01: Cluster Model Build and Cache — substrate complete (migration, store, builder, refresh, proof harness)
-  - [ ] S02: Thematic Finding Scoring and Review Integration
+  - [x] S02: Thematic Finding Scoring and Review Integration — scoring layer wired; safety guards; 82 tests; proof harness
   - [ ] S03: Refresh, Staleness Handling, and Fail-Open Verification
 - [ ] M040: Graph-Backed Extensive Review Context — persistent structural graph, blast-radius review selection, bounded graph context, optional validation gate
 - [ ] M041: Canonical Repo-Code Corpus — default-branch current-code chunk store with commit/ref provenance, incremental updates, and audit/repair
