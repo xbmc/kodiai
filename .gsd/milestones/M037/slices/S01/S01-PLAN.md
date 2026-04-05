@@ -16,7 +16,7 @@
   - Estimate: 1d
   - Files: src/knowledge/suggestion-cluster-builder.ts, src/knowledge/suggestion-cluster-builder.test.ts, src/knowledge/cluster-matcher.ts, src/knowledge/cluster-pipeline.ts
   - Verify: bun test ./src/knowledge/suggestion-cluster-builder.test.ts
-- [ ] **T03: Add model refresh entrypoint and proof harness** — - Add the bounded background refresh entrypoint for cluster models.
+- [x] **T03: Added suggestion-cluster-refresh module (20 unit tests) and confirmed verify-m037-s01 harness passes (20 tests) — all 40 tests green, tsc clean** — - Add the bounded background refresh entrypoint for cluster models.
 - Keep refresh decoupled from the live review path.
 - Add a verifier proving cached models are built and read without per-review rebuilds.
   - Estimate: 0.5-1d
