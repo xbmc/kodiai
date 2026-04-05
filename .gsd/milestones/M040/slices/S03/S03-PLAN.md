@@ -10,7 +10,7 @@
   - Estimate: 0.5-1d
   - Files: src/execution/review-prompt.ts, src/execution/review-prompt.test.ts, src/review-graph/prompt-context.ts
   - Verify: bun test ./src/execution/review-prompt.test.ts
-- [ ] **T02: Implement bypass and graph-amplified validation gate** — - Implement trivial-change bypass and optional second-pass validation for graph-amplified findings.
+- [x] **T02: Add isTrivialChange() bypass and validateGraphAmplifiedFindings() gate; wire both into review handler fail-open; 24 new tests pass, 235 total pass, tsc clean** — - Implement trivial-change bypass and optional second-pass validation for graph-amplified findings.
 - Keep both behaviors configurable and fail-open.
 - Wire the handler so graph or validation failure never blocks review completion.
   - Estimate: 1d

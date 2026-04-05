@@ -32,6 +32,7 @@ import {
   type FileRiskScore,
 } from "../lib/file-risk-scorer.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -2097,23 +2098,38 @@ export function createReviewHandler(deps: {
         });
 
         let graphSelection = applyGraphAwareSelection({ riskScores });
+        let graphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
         if (reviewGraphQuery) {
-          try {
-            const graph = await reviewGraphQuery({
-              repo: `${apiOwner}/${apiRepo}`,
-              workspaceKey: pr.head.sha,
-              changedPaths: reviewFiles,
-              limit: Math.max(
-                config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
-                20,
-              ),
-            });
-            graphSelection = applyGraphAwareSelection({ riskScores, graph });
-          } catch (err) {
-            logger.warn(
-              { ...baseLog, gate: "graph-aware-selection", err },
-              "Review graph query failed (fail-open, continuing with file-risk selection)",
+          // Trivial-change bypass: skip graph query overhead for small PRs.
+          const trivialCheck = isTrivialChange({
+            changedFileCount: reviewFiles.length,
+            totalLinesChanged: (diffAnalysis?.metrics.totalLinesAdded ?? 0) + (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+          });
+
+          if (trivialCheck.bypass) {
+            logger.info(
+              { ...baseLog, gate: "graph-query-bypass", reason: trivialCheck.reason, fileCount: reviewFiles.length },
+              "Trivial change detected — bypassing graph query",
             );
+          } else {
+            try {
+              const graph = await reviewGraphQuery({
+                repo: `${apiOwner}/${apiRepo}`,
+                workspaceKey: pr.head.sha,
+                changedPaths: reviewFiles,
+                limit: Math.max(
+                  config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
+                  20,
+                ),
+              });
+              graphBlastRadius = graph;
+              graphSelection = applyGraphAwareSelection({ riskScores, graph });
+            } catch (err) {
+              logger.warn(
+                { ...baseLog, gate: "graph-aware-selection", err },
+                "Review graph query failed (fail-open, continuing with file-risk selection)",
+              );
+            }
           }
         }
 
@@ -2585,6 +2601,8 @@ export function createReviewHandler(deps: {
           clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
           // PR-issue linking (PRLINK-03)
           linkedIssues: linkedIssueResult,
+          // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
+          graphBlastRadius: graphBlastRadius ?? undefined,
         });
 
         // Execute review via Claude
@@ -2942,6 +2960,81 @@ export function createReviewHandler(deps: {
             { ...baseLog, err: guardErr },
             "Guardrail pipeline failed (fail-open, existing filter results used)",
           );
+        }
+
+        // Optional graph-amplified finding validation (M040/S03).
+        // Runs only when graphBlastRadius is available and config.review.graphValidation.enabled=true.
+        // Fail-open: errors log a warning and leave processedFindings unchanged.
+        if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {
+          try {
+            const graphValidationLLM = {
+              generate: async (prompt: string, system: string): Promise<string> => {
+                const { createTaskRouter } = await import("../llm/task-router.ts");
+                const { TASK_TYPES } = await import("../llm/task-types.ts");
+                const { generateWithFallback } = await import("../llm/generate.ts");
+                const taskRouter = createTaskRouter({ models: {} });
+                const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
+                const genResult = await generateWithFallback({
+                  taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+                  resolved,
+                  system,
+                  prompt,
+                  logger,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  deliveryId: event.id,
+                });
+                return genResult.text;
+              },
+            };
+
+            const graphValidationInput = processedFindings.map((f) => ({
+              id: f.commentId,
+              filePath: f.filePath,
+              title: f.title,
+              severity: f.severity,
+            } satisfies GraphValidationFinding));
+
+            const validationResult = await validateGraphAmplifiedFindings(
+              graphValidationInput,
+              graphBlastRadius,
+              graphValidationLLM,
+              { enabled: true },
+              logger,
+            );
+
+            if (validationResult.succeeded && validationResult.validatedCount > 0) {
+              logger.info(
+                {
+                  ...baseLog,
+                  gate: "graph-amplified-validation",
+                  validatedCount: validationResult.validatedCount,
+                  confirmedCount: validationResult.confirmedCount,
+                  uncertainCount: validationResult.uncertainCount,
+                },
+                "Graph-amplified finding validation applied",
+              );
+
+              // Attach graphValidationVerdict to processedFindings for downstream telemetry.
+              const verdictMap = new Map(
+                validationResult.findings.map((f) => [f.id, { graphValidated: f.graphValidated, graphValidationVerdict: f.graphValidationVerdict }]),
+              );
+              processedFindings = processedFindings.map((f) => {
+                const v = verdictMap.get(f.commentId);
+                if (!v) return f;
+                return { ...f, ...v };
+              });
+            } else if (!validationResult.succeeded) {
+              logger.warn(
+                { ...baseLog, gate: "graph-amplified-validation", error: validationResult.errorMessage },
+                "Graph-amplified finding validation failed (fail-open, continuing without validation)",
+              );
+            }
+          } catch (validationErr) {
+            logger.warn(
+              { ...baseLog, gate: "graph-amplified-validation", err: validationErr },
+              "Graph-amplified finding validation threw unexpectedly (fail-open)",
+            );
+          }
         }
 
         const recurrenceCounts = new Map<string, number>();

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T12:15:00.903Z",
+  "exported_at": "2026-04-05T12:25:40.588Z",
   "milestones": [
     {
       "id": "M001",
@@ -8806,19 +8806,30 @@
       "milestone_id": "M040",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Implement bypass and graph-amplified validation gate",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Add isTrivialChange() bypass and validateGraphAmplifiedFindings() gate; wire both into review handler fail-open; 24 new tests pass, 235 total pass, tsc clean",
+      "status": "complete",
+      "one_liner": "Add isTrivialChange() bypass and validateGraphAmplifiedFindings() gate; wire both into review handler fail-open; 24 new tests pass, 235 total pass, tsc clean",
+      "narrative": "Created src/review-graph/validation.ts with isTrivialChange() (file-count-based trivial bypass, fail-closed, configurable) and validateGraphAmplifiedFindings() (optional second-pass LLM validation for findings on graph-amplified files, fail-open, annotates findings with graphValidated and graphValidationVerdict without suppressing anything). Wrote 24 tests covering all trivial bypass thresholds, active validation with confirming/uncertain LLMs, fail-open paths (LLM throw, unparseable response), and edge cases (empty findings, mixed changed/amplified files). Wired into the handler: added import, trivial bypass check before graph query, blast radius result capture, graphBlastRadius threaded to buildReviewPrompt(), and optional validation gate after guardrail pipeline. Validation gate is guarded by config.review.graphValidation?.enabled (default false, inert) and uses a dynamic import of the GUARDRAIL_CLASSIFICATION task router to stay fail-open.",
+      "verification_result": "bun test ./src/review-graph/validation.test.ts — 24 pass, 0 fail in 14ms. bun test ./src/review-graph/ ./src/execution/review-prompt.test.ts — 235 pass, 7 skip (DB), 0 fail in 75ms. bun run tsc --noEmit — no errors.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T12:25:40.562Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "config.review.graphValidation schema not added to Zod config — accessed via type assertion to keep gate inert by default without schema migration. T03 can formalize when ready to promote.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/review-graph/validation.ts",
+        "src/review-graph/validation.test.ts",
+        "src/handlers/review.ts"
+      ],
+      "key_decisions": [
+        "isTrivialChange() defaults to file-count threshold of 3; line threshold is opt-in (default 0 = disabled)",
+        "Trivial bypass fail-closed: returns false (run graph) for changedFileCount=0 or unexpected inputs",
+        "Validation gate uses GUARDRAIL_CLASSIFICATION task type (Haiku-class) to match existing non-agentic usage pattern",
+        "Dynamic imports inside gate block to avoid circular dependencies",
+        "graphValidated/graphValidationVerdict metadata attached to processedFindings without modifying suppressed/confidence",
+        "graphValidation.enabled config accessed via type assertion — schema addition deferred to T03"
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M040\nkey_files:\n  - src/review-graph/validation.ts\n  - src/review-graph/validation.test.ts\n  - src/handlers/review.ts\nkey_decisions:\n  - isTrivialChange() defaults to file-count threshold of 3; line threshold is opt-in (default 0 = disabled)\n  - Trivial bypass fail-closed: returns false (run graph) for changedFileCount=0 or unexpected inputs\n  - Validation gate uses GUARDRAIL_CLASSIFICATION task type (Haiku-class) to match existing non-agentic usage pattern\n  - Dynamic imports inside gate block to avoid circular dependencies\n  - graphValidated/graphValidationVerdict metadata attached to processedFindings without modifying suppressed/confidence\n  - graphValidation.enabled config accessed via type assertion — schema addition deferred to T03\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T12:25:40.562Z\nblocker_discovered: false\n---\n\n# T02: Add isTrivialChange() bypass and validateGraphAmplifiedFindings() gate; wire both into review handler fail-open; 24 new tests pass, 235 total pass, tsc clean\n\n**Add isTrivialChange() bypass and validateGraphAmplifiedFindings() gate; wire both into review handler fail-open; 24 new tests pass, 235 total pass, tsc clean**\n\n## What Happened\n\nCreated src/review-graph/validation.ts with isTrivialChange() (file-count-based trivial bypass, fail-closed, configurable) and validateGraphAmplifiedFindings() (optional second-pass LLM validation for findings on graph-amplified files, fail-open, annotates findings with graphValidated and graphValidationVerdict without suppressing anything). Wrote 24 tests covering all trivial bypass thresholds, active validation with confirming/uncertain LLMs, fail-open paths (LLM throw, unparseable response), and edge cases (empty findings, mixed changed/amplified files). Wired into the handler: added import, trivial bypass check before graph query, blast radius result capture, graphBlastRadius threaded to buildReviewPrompt(), and optional validation gate after guardrail pipeline. Validation gate is guarded by config.review.graphValidation?.enabled (default false, inert) and uses a dynamic import of the GUARDRAIL_CLASSIFICATION task router to stay fail-open.\n\n## Verification\n\nbun test ./src/review-graph/validation.test.ts — 24 pass, 0 fail in 14ms. bun test ./src/review-graph/ ./src/execution/review-prompt.test.ts — 235 pass, 7 skip (DB), 0 fail in 75ms. bun run tsc --noEmit — no errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/review-graph/validation.test.ts` | 0 | ✅ pass | 14ms |\n| 2 | `bun test ./src/review-graph/ ./src/execution/review-prompt.test.ts` | 0 | ✅ pass | 75ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 6700ms |\n\n## Deviations\n\nconfig.review.graphValidation schema not added to Zod config — accessed via type assertion to keep gate inert by default without schema migration. T03 can formalize when ready to promote.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/review-graph/validation.ts`\n- `src/review-graph/validation.test.ts`\n- `src/handlers/review.ts`\n",
       "description": "- Implement trivial-change bypass and optional second-pass validation for graph-amplified findings.\n- Keep both behaviors configurable and fail-open.\n- Wire the handler so graph or validation failure never blocks review completion.",
       "estimate": "1d",
       "files": [
@@ -11168,6 +11179,39 @@
       "verdict": "✅ pass",
       "duration_ms": 800,
       "created_at": "2026-04-05T12:15:00.879Z"
+    },
+    {
+      "id": 138,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M040",
+      "command": "bun test ./src/review-graph/validation.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 14,
+      "created_at": "2026-04-05T12:25:40.563Z"
+    },
+    {
+      "id": 139,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M040",
+      "command": "bun test ./src/review-graph/ ./src/execution/review-prompt.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 75,
+      "created_at": "2026-04-05T12:25:40.563Z"
+    },
+    {
+      "id": 140,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M040",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6700,
+      "created_at": "2026-04-05T12:25:40.563Z"
     }
   ]
 }
