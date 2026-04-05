@@ -4,7 +4,7 @@
 **Demo:** After this: After this, M038 can ask M040 and M041 for structural and semantic context through explicit adapters and produce a bounded internal structural-impact payload for a C++ or Python change.
 
 ## Tasks
-- [ ] **T01: Define graph/corpus consumer contracts** — - Define the consumer-facing structural-impact types and adapter contracts for graph and canonical-corpus queries.
+- [x] **T01: Defined StructuralImpactPayload, GraphAdapter, CorpusAdapter contracts and boundStructuralImpactPayload assembly in src/structural-impact/ with 18 passing tests and clean tsc** — - Define the consumer-facing structural-impact types and adapter contracts for graph and canonical-corpus queries.
 - Keep the adapters explicitly dependent on M040/M041 interfaces rather than reaching into substrate internals.
 - Model bounded payload fields for callers, dependents, impacted files, likely tests, and unchanged-code evidence.
   - Estimate: 0.5-1d

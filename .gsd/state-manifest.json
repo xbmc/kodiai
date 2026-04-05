@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T16:52:54.118Z",
+  "exported_at": "2026-04-05T16:57:03.617Z",
   "milestones": [
     {
       "id": "M001",
@@ -7969,19 +7969,28 @@
       "milestone_id": "M038",
       "slice_id": "S01",
       "id": "T01",
-      "title": "Define graph/corpus consumer contracts",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Defined StructuralImpactPayload, GraphAdapter, CorpusAdapter contracts and boundStructuralImpactPayload assembly in src/structural-impact/ with 18 passing tests and clean tsc",
+      "status": "complete",
+      "one_liner": "Defined StructuralImpactPayload, GraphAdapter, CorpusAdapter contracts and boundStructuralImpactPayload assembly in src/structural-impact/ with 18 passing tests and clean tsc",
+      "narrative": "Created the src/structural-impact/ module with three files. types.ts defines the bounded consumer payload types: StructuralImpactPayload (top-level hand-off), StructuralCaller, StructuralImpactFile, StructuralLikelyTest, CanonicalCodeEvidence, StructuralGraphStats, StructuralImpactStatus (ok/partial/unavailable), and StructuralImpactDegradation. adapters.ts defines GraphAdapter and CorpusAdapter interfaces as explicit dependency seams typed locally — no imports from review-graph/ or knowledge/ — and exports boundStructuralImpactPayload, the single assembly function that merges a nullable graph result and corpus matches into a StructuralImpactPayload. adapters.test.ts has 18 in-process stub tests covering all three status codes, degradation paths, field translation fidelity, and adapter interface shape. One naming deviation: M040's probableDependents is surfaced as probableCallers in the consumer payload for clarity to review prompt authors.",
+      "verification_result": "Ran both task-plan verification commands: bun test ./src/structural-impact/adapters.test.ts → 18 pass, 0 fail (9ms); bun run tsc --noEmit → clean (no output).",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T16:57:03.594Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "M040's probableDependents field is renamed to probableCallers in the consumer payload (StructuralImpactPayload). The raw M040 name is preserved in GraphBlastRadiusResult (the local adapter mirror type). This is a cosmetic consumer-clarity decision, not a structural deviation.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/structural-impact/types.ts",
+        "src/structural-impact/adapters.ts",
+        "src/structural-impact/adapters.test.ts"
+      ],
+      "key_decisions": [
+        "Adapter contracts are typed locally (GraphBlastRadiusResult, CorpusCodeMatch) and do NOT import from review-graph/ or knowledge/ — substrate changes stay bounded to the concrete wiring in orchestrator.ts",
+        "StructuralImpactStatus three-way enum (ok/partial/unavailable) lets callers distinguish full data, degraded partial, and complete absence without boolean field combinations",
+        "probableDependents from M040 blast-radius are surfaced as probableCallers in the consumer payload — clearer semantics for review prompt authors",
+        "graphStats.changedFilesRequested is added at the assembly boundary (not present in raw M040 result) to give prompt formatters a denominator for coverage framing"
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M038\nkey_files:\n  - src/structural-impact/types.ts\n  - src/structural-impact/adapters.ts\n  - src/structural-impact/adapters.test.ts\nkey_decisions:\n  - Adapter contracts are typed locally (GraphBlastRadiusResult, CorpusCodeMatch) and do NOT import from review-graph/ or knowledge/ — substrate changes stay bounded to the concrete wiring in orchestrator.ts\n  - StructuralImpactStatus three-way enum (ok/partial/unavailable) lets callers distinguish full data, degraded partial, and complete absence without boolean field combinations\n  - probableDependents from M040 blast-radius are surfaced as probableCallers in the consumer payload — clearer semantics for review prompt authors\n  - graphStats.changedFilesRequested is added at the assembly boundary (not present in raw M040 result) to give prompt formatters a denominator for coverage framing\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T16:57:03.594Z\nblocker_discovered: false\n---\n\n# T01: Defined StructuralImpactPayload, GraphAdapter, CorpusAdapter contracts and boundStructuralImpactPayload assembly in src/structural-impact/ with 18 passing tests and clean tsc\n\n**Defined StructuralImpactPayload, GraphAdapter, CorpusAdapter contracts and boundStructuralImpactPayload assembly in src/structural-impact/ with 18 passing tests and clean tsc**\n\n## What Happened\n\nCreated the src/structural-impact/ module with three files. types.ts defines the bounded consumer payload types: StructuralImpactPayload (top-level hand-off), StructuralCaller, StructuralImpactFile, StructuralLikelyTest, CanonicalCodeEvidence, StructuralGraphStats, StructuralImpactStatus (ok/partial/unavailable), and StructuralImpactDegradation. adapters.ts defines GraphAdapter and CorpusAdapter interfaces as explicit dependency seams typed locally — no imports from review-graph/ or knowledge/ — and exports boundStructuralImpactPayload, the single assembly function that merges a nullable graph result and corpus matches into a StructuralImpactPayload. adapters.test.ts has 18 in-process stub tests covering all three status codes, degradation paths, field translation fidelity, and adapter interface shape. One naming deviation: M040's probableDependents is surfaced as probableCallers in the consumer payload for clarity to review prompt authors.\n\n## Verification\n\nRan both task-plan verification commands: bun test ./src/structural-impact/adapters.test.ts → 18 pass, 0 fail (9ms); bun run tsc --noEmit → clean (no output).\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/structural-impact/adapters.test.ts` | 0 | ✅ pass | 9ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 800ms |\n\n## Deviations\n\nM040's probableDependents field is renamed to probableCallers in the consumer payload (StructuralImpactPayload). The raw M040 name is preserved in GraphBlastRadiusResult (the local adapter mirror type). This is a cosmetic consumer-clarity decision, not a structural deviation.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/structural-impact/types.ts`\n- `src/structural-impact/adapters.ts`\n- `src/structural-impact/adapters.test.ts`\n",
       "description": "- Define the consumer-facing structural-impact types and adapter contracts for graph and canonical-corpus queries.\n- Keep the adapters explicitly dependent on M040/M041 interfaces rather than reaching into substrate internals.\n- Model bounded payload fields for callers, dependents, impacted files, likely tests, and unchanged-code evidence.",
       "estimate": "0.5-1d",
       "files": [
@@ -11571,6 +11580,28 @@
       "verdict": "✅ pass",
       "duration_ms": 1800,
       "created_at": "2026-04-05T16:42:24.088Z"
+    },
+    {
+      "id": 161,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M038",
+      "command": "bun test ./src/structural-impact/adapters.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9,
+      "created_at": "2026-04-05T16:57:03.594Z"
+    },
+    {
+      "id": 162,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M038",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 800,
+      "created_at": "2026-04-05T16:57:03.594Z"
     }
   ]
 }

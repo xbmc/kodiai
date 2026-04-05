@@ -83,6 +83,22 @@
       "doneMilestones": 39,
       "totalMilestones": 41,
       "phase": "evaluating-gates"
+    },
+    {
+      "filename": "M041-2026-04-05T16-53-28.html",
+      "generatedAt": "2026-04-05T16:53:28.097Z",
+      "milestoneId": "M041",
+      "milestoneTitle": "Canonical Repo-Code Corpus",
+      "label": "M041: Canonical Repo-Code Corpus",
+      "kind": "milestone",
+      "totalCost": 389.9334887999996,
+      "totalTokens": 834026244,
+      "totalDuration": 123306595,
+      "doneSlices": 187,
+      "totalSlices": 190,
+      "doneMilestones": 40,
+      "totalMilestones": 41,
+      "phase": "evaluating-gates"
     }
   ]
 }
