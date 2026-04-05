@@ -1063,3 +1063,41 @@ The default threshold is 3 files. Line threshold is opt-in (default 0 = disabled
 **Rule:** If repair jobs regularly time out before completion (i.e., the corpus consistently has >2000 drifted rows per pass), consider adding a cursor/checkpoint column on `canonical_code_chunks`. Until then, stateless repair with a bounded per-pass limit is the correct operating pattern.
 
 **Established in:** M041/S03/T02 (`src/knowledge/embedding-repair.ts`, `CANONICAL_CODE_REPAIR_LIMIT`).
+
+---
+
+## Structural-Impact Cache Module: Extract from Orchestrator, Inject at Handler Level (M038/S03)
+
+**Context:** The structural-impact cache started embedded inside the orchestrator. Extracting it to a dedicated `cache.ts` module with a `createStructuralImpactCache()` factory and injecting it at the handler level (in `src/handlers/review.ts`) enables per-handler cache instances, removes TTL/eviction policy from orchestrator logic, and lets tests inject isolated or custom-clocked caches without touching the orchestrator.
+
+**Rule:** Cache policy (TTL, max size, key format) lives in `cache.ts`. Orchestrator receives a `StructuralImpactCache | undefined` via its options object and calls `cache?.get()` / `cache?.set()` — it never constructs a cache itself. Handler creates the cache at startup and threads it through. This pattern allows easy swap-out for testing and keeps orchestrator focused on timeout/degradation logic.
+
+**Key:** `buildStructuralImpactCacheKey({ repo, baseSha, headSha })` lowercases the repo for stability. Partial (timeout-degraded) payloads are cached truthfully — a second call on the same key will return the degraded result rather than re-querying. This avoids thundering herd on flaky substrates but may serve stale evidence; TTL is the release valve (default 10 min).
+
+**Established in:** M038/S03/T01 (`src/structural-impact/cache.ts`, `src/handlers/review.ts`).
+
+---
+
+## Structural-Impact Degradation Normalizer: Centralize Truthfulness Classification (M038/S03)
+
+**Context:** Without a dedicated normalizer, the formatter and handler each needed to re-derive `graphAvailable`, `corpusAvailable`, `fallbackUsed`, and `hasRenderableEvidence` from raw degradation arrays. The duplication risked inconsistency in edge cases (e.g., graph-available-but-empty producing `partial` vs `ok`).
+
+**Rule:** `summarizeStructuralImpactDegradation(payload)` in `degradation.ts` is the single source of truth for classification. It:
+1. Forces `status=partial` when any degradation record exists for a source, even if the raw `payload.status` was `ok`.
+2. Forces `status=unavailable` when both sources have degradation records.
+3. Emits `truthfulnessSignals` covering `graph-unavailable`, `corpus-unavailable`, `graph-empty`, `corpus-empty`, and `no-structural-evidence`.
+4. Sets `hasRenderableEvidence` as the rendering gate — formatter and prompt code must use this flag rather than re-deriving availability.
+
+Use this function whenever you need to make a rendering decision based on structural-impact quality, even if the raw payload status says `ok`.
+
+**Established in:** M038/S03/T02 (`src/structural-impact/degradation.ts`).
+
+---
+
+## M038-Style Verifier: Asymmetric Partial-Degradation Coverage (M038/S03)
+
+**Context:** M038-S03-PARTIAL-DEGRADATION-TRUTHFUL checks both asymmetric failure orientations in a single check (graph-ok+corpus-fail AND graph-fail+corpus-ok). This is worth covering explicitly because the two paths exercise different code branches — corpus degradation affects `canonicalEvidence` and its `hasDegradationForSource("corpus")` evaluation, while graph degradation affects callers/impactedFiles/graphStats.
+
+**Pattern:** When a proof harness check covers asymmetric fail-partial behavior, run both orientations in one `checkX()` function and include both case labels in the `detail` string (e.g., `case1[graphOk+corpusFail]: ... | case2[graphFail+corpusOk]: ...`). This makes the verifier output self-documenting and makes it obvious which orientation failed when a check fails.
+
+**Established in:** M038/S03/T03 (`scripts/verify-m038-s03.ts`, `checkPartialDegradationTruthful`).

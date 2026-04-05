@@ -10,7 +10,9 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M041 is complete. M038/S01 and M038/S02 are now complete. Kodiai can now consume M040 graph blast-radius data and M041 canonical current-code evidence at review time, render a bounded Structural Impact section inside Review Details, and inject structural evidence into the main review prompt so breaking-change wording is strengthened only when graph/corpus evidence actually exists. The remaining M038 work is S03: prove timeout behavior, cache reuse, and fail-open degradation end to end.
+**M038 is complete.** All three slices done. Kodiai now consumes M040 graph blast-radius data and M041 canonical current-code evidence at review time, renders a bounded Structural Impact section inside Review Details, injects structural evidence into the main review prompt with evidence-backed breaking-change guidance, and the entire consumer path is hardened with per-request cache reuse, explicit timeout enforcement, truthful fail-open degradation, and a machine-verifiable proof harness. R038 validated.
+
+Next unblocked work: M039 (Review Output Hardening), M035/S02 (Reranker Pipeline Wiring).
 
 ## Architecture / Key Patterns
 
@@ -37,16 +39,19 @@ M041 is complete. M038/S01 and M038/S02 are now complete. Kodiai can now consume
   - `scripts/verify-m041-s02.ts` — deterministic proof harness covering backfill persistence, canonical current-code retrieval evidence, corpus separation, and non-`main` default-branch propagation end to end
   - `scripts/verify-m041-s03.ts` — four-check in-memory proof harness: UNCHANGED-FILE-PRESERVATION, DRIFT-DETECTED-BY-AUDIT, SELECTIVE-REPAIR-FIXES-ONLY-DRIFTED-ROWS, REPAIR-SKIPS-WHEN-NO-DRIFT; all pass with `overallPassed:true`
   - `src/knowledge/index.ts` — exports canonical chunker, ingest, retrieval, backfill, and update surfaces for downstream slices
-- **Structural-impact consumer + rendering layer (M038/S01–S02 complete):**
+- **Structural-impact consumer + rendering layer (M038 complete — all three slices):**
   - `src/structural-impact/types.ts` — bounded consumer-facing structural-impact contract: `StructuralImpactPayload`, `StructuralImpactStatus`, graph stats, callers, likely tests, impacted files, canonical unchanged-code evidence, and degradation records
   - `src/structural-impact/adapters.ts` — local `GraphAdapter` and `CorpusAdapter` seams plus `boundStructuralImpactPayload()` assembly; M038 consumers stay decoupled from direct M040/M041 type imports
-  - `src/structural-impact/orchestrator.ts` — `fetchStructuralImpact()` concurrent graph+corpus execution with per-adapter timeout handling, fail-open degradations, stable `(repo, baseSha, headSha)` cache keys, and 12-signal observability surface
-  - `src/structural-impact/review-integration.ts` — review-facing wiring seam that builds concrete graph/corpus adapters, delegates to the orchestrator, and returns both the bounded payload and captured raw graph blast radius for incremental handler migration
+  - `src/structural-impact/orchestrator.ts` — `fetchStructuralImpact()` concurrent graph+corpus execution with per-adapter timeout handling, fail-open degradations, stable `(repo, baseSha, headSha)` cache keys, and 12-signal observability surface; injected `StructuralImpactCache` for handler-level reuse
+  - `src/structural-impact/cache.ts` — `createStructuralImpactCache()` factory (256-entry LRU, 10-min TTL, injectable clock for tests); `buildStructuralImpactCacheKey()` lowercases repo for stable keying; partial/degraded payloads are cached truthfully
+  - `src/structural-impact/degradation.ts` — `summarizeStructuralImpactDegradation()` single-source-of-truth for availability/truthfulness classification: forces `partial` when any degradation record exists, forces `unavailable` when both sources degraded, emits `truthfulnessSignals` array covering graph/corpus availability and evidence presence
+  - `src/structural-impact/review-integration.ts` — review-facing wiring seam that builds concrete graph/corpus adapters, delegates to the orchestrator, and returns both the bounded payload and captured raw graph blast radius
   - `src/lib/structural-impact-formatter.ts` — bounded Review Details formatter for changed symbols, graph coverage, probable callers/dependents, impacted files, likely tests, unchanged-code evidence, and explicit rendered/truncated counts with truthful confidence wording
   - `src/lib/review-utils.ts` — `formatReviewDetailsSummary()` now accepts optional `structuralImpact` and appends a dedicated Structural Impact subsection plus a machine-usable rendered-count line
   - `src/execution/review-prompt.ts` — `buildReviewPrompt()` now renders a `## Structural Impact Evidence` section and breaking-change guidance that distinguishes evidence-present, partial-evidence, and fallback-used paths
-  - `src/handlers/review.ts` — review flow threads the bounded structural-impact payload through prompt generation and Review Details rendering while preserving fail-open behavior when the payload is absent or partial
+  - `src/handlers/review.ts` — review flow creates and holds a handler-level `StructuralImpactCache`; threads the bounded structural-impact payload through prompt generation and Review Details rendering; all degradation paths fail-open without blocking review
   - `scripts/verify-m038-s02.ts` — deterministic C++/Python fixture harness proving bounded Structural Impact rendering and structurally grounded breaking-change wording in prompt + Review Details
+  - `scripts/verify-m038-s03.ts` — four-check fail-open + cache-reuse + degradation proof harness: CACHE-REUSE, TIMEOUT-FAIL-OPEN, SUBSTRATE-FAILURE-TRUTHFUL, PARTIAL-DEGRADATION-TRUTHFUL; all pass with `overallPassed:true`
 - **Generated rules lifecycle (M036):**
   - `src/knowledge/generated-rule-store.ts` — persistence (pending/active/retired states, non-downgrading upsert, activate, retire, list, getLifecycleCounts)
   - `src/knowledge/generated-rule-proposals.ts` — deterministic proposal generation: cosine-similarity clustering, multi-gate filtering, `positive_ratio × support` signal score
@@ -109,7 +114,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Canonical Schema, Chunking, and Storage
   - [x] S02: Default-Branch Backfill and Semantic Retrieval
   - [x] S03: Incremental Refresh and Audit/Repair
-- [ ] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
+- [x] M038: AST Call-Graph Impact Analysis — consume M040 graph + M041 canonical current-code substrates for bounded Structural Impact output, unchanged-code evidence, and evidence-backed breaking-change detection
   - [x] S01: Graph/Corpus Consumer Adapters and Orchestration
   - [x] S02: Structural Impact Rendering and Review Flow Integration
-  - [ ] S03: Timeout, Cache Reuse, and Fail-Open Verification
+  - [x] S03: Timeout, Cache Reuse, and Fail-Open Verification
