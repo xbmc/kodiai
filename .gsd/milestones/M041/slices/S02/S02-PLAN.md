@@ -10,7 +10,7 @@
   - Estimate: 1d
   - Files: src/knowledge/canonical-code-backfill.ts, src/knowledge/canonical-code-backfill.test.ts, src/jobs/workspace.ts, src/knowledge/canonical-code-ingest.ts
   - Verify: bun test ./src/knowledge/canonical-code-backfill.test.ts && bun run tsc --noEmit
-- [ ] **T02: Add canonical semantic retrieval with provenance** — - Add a retrieval module for canonical current-code chunks with provenance-rich results.
+- [x] **T02: Added canonical current-code semantic retrieval as a distinct provenance-rich corpus in the unified retrieval pipeline.** — - Add a retrieval module for canonical current-code chunks with provenance-rich results.
 - Integrate it alongside existing retrieval orchestration without collapsing historical and canonical corpora.
 - Ensure returned matches carry enough metadata for downstream bounded prompt packing.
   - Estimate: 1d

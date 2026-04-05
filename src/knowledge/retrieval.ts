@@ -13,9 +13,11 @@ import { buildSnippetAnchors, trimSnippetAnchorsToBudget } from "./retrieval-sni
 import { searchReviewComments, type ReviewCommentMatch } from "./review-comment-retrieval.ts";
 import { searchWikiPages, type WikiKnowledgeMatch } from "./wiki-retrieval.ts";
 import { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
+import { searchCanonicalCode, type CanonicalCodeMatch } from "./canonical-code-retrieval.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import { searchIssues, type IssueKnowledgeMatch } from "./issue-retrieval.ts";
 import type { IssueStore } from "./issue-types.ts";
+import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { hybridSearchMerge } from "./hybrid-search.ts";
 import {
   crossCorpusRRF,
@@ -72,6 +74,7 @@ export type RetrieveResult = {
     wikiPageCount: number;
     snippetCount: number;
     issueCount: number;
+    canonicalCodeCount: number;
     unifiedResultCount: number;
     rerankApplied: boolean;
     hybridSearchUsed: boolean;
@@ -100,10 +103,10 @@ const DEDUP_THRESHOLD = 0.9;
 
 /** Source weight multipliers for context-dependent re-ranking. */
 const SOURCE_WEIGHTS: Record<TriggerType, Record<string, number>> = {
-  pr_review: { code: 1.2, review_comment: 1.2, wiki: 1.0, snippet: 1.1, issue: 0.8 },
-  issue: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.5 },
-  question: { code: 1.0, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.2 },
-  slack: { code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0, issue: 1.0 },
+  pr_review: { code: 1.2, canonical_code: 1.25, review_comment: 1.2, wiki: 1.0, snippet: 1.1, issue: 0.8 },
+  issue: { code: 1.0, canonical_code: 1.05, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.5 },
+  question: { code: 1.0, canonical_code: 1.1, review_comment: 1.0, wiki: 1.2, snippet: 0.8, issue: 1.2 },
+  slack: { code: 1.0, canonical_code: 1.0, review_comment: 1.0, wiki: 1.0, snippet: 1.0, issue: 1.0 },
 };
 
 /** How much to boost exact-language matches in the unified pipeline. */
@@ -143,7 +146,7 @@ function buildProportionalLanguageWeights(prLanguages: string[]): Map<string, nu
  * - review_comment chunks: classifies from metadata.filePath
  */
 function getChunkLanguage(chunk: UnifiedRetrievalChunk): string | null {
-  if (chunk.source === "code") {
+  if (chunk.source === "code" || chunk.source === "canonical_code") {
     const lang = chunk.metadata?.language as string | undefined;
     return lang ?? null;
   }
@@ -279,6 +282,31 @@ function issueMatchToUnified(match: IssueKnowledgeMatch, repo: string): UnifiedR
   };
 }
 
+function canonicalCodeToUnified(match: CanonicalCodeMatch, repo: string): UnifiedRetrievalChunk {
+  return {
+    id: `canonical:${repo}:${match.canonicalRef}:${match.filePath}:${match.startLine}-${match.endLine}:${match.contentHash}`,
+    text: match.chunkText,
+    source: "canonical_code",
+    sourceLabel: `[canonical: ${match.filePath}:${match.startLine}-${match.endLine} @ ${match.canonicalRef}]`,
+    sourceUrl: null,
+    vectorDistance: match.distance,
+    rrfScore: 0,
+    createdAt: null,
+    metadata: {
+      canonicalRef: match.canonicalRef,
+      commitSha: match.commitSha,
+      filePath: match.filePath,
+      language: match.language,
+      startLine: match.startLine,
+      endLine: match.endLine,
+      chunkType: match.chunkType,
+      symbolName: match.symbolName,
+      contentHash: match.contentHash,
+      embeddingModel: match.embeddingModel,
+    },
+  };
+}
+
 /**
  * Normalize a learning memory result to UnifiedRetrievalChunk.
  */
@@ -359,6 +387,7 @@ export function createRetriever(deps: {
   wikiPageStore?: WikiPageStore;
   memoryStore?: LearningMemoryStore;
   codeSnippetStore?: CodeSnippetStore;
+  canonicalCodeStore?: Pick<CanonicalCodeStore, "searchByEmbedding">;
   issueStore?: IssueStore;
   wikiCitationLogger?: { logCitations(pageIds: number[]): Promise<void> };
   rerankProvider?: RerankProvider;
@@ -405,6 +434,7 @@ export function createRetriever(deps: {
         reviewFullTextResult,
         wikiFullTextResult,
         snippetVectorResult,
+        canonicalCodeVectorResult,
         issueVectorResult,
         issueFullTextResult,
       ] = await Promise.allSettled([
@@ -485,7 +515,19 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as CodeSnippetMatch[]),
-        // (h) Issue vector search
+        // (h) Canonical current-code vector search
+        deps.canonicalCodeStore
+          ? searchCanonicalCode({
+              store: deps.canonicalCodeStore,
+              embeddingProvider: deps.embeddingProvider,
+              query: intentQuery,
+              repo: opts.repo,
+              canonicalRef: "main",
+              topK: 5,
+              logger: opts.logger,
+            })
+          : Promise.resolve([] as CanonicalCodeMatch[]),
+        // (i) Issue vector search
         deps.issueStore
           ? searchIssues({
               store: deps.issueStore,
@@ -496,7 +538,7 @@ export function createRetriever(deps: {
               logger: opts.logger,
             })
           : Promise.resolve([] as IssueKnowledgeMatch[]),
-        // (i) Issue BM25 full-text search
+        // (j) Issue BM25 full-text search
         deps.issueStore?.searchByFullText
           ? deps.issueStore.searchByFullText({
               query: intentQuery,
@@ -515,6 +557,8 @@ export function createRetriever(deps: {
         wikiVectorResult.status === "fulfilled" ? wikiVectorResult.value : [];
       const snippetResults =
         snippetVectorResult.status === "fulfilled" ? snippetVectorResult.value : [];
+      const canonicalCodeResults =
+        canonicalCodeVectorResult.status === "fulfilled" ? canonicalCodeVectorResult.value : [];
 
       // Log failures
       if (variantResults.status === "rejected") {
@@ -528,6 +572,9 @@ export function createRetriever(deps: {
       }
       if (snippetVectorResult.status === "rejected") {
         logger.warn({ err: snippetVectorResult.reason }, "Code snippet vector search failed (fail-open)");
+      }
+      if (canonicalCodeVectorResult.status === "rejected") {
+        logger.warn({ err: canonicalCodeVectorResult.reason }, "Canonical code vector search failed (fail-open)");
       }
 
       const issueResults =
@@ -604,6 +651,7 @@ export function createRetriever(deps: {
 
       // 6a: Normalize all results to UnifiedRetrievalChunk
       const codeChunks = finalReranked.map((r) => memoryToUnified(r as unknown as MergedRetrievalResult));
+      const canonicalCodeChunks = canonicalCodeResults.map((m) => canonicalCodeToUnified(m, opts.repo));
       const reviewChunks = reviewPrecedents.map((m) => reviewMatchToUnified(m, opts.repo));
       const wikiChunks = wikiKnowledge.map(wikiMatchToUnified);
       const snippetChunks = snippetResults.map((m) => snippetToUnified(m, opts.repo));
@@ -722,6 +770,11 @@ export function createRetriever(deps: {
         similarityThreshold: DEDUP_THRESHOLD,
         mode: "within-corpus",
       });
+      const dedupedCanonicalCode = deduplicateChunks({
+        chunks: canonicalCodeChunks,
+        similarityThreshold: DEDUP_THRESHOLD,
+        mode: "within-corpus",
+      });
       const dedupedReview = deduplicateChunks({
         chunks: hybridReview.map((h) => h.item),
         similarityThreshold: DEDUP_THRESHOLD,
@@ -747,6 +800,9 @@ export function createRetriever(deps: {
       const sourceLists: RankedSourceList[] = [];
       if (dedupedCode.length > 0) {
         sourceLists.push({ source: "code", items: dedupedCode });
+      }
+      if (dedupedCanonicalCode.length > 0) {
+        sourceLists.push({ source: "canonical_code", items: dedupedCanonicalCode });
       }
       if (dedupedReview.length > 0) {
         sourceLists.push({ source: "review_comment", items: dedupedReview });
@@ -891,6 +947,7 @@ export function createRetriever(deps: {
           wikiPageCount: wikiKnowledge.length,
           snippetCount: snippetResults.length,
           issueCount: issueResults.length,
+          canonicalCodeCount: canonicalCodeResults.length,
           unifiedResultCount: unifiedResults.length,
           rerankApplied,
           hybridSearchUsed: true,

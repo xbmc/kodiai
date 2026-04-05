@@ -147,6 +147,9 @@ export type {
 // Code snippet retrieval
 export { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
 
+// Canonical code retrieval
+export { searchCanonicalCode, type CanonicalCodeMatch } from "./canonical-code-retrieval.ts";
+
 // Issue retrieval
 export { searchIssues, type IssueKnowledgeMatch } from "./issue-retrieval.ts";
 

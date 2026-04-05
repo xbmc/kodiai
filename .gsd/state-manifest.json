@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T14:17:53.692Z",
+  "exported_at": "2026-04-05T14:23:01.180Z",
   "milestones": [
     {
       "id": "M001",
@@ -9096,19 +9096,29 @@
       "milestone_id": "M041",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Add canonical semantic retrieval with provenance",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added canonical current-code semantic retrieval as a distinct provenance-rich corpus in the unified retrieval pipeline.",
+      "status": "complete",
+      "one_liner": "Added canonical current-code semantic retrieval as a distinct provenance-rich corpus in the unified retrieval pipeline.",
+      "narrative": "Implemented a dedicated canonical code retrieval helper backed by the canonical code store, returning semantic matches with canonical ref, commit SHA, file path, line range, chunk type, symbol name, content hash, and embedding model. Integrated those matches into the existing retrieval orchestrator as a new `canonical_code` unified source rather than folding them into the historical `code` corpus, preserving corpus boundaries and provenance for downstream review prompts. Updated unified retrieval provenance to expose `canonicalCodeCount`, ensured canonical hits contribute source-labeled entries to the assembled context window, extended the unified source discriminator, and exported the new helper. Added focused tests covering the standalone helper plus retriever orchestration and fail-open behavior.",
+      "verification_result": "Ran `bun test ./src/knowledge/canonical-code-retrieval.test.ts` and all five canonical retrieval tests passed, covering helper mapping, null-embedding skip, store fail-open behavior, retriever integration, and canonical fail-open preservation of other corpora. Also ran `bun run tsc --noEmit --pretty false` to verify the new `canonical_code` source discriminator and provenance additions compile cleanly across the codebase.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-05T14:23:01.157Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used only the canonical store's semantic search path and did not add canonical BM25 orchestration because this task's contract was specifically to add canonical semantic retrieval with provenance.",
+      "known_issues": "Unified canonical retrieval currently passes `main` as the canonical ref inside the orchestration path. Repositories whose default branch differs will need a follow-up caller wiring change to pass the resolved canonical ref explicitly.",
+      "key_files": [
+        "src/knowledge/canonical-code-retrieval.ts",
+        "src/knowledge/canonical-code-retrieval.test.ts",
+        "src/knowledge/retrieval.ts",
+        "src/knowledge/cross-corpus-rrf.ts",
+        "src/knowledge/index.ts",
+        ".gsd/milestones/M041/slices/S02/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Modeled canonical current-code retrieval as a new `canonical_code` source instead of collapsing it into the existing historical `code` corpus so provenance survives prompt packing and downstream audits.",
+        "Reused the existing fail-open retrieval helper pattern for canonical semantic search and integrated it directly into the main retrieval fan-out."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M041\nkey_files:\n  - src/knowledge/canonical-code-retrieval.ts\n  - src/knowledge/canonical-code-retrieval.test.ts\n  - src/knowledge/retrieval.ts\n  - src/knowledge/cross-corpus-rrf.ts\n  - src/knowledge/index.ts\n  - .gsd/milestones/M041/slices/S02/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Modeled canonical current-code retrieval as a new `canonical_code` source instead of collapsing it into the existing historical `code` corpus so provenance survives prompt packing and downstream audits.\n  - Reused the existing fail-open retrieval helper pattern for canonical semantic search and integrated it directly into the main retrieval fan-out.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-05T14:23:01.157Z\nblocker_discovered: false\n---\n\n# T02: Added canonical current-code semantic retrieval as a distinct provenance-rich corpus in the unified retrieval pipeline.\n\n**Added canonical current-code semantic retrieval as a distinct provenance-rich corpus in the unified retrieval pipeline.**\n\n## What Happened\n\nImplemented a dedicated canonical code retrieval helper backed by the canonical code store, returning semantic matches with canonical ref, commit SHA, file path, line range, chunk type, symbol name, content hash, and embedding model. Integrated those matches into the existing retrieval orchestrator as a new `canonical_code` unified source rather than folding them into the historical `code` corpus, preserving corpus boundaries and provenance for downstream review prompts. Updated unified retrieval provenance to expose `canonicalCodeCount`, ensured canonical hits contribute source-labeled entries to the assembled context window, extended the unified source discriminator, and exported the new helper. Added focused tests covering the standalone helper plus retriever orchestration and fail-open behavior.\n\n## Verification\n\nRan `bun test ./src/knowledge/canonical-code-retrieval.test.ts` and all five canonical retrieval tests passed, covering helper mapping, null-embedding skip, store fail-open behavior, retriever integration, and canonical fail-open preservation of other corpora. Also ran `bun run tsc --noEmit --pretty false` to verify the new `canonical_code` source discriminator and provenance additions compile cleanly across the codebase.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/knowledge/canonical-code-retrieval.test.ts` | 0 | ✅ pass | 21ms |\n| 2 | `bun run tsc --noEmit --pretty false` | 0 | ✅ pass | 1000ms |\n\n## Deviations\n\nUsed only the canonical store's semantic search path and did not add canonical BM25 orchestration because this task's contract was specifically to add canonical semantic retrieval with provenance.\n\n## Known Issues\n\nUnified canonical retrieval currently passes `main` as the canonical ref inside the orchestration path. Repositories whose default branch differs will need a follow-up caller wiring change to pass the resolved canonical ref explicitly.\n\n## Files Created/Modified\n\n- `src/knowledge/canonical-code-retrieval.ts`\n- `src/knowledge/canonical-code-retrieval.test.ts`\n- `src/knowledge/retrieval.ts`\n- `src/knowledge/cross-corpus-rrf.ts`\n- `src/knowledge/index.ts`\n- `.gsd/milestones/M041/slices/S02/tasks/T02-SUMMARY.md`\n",
       "description": "- Add a retrieval module for canonical current-code chunks with provenance-rich results.\n- Integrate it alongside existing retrieval orchestration without collapsing historical and canonical corpora.\n- Ensure returned matches carry enough metadata for downstream bounded prompt packing.",
       "estimate": "1d",
       "files": [
@@ -11389,6 +11399,28 @@
       "verdict": "✅ pass",
       "duration_ms": 3000,
       "created_at": "2026-04-05T14:17:53.666Z"
+    },
+    {
+      "id": 151,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M041",
+      "command": "bun test ./src/knowledge/canonical-code-retrieval.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 21,
+      "created_at": "2026-04-05T14:23:01.157Z"
+    },
+    {
+      "id": 152,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M041",
+      "command": "bun run tsc --noEmit --pretty false",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1000,
+      "created_at": "2026-04-05T14:23:01.157Z"
     }
   ]
 }
