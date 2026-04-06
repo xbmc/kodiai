@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T23:04:49.558Z",
+  "exported_at": "2026-04-06T23:09:13.309Z",
   "milestones": [
     {
       "id": "M001",
@@ -9944,19 +9944,28 @@
       "milestone_id": "M042",
       "slice_id": "S03",
       "id": "T03",
-      "title": "Build the M042/S03 cache-and-fallback proof harness",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added the M042/S03 proof harness and regression tests so cache-hit, profile-over-cache, and degraded fallback author-tier behavior stay truthfully rendered.",
+      "status": "complete",
+      "one_liner": "Added the M042/S03 proof harness and regression tests so cache-hit, profile-over-cache, and degraded fallback author-tier behavior stay truthfully rendered.",
+      "narrative": "Added scripts/verify-m042-s03.ts as a deterministic slice verifier that composes resolveAuthorTierFromSources(), buildReviewPrompt(), and formatReviewDetailsSummary() to prove cache-hit surface truthfulness, contributor-profile precedence over contradictory cache, and degraded fallback non-contradiction with the exact API-limit disclosure sentence. Added scripts/verify-m042-s03.test.ts to cover both real fixtures and targeted failure fixtures, registered verify:m042:s03 in package.json, and fixed a narrow missing ContributorProfileStore type import in src/handlers/review.test.ts that the required tsc gate surfaced during verification.",
+      "verification_result": "Ran bun test ./scripts/verify-m042-s03.test.ts, bun run verify:m042:s03, bun run verify:m042:s01, bun run verify:m042:s02, and bun run tsc --noEmit. All passed on the final rerun.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-06T23:09:13.282Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "The task plan did not explicitly call for modifying src/handlers/review.test.ts, but bun run tsc --noEmit surfaced a missing ContributorProfileStore import from prior slice work. I fixed that compile issue so the required verification gate could pass.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m042-s03.ts",
+        "scripts/verify-m042-s03.test.ts",
+        "package.json",
+        "src/handlers/review.test.ts",
+        ".gsd/milestones/M042/slices/S03/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Built the verifier by composing production seams instead of duplicating handler orchestration.",
+        "Made degraded-fallback proof deterministic by asserting the exact API-limit disclosure sentence alongside fallback-tier surface mapping."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S03\nmilestone: M042\nkey_files:\n  - scripts/verify-m042-s03.ts\n  - scripts/verify-m042-s03.test.ts\n  - package.json\n  - src/handlers/review.test.ts\n  - .gsd/milestones/M042/slices/S03/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Built the verifier by composing production seams instead of duplicating handler orchestration.\n  - Made degraded-fallback proof deterministic by asserting the exact API-limit disclosure sentence alongside fallback-tier surface mapping.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T23:09:13.282Z\nblocker_discovered: false\n---\n\n# T03: Added the M042/S03 proof harness and regression tests so cache-hit, profile-over-cache, and degraded fallback author-tier behavior stay truthfully rendered.\n\n**Added the M042/S03 proof harness and regression tests so cache-hit, profile-over-cache, and degraded fallback author-tier behavior stay truthfully rendered.**\n\n## What Happened\n\nAdded scripts/verify-m042-s03.ts as a deterministic slice verifier that composes resolveAuthorTierFromSources(), buildReviewPrompt(), and formatReviewDetailsSummary() to prove cache-hit surface truthfulness, contributor-profile precedence over contradictory cache, and degraded fallback non-contradiction with the exact API-limit disclosure sentence. Added scripts/verify-m042-s03.test.ts to cover both real fixtures and targeted failure fixtures, registered verify:m042:s03 in package.json, and fixed a narrow missing ContributorProfileStore type import in src/handlers/review.test.ts that the required tsc gate surfaced during verification.\n\n## Verification\n\nRan bun test ./scripts/verify-m042-s03.test.ts, bun run verify:m042:s03, bun run verify:m042:s01, bun run verify:m042:s02, and bun run tsc --noEmit. All passed on the final rerun.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m042-s03.test.ts` | 0 | ✅ pass | 173ms |\n| 2 | `bun run verify:m042:s03` | 0 | ✅ pass | 8000ms |\n| 3 | `bun run verify:m042:s01` | 0 | ✅ pass | 8000ms |\n| 4 | `bun run verify:m042:s02` | 0 | ✅ pass | 8000ms |\n| 5 | `bun run tsc --noEmit` | 0 | ✅ pass | 8200ms |\n\n## Deviations\n\nThe task plan did not explicitly call for modifying src/handlers/review.test.ts, but bun run tsc --noEmit surfaced a missing ContributorProfileStore import from prior slice work. I fixed that compile issue so the required verification gate could pass.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m042-s03.ts`\n- `scripts/verify-m042-s03.test.ts`\n- `package.json`\n- `src/handlers/review.test.ts`\n- `.gsd/milestones/M042/slices/S03/tasks/T03-SUMMARY.md`\n",
       "description": "Add a deterministic slice verifier for the remaining M042 contract and register it in `package.json`. Compose production seams rather than duplicating business logic: use `resolveAuthorTierFromSources()`, `buildReviewPrompt()`, `formatReviewDetailsSummary()`, and any small helper exports needed to prove cache-hit truthfulness, contributor-profile override of contradictory cache, and degraded fallback non-contradiction. Include stable check IDs and JSON/text output matching the established verifier pattern.\n\nThe harness should complement, not replace, T02 handler tests: keep orchestration-only behavior in handler tests and use the verifier for stable contract checks that milestone closure can rerun unchanged.",
       "estimate": "1.5h",
       "files": [
@@ -12627,6 +12636,61 @@
       "verdict": "✅ pass",
       "duration_ms": 2890,
       "created_at": "2026-04-06T23:04:49.532Z"
+    },
+    {
+      "id": 194,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun test ./scripts/verify-m042-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 173,
+      "created_at": "2026-04-06T23:09:13.282Z"
+    },
+    {
+      "id": 195,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun run verify:m042:s03",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8000,
+      "created_at": "2026-04-06T23:09:13.282Z"
+    },
+    {
+      "id": 196,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun run verify:m042:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8000,
+      "created_at": "2026-04-06T23:09:13.282Z"
+    },
+    {
+      "id": 197,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun run verify:m042:s02",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8000,
+      "created_at": "2026-04-06T23:09:13.282Z"
+    },
+    {
+      "id": 198,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8200,
+      "created_at": "2026-04-06T23:09:13.282Z"
     }
   ]
 }

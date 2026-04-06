@@ -16,7 +16,7 @@ Follow the established project rule from M028/S03/T02 and S02: assert on full re
   - Estimate: 2h
   - Files: src/handlers/review.test.ts, src/handlers/review.ts, src/execution/review-prompt.ts, src/lib/review-utils.ts
   - Verify: bun test ./src/handlers/review.test.ts
-- [ ] **T03: Build the M042/S03 cache-and-fallback proof harness** — Add a deterministic slice verifier for the remaining M042 contract and register it in `package.json`. Compose production seams rather than duplicating business logic: use `resolveAuthorTierFromSources()`, `buildReviewPrompt()`, `formatReviewDetailsSummary()`, and any small helper exports needed to prove cache-hit truthfulness, contributor-profile override of contradictory cache, and degraded fallback non-contradiction. Include stable check IDs and JSON/text output matching the established verifier pattern.
+- [x] **T03: Added the M042/S03 proof harness and regression tests so cache-hit, profile-over-cache, and degraded fallback author-tier behavior stay truthfully rendered.** — Add a deterministic slice verifier for the remaining M042 contract and register it in `package.json`. Compose production seams rather than duplicating business logic: use `resolveAuthorTierFromSources()`, `buildReviewPrompt()`, `formatReviewDetailsSummary()`, and any small helper exports needed to prove cache-hit truthfulness, contributor-profile override of contradictory cache, and degraded fallback non-contradiction. Include stable check IDs and JSON/text output matching the established verifier pattern.
 
 The harness should complement, not replace, T02 handler tests: keep orchestration-only behavior in handler tests and use the verifier for stable contract checks that milestone closure can rerun unchanged.
   - Estimate: 1.5h
