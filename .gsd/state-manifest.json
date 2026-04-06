@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T22:33:01.325Z",
+  "exported_at": "2026-04-06T22:40:41.037Z",
   "milestones": [
     {
       "id": "M001",
@@ -5470,14 +5470,14 @@
       "milestone_id": "M042",
       "id": "S01",
       "title": "Repro and Tier-State Correction",
-      "status": "pending",
+      "status": "complete",
       "risk": "high",
       "depends": [],
       "demo": "After this, we can reproduce the CrystalP misclassification path, prove whether stored contributor tiers are stuck, and show the profile can advance out of the wrong low tier under real scoring inputs or corrected recalculation behavior.",
       "created_at": "2026-04-06T22:17:17.886Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-06T22:36:46.829Z",
+      "full_summary_md": "---\nid: S01\nparent: M042\nmilestone: M042\nprovides:\n  - Deterministic reproduction of the stale-tier defect and regression coverage that proves score advancement previously failed to advance stored contributor tiers.\n  - A shared percentile recalculation path that persists corrected contributor tiers during incremental expertise updates.\n  - An explicit review author-tier precedence contract in which contributor-profile state outranks cache and fallback classification.\n  - A named slice proof harness (`bun run verify:m042:s01`) that downstream slices can reuse as the baseline contributor-tier truthfulness contract.\nrequires:\n  []\naffects:\n  - S02\n  - S03\nkey_files:\n  - src/contributor/expertise-scorer.ts\n  - src/contributor/expertise-scorer.test.ts\n  - src/contributor/tier-calculator.ts\n  - src/contributor/tier-calculator.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - scripts/verify-m042-s01.ts\n  - scripts/verify-m042-s01.test.ts\n  - package.json\n  - .gsd/DECISIONS.md\n  - .gsd/KNOWLEDGE.md\n  - .gsd/PROJECT.md\nkey_decisions:\n  - Recalculate and persist contributor tiers inside scorer update paths instead of patching review wording around stale profile state.\n  - Centralize percentile tier logic in tier-calculator and call it from a scorer-local fail-open seam so incremental updates and batch recalculation share one contract.\n  - Resolve review author tier through an explicit contributor-profile → cache → fallback precedence helper rather than implicit branching inside the review handler.\n  - Keep the slice verifier focused on behavioral invariants instead of fixture-specific absolute tiers so future percentile tuning does not create false failures while the truthfulness contract still holds.\npatterns_established:\n  - Persistence-first contributor truthfulness: fix stale contributor-tier state at score-update time rather than patching review-surface wording around bad stored data.\n  - Shared percentile contract: scorer-side single-profile recalculation and batch tier recalculation both reuse the same `tier-calculator` helpers so tier taxonomy stays centralized.\n  - Pure precedence seam: extract source-selection helpers like `resolveAuthorTierFromSources()` when review behavior needs focused regression coverage without full handler orchestration.\n  - Fail-open enrichment rule: background contributor-tier recalculation may degrade to the existing stored tier, but it must log the failure and never block review completion.\nobservability_surfaces:\n  - `recalculateTierFailOpen()` emits a structured warning with `profileId`, `updatedOverallScore`, and `fallbackTier` when percentile recalculation degrades, which is the durable failure signal for scorer-side tier truthfulness.\n  - `bun run verify:m042:s01` is now the authoritative slice proof surface; it prints four named checks and JSON output that downstream slices and milestone closure can rerun unchanged.\ndrill_down_paths:\n  - .gsd/milestones/M042/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M042/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M042/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-06T22:36:46.831Z\nblocker_discovered: false\n---\n\n# S01: Repro and Tier-State Correction\n\n**Contributor score updates now recalculate and persist truthful contributor tiers, and review-tier resolution explicitly trusts corrected profile state ahead of cache and fallback classification.**\n\n## What Happened\n\nS01 started by proving the defect directly instead of guessing at review-surface symptoms. The scorer path in `src/contributor/expertise-scorer.ts` was shown to recompute `overallScore` and still persist `profile.overallTier` unchanged, which made a CrystalP-shaped contributor look like a newcomer even after their score had advanced out of the lowest cohort. T01 added deterministic fake-store regressions around `updateExpertiseIncremental()` plus a scorer-local `deriveUpdatedOverallScore()` seam so the stale-tier write contract could be asserted without routing through the review handler or a database integration.\n\nWith the defect reproduced, T02 fixed the source of truth. Shared percentile assignment logic was extracted and anchored in `src/contributor/tier-calculator.ts`, and scorer updates now call `recalculateTierFailOpen()` after the updated `overallScore` is known. That means incremental updates persist a recalculated contributor tier derived from the current score distribution instead of blindly reusing the stored tier. The recalculation seam is explicitly fail-open: if the score snapshot read or calculation path fails, the scorer logs a warning and persists the existing tier so review-time background updates remain non-blocking.\n\nT03 then made the review path consume that corrected state explicitly. `src/handlers/review.ts` now exposes a pure `resolveAuthorTierFromSources()` helper whose contract is contributor profile first, then author cache, then fallback classification. Focused handler tests prove the precedence behavior directly. The slice also added `scripts/verify-m042-s01.ts` and its test coverage, giving the milestone a reusable named proof surface for four invariants: the stuck-tier repro is fixed, recalculated tier persistence is truthful, contributor-profile state outranks cache/fallback, and recalculation degradation stays fail-open rather than becoming review-blocking.\n\nOne small pre-existing cleanup surfaced during verification: `bun run tsc --noEmit` exposed a duplicate-property helper issue in `src/contributor/expertise-scorer.test.ts`. Fixing that kept the repo-level typecheck green, which matters because the slice plan explicitly required a clean type gate.\n\n## Verification\n\nPassed all planned slice verification gates: `bun test ./src/contributor/expertise-scorer.test.ts`, `bun test ./src/contributor/tier-calculator.test.ts`, `bun test ./src/handlers/review.test.ts`, `bun test ./scripts/verify-m042-s01.test.ts`, `bun run verify:m042:s01`, and `bun run tsc --noEmit`. The slice verifier reported four passing checks: `M042-S01-STUCK-TIER-REPRO-FIXED`, `M042-S01-RECALCULATED-TIER-PERSISTS`, `M042-S01-PROFILE-PRECEDENCE`, and `M042-S01-FAIL-OPEN-NONBLOCKING`.\n\n## Requirements Advanced\n\n- R037 — Established the persistence-time and review-resolution contracts needed for truthful contributor experience labeling in M042: stored contributor tiers now advance when scores advance, and review resolution prefers that corrected state ahead of lower-fidelity cache and fallback sources.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThis slice corrects stored contributor-tier advancement and source precedence, but it does not yet audit every review-surface wording path for newcomer-style copy; that belongs to S02. It also does not yet prove cache reuse and degraded fallback paths preserve the corrected contributor tier across repeated review executions; that belongs to S03.\n\n## Follow-ups\n\nS02 should wire the corrected contributor-profile tier through all review-surface wording and summary generation paths so no newcomer-style guidance survives when the stored profile has already advanced. S03 should verify cache reuse and degradation paths cannot reintroduce stale low-tier labeling after the source-of-truth fix.\n\n## Files Created/Modified\n\n- `src/contributor/expertise-scorer.ts` — Added scorer-local overall-score helper and fail-open tier recalculation so incremental contributor updates persist truthful tiers from the shared percentile distribution.\n- `src/contributor/expertise-scorer.test.ts` — Expanded scorer regressions to prove the stale-tier defect, truthful tier advancement, and fail-open persistence fallback under controlled score distributions.\n- `src/contributor/tier-calculator.ts` — Extracted canonical percentile assignment helpers used by both batch tier recalculation and scorer-side per-profile recalculation.\n- `src/contributor/tier-calculator.test.ts` — Added shared percentile-contract tests for targeted profile reassignment and batch tier recalculation.\n- `src/handlers/review.ts` — Exported a pure author-tier precedence helper so review resolution explicitly trusts contributor-profile state before cache and fallback classification.\n- `src/handlers/review.test.ts` — Added focused precedence tests covering contributor-profile, cache, and fallback author-tier source selection.\n- `scripts/verify-m042-s01.ts` — Added the named slice verifier covering stuck-tier repro repair, persisted recalculation, contributor-profile precedence, and fail-open non-blocking behavior.\n- `scripts/verify-m042-s01.test.ts` — Added verifier tests for the M042/S01 proof harness.\n- `package.json` — Registered the slice verifier command for downstream proof and milestone closure reuse.\n- `.gsd/KNOWLEDGE.md` — Recorded the new persistence-first contributor-tier truthfulness pattern for future slices.\n- `.gsd/DECISIONS.md` — Recorded the slice-level architecture decision that contributor-tier truthfulness is enforced at score persistence time and consumed by review precedence.\n- `.gsd/PROJECT.md` — Refreshed current project state to reflect completed M042/S01 and remaining M042 work.\n",
+      "full_uat_md": "# S01: Repro and Tier-State Correction — UAT\n\n**Milestone:** M042\n**Written:** 2026-04-06T22:36:46.831Z\n\n# S01: Repro and Tier-State Correction — UAT\n\n**Milestone:** M042\n**Written:** 2026-04-06T22:34:00Z\n\n## UAT Type\n\n- UAT mode: artifact-driven\n- Why this mode is sufficient: This slice changed scorer logic, tier persistence behavior, and review-tier source resolution through deterministic code paths with a named slice verifier. The contract is best proven by repeatable tests and the slice proof harness rather than a live GitHub review run.\n\n## Preconditions\n\n- Repository is at the M042/S01 slice-complete state.\n- Bun dependencies are installed.\n- No live GitHub, Slack, or database access is required for this UAT.\n\n## Smoke Test\n\nRun:\n\n```bash\nbun run verify:m042:s01\n```\n\n**Expected:** The command exits 0 and prints four PASS lines for:\n- `M042-S01-STUCK-TIER-REPRO-FIXED`\n- `M042-S01-RECALCULATED-TIER-PERSISTS`\n- `M042-S01-PROFILE-PRECEDENCE`\n- `M042-S01-FAIL-OPEN-NONBLOCKING`\n\n## Test Cases\n\n### 1. CrystalP-shaped stale-tier repro now advances out of the low tier\n\n1. Run:\n   ```bash\n   bun test ./src/contributor/expertise-scorer.test.ts\n   ```\n2. Inspect the passing test output for `updateExpertiseIncremental > recalculates and persists an advanced tier when the updated score outranks the lowest cohort`.\n3. **Expected:** The scorer suite passes, proving a contributor with a stale low stored tier can advance when their updated score outranks the lowest cohort.\n\n### 2. Shared percentile helper recalculates a target profile tier from the live score distribution\n\n1. Run:\n   ```bash\n   bun test ./src/contributor/tier-calculator.test.ts\n   ```\n2. Inspect the passing output for `calculateTierForProfile > replaces the target profile score before deriving its percentile tier`.\n3. **Expected:** The tier-calculator suite passes, proving the updated profile score is inserted into the full score distribution before assigning the new tier.\n\n### 3. Review resolution trusts contributor-profile state before cache and fallback\n\n1. Run:\n   ```bash\n   bun test ./src/handlers/review.test.ts\n   ```\n2. Inspect the passing output for `resolveAuthorTierFromSources > prefers contributor profile tier ahead of cache and fallback`.\n3. **Expected:** The review test suite passes, showing contributor-profile state is the first review-time source of truth when present.\n\n### 4. Slice-level proof surface reports the full truthfulness contract\n\n1. Run:\n   ```bash\n   bun run verify:m042:s01\n   ```\n2. Confirm the JSON payload ends with `\"overallPassed\": true`.\n3. Confirm the details report:\n   - corrected tier is not `newcomer` for the stuck-tier repro\n   - recalculated and persisted tiers match\n   - precedence source is `contributor-profile`\n   - degraded fallback preserves the existing tier\n4. **Expected:** The verifier exits 0 with all four checks passing and emits machine-readable JSON suitable for downstream slices and milestone closure.\n\n### 5. Repo-wide type safety remains intact after the scorer and review changes\n\n1. Run:\n   ```bash\n   bun run tsc --noEmit\n   ```\n2. **Expected:** The command exits 0 with no type errors.\n\n## Edge Cases\n\n### Recalculation dependency failure does not block score updates\n\n1. Run:\n   ```bash\n   bun run verify:m042:s01\n   ```\n2. Inspect the `M042-S01-FAIL-OPEN-NONBLOCKING` detail.\n3. **Expected:** The check passes with `fallback tier preserved=newcomer`, proving recalculation failure degrades to the stored tier instead of throwing or blocking the path.\n\n### Review resolution still falls back when no contributor profile is available\n\n1. Run:\n   ```bash\n   bun test ./src/handlers/review.test.ts\n   ```\n2. Inspect the passing output for:\n   - `falls back to cached tier when contributor profile is absent`\n   - `uses fallback tier when neither profile nor cache is available`\n3. **Expected:** Both tests pass, proving the precedence chain still behaves predictably when higher-fidelity sources are absent.\n\n## Failure Signals\n\n- `bun run verify:m042:s01` prints any `FAIL M042-S01-*` line or exits non-zero.\n- `bun test ./src/contributor/expertise-scorer.test.ts` fails on the tier-advancement or fail-open fallback cases.\n- `bun test ./src/handlers/review.test.ts` fails on contributor-profile precedence and starts preferring cache or fallback over corrected stored state.\n- `bun run tsc --noEmit` reports new type errors in contributor scoring or review-tier resolution.\n\n## Requirements Proved By This UAT\n\n- R037 — proves the contributor-experience source of truth now advances correctly and the review path consumes the corrected contributor-profile tier ahead of lower-fidelity sources.\n\n## Not Proven By This UAT\n\n- S02 review-surface wording and prompt-copy truthfulness for all rendered newcomer/experienced guidance paths.\n- S03 cache reuse and degraded runtime fallback behavior across repeated real review executions.\n- Live GitHub review output for the original CrystalP PR; this slice proves the underlying state and precedence contract, not the full outward rendering path.\n\n## Notes for Tester\n\nThis slice is intentionally proven through deterministic tests and the slice verifier rather than a live PR review run. If the verifier passes but a later live review still uses newcomer-style wording, the likely gap is in S02 review-surface wiring rather than in the persisted contributor-tier state repaired here.\n",
       "goal": "Reproduce the CrystalP-shaped stuck-tier defect, wire truthful contributor-tier recalculation into score updates, and prove the corrected stored tier becomes the review path’s trusted source before cache or fallback classification.",
       "success_criteria": "- A deterministic regression proves contributor score updates currently preserve a stale low stored tier and fails until the fix is in place.\n- Contributor score-update paths persist a recalculated stored tier derived from the same percentile logic used by tier recalculation, while preserving fail-open behavior if recalculation cannot complete.\n- A focused verifier and review-boundary regression prove a corrected stored contributor tier wins over cache/fallback classification for the CrystalP-shaped repro state.",
       "proof_level": "integration",
@@ -5500,11 +5500,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Wire the corrected contributor tier into the review path so review output reflects truthful author experience labels instead of stale newcomer-style guidance.",
-      "success_criteria": "- Review handler prefers the corrected source of truth for contributor experience.\n- CrystalP repro no longer emits newcomer-style author context.\n- Prompt/output behavior remains fail-open when enrichment is missing.",
-      "proof_level": "Review-path integration tests and prompt/output assertions against the real repro shape.",
-      "integration_closure": "`src/handlers/review.ts` and `src/execution/review-prompt.ts` consume the corrected tier path with explicit precedence over lower-fidelity fallbacks.",
-      "observability_impact": "Makes author-tier source-of-truth behavior visible in review-path tests and, where already logged, in structured classification outcomes.",
+      "goal": "Prove and harden the review surfaces so the contributor tier resolved in S01 drives truthful prompt and Review Details wording, preventing established contributors from receiving newcomer-style guidance.",
+      "success_criteria": "1. Prompt-surface tests prove `established` and `senior` tiers render tier-appropriate guidance and explicitly exclude newcomer/developing wording on the full rendered section.\n2. Review Details tests and handler integration coverage prove the resolved author tier reaches deterministic Review Details output and the captured review prompt/details bodies stay truthful for an established-contributor scenario.\n3. A named slice verifier (`bun run verify:m042:s02`) passes and encodes the CrystalP-shaped review-surface contract: contributor-profile tier wins in the review-surface path and established-tier output never regresses to newcomer guidance.",
+      "proof_level": "integration",
+      "integration_closure": "This slice closes the review-surface contract introduced by S01 by proving the resolved author tier survives into both the LLM prompt and deterministic Review Details body. S03 can build on this as a stable surface contract while hardening cache/fallback reuse behavior.",
+      "observability_impact": "The durable proof surfaces are test failures on full rendered prompt/details strings and the named verifier command `bun run verify:m042:s02`. Future agents can inspect the captured prompt/details bodies in `src/handlers/review.test.ts` and the verifier output to localize any regression in wording or source precedence.",
       "sequence": 0,
       "replan_triggered_at": null
     },
@@ -9698,6 +9698,132 @@
       "observability_impact": "Introduces a named verifier surface for this slice so later agents can inspect truthfulness state with one command instead of reconstructing contributor-tier behavior from scattered unit tests.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added prompt regression tests that lock established and senior author tiers away from newcomer and developing guidance.",
+      "status": "complete",
+      "one_liner": "Added prompt regression tests that lock established and senior author tiers away from newcomer and developing guidance.",
+      "narrative": "Verified the S02 prompt-rendering seam against the local code and research notes, then kept the existing buildAuthorExperienceSection() wording unchanged because the mapping was already correct. Hardened src/execution/review-prompt.test.ts with focused negative guards for established and senior tiers, plus full buildReviewPrompt() assertions that isolate the rendered Author Experience Context section and prove newcomer/developing phrases do not appear for higher contributor tiers.",
+      "verification_result": "Ran the task verification command from the plan: bun test ./src/execution/review-prompt.test.ts. The suite passed with 211 passing tests and 0 failures, including the new established/senior regression coverage and full rendered-section prompt assertions.",
+      "duration": "",
+      "completed_at": "2026-04-06T22:40:41.016Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/execution/review-prompt.test.ts",
+        ".gsd/milestones/M042/slices/S02/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Kept buildAuthorExperienceSection() copy unchanged because the existing taxonomy mapping was already correct; the missing protection was negative regression coverage on rendered output.",
+        "Used full rendered author-section assertions with banned-phrase checks instead of proxy assertions so prompt truthfulness is directly inspectable."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M042\nkey_files:\n  - src/execution/review-prompt.test.ts\n  - .gsd/milestones/M042/slices/S02/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Kept buildAuthorExperienceSection() copy unchanged because the existing taxonomy mapping was already correct; the missing protection was negative regression coverage on rendered output.\n  - Used full rendered author-section assertions with banned-phrase checks instead of proxy assertions so prompt truthfulness is directly inspectable.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T22:40:41.016Z\nblocker_discovered: false\n---\n\n# T01: Added prompt regression tests that lock established and senior author tiers away from newcomer and developing guidance.\n\n**Added prompt regression tests that lock established and senior author tiers away from newcomer and developing guidance.**\n\n## What Happened\n\nVerified the S02 prompt-rendering seam against the local code and research notes, then kept the existing buildAuthorExperienceSection() wording unchanged because the mapping was already correct. Hardened src/execution/review-prompt.test.ts with focused negative guards for established and senior tiers, plus full buildReviewPrompt() assertions that isolate the rendered Author Experience Context section and prove newcomer/developing phrases do not appear for higher contributor tiers.\n\n## Verification\n\nRan the task verification command from the plan: bun test ./src/execution/review-prompt.test.ts. The suite passed with 211 passing tests and 0 failures, including the new established/senior regression coverage and full rendered-section prompt assertions.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/execution/review-prompt.test.ts` | 0 | ✅ pass | 42ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/execution/review-prompt.test.ts`\n- `.gsd/milestones/M042/slices/S02/tasks/T01-SUMMARY.md`\n",
+      "description": "Add focused prompt-builder regression coverage around the author-experience section so established and senior contributors cannot silently fall back to newcomer or developing guidance. If the current `buildAuthorExperienceSection()` copy is ambiguous under the new negative guards, tighten the wording in `src/execution/review-prompt.ts` without changing the S01 precedence contract.\n\nAssumption: the existing mapping in `buildAuthorExperienceSection()` remains the correct taxonomy seam for S02 (`first-time/newcomer`, `regular/developing`, `established`, `core/senior`). Do not redesign the tier model here.",
+      "estimate": "45m",
+      "files": [
+        "src/execution/review-prompt.ts",
+        "src/execution/review-prompt.test.ts"
+      ],
+      "verify": "bun test ./src/execution/review-prompt.test.ts",
+      "inputs": [
+        "`src/execution/review-prompt.ts`",
+        "`src/execution/review-prompt.test.ts`",
+        "`.gsd/milestones/M042/slices/S02/S02-RESEARCH.md`"
+      ],
+      "expected_output": [
+        "`src/execution/review-prompt.ts`",
+        "`src/execution/review-prompt.test.ts`"
+      ],
+      "observability_impact": "Prompt truthfulness becomes directly inspectable through full-string regression tests that fail on banned newcomer/developing phrases instead of indirect proxy assertions.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Prove Review Details and handler outputs stay truthful",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Extend deterministic Review Details coverage and reuse the existing captured handler harness to assert that one review run threads the resolved author tier into both user-visible surfaces. The task should verify full rendered prompt/details bodies, not proxy fields, and should stay scoped to the existing `runProfileScenario()`-style seam rather than broad end-to-end orchestration.\n\nIf `formatReviewDetailsSummary()` wording is too weak to make the tier obvious, tighten it enough to distinguish default/fallback wording from established/senior truthfulness without changing unrelated review-details structure.",
+      "estimate": "1h",
+      "files": [
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/lib/review-utils.test.ts && bun test ./src/handlers/review.test.ts",
+      "inputs": [
+        "`src/lib/review-utils.ts`",
+        "`src/lib/review-utils.test.ts`",
+        "`src/handlers/review.test.ts`",
+        "`src/execution/review-prompt.ts`",
+        "`src/execution/review-prompt.test.ts`"
+      ],
+      "expected_output": [
+        "`src/lib/review-utils.ts`",
+        "`src/lib/review-utils.test.ts`",
+        "`src/handlers/review.test.ts`"
+      ],
+      "observability_impact": "The captured prompt and deterministic Review Details body in `src/handlers/review.test.ts` become the slice’s main inspection surface for future wording regressions.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Add the M042 S02 review-surface verifier",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Add a dedicated slice proof harness and command that lock in the review-surface truthfulness contract after T01 and T02 settle the wording. The verifier should reuse production helpers where possible, assert on full rendered output, and encode the CrystalP-shaped case: contributor-profile tier drives the surface output, established-tier prompt/details text stays established, and newcomer/developing guidance is absent.\n\nFollow the existing M042/S01 verifier pattern: keep the checks behavioral rather than overfitting to one exact prose paragraph, but make the banned wording assertions strict enough to catch a real regression.",
+      "estimate": "1h",
+      "files": [
+        "scripts/verify-m042-s02.ts",
+        "scripts/verify-m042-s02.test.ts",
+        "package.json"
+      ],
+      "verify": "bun test ./scripts/verify-m042-s02.test.ts && bun run verify:m042:s02 && bun run tsc --noEmit",
+      "inputs": [
+        "`scripts/verify-m042-s01.ts`",
+        "`scripts/verify-m042-s01.test.ts`",
+        "`src/execution/review-prompt.ts`",
+        "`src/lib/review-utils.ts`",
+        "`src/handlers/review.ts`",
+        "`package.json`"
+      ],
+      "expected_output": [
+        "`scripts/verify-m042-s02.ts`",
+        "`scripts/verify-m042-s02.test.ts`",
+        "`package.json`"
+      ],
+      "observability_impact": "`bun run verify:m042:s02` becomes the durable slice proof surface for milestone closure and downstream S03 regression checks.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -12264,6 +12390,17 @@
       "verdict": "✅ pass",
       "duration_ms": 7300,
       "created_at": "2026-04-06T22:33:01.303Z"
+    },
+    {
+      "id": 187,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M042",
+      "command": "bun test ./src/execution/review-prompt.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 42,
+      "created_at": "2026-04-06T22:40:41.016Z"
     }
   ]
 }

@@ -533,6 +533,72 @@ test("buildAuthorExperienceSection returns developing guidance for regular tier"
   expect(section).toContain("someone");
 });
 
+test("buildAuthorExperienceSection returns established guidance without newcomer or developing phrases", () => {
+  const section = buildAuthorExperienceSection({ tier: "established", authorLogin: "steadydev" });
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("established contributor");
+  expect(section).toContain("Keep explanations brief");
+  expect(section).toContain("steadydev");
+  expect(section).not.toContain("first-time or new contributor");
+  expect(section).not.toContain("developing contributor");
+  expect(section).not.toContain("Explain WHY each finding matters");
+  expect(section).not.toContain("learning opportunities");
+  expect(section).not.toContain("encouraging, welcoming");
+});
+
+test("buildAuthorExperienceSection returns senior guidance without newcomer or developing phrases", () => {
+  const section = buildAuthorExperienceSection({ tier: "senior", authorLogin: "principaldev" });
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("core/senior contributor");
+  expect(section).toContain("Be concise and assume familiarity with the codebase");
+  expect(section).toContain("principaldev");
+  expect(section).not.toContain("first-time or new contributor");
+  expect(section).not.toContain("developing contributor");
+  expect(section).not.toContain("Explain WHY each finding matters");
+  expect(section).not.toContain("learning opportunities");
+  expect(section).not.toContain("Include doc links for project-specific patterns");
+});
+
+test("buildReviewPrompt threads established author tier without newcomer or developing guidance", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "CrystalP",
+      authorTier: "established",
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("established contributor");
+  expect(authorSection).toContain("Keep explanations brief");
+  expect(authorSection).not.toContain("first-time or new contributor");
+  expect(authorSection).not.toContain("developing contributor");
+  expect(authorSection).not.toContain("Explain WHY each finding matters");
+  expect(authorSection).not.toContain("learning opportunities");
+});
+
+test("buildReviewPrompt threads senior author tier without newcomer or developing guidance", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "CrystalP",
+      authorTier: "senior",
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("core/senior contributor");
+  expect(authorSection).toContain("Be concise and assume familiarity with the codebase");
+  expect(authorSection).not.toContain("first-time or new contributor");
+  expect(authorSection).not.toContain("developing contributor");
+  expect(authorSection).not.toContain("Explain WHY each finding matters");
+  expect(authorSection).not.toContain("Include doc links for project-specific patterns");
+});
+
 // ---------------------------------------------------------------------------
 // buildLanguageGuidanceSection tests
 // ---------------------------------------------------------------------------

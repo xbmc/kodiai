@@ -211,6 +211,20 @@ return { method: () => fn() };  // closure captures the narrowed local
 
 ---
 
+## Contributor-Tier Truthfulness Belongs in Score Persistence, Not Review Rendering (M042/S01)
+
+**Context:** The CrystalP-shaped misclassification defect was caused by `updateExpertiseIncremental()` recalculating `overallScore` while persisting the stale stored `overallTier`. Review output was only reflecting the bad stored state — patching review copy or fallback selection would have treated the symptom, not the source of truth.
+
+**Pattern:** Recalculate the contributor tier immediately after the updated `overallScore` is known, using the shared percentile helpers in `src/contributor/tier-calculator.ts`, then persist that recalculated tier through the profile store. Review-time code should treat contributor-profile tier state as authoritative and only fall back to cache/classifier when the profile signal is absent.
+
+**Fail-open contract:** Tier recalculation must not block review-time background updates. If the score snapshot read fails, log a warning and persist the existing tier instead of throwing.
+
+**Rule:** For contributor-experience truthfulness, fix persistence-time state first and keep render-time precedence simple: contributor profile → cache → fallback. Do not add review-surface overrides that disagree with stored contributor-profile state.
+
+**Established in:** M042/S01 (`src/contributor/expertise-scorer.ts`, `src/contributor/tier-calculator.ts`, `src/handlers/review.ts`).
+
+---
+
 ## `createMockLoggerWithArrays` Pattern for Multi-Child Handler Tests (M030/S02)
 
 **Context:** `addon-check.test.ts` needs to assert that child loggers (created by `handlerLogger.child(...)`) emit structured info/warn bindings. A flat mock logger doesn't capture child-logger output separately; each child must write to the same shared arrays.
