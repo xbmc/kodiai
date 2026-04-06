@@ -2,11 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   computeFileRiskScores,
   triageFilesByRisk,
+  applyGraphAwareSelection,
   DEFAULT_RISK_WEIGHTS,
   type RiskWeights,
   type FileRiskScore,
-  type TieredFiles,
 } from "./file-risk-scorer.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 
 // ---------- computeFileRiskScores ----------
 
@@ -129,6 +130,124 @@ describe("computeFileRiskScores", () => {
     expect(scores).toHaveLength(1);
     expect(scores[0]!.score).toBeGreaterThanOrEqual(0);
     expect(scores[0]!.score).toBeLessThanOrEqual(100);
+  });
+});
+
+// ---------- applyGraphAwareSelection ----------
+
+describe("applyGraphAwareSelection", () => {
+  function makeRiskScores(paths: string[]): FileRiskScore[] {
+    const baseScores = [80, 70, 60];
+    return paths.map((filePath, index) => ({
+      filePath,
+      score: baseScores[index] ?? Math.max(0, 60 - index * 5),
+      breakdown: {
+        linesChanged: 50,
+        pathRisk: 25,
+        fileCategory: 20,
+        languageRisk: 10,
+        fileExtension: 10,
+      },
+    }));
+  }
+
+  function makeGraphResult(params: {
+    impactedFiles?: Array<Pick<ReviewGraphBlastRadiusResult["impactedFiles"][number], "path" | "score" | "confidence">>;
+    likelyTests?: Array<Pick<ReviewGraphBlastRadiusResult["likelyTests"][number], "path" | "score" | "confidence">>;
+  }): ReviewGraphBlastRadiusResult {
+    return {
+      changedFiles: ["src/changed.ts"],
+      seedSymbols: [],
+      impactedFiles: (params.impactedFiles ?? []).map((item) => ({
+        path: item.path,
+        score: item.score,
+        confidence: item.confidence,
+        reasons: ["graph impacted"],
+        relatedChangedPaths: ["src/changed.ts"],
+        languages: ["TypeScript"],
+      })),
+      probableDependents: [],
+      likelyTests: (params.likelyTests ?? []).map((item) => ({
+        path: item.path,
+        score: item.score,
+        confidence: item.confidence,
+        reasons: ["graph likely test"],
+        relatedChangedPaths: ["src/changed.ts"],
+        languages: ["TypeScript"],
+        testSymbols: ["suite"],
+      })),
+      graphStats: {
+        files: 3,
+        nodes: 5,
+        edges: 4,
+        changedFilesFound: 1,
+      },
+    };
+  }
+
+  test("preserves baseline ordering when graph data is absent", () => {
+    const riskScores = makeRiskScores([
+      "src/alpha.ts",
+      "src/beta.ts",
+      "test/beta.test.ts",
+    ]);
+
+    const result = applyGraphAwareSelection({ riskScores });
+
+    expect(result.usedGraph).toBe(false);
+    expect(result.graphHits).toBe(0);
+    expect(result.graphRankedSelections).toBe(0);
+    expect(result.riskScores.map((item) => item.filePath)).toEqual([
+      "src/alpha.ts",
+      "src/beta.ts",
+      "test/beta.test.ts",
+    ]);
+  });
+
+  test("promotes graph-impacted files and likely tests within bounded sorted output", () => {
+    const riskScores = makeRiskScores([
+      "src/alpha.ts",
+      "src/beta.ts",
+      "test/beta.test.ts",
+    ]);
+
+    const graph = makeGraphResult({
+      impactedFiles: [{ path: "src/beta.ts", score: 0.95, confidence: 1 }],
+      likelyTests: [{ path: "test/beta.test.ts", score: 0.9, confidence: 1 }],
+    });
+
+    const result = applyGraphAwareSelection({ riskScores, graph });
+
+    expect(result.usedGraph).toBe(true);
+    expect(result.graphHits).toBe(2);
+    expect(result.graphRankedSelections).toBeGreaterThanOrEqual(0);
+    expect(result.riskScores[0]?.filePath).toBe("src/beta.ts");
+    expect(
+      result.riskScores.find((item) => item.filePath === "test/beta.test.ts")?.score,
+    ).toBeGreaterThan(
+      riskScores.find((item) => item.filePath === "test/beta.test.ts")?.score ?? 0,
+    );
+  });
+
+  test("ignores graph paths that are not already in the review set", () => {
+    const riskScores = makeRiskScores([
+      "src/alpha.ts",
+      "src/beta.ts",
+    ]);
+
+    const graph = makeGraphResult({
+      impactedFiles: [{ path: "src/not-in-review.ts", score: 1, confidence: 1 }],
+    });
+
+    const result = applyGraphAwareSelection({ riskScores, graph });
+
+    expect(result.usedGraph).toBe(true);
+    expect(result.graphHits).toBe(1);
+    expect(result.graphRankedSelections).toBe(0);
+    expect(result.riskScores.map((item) => item.filePath)).toEqual([
+      "src/alpha.ts",
+      "src/beta.ts",
+    ]);
   });
 });
 
