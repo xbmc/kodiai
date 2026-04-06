@@ -234,6 +234,16 @@ describe("resolveAuthorTierFromSources", () => {
     ).toEqual({ tier: "regular", source: "author-cache" });
   });
 
+  test("cached author tiers are limited to fallback taxonomy values", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: "core",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "core", source: "author-cache" });
+  });
+
   test("uses fallback tier when neither profile nor cache is available", () => {
     expect(
       resolveAuthorTierFromSources({
@@ -7227,6 +7237,30 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(executeCount).toBe(1);
     expect(rateLimitEvents).toHaveLength(1);
     expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+  });
+
+  test("ignores unsupported cached contributor tiers and falls back to live classification", async () => {
+    let searchCallCount = 0;
+
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        return { data: { total_count: 0 } };
+      },
+      knowledgeStoreOverrides: {
+        getAuthorCache: () => ({
+          tier: "established",
+          prCount: 24,
+        }),
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(searchCallCount).toBe(1);
+    expect(prompt).toContain("first-time or new contributor");
+    expect(prompt).not.toContain("established contributor");
+    expect(prompt).not.toContain("core/senior contributor");
+    expect(prompt).toContain("The PR author (octocat) appears to be a first-time or new contributor to this repository.");
   });
 
   test("records telemetry miss then hit across equivalent Search cache reuse", async () => {

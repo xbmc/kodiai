@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T22:50:38.088Z",
+  "exported_at": "2026-04-06T23:00:34.474Z",
   "milestones": [
     {
       "id": "M001",
@@ -5490,16 +5490,16 @@
       "milestone_id": "M042",
       "id": "S02",
       "title": "Review-Surface Truthfulness Wiring",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S01"
       ],
       "demo": "After this, the review path uses the corrected contributor tier source consistently, and the CrystalP repro no longer receives newcomer-style author guidance in prompt/review output.",
       "created_at": "2026-04-06T22:17:17.886Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-06T22:53:44.907Z",
+      "full_summary_md": "---\nid: S02\nparent: M042\nmilestone: M042\nprovides:\n  - Prompt author-experience rendering that keeps established and senior contributors out of newcomer/developing guidance.\n  - Review Details rendering with an explicit `Author tier:` line and truthful guidance labels derived from the resolved tier.\n  - A reusable M042/S02 proof harness that composes contributor-profile precedence with prompt/details rendering and the CrystalP-shaped repro case.\nrequires:\n  - slice: S01\n    provides: Corrected contributor-tier persistence and the contributor-profile → cache → fallback precedence contract that S02 renders into user-visible surfaces.\naffects:\n  - S03\nkey_files:\n  - src/execution/review-prompt.ts\n  - src/execution/review-prompt.test.ts\n  - src/lib/review-utils.ts\n  - src/lib/review-utils.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - scripts/verify-m042-s02.ts\n  - scripts/verify-m042-s02.test.ts\n  - package.json\n  - .gsd/PROJECT.md\nkey_decisions:\n  - Kept the existing `buildAuthorExperienceSection()` taxonomy mapping and strengthened regression guards around rendered output instead of redesigning contributor tiers in S02.\n  - Made Review Details author-tier wording explicit (`developing`, `established contributor guidance`, `senior contributor guidance`) so truthfulness is visible in the rendered body rather than inferred from generic fallback wording.\n  - Built the slice proof harness on production seams (`resolveAuthorTierFromSources`, `buildReviewPrompt`, `formatReviewDetailsSummary`) with stable check IDs and banned-phrase guards rather than fixture-only duplicate logic.\n  - Documented the current handler-seam limitation honestly: the existing `runProfileScenario()` path does not yet prove established/senior wording end to end, so deterministic render-helper proof remains the authoritative S02 verification surface.\npatterns_established:\n  - Render-surface truthfulness should be asserted on the full rendered body, with required-phrase and banned-phrase checks, not on proxy fields or indirect metadata.\n  - When a user-visible wording contract depends on higher-fidelity persisted state, keep the state-precedence helper pure and test it separately from the render helpers; then add a slice verifier that composes those production seams.\n  - A deterministic proof harness with stable check IDs is the right place to lock cross-surface wording invariants that would be awkward or brittle to express through a larger orchestration test seam.\nobservability_surfaces:\n  - `bun run verify:m042:s02` is now the durable regression surface for review-surface contributor-tier truthfulness; it emits four named checks in both text and JSON forms and can be rerun unchanged by S03 and milestone closure.\ndrill_down_paths:\n  - .gsd/milestones/M042/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M042/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M042/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-06T22:53:44.907Z\nblocker_discovered: false\n---\n\n# S02: Review-Surface Truthfulness Wiring\n\n**Review prompt and Review Details surfaces now render explicit contributor-tier guidance from the corrected contributor-profile source, and a dedicated M042/S02 proof harness locks established-tier output away from newcomer/developing regressions.**\n\n## What Happened\n\nS02 consumed the persistence-first fix delivered in S01 and wired that corrected contributor-tier state into the main review surfaces instead of adding new fallback heuristics. T01 hardened `src/execution/review-prompt.test.ts` around the existing `buildAuthorExperienceSection()` taxonomy seam. The slice kept the established/senior wording model intact and added direct full-section assertions plus banned-phrase guards so higher-tier contributors cannot silently regress back to newcomer or developing guidance in prompt output.\n\nT02 made the Review Details surface equally explicit. `src/lib/review-utils.ts` now renders a concrete `Author tier:` line with guidance labels (`developing`, `established contributor guidance`, `senior contributor guidance`) instead of a weaker generic author label. Focused formatter tests prove the rendered Review Details body carries the correct tier wording and excludes newcomer/developing phrasing for established and senior cases. The handler test suite remains green, but one important limit remains: the existing `runProfileScenario()` seam still does not prove established/senior contributor wording all the way through a live review run. That is a test-harness gap, not a failing code path surfaced by verification, and it is called out explicitly rather than hidden.\n\nT03 added a durable slice verifier in `scripts/verify-m042-s02.ts`, registered as `bun run verify:m042:s02`. The harness uses production seams — `resolveAuthorTierFromSources()`, `buildReviewPrompt()`, and `formatReviewDetailsSummary()` — to assert four behavioral invariants: contributor-profile tier wins over cache/fallback, established-tier prompt guidance stays truthful, Review Details established-tier wording stays truthful, and the CrystalP-shaped repro keeps both surfaces established while excluding newcomer and developing phrases. The result is a reusable proof surface for milestone closure and for S03 regression work.\n\nThis slice therefore delivered the core S02 contract at the render-helper and slice-verifier level: the corrected contributor-profile tier now drives user-visible prompt/details wording, and the known CrystalP-shaped regression is locked out of those surfaces. The remaining work is not wording design; it is cache/fallback hardening and stronger orchestration-path proof in S03.\n\n## Verification\n\nRan all slice-plan verification commands and all passed.\n\n- `bun test ./src/execution/review-prompt.test.ts` → 211 pass, 0 fail\n- `bun test ./src/lib/review-utils.test.ts` → 4 pass, 0 fail\n- `bun test ./src/handlers/review.test.ts` → 76 pass, 0 fail\n- `bun test ./scripts/verify-m042-s02.test.ts` → 14 pass, 0 fail\n- `bun run verify:m042:s02` → PASS; all 4 checks passed\n- `bun run tsc --noEmit` → exit 0, no output\n\nThe proof harness passed these checks:\n- `M042-S02-PROFILE-TIER-DRIVES-SURFACE`\n- `M042-S02-PROMPT-ESTABLISHED-TRUTHFUL`\n- `M042-S02-DETAILS-ESTABLISHED-TRUTHFUL`\n- `M042-S02-CRYSTALP-SURFACES-STAY-ESTABLISHED`\n\nNo additional observability surface was introduced in this slice beyond the deterministic proof harness, and that harness executed successfully.\n\n## Requirements Advanced\n\n- R037 — Advanced the truthful review-surface side of contributor-context rendering by making prompt/details wording consume the corrected contributor-profile tier source explicitly instead of generic fallback wording.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nT02 planned to reuse the existing captured handler harness to prove one review run threads the resolved author tier into both user-visible surfaces. In practice, the existing `runProfileScenario()` seam still did not drive established/senior contributor output truthfully enough to serve as that end-to-end assertion. Rather than ship a misleading green test, the slice kept handler coverage scoped to the stable seam, strengthened deterministic formatter coverage in `src/lib/review-utils.test.ts`, and documented the orchestration-path proof gap for S03.\n\n## Known Limitations\n\nThe existing `runProfileScenario()` handler seam still does not prove established/senior contributor wording through a full live review execution path. S02 proves the contributor-profile precedence helper plus the production render helpers, and the handler suite remains green, but the strongest end-to-end handler-level author-tier assertion is still missing.\n\nThe M042/S02 proof harness exercises production seams, but it is still a slice-level deterministic harness, not a full GitHub-comment publication flow. Cache reuse and degraded fallback behavior are also intentionally out of scope here; S03 needs to verify those paths cannot reintroduce stale low-tier labeling.\n\n## Follow-ups\n\nS03 should harden cache reuse and fallback classification so repeated or degraded review runs cannot drift back to newcomer/developing wording after S01/S02 corrected the source-of-truth and render layers.\n\nS03 should also extend handler-level proof so at least one live review execution seam demonstrates established/senior contributor wording end to end, closing the gap called out in T02 rather than relying solely on precedence + render-helper assertions.\n\n## Files Created/Modified\n\n- `src/execution/review-prompt.test.ts` — Added full rendered-section regression guards proving established and senior prompt guidance excludes newcomer/developing wording.\n- `src/lib/review-utils.ts` — Changed Review Details rendering to include an explicit `Author tier:` line with concrete guidance labels for developing, established, and senior contributors.\n- `src/lib/review-utils.test.ts` — Added deterministic Review Details regression coverage for regular, established, and senior tier wording.\n- `src/handlers/review.test.ts` — Kept the handler suite green and documented the current limitation of the existing `runProfileScenario()` seam rather than shipping brittle overclaims.\n- `scripts/verify-m042-s02.ts` — Added the M042/S02 proof harness with four stable checks covering precedence, prompt truthfulness, Review Details truthfulness, and the CrystalP-shaped regression case.\n- `scripts/verify-m042-s02.test.ts` — Added harness tests for pass/fail behavior, JSON/text output, and failure-summary reporting.\n- `package.json` — Registered `verify:m042:s02` so the slice proof harness is runnable from the standard script surface.\n- `.gsd/PROJECT.md` — Refreshed project state to reflect completed M042/S02 work and the remaining S03 cache/fallback hardening scope.\n",
+      "full_uat_md": "# S02: Review-Surface Truthfulness Wiring — UAT\n\n**Milestone:** M042\n**Written:** 2026-04-06T22:53:44.907Z\n\n# S02: Review-Surface Truthfulness Wiring — UAT\n\n**Milestone:** M042\n**Written:** 2026-04-05\n\n## UAT: S02 — Review-Surface Truthfulness Wiring\n\n### Preconditions\n- Project checked out at `/home/keith/src/kodiai`\n- Bun runtime available\n- No special env vars required for this slice’s deterministic verification\n\n---\n\n### Test 1: Prompt established-tier guidance stays truthful\n\n**Purpose:** Verify the prompt author-experience section renders established-tier wording and excludes newcomer/developing phrasing.\n\n**Steps:**\n1. Run `bun test ./src/execution/review-prompt.test.ts`\n2. Confirm the tests `buildReviewPrompt threads established author tier without newcomer or developing guidance` and `buildReviewPrompt threads senior author tier without newcomer or developing guidance` pass.\n\n**Expected:**\n- Exit code 0\n- Established-tier prompt section contains `established contributor` and `Keep explanations brief`\n- Senior-tier prompt section contains `core/senior contributor` and `Be concise and assume familiarity with the codebase`\n- Neither rendered section contains `first-time or new contributor`, `developing contributor`, `Explain WHY each finding matters`, or similar newcomer/developing phrases\n\n---\n\n### Test 2: Review Details author-tier line is explicit for regular, established, and senior contributors\n\n**Purpose:** Verify Review Details output exposes the contributor tier directly instead of generic fallback wording.\n\n**Steps:**\n1. Run `bun test ./src/lib/review-utils.test.ts`\n2. Inspect the test `renders truthful author-tier wording for default, established, and senior contributors`.\n\n**Expected:**\n- Exit code 0\n- Default case contains `- Author tier: regular (developing guidance)`\n- Established case contains `- Author tier: established (established contributor guidance)`\n- Senior case contains `- Author tier: senior (senior contributor guidance)`\n- Established/senior outputs do not contain `newcomer guidance` or `developing guidance`\n\n---\n\n### Test 3: Handler suite remains green after author-tier wording changes\n\n**Purpose:** Ensure S02 did not destabilize the review handler while changing render surfaces.\n\n**Steps:**\n1. Run `bun test ./src/handlers/review.test.ts`\n2. Confirm the review handler test suite completes successfully.\n\n**Expected:**\n- Exit code 0\n- All handler tests pass\n- `resolveAuthorTierFromSources` precedence tests still pass, proving contributor-profile tier is preferred over cache and fallback\n\n**Note:** This suite does not yet prove established/senior wording through a full live review execution path. That limitation is known and should be closed in S03.\n\n---\n\n### Test 4: Slice proof harness passes all contributor-tier truthfulness checks\n\n**Purpose:** Verify the dedicated M042/S02 regression harness locks the review-surface contract.\n\n**Steps:**\n1. Run `bun run verify:m042:s02`\n2. Observe the printed checks and final verdict.\n\n**Expected:**\n- Exit code 0\n- Final verdict is `PASS`\n- The following checks all report `PASS`:\n  - `M042-S02-PROFILE-TIER-DRIVES-SURFACE`\n  - `M042-S02-PROMPT-ESTABLISHED-TRUTHFUL`\n  - `M042-S02-DETAILS-ESTABLISHED-TRUTHFUL`\n  - `M042-S02-CRYSTALP-SURFACES-STAY-ESTABLISHED`\n\n---\n\n### Test 5: JSON proof output is machine-readable and complete\n\n**Purpose:** Confirm the verifier can serve downstream automation and milestone closure.\n\n**Steps:**\n1. Run `bun run verify:m042:s02 --json`\n2. Inspect the JSON payload.\n\n**Expected:**\n- Exit code 0\n- JSON includes `overallPassed: true`\n- `check_ids` includes exactly the four S02 check IDs\n- `checks` array contains a row for each check with `passed: true`, `skipped: false`, and a stable `status_code`\n\n---\n\n### Test 6: Harness regression case — established contributor must not regress to newcomer/developing guidance\n\n**Purpose:** Verify the CrystalP-shaped regression is what the harness is actually locking.\n\n**Steps:**\n1. Run `bun test ./scripts/verify-m042-s02.test.ts`\n2. Inspect the tests under `M042-S02-CRYSTALP-SURFACES-STAY-ESTABLISHED`.\n\n**Expected:**\n- Exit code 0\n- The positive test proves the real deterministic fixture renders established wording for CrystalP\n- The negative test proves the harness fails if prompt/details regress to `developing contributor` or `developing guidance`\n\n---\n\n### Test 7: TypeScript remains clean after S02 surface and verifier changes\n\n**Purpose:** Ensure the slice leaves the repo in a type-safe state.\n\n**Steps:**\n1. Run `bun run tsc --noEmit`\n\n**Expected:**\n- Exit code 0\n- No output\n\n---\n\n## Edge Cases\n\n### Edge Case 1: Contributor-profile tier outranks stale cache and fallback\n\n**Why it matters:** The original bug was a truthfulness issue caused by trusting bad state. The render path must continue to honor the highest-fidelity source.\n\n**Steps:**\n1. Run `bun run verify:m042:s02`\n2. Check the `M042-S02-PROFILE-TIER-DRIVES-SURFACE` line\n\n**Expected:**\n- Status code `contributor_profile_tier_selected_for_surface_rendering`\n- Detail indicates `resolvedSource=contributor-profile resolvedTier=established`\n\n### Edge Case 2: Established prompt wording stays established, not merely non-newcomer\n\n**Why it matters:** Avoiding newcomer copy is not enough; the rendered wording should positively reflect established contributor status.\n\n**Steps:**\n1. Run `bun test ./src/execution/review-prompt.test.ts`\n2. Inspect the established-tier assertions\n\n**Expected:**\n- Prompt section contains affirmative established wording (`established contributor`, `Keep explanations brief`)\n- It is not just an absence-only assertion\n\n### Edge Case 3: Review Details must not silently drift to generic wording\n\n**Why it matters:** Review Details is a user-visible surface; vague labels can hide regressions.\n\n**Steps:**\n1. Run `bun test ./src/lib/review-utils.test.ts`\n2. Inspect the established and senior Review Details assertions\n\n**Expected:**\n- Output includes explicit guidance labels, not a generic `Author:` line\n- Established and senior wording are distinguishable from each other and from the regular/developing default\n\n---\n\n## Failure Interpretation\n\n- `prompt_established_truthfulness_failed` — prompt author-experience section lost required established wording or reintroduced newcomer/developing phrases; inspect `src/execution/review-prompt.ts` and `src/execution/review-prompt.test.ts`\n- `review_details_established_truthfulness_failed` — Review Details wording drifted; inspect `src/lib/review-utils.ts` and its formatter tests\n- `profile_tier_surface_selection_failed` — contributor-profile precedence regressed; inspect `resolveAuthorTierFromSources()` in `src/handlers/review.ts`\n- `crystalp_established_surface_regression_detected` — the CrystalP-shaped repro has returned in either prompt or Review Details output\n- `bun run tsc --noEmit` failure — the slice introduced a type regression that must be fixed before downstream cache/fallback hardening starts\n\n---\n\n## Operational Notes\n\n- This slice is code-complete and machine-verifiable entirely through deterministic tests and the proof harness; no live GitHub mutation or DB access is required for UAT.\n- The known orchestration-path proof gap is deliberate and documented: handler tests stay green, but full established/senior wording through the existing `runProfileScenario()` seam still needs stronger coverage in S03.\n",
       "goal": "Prove and harden the review surfaces so the contributor tier resolved in S01 drives truthful prompt and Review Details wording, preventing established contributors from receiving newcomer-style guidance.",
       "success_criteria": "1. Prompt-surface tests prove `established` and `senior` tiers render tier-appropriate guidance and explicitly exclude newcomer/developing wording on the full rendered section.\n2. Review Details tests and handler integration coverage prove the resolved author tier reaches deterministic Review Details output and the captured review prompt/details bodies stay truthful for an established-contributor scenario.\n3. A named slice verifier (`bun run verify:m042:s02`) passes and encodes the CrystalP-shaped review-surface contract: contributor-profile tier wins in the review-surface path and established-tier output never regresses to newcomer guidance.",
       "proof_level": "integration",
@@ -5523,11 +5523,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Harden cache and fallback behavior so corrected contributor labels are stable under normal review execution and stale/contradictory states do not leak back in.",
-      "success_criteria": "- Cache and fallback precedence are explicit and regression-tested.\n- No stale contradictory label survives after truthful profile state exists.\n- Adjacent cases are covered so the fix is not CrystalP-specific.",
-      "proof_level": "Deterministic regression tests proving cache/fallback consistency for the repro and adjacent cases.",
-      "integration_closure": "Contributor profile store, author cache, fallback classifier, and review handler behave consistently across cache-hit, cache-miss, and degraded-enrichment paths.",
-      "observability_impact": "Expands regression coverage to cache-hit, cache-miss, and degraded fallback scenarios around contributor classification truthfulness.",
+      "goal": "Harden contributor-tier cache and fallback behavior so repeated or degraded review runs preserve truthful author labeling, and lock the CrystalP repro plus adjacent contributor-history cases behind deterministic handler and verifier regressions.",
+      "success_criteria": "- Cache-backed author-tier reuse preserves truthful render-surface wording and cannot silently outrank higher-fidelity contributor-profile state within the review path.\n- Degraded fallback/search-rate-limit paths stay non-blocking and non-contradictory: they disclose degradation when required and do not invent stronger contributor history than the available signal supports.\n- Regression coverage includes the CrystalP-shaped repro plus adjacent cache-hit, contradictory-cache, and degraded-fallback cases at both handler-test and slice-verifier levels.\n- `bun run verify:m042:s03` exists and reruns cleanly alongside the existing M042/S01 and M042/S02 proof harnesses.",
+      "proof_level": "Integration + contract proof on production seams with deterministic handler orchestration regressions; real runtime not required.",
+      "integration_closure": "Closes the remaining M042 integration gap by hardening the `review.ts` author-tier resolution contract against stale cache/fallback drift and composing that resolved tier through prompt/details and retry/degradation paths. After this slice, nothing remains in M042 except milestone-level validation and closure.",
+      "observability_impact": "The slice relies on and extends existing durable diagnostics rather than adding new runtime telemetry: structured handler warnings for cache/search degradation remain the failure surface, and `bun run verify:m042:s01`, `bun run verify:m042:s02`, and the new `bun run verify:m042:s03` become the canonical inspection surfaces for contributor-tier truthfulness across persistence, render, and cache/fallback contracts.",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -9840,6 +9840,144 @@
       "observability_impact": "`bun run verify:m042:s02` becomes the durable slice proof surface for milestone closure and downstream S03 regression checks.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Bounded author-tier cache reuse to fallback taxonomy values and added regressions so unsupported cached tiers cannot overclaim contributor seniority.",
+      "status": "complete",
+      "one_liner": "Bounded author-tier cache reuse to fallback taxonomy values and added regressions so unsupported cached tiers cannot overclaim contributor seniority.",
+      "narrative": "Kept the work local to the review author-tier seam. In src/handlers/review.ts, cache reads are now normalized before reuse so only low-fidelity fallback taxonomy values (first-time, regular, core) can be reused from author_cache. Unsupported cached values such as established or senior are treated as invalid cache data, logged explicitly, and ignored so the handler falls back to live classification fail-open instead of trusting the row. I also tightened src/knowledge/types.ts and src/knowledge/store.ts so the author-cache contract reflects that narrower taxonomy, and added handler regressions proving valid cache reuse still works while contradictory high-fidelity cache labels no longer leak into rendered contributor wording.",
+      "verification_result": "Ran `bun test ./src/handlers/review.test.ts` and confirmed the full handler suite passed, including the new cache-boundary regression proving unsupported cached tiers are ignored and live fallback classification produces newcomer wording instead of established/senior overclaims.",
+      "duration": "",
+      "completed_at": "2026-04-06T23:00:34.447Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/review.ts",
+        "src/knowledge/types.ts",
+        "src/knowledge/store.ts",
+        "src/handlers/review.test.ts",
+        ".gsd/milestones/M042/slices/S03/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Kept author_cache as a low-fidelity fallback store rather than broadening it to persist contributor-profile tiers.",
+        "Validated cached author tiers at the handler boundary and ignored unsupported values fail-open with an explicit warning surface."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M042\nkey_files:\n  - src/handlers/review.ts\n  - src/knowledge/types.ts\n  - src/knowledge/store.ts\n  - src/handlers/review.test.ts\n  - .gsd/milestones/M042/slices/S03/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Kept author_cache as a low-fidelity fallback store rather than broadening it to persist contributor-profile tiers.\n  - Validated cached author tiers at the handler boundary and ignored unsupported values fail-open with an explicit warning surface.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T23:00:34.447Z\nblocker_discovered: false\n---\n\n# T01: Bounded author-tier cache reuse to fallback taxonomy values and added regressions so unsupported cached tiers cannot overclaim contributor seniority.\n\n**Bounded author-tier cache reuse to fallback taxonomy values and added regressions so unsupported cached tiers cannot overclaim contributor seniority.**\n\n## What Happened\n\nKept the work local to the review author-tier seam. In src/handlers/review.ts, cache reads are now normalized before reuse so only low-fidelity fallback taxonomy values (first-time, regular, core) can be reused from author_cache. Unsupported cached values such as established or senior are treated as invalid cache data, logged explicitly, and ignored so the handler falls back to live classification fail-open instead of trusting the row. I also tightened src/knowledge/types.ts and src/knowledge/store.ts so the author-cache contract reflects that narrower taxonomy, and added handler regressions proving valid cache reuse still works while contradictory high-fidelity cache labels no longer leak into rendered contributor wording.\n\n## Verification\n\nRan `bun test ./src/handlers/review.test.ts` and confirmed the full handler suite passed, including the new cache-boundary regression proving unsupported cached tiers are ignored and live fallback classification produces newcomer wording instead of established/senior overclaims.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/review.test.ts` | 0 | ✅ pass | 2810ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/review.ts`\n- `src/knowledge/types.ts`\n- `src/knowledge/store.ts`\n- `src/handlers/review.test.ts`\n- `.gsd/milestones/M042/slices/S03/tasks/T01-SUMMARY.md`\n",
+      "description": "Audit and tighten the `resolveAuthorClassification()` path in `src/handlers/review.ts` so cache reuse and fallback classification stay explicitly bounded by source fidelity. Keep the change local to the review author-tier seam unless a small type/store contract improvement is clearly justified. If cache values need normalization or validation, implement it where the handler reads/writes them and preserve fail-open behavior rather than introducing a blocking path.\n\nDocument the concrete assumptions in code comments or tests: contributor profile is the highest-fidelity source, cached fallback taxonomy is lower-fidelity and may be reused only as-is, and degraded fallback must never claim `established`/`senior` knowledge it does not actually have.",
+      "estimate": "1.5h",
+      "files": [
+        "src/handlers/review.ts",
+        "src/knowledge/types.ts",
+        "src/knowledge/store.ts",
+        "src/lib/author-classifier.ts"
+      ],
+      "verify": "bun test ./src/handlers/review.test.ts",
+      "inputs": [
+        "src/handlers/review.ts",
+        "src/knowledge/types.ts",
+        "src/knowledge/store.ts",
+        "src/lib/author-classifier.ts",
+        ".gsd/milestones/M042/slices/S03/S03-RESEARCH.md",
+        ".gsd/milestones/M042/slices/S02/S02-SUMMARY.md"
+      ],
+      "expected_output": [
+        "src/handlers/review.ts",
+        "src/knowledge/types.ts",
+        "src/knowledge/store.ts"
+      ],
+      "observability_impact": "Preserve and, if needed, sharpen the existing fail-open warning surfaces in `src/handlers/review.ts` so future agents can tell whether a run used contributor profile, author cache, or degraded fallback without inspecting production data manually.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Add handler regressions for cache-hit, contradictory-cache, and retry truthfulness",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Expand `src/handlers/review.test.ts` using the existing handler scaffolding rather than new broad test harnesses. Add focused scenarios that assert on the full rendered prompt/details bodies and prove: cached `core` maps to senior-style wording; cached `regular` maps to developing wording without overclaiming; contributor-profile `established` or `senior` still beats contradictory cached low-tier data in a real handler execution; and retry/degraded paths continue to thread the same resolved author tier into rebuilt prompt output.\n\nFollow the established project rule from M028/S03/T02 and S02: assert on full rendered bodies with required and banned phrases, not proxy metadata or single marker lines.",
+      "estimate": "2h",
+      "files": [
+        "src/handlers/review.test.ts",
+        "src/handlers/review.ts",
+        "src/execution/review-prompt.ts",
+        "src/lib/review-utils.ts"
+      ],
+      "verify": "bun test ./src/handlers/review.test.ts",
+      "inputs": [
+        "src/handlers/review.test.ts",
+        "src/handlers/review.ts",
+        "src/execution/review-prompt.ts",
+        "src/lib/review-utils.ts",
+        ".gsd/milestones/M042/slices/S01/S01-SUMMARY.md",
+        ".gsd/milestones/M042/slices/S02/S02-SUMMARY.md"
+      ],
+      "expected_output": [
+        "src/handlers/review.test.ts"
+      ],
+      "observability_impact": "These tests become the orchestration-level diagnostic surface for cache-hit and degraded retry behavior. They should make it obvious from a failing assertion whether the regression came from source selection, prompt wording, details wording, or retry-path rebuilds.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S03",
+      "id": "T03",
+      "title": "Build the M042/S03 cache-and-fallback proof harness",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Add a deterministic slice verifier for the remaining M042 contract and register it in `package.json`. Compose production seams rather than duplicating business logic: use `resolveAuthorTierFromSources()`, `buildReviewPrompt()`, `formatReviewDetailsSummary()`, and any small helper exports needed to prove cache-hit truthfulness, contributor-profile override of contradictory cache, and degraded fallback non-contradiction. Include stable check IDs and JSON/text output matching the established verifier pattern.\n\nThe harness should complement, not replace, T02 handler tests: keep orchestration-only behavior in handler tests and use the verifier for stable contract checks that milestone closure can rerun unchanged.",
+      "estimate": "1.5h",
+      "files": [
+        "scripts/verify-m042-s03.ts",
+        "scripts/verify-m042-s03.test.ts",
+        "package.json",
+        "src/handlers/review.ts",
+        "src/execution/review-prompt.ts",
+        "src/lib/review-utils.ts"
+      ],
+      "verify": "bun test ./scripts/verify-m042-s03.test.ts && bun run verify:m042:s03",
+      "inputs": [
+        "scripts/verify-m042-s02.ts",
+        "src/handlers/review.ts",
+        "src/execution/review-prompt.ts",
+        "src/lib/review-utils.ts",
+        "package.json",
+        ".gsd/milestones/M042/slices/S03/S03-RESEARCH.md"
+      ],
+      "expected_output": [
+        "scripts/verify-m042-s03.ts",
+        "scripts/verify-m042-s03.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "`bun run verify:m042:s03` becomes the durable slice inspection surface. Its named checks should localize failures to cache-hit surface mapping, profile-over-cache precedence, or degraded fallback truthfulness without needing live GitHub or DB access.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -12461,6 +12599,17 @@
       "verdict": "✅ pass",
       "duration_ms": 7400,
       "created_at": "2026-04-06T22:50:38.059Z"
+    },
+    {
+      "id": 192,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun test ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2810,
+      "created_at": "2026-04-06T23:00:34.447Z"
     }
   ]
 }

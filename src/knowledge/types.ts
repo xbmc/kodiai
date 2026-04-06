@@ -192,8 +192,12 @@ export type PriorFinding = {
   commentId: number | null;
 };
 
+import type { AuthorTier } from "../lib/author-classifier.ts";
+
+export type AuthorCacheTier = Extract<AuthorTier, "first-time" | "regular" | "core">;
+
 export type AuthorCacheEntry = {
-  tier: string;
+  tier: AuthorCacheTier;
   authorAssociation: string;
   prCount: number | null;
   cachedAt: string;

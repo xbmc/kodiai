@@ -109,6 +109,7 @@ import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/w
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
+import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -196,7 +197,7 @@ type AuthorTierSearchEnrichment = {
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorTier | null;
+  cachedTier?: AuthorCacheTier | null;
   fallbackTier: AuthorTier;
 }): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
   const { contributorTier, cachedTier, fallbackTier } = params;
@@ -210,6 +211,29 @@ export function resolveAuthorTierFromSources(params: {
   }
 
   return { tier: fallbackTier, source: "fallback" };
+}
+
+function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
+  if (value === "first-time" || value === "regular" || value === "core") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
+  if (!entry) {
+    return null;
+  }
+
+  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
+  if (!normalizedTier) {
+    return null;
+  }
+
+  return {
+    ...entry,
+    tier: normalizedTier,
+  };
 }
 
 async function executeSearchWithRateLimitRetry(params: {
@@ -459,10 +483,19 @@ async function resolveAuthorTier(params: {
   }
 
   try {
-    const cached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
+    const rawCached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
+    const cached = normalizeAuthorCacheEntry(rawCached);
+    if (rawCached && !cached) {
+      logger.warn(
+        { authorLogin, cachedTier: rawCached.tier },
+        "Ignoring unsupported author cache tier; only fallback taxonomy tiers may be reused from cache",
+      );
+    }
     const resolution = resolveAuthorTierFromSources({
       contributorTier,
-      cachedTier: cached?.tier as AuthorTier | null | undefined,
+      // Contributor profile is the high-fidelity source of truth. Cached author tiers
+      // are lower-fidelity fallback taxonomy values and may only be reused as-is.
+      cachedTier: cached?.tier ?? null,
       fallbackTier: "first-time",
     });
     if (resolution.source === "contributor-profile") {
@@ -596,11 +629,16 @@ async function resolveAuthorTier(params: {
     prCount,
   }).tier;
 
+  // Fallback classification is intentionally lower fidelity than contributor profiles.
+  // Never persist 4-tier contributor-profile labels in author_cache; cache only the
+  // direct fallback taxonomy so degraded runs cannot later overclaim established/senior knowledge.
+  const cacheTier: AuthorCacheTier = tier === "core" ? "core" : tier === "regular" ? "regular" : "first-time";
+
   try {
     await knowledgeStore.upsertAuthorCache?.({
       repo: repoSlug,
       authorLogin,
-      tier,
+      tier: cacheTier,
       authorAssociation: normalizedAssociation,
       prCount,
     });
