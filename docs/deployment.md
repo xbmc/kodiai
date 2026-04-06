@@ -14,7 +14,9 @@ This project is deployed as a containerized Bun service on Azure Container Apps.
 The service exposes:
 
 - Webhook endpoint: `POST /webhooks/github`
-- Health: `GET /health`
+- Slack events endpoint: `POST /webhooks/slack/events`
+- Slack commands endpoint: `POST /webhooks/slack/commands/*`
+- Health: `GET /healthz`
 - Readiness: `GET /readiness`
 
 ## Deploy Script
@@ -48,10 +50,13 @@ The deploy script now avoids that failure mode by updating existing apps with on
 - `GITHUB_PRIVATE_KEY_BASE64` (base64-encoded PEM)
 - `GITHUB_WEBHOOK_SECRET`
 - `CLAUDE_CODE_OAUTH_TOKEN`
+- `DATABASE_URL`
+- `VOYAGE_API_KEY`
 
 Notes:
 
 - The app runtime expects `GITHUB_PRIVATE_KEY` and supports base64; the deploy script stores the base64 PEM in an Azure secret and maps it to `GITHUB_PRIVATE_KEY`.
+- M038 structural-impact output depends on the M040 review graph and M041 canonical current-code substrates being reachable through the configured application environment at runtime.
 
 ### Run
 

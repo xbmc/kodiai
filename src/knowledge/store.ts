@@ -3,6 +3,7 @@ import type { Sql } from "../db/client.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
+  AuthorCacheTier,
   CheckpointRecord,
   DepBumpMergeHistoryRecord,
   FeedbackReaction,
@@ -437,7 +438,7 @@ export function createKnowledgeStore(opts: {
       const row = rows[0]!;
 
       return {
-        tier: row.tier,
+        tier: row.tier as AuthorCacheTier,
         authorAssociation: row.author_association,
         prCount: row.pr_count,
         cachedAt: typeof row.cached_at === "string" ? row.cached_at : (row.cached_at as Date).toISOString(),
@@ -469,7 +470,7 @@ export function createKnowledgeStore(opts: {
     async upsertAuthorCache(params: {
       repo: string;
       authorLogin: string;
-      tier: string;
+      tier: AuthorCacheTier;
       authorAssociation: string;
       prCount: number | null;
     }): Promise<void> {

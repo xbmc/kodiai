@@ -1,6 +1,11 @@
 import type { Logger } from "pino";
 import type { ContributorProfileStore, ContributorTier } from "./types.ts";
 
+export type ContributorScoreSnapshot = {
+  profileId: number;
+  overallScore: number;
+};
+
 function tierFromPercentile(
   overallScore: number,
   percentile: number,
@@ -12,6 +17,46 @@ function tierFromPercentile(
   if (percentile < 0.5) return "developing";
   if (percentile < 0.8) return "established";
   return "senior";
+}
+
+export function calculateTierAssignments(
+  scores: ContributorScoreSnapshot[],
+): Map<number, { tier: ContributorTier; overallScore: number }> {
+  const sorted = [...scores].sort((a, b) => a.overallScore - b.overallScore);
+  const total = sorted.length;
+  const tierAssignments = new Map<
+    number,
+    { tier: ContributorTier; overallScore: number }
+  >();
+
+  for (let i = 0; i < total; i++) {
+    const entry = sorted[i]!;
+    const percentile = total === 1 ? 0.5 : i / (total - 1);
+    const tier = tierFromPercentile(entry.overallScore, percentile);
+    tierAssignments.set(entry.profileId, {
+      tier,
+      overallScore: entry.overallScore,
+    });
+  }
+
+  return tierAssignments;
+}
+
+export function calculateTierForProfile(params: {
+  profileId: number;
+  updatedOverallScore: number;
+  scores: ContributorScoreSnapshot[];
+}): ContributorTier {
+  const { profileId, updatedOverallScore, scores } = params;
+  const dedupedScores = scores.filter((entry) => entry.profileId !== profileId);
+  dedupedScores.push({ profileId, overallScore: updatedOverallScore });
+  const assignment = calculateTierAssignments(dedupedScores).get(profileId);
+
+  if (!assignment) {
+    throw new Error(`Missing tier assignment for profile ${profileId}`);
+  }
+
+  return assignment.tier;
 }
 
 /**
@@ -30,30 +75,9 @@ export async function recalculateTiers(params: {
     return;
   }
 
-  // Sort ascending by score for percentile calculation
-  const sorted = [...allScores].sort(
-    (a, b) => a.overallScore - b.overallScore,
-  );
-  const total = sorted.length;
+  const total = allScores.length;
+  const tierAssignments = calculateTierAssignments(allScores);
 
-  // We need to know current tiers to detect changes.
-  // Build a map of profileId -> desired tier
-  const tierAssignments = new Map<
-    number,
-    { tier: ContributorTier; overallScore: number }
-  >();
-
-  for (let i = 0; i < total; i++) {
-    const entry = sorted[i]!;
-    const percentile = total === 1 ? 0.5 : i / (total - 1);
-    const tier = tierFromPercentile(entry.overallScore, percentile);
-    tierAssignments.set(entry.profileId, {
-      tier,
-      overallScore: entry.overallScore,
-    });
-  }
-
-  // Fetch current tiers and only update changed ones
   let tiersChanged = 0;
   const breakdown: Record<ContributorTier, number> = {
     newcomer: 0,
@@ -64,10 +88,6 @@ export async function recalculateTiers(params: {
 
   for (const [profileId, assignment] of tierAssignments) {
     breakdown[assignment.tier]++;
-    // Always update tier — the store call is idempotent, and we need to
-    // detect changes. In practice, we'd compare against cached current tier,
-    // but since getAllScores doesn't return the tier, we update all.
-    // The profileStore.updateTier is a cheap UPDATE.
     await profileStore.updateTier(
       profileId,
       assignment.tier,
