@@ -5,9 +5,15 @@ import {
   computeDecayedScore,
   normalizeScore,
   updateExpertiseIncremental,
+  deriveUpdatedOverallScore,
   type ActivitySignal,
 } from "./expertise-scorer.ts";
-import type { ContributorProfileStore, ContributorExpertise } from "./types.ts";
+import type {
+  ContributorProfileStore,
+  ContributorExpertise,
+  ContributorProfile,
+  ContributorTier,
+} from "./types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -48,10 +54,20 @@ describe("computeDecayedScore", () => {
     );
 
     const recentSignals: ActivitySignal[] = [
-      { type: "commit", date: now, languages: ["typescript"], fileAreas: ["src/handlers/"] },
+      {
+        type: "commit",
+        date: now,
+        languages: ["typescript"],
+        fileAreas: ["src/handlers/"],
+      },
     ];
     const oldSignals: ActivitySignal[] = [
-      { type: "commit", date: halfLifeAgo, languages: ["typescript"], fileAreas: ["src/handlers/"] },
+      {
+        type: "commit",
+        date: halfLifeAgo,
+        languages: ["typescript"],
+        fileAreas: ["src/handlers/"],
+      },
     ];
 
     const recentScore = computeDecayedScore(recentSignals);
@@ -65,10 +81,20 @@ describe("computeDecayedScore", () => {
   test("higher weight for pr_authored than commit", () => {
     const now = new Date();
     const commitSignals: ActivitySignal[] = [
-      { type: "commit", date: now, languages: ["typescript"], fileAreas: ["src/"] },
+      {
+        type: "commit",
+        date: now,
+        languages: ["typescript"],
+        fileAreas: ["src/"],
+      },
     ];
     const prSignals: ActivitySignal[] = [
-      { type: "pr_authored", date: now, languages: ["typescript"], fileAreas: ["src/"] },
+      {
+        type: "pr_authored",
+        date: now,
+        languages: ["typescript"],
+        fileAreas: ["src/"],
+      },
     ];
 
     expect(computeDecayedScore(prSignals)).toBeGreaterThan(
@@ -100,6 +126,41 @@ describe("normalizeScore", () => {
   });
 });
 
+describe("deriveUpdatedOverallScore", () => {
+  test("updates only the touched expertise topics before averaging the top five", () => {
+    const expertise = [
+      makeExpertise({ dimension: "language", topic: "typescript", score: 0.2 }),
+      makeExpertise({ dimension: "language", topic: "python", score: 0.91 }),
+      makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.35 }),
+      makeExpertise({ dimension: "file_area", topic: "src/lib/", score: 0.84 }),
+      makeExpertise({ dimension: "language", topic: "rust", score: 0.63 }),
+      makeExpertise({ dimension: "file_area", topic: "docs/", score: 0.18 }),
+    ];
+
+    const updatedScore = deriveUpdatedOverallScore({
+      existingExpertise: expertise,
+      touchedTopics: [
+        { dimension: "language", topic: "typescript" },
+        { dimension: "file_area", topic: "src/handlers/" },
+      ],
+      signal: {
+        type: "pr_authored",
+        date: new Date(),
+        languages: ["typescript"],
+        fileAreas: ["src/handlers/"],
+      },
+    });
+
+    const expectedTypescriptScore = 0.2 * 0.9 + normalizeScore(3) * 0.1;
+    const expectedHandlersScore = 0.35 * 0.9 + normalizeScore(3) * 0.1;
+    const expectedTopFiveAverage =
+      (0.91 + 0.84 + 0.63 + expectedHandlersScore + expectedTypescriptScore) /
+      5;
+
+    expect(updatedScore).toBeCloseTo(expectedTopFiveAverage, 6);
+  });
+});
+
 describe("updateExpertiseIncremental", () => {
   test("calls upsertExpertise for each language and file area", async () => {
     const upsertCalls: Array<{
@@ -110,18 +171,7 @@ describe("updateExpertiseIncremental", () => {
     const mockStore: ContributorProfileStore = {
       getByGithubUsername: async () => null,
       getBySlackUserId: async () => null,
-      linkIdentity: async () => ({
-        id: 1,
-        githubUsername: "test",
-        slackUserId: null,
-        displayName: null,
-        overallTier: "newcomer" as const,
-        overallScore: 0,
-        optedOut: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastScoredAt: null,
-      }),
+      linkIdentity: async () => makeProfile(),
       unlinkSlack: async () => {},
       setOptedOut: async () => {},
       getExpertise: async () => [],
@@ -132,18 +182,7 @@ describe("updateExpertiseIncremental", () => {
         });
       },
       updateTier: async () => {},
-      getOrCreateByGithubUsername: async () => ({
-        id: 1,
-        githubUsername: "test",
-        slackUserId: null,
-        displayName: null,
-        overallTier: "newcomer" as const,
-        overallScore: 0,
-        optedOut: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastScoredAt: null,
-      }),
+      getOrCreateByGithubUsername: async () => makeProfile(),
       getAllScores: async () => [],
     };
 
@@ -174,4 +213,165 @@ describe("updateExpertiseIncremental", () => {
     expect(areaCalls.some((c) => c.topic === "src/handlers/")).toBe(true);
     expect(areaCalls.some((c) => c.topic === "src/lib/")).toBe(true);
   });
+
+  test("reproduces stale-tier persistence when overall score rises above the stored newcomer tier", async () => {
+    const updateTierCalls: Array<{
+      profileId: number;
+      tier: ContributorTier;
+      overallScore: number;
+    }> = [];
+    const profile = makeProfile({
+      githubUsername: "crystalp",
+      overallTier: "newcomer",
+      overallScore: 0.2,
+    });
+
+    const existingExpertise = [
+      makeExpertise({ dimension: "language", topic: "typescript", score: 0.2 }),
+      makeExpertise({ dimension: "language", topic: "python", score: 0.91 }),
+      makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.35 }),
+      makeExpertise({ dimension: "file_area", topic: "src/lib/", score: 0.84 }),
+      makeExpertise({ dimension: "language", topic: "rust", score: 0.63 }),
+      makeExpertise({ dimension: "file_area", topic: "docs/", score: 0.18 }),
+    ];
+
+    const mockStore = createIncrementalMockStore({
+      profile,
+      expertise: existingExpertise,
+      onUpdateTier: (call) => updateTierCalls.push(call),
+    });
+
+    await updateExpertiseIncremental({
+      githubUsername: "crystalp",
+      filesChanged: ["src/handlers/review.ts"],
+      type: "pr_authored",
+      profileStore: mockStore,
+      logger: mockLogger,
+    });
+
+    expect(updateTierCalls).toHaveLength(1);
+    expect(updateTierCalls[0]?.tier).toBe("newcomer");
+    expect(updateTierCalls[0]?.overallScore).toBeGreaterThan(
+      profile.overallScore,
+    );
+    expect(updateTierCalls[0]?.overallScore).toBeCloseTo(0.5784826309, 6);
+  });
+
+  test("captures the CrystalP-shaped defect: stored newcomer tier survives despite ranking above the lowest score cohort", async () => {
+    const updateTierCalls: Array<{
+      profileId: number;
+      tier: ContributorTier;
+      overallScore: number;
+    }> = [];
+    const profile = makeProfile({
+      githubUsername: "crystalp",
+      overallTier: "newcomer",
+      overallScore: 0.24,
+    });
+
+    const expertise = [
+      makeExpertise({ dimension: "language", topic: "typescript", score: 0.25 }),
+      makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.3 }),
+      makeExpertise({ dimension: "language", topic: "python", score: 0.92 }),
+      makeExpertise({ dimension: "file_area", topic: "src/lib/", score: 0.81 }),
+      makeExpertise({ dimension: "language", topic: "rust", score: 0.74 }),
+    ];
+
+    const mockStore = createIncrementalMockStore({
+      profile,
+      expertise,
+      allScores: [
+        { profileId: 1, overallScore: 0.08 },
+        { profileId: 2, overallScore: 0.16 },
+        { profileId: 3, overallScore: 0.24 },
+        { profileId: 4, overallScore: 0.41 },
+        { profileId: 5, overallScore: 0.56 },
+        { profileId: 6, overallScore: 0.72 },
+      ],
+      onUpdateTier: (call) => updateTierCalls.push(call),
+    });
+
+    await updateExpertiseIncremental({
+      githubUsername: "crystalp",
+      filesChanged: ["src/handlers/review.ts"],
+      type: "pr_authored",
+      profileStore: mockStore,
+      logger: mockLogger,
+    });
+
+    expect(updateTierCalls).toHaveLength(1);
+    const persisted = updateTierCalls[0]!;
+    expect(persisted.tier).toBe("newcomer");
+    expect(persisted.overallScore).toBeGreaterThan(0.56);
+    expect(persisted.overallScore).toBeLessThan(0.72);
+  });
 });
+
+function makeProfile(
+  overrides: Partial<ContributorProfile> = {},
+): ContributorProfile {
+  return {
+    id: 1,
+    githubUsername: "test",
+    slackUserId: null,
+    displayName: null,
+    overallTier: "newcomer",
+    overallScore: 0,
+    optedOut: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastScoredAt: null,
+    ...overrides,
+  };
+}
+
+function makeExpertise(
+  overrides: Partial<ContributorExpertise> & {
+    dimension: ContributorExpertise["dimension"];
+    topic: string;
+    score: number;
+  },
+): ContributorExpertise {
+  return {
+    id: 1,
+    profileId: 1,
+    dimension: overrides.dimension,
+    topic: overrides.topic,
+    score: overrides.score,
+    rawSignals: 1,
+    lastActive: new Date(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+function createIncrementalMockStore(params: {
+  profile?: ContributorProfile;
+  expertise?: ContributorExpertise[];
+  allScores?: Array<{ profileId: number; overallScore: number }>;
+  onUpdateTier?: (call: {
+    profileId: number;
+    tier: ContributorTier;
+    overallScore: number;
+  }) => void;
+}): ContributorProfileStore {
+  const profile = params.profile ?? makeProfile();
+  const expertise = params.expertise ?? [];
+  const allScores = params.allScores ?? [];
+
+  return {
+    getByGithubUsername: async () => null,
+    getBySlackUserId: async () => null,
+    linkIdentity: async () => profile,
+    unlinkSlack: async () => {},
+    setOptedOut: async () => {},
+    getExpertise: async () => expertise,
+    upsertExpertise: async () => {},
+    updateTier: async (profileId, tier, overallScore) => {
+      params.onUpdateTier?.({ profileId, tier, overallScore });
+    },
+    getOrCreateByGithubUsername: async () => profile,
+    getAllScores: async () => allScores,
+  };
+}

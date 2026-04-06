@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.26 (2026-04-05)
+
+Structural Impact Evidence.
+
+### Added
+
+- Review-time structural-impact consumer layer combining persisted graph blast-radius data with canonical current-code retrieval through explicit `GraphAdapter` / `CorpusAdapter` seams
+- Bounded `StructuralImpactPayload` contract with callers, impacted files, likely tests, graph coverage stats, canonical unchanged-code evidence, and explicit degradation records
+- Structural Impact subsection in Review Details with hard caps, rendered/truncated counts, and truthful confidence wording
+- `## Structural Impact Evidence` prompt section and evidence-backed breaking-change guidance for C++ and Python reviews
+- Handler-level structural-impact cache with stable `(repo, baseSha, headSha)` keys, 256-entry LRU, and 10-minute TTL
+- Centralized degradation summarizer producing machine-readable truthfulness signals (`graph-unavailable`, `corpus-unavailable`, `no-structural-evidence`, etc.)
+- Deterministic proof harnesses `verify:m038:s02` and `verify:m038:s03` covering rendering, cache reuse, timeout fail-open, substrate-failure truthfulness, and asymmetric partial-degradation cases
+
+### Changed
+
+- Review flow now consumes the bounded structural-impact layer instead of reaching into substrate-native graph types directly
+- Architecture and deployment docs updated to reflect Azure Container App job execution, canonical current-code corpus, and the six-corpus retrieval stack
+- README updated to describe the Structural Impact feature and current retrieval/runtime shape
+
 ## v0.25 (2026-03-07)
 
 Wiki Content Updates.

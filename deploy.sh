@@ -314,7 +314,9 @@ if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --
     --termination-grace-period 600 \
     --output none
 
-  # Apply Azure Files volume mount via YAML (--volume flag not supported in az containerapp update)
+  # Apply Azure Files volume mount via YAML (--volume flag not supported in az containerapp update).
+  # Important: include the full container spec (env + probes + image + mounts), otherwise ACA
+  # treats omitted fields as replacements and drops env vars / probes from the new revision.
   APP_VOLUME_YAML=$(mktemp --suffix=.yaml)
   cat > "$APP_VOLUME_YAML" <<APPYAML
 properties:
@@ -322,6 +324,55 @@ properties:
     containers:
       - name: ${APP_NAME}
         image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        env:
+          - name: GITHUB_APP_ID
+            secretRef: github-app-id
+          - name: GITHUB_PRIVATE_KEY
+            secretRef: github-private-key
+          - name: GITHUB_WEBHOOK_SECRET
+            secretRef: github-webhook-secret
+          - name: CLAUDE_CODE_OAUTH_TOKEN
+            secretRef: claude-code-oauth-token
+          - name: VOYAGE_API_KEY
+            secretRef: voyage-api-key
+          - name: SLACK_BOT_TOKEN
+            secretRef: slack-bot-token
+          - name: SLACK_SIGNING_SECRET
+            secretRef: slack-signing-secret
+          - name: DATABASE_URL
+            secretRef: database-url
+          - name: SLACK_BOT_USER_ID
+            value: "${SLACK_BOT_USER_ID}"
+          - name: SLACK_KODIAI_CHANNEL_ID
+            value: "${SLACK_KODIAI_CHANNEL_ID}"
+          - name: SHUTDOWN_GRACE_MS
+            value: "${SHUTDOWN_GRACE_MS}"
+          - name: PORT
+            value: "3000"
+          - name: LOG_LEVEL
+            value: info
+        probes:
+          - type: liveness
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            failureThreshold: 3
+          - type: readiness
+            httpGet:
+              path: /readiness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          - type: startup
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 40
         volumeMounts:
           - volumeName: kodiai-workspaces
             mountPath: /mnt/kodiai-workspaces

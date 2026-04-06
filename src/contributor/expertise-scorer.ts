@@ -1,6 +1,10 @@
 import type { Logger } from "pino";
 import { classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
-import type { ContributorProfileStore, ExpertiseDimension } from "./types.ts";
+import type {
+  ContributorExpertise,
+  ContributorProfileStore,
+  ExpertiseDimension,
+} from "./types.ts";
 
 const DECAY_HALF_LIFE_DAYS = 180;
 const DECAY_LAMBDA = Math.LN2 / DECAY_HALF_LIFE_DAYS;
@@ -72,6 +76,11 @@ type ExpertiseBucket = {
   signals: ActivitySignal[];
 };
 
+type ExpertiseTopic = {
+  dimension: ExpertiseDimension;
+  topic: string;
+};
+
 function bucketSignals(
   signals: ActivitySignal[],
 ): Map<string, ExpertiseBucket> {
@@ -100,6 +109,43 @@ function bucketSignals(
 
   return buckets;
 }
+
+export function deriveUpdatedOverallScore(params: {
+  existingExpertise: ExpertiseDimensionScore[];
+  touchedTopics: ExpertiseTopic[];
+  signal: ActivitySignal;
+}): number {
+  const { existingExpertise, touchedTopics, signal } = params;
+  const scoreByTopic = new Map(
+    existingExpertise.map((entry) => [
+      `${entry.dimension}:${entry.topic}`,
+      entry.score,
+    ]),
+  );
+
+  const newRaw = computeDecayedScore([signal]);
+  const normalizedContribution = normalizeScore(newRaw);
+
+  for (const touched of touchedTopics) {
+    const key = `${touched.dimension}:${touched.topic}`;
+    const existingScore = scoreByTopic.get(key) ?? 0;
+    const blended = existingScore * 0.9 + normalizedContribution * 0.1;
+    scoreByTopic.set(key, Math.min(1, blended));
+  }
+
+  const topScores = [...scoreByTopic.values()]
+    .sort((a, b) => b - a)
+    .slice(0, 5);
+
+  return topScores.length > 0
+    ? topScores.reduce((a, b) => a + b, 0) / topScores.length
+    : 0;
+}
+
+type ExpertiseDimensionScore = Pick<
+  ContributorExpertise,
+  "dimension" | "topic" | "score"
+>;
 
 /**
  * Full expertise scoring from GitHub activity. Fetches commits, PRs, reviews
@@ -352,11 +398,20 @@ export async function updateExpertiseIncremental(params: {
 
   // Update overall score
   const allExpertise = await profileStore.getExpertise(profile.id);
-  const topScores = allExpertise.slice(0, 5).map((e) => e.score);
-  const overallScore =
-    topScores.length > 0
-      ? topScores.reduce((a, b) => a + b, 0) / topScores.length
-      : 0;
+  const overallScore = deriveUpdatedOverallScore({
+    existingExpertise: allExpertise,
+    touchedTopics: [
+      ...languages.map((topic) => ({
+        dimension: "language" as const,
+        topic,
+      })),
+      ...fileAreas.map((topic) => ({
+        dimension: "file_area" as const,
+        topic,
+      })),
+    ],
+    signal,
+  });
 
   await profileStore.updateTier(
     profile.id,

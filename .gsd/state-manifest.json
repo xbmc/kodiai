@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-05T21:17:50.747Z",
+  "exported_at": "2026-04-06T22:23:49.488Z",
   "milestones": [
     {
       "id": "M001",
@@ -1296,6 +1296,66 @@
       ],
       "requirement_coverage": "R036 is advanced by S01 and S02 through canonical storage, provenance, and semantic retrieval over current unchanged code. R035 is advanced by S03 through selective changed-file refresh plus bounded audit/repair instead of periodic full-repo re-embedding.",
       "boundary_map_markdown": "- **Owns:** canonical current-code corpus tables, chunking/exclusion rules, backfill/update/audit jobs, and retrieval APIs for current unchanged code\n- **Consumes:** repo contents from `src/jobs/workspace.ts`, embedding provider/runtime configuration, PostgreSQL/pgvector storage\n- **Provides to downstream milestones:** truthful current-code chunks with commit/ref provenance plus semantic retrieval over unchanged code\n- **Does not own:** historical PR diff-hunk corpus, graph substrate from M040, or prompt consumption logic in M038"
+    },
+    {
+      "id": "M042",
+      "title": "Contributor Tier Truthfulness",
+      "status": "active",
+      "depends_on": [],
+      "created_at": "2026-04-06T22:17:17.884Z",
+      "completed_at": null,
+      "vision": "Fix Kodiai's contributor-experience classification so a clearly established contributor is not labeled as a newcomer in review output, using the CrystalP `xbmc/xbmc#28132` repro to correct stored tier advancement, review-surface author labeling, and cache/fallback consistency the right way.",
+      "success_criteria": [
+        "A clearly experienced contributor is no longer labeled with newcomer-style author context in the review path.",
+        "Stored contributor profile tiers advance truthfully as contributor activity accumulates.",
+        "Review output, cache reuse, and fallback classification no longer contradict each other about contributor experience.",
+        "The real repro on `xbmc/xbmc#28132` is mechanically covered by regression verification."
+      ],
+      "key_risks": [
+        {
+          "risk": "Stored contributor tiers may be structurally stuck because score updates do not trigger recalculation.",
+          "whyItMatters": "If true, review output will stay wrong for any contributor whose profile was first created with a low/default tier."
+        },
+        {
+          "risk": "Two author-tier systems with different shapes may create contradictory behavior even after the stored-tier bug is fixed.",
+          "whyItMatters": "The review path can still regress through author cache or lightweight fallback classification if precedence is unclear."
+        },
+        {
+          "risk": "The repro may involve undercounted activity signals, not just stale state.",
+          "whyItMatters": "A narrow recalculation fix would be incomplete if the underlying scoring inputs systematically underclassify active contributors."
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "Stored contributor tiers may be structurally stuck because score updates do not trigger recalculation.",
+          "retireIn": "S01",
+          "whatWillBeProven": "The CrystalP-shaped repro can be reproduced and the stored contributor profile can advance out of the incorrect low tier under corrected tier-state logic."
+        },
+        {
+          "riskOrUnknown": "Two author-tier systems with different shapes may create contradictory behavior even after the stored-tier bug is fixed.",
+          "retireIn": "S02",
+          "whatWillBeProven": "The review handler and prompt/output path consume the corrected contributor tier source consistently for the repro case."
+        },
+        {
+          "riskOrUnknown": "The repro may involve undercounted activity signals, not just stale state.",
+          "retireIn": "S03",
+          "whatWillBeProven": "Cache-hit, cache-miss, fallback, and adjacent contributor-history scenarios preserve truthful labeling instead of silently reintroducing stale or contradictory states."
+        }
+      ],
+      "verification_contract": "Focused unit and integration tests prove truthful stored-tier advancement, review-path precedence, and repro regression coverage.",
+      "verification_integration": "Exercise the real review classification path (`src/handlers/review.ts` → prompt/output behavior) using the CrystalP-shaped repro and adjacent contributor-history cases.",
+      "verification_operational": "Verify cache-hit, cache-miss, and degraded-enrichment paths do not reintroduce stale contributor labels under fail-open execution.",
+      "verification_uat": "Human can inspect the repro case expectations and confirm that an obviously experienced contributor is no longer described as a newcomer in review output.",
+      "definition_of_done": [
+        "The CrystalP repro path for `xbmc/xbmc#28132` no longer produces newcomer-style author context.",
+        "Stored contributor profiles can advance truthfully when score/history warrants it.",
+        "Review output consumes the corrected contributor tier source consistently.",
+        "Cache and fallback classification no longer preserve contradictory contributor labels once truthful profile state exists.",
+        "Regression verification covers the real repro and adjacent contributor-history cases.",
+        "All milestone success criteria are re-checked against real code paths before closure."
+      ],
+      "requirement_coverage": "Covers: R039, R040, R041, R042\nLeaves for later: R043\nOut of scope for this milestone: R044, R045",
+      "boundary_map_markdown": "## Boundary Map\n\n### S01 → S02\nProduces:\n- `src/contributor/*` tier-advancement fix or equivalent shared classification primitive that turns updated contributor activity into a truthful stored tier\n- repro fixture / verification helper for the CrystalP `xbmc#28132` misclassification path\n- explicit normalization rule for mapping stored contributor tiers into review-path author-context behavior\n\nConsumes:\n- existing contributor profile store, expertise scoring, and review-handler author classification entrypoint\n\n### S02 → S03\nProduces:\n- review-path wiring that consumes the corrected contributor tier source of truth in `src/handlers/review.ts`\n- prompt/output regression coverage proving the repro no longer emits newcomer-style author context\n- documented precedence between contributor profile state and fallback classification\n\nConsumes from S01:\n- truthful stored-tier advancement behavior\n- repro verification helper / fixtures\n- tier normalization rule\n\n### S01 → S03\nProduces:\n- reproducible contributor-state scenarios that exercise stale/stuck tier behavior and corrected advancement behavior\n\nConsumes:\n- existing contributor profile and cache infrastructure"
     }
   ],
   "slices": [
@@ -5405,6 +5465,71 @@
       "observability_impact": "Adds freshness, stale-row, and repair-state signals that make corpus drift operationally visible.",
       "sequence": 0,
       "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M042",
+      "id": "S01",
+      "title": "Repro and Tier-State Correction",
+      "status": "pending",
+      "risk": "high",
+      "depends": [],
+      "demo": "After this, we can reproduce the CrystalP misclassification path, prove whether stored contributor tiers are stuck, and show the profile can advance out of the wrong low tier under real scoring inputs or corrected recalculation behavior.",
+      "created_at": "2026-04-06T22:17:17.886Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Reproduce the CrystalP-shaped stuck-tier defect, wire truthful contributor-tier recalculation into score updates, and prove the corrected stored tier becomes the review path’s trusted source before cache or fallback classification.",
+      "success_criteria": "- A deterministic regression proves contributor score updates currently preserve a stale low stored tier and fails until the fix is in place.\n- Contributor score-update paths persist a recalculated stored tier derived from the same percentile logic used by tier recalculation, while preserving fail-open behavior if recalculation cannot complete.\n- A focused verifier and review-boundary regression prove a corrected stored contributor tier wins over cache/fallback classification for the CrystalP-shaped repro state.",
+      "proof_level": "integration",
+      "integration_closure": "The slice closes the storage-side truthfulness boundary by connecting contributor scoring updates to tier recalculation and by proving the review author-tier resolver consumes corrected stored profile state first. Review-surface wording changes remain for S02, but S02 can rely on a truthful persisted tier source after this slice.",
+      "observability_impact": "Expose tier-transition behavior through focused verifier output and fail-open regression coverage so future agents can tell whether scoring updates advanced the stored tier, whether recalculation degraded safely, and whether review resolution consumed profile state rather than cache/fallback guesses.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M042",
+      "id": "S02",
+      "title": "Review-Surface Truthfulness Wiring",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S01"
+      ],
+      "demo": "After this, the review path uses the corrected contributor tier source consistently, and the CrystalP repro no longer receives newcomer-style author guidance in prompt/review output.",
+      "created_at": "2026-04-06T22:17:17.886Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Wire the corrected contributor tier into the review path so review output reflects truthful author experience labels instead of stale newcomer-style guidance.",
+      "success_criteria": "- Review handler prefers the corrected source of truth for contributor experience.\n- CrystalP repro no longer emits newcomer-style author context.\n- Prompt/output behavior remains fail-open when enrichment is missing.",
+      "proof_level": "Review-path integration tests and prompt/output assertions against the real repro shape.",
+      "integration_closure": "`src/handlers/review.ts` and `src/execution/review-prompt.ts` consume the corrected tier path with explicit precedence over lower-fidelity fallbacks.",
+      "observability_impact": "Makes author-tier source-of-truth behavior visible in review-path tests and, where already logged, in structured classification outcomes.",
+      "sequence": 0,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M042",
+      "id": "S03",
+      "title": "Cache, Fallback, and Regression Hardening",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [
+        "S01",
+        "S02"
+      ],
+      "demo": "After this, cache reuse and fallback classification preserve truthful contributor labeling, and regressions cover the repro plus adjacent contributor-history cases so the bug does not silently return.",
+      "created_at": "2026-04-06T22:17:17.886Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Harden cache and fallback behavior so corrected contributor labels are stable under normal review execution and stale/contradictory states do not leak back in.",
+      "success_criteria": "- Cache and fallback precedence are explicit and regression-tested.\n- No stale contradictory label survives after truthful profile state exists.\n- Adjacent cases are covered so the fix is not CrystalP-specific.",
+      "proof_level": "Deterministic regression tests proving cache/fallback consistency for the repro and adjacent cases.",
+      "integration_closure": "Contributor profile store, author cache, fallback classifier, and review handler behave consistently across cache-hit, cache-miss, and degraded-enrichment paths.",
+      "observability_impact": "Expands regression coverage to cache-hit, cache-miss, and degraded fallback scenarios around contributor classification truthfulness.",
+      "sequence": 0,
+      "replan_triggered_at": null
     }
   ],
   "tasks": [
@@ -9419,6 +9544,141 @@
       "observability_impact": "Provides stable proof IDs and drift-state output for future re-verification.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Added deterministic scorer regressions that prove contributor score updates can increase overallScore while still persisting the stale stored tier.",
+      "status": "complete",
+      "one_liner": "Added deterministic scorer regressions that prove contributor score updates can increase overallScore while still persisting the stale stored tier.",
+      "narrative": "Inspected the contributor scoring path and confirmed the defect is in src/contributor/expertise-scorer.ts: the scorer recalculates overallScore and then persists profile.overallTier unchanged through profileStore.updateTier(...). Added a small scorer-local helper, deriveUpdatedOverallScore, to expose the incremental top-five score calculation through a deterministic seam without involving the review path or DB integration. Expanded src/contributor/expertise-scorer.test.ts with fake-store regressions that capture updateTier arguments, including a general stuck-tier repro and a CrystalP-shaped fixture where a stored newcomer profile gains enough score to rank above the lowest cohort while the persisted tier remains newcomer. Left the stale-tier write behavior intact so this task proves the real defect instead of partially fixing it.",
+      "verification_result": "Ran bun test ./src/contributor/expertise-scorer.test.ts and confirmed the full scorer test suite passes, including the new deterministic stale-tier regression coverage and the helper-seam assertions.",
+      "duration": "",
+      "completed_at": "2026-04-06T22:23:49.462Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "The underlying defect remains in runtime code by design for this task: updateExpertiseIncremental() still persists profile.overallTier instead of recalculating a truthful tier. That fix is expected in T02.",
+      "key_files": [
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/expertise-scorer.test.ts",
+        ".gsd/milestones/M042/slices/S01/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Added a scorer-local deriveUpdatedOverallScore helper so regression fixtures can assert the updateTier contract directly without going through the review path or DB integration."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M042\nkey_files:\n  - src/contributor/expertise-scorer.ts\n  - src/contributor/expertise-scorer.test.ts\n  - .gsd/milestones/M042/slices/S01/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Added a scorer-local deriveUpdatedOverallScore helper so regression fixtures can assert the updateTier contract directly without going through the review path or DB integration.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T22:23:49.461Z\nblocker_discovered: false\n---\n\n# T01: Added deterministic scorer regressions that prove contributor score updates can increase overallScore while still persisting the stale stored tier.\n\n**Added deterministic scorer regressions that prove contributor score updates can increase overallScore while still persisting the stale stored tier.**\n\n## What Happened\n\nInspected the contributor scoring path and confirmed the defect is in src/contributor/expertise-scorer.ts: the scorer recalculates overallScore and then persists profile.overallTier unchanged through profileStore.updateTier(...). Added a small scorer-local helper, deriveUpdatedOverallScore, to expose the incremental top-five score calculation through a deterministic seam without involving the review path or DB integration. Expanded src/contributor/expertise-scorer.test.ts with fake-store regressions that capture updateTier arguments, including a general stuck-tier repro and a CrystalP-shaped fixture where a stored newcomer profile gains enough score to rank above the lowest cohort while the persisted tier remains newcomer. Left the stale-tier write behavior intact so this task proves the real defect instead of partially fixing it.\n\n## Verification\n\nRan bun test ./src/contributor/expertise-scorer.test.ts and confirmed the full scorer test suite passes, including the new deterministic stale-tier regression coverage and the helper-seam assertions.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/expertise-scorer.test.ts` | 0 | ✅ pass | 15ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe underlying defect remains in runtime code by design for this task: updateExpertiseIncremental() still persists profile.overallTier instead of recalculating a truthful tier. That fix is expected in T02.\n\n## Files Created/Modified\n\n- `src/contributor/expertise-scorer.ts`\n- `src/contributor/expertise-scorer.test.ts`\n- `.gsd/milestones/M042/slices/S01/tasks/T01-SUMMARY.md`\n",
+      "description": "Add deterministic regression coverage around contributor score updates so the slice starts by proving the real defect: `overallScore` changes while `overallTier` remains the stale stored value. Build fixtures that control the full score distribution rather than asserting absolute score thresholds, and shape one fixture after the CrystalP failure mode: a contributor profile stored as `newcomer` despite enough accumulated expertise to rank above the low tier.\n\nUse light fake-store seams rather than DB integration. Capture the `updateTier` arguments from `updateExpertiseIncremental()` and any shared helper seams you introduce so the repro is explicit about stale-tier persistence. If extracting a reusable helper is required to keep the test surgical, do that inside contributor scoring code rather than through the review prompt path.",
+      "estimate": "45m",
+      "files": [
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/expertise-scorer.test.ts",
+        "src/contributor/types.ts"
+      ],
+      "verify": "bun test ./src/contributor/expertise-scorer.test.ts",
+      "inputs": [
+        "`src/contributor/expertise-scorer.ts`",
+        "`src/contributor/expertise-scorer.test.ts`",
+        "`src/contributor/types.ts`"
+      ],
+      "expected_output": [
+        "`src/contributor/expertise-scorer.test.ts`",
+        "`src/contributor/expertise-scorer.ts`"
+      ],
+      "observability_impact": "Adds explicit regression evidence around the `updateTier` call contract so future agents can inspect whether stale-tier preservation or recalculated-tier persistence is happening from test output alone.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Wire percentile tier recalculation into score updates with fail-open behavior",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Implement the smallest durable recalculation seam inside contributor scoring so both incremental and batch score updates persist a truthful tier instead of blindly reusing `profile.overallTier`. Reuse the existing percentile logic from `src/contributor/tier-calculator.ts` rather than inventing a new scoring taxonomy.\n\nExtract or expose a reusable helper that computes a target tier from controlled score distributions, then call it from the scorer path after the updated `overallScore` is known. Preserve fail-open behavior: if the recalculation read or computation fails, the scoring path must still complete without blocking review-time background updates, and tests must prove that degradation path. Update tier-calculator tests as needed so the shared percentile contract stays anchored in one place.",
+      "estimate": "1h15m",
+      "files": [
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/expertise-scorer.test.ts",
+        "src/contributor/tier-calculator.ts",
+        "src/contributor/tier-calculator.test.ts",
+        "src/contributor/types.ts"
+      ],
+      "verify": "bun test ./src/contributor/expertise-scorer.test.ts && bun test ./src/contributor/tier-calculator.test.ts",
+      "inputs": [
+        "`src/contributor/expertise-scorer.ts`",
+        "`src/contributor/expertise-scorer.test.ts`",
+        "`src/contributor/tier-calculator.ts`",
+        "`src/contributor/tier-calculator.test.ts`",
+        "`src/contributor/types.ts`"
+      ],
+      "expected_output": [
+        "`src/contributor/expertise-scorer.ts`",
+        "`src/contributor/expertise-scorer.test.ts`",
+        "`src/contributor/tier-calculator.ts`",
+        "`src/contributor/tier-calculator.test.ts`"
+      ],
+      "observability_impact": "Makes the recalculation/fail-open boundary testable and visible: tests should show both successful tier advancement and the degraded path where score updates still complete if tier recalculation dependencies fail.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M042",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Prove review-source precedence with a slice verifier",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Add a focused regression proving that once stored contributor tier state is corrected, the review author-tier resolution path trusts that profile state ahead of cache and fallback classification. If the current `resolveAuthorTier` shape is too private for focused testing, extract the smallest helper seam needed to test precedence without hauling the full review handler into the test. Keep the scope on source-of-truth resolution, not prompt copy changes.\n\nCreate a slice verifier for M042/S01 that exercises three checks: stuck-tier repro fixed, recalculated-tier persistence under controlled population scores, and profile-precedence over cache/fallback for a CrystalP-shaped fixture. Include one fail-open check showing that recalculation errors do not become review-blocking failures. Register the verifier in `package.json` so downstream slices can run it as the slice-level proof surface.",
+      "estimate": "1h",
+      "files": [
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/tier-calculator.ts",
+        "scripts/verify-m042-s01.ts",
+        "scripts/verify-m042-s01.test.ts",
+        "package.json"
+      ],
+      "verify": "bun test ./src/handlers/review.test.ts && bun test ./scripts/verify-m042-s01.test.ts && bun run verify:m042:s01 && bun run tsc --noEmit",
+      "inputs": [
+        "`src/handlers/review.ts`",
+        "`src/handlers/review.test.ts`",
+        "`src/contributor/expertise-scorer.ts`",
+        "`src/contributor/tier-calculator.ts`",
+        "`package.json`"
+      ],
+      "expected_output": [
+        "`src/handlers/review.test.ts`",
+        "`src/handlers/review.ts`",
+        "`scripts/verify-m042-s01.ts`",
+        "`scripts/verify-m042-s01.test.ts`",
+        "`package.json`"
+      ],
+      "observability_impact": "Introduces a named verifier surface for this slice so later agents can inspect truthfulness state with one command instead of reconstructing contributor-tier behavior from scattered unit tests.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -9912,6 +10172,30 @@
       "rationale": "M038/S03 proves the fail-open contract end-to-end: (1) CACHE-REUSE confirmed first call triggers cache-miss+write, second call hits the cache with no adapter invocations; (2) TIMEOUT-FAIL-OPEN confirmed 40ms timeout against 500ms adapters returns status=unavailable with review completing in 41ms, no invented callers or evidence; (3) SUBSTRATE-FAILURE-TRUTHFUL confirmed both substrates throwing produces status=unavailable with graphStats=null, empty callers/evidence, and truthfulnessSignals=[graph-unavailable, corpus-unavailable, no-structural-evidence]; (4) PARTIAL-DEGRADATION-TRUTHFUL confirmed asymmetric failure shows only the available evidence with a degradation record for the missing source. bun run verify:m038:s03 --json exits 0 with overallPassed:true. All 61 structural-impact tests pass. tsc --noEmit exits 0.",
       "revisable": "Yes",
       "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 76,
+      "id": "D042",
+      "when_context": "M042 planning",
+      "scope": "architecture",
+      "decision": "Source of truth for contributor experience in M042",
+      "choice": "Treat the persistent contributor profile tier as the highest-fidelity author-context signal and fix its advancement behavior instead of patching review prompt wording around misclassifications.",
+      "rationale": "The user explicitly asked for the fuller fix. The review handler already prefers contributor profile state over cache and lightweight fallback classification. If that source of record is stale or structurally unable to advance, every downstream surface inherits the wrong premise. Fixing the source of truth first is the smallest durable correction.",
+      "revisable": "Yes — if M042 shows the stored tier model itself is structurally wrong",
+      "made_by": "collaborative",
+      "superseded_by": null
+    },
+    {
+      "seq": 77,
+      "id": "D043",
+      "when_context": "M042 planning",
+      "scope": "scope",
+      "decision": "Scope boundary for contributor-tier bugfix milestone",
+      "choice": "Keep M042 focused on correctness of tier advancement, review-surface truthfulness, and cache/fallback consistency; defer broader repo-wide contributor-tier recalibration and tone-model redesign to follow-up work.",
+      "rationale": "The immediate user problem is a real misclassification on a concrete PR. Repo-wide recalibration and author-tone redesign are valid concerns, but they would expand a focused correctness milestone into open-ended product work. Separating them preserves the real bugfix while keeping future design work visible.",
+      "revisable": "Yes — if the immediate fix proves impossible without broader recalibration",
+      "made_by": "collaborative",
       "superseded_by": null
     }
   ],
@@ -11895,6 +12179,17 @@
       "verdict": "✅ pass",
       "duration_ms": 1000,
       "created_at": "2026-04-05T21:08:07.943Z"
+    },
+    {
+      "id": 181,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun test ./src/contributor/expertise-scorer.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 15,
+      "created_at": "2026-04-06T22:23:49.462Z"
     }
   ]
 }
