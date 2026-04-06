@@ -14,6 +14,9 @@ import {
 import type { ResolvedReviewProfile } from "../lib/auto-profile.ts";
 import type { MergeConfidence } from "../lib/merge-confidence.ts";
 import { SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE } from "../execution/review-prompt.ts";
+import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
+import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -221,6 +224,7 @@ export function formatReviewDetailsSummary(params: {
     outputTokens: number | undefined;
     costUsd: number | undefined;
   };
+  structuralImpact?: StructuralImpactPayload | null;
 }): string {
   const {
     reviewOutputKey,
@@ -236,6 +240,7 @@ export function formatReviewDetailsSummary(params: {
     prioritization,
     usageLimit,
     tokenUsage,
+    structuralImpact,
   } = params;
 
   const profileLine = profileSelection.source === "auto"
@@ -244,6 +249,16 @@ export function formatReviewDetailsSummary(params: {
       ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
 
+  const authorToneLabel = authorTier === "first-time" || authorTier === "newcomer"
+    ? "newcomer guidance"
+    : authorTier === "regular" || authorTier === "developing" || authorTier === undefined
+      ? "developing guidance"
+      : authorTier === "established"
+        ? "established contributor guidance"
+        : authorTier === "core" || authorTier === "senior"
+          ? "senior contributor guidance"
+          : "adapted tone";
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
@@ -251,18 +266,19 @@ export function formatReviewDetailsSummary(params: {
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     profileLine,
-    `- Author: ${authorTier ?? "regular"} (${authorTier === "regular" ? "default" : "adapted tone"})`,
+    `- Author tier: ${authorTier ?? "regular"} (${authorToneLabel})`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];
 
   if (usageLimit?.utilization !== undefined) {
     const pct = Math.round(usageLimit.utilization * 100);
+    const pctLeft = 100 - pct;
     const type = usageLimit.rateLimitType ?? 'usage';
     const resetStr = usageLimit.resetsAt !== undefined
       ? ` | resets ${new Date(usageLimit.resetsAt * 1000).toISOString()}`
       : '';
-    sections.push(`- Claude Code usage: ${pct}% of ${type} limit${resetStr}`);
+    sections.push(`- Claude Code usage: ${pctLeft}% of ${type} limit remaining${resetStr}`);
   }
 
   if (tokenUsage?.inputTokens !== undefined || tokenUsage?.outputTokens !== undefined) {
@@ -314,6 +330,20 @@ export function formatReviewDetailsSummary(params: {
     sections.push(
       `- Prioritization: scored ${prioritization.findingsScored} findings | top score ${prioritization.topScore ?? "n/a"} | threshold score ${prioritization.thresholdScore ?? "n/a"}`,
     );
+  }
+
+  const structuralImpactSection = buildStructuralImpactSection(structuralImpact);
+  if (structuralImpactSection.text) {
+    const structuralImpactDegradation = summarizeStructuralImpactDegradation(structuralImpact);
+    sections.push(structuralImpactSection.text);
+    sections.push(
+      `- Structural Impact rendered: callers ${structuralImpactSection.stats.callersRendered}/${structuralImpactSection.stats.callersTotal}${structuralImpactSection.stats.callersTruncated ? " truncated" : ""}; files ${structuralImpactSection.stats.filesRendered}/${structuralImpactSection.stats.filesTotal}${structuralImpactSection.stats.filesTruncated ? " truncated" : ""}; tests ${structuralImpactSection.stats.testsRendered}/${structuralImpactSection.stats.testsTotal}${structuralImpactSection.stats.testsTruncated ? " truncated" : ""}; unchanged evidence ${structuralImpactSection.stats.evidenceRendered}/${structuralImpactSection.stats.evidenceTotal}${structuralImpactSection.stats.evidenceTruncated ? " truncated" : ""}`,
+    );
+    if (structuralImpactDegradation.fallbackUsed) {
+      sections.push(
+        `- Structural Impact degradation: status ${structuralImpactDegradation.status}; graph ${structuralImpactDegradation.availability.graphAvailable ? "available" : "unavailable"}; corpus ${structuralImpactDegradation.availability.corpusAvailable ? "available" : "unavailable"}; signals ${structuralImpactDegradation.truthfulnessSignals.join(", ")}`,
+      );
+    }
   }
 
   const keywordSection = buildKeywordParsingSection(

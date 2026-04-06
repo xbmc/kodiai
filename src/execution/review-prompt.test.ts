@@ -25,6 +25,7 @@ import {
   matchPathInstructions,
 } from "./review-prompt.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 function baseContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -37,6 +38,73 @@ function baseContext(overrides: Record<string, unknown> = {}) {
     baseBranch: "main",
     headBranch: "fix/bug",
     changedFiles: ["src/index.ts"],
+    ...overrides,
+  };
+}
+
+function makeStructuralImpact(overrides: Partial<StructuralImpactPayload> = {}): StructuralImpactPayload {
+  return {
+    status: "ok",
+    changedFiles: ["src/auth.ts"],
+    seedSymbols: [
+      {
+        stableKey: "auth.login",
+        symbolName: "login",
+        qualifiedName: "auth::login",
+        filePath: "src/auth.ts",
+      },
+    ],
+    probableCallers: [
+      {
+        stableKey: "session.requireLogin",
+        symbolName: "requireLogin",
+        qualifiedName: "session::requireLogin",
+        filePath: "src/session.ts",
+        score: 0.91,
+        confidence: 0.92,
+        reasons: ["calls changed symbol"],
+      },
+    ],
+    impactedFiles: [
+      {
+        path: "src/session.ts",
+        score: 0.91,
+        confidence: 0.92,
+        reasons: ["calls changed symbol"],
+        languages: ["TypeScript"],
+      },
+    ],
+    likelyTests: [
+      {
+        path: "src/auth.test.ts",
+        score: 0.72,
+        confidence: 0.75,
+        reasons: ["covers changed symbol"],
+        testSymbols: ["login succeeds"],
+      },
+    ],
+    canonicalEvidence: [
+      {
+        filePath: "src/session.ts",
+        startLine: 42,
+        endLine: 47,
+        language: "TypeScript",
+        chunkType: "function",
+        symbolName: "requireLogin",
+        chunkText: "if (!login(user)) throw new Error('auth failed');",
+        distance: 0.11,
+        commitSha: "abc1234",
+        canonicalRef: "main",
+      },
+    ],
+    graphStats: {
+      changedFilesRequested: 1,
+      changedFilesFound: 1,
+      files: 2,
+      nodes: 6,
+      edges: 8,
+    },
+    degradations: [],
     ...overrides,
   };
 }
@@ -463,6 +531,72 @@ test("buildAuthorExperienceSection returns developing guidance for regular tier"
   expect(section).toContain("Author Experience Context");
   expect(section).toContain("developing contributor");
   expect(section).toContain("someone");
+});
+
+test("buildAuthorExperienceSection returns established guidance without newcomer or developing phrases", () => {
+  const section = buildAuthorExperienceSection({ tier: "established", authorLogin: "steadydev" });
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("established contributor");
+  expect(section).toContain("Keep explanations brief");
+  expect(section).toContain("steadydev");
+  expect(section).not.toContain("first-time or new contributor");
+  expect(section).not.toContain("developing contributor");
+  expect(section).not.toContain("Explain WHY each finding matters");
+  expect(section).not.toContain("learning opportunities");
+  expect(section).not.toContain("encouraging, welcoming");
+});
+
+test("buildAuthorExperienceSection returns senior guidance without newcomer or developing phrases", () => {
+  const section = buildAuthorExperienceSection({ tier: "senior", authorLogin: "principaldev" });
+  expect(section).toContain("Author Experience Context");
+  expect(section).toContain("core/senior contributor");
+  expect(section).toContain("Be concise and assume familiarity with the codebase");
+  expect(section).toContain("principaldev");
+  expect(section).not.toContain("first-time or new contributor");
+  expect(section).not.toContain("developing contributor");
+  expect(section).not.toContain("Explain WHY each finding matters");
+  expect(section).not.toContain("learning opportunities");
+  expect(section).not.toContain("Include doc links for project-specific patterns");
+});
+
+test("buildReviewPrompt threads established author tier without newcomer or developing guidance", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "CrystalP",
+      authorTier: "established",
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("established contributor");
+  expect(authorSection).toContain("Keep explanations brief");
+  expect(authorSection).not.toContain("first-time or new contributor");
+  expect(authorSection).not.toContain("developing contributor");
+  expect(authorSection).not.toContain("Explain WHY each finding matters");
+  expect(authorSection).not.toContain("learning opportunities");
+});
+
+test("buildReviewPrompt threads senior author tier without newcomer or developing guidance", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "CrystalP",
+      authorTier: "senior",
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("core/senior contributor");
+  expect(authorSection).toContain("Be concise and assume familiarity with the codebase");
+  expect(authorSection).not.toContain("first-time or new contributor");
+  expect(authorSection).not.toContain("developing contributor");
+  expect(authorSection).not.toContain("Explain WHY each finding matters");
+  expect(authorSection).not.toContain("Include doc links for project-specific patterns");
 });
 
 // ---------------------------------------------------------------------------
@@ -1857,5 +1991,400 @@ describe("buildReviewPrompt includes security policy", () => {
   test("full prompt includes refuse instruction", () => {
     const prompt = buildReviewPrompt(baseContext());
     expect(prompt.toLowerCase()).toContain("refuse");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Active rules injection (M036/S02)
+// ---------------------------------------------------------------------------
+
+import type { SanitizedActiveRule } from "../knowledge/active-rules.ts";
+
+function makeActiveRule(overrides: Partial<SanitizedActiveRule> = {}): SanitizedActiveRule {
+  return {
+    id: 1,
+    title: "Test Rule",
+    ruleText: "Always verify return values.",
+    signalScore: 0.85,
+    memberCount: 5,
+    ...overrides,
+  };
+}
+
+describe("buildReviewPrompt active rules injection", () => {
+  test("omits Generated Review Rules section when activeRules is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Generated Review Rules");
+  });
+
+  test("omits Generated Review Rules section when activeRules is empty array", () => {
+    const prompt = buildReviewPrompt(baseContext({ activeRules: [] }));
+    expect(prompt).not.toContain("## Generated Review Rules");
+  });
+
+  test("includes Generated Review Rules section when rules provided", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({ activeRules: [makeActiveRule()] })
+    );
+    expect(prompt).toContain("## Generated Review Rules");
+  });
+
+  test("includes rule title in prompt", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ title: "Null dereference guard pattern" })],
+      })
+    );
+    expect(prompt).toContain("Null dereference guard pattern");
+  });
+
+  test("includes rule text in prompt", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ ruleText: "Check for null before accessing .value" })],
+      })
+    );
+    expect(prompt).toContain("Check for null before accessing .value");
+  });
+
+  test("includes signal score formatted to 2 decimal places", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({ activeRules: [makeActiveRule({ signalScore: 0.876 })] })
+    );
+    expect(prompt).toContain("0.88");
+  });
+
+  test("includes all provided active rules", () => {
+    const rules = [
+      makeActiveRule({ id: 1, title: "Rule Alpha", ruleText: "Alpha guidance." }),
+      makeActiveRule({ id: 2, title: "Rule Beta", ruleText: "Beta guidance." }),
+      makeActiveRule({ id: 3, title: "Rule Gamma", ruleText: "Gamma guidance." }),
+    ];
+    const prompt = buildReviewPrompt(baseContext({ activeRules: rules }));
+    expect(prompt).toContain("Rule Alpha");
+    expect(prompt).toContain("Rule Beta");
+    expect(prompt).toContain("Rule Gamma");
+    expect(prompt).toContain("Alpha guidance.");
+    expect(prompt).toContain("Beta guidance.");
+    expect(prompt).toContain("Gamma guidance.");
+  });
+
+  test("active rules section appears before custom instructions", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        activeRules: [makeActiveRule({ title: "My Active Rule" })],
+        customInstructions: "My custom instruction text.",
+      })
+    );
+    const rulesPos = prompt.indexOf("## Generated Review Rules");
+    const customPos = prompt.indexOf("## Custom instructions");
+    expect(rulesPos).toBeGreaterThan(-1);
+    expect(customPos).toBeGreaterThan(-1);
+    expect(rulesPos).toBeLessThan(customPos);
+  });
+
+  test("active rules section does not appear when no rules provided even with other context", () => {
+    const prompt = buildReviewPrompt(
+      baseContext({
+        customInstructions: "Some instructions.",
+        activeRules: undefined,
+      })
+    );
+    expect(prompt).not.toContain("Generated Review Rules");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M040/S03: Graph-context prompt rendering and bounded packing
+// ---------------------------------------------------------------------------
+
+import { buildGraphContextSection } from "../review-graph/prompt-context.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+
+function makeBlastRadius(overrides: Partial<ReviewGraphBlastRadiusResult> = {}): ReviewGraphBlastRadiusResult {
+  return {
+    changedFiles: ["src/auth.cpp"],
+    seedSymbols: [
+      { stableKey: "sym:auth:verifyToken", symbolName: "verifyToken", qualifiedName: "Auth::verifyToken", filePath: "src/auth.cpp" },
+    ],
+    impactedFiles: [
+      { path: "src/session.cpp", score: 0.92, confidence: 0.85, reasons: ["calls changed symbol Auth::verifyToken"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"] },
+      { path: "src/api/handler.cpp", score: 0.72, confidence: 0.70, reasons: ["imports changed file src/auth.cpp"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"] },
+    ],
+    probableDependents: [
+      { stableKey: "sym:session:create", symbolName: "create", qualifiedName: "Session::create", filePath: "src/session.cpp", score: 0.85, confidence: 0.80, reasons: ["calls changed symbol Auth::verifyToken"], relatedChangedPaths: ["src/auth.cpp"] },
+    ],
+    likelyTests: [
+      { path: "tests/auth_test.cpp", score: 0.88, confidence: 0.90, reasons: ["test heuristic matches changed symbol verifyToken"], relatedChangedPaths: ["src/auth.cpp"], languages: ["C++"], testSymbols: ["test_verifyToken"] },
+    ],
+    graphStats: { files: 120, nodes: 840, edges: 2100, changedFilesFound: 1 },
+    ...overrides,
+  };
+}
+
+describe("buildGraphContextSection", () => {
+  test("returns empty section for null blast radius", () => {
+    const result = buildGraphContextSection(null);
+    expect(result.text).toBe("");
+    expect(result.truncated).toBe(false);
+    expect(result.stats.impactedFilesIncluded).toBe(0);
+  });
+
+  test("returns empty section for undefined blast radius", () => {
+    const result = buildGraphContextSection(undefined);
+    expect(result.text).toBe("");
+  });
+
+  test("returns empty section when all sub-lists are empty", () => {
+    const result = buildGraphContextSection(makeBlastRadius({
+      impactedFiles: [],
+      likelyTests: [],
+      probableDependents: [],
+    }));
+    expect(result.text).toBe("");
+  });
+
+  test("returns empty section when maxChars is 0", () => {
+    const result = buildGraphContextSection(makeBlastRadius(), { maxChars: 0 });
+    expect(result.text).toBe("");
+  });
+
+  test("includes section header", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("## Graph-Derived Review Context");
+  });
+
+  test("includes graph stats in header", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("120 files");
+    expect(result.text).toContain("840 nodes");
+    expect(result.text).toContain("2100 edges");
+  });
+
+  test("includes impacted files with score and confidence", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Impacted Files");
+    expect(result.text).toContain("`src/session.cpp`");
+    expect(result.text).toContain("score: 0.920");
+    expect(result.text).toContain("confidence: high");
+  });
+
+  test("includes likely tests section", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Likely Affected Tests");
+    expect(result.text).toContain("`tests/auth_test.cpp`");
+  });
+
+  test("includes probable dependents section", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("### Probable Dependents");
+    expect(result.text).toContain("Session::create");
+    expect(result.text).toContain("`src/session.cpp`");
+  });
+
+  test("impacted file entry includes first reason", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.text).toContain("calls changed symbol Auth::verifyToken");
+  });
+
+  test("stats reflect included counts", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.stats.impactedFilesIncluded).toBe(2);
+    expect(result.stats.likelyTestsIncluded).toBe(1);
+    expect(result.stats.dependentsIncluded).toBe(1);
+  });
+
+  test("no truncation flag on small result", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.truncated).toBe(false);
+  });
+
+  test("caps impacted files at maxImpactedFiles option", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 15 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.05,
+        confidence: 0.8,
+        reasons: [`edge ${i}`],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const result = buildGraphContextSection(radius, { maxImpactedFiles: 5 });
+    expect(result.stats.impactedFilesIncluded).toBe(5);
+    expect(result.text).toContain("`src/file_0.cpp`");
+    // File 5 onwards should not be included
+    expect(result.text).not.toContain("`src/file_5.cpp`");
+  });
+
+  test("hard cap on impacted files is 20 regardless of option", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 25 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.03,
+        confidence: 0.8,
+        reasons: ["edge"],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const result = buildGraphContextSection(radius, { maxImpactedFiles: 50 });
+    // Hard cap is 20
+    expect(result.stats.impactedFilesIncluded).toBeLessThanOrEqual(20);
+  });
+
+  test("truncation note appears when char budget is exceeded", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 20 }, (_, i) => ({
+        path: `src/very_long_filename_that_uses_lots_of_characters_${i}.cpp`,
+        score: 1 - i * 0.04,
+        confidence: 0.8,
+        reasons: [`calls changed symbol LongClassName::longMethodNameThatIsVeryDescriptive_${i}`],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    // Small budget to force truncation
+    const result = buildGraphContextSection(radius, { maxChars: 600 });
+    expect(result.truncated).toBe(true);
+    expect(result.text).toContain("truncated");
+  });
+
+  test("total char count stays at or under maxChars", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 20 }, (_, i) => ({
+        path: `src/component_${i}.cpp`,
+        score: 1 - i * 0.04,
+        confidence: 0.9,
+        reasons: ["calls changed symbol"],
+        relatedChangedPaths: ["src/auth.cpp"],
+        languages: ["C++"],
+      })),
+    });
+    const MAX = 1200;
+    const result = buildGraphContextSection(radius, { maxChars: MAX });
+    expect(result.stats.charCount).toBeLessThanOrEqual(MAX);
+  });
+
+  test("confidence label is 'high' for >= 0.8, 'medium' for 0.5-0.79, 'low' below 0.5", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: [
+        { path: "src/high.cpp", score: 0.9, confidence: 0.95, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+        { path: "src/medium.cpp", score: 0.7, confidence: 0.6, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+        { path: "src/low.cpp", score: 0.5, confidence: 0.3, reasons: ["r"], relatedChangedPaths: [], languages: [] },
+      ],
+      likelyTests: [],
+      probableDependents: [],
+    });
+    const result = buildGraphContextSection(radius);
+    expect(result.text).toContain("confidence: high");
+    expect(result.text).toContain("confidence: medium");
+    expect(result.text).toContain("confidence: low");
+  });
+
+  test("charCount in stats matches actual text length", () => {
+    const result = buildGraphContextSection(makeBlastRadius());
+    expect(result.stats.charCount).toBe(result.text.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M040/S03: buildReviewPrompt graph context integration
+// ---------------------------------------------------------------------------
+
+describe("buildReviewPrompt graph context integration", () => {
+  test("includes graph context section when graphBlastRadius is provided", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
+    expect(prompt).toContain("## Graph-Derived Review Context");
+    expect(prompt).toContain("`src/session.cpp`");
+  });
+
+  test("includes structural impact section when structuralImpact is provided", () => {
+    const prompt = buildReviewPrompt(baseContext({ structuralImpact: makeStructuralImpact() }));
+    expect(prompt).toContain("## Structural Impact Evidence");
+    expect(prompt).toContain("### Structural Impact");
+    expect(prompt).toContain("Structural evidence status: evidence-present");
+  });
+
+  test("breaking-change instructions use structural evidence when callers or impacted files are present", () => {
+    const prompt = buildReviewPrompt(baseContext({ structuralImpact: makeStructuralImpact() }));
+    expect(prompt).toContain("## Breaking-Change Evidence Handling");
+    expect(prompt).toContain("use the structural evidence above to explain who is likely affected and why");
+    expect(prompt).toContain("callers: 1, impacted files: 1, tests: 1");
+  });
+
+  test("breaking-change instructions fall back when structural impact is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("## Breaking-Change Evidence Handling");
+    expect(prompt).toContain("Fallback status: fallback-used.");
+    expect(prompt).toContain("Do not claim downstream callers, impacted files, or likely tests are affected unless this prompt includes concrete structural evidence.");
+  });
+
+  test("breaking-change instructions call out partial structural evidence truthfully", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      structuralImpact: makeStructuralImpact({ status: "partial" }),
+    }));
+    expect(prompt).toContain("Structural evidence status: partial-evidence.");
+    expect(prompt).toContain("If structural evidence is partial, say so and avoid overstating blast radius certainty.");
+  });
+
+  test("omits graph context section when graphBlastRadius is absent", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Graph-Derived Review Context");
+  });
+
+  test("omits graph context section when graphBlastRadius is null", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: null }));
+    expect(prompt).not.toContain("## Graph-Derived Review Context");
+  });
+
+  test("graph context section appears after incremental review context and before knowledge context", () => {
+    const incrementalContext = {
+      lastReviewedHeadSha: "abc1234",
+      changedFilesSinceLastReview: ["src/auth.cpp"],
+      unresolvedPriorFindings: [],
+    };
+    const prompt = buildReviewPrompt(baseContext({
+      graphBlastRadius: makeBlastRadius(),
+      incrementalContext,
+    }));
+    const incrementalIdx = prompt.indexOf("## Incremental Review Mode");
+    const graphIdx = prompt.indexOf("## Graph-Derived Review Context");
+    expect(incrementalIdx).toBeGreaterThan(-1);
+    expect(graphIdx).toBeGreaterThan(-1);
+    expect(graphIdx).toBeGreaterThan(incrementalIdx);
+  });
+
+  test("graph context options are threaded through to the section builder", () => {
+    const radius = makeBlastRadius({
+      impactedFiles: Array.from({ length: 10 }, (_, i) => ({
+        path: `src/file_${i}.cpp`,
+        score: 1 - i * 0.05,
+        confidence: 0.8,
+        reasons: ["edge"],
+        relatedChangedPaths: [],
+        languages: ["C++"],
+      })),
+    });
+    // Cap at 3 with options
+    const prompt = buildReviewPrompt(baseContext({
+      graphBlastRadius: radius,
+      graphContextOptions: { maxImpactedFiles: 3 },
+    }));
+    expect(prompt).toContain("`src/file_0.cpp`");
+    expect(prompt).toContain("`src/file_2.cpp`");
+    expect(prompt).not.toContain("`src/file_3.cpp`");
+  });
+
+  test("backward compatible: existing prompt structure unchanged without graph context", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("Changed files:");
+    expect(prompt).toContain("## What to look for");
+    expect(prompt).not.toContain("Graph-Derived");
+  });
+
+  test("graph context section mentions impacted file count and changed file resolution", () => {
+    const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
+    expect(prompt).toContain("1/1 changed files resolved in graph");
   });
 });
