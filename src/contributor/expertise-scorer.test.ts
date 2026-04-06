@@ -6,6 +6,7 @@ import {
   normalizeScore,
   updateExpertiseIncremental,
   deriveUpdatedOverallScore,
+  recalculateTierFailOpen,
   type ActivitySignal,
 } from "./expertise-scorer.ts";
 import type {
@@ -15,16 +16,24 @@ import type {
   ContributorTier,
 } from "./types.ts";
 
-const mockLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-  trace: () => {},
-  fatal: () => {},
-  child: () => mockLogger,
-  level: "silent",
-} as unknown as Logger;
+function createMockLogger() {
+  const warnCalls: unknown[][] = [];
+
+  const logger = {
+    info: () => {},
+    warn: (...args: unknown[]) => {
+      warnCalls.push(args);
+    },
+    error: () => {},
+    debug: () => {},
+    trace: () => {},
+    fatal: () => {},
+    child: () => logger,
+    level: "silent",
+  } as unknown as Logger;
+
+  return { logger, warnCalls };
+}
 
 describe("extractFileArea", () => {
   test("extracts two-level directory prefix", () => {
@@ -73,7 +82,6 @@ describe("computeDecayedScore", () => {
     const recentScore = computeDecayedScore(recentSignals);
     const oldScore = computeDecayedScore(oldSignals);
 
-    // Recent should be ~2x old (half-life decay)
     expect(recentScore / oldScore).toBeCloseTo(2, 0);
     expect(recentScore).toBeGreaterThan(oldScore);
   });
@@ -161,6 +169,29 @@ describe("deriveUpdatedOverallScore", () => {
   });
 });
 
+describe("recalculateTierFailOpen", () => {
+  test("returns fallback tier and logs a warning when score snapshot lookup fails", async () => {
+    const { logger, warnCalls } = createMockLogger();
+    const store = createIncrementalMockStore({
+      getAllScoresError: new Error("db unavailable"),
+    });
+
+    const result = await recalculateTierFailOpen({
+      profileId: 3,
+      updatedOverallScore: 0.57,
+      fallbackTier: "newcomer",
+      profileStore: store,
+      logger,
+    });
+
+    expect(result).toBe("newcomer");
+    expect(warnCalls).toHaveLength(1);
+    expect(String(warnCalls[0]?.[1])).toContain(
+      "Contributor tier recalculation failed",
+    );
+  });
+});
+
 describe("updateExpertiseIncremental", () => {
   test("calls upsertExpertise for each language and file area", async () => {
     const upsertCalls: Array<{
@@ -168,6 +199,7 @@ describe("updateExpertiseIncremental", () => {
       topic: string;
     }> = [];
 
+    const { logger } = createMockLogger();
     const mockStore: ContributorProfileStore = {
       getByGithubUsername: async () => null,
       getBySlackUserId: async () => null,
@@ -195,10 +227,9 @@ describe("updateExpertiseIncremental", () => {
       ],
       type: "pr_authored",
       profileStore: mockStore,
-      logger: mockLogger,
+      logger,
     });
 
-    // Should have language entries (typescript, python) + file_area entries (src/handlers/, src/lib/)
     const languageCalls = upsertCalls.filter(
       (c) => c.dimension === "language",
     );
@@ -206,63 +237,21 @@ describe("updateExpertiseIncremental", () => {
       (c) => c.dimension === "file_area",
     );
 
-    expect(languageCalls.length).toBe(2); // typescript, python
-    expect(areaCalls.length).toBe(2); // src/handlers/, src/lib/
+    expect(languageCalls.length).toBe(2);
+    expect(areaCalls.length).toBe(2);
     expect(languageCalls.some((c) => c.topic === "typescript")).toBe(true);
     expect(languageCalls.some((c) => c.topic === "python")).toBe(true);
     expect(areaCalls.some((c) => c.topic === "src/handlers/")).toBe(true);
     expect(areaCalls.some((c) => c.topic === "src/lib/")).toBe(true);
   });
 
-  test("reproduces stale-tier persistence when overall score rises above the stored newcomer tier", async () => {
+  test("recalculates and persists an advanced tier when the updated score outranks the lowest cohort", async () => {
     const updateTierCalls: Array<{
       profileId: number;
       tier: ContributorTier;
       overallScore: number;
     }> = [];
-    const profile = makeProfile({
-      githubUsername: "crystalp",
-      overallTier: "newcomer",
-      overallScore: 0.2,
-    });
-
-    const existingExpertise = [
-      makeExpertise({ dimension: "language", topic: "typescript", score: 0.2 }),
-      makeExpertise({ dimension: "language", topic: "python", score: 0.91 }),
-      makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.35 }),
-      makeExpertise({ dimension: "file_area", topic: "src/lib/", score: 0.84 }),
-      makeExpertise({ dimension: "language", topic: "rust", score: 0.63 }),
-      makeExpertise({ dimension: "file_area", topic: "docs/", score: 0.18 }),
-    ];
-
-    const mockStore = createIncrementalMockStore({
-      profile,
-      expertise: existingExpertise,
-      onUpdateTier: (call) => updateTierCalls.push(call),
-    });
-
-    await updateExpertiseIncremental({
-      githubUsername: "crystalp",
-      filesChanged: ["src/handlers/review.ts"],
-      type: "pr_authored",
-      profileStore: mockStore,
-      logger: mockLogger,
-    });
-
-    expect(updateTierCalls).toHaveLength(1);
-    expect(updateTierCalls[0]?.tier).toBe("newcomer");
-    expect(updateTierCalls[0]?.overallScore).toBeGreaterThan(
-      profile.overallScore,
-    );
-    expect(updateTierCalls[0]?.overallScore).toBeCloseTo(0.5784826309, 6);
-  });
-
-  test("captures the CrystalP-shaped defect: stored newcomer tier survives despite ranking above the lowest score cohort", async () => {
-    const updateTierCalls: Array<{
-      profileId: number;
-      tier: ContributorTier;
-      overallScore: number;
-    }> = [];
+    const { logger } = createMockLogger();
     const profile = makeProfile({
       githubUsername: "crystalp",
       overallTier: "newcomer",
@@ -296,14 +285,54 @@ describe("updateExpertiseIncremental", () => {
       filesChanged: ["src/handlers/review.ts"],
       type: "pr_authored",
       profileStore: mockStore,
-      logger: mockLogger,
+      logger,
     });
 
     expect(updateTierCalls).toHaveLength(1);
     const persisted = updateTierCalls[0]!;
-    expect(persisted.tier).toBe("newcomer");
     expect(persisted.overallScore).toBeGreaterThan(0.56);
     expect(persisted.overallScore).toBeLessThan(0.72);
+    expect(persisted.tier).toBe("senior");
+  });
+
+  test("persists the existing tier when recalculation dependencies fail open", async () => {
+    const updateTierCalls: Array<{
+      profileId: number;
+      tier: ContributorTier;
+      overallScore: number;
+    }> = [];
+    const { logger, warnCalls } = createMockLogger();
+    const profile = makeProfile({
+      githubUsername: "crystalp",
+      overallTier: "newcomer",
+      overallScore: 0.24,
+    });
+
+    const mockStore = createIncrementalMockStore({
+      profile,
+      expertise: [
+        makeExpertise({ dimension: "language", topic: "typescript", score: 0.25 }),
+        makeExpertise({ dimension: "file_area", topic: "src/handlers/", score: 0.3 }),
+        makeExpertise({ dimension: "language", topic: "python", score: 0.92 }),
+        makeExpertise({ dimension: "file_area", topic: "src/lib/", score: 0.81 }),
+        makeExpertise({ dimension: "language", topic: "rust", score: 0.74 }),
+      ],
+      getAllScoresError: new Error("snapshot unavailable"),
+      onUpdateTier: (call) => updateTierCalls.push(call),
+    });
+
+    await updateExpertiseIncremental({
+      githubUsername: "crystalp",
+      filesChanged: ["src/handlers/review.ts"],
+      type: "pr_authored",
+      profileStore: mockStore,
+      logger,
+    });
+
+    expect(updateTierCalls).toHaveLength(1);
+    expect(updateTierCalls[0]?.tier).toBe("newcomer");
+    expect(updateTierCalls[0]?.overallScore).toBeGreaterThan(0.56);
+    expect(warnCalls).toHaveLength(1);
   });
 });
 
@@ -350,12 +379,13 @@ function createIncrementalMockStore(params: {
   profile?: ContributorProfile;
   expertise?: ContributorExpertise[];
   allScores?: Array<{ profileId: number; overallScore: number }>;
+  getAllScoresError?: Error;
   onUpdateTier?: (call: {
     profileId: number;
     tier: ContributorTier;
     overallScore: number;
   }) => void;
-}): ContributorProfileStore {
+} = {}): ContributorProfileStore {
   const profile = params.profile ?? makeProfile();
   const expertise = params.expertise ?? [];
   const allScores = params.allScores ?? [];
@@ -372,6 +402,11 @@ function createIncrementalMockStore(params: {
       params.onUpdateTier?.({ profileId, tier, overallScore });
     },
     getOrCreateByGithubUsername: async () => profile,
-    getAllScores: async () => allScores,
+    getAllScores: async () => {
+      if (params.getAllScoresError) {
+        throw params.getAllScoresError;
+      }
+      return allScores;
+    },
   };
 }

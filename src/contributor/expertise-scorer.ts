@@ -1,8 +1,10 @@
 import type { Logger } from "pino";
 import { classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
+import { calculateTierForProfile } from "./tier-calculator.ts";
 import type {
   ContributorExpertise,
   ContributorProfileStore,
+  ContributorTier,
   ExpertiseDimension,
 } from "./types.ts";
 
@@ -81,6 +83,11 @@ type ExpertiseTopic = {
   topic: string;
 };
 
+type ExpertiseDimensionScore = Pick<
+  ContributorExpertise,
+  "dimension" | "topic" | "score"
+>;
+
 function bucketSignals(
   signals: ActivitySignal[],
 ): Map<string, ExpertiseBucket> {
@@ -142,10 +149,36 @@ export function deriveUpdatedOverallScore(params: {
     : 0;
 }
 
-type ExpertiseDimensionScore = Pick<
-  ContributorExpertise,
-  "dimension" | "topic" | "score"
->;
+export async function recalculateTierFailOpen(params: {
+  profileId: number;
+  updatedOverallScore: number;
+  fallbackTier: ContributorTier;
+  profileStore: ContributorProfileStore;
+  logger: Logger;
+}): Promise<ContributorTier> {
+  const { profileId, updatedOverallScore, fallbackTier, profileStore, logger } =
+    params;
+
+  try {
+    const allScores = await profileStore.getAllScores();
+    return calculateTierForProfile({
+      profileId,
+      updatedOverallScore,
+      scores: allScores,
+    });
+  } catch (err) {
+    logger.warn(
+      {
+        err,
+        profileId,
+        updatedOverallScore,
+        fallbackTier,
+      },
+      "Contributor tier recalculation failed; persisting existing tier",
+    );
+    return fallbackTier;
+  }
+}
 
 /**
  * Full expertise scoring from GitHub activity. Fetches commits, PRs, reviews
@@ -207,7 +240,6 @@ export async function computeExpertiseScores(params: {
   const allSignals: ActivitySignal[] = [];
   const allFiles: string[] = [];
 
-  // Fetch commits (up to 5 pages)
   try {
     for (let page = 1; page <= 5; page++) {
       const resp = await octokit.rest.repos.listCommits({
@@ -230,9 +262,7 @@ export async function computeExpertiseScores(params: {
               .filter((l): l is string => l !== null),
           ),
         ];
-        const fileAreas = [
-          ...new Set(files.map((f) => extractFileArea(f))),
-        ];
+        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
         allSignals.push({
           type: "commit",
           date: new Date(commit.commit.author?.date ?? Date.now()),
@@ -246,7 +276,6 @@ export async function computeExpertiseScores(params: {
     logger.warn({ err, githubUsername }, "Failed to fetch commits (fail-open)");
   }
 
-  // Fetch authored PRs (up to 3 pages)
   try {
     for (let page = 1; page <= 3; page++) {
       const resp = await octokit.rest.pulls.list({
@@ -282,9 +311,7 @@ export async function computeExpertiseScores(params: {
               .filter((l): l is string => l !== null),
           ),
         ];
-        const fileAreas = [
-          ...new Set(files.map((f) => extractFileArea(f))),
-        ];
+        const fileAreas = [...new Set(files.map((f) => extractFileArea(f)))];
         allSignals.push({
           type: "pr_authored",
           date: new Date(pr.merged_at),
@@ -301,7 +328,6 @@ export async function computeExpertiseScores(params: {
     );
   }
 
-  // Bucket signals and compute scores
   const buckets = bucketSignals(allSignals);
   for (const bucket of buckets.values()) {
     const raw = computeDecayedScore(bucket.signals);
@@ -316,7 +342,6 @@ export async function computeExpertiseScores(params: {
     });
   }
 
-  // Compute overall_score as average of top-5
   const expertise = await profileStore.getExpertise(profile.id);
   const topScores = expertise.slice(0, 5).map((e) => e.score);
   const overallScore =
@@ -324,13 +349,22 @@ export async function computeExpertiseScores(params: {
       ? topScores.reduce((a, b) => a + b, 0) / topScores.length
       : 0;
 
-  await profileStore.updateTier(profile.id, profile.overallTier, overallScore);
+  const updatedTier = await recalculateTierFailOpen({
+    profileId: profile.id,
+    updatedOverallScore: overallScore,
+    fallbackTier: profile.overallTier,
+    profileStore,
+    logger,
+  });
+
+  await profileStore.updateTier(profile.id, updatedTier, overallScore);
   logger.info(
     {
       githubUsername,
       signalCount: allSignals.length,
       bucketCount: buckets.size,
       overallScore,
+      updatedTier,
     },
     "Computed expertise scores",
   );
@@ -358,14 +392,11 @@ export async function updateExpertiseIncremental(params: {
         .filter((l): l is string => l !== null),
     ),
   ];
-  const fileAreas = [
-    ...new Set(filesChanged.map((f) => extractFileArea(f))),
-  ];
+  const fileAreas = [...new Set(filesChanged.map((f) => extractFileArea(f)))];
 
   const now = new Date();
   const signal: ActivitySignal = { type, date: now, languages, fileAreas };
 
-  // Upsert each dimension/topic
   const dimensions: Array<{ dimension: ExpertiseDimension; topics: string[] }> =
     [
       { dimension: "language", topics: languages },
@@ -374,7 +405,6 @@ export async function updateExpertiseIncremental(params: {
 
   for (const { dimension, topics } of dimensions) {
     for (const topic of topics) {
-      // Get existing expertise to blend with new signal
       const existing = await profileStore.getExpertise(profile.id);
       const entry = existing.find(
         (e) => e.dimension === dimension && e.topic === topic,
@@ -382,7 +412,6 @@ export async function updateExpertiseIncremental(params: {
 
       const newRaw = computeDecayedScore([signal]);
       const existingScore = entry?.score ?? 0;
-      // Blend: existing * 0.9 + new normalized contribution
       const blended = existingScore * 0.9 + normalizeScore(newRaw) * 0.1;
 
       await profileStore.upsertExpertise({
@@ -396,7 +425,6 @@ export async function updateExpertiseIncremental(params: {
     }
   }
 
-  // Update overall score
   const allExpertise = await profileStore.getExpertise(profile.id);
   const overallScore = deriveUpdatedOverallScore({
     existingExpertise: allExpertise,
@@ -413,13 +441,17 @@ export async function updateExpertiseIncremental(params: {
     signal,
   });
 
-  await profileStore.updateTier(
-    profile.id,
-    profile.overallTier,
-    overallScore,
-  );
+  const updatedTier = await recalculateTierFailOpen({
+    profileId: profile.id,
+    updatedOverallScore: overallScore,
+    fallbackTier: profile.overallTier,
+    profileStore,
+    logger,
+  });
+
+  await profileStore.updateTier(profile.id, updatedTier, overallScore);
   logger.debug(
-    { githubUsername, type, languages, fileAreas },
+    { githubUsername, type, languages, fileAreas, overallScore, updatedTier },
     "Incremental expertise update complete",
   );
 }

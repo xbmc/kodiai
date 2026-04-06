@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T22:23:49.488Z",
+  "exported_at": "2026-04-06T22:29:11.180Z",
   "milestones": [
     {
       "id": "M001",
@@ -9593,19 +9593,27 @@
       "milestone_id": "M042",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Wire percentile tier recalculation into score updates with fail-open behavior",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Wired percentile tier recalculation into contributor score updates with fail-open fallback.",
+      "status": "complete",
+      "one_liner": "Wired percentile tier recalculation into contributor score updates with fail-open fallback.",
+      "narrative": "Extracted shared percentile helpers in src/contributor/tier-calculator.ts and routed both computeExpertiseScores() and updateExpertiseIncremental() through a scorer-local recalculateTierFailOpen() seam in src/contributor/expertise-scorer.ts. Score updates now persist a recalculated tier derived from the current score distribution instead of reusing profile.overallTier, while snapshot-read failures log a warning and fall back to the stored tier so background review-time updates remain non-blocking. Updated the scorer and tier-calculator tests to prove truthful tier advancement and the degraded fallback path.",
+      "verification_result": "Ran the task verification gate exactly as planned: bun test ./src/contributor/expertise-scorer.test.ts && bun test ./src/contributor/tier-calculator.test.ts. Both suites passed, covering shared percentile assignment helpers, scorer-side tier advancement under the CrystalP-shaped distribution, and fail-open fallback when score snapshot reads fail.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-06T22:29:11.153Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/expertise-scorer.test.ts",
+        "src/contributor/tier-calculator.ts",
+        "src/contributor/tier-calculator.test.ts",
+        ".gsd/milestones/M042/slices/S01/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Extracted canonical percentile helpers into tier-calculator and wrapped scorer-side recalculation in a fail-open seam so shared tier logic stays centralized without blocking review-time background updates on snapshot-read failures."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M042\nkey_files:\n  - src/contributor/expertise-scorer.ts\n  - src/contributor/expertise-scorer.test.ts\n  - src/contributor/tier-calculator.ts\n  - src/contributor/tier-calculator.test.ts\n  - .gsd/milestones/M042/slices/S01/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Extracted canonical percentile helpers into tier-calculator and wrapped scorer-side recalculation in a fail-open seam so shared tier logic stays centralized without blocking review-time background updates on snapshot-read failures.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T22:29:11.153Z\nblocker_discovered: false\n---\n\n# T02: Wired percentile tier recalculation into contributor score updates with fail-open fallback.\n\n**Wired percentile tier recalculation into contributor score updates with fail-open fallback.**\n\n## What Happened\n\nExtracted shared percentile helpers in src/contributor/tier-calculator.ts and routed both computeExpertiseScores() and updateExpertiseIncremental() through a scorer-local recalculateTierFailOpen() seam in src/contributor/expertise-scorer.ts. Score updates now persist a recalculated tier derived from the current score distribution instead of reusing profile.overallTier, while snapshot-read failures log a warning and fall back to the stored tier so background review-time updates remain non-blocking. Updated the scorer and tier-calculator tests to prove truthful tier advancement and the degraded fallback path.\n\n## Verification\n\nRan the task verification gate exactly as planned: bun test ./src/contributor/expertise-scorer.test.ts && bun test ./src/contributor/tier-calculator.test.ts. Both suites passed, covering shared percentile assignment helpers, scorer-side tier advancement under the CrystalP-shaped distribution, and fail-open fallback when score snapshot reads fail.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/expertise-scorer.test.ts && bun test ./src/contributor/tier-calculator.test.ts` | 0 | ✅ pass | 5000ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/contributor/expertise-scorer.ts`\n- `src/contributor/expertise-scorer.test.ts`\n- `src/contributor/tier-calculator.ts`\n- `src/contributor/tier-calculator.test.ts`\n- `.gsd/milestones/M042/slices/S01/tasks/T02-SUMMARY.md`\n",
       "description": "Implement the smallest durable recalculation seam inside contributor scoring so both incremental and batch score updates persist a truthful tier instead of blindly reusing `profile.overallTier`. Reuse the existing percentile logic from `src/contributor/tier-calculator.ts` rather than inventing a new scoring taxonomy.\n\nExtract or expose a reusable helper that computes a target tier from controlled score distributions, then call it from the scorer path after the updated `overallScore` is known. Preserve fail-open behavior: if the recalculation read or computation fails, the scoring path must still complete without blocking review-time background updates, and tests must prove that degradation path. Update tier-calculator tests as needed so the shared percentile contract stays anchored in one place.",
       "estimate": "1h15m",
       "files": [
@@ -12190,6 +12198,17 @@
       "verdict": "✅ pass",
       "duration_ms": 15,
       "created_at": "2026-04-06T22:23:49.462Z"
+    },
+    {
+      "id": 182,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun test ./src/contributor/expertise-scorer.test.ts && bun test ./src/contributor/tier-calculator.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5000,
+      "created_at": "2026-04-06T22:29:11.154Z"
     }
   ]
 }
