@@ -16,7 +16,7 @@ If `formatReviewDetailsSummary()` wording is too weak to make the tier obvious, 
   - Estimate: 1h
   - Files: src/lib/review-utils.ts, src/lib/review-utils.test.ts, src/handlers/review.test.ts
   - Verify: bun test ./src/lib/review-utils.test.ts && bun test ./src/handlers/review.test.ts
-- [ ] **T03: Add the M042 S02 review-surface verifier** — Add a dedicated slice proof harness and command that lock in the review-surface truthfulness contract after T01 and T02 settle the wording. The verifier should reuse production helpers where possible, assert on full rendered output, and encode the CrystalP-shaped case: contributor-profile tier drives the surface output, established-tier prompt/details text stays established, and newcomer/developing guidance is absent.
+- [x] **T03: Added a durable M042 S02 proof harness that locks contributor-tier truthfulness across prompt and Review Details output.** — Add a dedicated slice proof harness and command that lock in the review-surface truthfulness contract after T01 and T02 settle the wording. The verifier should reuse production helpers where possible, assert on full rendered output, and encode the CrystalP-shaped case: contributor-profile tier drives the surface output, established-tier prompt/details text stays established, and newcomer/developing guidance is absent.
 
 Follow the existing M042/S01 verifier pattern: keep the checks behavioral rather than overfitting to one exact prose paragraph, but make the banned wording assertions strict enough to catch a real regression.
   - Estimate: 1h

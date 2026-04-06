@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T22:47:03.747Z",
+  "exported_at": "2026-04-06T22:50:38.088Z",
   "milestones": [
     {
       "id": "M001",
@@ -9795,19 +9795,27 @@
       "milestone_id": "M042",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add the M042 S02 review-surface verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a durable M042 S02 proof harness that locks contributor-tier truthfulness across prompt and Review Details output.",
+      "status": "complete",
+      "one_liner": "Added a durable M042 S02 proof harness that locks contributor-tier truthfulness across prompt and Review Details output.",
+      "narrative": "Added scripts/verify-m042-s02.ts as a slice proof harness around the shipped review-surface seams: resolveAuthorTierFromSources for contributor-profile precedence, buildReviewPrompt for Author Experience rendering, and formatReviewDetailsSummary for Review Details rendering. The harness codifies four stable checks covering contributor-profile tier selection, established-tier prompt truthfulness, established-tier Review Details truthfulness, and the CrystalP-shaped regression case where established contributors must not receive newcomer or developing guidance. Added scripts/verify-m042-s02.test.ts with deterministic happy-path, negative-path, JSON/text output, and stderr failure-summary coverage, and wired the harness into package.json as verify:m042:s02.",
+      "verification_result": "Ran the task-plan verification commands exactly as written. `bun test ./scripts/verify-m042-s02.test.ts` passed with 14 passing tests. `bun run verify:m042:s02` passed all four proof-harness checks. `bun run tsc --noEmit` completed successfully with exit code 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-06T22:50:38.059Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m042-s02.ts",
+        "scripts/verify-m042-s02.test.ts",
+        "package.json",
+        ".gsd/milestones/M042/slices/S02/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Built the verifier around real production seams instead of duplicate fixture-only logic so milestone closure exercises shipped renderers.",
+        "Used the established proof-harness pattern with stable check IDs, status codes, text/JSON output, and stderr failure summaries so the verifier is reusable for downstream regression gates."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M042\nkey_files:\n  - scripts/verify-m042-s02.ts\n  - scripts/verify-m042-s02.test.ts\n  - package.json\n  - .gsd/milestones/M042/slices/S02/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Built the verifier around real production seams instead of duplicate fixture-only logic so milestone closure exercises shipped renderers.\n  - Used the established proof-harness pattern with stable check IDs, status codes, text/JSON output, and stderr failure summaries so the verifier is reusable for downstream regression gates.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T22:50:38.058Z\nblocker_discovered: false\n---\n\n# T03: Added a durable M042 S02 proof harness that locks contributor-tier truthfulness across prompt and Review Details output.\n\n**Added a durable M042 S02 proof harness that locks contributor-tier truthfulness across prompt and Review Details output.**\n\n## What Happened\n\nAdded scripts/verify-m042-s02.ts as a slice proof harness around the shipped review-surface seams: resolveAuthorTierFromSources for contributor-profile precedence, buildReviewPrompt for Author Experience rendering, and formatReviewDetailsSummary for Review Details rendering. The harness codifies four stable checks covering contributor-profile tier selection, established-tier prompt truthfulness, established-tier Review Details truthfulness, and the CrystalP-shaped regression case where established contributors must not receive newcomer or developing guidance. Added scripts/verify-m042-s02.test.ts with deterministic happy-path, negative-path, JSON/text output, and stderr failure-summary coverage, and wired the harness into package.json as verify:m042:s02.\n\n## Verification\n\nRan the task-plan verification commands exactly as written. `bun test ./scripts/verify-m042-s02.test.ts` passed with 14 passing tests. `bun run verify:m042:s02` passed all four proof-harness checks. `bun run tsc --noEmit` completed successfully with exit code 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m042-s02.test.ts` | 0 | ✅ pass | 7400ms |\n| 2 | `bun run verify:m042:s02` | 0 | ✅ pass | 7400ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 7400ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m042-s02.ts`\n- `scripts/verify-m042-s02.test.ts`\n- `package.json`\n- `.gsd/milestones/M042/slices/S02/tasks/T03-SUMMARY.md`\n",
       "description": "Add a dedicated slice proof harness and command that lock in the review-surface truthfulness contract after T01 and T02 settle the wording. The verifier should reuse production helpers where possible, assert on full rendered output, and encode the CrystalP-shaped case: contributor-profile tier drives the surface output, established-tier prompt/details text stays established, and newcomer/developing guidance is absent.\n\nFollow the existing M042/S01 verifier pattern: keep the checks behavioral rather than overfitting to one exact prose paragraph, but make the banned wording assertions strict enough to catch a real regression.",
       "estimate": "1h",
       "files": [
@@ -12420,6 +12428,39 @@
       "verdict": "✅ pass",
       "duration_ms": 2840,
       "created_at": "2026-04-06T22:47:03.721Z"
+    },
+    {
+      "id": 189,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M042",
+      "command": "bun test ./scripts/verify-m042-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7400,
+      "created_at": "2026-04-06T22:50:38.059Z"
+    },
+    {
+      "id": 190,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M042",
+      "command": "bun run verify:m042:s02",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7400,
+      "created_at": "2026-04-06T22:50:38.059Z"
+    },
+    {
+      "id": 191,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M042",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7400,
+      "created_at": "2026-04-06T22:50:38.059Z"
     }
   ]
 }
