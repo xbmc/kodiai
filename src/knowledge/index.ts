@@ -16,6 +16,32 @@ export { createEmbeddingProvider, createNoOpEmbeddingProvider } from "./embeddin
 // Memory store
 export { createLearningMemoryStore } from "./memory-store.ts";
 
+// Generated rule store
+export {
+  createGeneratedRuleStore,
+  type GeneratedRuleStore,
+  type GeneratedRuleRecord,
+  type GeneratedRuleProposal,
+  type GeneratedRuleStatus,
+  type GeneratedRuleLifecycleCounts,
+} from "./generated-rule-store.ts";
+
+// Generated rule proposals
+export {
+  generatePendingRuleProposals,
+  type GeneratedRuleProposalCandidate,
+  type GeneratePendingRuleProposalsOptions,
+} from "./generated-rule-proposals.ts";
+
+// Generated rule sweep
+export {
+  createGeneratedRuleSweep,
+  type GeneratedRuleSweepOptions,
+  type GeneratedRuleSweepRunOptions,
+  type GeneratedRuleSweepRepoResult,
+  type GeneratedRuleSweepResult,
+} from "./generated-rule-sweep.ts";
+
 // Isolation
 export { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 
@@ -77,6 +103,47 @@ export type { WikiSyncSchedulerOptions, WikiSyncResult } from "./wiki-sync.ts";
 // Code snippet store
 export { createCodeSnippetStore } from "./code-snippet-store.ts";
 
+// Canonical code chunker
+export {
+  chunkCanonicalCodeFile,
+  getCanonicalChunkExclusionReason,
+  isCanonicalCodePathExcluded,
+} from "./canonical-code-chunker.ts";
+export type {
+  CanonicalChunk,
+  CanonicalChunkBoundary,
+  CanonicalChunkResult,
+  CanonicalChunkerObservability,
+  CanonicalExclusionReason,
+} from "./canonical-code-chunker.ts";
+
+// Canonical code ingest
+export { ingestCanonicalCodeSnapshot } from "./canonical-code-ingest.ts";
+export type {
+  CanonicalCodeIngestFile,
+  CanonicalCodeIngestFileResult,
+  CanonicalCodeIngestRequest,
+  CanonicalCodeIngestResult,
+} from "./canonical-code-ingest.ts";
+
+// Canonical code update
+export { updateCanonicalCodeSnapshot } from "./canonical-code-update.ts";
+export type {
+  CanonicalCodeUpdateFile,
+  CanonicalCodeUpdateFileResult,
+  CanonicalCodeUpdateRequest,
+  CanonicalCodeUpdateResult,
+} from "./canonical-code-update.ts";
+
+// Canonical code backfill
+export { backfillCanonicalCodeSnapshot } from "./canonical-code-backfill.ts";
+export type {
+  CanonicalCodeBackfillDeps,
+  CanonicalCodeBackfillRequest,
+  CanonicalCodeBackfillResult,
+  CanonicalCodeBackfillWarning,
+} from "./canonical-code-backfill.ts";
+
 // Code snippet chunker
 export { parseDiffHunks, buildEmbeddingText, isExcludedPath, applyHunkCap, computeContentHash } from "./code-snippet-chunker.ts";
 export type { ParsedHunk } from "./code-snippet-chunker.ts";
@@ -88,6 +155,9 @@ export type {
 
 // Code snippet retrieval
 export { searchCodeSnippets, type CodeSnippetMatch } from "./code-snippet-retrieval.ts";
+
+// Canonical code retrieval
+export { searchCanonicalCode, type CanonicalCodeMatch } from "./canonical-code-retrieval.ts";
 
 // Issue retrieval
 export { searchIssues, type IssueKnowledgeMatch } from "./issue-retrieval.ts";

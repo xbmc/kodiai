@@ -192,8 +192,12 @@ export type PriorFinding = {
   commentId: number | null;
 };
 
+import type { AuthorTier } from "../lib/author-classifier.ts";
+
+export type AuthorCacheTier = Extract<AuthorTier, "first-time" | "regular" | "core">;
+
 export type AuthorCacheEntry = {
-  tier: string;
+  tier: AuthorCacheTier;
   authorAssociation: string;
   prCount: number | null;
   cachedAt: string;
@@ -356,4 +360,9 @@ export type EmbeddingProvider = {
   generate(text: string, inputType: "document" | "query"): Promise<EmbeddingResult>;
   readonly model: string;
   readonly dimensions: number;
+};
+
+export type RerankProvider = {
+  rerank(opts: { query: string; documents: string[]; topK?: number }): Promise<number[] | null>;
+  readonly model: string;
 };
