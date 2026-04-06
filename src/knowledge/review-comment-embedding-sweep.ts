@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
-const EMBEDDING_MODEL = "voyage-code-3";
+const EMBEDDING_MODEL = "voyage-4";
 
 export type EmbeddingSweepOptions = {
   store: ReviewCommentStore;

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { createRetriever, type RetrieveOptions, type RetrieveResult } from "./retrieval.ts";
-import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWithProvenance } from "./types.ts";
+import type { EmbeddingProvider, EmbeddingResult, RetrievalResult, RetrievalWithProvenance, RerankProvider } from "./types.ts";
 import type { IsolationLayer } from "./isolation.ts";
 import type { ReviewCommentStore, ReviewCommentSearchResult } from "./review-comment-types.ts";
 import type { WikiPageStore, WikiPageSearchResult } from "./wiki-types.ts";
@@ -96,6 +96,15 @@ function makeConfig(overrides: Partial<{ enabled: boolean; adaptive: boolean }> 
       maxContextChars: 2000,
     },
     sharing: { enabled: false },
+  };
+}
+
+function makeMockRerankProvider(impl: (documents: string[]) => Promise<number[] | null>): RerankProvider {
+  return {
+    async rerank(opts: { query: string; documents: string[]; topK?: number }): Promise<number[] | null> {
+      return impl(opts.documents);
+    },
+    get model() { return "rerank-2.5"; },
   };
 }
 
@@ -342,6 +351,67 @@ describe("createRetriever", () => {
     expect(result).not.toBeNull();
     expect(result!.reviewPrecedents).toHaveLength(0);
     expect(result!.provenance.reviewCommentCount).toBe(0);
+  });
+
+  test("reranker reorders unified results and annotates rerank scores", async () => {
+    const results = [makeRetrievalResult(1, 0.2), makeRetrievalResult(2, 0.3)];
+
+    const baselineRetriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+    });
+    const baseline = await baselineRetriever.retrieve(makeBaseOpts());
+
+    expect(baseline).not.toBeNull();
+    expect(baseline!.unifiedResults).toHaveLength(2);
+    const baselineIds = baseline!.unifiedResults.map((chunk) => chunk.id);
+
+    const rerankedRetriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+      rerankProvider: makeMockRerankProvider(async () => [1, 0]),
+    });
+
+    const reranked = await rerankedRetriever.retrieve(makeBaseOpts());
+
+    expect(reranked).not.toBeNull();
+    expect(reranked!.unifiedResults.map((chunk) => chunk.id)).toEqual([...baselineIds].reverse());
+    expect(reranked!.unifiedResults.map((chunk) => chunk.rerankScore)).toEqual([0, 1]);
+    expect(reranked!.provenance.rerankApplied).toBe(true);
+  });
+
+  test("reranker null return preserves RRF order and marks rerank as not applied", async () => {
+    const results = [makeRetrievalResult(1, 0.2)];
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+      rerankProvider: makeMockRerankProvider(async () => null),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+
+    expect(result).not.toBeNull();
+    expect(result!.unifiedResults).toHaveLength(1);
+    expect(result!.unifiedResults[0]!.rerankScore).toBeUndefined();
+    expect(result!.provenance.rerankApplied).toBe(false);
+  });
+
+  test("absent rerank provider leaves existing retrieval behavior unchanged", async () => {
+    const results = [makeRetrievalResult(1, 0.2)];
+    const retriever = createRetriever({
+      embeddingProvider: makeMockEmbeddingProvider(),
+      isolationLayer: makeMockIsolationLayer(results),
+      config: makeConfig(),
+    });
+
+    const result = await retriever.retrieve(makeBaseOpts());
+
+    expect(result).not.toBeNull();
+    expect(result!.unifiedResults).toHaveLength(1);
+    expect(result!.provenance.rerankApplied).toBe(false);
   });
 });
 

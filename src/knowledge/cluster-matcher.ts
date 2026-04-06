@@ -33,7 +33,7 @@ function filePathOverlap(prPaths: string[], clusterPaths: string[]): number {
 // ── Matcher ──────────────────────────────────────────────────────────
 
 export type MatchPatternsInput = {
-  /** Embedding of the PR diff (1024-dim voyage-code-3). Null = fail-open, returns []. */
+  /** Embedding of the PR diff (1024-dim voyage-4). Null = fail-open, returns []. */
   prEmbedding: Float32Array | null;
   /** File paths changed in the PR. */
   prFilePaths: string[];

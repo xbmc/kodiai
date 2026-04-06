@@ -1,21 +1,28 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
-import type { EmbeddingProvider, LearningMemoryStore } from "./types.ts";
+import type { EmbeddingProvider, LearningMemoryStore, RerankProvider } from "./types.ts";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { WikiPageStore } from "./wiki-types.ts";
 import type { CodeSnippetStore } from "./code-snippet-types.ts";
 import type { IssueStore } from "./issue-types.ts";
 import { createLearningMemoryStore } from "./memory-store.ts";
-import { createEmbeddingProvider, createNoOpEmbeddingProvider, createContextualizedEmbeddingProvider } from "./embeddings.ts";
+import {
+  createEmbeddingProvider,
+  createNoOpEmbeddingProvider,
+  createContextualizedEmbeddingProvider,
+  createRerankProvider,
+} from "./embeddings.ts";
 import { createReviewCommentStore } from "./review-comment-store.ts";
 import { createWikiPageStore } from "./wiki-store.ts";
 import { createCodeSnippetStore } from "./code-snippet-store.ts";
 import { createIssueStore } from "./issue-store.ts";
+import { createCanonicalCodeStore } from "./canonical-code-store.ts";
+import type { CanonicalCodeStore } from "./canonical-code-types.ts";
 import { createIsolationLayer, type IsolationLayer } from "./isolation.ts";
 import { createRetriever, type RetrieverConfig } from "./retrieval.ts";
 import { createWikiPopularityStore } from "./wiki-popularity-store.ts";
 
-export const DEFAULT_EMBEDDING_MODEL = "voyage-code-3";
+export const DEFAULT_EMBEDDING_MODEL = "voyage-4";
 export const DEFAULT_WIKI_EMBEDDING_MODEL = "voyage-context-3";
 export const DEFAULT_EMBEDDING_DIMENSIONS = 1024;
 
@@ -40,9 +47,11 @@ export type KnowledgeRuntime = {
   wikiPageStore: WikiPageStore;
   codeSnippetStore: CodeSnippetStore;
   issueStore: IssueStore;
+  canonicalCodeStore: CanonicalCodeStore;
   isolationLayer: IsolationLayer | undefined;
   retriever: ReturnType<typeof createRetriever> | undefined;
   wikiCitationLogger: ReturnType<typeof createWikiPopularityStore>;
+  rerankProvider: RerankProvider;
 };
 
 export function createKnowledgeRuntime(opts: {
@@ -96,6 +105,9 @@ export function createKnowledgeRuntime(opts: {
     );
   }
 
+  const rerankProvider = createRerankProvider({ apiKey: voyageApiKey, logger });
+  logger.info({ model: rerankProvider.model }, "Rerank provider initialized");
+
   const reviewCommentStore = createReviewCommentStore({ sql, logger });
   logger.info("Review comment store initialized (PostgreSQL + pgvector)");
 
@@ -111,6 +123,9 @@ export function createKnowledgeRuntime(opts: {
 
   const issueStore = createIssueStore({ sql, logger });
   logger.info("Issue store initialized (PostgreSQL + pgvector)");
+
+  const canonicalCodeStore = createCanonicalCodeStore({ sql, logger });
+  logger.info("Canonical code store initialized (PostgreSQL + pgvector)");
 
   let isolationLayer: IsolationLayer | undefined;
   if (learningMemoryStore) {
@@ -132,6 +147,7 @@ export function createKnowledgeRuntime(opts: {
         codeSnippetStore,
         issueStore,
         wikiCitationLogger,
+        rerankProvider,
       })
     : undefined;
 
@@ -143,9 +159,11 @@ export function createKnowledgeRuntime(opts: {
     wikiPageStore,
     codeSnippetStore,
     issueStore,
+    canonicalCodeStore,
     isolationLayer,
     retriever,
     wikiCitationLogger,
+    rerankProvider,
   };
 }
 

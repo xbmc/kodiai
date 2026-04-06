@@ -241,10 +241,10 @@ const telemetrySchema = z
 const embeddingsSchema = z
   .object({
     enabled: z.boolean().default(true),
-    model: z.string().default("voyage-code-3"),
+    model: z.string().default("voyage-4"),
     dimensions: z.number().min(256).max(2048).default(1024),
   })
-  .default({ enabled: true, model: "voyage-code-3", dimensions: 1024 });
+  .default({ enabled: true, model: "voyage-4", dimensions: 1024 });
 
 const sharingSchema = z
   .object({
@@ -324,7 +324,7 @@ const knowledgeSchema = z
   .default({
     shareGlobal: false,
     sharing: { enabled: false },
-    embeddings: { enabled: true, model: "voyage-code-3", dimensions: 1024 },
+    embeddings: { enabled: true, model: "voyage-4", dimensions: 1024 },
     retrieval: {
       enabled: true,
       topK: 5,
