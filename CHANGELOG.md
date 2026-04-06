@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.27 (2026-04-06)
+
+Contributor Tier Truthfulness.
+
+### Added
+
+- Shared percentile tier-calculation helpers in `src/contributor/tier-calculator.ts` plus scorer-side recalculation hooks used by incremental expertise updates
+- Deterministic proof harnesses `verify:m042:s01`, `verify:m042:s02`, and `verify:m042:s03` covering persisted-tier advancement, review-surface truthfulness, and cache/fallback hardening
+- Explicit `Author tier:` Review Details rendering and full-body regression coverage with required/banned phrase assertions for established and senior contributor guidance
+- Warning surface for invalid cached author tiers so malformed lower-fidelity cache data is observable without blocking reviews
+
+### Changed
+
+- Contributor score updates now recalculate and persist truthful contributor tiers when overall scores advance instead of persisting stale stored tiers
+- Review author-tier resolution now follows explicit precedence: contributor profile → bounded author cache → fallback classifier
+- Prompt and Review Details surfaces now render truthful developing/established/senior guidance from the resolved contributor tier, including the CrystalP-shaped repro path
+- `author_cache` reuse is now bounded to fallback-taxonomy values only (`first-time`, `regular`, `core`); unsupported cached values are ignored fail-open rather than trusted as richer contributor knowledge
+- Degraded fallback review paths preserve the resolved author tier and include the exact Search API disclosure sentence without contradicting contributor guidance
+
 ## v0.26 (2026-04-05)
 
 Structural Impact Evidence.

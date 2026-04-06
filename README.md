@@ -2,7 +2,7 @@
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional `.kodiai.yml` file.
 
-26 milestones shipped (v0.1 through v0.26). See [CHANGELOG.md](CHANGELOG.md) for release history.
+27 milestones shipped (v0.1 through v0.27). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ bun install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your credentials — see .env.example for all 26 variables
+# Apply your credentials securely (do not commit .env)
 
 # Start the dev server
 bun run dev
@@ -60,7 +60,7 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 **Epistemic Guardrails** — 3-tier knowledge classification with severity demotion for unverifiable claims, applied across all response surfaces.
 
-**Contributor Profiles** — GitHub/Slack identity linking, expertise inference with decay scoring, and 4-tier adaptive review depth.
+**Contributor Profiles** — GitHub/Slack identity linking, expertise inference with decay scoring, 4-tier adaptive review depth, persistence-time tier recalculation, truthful review-surface contributor guidance, and bounded cache/fallback author labeling.
 
 **Review Pattern Clustering** — HDBSCAN + UMAP theme detection injected as footnotes in PR reviews.
 

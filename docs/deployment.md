@@ -16,7 +16,7 @@ The service exposes:
 - Webhook endpoint: `POST /webhooks/github`
 - Slack events endpoint: `POST /webhooks/slack/events`
 - Slack commands endpoint: `POST /webhooks/slack/commands/*`
-- Health: `GET /health`
+- Health: `GET /healthz`
 - Readiness: `GET /readiness`
 
 ## Deploy Script
