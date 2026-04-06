@@ -10,17 +10,17 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M001–M041 are complete. M042 is now complete through S03.
+M001–M042 are complete.
 
-Kodiai can now carry contributor-tier truthfulness across the full M042 path:
+Kodiai now carries contributor-tier truthfulness across the full M042 path:
 - scorer-side expertise updates recalculate and persist truthful contributor tiers when overall scores advance
 - review rendering prefers contributor-profile state over cache and fallback classification
-- prompt and Review Details surfaces render explicit established/senior/developing guidance without regressing to newcomer copy for advanced contributors
+- prompt and Review Details surfaces render explicit developing/established/senior guidance without regressing advanced contributors to newcomer copy
 - author-tier cache reuse is bounded to fallback-taxonomy values only, so stale or malformed cache rows cannot overclaim contributor seniority
-- degraded/retry review paths preserve the same resolved author tier and thread the exact Search API degradation disclosure sentence without contradicting the rendered author guidance
-- deterministic proof harnesses now cover all three slices: persistence/source-of-truth (`verify:m042:s01`), review-surface truthfulness (`verify:m042:s02`), and cache/fallback hardening (`verify:m042:s03`)
+- degraded and retry review paths preserve the resolved author tier and include the exact Search API degradation disclosure sentence without contradicting contributor guidance
+- deterministic proof harnesses cover all three M042 slices: persistence/source-of-truth (`verify:m042:s01`), review-surface truthfulness (`verify:m042:s02`), and cache/fallback truthfulness (`verify:m042:s03`)
 
-The CrystalP-shaped regression is therefore covered at persistence time, render time, and cache/degradation time, with slice verifiers that milestone closure can rerun unchanged.
+The CrystalP-shaped regression is now covered at persistence time, render time, and cache/degradation time by repeatable verification rather than ad hoc inspection.
 
 ## Architecture / Key Patterns
 

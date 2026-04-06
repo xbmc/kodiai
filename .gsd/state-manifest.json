@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T23:11:55.429Z",
+  "exported_at": "2026-04-06T23:19:00.738Z",
   "milestones": [
     {
       "id": "M001",
@@ -1300,10 +1300,10 @@
     {
       "id": "M042",
       "title": "Contributor Tier Truthfulness",
-      "status": "active",
+      "status": "complete",
       "depends_on": [],
       "created_at": "2026-04-06T22:17:17.884Z",
-      "completed_at": null,
+      "completed_at": "2026-04-06T23:19:00.713Z",
       "vision": "Fix Kodiai's contributor-experience classification so a clearly established contributor is not labeled as a newcomer in review output, using the CrystalP `xbmc/xbmc#28132` repro to correct stored tier advancement, review-surface author labeling, and cache/fallback consistency the right way.",
       "success_criteria": [
         "A clearly experienced contributor is no longer labeled with newcomer-style author context in the review path.",

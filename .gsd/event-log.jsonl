@@ -201,3 +201,4 @@
 {"cmd":"complete-task","params":{"milestoneId":"M042","sliceId":"S03","taskId":"T02"},"ts":"2026-04-06T23:04:49.566Z","actor":"agent","hash":"cac534d22a03b8d0","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
 {"cmd":"complete-task","params":{"milestoneId":"M042","sliceId":"S03","taskId":"T03"},"ts":"2026-04-06T23:09:13.316Z","actor":"agent","hash":"cae07011131203b8","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
 {"cmd":"complete-slice","params":{"milestoneId":"M042","sliceId":"S03"},"ts":"2026-04-06T23:11:55.437Z","actor":"agent","hash":"1751bc3bb5eb3a07","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
+{"cmd":"complete-milestone","params":{"milestoneId":"M042"},"ts":"2026-04-06T23:19:00.746Z","actor":"agent","hash":"f5627b779398151e","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
