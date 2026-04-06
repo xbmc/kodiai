@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T23:00:34.474Z",
+  "exported_at": "2026-04-06T23:04:49.558Z",
   "milestones": [
     {
       "id": "M001",
@@ -9897,19 +9897,25 @@
       "milestone_id": "M042",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Add handler regressions for cache-hit, contradictory-cache, and retry truthfulness",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added handler regressions for cache-hit, contradictory-cache, and retry-path author-tier truthfulness.",
+      "status": "complete",
+      "one_liner": "Added handler regressions for cache-hit, contradictory-cache, and retry-path author-tier truthfulness.",
+      "narrative": "Kept the work inside src/handlers/review.test.ts and expanded the existing handler scaffolding rather than adding a new broad harness. Added focused regressions that prove cached core cache hits render senior-style wording, regular-tier output stays in developing wording without overclaiming, contributor-profile established state beats contradictory cached low-tier data in a real handler execution, and the retry/degraded path rebuilds prompt output with the same resolved established tier. To support those scenarios through the real handler path, I extended runSingleAuthorTierEvent() with an optional contributorProfileStore injection seam.",
+      "verification_result": "Ran bun test ./src/handlers/review.test.ts and the full handler suite passed, including the new cache-hit, contradictory-cache, and retry-truthfulness regressions.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-06T23:04:49.532Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Extended the existing single-event author-tier helper with an optional contributorProfileStore seam instead of forcing every new scenario through the auto-profile helper. This kept the regressions on the real handler execution path already used by the cache/degradation tests.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/review.test.ts",
+        ".gsd/milestones/M042/slices/S03/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Extended runSingleAuthorTierEvent with optional contributor-profile injection instead of building a parallel handler harness.",
+        "Asserted on full rendered prompt/details bodies with required and banned phrases so failures identify wording/source-selection regressions directly."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M042\nkey_files:\n  - src/handlers/review.test.ts\n  - .gsd/milestones/M042/slices/S03/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Extended runSingleAuthorTierEvent with optional contributor-profile injection instead of building a parallel handler harness.\n  - Asserted on full rendered prompt/details bodies with required and banned phrases so failures identify wording/source-selection regressions directly.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T23:04:49.532Z\nblocker_discovered: false\n---\n\n# T02: Added handler regressions for cache-hit, contradictory-cache, and retry-path author-tier truthfulness.\n\n**Added handler regressions for cache-hit, contradictory-cache, and retry-path author-tier truthfulness.**\n\n## What Happened\n\nKept the work inside src/handlers/review.test.ts and expanded the existing handler scaffolding rather than adding a new broad harness. Added focused regressions that prove cached core cache hits render senior-style wording, regular-tier output stays in developing wording without overclaiming, contributor-profile established state beats contradictory cached low-tier data in a real handler execution, and the retry/degraded path rebuilds prompt output with the same resolved established tier. To support those scenarios through the real handler path, I extended runSingleAuthorTierEvent() with an optional contributorProfileStore injection seam.\n\n## Verification\n\nRan bun test ./src/handlers/review.test.ts and the full handler suite passed, including the new cache-hit, contradictory-cache, and retry-truthfulness regressions.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/review.test.ts` | 0 | ✅ pass | 2890ms |\n\n## Deviations\n\nExtended the existing single-event author-tier helper with an optional contributorProfileStore seam instead of forcing every new scenario through the auto-profile helper. This kept the regressions on the real handler execution path already used by the cache/degradation tests.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/review.test.ts`\n- `.gsd/milestones/M042/slices/S03/tasks/T02-SUMMARY.md`\n",
       "description": "Expand `src/handlers/review.test.ts` using the existing handler scaffolding rather than new broad test harnesses. Add focused scenarios that assert on the full rendered prompt/details bodies and prove: cached `core` maps to senior-style wording; cached `regular` maps to developing wording without overclaiming; contributor-profile `established` or `senior` still beats contradictory cached low-tier data in a real handler execution; and retry/degraded paths continue to thread the same resolved author tier into rebuilt prompt output.\n\nFollow the established project rule from M028/S03/T02 and S02: assert on full rendered bodies with required and banned phrases, not proxy metadata or single marker lines.",
       "estimate": "2h",
       "files": [
@@ -12610,6 +12616,17 @@
       "verdict": "✅ pass",
       "duration_ms": 2810,
       "created_at": "2026-04-06T23:00:34.447Z"
+    },
+    {
+      "id": 193,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M042",
+      "command": "bun test ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2890,
+      "created_at": "2026-04-06T23:04:49.532Z"
     }
   ]
 }

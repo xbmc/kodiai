@@ -10,7 +10,7 @@ Document the concrete assumptions in code comments or tests: contributor profile
   - Estimate: 1.5h
   - Files: src/handlers/review.ts, src/knowledge/types.ts, src/knowledge/store.ts, src/lib/author-classifier.ts
   - Verify: bun test ./src/handlers/review.test.ts
-- [ ] **T02: Add handler regressions for cache-hit, contradictory-cache, and retry truthfulness** — Expand `src/handlers/review.test.ts` using the existing handler scaffolding rather than new broad test harnesses. Add focused scenarios that assert on the full rendered prompt/details bodies and prove: cached `core` maps to senior-style wording; cached `regular` maps to developing wording without overclaiming; contributor-profile `established` or `senior` still beats contradictory cached low-tier data in a real handler execution; and retry/degraded paths continue to thread the same resolved author tier into rebuilt prompt output.
+- [x] **T02: Added handler regressions for cache-hit, contradictory-cache, and retry-path author-tier truthfulness.** — Expand `src/handlers/review.test.ts` using the existing handler scaffolding rather than new broad test harnesses. Add focused scenarios that assert on the full rendered prompt/details bodies and prove: cached `core` maps to senior-style wording; cached `regular` maps to developing wording without overclaiming; contributor-profile `established` or `senior` still beats contradictory cached low-tier data in a real handler execution; and retry/degraded paths continue to thread the same resolved author tier into rebuilt prompt output.
 
 Follow the established project rule from M028/S03/T02 and S02: assert on full rendered bodies with required and banned phrases, not proxy metadata or single marker lines.
   - Estimate: 2h
