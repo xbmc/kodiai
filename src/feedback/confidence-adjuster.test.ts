@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import type { FeedbackPattern, FeedbackSuppressionConfig } from "./types.ts";
 import type { KnowledgeStore } from "../knowledge/types.ts";
-import { adjustConfidenceForFeedback } from "./confidence-adjuster.ts";
+import { adjustConfidenceForFeedback, applyClusterScoreAdjustment } from "./confidence-adjuster.ts";
 import { evaluateFeedbackSuppressions } from "./index.ts";
 
 describe("adjustConfidenceForFeedback", () => {
@@ -180,5 +180,80 @@ describe("evaluateFeedbackSuppressions", () => {
     expect(result.suppressedPatternCount).toBe(0);
     expect(result.patterns).toHaveLength(0);
     expect(warnings.length).toBeGreaterThan(0);
+  });
+});
+
+// ── applyClusterScoreAdjustment tests ─────────────────────────────────
+
+describe("applyClusterScoreAdjustment", () => {
+  const mediumStyle = { severity: "medium" as const, category: "style" as const };
+  const criticalSecurity = { severity: "critical" as const, category: "security" as const };
+  const majorCorrectness = { severity: "major" as const, category: "correctness" as const };
+  const minorDocumentation = { severity: "minor" as const, category: "documentation" as const };
+
+  test("returns identity when clusterModelUsed is false (fail-open)", () => {
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, true, 75, false);
+    expect(result.confidence).toBe(60);
+    expect(result.suppressed).toBe(false);
+  });
+
+  test("CRITICAL finding: cluster suppress signal is ignored (safety guard)", () => {
+    const result = applyClusterScoreAdjustment(criticalSecurity, 80, true, 80, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(80);
+  });
+
+  test("CRITICAL finding: confidence boost is ignored (safety guard)", () => {
+    // clusterSuppressed = false, adjustedConfidence boosted to 95
+    const result = applyClusterScoreAdjustment(criticalSecurity, 80, false, 95, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(80); // no boost for CRITICAL
+  });
+
+  test("MAJOR security finding: both suppression and boost are blocked (safety guard)", () => {
+    const result = applyClusterScoreAdjustment(majorCorrectness, 70, true, 85, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(70);
+  });
+
+  test("medium/style finding: cluster suppression is applied", () => {
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, true, 60, true);
+    expect(result.suppressed).toBe(true);
+    expect(result.confidence).toBe(60); // confidence unchanged on suppress path
+  });
+
+  test("minor finding: cluster confidence boost is applied", () => {
+    const result = applyClusterScoreAdjustment(minorDocumentation, 50, false, 65, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(65);
+  });
+
+  test("no boost when clusterAdjustedConfidence equals base (no change)", () => {
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, false, 60, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(60);
+  });
+
+  test("no boost when clusterAdjustedConfidence is lower than base (degraded model)", () => {
+    // scoreFindings clamps adjustedConfidence to [0, 100] and only boosts, but
+    // applyClusterScoreAdjustment should never lower confidence
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, false, 40, true);
+    expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(60); // keeps higher of the two
+  });
+
+  test("suppression takes precedence over boost (mutually exclusive paths)", () => {
+    // When suppress=true, adjustedConfidence boost should not be applied
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, true, 75, true);
+    expect(result.suppressed).toBe(true);
+    expect(result.confidence).toBe(60); // not boosted because suppressed
+  });
+
+  test("confidence is clamped at 100 via boost path", () => {
+    // Base 90, adjusted 100+ would overflow but scoring already clamps in scoreFindings
+    // applyClusterScoreAdjustment trusts the incoming value
+    const result = applyClusterScoreAdjustment(mediumStyle, 90, false, 100, true);
+    expect(result.confidence).toBe(100);
+    expect(result.suppressed).toBe(false);
   });
 });

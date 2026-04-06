@@ -24,7 +24,18 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { reviewAdapter, type ReviewInput } from "../lib/guardrail/adapters/review-adapter.ts";
 import { loadRepoConfig } from "../execution/config.ts";
 import { analyzeDiff, parseNumstatPerFile, classifyFileLanguageWithContext } from "../execution/diff-analysis.ts";
-import { computeFileRiskScores, triageFilesByRisk, type TieredFiles, type FileRiskScore } from "../lib/file-risk-scorer.ts";
+import {
+  computeFileRiskScores,
+  triageFilesByRisk,
+  applyGraphAwareSelection,
+  type TieredFiles,
+  type FileRiskScore,
+} from "../lib/file-risk-scorer.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+import { isTrivialChange, validateGraphAmplifiedFindings, type GraphValidationFinding } from "../review-graph/validation.ts";
+import { fetchReviewStructuralImpact } from "../structural-impact/review-integration.ts";
+import { createStructuralImpactCache } from "../structural-impact/cache.ts";
+import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import {
   buildReviewPrompt,
   matchPathInstructions,
@@ -41,6 +52,8 @@ import { prioritizeFindings } from "../lib/finding-prioritizer.ts";
 import { computeConfidence, matchesSuppression } from "../knowledge/confidence.ts";
 import { applyEnforcement } from "../enforcement/index.ts";
 import { evaluateFeedbackSuppressions, adjustConfidenceForFeedback } from "../feedback/index.ts";
+import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-store.ts";
+import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
@@ -96,6 +109,7 @@ import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/w
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
+import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -181,9 +195,46 @@ type AuthorTierSearchEnrichment = {
   degradationPath: "none" | "search-api-rate-limit";
 };
 
+export function resolveAuthorTierFromSources(params: {
+  contributorTier?: AuthorTier | null;
+  cachedTier?: AuthorCacheTier | null;
+  fallbackTier: AuthorTier;
+}): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
+  const { contributorTier, cachedTier, fallbackTier } = params;
 
+  if (contributorTier) {
+    return { tier: contributorTier, source: "contributor-profile" };
+  }
 
+  if (cachedTier) {
+    return { tier: cachedTier, source: "author-cache" };
+  }
 
+  return { tier: fallbackTier, source: "fallback" };
+}
+
+function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
+  if (value === "first-time" || value === "regular" || value === "core") {
+    return value;
+  }
+  return null;
+}
+
+function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
+  if (!entry) {
+    return null;
+  }
+
+  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
+  if (!normalizedTier) {
+    return null;
+  }
+
+  return {
+    ...entry,
+    tier: normalizedTier,
+  };
+}
 
 async function executeSearchWithRateLimitRetry(params: {
   operation: () => Promise<number>;
@@ -415,20 +466,16 @@ async function resolveAuthorTier(params: {
   };
   let searchCacheHit = false;
 
+  let contributorTier: AuthorTier | null = null;
+  let contributorExpertise: ContributorExpertise[] | undefined;
+
   // Try contributor profile store first (4-tier system)
   if (contributorProfileStore) {
     try {
       const profile = await contributorProfileStore.getByGithubUsername(authorLogin);
       if (profile) {
-        const expertise = await contributorProfileStore.getExpertise(profile.id);
-        return {
-          tier: profile.overallTier as AuthorTier,
-          prCount: null,
-          fromCache: false,
-          searchCacheHit: false,
-          searchEnrichment,
-          expertise,
-        };
+        contributorTier = profile.overallTier as AuthorTier;
+        contributorExpertise = await contributorProfileStore.getExpertise(profile.id);
       }
     } catch (err) {
       logger.warn({ err, authorLogin }, "Contributor profile lookup failed (fail-open)");
@@ -436,11 +483,35 @@ async function resolveAuthorTier(params: {
   }
 
   try {
-    const cached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
-    if (cached) {
+    const rawCached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
+    const cached = normalizeAuthorCacheEntry(rawCached);
+    if (rawCached && !cached) {
+      logger.warn(
+        { authorLogin, cachedTier: rawCached.tier },
+        "Ignoring unsupported author cache tier; only fallback taxonomy tiers may be reused from cache",
+      );
+    }
+    const resolution = resolveAuthorTierFromSources({
+      contributorTier,
+      // Contributor profile is the high-fidelity source of truth. Cached author tiers
+      // are lower-fidelity fallback taxonomy values and may only be reused as-is.
+      cachedTier: cached?.tier ?? null,
+      fallbackTier: "first-time",
+    });
+    if (resolution.source === "contributor-profile") {
       return {
-        tier: cached.tier as AuthorTier,
-        prCount: cached.prCount,
+        tier: resolution.tier,
+        prCount: null,
+        fromCache: false,
+        searchCacheHit: false,
+        searchEnrichment,
+        expertise: contributorExpertise,
+      };
+    }
+    if (resolution.source === "author-cache") {
+      return {
+        tier: resolution.tier,
+        prCount: cached?.prCount ?? null,
         fromCache: true,
         searchCacheHit,
         searchEnrichment,
@@ -448,6 +519,16 @@ async function resolveAuthorTier(params: {
     }
   } catch (err) {
     logger.warn({ err, authorLogin }, "Author cache read failed (fail-open)");
+    if (contributorTier) {
+      return {
+        tier: contributorTier,
+        prCount: null,
+        fromCache: false,
+        searchCacheHit: false,
+        searchEnrichment,
+        expertise: contributorExpertise,
+      };
+    }
   }
 
   const ambiguousAssociations = new Set(["NONE", "MANNEQUIN", "COLLABORATOR", "CONTRIBUTOR"]);
@@ -548,11 +629,16 @@ async function resolveAuthorTier(params: {
     prCount,
   }).tier;
 
+  // Fallback classification is intentionally lower fidelity than contributor profiles.
+  // Never persist 4-tier contributor-profile labels in author_cache; cache only the
+  // direct fallback taxonomy so degraded runs cannot later overclaim established/senior knowledge.
+  const cacheTier: AuthorCacheTier = tier === "core" ? "core" : tier === "regular" ? "regular" : "first-time";
+
   try {
     await knowledgeStore.upsertAuthorCache?.({
       repo: repoSlug,
       authorLogin,
-      tier,
+      tier: cacheTier,
       authorAssociation: normalizedAssociation,
       prCount,
     });
@@ -957,8 +1043,17 @@ export function createReviewHandler(deps: {
   clusterMatcher?: (opts: { prEmbedding: Float32Array | null; prFilePaths: string[]; repo: string }) => Promise<ClusterPatternMatch[]>;
   /** Optional issue store for PR-issue linking (Phase 108: PRLINK). */
   issueStore?: IssueStore;
+  /** Optional review-graph blast-radius query for graph-aware large-PR selection. */
+  reviewGraphQuery?: (input: {
+    repo: string;
+    workspaceKey: string;
+    changedPaths: string[];
+    limit?: number;
+  }) => Promise<ReviewGraphBlastRadiusResult>;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
+  /** Optional cluster model store for thematic finding scoring (M037/S02). */
+  clusterModelStore?: SuggestionClusterStore;
   logger: Logger;
 }): void {
   const {
@@ -981,11 +1076,14 @@ export function createReviewHandler(deps: {
     slackBotToken,
     clusterMatcher,
     issueStore,
+    reviewGraphQuery,
     sql,
+    clusterModelStore,
     logger,
   } = deps;
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
+  const structuralImpactCache = createStructuralImpactCache();
 
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
@@ -2076,11 +2174,86 @@ export function createReviewHandler(deps: {
           weights: config.largePR.riskWeights,
         });
 
+        let graphSelection = applyGraphAwareSelection({ riskScores });
+        let graphBlastRadius: ReviewGraphBlastRadiusResult | null = null;
+        let structuralImpactForReview: import("../structural-impact/types.ts").StructuralImpactPayload | null = null;
+        if (reviewGraphQuery) {
+          // Trivial-change bypass: skip graph query overhead for small PRs.
+          const trivialCheck = isTrivialChange({
+            changedFileCount: reviewFiles.length,
+            totalLinesChanged: (diffAnalysis?.metrics.totalLinesAdded ?? 0) + (diffAnalysis?.metrics.totalLinesRemoved ?? 0),
+          });
+
+          if (trivialCheck.bypass) {
+            logger.info(
+              { ...baseLog, gate: "graph-query-bypass", reason: trivialCheck.reason, fileCount: reviewFiles.length },
+              "Trivial change detected — bypassing graph query",
+            );
+          } else {
+            try {
+              const structuralImpact = await fetchReviewStructuralImpact(
+                {
+                  reviewGraphQuery,
+                  cache: structuralImpactCache,
+                  logger,
+                },
+                {
+                  repo: `${apiOwner}/${apiRepo}`,
+                  owner: apiOwner,
+                  workspaceKey: pr.head.sha,
+                  baseSha: pr.base.sha,
+                  headSha: pr.head.sha,
+                  changedPaths: reviewFiles,
+                  canonicalRef: pr.base.ref,
+                  query: reviewFiles.join(" "),
+                  graphLimit: Math.max(
+                    config.largePR.fullReviewCount + config.largePR.abbreviatedCount,
+                    20,
+                  ),
+                },
+              );
+              const structuralImpactDegradation = summarizeStructuralImpactDegradation(structuralImpact.payload);
+              structuralImpactForReview = {
+                ...structuralImpact.payload,
+                status: structuralImpactDegradation.status,
+                degradations: structuralImpactDegradation.degradations,
+              };
+              graphBlastRadius = structuralImpact.graphBlastRadius;
+              logger.info(
+                {
+                  ...baseLog,
+                  gate: "structural-impact",
+                  status: structuralImpactForReview.status,
+                  graphPresent: Boolean(structuralImpact.graphBlastRadius),
+                  probableCallers: structuralImpactForReview.probableCallers.length,
+                  impactedFiles: structuralImpactForReview.impactedFiles.length,
+                  likelyTests: structuralImpactForReview.likelyTests.length,
+                  canonicalEvidence: structuralImpactForReview.canonicalEvidence.length,
+                  breakingChangeEvidenceUsed: structuralImpactForReview.probableCallers.length > 0 || structuralImpactForReview.impactedFiles.length > 0,
+                  fallbackUsed: structuralImpactDegradation.fallbackUsed,
+                  degradationSignals: structuralImpactDegradation.truthfulnessSignals,
+                  graphAvailable: structuralImpactDegradation.availability.graphAvailable,
+                  corpusAvailable: structuralImpactDegradation.availability.corpusAvailable,
+                },
+                "Review structural-impact payload collected",
+              );
+              if (graphBlastRadius) {
+                graphSelection = applyGraphAwareSelection({ riskScores, graph: graphBlastRadius });
+              }
+            } catch (err) {
+              logger.warn(
+                { ...baseLog, gate: "graph-aware-selection", err },
+                "Review structural-impact integration failed (fail-open, continuing with file-risk selection)",
+              );
+            }
+          }
+        }
+
         // Triage uses changedFiles.length (full PR size) for threshold check,
         // not reviewFiles.length (which may be filtered for incremental mode).
         // Per pitfall 3 in research: check full PR, triage review set.
         const tieredFiles = triageFilesByRisk({
-          riskScores,
+          riskScores: graphSelection.riskScores,
           fileThreshold: config.largePR.fileThreshold,
           fullReviewCount: config.largePR.fullReviewCount,
           abbreviatedCount: config.largePR.abbreviatedCount,
@@ -2101,6 +2274,9 @@ export function createReviewHandler(deps: {
             abbreviated: tieredFiles.abbreviated.length,
             mentionOnly: tieredFiles.mentionOnly.length,
             threshold: config.largePR.fileThreshold,
+            graphHitCount: graphSelection.graphHits,
+            graphRankedSelections: graphSelection.graphRankedSelections,
+            graphAwareSelectionApplied: graphSelection.usedGraph,
           }, "Large PR file triage applied");
         }
 
@@ -2541,6 +2717,9 @@ export function createReviewHandler(deps: {
           clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
           // PR-issue linking (PRLINK-03)
           linkedIssues: linkedIssueResult,
+          // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
+          graphBlastRadius: graphBlastRadius ?? undefined,
+          structuralImpact: structuralImpactForReview,
         });
 
         // Execute review via Claude
@@ -2636,6 +2815,9 @@ export function createReviewHandler(deps: {
             "Feedback-driven suppression applied",
           );
         }
+
+        // Thematic cluster scoring placeholder — model resolved in the scoring step below (M037/S03).
+        // applyClusterScoringWithDegradation handles model load, eligibility, and scoring in one call.
 
         // Post-LLM abbreviated tier enforcement (LARGE-08)
         // Suppress medium/minor findings on abbreviated-tier files deterministically.
@@ -2773,6 +2955,31 @@ export function createReviewHandler(deps: {
           };
         });
 
+        // Thematic cluster scoring (M037/S03): score processed findings against
+        // positive/negative centroids using the fail-open degradation wrapper.
+        // Runs after feedback suppression so cluster signal applies to feedback-adjusted
+        // confidence values. All error paths degrade cleanly — review always completes.
+        {
+          const clusterResult = await applyClusterScoringWithDegradation(
+            processedFindings.map(f => ({
+              ...f,
+              // ClusterScoringFinding shape — extra fields preserved via spread
+            })),
+            clusterModelStore ?? null,
+            embeddingProvider ?? null,
+            `${apiOwner}/${apiRepo}`,
+            logger,
+          );
+          if (clusterResult.modelUsed) {
+            // Merge adjusted findings back (confidence and suppressed fields may have changed)
+            processedFindings = processedFindings.map((f, i) => {
+              const adj = clusterResult.findings[i];
+              if (!adj) return f;
+              return { ...f, confidence: adj.confidence, suppressed: adj.suppressed };
+            });
+          }
+        }
+
         // Output filtering: rewrite mixed findings, suppress primarily-external findings (FILT-01, FILT-02)
         const filterResult = filterExternalClaims(
           processedFindings as FilterableFinding[],
@@ -2870,6 +3077,81 @@ export function createReviewHandler(deps: {
             { ...baseLog, err: guardErr },
             "Guardrail pipeline failed (fail-open, existing filter results used)",
           );
+        }
+
+        // Optional graph-amplified finding validation (M040/S03).
+        // Runs only when graphBlastRadius is available and config.review.graphValidation.enabled=true.
+        // Fail-open: errors log a warning and leave processedFindings unchanged.
+        if (graphBlastRadius && (config.review as Record<string, unknown> & { graphValidation?: { enabled?: boolean } }).graphValidation?.enabled) {
+          try {
+            const graphValidationLLM = {
+              generate: async (prompt: string, system: string): Promise<string> => {
+                const { createTaskRouter } = await import("../llm/task-router.ts");
+                const { TASK_TYPES } = await import("../llm/task-types.ts");
+                const { generateWithFallback } = await import("../llm/generate.ts");
+                const taskRouter = createTaskRouter({ models: {} });
+                const resolved = taskRouter.resolve(TASK_TYPES.GUARDRAIL_CLASSIFICATION);
+                const genResult = await generateWithFallback({
+                  taskType: TASK_TYPES.GUARDRAIL_CLASSIFICATION,
+                  resolved,
+                  system,
+                  prompt,
+                  logger,
+                  repo: `${apiOwner}/${apiRepo}`,
+                  deliveryId: event.id,
+                });
+                return genResult.text;
+              },
+            };
+
+            const graphValidationInput = processedFindings.map((f) => ({
+              id: f.commentId,
+              filePath: f.filePath,
+              title: f.title,
+              severity: f.severity,
+            } satisfies GraphValidationFinding));
+
+            const validationResult = await validateGraphAmplifiedFindings(
+              graphValidationInput,
+              graphBlastRadius,
+              graphValidationLLM,
+              { enabled: true },
+              logger,
+            );
+
+            if (validationResult.succeeded && validationResult.validatedCount > 0) {
+              logger.info(
+                {
+                  ...baseLog,
+                  gate: "graph-amplified-validation",
+                  validatedCount: validationResult.validatedCount,
+                  confirmedCount: validationResult.confirmedCount,
+                  uncertainCount: validationResult.uncertainCount,
+                },
+                "Graph-amplified finding validation applied",
+              );
+
+              // Attach graphValidationVerdict to processedFindings for downstream telemetry.
+              const verdictMap = new Map(
+                validationResult.findings.map((f) => [f.id, { graphValidated: f.graphValidated, graphValidationVerdict: f.graphValidationVerdict }]),
+              );
+              processedFindings = processedFindings.map((f) => {
+                const v = verdictMap.get(f.commentId);
+                if (!v) return f;
+                return { ...f, ...v };
+              });
+            } else if (!validationResult.succeeded) {
+              logger.warn(
+                { ...baseLog, gate: "graph-amplified-validation", error: validationResult.errorMessage },
+                "Graph-amplified finding validation failed (fail-open, continuing without validation)",
+              );
+            }
+          } catch (validationErr) {
+            logger.warn(
+              { ...baseLog, gate: "graph-amplified-validation", err: validationErr },
+              "Graph-amplified finding validation threw unexpectedly (fail-open)",
+            );
+          }
         }
 
         const recurrenceCounts = new Map<string, number>();
@@ -3032,6 +3314,7 @@ export function createReviewHandler(deps: {
               prioritization: prioritizationStats,
               usageLimit: result.usageLimit,
               tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+              structuralImpact: structuralImpactForReview,
             });
 
             // Append suppressed-findings section if any findings were filtered (FILT-02)
@@ -3719,6 +4002,7 @@ export function createReviewHandler(deps: {
                       clusterPatterns: clusterPatternsForPrompt.length > 0 ? clusterPatternsForPrompt : undefined,
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
+                      structuralImpact: structuralImpactForReview,
                     });
 
                     const retryResult = await executor.execute({
