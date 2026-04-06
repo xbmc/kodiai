@@ -364,14 +364,14 @@ function makeExpertise(
   return {
     id: 1,
     profileId: 1,
-    dimension: overrides.dimension,
-    topic: overrides.topic,
-    score: overrides.score,
     rawSignals: 1,
     lastActive: new Date(),
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
+    dimension: overrides.dimension,
+    topic: overrides.topic,
+    score: overrides.score,
   };
 }
 

@@ -194,9 +194,23 @@ type AuthorTierSearchEnrichment = {
   degradationPath: "none" | "search-api-rate-limit";
 };
 
+export function resolveAuthorTierFromSources(params: {
+  contributorTier?: AuthorTier | null;
+  cachedTier?: AuthorTier | null;
+  fallbackTier: AuthorTier;
+}): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
+  const { contributorTier, cachedTier, fallbackTier } = params;
 
+  if (contributorTier) {
+    return { tier: contributorTier, source: "contributor-profile" };
+  }
 
+  if (cachedTier) {
+    return { tier: cachedTier, source: "author-cache" };
+  }
 
+  return { tier: fallbackTier, source: "fallback" };
+}
 
 async function executeSearchWithRateLimitRetry(params: {
   operation: () => Promise<number>;
@@ -428,20 +442,16 @@ async function resolveAuthorTier(params: {
   };
   let searchCacheHit = false;
 
+  let contributorTier: AuthorTier | null = null;
+  let contributorExpertise: ContributorExpertise[] | undefined;
+
   // Try contributor profile store first (4-tier system)
   if (contributorProfileStore) {
     try {
       const profile = await contributorProfileStore.getByGithubUsername(authorLogin);
       if (profile) {
-        const expertise = await contributorProfileStore.getExpertise(profile.id);
-        return {
-          tier: profile.overallTier as AuthorTier,
-          prCount: null,
-          fromCache: false,
-          searchCacheHit: false,
-          searchEnrichment,
-          expertise,
-        };
+        contributorTier = profile.overallTier as AuthorTier;
+        contributorExpertise = await contributorProfileStore.getExpertise(profile.id);
       }
     } catch (err) {
       logger.warn({ err, authorLogin }, "Contributor profile lookup failed (fail-open)");
@@ -450,10 +460,25 @@ async function resolveAuthorTier(params: {
 
   try {
     const cached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
-    if (cached) {
+    const resolution = resolveAuthorTierFromSources({
+      contributorTier,
+      cachedTier: cached?.tier as AuthorTier | null | undefined,
+      fallbackTier: "first-time",
+    });
+    if (resolution.source === "contributor-profile") {
       return {
-        tier: cached.tier as AuthorTier,
-        prCount: cached.prCount,
+        tier: resolution.tier,
+        prCount: null,
+        fromCache: false,
+        searchCacheHit: false,
+        searchEnrichment,
+        expertise: contributorExpertise,
+      };
+    }
+    if (resolution.source === "author-cache") {
+      return {
+        tier: resolution.tier,
+        prCount: cached?.prCount ?? null,
         fromCache: true,
         searchCacheHit,
         searchEnrichment,
@@ -461,6 +486,16 @@ async function resolveAuthorTier(params: {
     }
   } catch (err) {
     logger.warn({ err, authorLogin }, "Author cache read failed (fail-open)");
+    if (contributorTier) {
+      return {
+        tier: contributorTier,
+        prCount: null,
+        fromCache: false,
+        searchCacheHit: false,
+        searchEnrichment,
+        expertise: contributorExpertise,
+      };
+    }
   }
 
   const ambiguousAssociations = new Set(["NONE", "MANNEQUIN", "COLLABORATOR", "CONTRIBUTOR"]);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-06T22:29:11.180Z",
+  "exported_at": "2026-04-06T22:33:01.325Z",
   "milestones": [
     {
       "id": "M001",
@@ -9645,19 +9645,30 @@
       "milestone_id": "M042",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Prove review-source precedence with a slice verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a review-tier precedence seam and named slice verifier proving corrected contributor tiers outrank cache and fallback classification.",
+      "status": "complete",
+      "one_liner": "Added a review-tier precedence seam and named slice verifier proving corrected contributor tiers outrank cache and fallback classification.",
+      "narrative": "Exported a pure resolveAuthorTierFromSources helper in src/handlers/review.ts and routed resolveAuthorTier() through it so contributor-profile tier state is the explicit first source of truth ahead of author-cache and fallback classification. Added focused review tests for contributor-profile, cache, and fallback precedence. Built scripts/verify-m042-s01.ts plus scripts/verify-m042-s01.test.ts to prove the slice contract end to end: corrected stuck-tier behavior under controlled scores, truthful persisted recalculation, profile precedence for a CrystalP-shaped fixture, and fail-open recalculation fallback that does not become review-blocking. Registered the verifier in package.json. During verification, bun run tsc --noEmit exposed a pre-existing duplicate-property helper pattern in src/contributor/expertise-scorer.test.ts; fixed the helper ordering so the repo-wide typecheck exits cleanly.",
+      "verification_result": "Ran the task verification gate exactly as planned: bun test ./src/handlers/review.test.ts && bun test ./scripts/verify-m042-s01.test.ts && bun run verify:m042:s01 && bun run tsc --noEmit. All commands passed. The verifier emitted four passing checks: M042-S01-STUCK-TIER-REPRO-FIXED, M042-S01-RECALCULATED-TIER-PERSISTS, M042-S01-PROFILE-PRECEDENCE, and M042-S01-FAIL-OPEN-NONBLOCKING.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-06T22:33:01.303Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "scripts/verify-m042-s01.ts",
+        "scripts/verify-m042-s01.test.ts",
+        "package.json",
+        "src/contributor/expertise-scorer.test.ts",
+        ".gsd/milestones/M042/slices/S01/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Extracted a pure resolveAuthorTierFromSources helper so precedence can be tested directly without coupling the regression to full review orchestration.",
+        "Made the slice verifier assert behavioral invariants rather than a fixture-specific named tier so the proof remains truthful if percentile distribution tuning changes while the source-of-truth contract stays the same."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M042\nkey_files:\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - scripts/verify-m042-s01.ts\n  - scripts/verify-m042-s01.test.ts\n  - package.json\n  - src/contributor/expertise-scorer.test.ts\n  - .gsd/milestones/M042/slices/S01/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Extracted a pure resolveAuthorTierFromSources helper so precedence can be tested directly without coupling the regression to full review orchestration.\n  - Made the slice verifier assert behavioral invariants rather than a fixture-specific named tier so the proof remains truthful if percentile distribution tuning changes while the source-of-truth contract stays the same.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-06T22:33:01.302Z\nblocker_discovered: false\n---\n\n# T03: Added a review-tier precedence seam and named slice verifier proving corrected contributor tiers outrank cache and fallback classification.\n\n**Added a review-tier precedence seam and named slice verifier proving corrected contributor tiers outrank cache and fallback classification.**\n\n## What Happened\n\nExported a pure resolveAuthorTierFromSources helper in src/handlers/review.ts and routed resolveAuthorTier() through it so contributor-profile tier state is the explicit first source of truth ahead of author-cache and fallback classification. Added focused review tests for contributor-profile, cache, and fallback precedence. Built scripts/verify-m042-s01.ts plus scripts/verify-m042-s01.test.ts to prove the slice contract end to end: corrected stuck-tier behavior under controlled scores, truthful persisted recalculation, profile precedence for a CrystalP-shaped fixture, and fail-open recalculation fallback that does not become review-blocking. Registered the verifier in package.json. During verification, bun run tsc --noEmit exposed a pre-existing duplicate-property helper pattern in src/contributor/expertise-scorer.test.ts; fixed the helper ordering so the repo-wide typecheck exits cleanly.\n\n## Verification\n\nRan the task verification gate exactly as planned: bun test ./src/handlers/review.test.ts && bun test ./scripts/verify-m042-s01.test.ts && bun run verify:m042:s01 && bun run tsc --noEmit. All commands passed. The verifier emitted four passing checks: M042-S01-STUCK-TIER-REPRO-FIXED, M042-S01-RECALCULATED-TIER-PERSISTS, M042-S01-PROFILE-PRECEDENCE, and M042-S01-FAIL-OPEN-NONBLOCKING.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/review.test.ts` | 0 | ✅ pass | 2790ms |\n| 2 | `bun test ./scripts/verify-m042-s01.test.ts` | 0 | ✅ pass | 168ms |\n| 3 | `bun run verify:m042:s01` | 0 | ✅ pass | 120ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 7300ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n- `scripts/verify-m042-s01.ts`\n- `scripts/verify-m042-s01.test.ts`\n- `package.json`\n- `src/contributor/expertise-scorer.test.ts`\n- `.gsd/milestones/M042/slices/S01/tasks/T03-SUMMARY.md`\n",
       "description": "Add a focused regression proving that once stored contributor tier state is corrected, the review author-tier resolution path trusts that profile state ahead of cache and fallback classification. If the current `resolveAuthorTier` shape is too private for focused testing, extract the smallest helper seam needed to test precedence without hauling the full review handler into the test. Keep the scope on source-of-truth resolution, not prompt copy changes.\n\nCreate a slice verifier for M042/S01 that exercises three checks: stuck-tier repro fixed, recalculated-tier persistence under controlled population scores, and profile-precedence over cache/fallback for a CrystalP-shaped fixture. Include one fail-open check showing that recalculation errors do not become review-blocking failures. Register the verifier in `package.json` so downstream slices can run it as the slice-level proof surface.",
       "estimate": "1h",
       "files": [
@@ -12209,6 +12220,50 @@
       "verdict": "✅ pass",
       "duration_ms": 5000,
       "created_at": "2026-04-06T22:29:11.154Z"
+    },
+    {
+      "id": 183,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun test ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2790,
+      "created_at": "2026-04-06T22:33:01.303Z"
+    },
+    {
+      "id": 184,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun test ./scripts/verify-m042-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 168,
+      "created_at": "2026-04-06T22:33:01.303Z"
+    },
+    {
+      "id": 185,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun run verify:m042:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 120,
+      "created_at": "2026-04-06T22:33:01.303Z"
+    },
+    {
+      "id": 186,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M042",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7300,
+      "created_at": "2026-04-06T22:33:01.303Z"
     }
   ]
 }

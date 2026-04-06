@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { createReviewHandler } from "./review.ts";
+import { createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -212,6 +212,38 @@ function buildReviewRequestedEvent(
     ...eventOverrides,
   };
 }
+
+describe("resolveAuthorTierFromSources", () => {
+  test("prefers contributor profile tier ahead of cache and fallback", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: "established",
+        cachedTier: "first-time",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "established", source: "contributor-profile" });
+  });
+
+  test("falls back to cached tier when contributor profile is absent", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: "regular",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "regular", source: "author-cache" });
+  });
+
+  test("uses fallback tier when neither profile nor cache is available", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: null,
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "first-time", source: "fallback" });
+  });
+});
 
 describe("createReviewHandler review_requested gating", () => {
   test("enqueues exactly one review for manual kodiai re-request", async () => {

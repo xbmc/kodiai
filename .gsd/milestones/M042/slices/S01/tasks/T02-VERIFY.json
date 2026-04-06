@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M042/S01/T02",
+  "timestamp": 1775514566974,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/contributor/expertise-scorer.test.ts",
+      "exitCode": 0,
+      "durationMs": 22,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test ./src/contributor/tier-calculator.test.ts",
+      "exitCode": 0,
+      "durationMs": 16,
+      "verdict": "pass"
+    }
+  ]
+}
