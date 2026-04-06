@@ -17,6 +17,31 @@ const BASE_PARAMS = {
 };
 
 describe("formatReviewDetailsSummary", () => {
+  it("renders truthful author-tier wording for default, established, and senior contributors", () => {
+    const regularResult = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+    });
+    expect(regularResult).toContain("- Author tier: regular (developing guidance)");
+    expect(regularResult).not.toContain("established contributor guidance");
+    expect(regularResult).not.toContain("senior contributor guidance");
+
+    const establishedResult = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      authorTier: "established",
+    });
+    expect(establishedResult).toContain("- Author tier: established (established contributor guidance)");
+    expect(establishedResult).not.toContain("developing guidance");
+    expect(establishedResult).not.toContain("newcomer guidance");
+
+    const seniorResult = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      authorTier: "senior",
+    });
+    expect(seniorResult).toContain("- Author tier: senior (senior contributor guidance)");
+    expect(seniorResult).not.toContain("developing guidance");
+    expect(seniorResult).not.toContain("newcomer guidance");
+  });
+
   it("renders usage line when usageLimit is present", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,

@@ -501,6 +501,8 @@ describe("createReviewHandler auto profile selection", () => {
     manualProfile?: "strict" | "balanced" | "minimal";
     additions: number;
     deletions: number;
+    contributorTier?: "first-time" | "regular" | "established" | "senior";
+    prAuthor?: string;
   }): Promise<{ prompt: string; detailsCommentBody: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -591,6 +593,17 @@ describe("createReviewHandler auto profile selection", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
+      contributorProfileStore: options.contributorTier
+        ? {
+          getByGithubUsername: async (login: string) => login === (options.prAuthor ?? "octocat")
+            ? {
+              id: "profile-1",
+              overallTier: options.contributorTier,
+            }
+            : null,
+          getExpertise: async () => [],
+        } as never
+        : undefined,
       logger: createNoopLogger(),
     });
 
@@ -608,7 +621,7 @@ describe("createReviewHandler auto profile selection", () => {
           commits: 0,
           additions: options.additions,
           deletions: options.deletions,
-          user: { login: "octocat" },
+          user: { login: options.prAuthor ?? "octocat" },
           base: { ref: "main", sha: "mainsha" },
           head: {
             sha: "abcdef1234567890",

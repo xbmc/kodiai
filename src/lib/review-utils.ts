@@ -249,6 +249,16 @@ export function formatReviewDetailsSummary(params: {
       ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
 
+  const authorToneLabel = authorTier === "first-time" || authorTier === "newcomer"
+    ? "newcomer guidance"
+    : authorTier === "regular" || authorTier === "developing" || authorTier === undefined
+      ? "developing guidance"
+      : authorTier === "established"
+        ? "established contributor guidance"
+        : authorTier === "core" || authorTier === "senior"
+          ? "senior contributor guidance"
+          : "adapted tone";
+
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
@@ -256,7 +266,7 @@ export function formatReviewDetailsSummary(params: {
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     profileLine,
-    `- Author: ${authorTier ?? "regular"} (${authorTier === "regular" ? "default" : "adapted tone"})`,
+    `- Author tier: ${authorTier ?? "regular"} (${authorToneLabel})`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];

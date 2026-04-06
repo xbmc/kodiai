@@ -10,7 +10,7 @@ Assumption: the existing mapping in `buildAuthorExperienceSection()` remains the
   - Estimate: 45m
   - Files: src/execution/review-prompt.ts, src/execution/review-prompt.test.ts
   - Verify: bun test ./src/execution/review-prompt.test.ts
-- [ ] **T02: Prove Review Details and handler outputs stay truthful** — Extend deterministic Review Details coverage and reuse the existing captured handler harness to assert that one review run threads the resolved author tier into both user-visible surfaces. The task should verify full rendered prompt/details bodies, not proxy fields, and should stay scoped to the existing `runProfileScenario()`-style seam rather than broad end-to-end orchestration.
+- [x] **T02: Made Review Details author-tier wording explicit and locked it with deterministic regression coverage.** — Extend deterministic Review Details coverage and reuse the existing captured handler harness to assert that one review run threads the resolved author tier into both user-visible surfaces. The task should verify full rendered prompt/details bodies, not proxy fields, and should stay scoped to the existing `runProfileScenario()`-style seam rather than broad end-to-end orchestration.
 
 If `formatReviewDetailsSummary()` wording is too weak to make the tier obvious, tighten it enough to distinguish default/fallback wording from established/senior truthfulness without changing unrelated review-details structure.
   - Estimate: 1h
