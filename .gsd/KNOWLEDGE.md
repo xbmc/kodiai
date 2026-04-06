@@ -225,6 +225,20 @@ return { method: () => fn() };  // closure captures the narrowed local
 
 ---
 
+## Author-Tier Cache May Reuse Only Fallback Taxonomy Values (M042/S03)
+
+**Context:** `resolveAuthorTierFromSources()` accepts three fidelity tiers: contributor-profile state (highest), author-cache rows (lower-fidelity reuse), and live fallback classification (lowest). The bug risk in S03 was letting cache rows carry richer labels like `established` or `senior`, which would let a stale or malformed cache overclaim contributor seniority.
+
+**Rule:** The author cache is bounded to the fallback taxonomy only: `first-time`, `regular`, and `core`. Any cached value outside that set must be treated as invalid cache data, logged, and ignored fail-open so resolution falls through to live fallback classification rather than trusting the cache.
+
+**Rendering implication:** Cache hits may faithfully reuse the bounded fallback taxonomy as-is (`core` can still map to senior-style wording because that is the established rendering for the fallback taxonomy), but degraded fallback paths must never invent `established` or `senior` knowledge that only the contributor-profile source can prove.
+
+**Testing pattern:** Lock this with full rendered-body assertions, not just source metadata. Handler and verifier tests should require the expected prompt/details phrases and ban contradictory newcomer/developing/established/senior phrases in the same assertion block.
+
+**Established in:** M042/S03 (`src/handlers/review.ts`, `src/handlers/review.test.ts`, `scripts/verify-m042-s03.ts`).
+
+---
+
 ## `createMockLoggerWithArrays` Pattern for Multi-Child Handler Tests (M030/S02)
 
 **Context:** `addon-check.test.ts` needs to assert that child loggers (created by `handlerLogger.child(...)`) emit structured info/warn bindings. A flat mock logger doesn't capture child-logger output separately; each child must write to the same shared arrays.

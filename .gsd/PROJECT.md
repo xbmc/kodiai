@@ -10,30 +10,34 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 ## Current State
 
-M001–M041 are complete. M042 is in progress.
+M001–M041 are complete. M042 is now complete through S03.
 
-M042/S01 and M042/S02 are now complete. Kodiai can reproduce the CrystalP-shaped contributor-tier defect, recalculate contributor tiers truthfully when overall scores change, persist the recalculated tier as the stored source of truth, and render that corrected tier into the main review surfaces. The prompt author-experience section and Review Details output now distinguish established and senior contributors explicitly, and the M042/S02 proof harness locks the contributor-profile precedence plus the established-tier prompt/details wording against newcomer and developing regressions.
+Kodiai can now carry contributor-tier truthfulness across the full M042 path:
+- scorer-side expertise updates recalculate and persist truthful contributor tiers when overall scores advance
+- review rendering prefers contributor-profile state over cache and fallback classification
+- prompt and Review Details surfaces render explicit established/senior/developing guidance without regressing to newcomer copy for advanced contributors
+- author-tier cache reuse is bounded to fallback-taxonomy values only, so stale or malformed cache rows cannot overclaim contributor seniority
+- degraded/retry review paths preserve the same resolved author tier and thread the exact Search API degradation disclosure sentence without contradicting the rendered author guidance
+- deterministic proof harnesses now cover all three slices: persistence/source-of-truth (`verify:m042:s01`), review-surface truthfulness (`verify:m042:s02`), and cache/fallback hardening (`verify:m042:s03`)
 
-The remaining M042 work is cache and fallback hardening: S03 needs to prove that cached author-tier reuse and degraded fallback classification preserve truthful contributor labeling across repeated review runs and regression cases.
+The CrystalP-shaped regression is therefore covered at persistence time, render time, and cache/degradation time, with slice verifiers that milestone closure can rerun unchanged.
 
 ## Architecture / Key Patterns
 
 - **Entrypoint:** Hono HTTP server (`src/index.ts`) receiving GitHub webhooks + Slack events
 - **Execution:** Azure Container App Jobs dispatch per review; agent writes `result.json` to shared Azure Files mount
 - **Review flow:** `src/handlers/review.ts` orchestrates PR analysis, author classification, prompt construction, output filtering, and GitHub publication
-- **Author classification path after M042/S02:**
+- **Contributor-tier truthfulness path after M042:**
   - `src/contributor/` — persistent contributor profiles, expertise scoring, percentile-based tier calculation, profile store
   - `src/contributor/expertise-scorer.ts` — score updates recalculate a target tier from the current score distribution before persisting
   - `src/contributor/tier-calculator.ts` — canonical percentile assignment helpers shared by batch recalculation and scorer-side updates
-  - `src/handlers/review.ts` — resolves author tier through explicit precedence: contributor profile → author cache → fallback classifier
+  - `src/handlers/review.ts` — resolves author tier through explicit precedence: contributor profile → bounded author cache → fallback classifier
+  - `src/knowledge/store.ts` / `src/knowledge/types.ts` — author-cache contract is bounded to fallback-taxonomy values (`first-time`, `regular`, `core`)
   - `src/lib/author-classifier.ts` — lightweight PR-time fallback classifier used only when higher-fidelity state is unavailable
-  - `src/execution/review-prompt.ts` — maps the resolved tier into prompt author-experience guidance, with explicit established/senior wording guarded against newcomer/developing regressions
+  - `src/execution/review-prompt.ts` — maps the resolved tier into prompt author-experience guidance, with explicit established/senior wording and a stable degradation disclosure sentence for Search API fallback
   - `src/lib/review-utils.ts` — renders Review Details with an explicit `Author tier:` line and guidance label derived from the resolved tier
-  - `scripts/verify-m042-s01.ts` / `scripts/verify-m042-s02.ts` — deterministic proof harnesses for tier persistence/preference and review-surface truthfulness
-- **Persistence / caches:**
-  - contributor profile state in Postgres via `src/contributor/profile-store.ts`
-  - author-tier cache in `knowledgeStore` used by the review path
-- **Established pattern:** fix contributor-experience truthfulness at the persistent source-of-truth layer first, then make render surfaces consume that state explicitly; keep review execution fail-open when enrichment or recalculation dependencies degrade
+  - `scripts/verify-m042-s01.ts`, `scripts/verify-m042-s02.ts`, `scripts/verify-m042-s03.ts` — deterministic proof harnesses for persistence truthfulness, review-surface truthfulness, and cache/fallback truthfulness
+- **Established pattern:** fix contributor-experience truthfulness at the persistent source-of-truth layer first, then make render surfaces consume that state explicitly, then bound cache/degradation behavior so lower-fidelity paths cannot overclaim what only contributor-profile state can prove
 
 ## Capability Contract
 
@@ -42,7 +46,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [x] M001–M041: MVP through Canonical Repo-Code Corpus and Structural Impact work
-- [ ] M042: Contributor Tier Truthfulness
+- [x] M042: Contributor Tier Truthfulness
   - [x] S01: Repro and Tier-State Correction
   - [x] S02: Review-Surface Truthfulness Wiring
-  - [ ] S03: Cache, Fallback, and Regression Hardening
+  - [x] S03: Cache, Fallback, and Regression Hardening
