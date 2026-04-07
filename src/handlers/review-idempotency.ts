@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import { wrapInDetails } from "../lib/formatting.ts";
 
 export type ReviewOutputKeyInput = {
   installationId: number;
@@ -10,17 +11,45 @@ export type ReviewOutputKeyInput = {
   headSha: string;
 };
 
+export type ReviewOutputIdempotencyLocation =
+  | "review-comment"
+  | "issue-comment"
+  | "review";
+
+export type ReviewOutputIdempotencyDecision =
+  | "publish"
+  | "skip-existing-review-comment"
+  | "skip-existing-issue-comment"
+  | "skip-existing-review";
+
+export type ReviewOutputScanSummary = {
+  scanned: number;
+  hitCap: boolean;
+};
+
+export type ReviewOutputScanStats = {
+  reviewComments: ReviewOutputScanSummary;
+  issueComments: ReviewOutputScanSummary;
+  reviews: ReviewOutputScanSummary;
+};
+
+export type ReviewOutputPublicationState = "publish" | "skip-existing-output";
+
 export type ReviewOutputPublicationStatus = {
   reviewOutputKey: string;
   marker: string;
   shouldPublish: boolean;
-  existingLocation: "review-comment" | "issue-comment" | "review" | null;
+  publicationState: ReviewOutputPublicationState;
+  existingLocation: ReviewOutputIdempotencyLocation | null;
+  idempotencyDecision: ReviewOutputIdempotencyDecision;
+  scanStats: ReviewOutputScanStats;
 };
 
 const KEY_PREFIX = "kodiai-review-output";
 
 const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_SCAN_ITEMS = 2000;
+const EMPTY_SCAN_SUMMARY: ReviewOutputScanSummary = { scanned: 0, hitCap: false };
 
 async function scanForMarkerInPagedBodies<T extends { body?: string | null }>(params: {
   marker: string;
@@ -53,6 +82,50 @@ function normalizeSegment(value: string): string {
   return value.trim().toLowerCase();
 }
 
+function summarizeScan(scan: { scanned: number; hitCap: boolean }): ReviewOutputScanSummary {
+  return { scanned: scan.scanned, hitCap: scan.hitCap };
+}
+
+function buildPublicationStatus(params: {
+  reviewOutputKey: string;
+  marker: string;
+  shouldPublish: boolean;
+  existingLocation: ReviewOutputIdempotencyLocation | null;
+  idempotencyDecision: ReviewOutputIdempotencyDecision;
+  scanStats: Partial<ReviewOutputScanStats>;
+}): ReviewOutputPublicationStatus {
+  return {
+    reviewOutputKey: params.reviewOutputKey,
+    marker: params.marker,
+    shouldPublish: params.shouldPublish,
+    publicationState: params.shouldPublish ? "publish" : "skip-existing-output",
+    existingLocation: params.existingLocation,
+    idempotencyDecision: params.idempotencyDecision,
+    scanStats: {
+      reviewComments: params.scanStats.reviewComments ?? EMPTY_SCAN_SUMMARY,
+      issueComments: params.scanStats.issueComments ?? EMPTY_SCAN_SUMMARY,
+      reviews: params.scanStats.reviews ?? EMPTY_SCAN_SUMMARY,
+    },
+  };
+}
+
+export function buildReviewOutputPublicationLogFields(
+  status: ReviewOutputPublicationStatus,
+): Record<string, string | number | boolean | null> {
+  return {
+    reviewOutputKey: status.reviewOutputKey,
+    reviewOutputPublicationState: status.publicationState,
+    idempotencyDecision: status.idempotencyDecision,
+    existingLocation: status.existingLocation,
+    reviewCommentsScanned: status.scanStats.reviewComments.scanned,
+    reviewCommentsHitCap: status.scanStats.reviewComments.hitCap,
+    issueCommentsScanned: status.scanStats.issueComments.scanned,
+    issueCommentsHitCap: status.scanStats.issueComments.hitCap,
+    reviewsScanned: status.scanStats.reviews.scanned,
+    reviewsHitCap: status.scanStats.reviews.hitCap,
+  };
+}
+
 export function buildReviewOutputKey(input: ReviewOutputKeyInput): string {
   const owner = normalizeSegment(input.owner);
   const repo = normalizeSegment(input.repo);
@@ -76,6 +149,25 @@ export function buildReviewOutputMarker(reviewOutputKey: string): string {
   return `<!-- kodiai:review-output-key:${reviewOutputKey} -->`;
 }
 
+export function buildApprovedReviewBody(params: {
+  reviewOutputKey: string;
+  approvalConfidence?: string | null;
+}): string {
+  const marker = buildReviewOutputMarker(params.reviewOutputKey);
+  const lines = [
+    "Decision: APPROVE",
+    "Issues: none",
+  ];
+
+  const approvalConfidence = params.approvalConfidence?.trim();
+  if (approvalConfidence) {
+    lines.push("", approvalConfidence);
+  }
+
+  lines.push("", marker);
+  return wrapInDetails(lines.join("\n"), "kodiai response");
+}
+
 export async function ensureReviewOutputNotPublished(deps: {
   octokit: Octokit;
   owner: string;
@@ -84,6 +176,7 @@ export async function ensureReviewOutputNotPublished(deps: {
   reviewOutputKey: string;
 }): Promise<ReviewOutputPublicationStatus> {
   const marker = buildReviewOutputMarker(deps.reviewOutputKey);
+  const scanStats: Partial<ReviewOutputScanStats> = {};
 
   const reviewCommentsScan = await scanForMarkerInPagedBodies({
     marker,
@@ -100,14 +193,17 @@ export async function ensureReviewOutputNotPublished(deps: {
       return data;
     },
   });
+  scanStats.reviewComments = summarizeScan(reviewCommentsScan);
 
   if (reviewCommentsScan.found) {
-    return {
+    return buildPublicationStatus({
       reviewOutputKey: deps.reviewOutputKey,
       marker,
       shouldPublish: false,
       existingLocation: "review-comment",
-    };
+      idempotencyDecision: "skip-existing-review-comment",
+      scanStats,
+    });
   }
 
   const issueCommentsScan = await scanForMarkerInPagedBodies({
@@ -125,14 +221,17 @@ export async function ensureReviewOutputNotPublished(deps: {
       return data;
     },
   });
+  scanStats.issueComments = summarizeScan(issueCommentsScan);
 
   if (issueCommentsScan.found) {
-    return {
+    return buildPublicationStatus({
       reviewOutputKey: deps.reviewOutputKey,
       marker,
       shouldPublish: false,
       existingLocation: "issue-comment",
-    };
+      idempotencyDecision: "skip-existing-issue-comment",
+      scanStats,
+    });
   }
 
   const reviewsScan = await scanForMarkerInPagedBodies({
@@ -148,20 +247,25 @@ export async function ensureReviewOutputNotPublished(deps: {
       return data;
     },
   });
+  scanStats.reviews = summarizeScan(reviewsScan);
 
   if (reviewsScan.found) {
-    return {
+    return buildPublicationStatus({
       reviewOutputKey: deps.reviewOutputKey,
       marker,
       shouldPublish: false,
       existingLocation: "review",
-    };
+      idempotencyDecision: "skip-existing-review",
+      scanStats,
+    });
   }
 
-  return {
+  return buildPublicationStatus({
     reviewOutputKey: deps.reviewOutputKey,
     marker,
     shouldPublish: true,
     existingLocation: null,
-  };
+    idempotencyDecision: "publish",
+    scanStats,
+  });
 }

@@ -40,7 +40,12 @@ import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import { classifyFileLanguage } from "../execution/diff-analysis.ts";
-import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
+import {
+  type ErrorCategory,
+  classifyError,
+  formatErrorComment,
+  postOrUpdateErrorComment,
+} from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import { validateIssue, generateGuidanceComment, generateLabelRecommendation, generateGenericNudge } from "../triage/triage-agent.ts";
@@ -49,7 +54,12 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 import { buildWritePolicyRefusalMessage, scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
-import { buildReviewOutputKey, ensureReviewOutputNotPublished } from "./review-idempotency.ts";
+import {
+  buildApprovedReviewBody,
+  buildReviewOutputKey,
+  buildReviewOutputPublicationLogFields,
+  ensureReviewOutputNotPublished,
+} from "./review-idempotency.ts";
 import { renderApprovalConfidence } from "../lib/review-utils.ts";
 
 type MentionRetrievalContext = {
@@ -69,6 +79,23 @@ type MentionRetrievalContext = {
 };
 
 type IssueWriteFailureStep = "branch-push" | "create-pr" | "issue-linkback";
+type MentionPublishResolution =
+  | "none"
+  | "executor"
+  | "approval-bridge"
+  | "idempotency-skip"
+  | "duplicate-suppressed"
+  | "publish-failure-fallback"
+  | "publish-failure-comment-failed";
+type MentionErrorDelivery =
+  | "review-thread-reply"
+  | "error-comment-created"
+  | "error-comment-updated"
+  | "error-comment-failed";
+type MentionErrorPostResult = {
+  posted: boolean;
+  delivery: MentionErrorDelivery;
+};
 
 const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
@@ -547,6 +574,18 @@ export function createMentionHandler(deps: {
     return firstLine ?? "Unknown publish failure";
   }
 
+  function buildExplicitReviewPublishFailureBody(publishErr: unknown): string {
+    const detail = summarizeErrorForDiagnostics(publishErr);
+    const category = classifyError(publishErr, false);
+    return wrapInDetails(
+      formatErrorComment(
+        category,
+        `Review execution finished, but GitHub rejected the publish step. ${detail}`,
+      ),
+      "Kodiai couldn't publish the review result",
+    );
+  }
+
   function buildIssueWriteSuccessReply(params: {
     prUrl: string;
     issueLinkbackUrl: string;
@@ -882,7 +921,7 @@ export function createMentionHandler(deps: {
           });
         }
 
-        async function postMentionError(errorBody: string): Promise<void> {
+        async function postMentionError(errorBody: string): Promise<MentionErrorPostResult> {
           const sanitizedBody = sanitizeOutgoingMentions(errorBody, possibleHandles);
           // Prefer replying in-thread for inline review comment mentions.
           if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
@@ -894,7 +933,7 @@ export function createMentionHandler(deps: {
                 comment_id: mention.commentId,
                 body: sanitizedBody,
               });
-              return;
+              return { posted: true, delivery: "review-thread-reply" };
             } catch (err) {
               logger.warn(
                 { err, prNumber: mention.prNumber, commentId: mention.commentId },
@@ -903,7 +942,7 @@ export function createMentionHandler(deps: {
             }
           }
 
-          await postOrUpdateErrorComment(
+          const commentStatus = await postOrUpdateErrorComment(
             octokit,
             {
               owner: mention.owner,
@@ -913,6 +952,18 @@ export function createMentionHandler(deps: {
             sanitizedBody,
             logger,
           );
+
+          if (commentStatus.ok) {
+            return {
+              posted: true,
+              delivery:
+                commentStatus.resolution === "updated"
+                  ? "error-comment-updated"
+                  : "error-comment-created",
+            };
+          }
+
+          return { posted: false, delivery: "error-comment-failed" };
         }
 
         // Determine clone parameters
@@ -1797,16 +1848,51 @@ export function createMentionHandler(deps: {
         // Explicit PR review mentions bypass the pull_request review handler's
         // deterministic clean-review publish path. Bridge that gap here so a
         // successful no-issues run still produces a GitHub-visible approval.
-        if (
+        let mentionOutputPublished = Boolean(result.published);
+        let publishResolution: MentionPublishResolution = mentionOutputPublished ? "executor" : "none";
+        let publishFailureCategory: ErrorCategory | null = null;
+        let publishFallbackDelivery: MentionErrorDelivery | null = null;
+        const explicitReviewPublishEligible =
           explicitReviewRequest &&
           mention.prNumber !== undefined &&
           result.conclusion === "success" &&
           !result.published &&
           reviewOutputKey &&
-          config.review.autoApprove
-        ) {
+          config.review.autoApprove;
+
+        if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
+          const skipReason =
+            result.conclusion !== "success"
+              ? "execution-not-success"
+              : result.published
+                ? "output-already-published"
+                : !reviewOutputKey
+                  ? "missing-review-output-key"
+                  : !config.review.autoApprove
+                    ? "auto-approve-disabled"
+                    : "not-eligible";
+
+          logger.info(
+            {
+              surface: mention.surface,
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              gate: "explicit-review-publish",
+              gateResult: "skipped",
+              skipReason,
+              reviewOutputKey: reviewOutputKey ?? null,
+              resultConclusion: result.conclusion,
+              resultPublished: result.published,
+              autoApprove: config.review.autoApprove,
+            },
+            "Skipping explicit mention review publish path",
+          );
+        }
+
+        if (explicitReviewPublishEligible && reviewOutputKey && mention.prNumber !== undefined) {
+          const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
           try {
-            const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
             const idempotencyCheck = await ensureReviewOutputNotPublished({
               octokit: publishOctokit,
               owner: mention.owner,
@@ -1815,16 +1901,62 @@ export function createMentionHandler(deps: {
               reviewOutputKey,
             });
 
-            if (idempotencyCheck.shouldPublish) {
+            if (!idempotencyCheck.shouldPublish) {
+              mentionOutputPublished = true;
+              publishResolution = "idempotency-skip";
+              logger.info(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  gate: "review-output-idempotency",
+                  gateResult: "skipped",
+                  skipReason: "already-published",
+                  ...buildReviewOutputPublicationLogFields(idempotencyCheck),
+                },
+                "Skipping explicit mention review publish because output already exists",
+              );
+            } else {
+              logger.info(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  gate: "review-output-idempotency",
+                  gateResult: "accepted",
+                  ...buildReviewOutputPublicationLogFields(idempotencyCheck),
+                },
+                "Explicit mention review idempotency check passed",
+              );
+
               const appSlug = githubApp.getAppSlug();
+              logger.info(
+                {
+                  surface: mention.surface,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  gate: "explicit-review-publish",
+                  gateResult: "attempt",
+                  publishAttemptOutcome: "attempting-approval",
+                  reviewOutputKey,
+                },
+                "Attempting explicit mention review approval publish",
+              );
               await publishOctokit.rest.pulls.createReview({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
                 event: "APPROVE",
-                body: sanitizeOutgoingMentions(idempotencyCheck.marker, [appSlug, "claude", "kodai"]),
+                body: sanitizeOutgoingMentions(
+                  buildApprovedReviewBody({ reviewOutputKey }),
+                  [appSlug, "claude", "kodai"],
+                ),
               });
-              result.published = true;
+              mentionOutputPublished = true;
+              publishResolution = "approval-bridge";
               logger.info(
                 {
                   evidenceType: "review",
@@ -1836,11 +1968,13 @@ export function createMentionHandler(deps: {
                   repo: `${mention.owner}/${mention.repo}`,
                   prNumber: mention.prNumber,
                   reviewOutputKey,
+                  publishAttemptOutcome: "submitted-approval",
                 },
-                "Submitted silent approval for explicit mention review",
+                "Submitted approval review for explicit mention request",
               );
             }
           } catch (publishErr) {
+            publishFailureCategory = classifyError(publishErr, false);
             logger.warn(
               {
                 err: publishErr,
@@ -1849,9 +1983,84 @@ export function createMentionHandler(deps: {
                 repo: mention.repo,
                 prNumber: mention.prNumber,
                 reviewOutputKey,
+                publishAttemptOutcome:
+                  publishFailureCategory === "api_error" ? "github-api-rejected" : "failed",
+                publishFailureCategory,
               },
-              "Failed to submit silent approval for explicit mention review",
+              "Failed to submit approval review for explicit mention request",
             );
+
+            let outputDetectedAfterError = false;
+            try {
+              const recheck = await ensureReviewOutputNotPublished({
+                octokit: publishOctokit,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                reviewOutputKey,
+              });
+
+              if (!recheck.shouldPublish) {
+                mentionOutputPublished = true;
+                publishResolution = "duplicate-suppressed";
+                outputDetectedAfterError = true;
+                logger.info(
+                  {
+                    surface: mention.surface,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    prNumber: mention.prNumber,
+                    gate: "review-output-idempotency",
+                    gateResult: "recovered",
+                    skipReason: "output-detected-after-error",
+                    ...buildReviewOutputPublicationLogFields(recheck),
+                  },
+                  "Explicit mention review publish error still produced output; suppressing fallback",
+                );
+              }
+            } catch (recheckErr) {
+              logger.warn(
+                {
+                  err: recheckErr,
+                  deliveryId: event.id,
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  prNumber: mention.prNumber,
+                  reviewOutputKey,
+                  publishAttemptOutcome: "recheck-failed",
+                  publishFailureCategory,
+                },
+                "Failed to recheck explicit mention review output after publish error",
+              );
+            }
+
+            if (!outputDetectedAfterError) {
+              const fallbackResult = await postMentionError(
+                buildExplicitReviewPublishFailureBody(publishErr),
+              );
+              publishFallbackDelivery = fallbackResult.delivery;
+
+              if (fallbackResult.posted) {
+                mentionOutputPublished = true;
+                publishResolution = "publish-failure-fallback";
+              } else {
+                mentionOutputPublished = false;
+                publishResolution = "publish-failure-comment-failed";
+                logger.warn(
+                  {
+                    deliveryId: event.id,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    prNumber: mention.prNumber,
+                    reviewOutputKey,
+                    publishAttemptOutcome: "fallback-comment-failed",
+                    publishFailureCategory,
+                    publishFallbackDelivery,
+                  },
+                  "Explicit mention review publish fallback could not be delivered",
+                );
+              }
+            }
           }
         }
 
@@ -1860,12 +2069,18 @@ export function createMentionHandler(deps: {
             surface: mention.surface,
             issueNumber: mention.issueNumber,
             conclusion: result.conclusion,
-            published: result.published,
+            published: mentionOutputPublished,
+            executorPublished: result.published,
+            publishResolution,
+            publishFailureCategory,
+            publishFallbackDelivery,
             writeEnabled,
             costUsd: result.costUsd,
             numTurns: result.numTurns,
             durationMs: result.durationMs,
             sessionId: result.sessionId,
+            ...(explicitReviewRequest ? { explicitReviewRequest: true } : {}),
+            ...(reviewOutputKey ? { reviewOutputKey } : {}),
           },
           "Mention execution completed",
         );
@@ -2662,7 +2877,14 @@ export function createMentionHandler(deps: {
 
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
-        if (!writeEnabled && result.conclusion === "success" && !result.published) {
+        // Explicit review publish failures that already exhausted the comment fallback path must
+        // not fall through here, or we spam the same broken comment surface with a less specific reply.
+        if (
+          !writeEnabled &&
+          result.conclusion === "success" &&
+          !mentionOutputPublished &&
+          publishResolution !== "publish-failure-comment-failed"
+        ) {
           const fallbackLines = explicitReviewRequest
             ? [
                 "Decision: NOT APPROVED",
@@ -2718,7 +2940,7 @@ export function createMentionHandler(deps: {
         // If execution failed without publishing, always post a user-visible fallback.
         // The SDK can return conclusion="failure" with stop reasons other than max_turns,
         // and previously those paths could finish silently.
-        if (result.conclusion === "failure" && !result.published) {
+        if (result.conclusion === "failure" && !mentionOutputPublished) {
           if (result.stopReason === "max_turns") {
             const turnLimitBody = wrapInDetails(
               [

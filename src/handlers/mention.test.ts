@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createMentionHandler } from "./mention.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -21,6 +22,43 @@ function createNoopLogger(): Logger {
     trace: noop,
     fatal: noop,
     child: () => createNoopLogger(),
+  } as unknown as Logger;
+}
+
+type LogCall = { bindings: Record<string, unknown>; message: string };
+
+function createMockLogger() {
+  const infoCalls: LogCall[] = [];
+  const warnCalls: LogCall[] = [];
+  const errorCalls: LogCall[] = [];
+  return {
+    logger: createMockLoggerWithArrays(infoCalls, warnCalls, errorCalls),
+    infoCalls,
+    warnCalls,
+    errorCalls,
+  };
+}
+
+function createMockLoggerWithArrays(
+  infoCalls: LogCall[],
+  warnCalls: LogCall[],
+  errorCalls: LogCall[],
+): Logger {
+  const noop = () => undefined;
+  return {
+    info: (bindings: Record<string, unknown>, message: string) => {
+      infoCalls.push({ bindings, message });
+    },
+    warn: (bindings: Record<string, unknown>, message: string) => {
+      warnCalls.push({ bindings, message });
+    },
+    error: (bindings: Record<string, unknown>, message: string) => {
+      errorCalls.push({ bindings, message });
+    },
+    debug: noop,
+    trace: noop,
+    fatal: noop,
+    child: () => createMockLoggerWithArrays(infoCalls, warnCalls, errorCalls),
   } as unknown as Logger;
 }
 
@@ -6411,7 +6449,7 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
 describe("createMentionHandler review command", () => {
   test("pr top-level review request posts review-structured fallback when execution is non-published", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
-    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: false\n");
 
     const prNumber = 101;
     const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
@@ -6620,7 +6658,7 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("explicit PR review mention submits silent approval when execution succeeds without publishing", async () => {
+  test("explicit PR review mention submits approval review when execution succeeds without publishing", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
 
@@ -6630,6 +6668,7 @@ describe("createMentionHandler review command", () => {
       .trim();
     await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
 
+    const { logger, infoCalls } = createMockLogger();
     const createdReviews: Array<{ event: string; body: string }> = [];
 
     const eventRouter: EventRouter = {
@@ -6710,7 +6749,7 @@ describe("createMentionHandler review command", () => {
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
-      logger: createNoopLogger(),
+      logger,
     });
 
     const handler = handlers.get("issue_comment.created");
@@ -6725,7 +6764,583 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
+    expect(createdReviews[0]?.body).toContain("<summary>kodiai response</summary>");
+    expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
+    expect(createdReviews[0]?.body).toContain("Issues: none");
     expect(createdReviews[0]?.body).toContain("kodiai:review-output-key:");
+
+    const idempotencyLog = infoCalls.find((entry) =>
+      entry.message === "Explicit mention review idempotency check passed",
+    );
+    expect(idempotencyLog?.bindings.reviewOutputKey).toBeDefined();
+    expect(idempotencyLog?.bindings.idempotencyDecision).toBe("publish");
+    expect(idempotencyLog?.bindings.gate).toBe("review-output-idempotency");
+    expect(idempotencyLog?.bindings.gateResult).toBe("accepted");
+
+    const publishAttemptLog = infoCalls.find((entry) =>
+      entry.message === "Submitted approval review for explicit mention request",
+    );
+    expect(publishAttemptLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    expect(publishAttemptLog?.bindings.publishAttemptOutcome).toBe("submitted-approval");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
+    expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("approval-bridge");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention logs idempotency skip when review output already exists", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 105;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    let createReviewCalls = 0;
+    const issueReplies: string[] = [];
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      action: "mention-review",
+      deliveryId: "delivery-pr-issue-comment-mention",
+      headSha: "feature",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({
+            data: [{ id: 1, body: `Silent approval\n\n${marker}` }],
+          }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            createReviewCalls++;
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention-idempotency-skip",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createReviewCalls).toBe(0);
+    expect(issueReplies).toHaveLength(0);
+
+    const skipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish because output already exists",
+    );
+    expect(skipLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(skipLog?.bindings.idempotencyDecision).toBe("skip-existing-review");
+    expect(skipLog?.bindings.reviewOutputPublicationState).toBe("skip-existing-output");
+    expect(skipLog?.bindings.existingLocation).toBe("review");
+    expect(skipLog?.bindings.gate).toBe("review-output-idempotency");
+    expect(skipLog?.bindings.gateResult).toBe("skipped");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("idempotency-skip");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention suppresses fallback when publish recheck finds output", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 106;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls, warnCalls } = createMockLogger();
+    const issueReplies: string[] = [];
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      action: "mention-review",
+      deliveryId: "delivery-pr-issue-comment-mention",
+      headSha: "feature",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    let listReviewsCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => {
+            listReviewsCalls++;
+            return listReviewsCalls === 1
+              ? { data: [] }
+              : { data: [{ id: 1, body: `Recovered approval\n\n${marker}` }] };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            throw new Error("publish blocked after create");
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention-publish-recheck",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(issueReplies).toHaveLength(0);
+
+    const failureLog = warnCalls.find((entry) =>
+      entry.message === "Failed to submit approval review for explicit mention request",
+    );
+    expect(failureLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(failureLog?.bindings.publishAttemptOutcome).toBe("failed");
+    expect(failureLog?.bindings.publishFailureCategory).toBe("internal_error");
+
+    const recoveredLog = infoCalls.find((entry) =>
+      entry.message === "Explicit mention review publish error still produced output; suppressing fallback",
+    );
+    expect(recoveredLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(recoveredLog?.bindings.gateResult).toBe("recovered");
+    expect(recoveredLog?.bindings.reviewOutputPublicationState).toBe("skip-existing-output");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("duplicate-suppressed");
+    expect(completionLog?.bindings.publishFailureCategory).toBe("internal_error");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention logs publish failure when approval submission throws", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 107;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls, warnCalls } = createMockLogger();
+    const issueReplies: string[] = [];
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      action: "mention-review",
+      deliveryId: "delivery-pr-issue-comment-mention",
+      headSha: "feature",
+    });
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            throw Object.assign(new Error("Validation Failed"), { status: 422 });
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention-publish-failure",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Kodiai couldn't publish the review result");
+    expect(issueReplies[0]).toContain("Kodiai encountered an API error");
+    expect(issueReplies[0]).toContain("GitHub rejected the publish step. Validation Failed");
+    expect(issueReplies[0]).not.toContain("Decision: NOT APPROVED");
+
+    const attemptLog = infoCalls.find((entry) =>
+      entry.message === "Attempting explicit mention review approval publish",
+    );
+    expect(attemptLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(attemptLog?.bindings.publishAttemptOutcome).toBe("attempting-approval");
+
+    const failureLog = warnCalls.find((entry) =>
+      entry.message === "Failed to submit approval review for explicit mention request",
+    );
+    expect(failureLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(failureLog?.bindings.publishAttemptOutcome).toBe("github-api-rejected");
+    expect(failureLog?.bindings.publishFailureCategory).toBe("api_error");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(completionLog?.bindings.published).toBe(true);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("publish-failure-fallback");
+    expect(completionLog?.bindings.publishFailureCategory).toBe("api_error");
+    expect(completionLog?.bindings.publishFallbackDelivery).toBe("error-comment-created");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention logs fallback comment delivery failure distinctly", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 108;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls, warnCalls, errorCalls } = createMockLogger();
+    const issueReplies: string[] = [];
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber,
+      action: "mention-review",
+      deliveryId: "delivery-pr-issue-comment-mention",
+      headSha: "feature",
+    });
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            throw Object.assign(new Error("Validation Failed"), { status: 403 });
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            throw new Error("comment write blocked");
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention-fallback-comment-failure",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(issueReplies).toHaveLength(1);
+
+    const helperFailureLog = errorCalls.find((entry) =>
+      entry.message === "Failed to post/update error comment",
+    );
+    expect(helperFailureLog?.bindings.errorCommentMethod).toBe("create-comment");
+
+    const fallbackFailureLog = warnCalls.find((entry) =>
+      entry.message === "Explicit mention review publish fallback could not be delivered",
+    );
+    expect(fallbackFailureLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(fallbackFailureLog?.bindings.publishAttemptOutcome).toBe("fallback-comment-failed");
+    expect(fallbackFailureLog?.bindings.publishFailureCategory).toBe("api_error");
+    expect(fallbackFailureLog?.bindings.publishFallbackDelivery).toBe("error-comment-failed");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.reviewOutputKey).toBe(reviewOutputKey);
+    expect(completionLog?.bindings.published).toBe(false);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("publish-failure-comment-failed");
+    expect(completionLog?.bindings.publishFailureCategory).toBe("api_error");
+    expect(completionLog?.bindings.publishFallbackDelivery).toBe("error-comment-failed");
 
     await workspaceFixture.cleanup();
   });

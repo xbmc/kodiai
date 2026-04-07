@@ -23,6 +23,16 @@ export type ErrorCategory =
   | "clone_error"
   | "internal_error";
 
+export type ErrorCommentPublicationMethod = "create-comment" | "update-comment";
+export type ErrorCommentPublicationResolution = "created" | "updated" | "failed";
+
+export type ErrorCommentPublicationStatus = {
+  ok: boolean;
+  resolution: ErrorCommentPublicationResolution;
+  method: ErrorCommentPublicationMethod;
+  error?: unknown;
+};
+
 /**
  * Classify an error into a user-understandable category.
  *
@@ -41,8 +51,18 @@ export function classifyError(
 
   const message =
     error instanceof Error ? error.message : String(error);
+  const status =
+    typeof error === "object" && error !== null
+      ? typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : typeof (error as { response?: { status?: unknown } }).response?.status === "number"
+          ? ((error as { response: { status: number } }).response.status)
+          : undefined
+      : undefined;
 
   if (message.includes(".kodiai.yml")) return "config_error";
+
+  if (status !== undefined && status >= 400 && status < 600) return "api_error";
 
   // API errors checked before clone errors: "rate limit" contains "git"
   // and status codes are more specific than the broad "git" match
@@ -105,7 +125,9 @@ export function formatErrorComment(
  *
  * IMPORTANT: This function never throws. If the GitHub API call fails,
  * the error is logged but swallowed. Error reporting must not mask
- * the original error that triggered it (Pitfall 6).
+ * the original error that triggered it (Pitfall 6). The return value
+ * truthfully reports whether the fallback comment was created, updated,
+ * or failed to publish.
  *
  * @param octokit - Authenticated Octokit instance
  * @param target - The issue/PR to comment on
@@ -122,7 +144,11 @@ export async function postOrUpdateErrorComment(
   },
   body: string,
   logger: Logger,
-): Promise<void> {
+): Promise<ErrorCommentPublicationStatus> {
+  const method: ErrorCommentPublicationMethod = target.trackingCommentId
+    ? "update-comment"
+    : "create-comment";
+
   try {
     if (target.trackingCommentId) {
       await octokit.rest.issues.updateComment({
@@ -131,18 +157,28 @@ export async function postOrUpdateErrorComment(
         comment_id: target.trackingCommentId,
         body,
       });
-    } else {
-      await octokit.rest.issues.createComment({
-        owner: target.owner,
-        repo: target.repo,
-        issue_number: target.issueNumber,
-        body,
-      });
+      return { ok: true, resolution: "updated", method };
     }
+
+    await octokit.rest.issues.createComment({
+      owner: target.owner,
+      repo: target.repo,
+      issue_number: target.issueNumber,
+      body,
+    });
+    return { ok: true, resolution: "created", method };
   } catch (err) {
     logger.error(
-      { err, owner: target.owner, repo: target.repo, issueNumber: target.issueNumber },
+      {
+        err,
+        owner: target.owner,
+        repo: target.repo,
+        issueNumber: target.issueNumber,
+        trackingCommentId: target.trackingCommentId ?? null,
+        errorCommentMethod: method,
+      },
       "Failed to post/update error comment",
     );
+    return { ok: false, resolution: "failed", method, error: err };
   }
 }
