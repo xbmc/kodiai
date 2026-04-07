@@ -49,6 +49,7 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 import { buildWritePolicyRefusalMessage, scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
+import { buildReviewOutputKey } from "./review-idempotency.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -1120,6 +1121,7 @@ export function createMentionHandler(deps: {
 
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
         const isPrSurface = mention.prNumber !== undefined;
+        const explicitReviewRequest = isPrSurface && isReviewRequest(userQuestion);
         const parsedWriteIntent = parseWriteIntent(userQuestion);
 
         // Issue surfaces: broad implicit intent detection (existing behavior)
@@ -1758,6 +1760,18 @@ export function createMentionHandler(deps: {
           ? (prDiffContext !== undefined ? 12 : 20)
           : undefined; // undefined → falls through to config.maxTurns
 
+        const reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined
+          ? buildReviewOutputKey({
+              installationId: event.installationId,
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              action: "mention-review",
+              deliveryId: event.id,
+              headSha: mention.headRef ?? "unknown-head-sha",
+            })
+          : undefined;
+
         // Execute via Claude
         const result = await executor.execute({
           workspace,
@@ -1771,10 +1785,11 @@ export function createMentionHandler(deps: {
           deliveryId: event.id,
           botHandles: possibleHandles,
           writeMode: writeEnabled,
-          taskType: "mention.response",
+          taskType: explicitReviewRequest ? "review.full" : "mention.response",
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
-          triggerBody: mention.commentBody,
+          triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
           prompt: mentionPrompt,
+          reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
         });
 
@@ -2586,11 +2601,17 @@ export function createMentionHandler(deps: {
         // If Claude finished successfully but did not publish any output, post a fallback reply.
         // This prevents "silent success" where the model chose not to call any comment tools.
         if (!writeEnabled && result.conclusion === "success" && !result.published) {
-          const fallbackLines = [
-            "I can answer this, but I need one detail first.",
-            "",
-            "Could you share the exact outcome you want and the primary file/path I should focus on first?",
-          ];
+          const fallbackLines = explicitReviewRequest
+            ? [
+                "Decision: NOT APPROVED",
+                "Issues:",
+                "- (1) [major] review execution (0): The review run completed without publishing any review findings or approval state, so this request did not produce a usable code review.",
+              ]
+            : [
+                "I can answer this, but I need one detail first.",
+                "",
+                "Could you share the exact outcome you want and the primary file/path I should focus on first?",
+              ];
 
           const fallbackBody = wrapInDetails(
             fallbackLines.join("\n"),
