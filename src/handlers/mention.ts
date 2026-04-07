@@ -49,7 +49,8 @@ import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
 import { mentionAdapter } from "../lib/guardrail/adapters/mention-adapter.ts";
 import { FORK_WRITE_POLICY_INSTRUCTIONS } from "../execution/prompts.ts";
 import { buildWritePolicyRefusalMessage, scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
-import { buildReviewOutputKey } from "./review-idempotency.ts";
+import { buildReviewOutputKey, ensureReviewOutputNotPublished } from "./review-idempotency.ts";
+import { renderApprovalConfidence } from "../lib/review-utils.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -1792,6 +1793,67 @@ export function createMentionHandler(deps: {
           reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
         });
+
+        // Explicit PR review mentions bypass the pull_request review handler's
+        // deterministic clean-review publish path. Bridge that gap here so a
+        // successful no-issues run still produces a GitHub-visible approval.
+        if (
+          explicitReviewRequest &&
+          mention.prNumber !== undefined &&
+          result.conclusion === "success" &&
+          !result.published &&
+          reviewOutputKey &&
+          config.review.autoApprove
+        ) {
+          try {
+            const publishOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            const idempotencyCheck = await ensureReviewOutputNotPublished({
+              octokit: publishOctokit,
+              owner: mention.owner,
+              repo: mention.repo,
+              prNumber: mention.prNumber,
+              reviewOutputKey,
+            });
+
+            if (idempotencyCheck.shouldPublish) {
+              const appSlug = githubApp.getAppSlug();
+              await publishOctokit.rest.pulls.createReview({
+                owner: mention.owner,
+                repo: mention.repo,
+                pull_number: mention.prNumber,
+                event: "APPROVE",
+                body: sanitizeOutgoingMentions(idempotencyCheck.marker, [appSlug, "claude", "kodai"]),
+              });
+              result.published = true;
+              logger.info(
+                {
+                  evidenceType: "review",
+                  outcome: "submitted-approval",
+                  deliveryId: event.id,
+                  installationId: event.installationId,
+                  owner: mention.owner,
+                  repoName: mention.repo,
+                  repo: `${mention.owner}/${mention.repo}`,
+                  prNumber: mention.prNumber,
+                  reviewOutputKey,
+                },
+                "Submitted silent approval for explicit mention review",
+              );
+            }
+          } catch (publishErr) {
+            logger.warn(
+              {
+                err: publishErr,
+                deliveryId: event.id,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                reviewOutputKey,
+              },
+              "Failed to submit silent approval for explicit mention review",
+            );
+          }
+        }
 
         logger.info(
           {
