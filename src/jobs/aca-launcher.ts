@@ -191,6 +191,20 @@ export async function launchAcaJob(opts: {
     },
   };
 
+  logger?.info(
+    {
+      jobName,
+      resourceGroup,
+      startApiVersion: "2024-03-01",
+      specImage: spec.image,
+      bodyTemplateContainerNames: body.template.containers.map((c) => c.name),
+      bodyTemplateImages: body.template.containers.map((c) => c.image),
+      bodyEnvNames: body.template.containers[0]?.env?.map((e) => e.name) ?? [],
+      workspaceDir: spec.workspaceDir,
+    },
+    "ACA Job start request prepared",
+  );
+
   const response = await fetch(url, {
     method: "POST",
     headers: {
@@ -202,6 +216,24 @@ export async function launchAcaJob(opts: {
 
   if (!response.ok) {
     const text = await response.text();
+    logger?.error(
+      {
+        jobName,
+        resourceGroup,
+        httpStatus: response.status,
+        responseBody: text.slice(0, 1000),
+        startApiVersion: "2024-03-01",
+        specImage: spec.image,
+        bodyShape: {
+          hasTemplate: true,
+          templateContainerCount: body.template.containers.length,
+          templateContainerNames: body.template.containers.map((c) => c.name),
+          templateContainerImagesPresent: body.template.containers.map((c) => Boolean(c.image)),
+          templateEnvCounts: body.template.containers.map((c) => c.env?.length ?? 0),
+        },
+      },
+      "ACA Job start request rejected",
+    );
     throw new Error(
       `launchAcaJob: REST API returned ${response.status}: ${text.slice(0, 500)}`,
     );
