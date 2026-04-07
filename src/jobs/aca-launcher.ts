@@ -180,13 +180,15 @@ export async function launchAcaJob(opts: {
   const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/start?api-version=2024-03-01`;
 
   const body = {
-    containers: [
-      {
-        name: jobName,
-        image: spec.image,
-        env: spec.env.map((e) => ({ name: e.name, value: e.value })),
-      },
-    ],
+    template: {
+      containers: [
+        {
+          name: jobName,
+          image: spec.image,
+          env: spec.env.map((e) => ({ name: e.name, value: e.value })),
+        },
+      ],
+    },
   };
 
   const response = await fetch(url, {
