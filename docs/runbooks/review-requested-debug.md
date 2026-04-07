@@ -74,11 +74,21 @@ If using team-based UI retrigger, confirm the requested team is `ai-review` or `
 
 Look for queue logs with the same `deliveryId`:
 - `Review enqueue started`
+- `ACA Job start request prepared`
 - `Job execution started`
 - `Job execution completed` (or `Job execution failed`)
 - `Review enqueue completed`
 
-If `Review enqueue started` exists but no `Job execution started`, investigate queue saturation or process crash.
+If `ACA Job start request rejected` appears, inspect the structured fields on that log line:
+- `specImage`
+- `bodyContainerNames`
+- `bodyImages`
+- `bodyEnvNames`
+- `responseBody`
+
+These fields are the authoritative evidence for Azure Job start contract mismatches.
+
+If `Review enqueue started` exists but no `Job execution started`, investigate queue saturation, process crash, or an ACA start rejection.
 
 ## 5) Local replay check (fast isolation)
 

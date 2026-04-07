@@ -26,7 +26,19 @@ Key properties:
 - Idempotent: safe to re-run
 - Remote build: uses `az acr build` (Docker not required locally)
 - Managed identity: used for ACR pull (`AcrPull` role)
-- Probes: liveness/readiness/startup configured via YAML update
+- Probes: liveness/readiness/startup configured in the app template
+- **Existing app updates are single-shot full YAML updates**: image, env, probes, secrets, scale, ingress, and volume mounts are rendered together for `az containerapp update --yaml`
+
+### Why the single-shot YAML matters
+
+Azure Container Apps update semantics are destructive for omitted fields. A two-step update like:
+
+1. `az containerapp update --set-env-vars ... --image ...`
+2. `az containerapp update --yaml <partial-template-with-volume-mount>`
+
+can create a second revision that drops env vars and probes if the YAML omits them. In single-revision mode, that broken revision can become the active revision and take the app down.
+
+The deploy script now avoids that failure mode by updating existing apps with one full YAML payload.
 
 ### Required Environment Variables
 
@@ -85,13 +97,17 @@ This avoids webhook timeouts from cold starts and reduces concurrency surprises.
 
 ## Health Probes
 
-Configured (via the YAML update step in `deploy.sh`):
+Configured in the container app template:
 
-- Liveness: `GET /health`
+- Liveness: `GET /healthz`
 - Readiness: `GET /readiness`
-- Startup: `GET /health`
+- Startup: `GET /healthz`
 
-Important: the YAML update includes the full container spec (image + env) to avoid wiping env vars on update.
+Important:
+
+- Existing app updates must render the **full container app template** in one YAML payload.
+- Partial YAML updates that only add a volume mount can wipe env vars or probes from the next revision.
+- In single-revision mode, a stripped revision can become active immediately and fail startup with missing env vars.
 
 ## Operational Runbooks
 

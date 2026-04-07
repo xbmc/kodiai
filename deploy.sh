@@ -278,52 +278,92 @@ echo "==> Deploying container app: $APP_NAME..."
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" --output none 2>/dev/null; then
   REVISION_SUFFIX="deploy-$(date +%Y%m%d-%H%M%S)"
   echo "==> Updating existing container app (revision: $REVISION_SUFFIX)..."
-  az containerapp secret set \
-    --name "$APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --secrets \
-      github-app-id="$GITHUB_APP_ID" \
-      github-private-key="$GITHUB_PRIVATE_KEY_BASE64" \
-      github-webhook-secret="$GITHUB_WEBHOOK_SECRET" \
-      claude-code-oauth-token="$CLAUDE_CODE_OAUTH_TOKEN" \
-      voyage-api-key="$VOYAGE_API_KEY" \
-      slack-bot-token="$SLACK_BOT_TOKEN" \
-      slack-signing-secret="$SLACK_SIGNING_SECRET" \
-      database-url="$DATABASE_URL" \
-    --output none
-
-  az containerapp update \
-    --name "$APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --revision-suffix "$REVISION_SUFFIX" \
-    --image "$ACR_NAME.azurecr.io/kodiai:latest" \
-    --set-env-vars \
-      GITHUB_APP_ID=secretref:github-app-id \
-      GITHUB_PRIVATE_KEY=secretref:github-private-key \
-      GITHUB_WEBHOOK_SECRET=secretref:github-webhook-secret \
-      CLAUDE_CODE_OAUTH_TOKEN=secretref:claude-code-oauth-token \
-      VOYAGE_API_KEY=secretref:voyage-api-key \
-      SLACK_BOT_TOKEN=secretref:slack-bot-token \
-      SLACK_SIGNING_SECRET=secretref:slack-signing-secret \
-      DATABASE_URL=secretref:database-url \
-      SLACK_BOT_USER_ID="$SLACK_BOT_USER_ID" \
-      SLACK_KODIAI_CHANNEL_ID="$SLACK_KODIAI_CHANNEL_ID" \
-      SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
-      PORT=3000 \
-      LOG_LEVEL=info \
-    --min-replicas 1 \
-    --max-replicas 1 \
-    --termination-grace-period 600 \
-    --output none
-
-  # Apply Azure Files volume mount via YAML (--volume flag not supported in az containerapp update)
-  APP_VOLUME_YAML=$(mktemp --suffix=.yaml)
-  cat > "$APP_VOLUME_YAML" <<APPYAML
+  APP_YAML=$(mktemp --suffix=.yaml)
+  cat > "$APP_YAML" <<APPYAML
 properties:
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 3000
+      transport: Auto
+    registries:
+      - server: ${ACR_NAME}.azurecr.io
+        identity: ${IDENTITY_RESOURCE_ID}
+    secrets:
+      - name: github-app-id
+        value: ${GITHUB_APP_ID}
+      - name: github-private-key
+        value: ${GITHUB_PRIVATE_KEY_BASE64}
+      - name: github-webhook-secret
+        value: ${GITHUB_WEBHOOK_SECRET}
+      - name: claude-code-oauth-token
+        value: ${CLAUDE_CODE_OAUTH_TOKEN}
+      - name: voyage-api-key
+        value: ${VOYAGE_API_KEY}
+      - name: slack-bot-token
+        value: ${SLACK_BOT_TOKEN}
+      - name: slack-signing-secret
+        value: ${SLACK_SIGNING_SECRET}
+      - name: database-url
+        value: ${DATABASE_URL}
   template:
+    terminationGracePeriodSeconds: 600
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
     containers:
       - name: ${APP_NAME}
         image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        env:
+          - name: GITHUB_APP_ID
+            secretRef: github-app-id
+          - name: GITHUB_PRIVATE_KEY
+            secretRef: github-private-key
+          - name: GITHUB_WEBHOOK_SECRET
+            secretRef: github-webhook-secret
+          - name: CLAUDE_CODE_OAUTH_TOKEN
+            secretRef: claude-code-oauth-token
+          - name: VOYAGE_API_KEY
+            secretRef: voyage-api-key
+          - name: SLACK_BOT_TOKEN
+            secretRef: slack-bot-token
+          - name: SLACK_SIGNING_SECRET
+            secretRef: slack-signing-secret
+          - name: DATABASE_URL
+            secretRef: database-url
+          - name: SLACK_BOT_USER_ID
+            value: "${SLACK_BOT_USER_ID}"
+          - name: SLACK_KODIAI_CHANNEL_ID
+            value: "${SLACK_KODIAI_CHANNEL_ID}"
+          - name: SHUTDOWN_GRACE_MS
+            value: "${SHUTDOWN_GRACE_MS}"
+          - name: PORT
+            value: "3000"
+          - name: LOG_LEVEL
+            value: info
+        probes:
+          - type: Liveness
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+            failureThreshold: 3
+          - type: Readiness
+            httpGet:
+              path: /readiness
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          - type: Startup
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 40
         volumeMounts:
           - volumeName: kodiai-workspaces
             mountPath: /mnt/kodiai-workspaces
@@ -332,12 +372,13 @@ properties:
         storageName: kodiai-workspaces
         storageType: AzureFile
 APPYAML
+
   az containerapp update \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
-    --yaml "$APP_VOLUME_YAML" \
+    --yaml "$APP_YAML" \
     --output none
-  rm -f "$APP_VOLUME_YAML"
+  rm -f "$APP_YAML"
 else
   echo "==> Creating container app: $APP_NAME..."
   az containerapp create \
