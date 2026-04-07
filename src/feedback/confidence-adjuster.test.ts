@@ -197,9 +197,21 @@ describe("applyClusterScoreAdjustment", () => {
     expect(result.suppressed).toBe(false);
   });
 
+  test("preserves upstream suppression when clusterModelUsed is false", () => {
+    const result = applyClusterScoreAdjustment(mediumStyle, 60, false, 75, false, true);
+    expect(result.confidence).toBe(60);
+    expect(result.suppressed).toBe(true);
+  });
+
   test("CRITICAL finding: cluster suppress signal is ignored (safety guard)", () => {
     const result = applyClusterScoreAdjustment(criticalSecurity, 80, true, 80, true);
     expect(result.suppressed).toBe(false);
+    expect(result.confidence).toBe(80);
+  });
+
+  test("safety-protected findings preserve upstream suppression", () => {
+    const result = applyClusterScoreAdjustment(criticalSecurity, 80, false, 95, true, true);
+    expect(result.suppressed).toBe(true);
     expect(result.confidence).toBe(80);
   });
 

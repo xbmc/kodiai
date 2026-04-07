@@ -252,6 +252,7 @@ export async function applyClusterScoringWithDegradation<T extends ClusterScorin
         score.suppress,
         score.adjustedConfidence,
         true, // clusterModelUsed = true
+        f.suppressed ?? false,
       );
 
       const didSuppress = adj.suppressed && !f.suppressed;

@@ -67,7 +67,7 @@ async function listFilesRecursive(rootDir: string, currentDir = rootDir): Promis
 
 function shouldResumeFromPath(filePath: string, lastFilePath: string | null): boolean {
   if (!lastFilePath) return true;
-  return filePath > lastFilePath;
+  return filePath.localeCompare(lastFilePath) > 0;
 }
 
 function createInitialState(params: {

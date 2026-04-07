@@ -118,7 +118,8 @@ export async function getActiveRulesForPrompt(
   }
 
   const wasCapped = rawRules.length > effectiveLimit;
-  const totalActive = wasCapped ? rawRules.length : rawRules.length; // lower bound
+  // Exact when uncapped; lower bound when capped because we fetched one extra row.
+  const totalActive = rawRules.length;
   const cappedRules = rawRules.slice(0, effectiveLimit);
 
   let truncatedCount = 0;
