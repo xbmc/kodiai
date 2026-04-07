@@ -411,3 +411,10 @@ export async function readJobResult(workspaceDir: string): Promise<unknown> {
   const text = await Bun.file(resultPath).text();
   return JSON.parse(text) as unknown;
 }
+
+export async function readJobDiagnostics(workspaceDir: string): Promise<string | undefined> {
+  const diagnosticsPath = join(workspaceDir, "agent-diagnostics.log");
+  const file = Bun.file(diagnosticsPath);
+  if (!(await file.exists())) return undefined;
+  return await file.text();
+}

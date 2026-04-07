@@ -213,6 +213,7 @@ describe("missing env vars", () => {
       exitFn: (code) => { exitCode = code; return undefined as never; },
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () => makeAsyncIterable([makeResultSuccess()]),
     };
     await main(deps);
@@ -281,6 +282,7 @@ describe("happy path", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () => makeAsyncIterable([makeResultSuccess()]),
     };
 
@@ -314,6 +316,7 @@ describe("happy path", () => {
         written[path] = content;
         writeOrder.push(path);
       },
+      appendFileFn: async () => undefined,
       queryFn: () => {
         queryCalled = true;
         return makeAsyncIterable([makeResultSuccess()]);
@@ -335,6 +338,7 @@ describe("happy path", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async () => undefined,
+      appendFileFn: async () => undefined,
       queryFn: (params) => {
         capturedOptions = params.options as Record<string, unknown>;
         return makeAsyncIterable([makeResultSuccess()]);
@@ -360,6 +364,7 @@ describe("happy path", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async () => undefined,
+      appendFileFn: async () => undefined,
       queryFn: (params) => {
         capturedParams = params as { prompt: string; options?: Record<string, unknown> };
         return makeAsyncIterable([makeResultSuccess()]);
@@ -400,6 +405,7 @@ describe("SDK error handling", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () => {
         const iter: AsyncGenerator<never, void> = (async function* () {
           throw new Error("SDK connection refused");
@@ -423,6 +429,7 @@ describe("SDK error handling", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () => makeAsyncIterable([]), // iterator yields no messages
     };
 
@@ -456,6 +463,7 @@ describe("rate_limit_event capture", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () =>
         makeAsyncIterable([
           makeRateLimitEvent({ utilization: 0.75, rateLimitType: "seven_day", resetsAt: 9999 }),
@@ -479,6 +487,7 @@ describe("rate_limit_event capture", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () =>
         makeAsyncIterable([
           makeRateLimitEvent({ utilization: 0.5 }),
@@ -502,6 +511,7 @@ describe("rate_limit_event capture", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () => makeAsyncIterable([makeResultSuccess()]),
     };
 
@@ -517,6 +527,7 @@ describe("rate_limit_event capture", () => {
     const deps: Partial<EntrypointDeps> = {
       readFileFn: async () => VALID_AGENT_CONFIG,
       writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
       queryFn: () =>
         makeAsyncIterable([
           makeRateLimitEvent({ status: "allowed" }), // no utilization/rateLimitType/resetsAt

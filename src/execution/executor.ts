@@ -16,6 +16,7 @@ import {
   pollUntilComplete,
   cancelAcaJob,
   readJobResult,
+  readJobDiagnostics,
 } from "../jobs/aca-launcher.ts";
 import { createAzureFilesWorkspaceDir } from "../jobs/workspace.ts";
 
@@ -295,6 +296,25 @@ export function createExecutor(deps: {
         // Handle job failure
         if (status === "failed") {
           logger.error({ executionName, durationMs }, "ACA Job failed");
+          let resultErrorMessage: string | undefined;
+          let diagnosticsExcerpt: string | undefined;
+          try {
+            const rawResult = await readJobResult(workspaceDir);
+            const failedResult = rawResult as Partial<ExecutionResult>;
+            if (typeof failedResult.errorMessage === "string" && failedResult.errorMessage.trim().length > 0) {
+              resultErrorMessage = failedResult.errorMessage;
+            }
+          } catch {
+            // best effort: failed jobs may not have written result.json
+          }
+          try {
+            const diagnostics = await readJobDiagnostics(workspaceDir);
+            if (diagnostics && diagnostics.trim().length > 0) {
+              diagnosticsExcerpt = diagnostics.trim().split(/\r?\n/).slice(-12).join("\n");
+            }
+          } catch {
+            // best effort only
+          }
           mcpJobRegistry.unregister(mcpBearerToken);
           return {
             conclusion: "error",
@@ -303,7 +323,10 @@ export function createExecutor(deps: {
             durationMs,
             sessionId: undefined,
             published,
-            errorMessage: "ACA Job execution failed",
+            errorMessage: resultErrorMessage
+              ?? (diagnosticsExcerpt
+                ? `ACA Job execution failed\n\n${diagnosticsExcerpt}`
+                : "ACA Job execution failed"),
             model: undefined,
             inputTokens: undefined,
             outputTokens: undefined,

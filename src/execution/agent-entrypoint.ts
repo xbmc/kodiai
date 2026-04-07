@@ -13,7 +13,7 @@
 
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
-import { readFile, writeFile as fsWriteFile } from "node:fs/promises";
+import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { buildSecurityClaudeMd } from "./executor.ts";
 import type { ExecutionResult } from "./types.ts";
@@ -52,6 +52,7 @@ export const MCP_SERVER_NAMES = [
 export interface EntrypointDeps {
   queryFn: (params: { prompt: string; options?: object }) => Query;
   writeFileFn: (path: string, content: string) => Promise<void>;
+  appendFileFn: (path: string, content: string) => Promise<void>;
   readFileFn: (path: string, encoding: "utf-8") => Promise<string>;
   exitFn: (code: number) => never;
 }
@@ -60,6 +61,7 @@ function defaultDeps(): EntrypointDeps {
   return {
     queryFn: sdkQuery,
     writeFileFn: (path, content) => fsWriteFile(path, content),
+    appendFileFn: (path, content) => fsAppendFile(path, content),
     readFileFn: readFile,
     exitFn: (code) => process.exit(code),
   };
@@ -73,6 +75,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   const {
     queryFn,
     writeFileFn,
+    appendFileFn,
     readFileFn,
     exitFn,
   }: EntrypointDeps = { ...defaultDeps(), ...deps };
@@ -133,8 +136,14 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
   // 5–6. Call SDK, collect messages
   const resultJson = join(workspaceDir!, "result.json");
+  const diagnosticsLog = join(workspaceDir!, "agent-diagnostics.log");
+
+  const appendDiagnostic = async (line: string): Promise<void> => {
+    await appendFileFn(diagnosticsLog, `${new Date().toISOString()} ${line}\n`);
+  };
 
   try {
+    await appendDiagnostic(`startup taskType=${agentConfig.taskType ?? "unknown"} model=${agentConfig.model} maxTurns=${agentConfig.maxTurns}`);
     const sdkQueryResult = queryFn({
       prompt: agentConfig.prompt,
       options: {
@@ -148,6 +157,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
         settingSources: ["project"],
         stderr: (line: string) => {
           console.error("[sdk-stderr]", line);
+          void appendDiagnostic(`[sdk-stderr] ${line}`);
         },
       },
     });
@@ -183,6 +193,8 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       await writeFileFn(resultJson, JSON.stringify(errorResult, null, 2));
       return;
     }
+
+    await appendDiagnostic(`sdk completed subtype=${resultMessage.subtype} turns=${resultMessage.num_turns ?? "unknown"} session=${resultMessage.session_id ?? "unknown"}`);
 
     // 7. Write result.json
     const modelEntries = Object.entries(resultMessage.modelUsage ?? {});
@@ -222,13 +234,15 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     await writeFileFn(resultJson, JSON.stringify(result, null, 2));
   } catch (err) {
     const durationMs = Date.now() - startTime;
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    await appendDiagnostic(`fatal ${errorMessage}`);
     const errorResult: ExecutionResult = {
       conclusion: "error",
       costUsd: undefined,
       numTurns: undefined,
       durationMs,
       sessionId: undefined,
-      errorMessage: err instanceof Error ? err.message : String(err),
+      errorMessage,
       model: undefined,
       inputTokens: undefined,
       outputTokens: undefined,
