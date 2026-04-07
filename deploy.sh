@@ -218,6 +218,7 @@ az acr build \
 ACA_JOB_NAME="caj-kodiai-agent"
 echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
 
+ACA_JOB_IMAGE="${ACR_NAME}.azurecr.io/kodiai-agent:latest"
 ACA_JOB_YAML=$(mktemp --suffix=.yaml)
 cat > "$ACA_JOB_YAML" <<ACAYAML
 properties:
@@ -232,7 +233,7 @@ properties:
   template:
     containers:
       - name: "${ACA_JOB_NAME}"
-        image: "${ACR_NAME}.azurecr.io/kodiai-agent:latest"
+        image: "${ACA_JOB_IMAGE}"
         volumeMounts:
           - volumeName: kodiai-workspaces
             mountPath: /mnt/kodiai-workspaces
@@ -246,6 +247,7 @@ if az containerapp job show --name "$ACA_JOB_NAME" --resource-group "$RESOURCE_G
   az containerapp job update \
     --name "$ACA_JOB_NAME" \
     --resource-group "$RESOURCE_GROUP" \
+    --image "$ACA_JOB_IMAGE" \
     --yaml "$ACA_JOB_YAML" \
     --output none
 else
