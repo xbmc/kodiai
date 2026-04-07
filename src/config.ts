@@ -36,8 +36,8 @@ const configSchema = z.object({
         .map((r) => r.trim())
         .filter(Boolean),
     ),
-  mcpInternalBaseUrl: z.string().default(""),
-  acaJobImage: z.string().default(""),
+  mcpInternalBaseUrl: z.string().default("http://ca-kodiai:3000/internal/mcp"),
+  acaJobImage: z.string().default("kodiairegistry.azurecr.io/kodiai-agent:latest"),
   acaResourceGroup: z.string().default("rg-kodiai"),
   acaJobName: z.string().default("caj-kodiai-agent"),
 });

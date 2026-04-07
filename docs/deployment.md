@@ -77,7 +77,14 @@ Azure secrets created by `deploy.sh`:
 - `github-webhook-secret`
 - `claude-code-oauth-token`
 
-These are exposed to the container via env vars:
+Runtime defaults used by the app when env vars are absent:
+
+- `ACA_JOB_IMAGE=kodiairegistry.azurecr.io/kodiai-agent:latest`
+- `ACA_JOB_NAME=caj-kodiai-agent`
+- `ACA_RESOURCE_GROUP=rg-kodiai`
+- `MCP_INTERNAL_BASE_URL=http://ca-kodiai:3000/internal/mcp`
+
+These defaults match the current production deployment and prevent blank ACA job-launch config from causing `ContainerAppImageRequired` failures.
 
 - `GITHUB_APP_ID`
 - `GITHUB_PRIVATE_KEY`
