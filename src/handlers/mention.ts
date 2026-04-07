@@ -757,7 +757,7 @@ export function createMentionHandler(deps: {
 
   async function handleMention(event: WebhookEvent): Promise<void> {
     const appSlug = githubApp.getAppSlug();
-    const possibleHandles = [appSlug, "claude"];
+    const possibleHandles = [appSlug, "kodai", "claude"];
 
     const action = (event.payload as Record<string, unknown>).action as string | undefined;
 
@@ -787,7 +787,7 @@ export function createMentionHandler(deps: {
     // We still do the authoritative accepted-handles check inside the job after loading config.
     const bodyLower = mention.commentBody.toLowerCase();
     const appHandle = `@${appSlug.toLowerCase()}`;
-    if (!bodyLower.includes(appHandle) && !bodyLower.includes("@claude")) return;
+    if (!bodyLower.includes(appHandle) && !bodyLower.includes("@kodai") && !bodyLower.includes("@claude")) return;
 
     const normalizedCommentAuthor = mention.commentAuthor.toLowerCase();
     if (
@@ -1079,7 +1079,7 @@ export function createMentionHandler(deps: {
         // (Repo-level opt-out remains possible via mention.acceptClaudeAlias=false,
         // but the alias is enabled by default to support immediate cutover.)
         const acceptClaudeAlias = config.mention.acceptClaudeAlias !== false;
-        const acceptedHandles = acceptClaudeAlias ? [appSlug, "claude"] : [appSlug];
+        const acceptedHandles = acceptClaudeAlias ? [appSlug, "kodai", "claude"] : [appSlug, "kodai"];
 
         // Ensure the mention is actually allowed for this repo (e.g. @claude opt-out).
         // Use substring match to align with the fast filter.
