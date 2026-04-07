@@ -6511,6 +6511,115 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("pr top-level review request posts failure fallback when review run fails without publishing", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    const prNumber = 102;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "error_max_structured_output_retries",
+          errorMessage: "Review response could not satisfy the structured output contract.",
+          costUsd: 0,
+          numTurns: 13,
+          durationMs: 1,
+          sessionId: "session-mention-failure",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
+    expect(issueReplies[0]).toContain("Stop reason: error_max_structured_output_retries");
+    expect(issueReplies[0]).toContain("Review response could not satisfy the structured output contract.");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("@kodai review uses review task type and review output key", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(

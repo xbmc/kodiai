@@ -2653,54 +2653,52 @@ export function createMentionHandler(deps: {
           await postMentionError(errorBody);
         }
 
-        // If execution hit the turn limit without publishing, post a brief explanation.
-        // Gated on stopReason === "max_turns" to distinguish turn exhaustion from other failure
-        // subtypes (error_during_execution, error_max_budget_usd, error_max_structured_output_retries)
-        // which should not produce a "ran out of steps" message.
-        if (result.conclusion === "failure" && !result.published && result.stopReason === "max_turns") {
-          const turnLimitBody = wrapInDetails(
-            [
-              "I ran out of steps analyzing this and wasn't able to post a complete response.",
-              "",
-              "This can happen on PRs with large or complex diffs. To get a response:",
-              "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
-              "- Or mention me again — the next run may complete within the step budget",
-            ].join("\n"),
-            "kodiai response",
-          );
-          try {
-            await postMentionError(turnLimitBody);
-          } catch (postErr) {
-            logger.warn(
-              { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
-              "Failed to post turn-limit notice (non-blocking)",
+        // If execution failed without publishing, always post a user-visible fallback.
+        // The SDK can return conclusion="failure" with stop reasons other than max_turns,
+        // and previously those paths could finish silently.
+        if (result.conclusion === "failure" && !result.published) {
+          if (result.stopReason === "max_turns") {
+            const turnLimitBody = wrapInDetails(
+              [
+                "I ran out of steps analyzing this and wasn't able to post a complete response.",
+                "",
+                "This can happen on PRs with large or complex diffs. To get a response:",
+                "- Ask a more targeted question (e.g. `@kodiai review LangInfo.cpp only`)",
+                "- Or mention me again — the next run may complete within the step budget",
+              ].join("\n"),
+              "kodiai response",
             );
-          }
-        }
-
-        // Handle SDK error_during_execution (failure with no stopReason) — this fires when the
-        // agent ends in a non-assistant state (e.g. mid-tool, permission denial, internal SDK error).
-        // Without this, the failure is silent and the user never sees any response.
-        if (result.conclusion === "failure" && !result.published && !result.stopReason) {
-          const executionErrorBody = wrapInDetails(
-            [
-              "I wasn't able to complete a response for this request.",
+            try {
+              await postMentionError(turnLimitBody);
+            } catch (postErr) {
+              logger.warn(
+                { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
+                "Failed to post turn-limit notice (non-blocking)",
+              );
+            }
+          } else {
+            const detailLines = [
+              "I completed the review run but couldn't publish a GitHub review/comment from it.",
+            ];
+            if (result.stopReason) {
+              detailLines.push("", `Stop reason: ${result.stopReason}`);
+            }
+            if (result.errorMessage) {
+              detailLines.push("", result.errorMessage);
+            }
+            detailLines.push(
               "",
-              "This can happen when:",
-              "- The PR diff couldn't be fetched (shallow clone merge-base issue)",
-              "- An unexpected error occurred mid-execution",
-              "",
-              "Try mentioning me again — the next run may succeed.",
-            ].join("\n"),
-            "kodiai response",
-          );
-          try {
-            await postMentionError(executionErrorBody);
-          } catch (postErr) {
-            logger.warn(
-              { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
-              "Failed to post execution-error notice (non-blocking)",
+              "Try mentioning me again after this reply if you want another attempt.",
             );
+            const failureBody = wrapInDetails(detailLines.join("\n"), "kodiai response");
+            try {
+              await postMentionError(failureBody);
+            } catch (postErr) {
+              logger.warn(
+                { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber, stopReason: result.stopReason },
+                "Failed to post failure fallback notice (non-blocking)",
+              );
+            }
           }
         }
       } catch (err) {
