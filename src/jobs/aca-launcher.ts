@@ -180,15 +180,13 @@ export async function launchAcaJob(opts: {
   const url = `https://management.azure.com/subscriptions/${subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.App/jobs/${jobName}/start?api-version=2024-03-01`;
 
   const body = {
-    template: {
-      containers: [
-        {
-          name: jobName,
-          image: spec.image,
-          env: spec.env.map((e) => ({ name: e.name, value: e.value })),
-        },
-      ],
-    },
+    containers: [
+      {
+        name: jobName,
+        image: spec.image,
+        env: spec.env.map((e) => ({ name: e.name, value: e.value })),
+      },
+    ],
   };
 
   logger?.info(
@@ -197,9 +195,9 @@ export async function launchAcaJob(opts: {
       resourceGroup,
       startApiVersion: "2024-03-01",
       specImage: spec.image,
-      bodyTemplateContainerNames: body.template.containers.map((c) => c.name),
-      bodyTemplateImages: body.template.containers.map((c) => c.image),
-      bodyEnvNames: body.template.containers[0]?.env?.map((e) => e.name) ?? [],
+      bodyContainerNames: body.containers.map((c) => c.name),
+      bodyImages: body.containers.map((c) => c.image),
+      bodyEnvNames: body.containers[0]?.env?.map((e) => e.name) ?? [],
       workspaceDir: spec.workspaceDir,
     },
     "ACA Job start request prepared",
@@ -225,11 +223,11 @@ export async function launchAcaJob(opts: {
         startApiVersion: "2024-03-01",
         specImage: spec.image,
         bodyShape: {
-          hasTemplate: true,
-          templateContainerCount: body.template.containers.length,
-          templateContainerNames: body.template.containers.map((c) => c.name),
-          templateContainerImagesPresent: body.template.containers.map((c) => Boolean(c.image)),
-          templateEnvCounts: body.template.containers.map((c) => c.env?.length ?? 0),
+          hasTemplate: false,
+          containerCount: body.containers.length,
+          containerNames: body.containers.map((c) => c.name),
+          containerImagesPresent: body.containers.map((c) => Boolean(c.image)),
+          envCounts: body.containers.map((c) => c.env?.length ?? 0),
         },
       },
       "ACA Job start request rejected",
