@@ -11,6 +11,12 @@ import type { DepBumpContext } from "../lib/dep-bump-detector.ts";
 import type { SecurityContext, ChangelogContext } from "../lib/dep-bump-enrichment.ts";
 import type { MergeConfidenceLevel } from "../lib/merge-confidence.ts";
 import type { LinkResult } from "../knowledge/issue-linker.ts";
+import { buildStructuralImpactSection } from "../lib/structural-impact-formatter.ts";
+import { formatActiveRulesSection, type SanitizedActiveRule } from "../knowledge/active-rules.ts";
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
+import { buildGraphContextSection, type GraphContextOptions } from "../review-graph/prompt-context.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
+import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1170,8 +1176,6 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 // Helper: Unified cross-corpus context formatting (KI-17)
 // ---------------------------------------------------------------------------
 
-import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
-
 const MAX_UNIFIED_CITATIONS = 8;
 
 /**
@@ -1425,6 +1429,64 @@ function buildChangelogSection(changelog: ChangelogContext): string {
 // ---------------------------------------------------------------------------
 // Helper: Dependency bump context section (DEP-01/02/03)
 // ---------------------------------------------------------------------------
+function buildStructuralImpactPromptSection(structuralImpact: StructuralImpactPayload): string {
+  const rendered = buildStructuralImpactSection(structuralImpact);
+  if (!rendered.text) {
+    return "";
+  }
+
+  const structuralStatus = structuralImpact.status === "partial" ? "partial-evidence" : "evidence-present";
+
+  return [
+    "## Structural Impact Evidence",
+    "",
+    "Use this bounded structural payload to strengthen review comments and breaking-change assessment when the evidence supports it.",
+    "Prefer structural evidence over generic speculation when caller, dependent, test, or unchanged-code evidence is present.",
+    rendered.text.trimStart(),
+    "",
+    `Structural evidence status: ${structuralStatus} (callers ${rendered.stats.callersRendered}/${rendered.stats.callersTotal}, files ${rendered.stats.filesRendered}/${rendered.stats.filesTotal}, tests ${rendered.stats.testsRendered}/${rendered.stats.testsTotal}, unchanged evidence ${rendered.stats.evidenceRendered}/${rendered.stats.evidenceTotal}).`,
+  ].join("\n");
+}
+
+function buildBreakingChangeEvidenceInstructions(structuralImpact: StructuralImpactPayload | null | undefined): string {
+  const hasStructuralEvidence = Boolean(
+    structuralImpact
+    && structuralImpact.status !== "unavailable"
+    && (
+      structuralImpact.probableCallers.length > 0
+      || structuralImpact.impactedFiles.length > 0
+      || structuralImpact.likelyTests.length > 0
+      || structuralImpact.canonicalEvidence.length > 0
+    ),
+  );
+
+  if (!hasStructuralEvidence) {
+    return [
+      "## Breaking-Change Evidence Handling",
+      "",
+      "No structural impact evidence was available for this review path.",
+      "Fallback status: fallback-used.",
+      "If the diff or changelog suggests breakage, state that the concern is based only on visible diff context or changelog text.",
+      "Do not claim downstream callers, impacted files, or likely tests are affected unless this prompt includes concrete structural evidence.",
+    ].join("\n");
+  }
+
+  const structuralStatus = structuralImpact?.status === "partial" ? "partial-evidence" : "evidence-present";
+  const callerCount = structuralImpact?.probableCallers.length ?? 0;
+  const impactedFileCount = structuralImpact?.impactedFiles.length ?? 0;
+  const testCount = structuralImpact?.likelyTests.length ?? 0;
+
+  return [
+    "## Breaking-Change Evidence Handling",
+    "",
+    `Structural evidence status: ${structuralStatus}.`,
+    "When evaluating breaking changes, use the structural evidence above to explain who is likely affected and why.",
+    `You may strengthen breaking-change wording when probable callers, impacted files, or likely tests are present (callers: ${callerCount}, impacted files: ${impactedFileCount}, tests: ${testCount}).`,
+    "Keep the wording truthful: call the impact probable unless the cited evidence is explicitly strong/full-confidence.",
+    "If structural evidence is partial, say so and avoid overstating blast radius certainty.",
+  ].join("\n");
+}
+
 function buildDepBumpSection(ctx: DepBumpContext): string {
   const lines = [
     "## Dependency Bump Context",
@@ -1654,6 +1716,12 @@ export function buildReviewPrompt(context: {
   clusterPatterns?: ClusterPatternMatch[];
   // PR-issue linking (PRLINK-03)
   linkedIssues?: LinkResult;
+  // Generated active rules (M036/S02)
+  activeRules?: SanitizedActiveRule[];
+  // Graph-derived review context (M040/S03): blast-radius result + packing options
+  graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
+  graphContextOptions?: GraphContextOptions;
+  structuralImpact?: StructuralImpactPayload | null;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1728,6 +1796,25 @@ export function buildReviewPrompt(context: {
   // --- Incremental review context ---
   if (context.incrementalContext) {
     lines.push("", buildIncrementalReviewSection(context.incrementalContext));
+  }
+
+  // --- Graph-derived review context (M040/S03) ---
+  if (context.graphBlastRadius) {
+    const graphSection = buildGraphContextSection(
+      context.graphBlastRadius,
+      context.graphContextOptions,
+    );
+    if (graphSection.text) {
+      lines.push("", graphSection.text);
+    }
+  }
+
+  // --- Structural impact evidence (M038/S02) ---
+  if (context.structuralImpact) {
+    const structuralSection = buildStructuralImpactPromptSection(context.structuralImpact);
+    if (structuralSection) {
+      lines.push("", structuralSection);
+    }
   }
 
   // --- Knowledge context (unified cross-corpus or legacy) ---
@@ -1945,6 +2032,8 @@ export function buildReviewPrompt(context: {
   if (context.depBumpContext) {
     lines.push("", buildDepBumpSection(context.depBumpContext));
   }
+
+  lines.push("", buildBreakingChangeEvidenceInstructions(context.structuralImpact));
 
   if (context.searchRateLimitDegradation?.degraded) {
     lines.push(
@@ -2175,6 +2264,12 @@ export function buildReviewPrompt(context: {
       "If you found issues: post the summary comment (wrapped in <details>) first, then post inline comments.",
       "If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.",
     );
+  }
+
+  // --- Generated active rules (M036/S02) ---
+  if (context.activeRules && context.activeRules.length > 0) {
+    const activeRulesSection = formatActiveRulesSection(context.activeRules);
+    if (activeRulesSection) lines.push("", activeRulesSection);
   }
 
   // --- Custom instructions ---

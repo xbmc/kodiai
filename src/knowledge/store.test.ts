@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { createKnowledgeStore } from "./store.ts";
 import type { KnowledgeStore } from "./types.ts";
 import type { Sql } from "../db/client.ts";
+import { runMigrations } from "../db/migrate.ts";
 
 const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
 
@@ -37,6 +38,7 @@ async function truncateAll(): Promise<void> {
 
 beforeAll(async () => {
   sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+  await runMigrations(sql);
   store = createKnowledgeStore({ sql, logger: mockLogger });
 });
 
@@ -151,7 +153,7 @@ describe("KnowledgeStore", () => {
     const [finding] = await sql`
       SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ${reviewId}
     `;
-    expect(finding!.comment_id).toBe(1234);
+    expect(Number(finding!.comment_id)).toBe(1234);
     expect(finding!.comment_surface).toBe("pull_request_review_comment");
     expect(finding!.review_output_key).toBe("kodiai-review-output:v1:test");
   });

@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 import type { ReviewCommentStore } from "./review-comment-types.ts";
 import type { EmbeddingProvider } from "./types.ts";
 
-const EMBEDDING_MODEL = "voyage-code-3";
+const EMBEDDING_MODEL = "voyage-4";
 
 export type EmbeddingSweepOptions = {
   store: ReviewCommentStore;
@@ -87,7 +87,11 @@ export async function sweepNullEmbeddings(
         }
 
         if (!dryRun) {
-          await store.updateEmbedding(chunk.id, result.embedding, EMBEDDING_MODEL);
+          await store.updateEmbedding(
+            chunk.id,
+            result.embedding,
+            result.model || embeddingProvider.model || EMBEDDING_MODEL,
+          );
         }
         succeeded++;
       } catch (err: unknown) {

@@ -329,7 +329,11 @@ export async function cacheStyleDescription(
  */
 export async function extractPageStyle(
   pageChunks: WikiPageRecord[],
-  opts: VoiceAnalyzerOptions & { sql?: any; cacheTtlDays?: number },
+  opts: VoiceAnalyzerOptions & {
+    sql?: any;
+    cacheTtlDays?: number;
+    _generateWithFallbackFn?: typeof generateWithFallback;
+  },
 ): Promise<PageStyleDescription> {
   const logger = opts.logger.child({ module: "wiki-voice-analyzer" });
 
@@ -374,7 +378,7 @@ export async function extractPageStyle(
 /** Internal: run LLM style extraction (called on cache miss or when no sql). */
 async function extractPageStyleLLM(
   pageChunks: WikiPageRecord[],
-  opts: VoiceAnalyzerOptions,
+  opts: VoiceAnalyzerOptions & { _generateWithFallbackFn?: typeof generateWithFallback },
   logger: Logger,
 ): Promise<PageStyleDescription> {
   const pageTitle = pageChunks[0]!.pageTitle;
@@ -392,8 +396,9 @@ async function extractPageStyleLLM(
   const prompt = buildStyleExtractionPrompt(pageTitle, contentText);
 
   const resolved = opts.taskRouter.resolve(TASK_TYPES.VOICE_EXTRACT);
+  const generateFn = opts._generateWithFallbackFn ?? generateWithFallback;
 
-  const result = await generateWithFallback({
+  const result = await generateFn({
     taskType: TASK_TYPES.VOICE_EXTRACT,
     resolved,
     prompt,

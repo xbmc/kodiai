@@ -31,8 +31,8 @@ The `src/` directory contains 20 top-level modules. Each is a directory with a f
 | `feedback/` | Reaction-based feedback aggregation and confidence adjustment | `aggregator.ts`, `confidence-adjuster.ts` |
 | `handlers/` | Event handlers — one per webhook event type | `review.ts`, `mention.ts`, `ci-failure.ts`, `issue-opened.ts`, + 6 more |
 | `jobs/` | Job queue (per-installation concurrency), workspace manager, fork manager | `queue.ts`, `workspace.ts`, `fork-manager.ts`, `gist-publisher.ts` |
-| `knowledge/` | 5-corpus knowledge system — embeddings, retrieval, stores (63 files) | `retrieval.ts`, `store.ts`, `memory-store.ts`, `wiki-store.ts`, `code-snippet-store.ts`, `issue-store.ts`, `review-comment-store.ts` |
-| `lib/` | Shared utilities — sanitizer, formatters, parsers, guardrails, diff tools | `errors.ts`, `sanitizer.ts`, `guardrail/`, `dep-bump-detector.ts`, ~40 files |
+| `knowledge/` | 6-corpus knowledge system — embeddings, retrieval, stores, canonical current-code, repair/audit flows | `retrieval.ts`, `store.ts`, `memory-store.ts`, `wiki-store.ts`, `code-snippet-store.ts`, `issue-store.ts`, `review-comment-store.ts`, `canonical-code-store.ts` |
+| `structural-impact/` | Review-time consumer layer for graph blast-radius + canonical current-code evidence | `types.ts`, `adapters.ts`, `orchestrator.ts`, `review-integration.ts`, `cache.ts`, `degradation.ts` |
 | `lifecycle/` | Request tracking, graceful shutdown, webhook queue persistence | `shutdown-manager.ts`, `request-tracker.ts`, `webhook-queue-store.ts` |
 | `llm/` | Model routing (task router), cost tracking, provider abstraction | `task-router.ts`, `cost-tracker.ts`, `providers.ts` |
 | `routes/` | HTTP route handlers mounted on the Hono app | `webhooks.ts`, `health.ts`, `slack-events.ts`, `slack-commands.ts` |
@@ -134,11 +134,14 @@ A single connection pool (`src/db/client.ts`) is shared by all stores. Every sto
 
 ### Embedding model
 
-Embeddings are generated via the Voyage AI API. Two models are used:
-- **voyage-code-3** — for code snippets, review comments, learning memories, and issues
+Embeddings are generated via the Voyage AI API. Current model routing:
+- **voyage-4** — for non-wiki corpora (code snippets, review comments, learning memories, issues, canonical current-code)
 - **voyage-context-3** — for wiki pages (uses the contextualized embedding API for better document retrieval)
 
-Both produce 1024-dimensional vectors stored in pgvector columns.
+A post-RRF neural reranker is also available:
+- **rerank-2.5** — fail-open reranking over the already-filtered candidate set
+
+All embeddings use 1024-dimensional vectors stored in pgvector columns.
 
 ## Key Abstractions
 
@@ -152,16 +155,16 @@ An in-memory job queue with per-installation concurrency control (default: 1 con
 
 ### Workspace Manager (`jobs/workspace.ts`)
 
-Creates temporary git clones for each job. Clones the repo at a specific ref (PR head, default branch), manages cleanup, and provides utilities for branch creation, committing, and pushing. Stale workspaces from previous runs are cleaned up at startup.
+Creates Azure Files-backed git workspaces for each job. Clones the repo at a specific ref (PR head, default branch), manages cleanup, strips persisted auth from remotes, and provides utilities for branch creation, committing, fetching, and pushing via per-command ephemeral auth URLs.
 
 ### Executor (`execution/executor.ts`)
 
-The LLM execution engine. Wraps the Claude Agent SDK with:
+The LLM execution engine. Kodiai prepares prompts, context, and workspaces in the main service, then dispatches isolated Azure Container App jobs for agent execution. The executor stack wraps the Claude Agent SDK with:
 - Model resolution via the task router
-- Timeout enforcement via AbortController
-- MCP tool server configuration (filesystem tools for write mode)
+- Timeout enforcement and job polling
+- MCP HTTP server configuration with per-job bearer-token auth
 - Cost tracking integration
-- Structured result extraction (findings, text, token usage)
+- Structured result extraction (`result.json`, findings, text, token usage, usage-limit events)
 
 ### Task Router (`llm/task-router.ts`)
 
@@ -183,15 +186,16 @@ Enforces repository-level data isolation for the learning memory store. Ensures 
 
 ## Knowledge System
 
-Kodiai maintains a 5-corpus knowledge system that provides contextual memory across reviews:
+Kodiai maintains a 6-corpus knowledge system that provides contextual memory across reviews:
 
 1. **Learning memories** — patterns learned from reviewer feedback (thumbs up/down reactions on findings)
 2. **Review comments** — historical review comments indexed for similarity search
 3. **Wiki pages** — documentation synced from a MediaWiki instance, refreshed on a 24-hour schedule
 4. **Code snippets** — hunks from previously reviewed diffs, embedded for code-aware retrieval
 5. **Issues** — GitHub issues indexed for duplicate detection and contextual reference
+6. **Canonical current-code** — default-branch repository code chunked and embedded with commit/ref provenance for unchanged-code retrieval at review time
 
-The retrieval pipeline unifies all five corpora through embedding-based search with cross-corpus RRF merging. Additional systems include review pattern clustering (grouping similar findings), wiki staleness detection, and wiki popularity scoring.
+The retrieval pipeline unifies these corpora through embedding-based search with cross-corpus RRF merging, bounded structural re-ranking, and fail-open degradation. Additional systems include review pattern clustering, wiki staleness detection, wiki popularity scoring, the persistent review graph substrate, and the M038 structural-impact consumer layer that combines graph blast-radius evidence with canonical current-code retrieval for Review Details and prompt output.
 
 For detailed documentation of the knowledge system internals, see [knowledge-system.md](knowledge-system.md).
 

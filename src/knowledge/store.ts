@@ -3,6 +3,7 @@ import type { Sql } from "../db/client.ts";
 import type { FeedbackPattern } from "../feedback/types.ts";
 import type {
   AuthorCacheEntry,
+  AuthorCacheTier,
   CheckpointRecord,
   DepBumpMergeHistoryRecord,
   FeedbackReaction,
@@ -47,6 +48,12 @@ function _fingerprintTitle(title: string): string {
 /** FNV-1a fingerprint matching review.ts fingerprintFindingTitle (includes fp- prefix). */
 function _feedbackFingerprint(title: string): string {
   return `fp-${_fingerprintTitle(title)}`;
+}
+
+function _normalizeDbNumber(value: unknown): number | null {
+  if (value == null) return null;
+  const normalized = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(normalized) ? normalized : null;
 }
 
 export function createKnowledgeStore(opts: {
@@ -147,7 +154,7 @@ export function createKnowledgeStore(opts: {
         findingId: row.finding_id,
         reviewId: row.review_id,
         repo: row.repo,
-        commentId: row.comment_id,
+        commentId: _normalizeDbNumber(row.comment_id) ?? 0,
         commentSurface: row.comment_surface,
         reviewOutputKey: row.review_output_key,
         severity: row.severity,
@@ -437,7 +444,7 @@ export function createKnowledgeStore(opts: {
       const row = rows[0]!;
 
       return {
-        tier: row.tier,
+        tier: row.tier as AuthorCacheTier,
         authorAssociation: row.author_association,
         prCount: row.pr_count,
         cachedAt: typeof row.cached_at === "string" ? row.cached_at : (row.cached_at as Date).toISOString(),
@@ -469,7 +476,7 @@ export function createKnowledgeStore(opts: {
     async upsertAuthorCache(params: {
       repo: string;
       authorLogin: string;
-      tier: string;
+      tier: AuthorCacheTier;
       authorAssociation: string;
       prCount: number | null;
     }): Promise<void> {
@@ -551,7 +558,7 @@ export function createKnowledgeStore(opts: {
         category: row.category as FindingCategory,
         startLine: row.start_line,
         endLine: row.end_line,
-        commentId: row.comment_id,
+        commentId: _normalizeDbNumber(row.comment_id),
       }));
     },
 
@@ -648,7 +655,7 @@ export function createKnowledgeStore(opts: {
         findingCount: typeof parsed.findingCount === "number" ? parsed.findingCount : 0,
         summaryDraft: typeof parsed.summaryDraft === "string" ? parsed.summaryDraft : "",
         totalFiles: typeof parsed.totalFiles === "number" ? parsed.totalFiles : 0,
-        partialCommentId: row.partial_comment_id,
+        partialCommentId: _normalizeDbNumber(row.partial_comment_id),
         createdAt: typeof row.created_at === "string" ? row.created_at : (row.created_at as Date).toISOString(),
       };
     },

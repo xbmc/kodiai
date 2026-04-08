@@ -687,3 +687,100 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 **Rule:** When a rendering utility needs a subset of an execution type's fields, inline the shape at the function parameter boundary rather than importing the full type. The minor duplication is worth the decoupling. Document the mapping in the call site comment if the shapes diverge.
 
 **Established in:** M034/S02.
+
+---
+
+## HEAD-Based Branch Hygiene Proofs Are Commit-Sensitive (M043/S03)
+
+**Context:** S03 used `origin/main...HEAD` and `fd67a48111...HEAD` diff proofs to confirm the rebased PR #80 branch had only the intended hotfix surface. Restoring tracked runtime files like `.gsd/event-log.jsonl` and `.gsd/state-manifest.json` in the working tree was not sufficient, because those proofs compare committed branch state. `gsd_complete_task` also re-touched the same tracked `.gsd` files as bookkeeping side effects, so they had to be restored back to `HEAD` before the final audit stayed clean.
+
+**Rule:** When a task or slice uses `...HEAD` diff proofs, cleanup of tracked runtime/planning files must be recorded in a real commit before rerunning the proof. After any `gsd_*complete*` step, re-check tracked `.gsd` files if they are part of the branch delta — the completion tooling may update them as side effects.
+
+**Established in:** M043/S03/T04.
+
+---
+
+## Structural-Impact Prompt Status Must Mirror Breaking-Change Status (M043/S04)
+
+**Context:** `buildStructuralImpactPromptSection()` and `buildBreakingChangeEvidenceInstructions()` both describe the same structural-impact payload in `src/execution/review-prompt.ts`. A live PR-review defect appeared when the structural section hardcoded `evidence-present` while the breaking-change section already used `partial-evidence` for `status: "partial"` payloads.
+
+**Rule:** Any prompt surface that summarizes structural impact must derive its status string from `structuralImpact.status` using the same contract: `partial` -> `partial-evidence`, everything else with renderable evidence -> `evidence-present`. Do not hardcode the structural status line independently of the breaking-change helper.
+
+**Testing pattern:** Assert on the structural section itself, not only the breaking-change helper. In `src/execution/review-prompt.test.ts`, extract the `## Structural Impact Evidence` section and require the partial-status wording there while preserving the rendered caller/file/test/evidence counters.
+
+**Established in:** M043/S04/T01.
+
+---
+
+## Active-Rules `totalActive` Is a Lower Bound When Prompt Injection Is Capped (M043/S04)
+
+**Context:** `getActiveRulesForPrompt()` in `src/knowledge/active-rules.ts` fetches `effectiveLimit + 1` rows so it can detect capping without a separate `COUNT(*)`. When the result is capped, `totalActive` is therefore the fetched lower bound (`effectiveLimit + 1`), not the exact store total.
+
+**Rule:** Tests and callers must treat capped `totalActive` as a lower-bound signal, not an exact count. To prove the capped path, stub `getActiveRulesForRepo()` with at least `effectiveLimit + 1` rows and assert that `totalActive === effectiveLimit + 1` while only `effectiveLimit` rules are injected.
+
+**Established in:** M043/S04/T02 (`src/knowledge/active-rules.test.ts`).
+
+---
+
+## Canonical Backfill Resume Ordering Must Follow `localeCompare`, Including Non-ASCII Paths (M043/S04)
+
+**Context:** `listFilesRecursive()` and `shouldResumeFromPath()` in `src/knowledge/canonical-code-backfill.ts` both use `localeCompare()` for canonical file ordering and resume checkpoint comparisons. ASCII-only fixtures can hide ordering bugs when filenames contain accented characters.
+
+**Rule:** Resume tests for canonical backfill must build expectations from the same `localeCompare()` ordering the production code uses, and should include non-ASCII filenames (for example `éclair.ts` or `ångström.ts`) so checkpoint behavior is proven against real collation-sensitive inputs. Do not assume byte-order or plain ASCII sorting when asserting resumed file sets.
+
+**Established in:** M043/S04/T02 (`src/knowledge/canonical-code-backfill.test.ts`).
+
+---
+
+## BIGINT Comment IDs Read Back as Strings from Raw SQL Rows (M043/S05)
+
+**Context:** `032-bigint-comment-ids.sql` promotes `findings.comment_id` (and sibling comment-id columns) from `INTEGER` to `BIGINT`. In the CI-shaped Postgres lane, direct `sql` reads of `comment_id` now come back as string values like `"1234"`, not numeric `1234`, even when the inserted input was a number.
+
+**Rule:** When tests or one-off diagnostics read `comment_id` / `partial_comment_id` directly from raw SQL rows after the bigint migration, treat the value as stringly typed unless the caller normalizes it explicitly. Assertions should either compare against the string form or coerce with `Number(...)` before comparing.
+
+**Why it matters:** Store-layer code that passes bigint IDs through raw row objects can fail deterministic tests with type-only mismatches even though the persisted value is correct. The first post-S05 red in `src/knowledge/store.test.ts` was exactly this shape.
+
+**Established in:** M043/S05/T01 (`src/knowledge/store.test.ts`, `src/db/migrations/032-bigint-comment-ids.sql`).
+
+---
+
+## Explicit `@kodiai review` Must Use Review-Class Turns and Tools, Not Conversational Mention Caps (M043/S05)
+
+**Context:** The fresh production proof delivery `bab62150-3329-11f1-96a5-aecd0f6e5943` initially reproduced a pre-publish gap only because explicit PR review mentions inherited the read-only mention budget: the agent workspace showed `taskType: "review.full"` but `maxTurns: 12` plus the reduced mention tool set (`Read`, `Grep`, `Bash(git diff:*)`, `Bash(git status:*)`). A prior live run ended with `conclusion: "failure"`, `stopReason: "tool_use"`, and no publish markers because the agent exhausted the conversational mention budget before it could publish.
+
+**Rule:** When `mention.ts` promotes a PR mention to `taskType="review.full"`, it must also inherit the **full review execution budget**:
+- `maxTurnsOverride` must be `undefined` so executor falls back to repo-config `maxTurns` (currently 25), not the 12/20 turn mention cap.
+- Executor must not classify that run as a reduced-tool "read-only PR mention". Explicit review mentions need the normal review tool surface (`Glob`, `Bash(git log:*)`, `Bash(git show:*)`, etc.), not the conversational mention subset.
+
+**Operational proof:** After deploying this fix to revision `ca-kodiai--0000076`, the next fresh explicit review delivery on PR #80 completed with:
+- `reviewOutputPublicationState=publish`
+- `publishResolution=approval-bridge`
+- GitHub review `@kodiai[bot]: APPROVED`
+- `result.json` showing `conclusion: "success"`, `stopReason: "end_turn"`
+
+**Testing pattern:**
+- In `src/handlers/mention.test.ts`, capture `maxTurnsOverride` for `@kodiai review` and assert it is `undefined`.
+- In `src/execution/executor.test.ts`, assert explicit review mentions (`eventType="issue_comment.created"`, `taskType="review.full"`, PR context) write `agent-config.json` with repo-config `maxTurns` and the full review tool set, while conversational mention requests still get the reduced tool set.
+
+**Established in:** M043/S05 post-close remediation (`src/handlers/mention.ts`, `src/execution/executor.ts`).
+
+---
+
+## Clean-DB CI Repros Must Start From a Fresh Database, Not the Warm `kodiai` DB (M043/S05)
+
+**Context:** PR #80 still failed in GitHub Actions after the deterministic and live mention-review fixes landed. The rerun exposed a hidden local false positive: `src/knowledge/store.test.ts` was passing only because the developer DB already had migrated tables. On a fresh CI database, the suite failed immediately with `PostgresError: relation "review_checkpoints" does not exist` from `truncateAll()` before the first `KnowledgeStore` assertion even ran.
+
+**Rule:** For any DB-shaped CI repro, prove the failure or fix against a **freshly created database** (for example `kodiai_ci_repro`), not just the long-lived local `kodiai` database. A warm local DB can hide missing test bootstrap. If a test file opens a direct `postgres(...)` connection, verify it explicitly runs `runMigrations(sql)` in `beforeAll` unless the schema is created some other way.
+
+**Concrete fix pattern:** Store/integration tests that own a Postgres connection should follow the same bootstrap pattern as `memory-store.test.ts`, `issue-store.test.ts`, and similar peers:
+```ts
+import { runMigrations } from "../db/migrate.ts";
+
+beforeAll(async () => {
+  sql = postgres(DATABASE_URL, ...);
+  await runMigrations(sql);
+  store = createKnowledgeStore({ sql, logger: mockLogger });
+});
+```
+
+**Established in:** M043/S05 clean-DB rerun after PR #80 CI surfaced `review_checkpoints` schema drift (`src/knowledge/store.test.ts`).

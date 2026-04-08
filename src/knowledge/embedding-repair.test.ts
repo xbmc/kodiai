@@ -2,7 +2,7 @@ import { describe, expect, test, mock } from "bun:test";
 import { buildCommentEmbeddingText, buildIssueEmbeddingText } from "./issue-comment-chunker.ts";
 import { buildEmbeddingText } from "./code-snippet-chunker.ts";
 
-type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments";
+type EmbeddingRepairCorpus = "review_comments" | "learning_memories" | "code_snippets" | "issues" | "issue_comments" | "canonical_code";
 
 type RepairCandidateRow = {
   id: number;
@@ -210,7 +210,7 @@ function makeRow(overrides: Partial<RepairCandidateRow> & Pick<RepairCandidateRo
     corpus: overrides.corpus,
     embedding_model: Object.prototype.hasOwnProperty.call(overrides, "embedding_model")
       ? overrides.embedding_model ?? null
-      : "voyage-code-3",
+      : "voyage-4",
     embedding: Object.prototype.hasOwnProperty.call(overrides, "embedding")
       ? overrides.embedding ?? null
       : new Float32Array([0.1, 0.2]),
@@ -236,21 +236,23 @@ function makeEmbedding(seed: number): Float32Array {
 }
 
 describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts", () => {
-  test("buildEmbeddingRepairPlan keeps all non-wiki corpora pinned to voyage-code-3 and preserves stale-support differences", async () => {
+  test("buildEmbeddingRepairPlan keeps all non-wiki corpora pinned to voyage-4 and preserves stale-support differences", async () => {
     const module = await loadEmbeddingRepairModule();
 
-    expect(module.NON_WIKI_TARGET_EMBEDDING_MODEL).toBe("voyage-code-3");
+    expect(module.NON_WIKI_TARGET_EMBEDDING_MODEL).toBe("voyage-4");
     expect(module.NON_WIKI_REPAIR_CORPORA).toEqual([
       "review_comments",
       "learning_memories",
       "code_snippets",
       "issues",
       "issue_comments",
+      "canonical_code",
     ]);
     expect(module.STALE_SUPPORTED_CORPORA).toEqual([
       "review_comments",
       "learning_memories",
       "code_snippets",
+      "canonical_code",
     ]);
 
     const reviewPlan = module.buildEmbeddingRepairPlan({
@@ -260,13 +262,13 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
         makeRow({ corpus: "review_comments", id: 11, chunk_text: "needs model repair", embedding_model: "voyage-context-3" }),
         makeRow({ corpus: "review_comments", id: 12, chunk_text: "needs stale repair", stale: true }),
         makeRow({ corpus: "review_comments", id: 13, chunk_text: "needs null repair", embedding: null, embedding_model: null }),
-        makeRow({ corpus: "review_comments", id: 14, chunk_text: "healthy", embedding_model: "voyage-code-3", stale: false }),
+        makeRow({ corpus: "review_comments", id: 14, chunk_text: "healthy", embedding_model: "voyage-4", stale: false }),
       ],
     });
 
     expect(reviewPlan).toMatchObject({
       corpus: "review_comments",
-      target_model: "voyage-code-3",
+      target_model: "voyage-4",
       stale_supported: true,
       total_candidates: 3,
       batch_size: 2,
@@ -283,13 +285,13 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
       rows: [
         makeRow({ corpus: "issues", id: 21, title: "Model drift", body: "wrong model", embedding_model: "voyage-context-3" }),
         makeRow({ corpus: "issues", id: 22, title: "Missing embedding", body: null, embedding: null, embedding_model: null }),
-        makeRow({ corpus: "issues", id: 23, title: "Healthy issue", body: "already correct", embedding_model: "voyage-code-3", stale: true }),
+        makeRow({ corpus: "issues", id: 23, title: "Healthy issue", body: "already correct", embedding_model: "voyage-4", stale: true }),
       ],
     });
 
     expect(issuePlan).toMatchObject({
       corpus: "issues",
-      target_model: "voyage-code-3",
+      target_model: "voyage-4",
       stale_supported: false,
       total_candidates: 2,
     });
@@ -461,8 +463,8 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
       { ids: [43, 45], attempt: 0 },
     ]);
     expect(writeBatches).toEqual([
-      expect.objectContaining({ corpus: "review_comments", row_ids: [41, 42], target_model: "voyage-code-3" }),
-      expect.objectContaining({ corpus: "review_comments", row_ids: [43, 45], target_model: "voyage-code-3" }),
+      expect.objectContaining({ corpus: "review_comments", row_ids: [41, 42], target_model: "voyage-4" }),
+      expect.objectContaining({ corpus: "review_comments", row_ids: [43, 45], target_model: "voyage-4" }),
     ]);
     expect(savedStates).toEqual([
       expect.objectContaining({
@@ -497,7 +499,7 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
       success: true,
       status_code: "repair_completed",
       corpus: "review_comments",
-      target_model: "voyage-code-3",
+      target_model: "voyage-4",
       resumed: false,
       dry_run: false,
       processed: 4,
@@ -599,7 +601,7 @@ describe("shared non-wiki repair contract for src/knowledge/embedding-repair.ts"
       success: true,
       status_code: "repair_not_needed",
       corpus: "learning_memories",
-      target_model: "voyage-code-3",
+      target_model: "voyage-4",
       processed: 0,
       repaired: 0,
       skipped: 0,

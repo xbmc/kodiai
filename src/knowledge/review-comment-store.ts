@@ -168,7 +168,7 @@ export function createReviewCommentStore(opts: {
         try {
           const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
           const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
-          const embeddingModel = hasEmbedding ? "voyage-code-3" : null;
+          const embeddingModel = hasEmbedding ? "voyage-4" : null;
           await sql`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
@@ -223,7 +223,7 @@ export function createReviewCommentStore(opts: {
         for (const chunk of chunks) {
           const hasEmbedding = chunk.embedding && chunk.embedding.length > 0;
           const embeddingValue = hasEmbedding ? float32ArrayToVectorString(chunk.embedding!) : null;
-          const embeddingModel = hasEmbedding ? "voyage-code-3" : null;
+          const embeddingModel = hasEmbedding ? "voyage-4" : null;
           await (tx as unknown as Sql)`
             INSERT INTO review_comments (
               repo, owner, pr_number, pr_title, comment_github_id,
@@ -409,7 +409,7 @@ export function createReviewCommentStore(opts: {
           AND (
             embedding IS NULL
             OR stale = true
-            OR embedding_model IS DISTINCT FROM ${"voyage-code-3"}
+            OR embedding_model IS DISTINCT FROM ${"voyage-4"}
           )
         ORDER BY id ASC
       `;
@@ -445,7 +445,7 @@ export function createReviewCommentStore(opts: {
           failure_counts, last_failure_class, last_failure_message,
           updated_at
         ) VALUES (
-          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-code-3"},
+          ${state.corpus}, ${state.repair_key ?? DEFAULT_REPAIR_KEY}, ${state.run_id}, ${state.target_model ?? "voyage-4"},
           ${state.dry_run ?? false}, ${state.resumed ?? false}, ${state.status ?? "running"}, ${state.resume_ready ?? false},
           ${state.batch_index}, ${state.batches_total}, ${state.last_row_id},
           ${state.processed}, ${state.repaired}, ${state.skipped}, ${state.failed},

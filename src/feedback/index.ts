@@ -19,7 +19,7 @@ export type {
 // Re-export functions
 export { aggregateSuppressiblePatterns } from "./aggregator.ts";
 export { isFeedbackSuppressionProtected } from "./safety-guard.ts";
-export { adjustConfidenceForFeedback } from "./confidence-adjuster.ts";
+export { adjustConfidenceForFeedback, applyClusterScoreAdjustment } from "./confidence-adjuster.ts";
 
 const EMPTY_RESULT: FeedbackSuppressionResult = {
   suppressedFingerprints: new Set<string>(),

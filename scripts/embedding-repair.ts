@@ -2,8 +2,10 @@ import pino from "pino";
 import { createDbClient } from "../src/db/client.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import {
+  CANONICAL_CODE_TARGET_EMBEDDING_MODEL,
   NON_WIKI_REPAIR_CORPORA,
   NON_WIKI_TARGET_EMBEDDING_MODEL,
+  runCanonicalCodeEmbeddingRepair,
   runCodeSnippetEmbeddingRepair,
   runIssueEmbeddingRepair,
   runLearningMemoryEmbeddingRepair,
@@ -34,16 +36,24 @@ type CliOptions = {
   resume?: boolean;
   dryRun?: boolean;
   corpus?: EmbeddingRepairCorpus;
+  /** Required when --corpus canonical_code: the repository name (e.g. "kodiai") */
+  repo?: string;
+  /** Required when --corpus canonical_code: the canonical ref (e.g. "main") */
+  canonicalRef?: string;
 };
 
 type RunRepairFn = (options: {
   corpus: EmbeddingRepairCorpus;
   resume?: boolean;
   dryRun?: boolean;
+  repo?: string;
+  canonicalRef?: string;
 }) => Promise<RepairCliReport>;
 
 type GetRepairStatusFn = (options: {
   corpus: EmbeddingRepairCorpus;
+  repo?: string;
+  canonicalRef?: string;
 }) => Promise<RepairCliReport>;
 
 function isEmbeddingRepairCorpus(value: string | undefined): value is EmbeddingRepairCorpus {
@@ -52,6 +62,8 @@ function isEmbeddingRepairCorpus(value: string | undefined): value is EmbeddingR
 
 export function parseEmbeddingRepairCliArgs(args: string[]): CliOptions {
   let corpus: EmbeddingRepairCorpus | undefined;
+  let repo: string | undefined;
+  let canonicalRef: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -60,6 +72,12 @@ export function parseEmbeddingRepairCliArgs(args: string[]): CliOptions {
       if (isEmbeddingRepairCorpus(value)) {
         corpus = value;
       }
+      index += 1;
+    } else if (arg === "--repo") {
+      repo = args[index + 1];
+      index += 1;
+    } else if (arg === "--ref") {
+      canonicalRef = args[index + 1];
       index += 1;
     }
   }
@@ -71,6 +89,8 @@ export function parseEmbeddingRepairCliArgs(args: string[]): CliOptions {
     resume: args.includes("--resume"),
     dryRun: args.includes("--dry-run"),
     corpus,
+    repo,
+    canonicalRef,
   };
 }
 
@@ -83,6 +103,8 @@ function usage(): string {
     "",
     "Options:",
     "  --corpus <name>      Required. Select one non-wiki persisted corpus",
+    "  --repo <name>        Required when --corpus canonical_code: repository name",
+    "  --ref <ref>          Required when --corpus canonical_code: canonical ref (e.g. main)",
     "  --resume             Resume from the persisted embedding_repair_state cursor",
     "  --status             Read the persisted repair state without mutating rows",
     "  --dry-run            Execute candidate planning without writing embeddings",
@@ -212,6 +234,8 @@ async function executeRepair(options: {
   corpus: EmbeddingRepairCorpus;
   resume?: boolean;
   dryRun?: boolean;
+  repo?: string;
+  canonicalRef?: string;
 }): Promise<RepairCliReport> {
   const logger = pino({ level: "silent" });
   const db = createDbClient({ logger });
@@ -258,6 +282,27 @@ async function executeRepair(options: {
           dryRun: options.dryRun,
           logger,
         }));
+      case "canonical_code": {
+        const repo = options.repo;
+        const canonicalRef = options.canonicalRef;
+        if (!repo || !canonicalRef) {
+          throw new Error(
+            "canonical_code repair requires --repo and --ref to identify the corpus scope",
+          );
+        }
+        if (!runtime.canonicalCodeStore) {
+          throw new Error("Canonical code store is unavailable; cannot repair canonical_code");
+        }
+        return reportFromRepairResult(await runCanonicalCodeEmbeddingRepair({
+          store: runtime.canonicalCodeStore,
+          embeddingProvider: runtime.embeddingProvider,
+          repo,
+          canonicalRef,
+          resume: options.resume,
+          dryRun: options.dryRun,
+          logger,
+        }));
+      }
       default: {
         const exhaustiveCheck: never = options.corpus;
         throw new Error(`Unsupported repair corpus: ${String(exhaustiveCheck)}`);
@@ -270,6 +315,8 @@ async function executeRepair(options: {
 
 async function executeStatus(options: {
   corpus: EmbeddingRepairCorpus;
+  repo?: string;
+  canonicalRef?: string;
 }): Promise<RepairCliReport> {
   const logger = pino({ level: "silent" });
   const db = createDbClient({ logger });
@@ -303,6 +350,31 @@ async function executeStatus(options: {
         const candidates = await runtime.issueStore.listRepairCandidates!(options.corpus);
         return normalizeStatusReport({ corpus: options.corpus, checkpoint, hasCandidates: candidates.length > 0 });
       }
+      case "canonical_code": {
+        const repo = options.repo;
+        const canonicalRef = options.canonicalRef;
+        if (!repo || !canonicalRef) {
+          throw new Error(
+            "canonical_code status requires --repo and --ref to scope the query",
+          );
+        }
+        if (!runtime.canonicalCodeStore) {
+          throw new Error("Canonical code store is unavailable; cannot inspect canonical_code repair state");
+        }
+        // Canonical code has no persistent checkpoint table — derive status from
+        // whether any stale/missing chunks exist for this repo×ref pair.
+        const staleChunks = await runtime.canonicalCodeStore.listStaleChunks({
+          repo,
+          canonicalRef,
+          targetModel: CANONICAL_CODE_TARGET_EMBEDDING_MODEL,
+          limit: 1,
+        });
+        return normalizeStatusReport({
+          corpus: options.corpus,
+          checkpoint: null,
+          hasCandidates: staleChunks.length > 0,
+        });
+      }
       default: {
         const exhaustiveCheck: never = options.corpus;
         throw new Error(`Unsupported repair corpus: ${String(exhaustiveCheck)}`);
@@ -332,8 +404,18 @@ export async function runEmbeddingRepairCli(input?: {
   const runRepair = input?.runRepair ?? executeRepair;
   const getRepairStatus = input?.getRepairStatus ?? executeStatus;
   const report = options.status
-    ? await getRepairStatus({ corpus: options.corpus })
-    : await runRepair({ corpus: options.corpus, resume: options.resume, dryRun: options.dryRun });
+    ? await getRepairStatus({
+        corpus: options.corpus,
+        repo: options.repo,
+        canonicalRef: options.canonicalRef,
+      })
+    : await runRepair({
+        corpus: options.corpus,
+        resume: options.resume,
+        dryRun: options.dryRun,
+        repo: options.repo,
+        canonicalRef: options.canonicalRef,
+      });
 
   return {
     report,

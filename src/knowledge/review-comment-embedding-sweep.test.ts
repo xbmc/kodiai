@@ -25,12 +25,12 @@ function createMockEmbeddingProvider(opts?: {
       if (opts?.shouldFail) return null;
       return {
         embedding: new Float32Array([0.1, 0.2, 0.3]),
-        model: "voyage-code-3",
+        model: "voyage-4",
         dimensions: 1024,
       };
     },
     get model() {
-      return "voyage-code-3";
+      return "voyage-4";
     },
     get dimensions() {
       return 1024;
@@ -157,7 +157,7 @@ describe("sweepNullEmbeddings", () => {
   it("calls embeddingProvider.generate with chunkText and 'document' inputType", async () => {
     const generateFn = mock(async () => ({
       embedding: new Float32Array([0.1, 0.2]),
-      model: "voyage-code-3",
+      model: "voyage-4",
       dimensions: 1024,
     }));
     let callCount = 0;
@@ -173,7 +173,7 @@ describe("sweepNullEmbeddings", () => {
 
     const embeddingProvider = {
       generate: generateFn,
-      get model() { return "voyage-code-3"; },
+      get model() { return "voyage-4"; },
       get dimensions() { return 1024; },
     } as unknown as EmbeddingProvider;
 
@@ -204,9 +204,9 @@ describe("sweepNullEmbeddings", () => {
 
     const embeddingProvider = {
       async generate() {
-        return { embedding, model: "voyage-code-3", dimensions: 1024 };
+        return { embedding, model: "voyage-4", dimensions: 1024 };
       },
-      get model() { return "voyage-code-3"; },
+      get model() { return "voyage-4"; },
       get dimensions() { return 1024; },
     } as unknown as EmbeddingProvider;
 
@@ -219,7 +219,7 @@ describe("sweepNullEmbeddings", () => {
     });
 
     expect(store.updateEmbedding).toHaveBeenCalledTimes(1);
-    expect(store.updateEmbedding).toHaveBeenCalledWith(42, embedding, "voyage-code-3");
+    expect(store.updateEmbedding).toHaveBeenCalledWith(42, embedding, "voyage-4");
   });
 
   it("skips chunks where embeddingProvider.generate returns null", async () => {

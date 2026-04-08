@@ -182,6 +182,38 @@ describe("breaking change detection", () => {
     const intent = parsePRIntent("Fix null pointer", body);
     expect(intent.breakingChangeDetected).toBe(false);
   });
+
+  test("xbmc PR template body with Breaking change checkbox does not trigger detection", () => {
+    // Real xbmc PR template structure: ## Types of change section contains a
+    // "Breaking change" checkbox option that must not be read as author intent.
+    // Previously the heading-only stripping left the checkbox lines in place,
+    // and the 3-consecutive-run backstop still fired on 3+ boxes.
+    // This fixture covers the regression: the full section body must be stripped.
+    const xbmcFixtureBody = [
+      "## Description",
+      "Fix player crash on malformed stream input.",
+      "",
+      "## Types of change",
+      "- [ ] Bug fix (non-breaking change which fixes an issue)",
+      "- [ ] Breaking change (fix or feature that will cause existing functionality to change)",
+      "- [ ] New feature (non-breaking change which adds functionality)",
+      "",
+      "## Checklist",
+      "- [x] My code follows the code style of this project.",
+      "- [x] I have read the CONTRIBUTING document.",
+      "- [x] I have added tests that prove my fix is effective.",
+    ].join("\n");
+    const intent = parsePRIntent("Fix player crash", xbmcFixtureBody);
+    expect(intent.breakingChangeDetected).toBe(false);
+    expect(intent.breakingChangeSources.filter((s) => s.source === "body")).toHaveLength(0);
+  });
+
+  test("plain body prose breaking change is still detected after template stripping", () => {
+    const body = "This is a breaking change to the player API.\n\nUpdated the stream decoder interface.";
+    const intent = parsePRIntent("Update player API", body);
+    expect(intent.breakingChangeDetected).toBe(true);
+    expect(intent.breakingChangeSources.some((s) => s.source === "body")).toBe(true);
+  });
 });
 
 describe("commit message scanning", () => {

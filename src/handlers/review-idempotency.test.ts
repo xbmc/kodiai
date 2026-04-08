@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildApprovedReviewBody,
   buildReviewOutputKey,
   buildReviewOutputMarker,
+  buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
 
@@ -78,7 +80,30 @@ describe("review idempotency helpers", () => {
     expect(buildReviewOutputKey({ ...base, prNumber: 102 })).not.toBe(baseKey);
   });
 
-  test("ensureReviewOutputNotPublished returns skip when marker exists in review comments", async () => {
+  test("buildApprovedReviewBody returns a review-structured approval body with marker", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "mention-review",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = buildApprovedReviewBody({
+      reviewOutputKey,
+      approvalConfidence: ":green_circle: **Merge Confidence: High** — Safe to merge.",
+    });
+
+    expect(result).toContain("<summary>kodiai response</summary>");
+    expect(result).toContain("Decision: APPROVE");
+    expect(result).toContain("Issues: none");
+    expect(result).toContain("Merge Confidence: High");
+    expect(result).toContain(buildReviewOutputMarker(reviewOutputKey));
+  });
+
+  test("ensureReviewOutputNotPublished returns skip decision when marker exists in review comments", async () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -105,8 +130,13 @@ describe("review idempotency helpers", () => {
 
     expect(marker).toBe(`<!-- kodiai:review-output-key:${reviewOutputKey} -->`);
     expect(result.shouldPublish).toBe(false);
+    expect(result.publicationState).toBe("skip-existing-output");
     expect(result.existingLocation).toBe("review-comment");
+    expect(result.idempotencyDecision).toBe("skip-existing-review-comment");
     expect(result.marker).toBe(marker);
+    expect(result.scanStats.reviewComments.scanned).toBe(2);
+    expect(result.scanStats.issueComments.scanned).toBe(0);
+    expect(result.scanStats.reviews.scanned).toBe(0);
   });
 
   test("ensureReviewOutputNotPublished allows publish when marker absent", async () => {
@@ -133,10 +163,15 @@ describe("review idempotency helpers", () => {
 
     expect(result.marker).toBe(`<!-- kodiai:review-output-key:${reviewOutputKey} -->`);
     expect(result.shouldPublish).toBe(true);
+    expect(result.publicationState).toBe("publish");
     expect(result.existingLocation).toBeNull();
+    expect(result.idempotencyDecision).toBe("publish");
+    expect(result.scanStats.reviewComments.scanned).toBe(1);
+    expect(result.scanStats.issueComments.scanned).toBe(0);
+    expect(result.scanStats.reviews.scanned).toBe(1);
   });
 
-  test("ensureReviewOutputNotPublished returns skip when marker exists in issue comments", async () => {
+  test("ensureReviewOutputNotPublished returns skip decision when marker exists in issue comments", async () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -162,7 +197,76 @@ describe("review idempotency helpers", () => {
     });
 
     expect(result.shouldPublish).toBe(false);
+    expect(result.publicationState).toBe("skip-existing-output");
     expect(result.existingLocation).toBe("issue-comment");
+    expect(result.idempotencyDecision).toBe("skip-existing-issue-comment");
     expect(result.marker).toBe(marker);
+    expect(result.scanStats.reviewComments.scanned).toBe(0);
+    expect(result.scanStats.issueComments.scanned).toBe(2);
+    expect(result.scanStats.reviews.scanned).toBe(0);
+  });
+
+  test("ensureReviewOutputNotPublished returns skip decision when marker exists in review bodies", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const result = await ensureReviewOutputNotPublished({
+      octokit: createOctokitStub({
+        reviewBodies: [
+          "General review without marker",
+          `Silent approval\n\n${marker}`,
+        ],
+      }) as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
+
+    expect(result.shouldPublish).toBe(false);
+    expect(result.publicationState).toBe("skip-existing-output");
+    expect(result.existingLocation).toBe("review");
+    expect(result.idempotencyDecision).toBe("skip-existing-review");
+    expect(result.scanStats.reviewComments.scanned).toBe(0);
+    expect(result.scanStats.issueComments.scanned).toBe(0);
+    expect(result.scanStats.reviews.scanned).toBe(2);
+  });
+
+  test("buildReviewOutputPublicationLogFields exposes normalized publication state", async () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const result = await ensureReviewOutputNotPublished({
+      octokit: createOctokitStub({
+        reviewBodies: [`Silent approval\n\n${marker}`],
+      }) as never,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      reviewOutputKey,
+    });
+
+    const fields = buildReviewOutputPublicationLogFields(result);
+    expect(fields.reviewOutputKey).toBe(reviewOutputKey);
+    expect(fields.reviewOutputPublicationState).toBe("skip-existing-output");
+    expect(fields.idempotencyDecision).toBe("skip-existing-review");
+    expect(fields.existingLocation).toBe("review");
+    expect(fields.reviewsScanned).toBe(1);
   });
 });

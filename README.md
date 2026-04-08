@@ -2,7 +2,7 @@
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional `.kodiai.yml` file.
 
-25 milestones shipped (v0.1 through v0.25). See [CHANGELOG.md](CHANGELOG.md) for release history.
+27 milestones shipped (v0.1 through v0.27). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ bun install
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your credentials — see .env.example for all 26 variables
+# Apply your credentials securely (do not commit .env)
 
 # Start the dev server
 bun run dev
@@ -42,13 +42,13 @@ The server exposes:
 
 Kodiai runs as a Bun + Hono HTTP server backed by PostgreSQL with pgvector for hybrid retrieval. It uses multi-model LLM routing via Vercel AI SDK, VoyageAI embeddings, and deploys to Azure Container Apps.
 
-The system processes GitHub webhooks through a job queue with per-installation concurrency limits, uses ephemeral shallow clones for code analysis, and executes agentic tasks via the Vercel Agent SDK with in-process MCP servers.
+The system processes GitHub webhooks through a job queue with per-installation concurrency limits, uses Azure Files-backed workspaces for code analysis, and executes agentic tasks via isolated Azure Container App jobs that write `result.json` back to the shared workspace. Review-time structural analysis now consumes the persisted review graph substrate and canonical current-code corpus through a bounded structural-impact layer.
 
-For the full architecture walkthrough — components, data flow, retrieval pipeline, and extension points — see **[docs/architecture.md](docs/architecture.md)**.
+For the full architecture walkthrough — components, data flow, retrieval pipeline, structural-impact layer, and extension points — see **[docs/architecture.md](docs/architecture.md)**.
 
 ## Features
 
-**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, dependency bump deep-review, CI failure recognition, and risk-weighted file prioritization for large PRs.
+**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, dependency bump deep-review, CI failure recognition, risk-weighted file prioritization for large PRs, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
 **@kodiai Mentions** — Conversational responses to `@kodiai` across issue comments, PR comments, and review threads with context-aware follow-ups.
 
@@ -56,11 +56,11 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 **Slack Integration** — Thread-based assistant in `#kodiai` with read-only default, explicit write-mode activation, and high-impact confirmation gating.
 
-**Knowledge System** — 5-corpus hybrid retrieval (code, review comments, wiki, code snippets, issues) with BM25 + vector search and Reciprocal Rank Fusion merging.
+**Knowledge System** — 6-corpus hybrid retrieval (code, review comments, wiki, code snippets, issues, canonical current-code) with BM25 + vector search, Reciprocal Rank Fusion merging, and post-RRF neural reranking.
 
 **Epistemic Guardrails** — 3-tier knowledge classification with severity demotion for unverifiable claims, applied across all response surfaces.
 
-**Contributor Profiles** — GitHub/Slack identity linking, expertise inference with decay scoring, and 4-tier adaptive review depth.
+**Contributor Profiles** — GitHub/Slack identity linking, expertise inference with decay scoring, 4-tier adaptive review depth, persistence-time tier recalculation, truthful review-surface contributor guidance, and bounded cache/fallback author labeling.
 
 **Review Pattern Clustering** — HDBSCAN + UMAP theme detection injected as footnotes in PR reviews.
 

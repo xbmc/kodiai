@@ -4,9 +4,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { createReviewHandler } from "./review.ts";
+import { createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
+import type { ContributorProfileStore } from "../contributor/types.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -212,6 +213,48 @@ function buildReviewRequestedEvent(
     ...eventOverrides,
   };
 }
+
+describe("resolveAuthorTierFromSources", () => {
+  test("prefers contributor profile tier ahead of cache and fallback", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: "established",
+        cachedTier: "first-time",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "established", source: "contributor-profile" });
+  });
+
+  test("falls back to cached tier when contributor profile is absent", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: "regular",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "regular", source: "author-cache" });
+  });
+
+  test("cached author tiers are limited to fallback taxonomy values", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: "core",
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "core", source: "author-cache" });
+  });
+
+  test("uses fallback tier when neither profile nor cache is available", () => {
+    expect(
+      resolveAuthorTierFromSources({
+        contributorTier: null,
+        cachedTier: null,
+        fallbackTier: "first-time",
+      }),
+    ).toEqual({ tier: "first-time", source: "fallback" });
+  });
+});
 
 describe("createReviewHandler review_requested gating", () => {
   test("enqueues exactly one review for manual kodiai re-request", async () => {
@@ -469,6 +512,8 @@ describe("createReviewHandler auto profile selection", () => {
     manualProfile?: "strict" | "balanced" | "minimal";
     additions: number;
     deletions: number;
+    contributorTier?: "first-time" | "regular" | "established" | "senior";
+    prAuthor?: string;
   }): Promise<{ prompt: string; detailsCommentBody: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -559,6 +604,17 @@ describe("createReviewHandler auto profile selection", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
+      contributorProfileStore: options.contributorTier
+        ? {
+          getByGithubUsername: async (login: string) => login === (options.prAuthor ?? "octocat")
+            ? {
+              id: "profile-1",
+              overallTier: options.contributorTier,
+            }
+            : null,
+          getExpertise: async () => [],
+        } as never
+        : undefined,
       logger: createNoopLogger(),
     });
 
@@ -576,7 +632,7 @@ describe("createReviewHandler auto profile selection", () => {
           commits: 0,
           additions: options.additions,
           deletions: options.deletions,
-          user: { login: "octocat" },
+          user: { login: options.prAuthor ?? "octocat" },
           base: { ref: "main", sha: "mainsha" },
           head: {
             sha: "abcdef1234567890",
@@ -610,6 +666,18 @@ describe("createReviewHandler auto profile selection", () => {
     expect(result.prompt).toContain("Post at most 7 inline comments");
     expect(result.prompt).toContain("Only report findings at these severity levels: critical, major, medium.");
     expect(result.detailsCommentBody).toContain("- Profile: balanced (auto, lines changed: 110)");
+  });
+
+  test("cached regular tier keeps developing wording without overclaiming", async () => {
+    const result = await runProfileScenario({ additions: 90, deletions: 20, contributorTier: "regular" });
+
+    expect(result.prompt).toContain("The PR author (octocat) is a developing contributor with growing familiarity in this area.");
+    expect(result.prompt).toContain("Provide moderate explanation");
+    expect(result.prompt).not.toContain("established contributor.");
+    expect(result.prompt).not.toContain("core/senior contributor of this repository.");
+    expect(result.detailsCommentBody).toContain("- Author tier: regular (developing guidance)");
+    expect(result.detailsCommentBody).not.toContain("established contributor guidance");
+    expect(result.detailsCommentBody).not.toContain("senior contributor guidance");
   });
 
   test("large PRs default to minimal profile", async () => {
@@ -6022,7 +6090,7 @@ describe("createReviewHandler usageLimit and token wiring", () => {
     await workspaceFixture.cleanup();
 
     expect(detailsCommentBody).toBeDefined();
-    expect(detailsCommentBody).toContain("80% of seven_day limit");
+    expect(detailsCommentBody).toContain("20% of seven_day limit remaining");
     expect(detailsCommentBody).toContain("in /");
   });
 });
@@ -6542,6 +6610,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     knowledgeStoreOverrides?: Record<string, unknown>;
     configYaml?: string;
     retriever?: ReturnType<typeof createRetriever>;
+    contributorProfileStore?: ContributorProfileStore;
   }): Promise<{ executeCount: number; prompt: string }> {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
@@ -6620,6 +6689,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
       knowledgeStore: createKnowledgeStoreStub(params.knowledgeStoreOverrides) as never,
       searchCache: params.searchCache as never,
       retriever: params.retriever,
+      contributorProfileStore: params.contributorProfileStore as never,
       logger: createNoopLogger(),
     });
 
@@ -7182,6 +7252,113 @@ describe("createReviewHandler author-tier search cache integration", () => {
     expect(executeCount).toBe(1);
     expect(rateLimitEvents).toHaveLength(1);
     expect(rateLimitEvents[0]?.cacheHitRate).toBe(0);
+  });
+
+  test("ignores unsupported cached contributor tiers and falls back to live classification", async () => {
+    let searchCallCount = 0;
+
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        return { data: { total_count: 0 } };
+      },
+      knowledgeStoreOverrides: {
+        getAuthorCache: () => ({
+          tier: "established",
+          prCount: 24,
+        }),
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(searchCallCount).toBe(1);
+    expect(prompt).toContain("first-time or new contributor");
+    expect(prompt).not.toContain("established contributor");
+    expect(prompt).not.toContain("core/senior contributor");
+    expect(prompt).toContain("The PR author (octocat) appears to be a first-time or new contributor to this repository.");
+  });
+
+  test("cached core tier keeps senior-style handler wording on cache hits", async () => {
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        throw new Error("search should not execute when author classification cache is hit");
+      },
+      knowledgeStoreOverrides: {
+        getAuthorCache: () => ({
+          tier: "core",
+          prCount: 12,
+        }),
+      },
+    });
+
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("The PR author (octocat) is a core/senior contributor of this repository.");
+    expect(prompt).toContain("Be concise and assume familiarity with the codebase");
+    expect(prompt).not.toContain("first-time or new contributor");
+    expect(prompt).not.toContain("developing contributor with growing familiarity");
+  });
+
+  test("contributor profile established tier beats contradictory cached low-tier data in handler output", async () => {
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        throw new Error("search should not execute when contributor profile is present");
+      },
+      knowledgeStoreOverrides: {
+        getAuthorCache: () => ({
+          tier: "regular",
+          prCount: 4,
+        }),
+      },
+      contributorProfileStore: {
+        getByGithubUsername: async (login: string) => login === "octocat"
+          ? { id: "profile-1", overallTier: "established" }
+          : null,
+        getExpertise: async () => [],
+      } as never,
+    });
+
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("The PR author (octocat) is an established contributor.");
+    expect(prompt).toContain("Keep explanations brief — one sentence on WHY, then the suggestion");
+    expect(prompt).not.toContain("first-time or new contributor");
+    expect(prompt).not.toContain("developing contributor with growing familiarity");
+    expect(prompt).not.toContain("core/senior contributor of this repository.");
+  });
+
+  test("degraded retry path keeps resolved established tier in rebuilt prompt output", async () => {
+    let searchCallCount = 0;
+
+    const { executeCount, prompt } = await runSingleAuthorTierEvent({
+      issuesAndPullRequests: async () => {
+        searchCallCount += 1;
+        throw {
+          status: 429,
+          message: "secondary rate limit",
+          response: {
+            headers: {
+              "retry-after": "0",
+            },
+            data: {
+              message: "You have exceeded a secondary rate limit",
+            },
+          },
+        };
+      },
+      contributorProfileStore: {
+        getByGithubUsername: async (login: string) => login === "octocat"
+          ? { id: "profile-1", overallTier: "established" }
+          : null,
+        getExpertise: async () => [],
+      } as never,
+    });
+
+    expect(searchCallCount).toBe(0);
+    expect(executeCount).toBe(1);
+    expect(prompt).toContain("The PR author (octocat) is an established contributor.");
+    expect(prompt).toContain("Keep explanations brief — one sentence on WHY, then the suggestion");
+    expect(prompt).not.toContain("first-time or new contributor");
+    expect(prompt).not.toContain("developing contributor with growing familiarity");
+    expect(prompt).not.toContain("## Search API Degradation Context");
   });
 
   test("records telemetry miss then hit across equivalent Search cache reuse", async () => {

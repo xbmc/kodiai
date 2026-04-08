@@ -104,14 +104,11 @@ OVERALL: PASS`;
 
 describe("validateVoiceMatch", () => {
   it("calls generateWithFallback with voice.validate task type", async () => {
-    // We test that the function calls taskRouter.resolve with the correct type
-    const mockResolve = mock(() => ({
-      modelId: "claude-sonnet-4-5-20250929",
-      provider: "anthropic",
-      sdk: "ai" as const,
-      fallbackModelId: "claude-sonnet-4-5-20250929",
-      fallbackProvider: "anthropic",
-    }));
+    // Stop at taskRouter.resolve so the test asserts the task type without
+    // entering the real LLM provider path.
+    const mockResolve = mock(() => {
+      throw new Error("test-stop-before-llm");
+    });
 
     const styleDescription: PageStyleDescription = {
       pageTitle: "Test Page",
@@ -135,7 +132,7 @@ describe("validateVoiceMatch", () => {
     try {
       await validateVoiceMatch(opts);
     } catch {
-      // Expected: generateWithFallback fails without real LLM provider
+      // Expected: test aborts before the real LLM path.
     }
 
     expect(mockResolve).toHaveBeenCalledWith("voice.validate");
