@@ -1802,15 +1802,15 @@ export function createMentionHandler(deps: {
           prDiffContext,
         });
 
-        // Cap max turns for read-only PR mentions.
-        // When the diff pre-fetch succeeds, 12 turns is usually enough.
-        // When it fails (shallow-clone merge-base issue, exit 128), the model needs
-        // to fall back to git tool calls and may need the full 25 turns.
-        // Use 20 as a middle ground: enough headroom for the tool-call fallback path
-        // while still capping worst-case cost vs write-mode and issue mentions.
-        const mentionMaxTurns = (!writeEnabled && mention.prNumber !== undefined)
-          ? (prDiffContext !== undefined ? 12 : 20)
-          : undefined; // undefined → falls through to config.maxTurns
+        // Cap max turns for read-only conversational PR mentions.
+        // Explicit `@kodiai review` requests should use the full review budget so
+        // large PRs do not terminate mid-tool-call before any publish step occurs.
+        const mentionMaxTurns =
+          explicitReviewRequest
+            ? undefined
+            : (!writeEnabled && mention.prNumber !== undefined)
+              ? (prDiffContext !== undefined ? 12 : 20)
+              : undefined; // undefined → falls through to config.maxTurns
 
         const reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined
           ? buildReviewOutputKey({

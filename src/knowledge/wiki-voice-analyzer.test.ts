@@ -155,7 +155,7 @@ describe("extractPageStyle", () => {
       }),
     );
 
-    const opts: VoiceAnalyzerOptions = {
+    const opts = {
       taskRouter: {
         resolve: mock(() => ({
           modelId: "claude-sonnet-4-5-20250929",
@@ -166,20 +166,17 @@ describe("extractPageStyle", () => {
         })),
       },
       logger: { child: () => ({ debug: () => {}, info: () => {}, warn: () => {}, error: () => {} }) } as any,
+      _generateWithFallbackFn: mockGenerateWithFallback,
+    } satisfies VoiceAnalyzerOptions & {
+      _generateWithFallbackFn: typeof mockGenerateWithFallback;
     };
 
-    // extractPageStyle calls generateWithFallback internally
-    // We can only test that it doesn't throw and returns valid structure
-    // Full integration test would require mocking the import
-    try {
-      await extractPageStyle(chunks, opts);
-    } catch {
-      // Expected to fail due to missing LLM provider in test env
-      // The important thing is that token budget logic runs before the LLM call
-    }
+    const result = await extractPageStyle(chunks, opts);
 
     // Verify taskRouter.resolve was called with voice.extract
     expect(opts.taskRouter.resolve).toHaveBeenCalledWith(TASK_TYPES.VOICE_EXTRACT);
+    expect(mockGenerateWithFallback).toHaveBeenCalledTimes(1);
+    expect(result.tokenCount).toBeLessThanOrEqual(3000);
   });
 });
 

@@ -165,7 +165,14 @@ export function createExecutor(deps: {
         };
 
         // Build allowed tools list
-        const isReadOnlyPrMention = isMentionEvent && !isWriteMode && context.prNumber !== undefined;
+        // Explicit review requests (`taskType=review.full`) run through the mention
+        // handler for trigger semantics, but they still need the broader review tool
+        // budget. Only conversational PR mentions keep the reduced tool surface.
+        const isReadOnlyPrMention =
+          isMentionEvent &&
+          !isWriteMode &&
+          context.prNumber !== undefined &&
+          taskType !== "review.full";
         const baseTools = isReadOnlyPrMention
           ? [
               "Read",

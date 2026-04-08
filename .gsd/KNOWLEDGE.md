@@ -741,3 +741,25 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 **Why it matters:** Store-layer code that passes bigint IDs through raw row objects can fail deterministic tests with type-only mismatches even though the persisted value is correct. The first post-S05 red in `src/knowledge/store.test.ts` was exactly this shape.
 
 **Established in:** M043/S05/T01 (`src/knowledge/store.test.ts`, `src/db/migrations/032-bigint-comment-ids.sql`).
+
+---
+
+## Explicit `@kodiai review` Must Use Review-Class Turns and Tools, Not Conversational Mention Caps (M043/S05)
+
+**Context:** The fresh production proof delivery `bab62150-3329-11f1-96a5-aecd0f6e5943` initially reproduced a pre-publish gap only because explicit PR review mentions inherited the read-only mention budget: the agent workspace showed `taskType: "review.full"` but `maxTurns: 12` plus the reduced mention tool set (`Read`, `Grep`, `Bash(git diff:*)`, `Bash(git status:*)`). A prior live run ended with `conclusion: "failure"`, `stopReason: "tool_use"`, and no publish markers because the agent exhausted the conversational mention budget before it could publish.
+
+**Rule:** When `mention.ts` promotes a PR mention to `taskType="review.full"`, it must also inherit the **full review execution budget**:
+- `maxTurnsOverride` must be `undefined` so executor falls back to repo-config `maxTurns` (currently 25), not the 12/20 turn mention cap.
+- Executor must not classify that run as a reduced-tool "read-only PR mention". Explicit review mentions need the normal review tool surface (`Glob`, `Bash(git log:*)`, `Bash(git show:*)`, etc.), not the conversational mention subset.
+
+**Operational proof:** After deploying this fix to revision `ca-kodiai--0000076`, the next fresh explicit review delivery on PR #80 completed with:
+- `reviewOutputPublicationState=publish`
+- `publishResolution=approval-bridge`
+- GitHub review `@kodiai[bot]: APPROVED`
+- `result.json` showing `conclusion: "success"`, `stopReason: "end_turn"`
+
+**Testing pattern:**
+- In `src/handlers/mention.test.ts`, capture `maxTurnsOverride` for `@kodiai review` and assert it is `undefined`.
+- In `src/execution/executor.test.ts`, assert explicit review mentions (`eventType="issue_comment.created"`, `taskType="review.full"`, PR context) write `agent-config.json` with repo-config `maxTurns` and the full review tool set, while conversational mention requests still get the reduced tool set.
+
+**Established in:** M043/S05 post-close remediation (`src/handlers/mention.ts`, `src/execution/executor.ts`).

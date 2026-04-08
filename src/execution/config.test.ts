@@ -1050,7 +1050,7 @@ test("default config has knowledge.embeddings with correct defaults", async () =
   try {
     const { config, warnings } = await loadRepoConfig(dir);
     expect(config.knowledge.embeddings.enabled).toBe(true);
-    expect(config.knowledge.embeddings.model).toBe("voyage-code-3");
+    expect(config.knowledge.embeddings.model).toBe("voyage-4");
     expect(config.knowledge.embeddings.dimensions).toBe(1024);
     expect(warnings).toEqual([]);
   } finally {
@@ -1113,7 +1113,7 @@ test("backward compat: knowledge.shareGlobal: true still parses without error", 
     // sharing and embeddings should still have defaults
     expect(config.knowledge.sharing.enabled).toBe(false);
     expect(config.knowledge.embeddings.enabled).toBe(true);
-    expect(config.knowledge.embeddings.model).toBe("voyage-code-3");
+    expect(config.knowledge.embeddings.model).toBe("voyage-4");
     expect(warnings).toEqual([]);
   } finally {
     await rm(dir, { recursive: true });

@@ -76,16 +76,17 @@ async function loadEmbeddingAuditModule(): Promise<EmbeddingAuditModule> {
 }
 
 describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => {
-  test("locks six-corpus audit math, wiki-vs-non-wiki model rules, unsupported stale semantics, and code_snippet_occurrences diagnostics", async () => {
+  test("locks seven-corpus audit math, wiki-vs-non-wiki model rules, unsupported stale semantics, and code_snippet_occurrences diagnostics", async () => {
     const module = await loadEmbeddingAuditModule();
 
     expect(module.EXPECTED_CORPUS_MODELS).toEqual({
-      learning_memories: "voyage-code-3",
-      review_comments: "voyage-code-3",
+      learning_memories: "voyage-4",
+      review_comments: "voyage-4",
       wiki_pages: "voyage-context-3",
-      code_snippets: "voyage-code-3",
-      issues: "voyage-code-3",
-      issue_comments: "voyage-code-3",
+      code_snippets: "voyage-4",
+      issues: "voyage-4",
+      issue_comments: "voyage-4",
+      canonical_code: "voyage-4",
     });
 
     const report = module.buildEmbeddingAuditReport({
@@ -96,28 +97,28 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
           missing_or_null: 0,
           stale: 1,
           stale_support: "supported",
-          actual_model_counts: { "voyage-code-3": 5 },
+          actual_model_counts: { "voyage-4": 5 },
         },
         review_comments: {
           total: 4,
           missing_or_null: 1,
           stale: 0,
           stale_support: "supported",
-          actual_model_counts: { "voyage-code-3": 3 },
+          actual_model_counts: { "voyage-4": 3 },
         },
         wiki_pages: {
           total: 3,
           missing_or_null: 0,
           stale: 0,
           stale_support: "supported",
-          actual_model_counts: { "voyage-code-3": 3 },
+          actual_model_counts: { "voyage-4": 3 },
         },
         code_snippets: {
           total: 6,
           missing_or_null: 0,
           stale: 0,
           stale_support: "supported",
-          actual_model_counts: { "voyage-code-3": 6 },
+          actual_model_counts: { "voyage-4": 6 },
           occurrence_diagnostics: {
             occurrence_rows: 4,
             snippets_without_occurrences: 2,
@@ -127,13 +128,20 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
           total: 2,
           missing_or_null: 0,
           stale_support: "not_supported",
-          actual_model_counts: { "voyage-code-3": 2 },
+          actual_model_counts: { "voyage-4": 2 },
         },
         issue_comments: {
           total: 7,
           missing_or_null: 2,
           stale_support: "not_supported",
-          actual_model_counts: { "voyage-code-3": 5 },
+          actual_model_counts: { "voyage-4": 5 },
+        },
+        canonical_code: {
+          total: 8,
+          missing_or_null: 0,
+          stale: 0,
+          stale_support: "supported",
+          actual_model_counts: { "voyage-4": 8 },
         },
       },
     });
@@ -146,6 +154,7 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
       "code_snippets",
       "issues",
       "issue_comments",
+      "canonical_code",
     ]);
     expect(report.overall_status).toBe("fail");
     expect(report.overall_severity).toBe("critical");
@@ -158,8 +167,8 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale: 1,
         stale_support: "supported",
         model_mismatch: 0,
-        expected_model: "voyage-code-3",
-        actual_models: ["voyage-code-3"],
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
         status: "warn",
         severity: "warning",
       }),
@@ -170,8 +179,8 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale: 0,
         stale_support: "supported",
         model_mismatch: 0,
-        expected_model: "voyage-code-3",
-        actual_models: ["voyage-code-3"],
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
         status: "fail",
         severity: "critical",
       }),
@@ -183,7 +192,7 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale_support: "supported",
         model_mismatch: 3,
         expected_model: "voyage-context-3",
-        actual_models: ["voyage-code-3"],
+        actual_models: ["voyage-4"],
         status: "fail",
         severity: "critical",
       }),
@@ -194,8 +203,8 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale: 0,
         stale_support: "supported",
         model_mismatch: 0,
-        expected_model: "voyage-code-3",
-        actual_models: ["voyage-code-3"],
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
         status: "warn",
         severity: "warning",
         occurrence_diagnostics: {
@@ -210,8 +219,8 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale: 0,
         stale_support: "not_supported",
         model_mismatch: 0,
-        expected_model: "voyage-code-3",
-        actual_models: ["voyage-code-3"],
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
         status: "pass",
         severity: "info",
       }),
@@ -222,10 +231,22 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         stale: 0,
         stale_support: "not_supported",
         model_mismatch: 0,
-        expected_model: "voyage-code-3",
-        actual_models: ["voyage-code-3"],
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
         status: "fail",
         severity: "critical",
+      }),
+      expect.objectContaining({
+        corpus: "canonical_code",
+        total: 8,
+        missing_or_null: 0,
+        stale: 0,
+        stale_support: "supported",
+        model_mismatch: 0,
+        expected_model: "voyage-4",
+        actual_models: ["voyage-4"],
+        status: "pass",
+        severity: "info",
       }),
     ]);
   });
@@ -242,6 +263,7 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
         "code_snippets",
         "issues",
         "issue_comments",
+        "canonical_code",
       ],
       overall_status: "fail",
       overall_severity: "critical",
@@ -254,7 +276,7 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
           stale_support: "supported",
           model_mismatch: 3,
           expected_model: "voyage-context-3",
-          actual_models: ["voyage-code-3"],
+          actual_models: ["voyage-4"],
           status: "fail",
           severity: "critical",
         },
@@ -265,8 +287,8 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
           stale: 0,
           stale_support: "not_supported",
           model_mismatch: 0,
-          expected_model: "voyage-code-3",
-          actual_models: ["voyage-code-3"],
+          expected_model: "voyage-4",
+          actual_models: ["voyage-4"],
           status: "fail",
           severity: "critical",
         },
@@ -276,7 +298,7 @@ describe("embedding audit contract for src/knowledge/embedding-audit.ts", () => 
     expect(rendered).toContain("overall_status: fail");
     expect(rendered).toContain("wiki_pages");
     expect(rendered).toContain("expected_model=voyage-context-3");
-    expect(rendered).toContain("actual_models=voyage-code-3");
+    expect(rendered).toContain("actual_models=voyage-4");
     expect(rendered).toContain("issue_comments");
     expect(rendered).toContain("stale=not_supported");
     expect(rendered).not.toContain("issue_comments stale=0 supported");

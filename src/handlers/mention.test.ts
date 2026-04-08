@@ -7465,6 +7465,7 @@ describe("createMentionHandler review command", () => {
     let capturedTaskType: string | undefined;
     let capturedReviewOutputKey: string | undefined;
     let capturedTriggerBody: string | undefined;
+    let capturedMaxTurnsOverride: number | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -7522,10 +7523,11 @@ describe("createMentionHandler review command", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async (ctx: { taskType?: string; reviewOutputKey?: string; triggerBody?: string }) => {
+        execute: async (ctx: { taskType?: string; reviewOutputKey?: string; triggerBody?: string; maxTurnsOverride?: number }) => {
           capturedTaskType = ctx.taskType;
           capturedReviewOutputKey = ctx.reviewOutputKey;
           capturedTriggerBody = ctx.triggerBody;
+          capturedMaxTurnsOverride = ctx.maxTurnsOverride;
           return {
             conclusion: "success",
             published: true,
@@ -7554,6 +7556,7 @@ describe("createMentionHandler review command", () => {
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("review");
+    expect(capturedMaxTurnsOverride).toBeUndefined();
 
     await workspaceFixture.cleanup();
   });

@@ -12,9 +12,9 @@ Automated, high-signal code review on every PR — findings land in a structured
 
 The full review stack is deployed: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant, write-mode agent execution, MCP tooling, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-M043 is still open, but all five slices are now complete. S01 restored truthful explicit `@kodiai review` publication wiring in production, S02 hardened publish-failure diagnostics and deploy safety, S03 rebased PR #80 onto current `origin/main`, backported the approved mention/idempotency hotfix surface, aligned deploy/runbook docs to the live ACA contract, and removed tracked `.gsd` review noise from the branch surface, and S04 closed the remaining deterministic PR review findings on the cleaned branch.
+M043 is functionally repaired but not fully closed. The local deterministic workflow contract is green again on `pr/multi-m035-m042-clean`: `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test` passes and `bunx tsc --noEmit` passes after the BIGINT comment-id normalization, voyage-4 contract refreshes, embedding sweep model fix, and deterministic wiki style test seam landed. Production explicit `@kodiai review` is also restored on the newly deployed revision `ca-kodiai--0000076`: fresh delivery `bab62150-3329-11f1-96a5-aecd0f6e5943` reached `taskType="review.full"`, emitted `reviewOutputPublicationState=publish`, ended with `publishResolution="approval-bridge"`, and produced one fresh `@kodiai[bot]` approval review on PR #80.
 
-S05 reran the final closeout proof lanes on current state and converted the result into blocker-grade evidence. The deterministic CI-shaped lane still fails under the exact workflow DB contract (`DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`) with 11 red tests; the first blocker is `KnowledgeStore > recordFindings persists deterministic comment linkage fields`, where raw SQL readback of migrated BIGINT comment IDs now returns string values. `bunx tsc --noEmit` passes. The live production explicit-mention lane is also still red: the active revision `ca-kodiai--hotfix-125330` passes `/healthz` and `/readiness`, and delivery `66b4ee50-32bc-11f1-9eeb-89b961f025e8` reaches `taskType=review.full` and ACA job completion, but no `reviewOutputKey`, no publish-path rows, and no GitHub-visible review outcome are emitted. PR #80 remains open/dirty with a failing `test` check. Milestone closure is blocked until both proof lanes are green.
+The remaining gap is branch synchronization, not runtime behavior. `git status --short --branch` shows the local PR branch is divergent from `origin/pr/multi-m035-m042-clean` (`ahead 28, behind 9`) with the repaired files still local-only, so PR #80 on GitHub still shows a stale failing `test` check. Until that branch is reconciled and pushed, milestone M043 should remain in `needs-attention` rather than complete.
 
 ## Architecture / Key Patterns
 
@@ -24,8 +24,8 @@ S05 reran the final closeout proof lanes on current state and converted the resu
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, uses `src/handlers/review-idempotency.ts` for marker-based skip detection, and classifies terminal publish outcomes such as `skip-existing-output`, `idempotency-skip`, and `duplicate-suppressed`.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; the operator runbook uses `ContainerAppConsoleLogs_CL` queries keyed on `taskType=review.full`, `reviewOutputKey`, and publish-resolution logs.
-- **Review output truthfulness:** Structural evidence, author-tier messaging, and Review Details metadata are rendered from shared contracts rather than duplicated literals so degraded or partial states are expressed truthfully.
-- **Final closeout proof pattern:** Deterministic milestone-close reruns use the workflow DATABASE_URL exactly, then `bun test --bail=1` to anchor the first blocker. Live proof uses active revision + `/healthz` + `/readiness` + `deliveryId` + exact `reviewOutputKey` + publish-path row presence/absence as the authoritative chain.
+- **Workspace artifact debugging:** When a live ACA execution succeeds but the app has not yet emitted terminal publish logs, inspect Azure Files workspace artifacts (`agent-config.json`, `agent-diagnostics.log`, `result.json`) before guessing at handler behavior.
+- **Explicit review mention budget rule:** PR mentions promoted to `taskType="review.full"` must inherit repo-config `maxTurns` and the full review tool surface. Conversational mention caps are for `mention.response`, not explicit review.
 
 ## Capability Contract
 
@@ -39,4 +39,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Publish Failure Hardening and Deploy Safety
   - [x] S03: Backport Hotfixes onto PR #80
   - [x] S04: Finish PR #80 Review Fixes
-  - [x] S05: Final Production and PR Proof — final proof reruns are complete, but milestone closure remains blocked on the still-red deterministic lane and the still-red live explicit-mention publish lane.
+  - [x] S05: Final Production and PR Proof — local deterministic proof and live production mention proof are both green, but the remote PR branch and GitHub `test` check are still stale until the repaired branch is reconciled and pushed.

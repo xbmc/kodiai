@@ -367,7 +367,10 @@ function createTestableExecutor(deps: {
         const timeoutMs = timeoutSeconds * 1000;
 
         const getOctokit = () => githubApp.getInstallationOctokit(context.installationId);
-        const isMentionEvent = false;
+        const isMentionEvent =
+          context.eventType === "issue_comment.created" ||
+          context.eventType === "pull_request_review_comment.created" ||
+          context.eventType === "pull_request_review.submitted";
         const isWriteMode = context.writeMode === true;
         const enableInlineTools = isMentionEvent || isWriteMode ? false : (context.enableInlineTools ?? true);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
@@ -388,7 +391,14 @@ function createTestableExecutor(deps: {
           enableCommentTools,
         });
 
-        const baseTools = ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"];
+        const isReadOnlyPrMention =
+          isMentionEvent &&
+          !isWriteMode &&
+          context.prNumber !== undefined &&
+          taskType !== "review.full";
+        const baseTools = isReadOnlyPrMention
+          ? ["Read", "Grep", "Bash(git diff:*)", "Bash(git status:*)"]
+          : ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
         const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
@@ -963,6 +973,84 @@ test("ACA dispatch: CLAUDE.md written to workspace dir before launch", async () 
   expect(claudeMdExistedAtLaunch).toBe(true);
   const claudeMd = await readFile(join(tmpDir!, "CLAUDE.md"), "utf-8");
   expect(claudeMd).toContain("Security Policy");
+});
+
+test("ACA dispatch: explicit review mention keeps full review toolset and config maxTurns", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-explicit-review-mention" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  await executor.execute(
+    makeContext(tmpDir!, {
+      eventType: "issue_comment.created",
+      prNumber: 80,
+      taskType: "review.full",
+    }),
+  );
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    maxTurns: number;
+    allowedTools: string[];
+    taskType: string;
+  };
+
+  expect(agentConfig.taskType).toBe("review.full");
+  expect(agentConfig.maxTurns).toBe(25);
+  expect(agentConfig.allowedTools).toContain("Glob");
+  expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
+});
+
+test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-pr-mention" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  await executor.execute(
+    makeContext(tmpDir!, {
+      eventType: "issue_comment.created",
+      prNumber: 80,
+      taskType: "mention.response",
+    }),
+  );
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    allowedTools: string[];
+    taskType: string;
+  };
+
+  expect(agentConfig.taskType).toBe("mention.response");
+  expect(agentConfig.allowedTools).not.toContain("Glob");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git show:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
 });
 
 test("createExecutor signature: accepts config and mcpJobRegistry", () => {

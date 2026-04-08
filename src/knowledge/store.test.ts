@@ -151,7 +151,7 @@ describe("KnowledgeStore", () => {
     const [finding] = await sql`
       SELECT comment_id, comment_surface, review_output_key FROM findings WHERE review_id = ${reviewId}
     `;
-    expect(finding!.comment_id).toBe(1234);
+    expect(Number(finding!.comment_id)).toBe(1234);
     expect(finding!.comment_surface).toBe("pull_request_review_comment");
     expect(finding!.review_output_key).toBe("kodiai-review-output:v1:test");
   });

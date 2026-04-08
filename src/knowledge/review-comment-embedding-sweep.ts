@@ -87,7 +87,11 @@ export async function sweepNullEmbeddings(
         }
 
         if (!dryRun) {
-          await store.updateEmbedding(chunk.id, result.embedding, EMBEDDING_MODEL);
+          await store.updateEmbedding(
+            chunk.id,
+            result.embedding,
+            result.model || embeddingProvider.model || EMBEDDING_MODEL,
+          );
         }
         succeeded++;
       } catch (err: unknown) {
