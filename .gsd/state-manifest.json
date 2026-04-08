@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-08T00:51:33.819Z",
+  "exported_at": "2026-04-08T01:28:10.374Z",
   "milestones": [
     {
       "id": "M001",
@@ -5658,16 +5658,16 @@
       "milestone_id": "M043",
       "id": "S04",
       "title": "Finish PR #80 Review Fixes",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [
         "S03"
       ],
       "demo": "After this, the remaining concrete PR review findings are addressed on the synced branch and the targeted verification suite passes.",
       "created_at": "2026-04-07T20:57:19.116Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-08T00:57:54.313Z",
+      "full_summary_md": "---\nid: S04\nparent: M043\nmilestone: M043\nprovides:\n  - A clean PR #80 branch with the remaining deterministic review findings resolved and targeted proof green.\n  - Durable regression coverage for structural prompt truthfulness, capped generated-rule counts, and locale-sensitive canonical backfill resume ordering.\n  - Preserved deploy/debug proof strings that S05 can reuse for final live verification.\nrequires:\n  - slice: S03\n    provides: The rebased PR #80 branch plus preserved deploy/runbook proof surfaces for explicit mention-review diagnostics.\naffects:\n  - S05\nkey_files:\n  - src/execution/review-prompt.ts\n  - src/execution/review-prompt.test.ts\n  - src/contributor/tier-calculator.test.ts\n  - src/knowledge/active-rules.test.ts\n  - src/knowledge/canonical-code-backfill.test.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Mirror the structural-impact prompt status from `structuralImpact.status` instead of duplicating a hardcoded `evidence-present` label.\n  - Close the remaining PR review comments with targeted regression coverage when production behavior is already correct, rather than reopening unrelated code paths.\npatterns_established:\n  - Shared prompt truth labels should be derived from the payload contract and asserted at each rendered section, not copied as independent literals.\n  - When a bounded fetch intentionally requests `limit + 1` rows to detect capping, tests should prove the returned count as a lower bound instead of asserting an exact total.\n  - Resume/checkpoint tests that depend on path ordering should include non-ASCII filenames and derive expectations with the same `localeCompare()` logic production uses.\nobservability_surfaces:\n  - `deploy.sh` still exposes active revision plus `/healthz` and `/readiness` deploy proof output.\n  - `docs/runbooks/review-requested-debug.md` still carries `ContainerAppConsoleLogs_CL` queries keyed on `taskType=review.full` and publish-resolution states.\ndrill_down_paths:\n  - .gsd/milestones/M043/slices/S04/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M043/slices/S04/tasks/T02-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-08T00:57:54.313Z\nblocker_discovered: false\n---\n\n# S04: Finish PR #80 Review Fixes\n\n**Closed the remaining deterministic PR #80 review findings by fixing structural-impact prompt truthfulness, hardening edge-case regression coverage, and preserving the inherited deploy/debug proof surfaces for the cleaned branch.**\n\n## What Happened\n\nS04 was a cleanup-and-proof slice on the rebased PR #80 branch. The only live code defect among the remaining review comments was in `src/execution/review-prompt.ts`: the structural-impact prompt section always emitted `evidence-present` even when the bounded structural payload was already marked `status: \"partial\"`. The fix stayed local to the prompt helper, deriving the structural section status from `structuralImpact.status` so the structural-evidence section and the breaking-change instructions now speak the same truth. The paired prompt tests were tightened to assert on the structural section itself while preserving the rendered caller/file/test/unchanged-evidence counters.\n\nThe rest of the slice closed stale or misleading PR review comments without reopening already-correct production paths. `src/contributor/tier-calculator.test.ts` now names the absent-profile case truthfully around its `.not.toThrow()` assertion. `src/knowledge/active-rules.test.ts` now proves the capped `totalActive` lower-bound contract created by the fetch-one-extra implementation in `getActiveRulesForPrompt()`. `src/knowledge/canonical-code-backfill.test.ts` now covers resume ordering with non-ASCII file names so the `localeCompare()` checkpoint path is explicit rather than implied by ASCII-only fixtures.\n\nTo preserve the S03 operator contract while cleaning up PR #80, the slice reran the deploy/runbook proof-surface grep across `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md`. That confirmed the active-revision, `/healthz`, `/readiness`, ACA job env, Log Analytics table, and publish-resolution strings still exist on the branch surface that S05 will use for final live proof.\n\n## Verification\n\n- `bun test ./src/execution/review-prompt.test.ts` — passed (212/212), including direct structural-section partial-evidence assertions.\n- `bun run verify:m038:s02` — passed with `overallPassed=true`; both C++ and Python structural-impact rendering checks stayed green.\n- `bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts` — passed (30/30), covering truthful test naming, capped `totalActive` lower-bound semantics, and non-ASCII resume ordering.\n- `rg -n 'ACA_JOB_IMAGE|ACA_JOB_NAME|ACA_RESOURCE_GROUP|MCP_INTERNAL_BASE_URL|/healthz|/readiness|active revision|ContainerAppConsoleLogs_CL|taskType=review.full|skip-existing-output|idempotency-skip|duplicate-suppressed' deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md` — matched all required deploy/debug proof strings.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThis slice is deterministic branch cleanup and proof only. It does not rerun a live production `@kodiai review` or a final end-to-end PR #80 proof after cleanup; those live checks remain for S05. The deploy/runbook grep confirms the operator strings are still present on the branch, not that the currently deployed ACA revision has already been re-proven.\n\n## Follow-ups\n\nS05 should use the cleaned PR #80 branch to rerun final targeted PR verification and the live production explicit-mention proof path, using the preserved deploy and runbook surfaces as the operator checklist.\n\n## Files Created/Modified\n\n- `src/execution/review-prompt.ts` — Derived the structural-impact section status from `structuralImpact.status` so partial payloads render `partial-evidence` instead of overstating `evidence-present`.\n- `src/execution/review-prompt.test.ts` — Added direct structural-section truthfulness coverage for partial structural impact while preserving rendered evidence counters.\n- `src/contributor/tier-calculator.test.ts` — Renamed the absent-profile `calculateTierForProfile` case so the test title matches the `.not.toThrow()` assertion.\n- `src/knowledge/active-rules.test.ts` — Added a capped-path regression that proves `totalActive` is the lower-bound `effectiveLimit + 1` count when prompt injection is capped.\n- `src/knowledge/canonical-code-backfill.test.ts` — Extended the git-backed resume test with non-ASCII filenames to lock `localeCompare()` checkpoint ordering.\n- `.gsd/KNOWLEDGE.md` — Captured the capped active-rules count contract and the locale-sensitive canonical backfill resume-ordering rule for future agents.\n",
+      "full_uat_md": "# S04: Finish PR #80 Review Fixes — UAT\n\n**Milestone:** M043\n**Written:** 2026-04-08T00:57:54.314Z\n\n# S04: Finish PR #80 Review Fixes — UAT\n\n**Milestone:** M043\n**Written:** 2026-04-05\n\n## UAT Type\n\n- UAT mode: artifact-driven\n- Why this mode is sufficient: This slice changes prompt truthfulness, deterministic regression coverage, and preserved operator proof strings on the cleaned PR branch; it does not introduce a new live runtime path that needs interactive exercising.\n\n## Preconditions\n\n- Repository is checked out at the S04 completion state.\n- Bun dependencies are installed.\n- Commands are run from the repository root.\n\n## Smoke Test\n\nRun:\n\n```bash\nbun run verify:m038:s02\n```\n\n**Expected:** The verifier prints `overallPassed=true` and both structural-impact rendering checks pass for the C++ and Python scenarios.\n\n## Test Cases\n\n### 1. Structural-impact prompt status stays truthful for partial evidence\n\n1. Run:\n   ```bash\n   bun test ./src/execution/review-prompt.test.ts\n   ```\n2. Inspect the output for the named tests:\n   - `buildReviewPrompt graph context integration > structural impact section calls out partial evidence truthfully`\n   - `buildReviewPrompt graph context integration > breaking-change instructions call out partial structural evidence truthfully`\n3. **Expected:** The suite passes with zero failures, and the named tests confirm that a `status: \"partial\"` structural payload renders `partial-evidence` rather than `evidence-present`.\n\n### 2. Structural-impact proof harness still passes end to end\n\n1. Run:\n   ```bash\n   bun run verify:m038:s02\n   ```\n2. Review the output for:\n   - `M038-S02-CPP-REVIEW-DETAILS-STRUCTURAL-IMPACT: PASS`\n   - `M038-S02-PYTHON-BREAKING-CHANGE-EVIDENCE: PASS`\n3. **Expected:** `overallPassed=true`, both checks pass, and the verifier reports rendered structural-impact sections plus preserved caller/file/test counts.\n\n### 3. Remaining PR review comments are closed with truthful targeted regressions\n\n1. Run:\n   ```bash\n   bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts\n   ```\n2. Confirm the output includes the named cases:\n   - `calculateTierForProfile > does not throw when the target profile is absent from the existing scores list`\n   - `getActiveRulesForPrompt > reports capped totalActive as the lower-bound count fetched past the effective limit`\n   - `backfillCanonicalCodeSnapshot > resumes from stored lastFilePath using localeCompare ordering, including non-ASCII filenames, when the commit sha still matches`\n3. **Expected:** All three files pass with zero failures. The tier test title matches its assertion, the active-rules test proves the lower-bound capped-count contract, and the canonical backfill test proves resume behavior with non-ASCII filenames.\n\n### 4. Deploy and runbook proof surfaces survived PR cleanup\n\n1. Run:\n   ```bash\n   rg -n 'ACA_JOB_IMAGE|ACA_JOB_NAME|ACA_RESOURCE_GROUP|MCP_INTERNAL_BASE_URL|/healthz|/readiness|active revision|ContainerAppConsoleLogs_CL|taskType=review.full|skip-existing-output|idempotency-skip|duplicate-suppressed' deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md\n   ```\n2. Check that matches are returned from all three files.\n3. **Expected:** The output still includes the ACA job env vars, active revision wording, `/healthz` and `/readiness`, the Log Analytics table name, `taskType=review.full`, and the explicit publish-resolution states `skip-existing-output`, `idempotency-skip`, and `duplicate-suppressed`.\n\n## Edge Cases\n\n### Partial structural payload must not overstate certainty\n\n1. Run the full `review-prompt.test.ts` suite.\n2. **Expected:** The structural-impact section test passes only when the rendered status line says `partial-evidence`; any reappearance of `evidence-present` for partial payloads is a failure.\n\n### Capped generated-rule fetch returns a lower bound, not an exact total\n\n1. Run the targeted active-rules test file.\n2. **Expected:** The capped-path regression proves `totalActive === effectiveLimit + 1` when one extra row is fetched, while only `effectiveLimit` rules are injected into the prompt.\n\n### Resume ordering remains correct with accented file names\n\n1. Run the targeted canonical backfill test file.\n2. **Expected:** Only files whose `localeCompare()` ordering falls after `lastFilePath` are reprocessed, even when file names contain accented characters such as `éclair.ts` or `ångström.ts`.\n\n## Failure Signals\n\n- `bun run verify:m038:s02` prints `overallPassed=false` or any `FAIL` check.\n- `review-prompt.test.ts` fails the structural-section or breaking-change partial-evidence tests.\n- `active-rules.test.ts` stops proving the lower-bound capped-count behavior.\n- `canonical-code-backfill.test.ts` fails the non-ASCII resume case.\n- The deploy/runbook grep returns no matches for any of the required proof strings.\n\n## Requirements Proved By This UAT\n\n- none — this slice closes deterministic PR review findings and preserves branch proof surfaces, but it does not change status for any currently tracked requirement in `.gsd/REQUIREMENTS.md`.\n\n## Not Proven By This UAT\n\n- Live production explicit-mention review publication after branch cleanup.\n- Final PR #80 end-to-end proof on the deployed ACA revision.\n- Operator proof that the currently deployed environment still satisfies the preserved deploy/runbook strings in practice.\n\n## Notes for Tester\n\nUse the named tests and verifier checks as the authoritative signals if raw test counts change later. The grep step is intentionally a branch-surface preservation check, not a substitute for the live production proof that S05 still needs to run.\n",
       "goal": "Resolve the remaining concrete PR #80 review findings on the cleaned branch by fixing the shared prompt truthfulness bug, closing the remaining misleading or stale review comments with targeted proof, and preserving the deploy/runbook proof surfaces inherited from S03.",
       "success_criteria": "## Must-Haves\n\n- `src/execution/review-prompt.ts` renders a truthful structural-impact status line: `partial-evidence` when `structuralImpact.status === \"partial\"`, `evidence-present` otherwise.\n- `src/execution/review-prompt.test.ts` directly asserts the structural-impact section’s partial-status wording instead of relying only on the breaking-change section.\n- The remaining PR-review cleanup is narrow and truthful: the misleading `calculateTierForProfile` test name is fixed, `src/knowledge/active-rules.test.ts` proves capped `totalActive` semantics, and `src/knowledge/canonical-code-backfill.test.ts` guards resume ordering with non-ASCII filenames.\n- R011 stays preserved on the rebased PR branch: `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md` still expose the live ACA proof URLs, launch-contract strings, and operator diagnostics from S03.\n\n## Requirement Impact\n\n- **Requirements touched**: R011\n- **Re-verify**: `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md` still expose ACA launch-contract keys, proof URLs, log table names, and publish-resolution strings after the PR review fixes land.\n- **Decisions revisited**: D050, D051\n\n## Verification\n\n- `bun test ./src/execution/review-prompt.test.ts ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts`\n- `bun run verify:m038:s02`\n- `bun run verify:m042:s02`\n- `bun run verify:m042:s03`\n- `rg -n 'ACA_JOB_IMAGE|ACA_JOB_NAME|ACA_RESOURCE_GROUP|MCP_INTERNAL_BASE_URL|/healthz|/readiness|active revision|ContainerAppConsoleLogs_CL|taskType=review.full|skip-existing-output|idempotency-skip|duplicate-suppressed' deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md`",
       "proof_level": "- This slice proves: contract\n- Real runtime required: no\n- Human/UAT required: no",
@@ -5691,11 +5691,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Prove the assembled production repair and PR cleanup together so both the deployed bot and the cleaned public branch are trustworthy.",
-      "success_criteria": "- A fresh live explicit PR mention review still publishes the expected outcome after the PR cleanup work is complete.\n- PR #80 verification artifacts show the remaining fixes are in place and passing.\n- Milestone closure evidence cites live publish proof plus branch verification, not only unit tests.",
-      "proof_level": "End-to-end live production exercise plus final PR verifier sweep.",
-      "integration_closure": "Confirms the deployed app, the GitHub publication path, and the cleaned PR branch remain aligned at the end of the milestone.",
-      "observability_impact": "Captures final proof signals and confirms no ambiguity remains in the explicit mention-review publish path.",
+      "goal": "Re-run the final deterministic PR #80 proof lane and the live production explicit-mention proof lane against current state so M043 closes on observed evidence or stops on one precise blocker.",
+      "success_criteria": "## Must-Haves\n\n- Reproduce the exact GitHub `test` job contract from `.github/workflows/ci.yml` against a local `pgvector/pgvector:pg17` Postgres instance and the workflow `DATABASE_URL`, not the ambient shell environment.\n- Leave PR #80 with either a green CI-shaped verdict or one concrete first blocker localized to a specific suite/assertion with no shell-env ambiguity.\n- Prove the production explicit `@kodiai review` lane with the existing surfaces only: active ACA revision + probes, `deliveryId`, `reviewOutputKey`, `publishResolution`, and one GitHub-visible outcome for the proven delivery.\n- Write closure-ready evidence that records the exact commands run, the current GitHub PR state, the live-delivery correlation chain, and whether M043 was validated/completed or explicitly blocked.\n\n## Threat Surface\n\n- **Abuse**: Reusing a stale delivery or ignoring idempotency could produce duplicate GitHub-visible review output; rerunning `bun test` under the wrong `DATABASE_URL` could create a false-green or false-red milestone verdict.\n- **Data exposure**: GitHub PR comments/reviews and `ContainerAppConsoleLogs_CL` rows are inspectable proof surfaces; never copy auth material, secrets, or Azure tokens into summaries.\n- **Input trust**: GitHub comment bodies, PR state, delivery headers, Log Analytics rows, and shell env are all untrusted until correlated across source, runtime, and GitHub-visible output.\n\n## Verification\n\n- `docker compose up -d postgres`\n- `bun install`\n- `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`\n- `bunx tsc --noEmit`\n- Manual review — one authorized explicit-review delivery is correlated through GitHub plus `ContainerAppConsoleLogs_CL`, reaches `taskType=review.full`, produces exactly one GitHub-visible outcome, and ends with `Mention execution completed` carrying the matching `reviewOutputKey` and truthful `publishResolution`.\n- `test -s .gsd/milestones/M043/slices/S05/S05-SUMMARY.md`",
+      "proof_level": "- This slice proves: final-assembly\n- Real runtime required: yes\n- Human/UAT required: yes — a fresh explicit `@kodiai review` trigger is an outward-facing GitHub action, so auto-mode must use an already-authorized trigger or stop with a blocker instead of inventing one.",
+      "integration_closure": "- Upstream surfaces consumed: `.github/workflows/ci.yml`, `docker-compose.yml`, `src/handlers/mention.ts`, `src/handlers/review-idempotency.ts`, `docs/runbooks/review-requested-debug.md`, `deploy.sh`, `docs/deployment.md`\n- New wiring introduced in this slice: none — S05 proves the assembled branch and live deployment without adding a new mention verifier or alternate publish path\n- What remains before the milestone is truly usable end-to-end: nothing if the CI-shaped PR lane and live explicit-mention lane both pass; otherwise only the exact blocker captured in `S05-SUMMARY.md`",
+      "observability_impact": "- Runtime signals: active ACA revision, `/healthz`, `/readiness`, `deliveryId`, `reviewOutputKey`, `publishResolution`, `Mention execution completed`, and the current PR #80 GitHub check/comment state\n- Inspection surfaces: `.github/workflows/ci.yml`, `docker-compose.yml`, `github_prs view/checks 80`, `github_comments list 80`, `docs/runbooks/review-requested-debug.md`, and Log Analytics `ContainerAppConsoleLogs_CL`\n- Failure visibility: first failing CI suite/assertion, missing delivery, absent publish-path rows, mismatched `reviewOutputKey`, or a terminal `publishResolution` that lands on fallback/failure\n- Redaction constraints: record delivery IDs, revision names, URLs, and public PR output; never echo secrets, tokens, or full credential-bearing command output",
       "sequence": 0,
       "replan_triggered_at": null
     }
@@ -10792,6 +10792,150 @@
       "observability_impact": "- Signals added/changed: regression assertions for capped active-rule counts and non-ASCII resume ordering, plus preserved deploy/runbook proof-surface grep coverage\n- How a future agent inspects this: rerun the three focused unit files and the deploy/docs grep gate\n- Failure state exposed: misleading review wording, capped-count drift, locale-order resume drift, or missing operator proof strings fail with file-local assertions or grep output",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M043",
+      "slice_id": "S05",
+      "id": "T01",
+      "title": "Reproduced PR #80 against the workflow DB contract, fixed the first timeouty voice-validator test, and stopped on the next precise blocker in KnowledgeStore bigint comment IDs.",
+      "status": "complete",
+      "one_liner": "Reproduced PR #80 against the workflow DB contract, fixed the first timeouty voice-validator test, and stopped on the next precise blocker in KnowledgeStore bigint comment IDs.",
+      "narrative": "Started the local pgvector Postgres service from docker-compose.yml and ran the deterministic lane against the workflow DATABASE_URL (postgresql://kodiai:kodiai@localhost:5432/kodiai), not the ambient shell environment. `bun install` was clean. The first full `bun test` run failed with 12 reds. I localized the first failure to `src/knowledge/wiki-voice-validator.test.ts`, where the `validateVoiceMatch > calls generateWithFallback with voice.validate task type` assertion timed out because the test entered the real LLM/provider path. I fixed that bounded test-only defect by making the test’s `taskRouter.resolve` throw immediately, preserving the task-type assertion while preventing provider work. The focused rerun of that file passed. I then reran the full test lane; it was still red with 11 failures spanning KnowledgeStore, embedding audit/repair, review-comment embedding sweep, config defaults, and an `extractPageStyle` timeout. Per the task contract, I did not widen S05 into a general cleanup pass. Instead, I ran `bun test --bail=1` under the same workflow DATABASE_URL and isolated the next precise blocker to `src/knowledge/store.test.ts`: `KnowledgeStore > recordFindings persists deterministic comment linkage fields`, where the raw SQL readback for `comment_id` is now `\"1234\"` instead of numeric `1234`, consistent with the `032-bigint-comment-ids.sql` migration. I documented that raw-SQL bigint string-readback gotcha in `.gsd/KNOWLEDGE.md`. I also ran `bunx tsc --noEmit`, which completed successfully. Read-only GitHub inspection showed PR #80 still open, dirty, failing the `test` check, and carrying repeated ACA execution errors in the thread without a successful explicit-review outcome.",
+      "verification_result": "Verified the deterministic lane against the repository’s actual CI contract: `docker compose up -d postgres`, `bun install`, `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`, focused rerun of `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test ./src/knowledge/wiki-voice-validator.test.ts`, full rerun of `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`, blocker isolation with `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test --bail=1`, and `bunx tsc --noEmit`. Results: Postgres startup passed, install passed, focused voice-validator rerun passed, typecheck passed, full test lane remained red after the bounded fix, and `--bail=1` isolated the next concrete blocker to the KnowledgeStore bigint comment-id assertion. Read-only GitHub checks confirmed PR #80 still has a failing `test` check and no successful explicit-review publication in the visible thread.",
+      "duration": "",
+      "completed_at": "2026-04-08T01:28:10.344Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "The CI-shaped `bun test` lane remains red with 11 failures after the bounded voice-validator fix. The first remaining blocker is `src/knowledge/store.test.ts`, where raw SQL reads of migrated BIGINT comment IDs return strings. Additional unfixed clusters remain in embedding/config expectation tests and one `extractPageStyle` timeout. PR #80 remains dirty with a failing `test` check and repeated ACA execution errors in the comment history.",
+      "key_files": [
+        "src/knowledge/wiki-voice-validator.test.ts",
+        ".gsd/KNOWLEDGE.md",
+        ".gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Fixed only the first bounded test-only failure in the voice-validator suite before rerunning the full lane.",
+        "Stopped after isolating the next precise blocker with `bun test --bail=1` instead of sweeping unrelated reds across multiple suites.",
+        "Recorded the post-migration BIGINT comment-id raw-row behavior in project knowledge because it affects future deterministic tests and diagnostics."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S05\nmilestone: M043\nkey_files:\n  - src/knowledge/wiki-voice-validator.test.ts\n  - .gsd/KNOWLEDGE.md\n  - .gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Fixed only the first bounded test-only failure in the voice-validator suite before rerunning the full lane.\n  - Stopped after isolating the next precise blocker with `bun test --bail=1` instead of sweeping unrelated reds across multiple suites.\n  - Recorded the post-migration BIGINT comment-id raw-row behavior in project knowledge because it affects future deterministic tests and diagnostics.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-08T01:28:10.344Z\nblocker_discovered: false\n---\n\n# T01: Reproduced PR #80 against the workflow DB contract, fixed the first timeouty voice-validator test, and stopped on the next precise blocker in KnowledgeStore bigint comment IDs.\n\n**Reproduced PR #80 against the workflow DB contract, fixed the first timeouty voice-validator test, and stopped on the next precise blocker in KnowledgeStore bigint comment IDs.**\n\n## What Happened\n\nStarted the local pgvector Postgres service from docker-compose.yml and ran the deterministic lane against the workflow DATABASE_URL (postgresql://kodiai:kodiai@localhost:5432/kodiai), not the ambient shell environment. `bun install` was clean. The first full `bun test` run failed with 12 reds. I localized the first failure to `src/knowledge/wiki-voice-validator.test.ts`, where the `validateVoiceMatch > calls generateWithFallback with voice.validate task type` assertion timed out because the test entered the real LLM/provider path. I fixed that bounded test-only defect by making the test’s `taskRouter.resolve` throw immediately, preserving the task-type assertion while preventing provider work. The focused rerun of that file passed. I then reran the full test lane; it was still red with 11 failures spanning KnowledgeStore, embedding audit/repair, review-comment embedding sweep, config defaults, and an `extractPageStyle` timeout. Per the task contract, I did not widen S05 into a general cleanup pass. Instead, I ran `bun test --bail=1` under the same workflow DATABASE_URL and isolated the next precise blocker to `src/knowledge/store.test.ts`: `KnowledgeStore > recordFindings persists deterministic comment linkage fields`, where the raw SQL readback for `comment_id` is now `\"1234\"` instead of numeric `1234`, consistent with the `032-bigint-comment-ids.sql` migration. I documented that raw-SQL bigint string-readback gotcha in `.gsd/KNOWLEDGE.md`. I also ran `bunx tsc --noEmit`, which completed successfully. Read-only GitHub inspection showed PR #80 still open, dirty, failing the `test` check, and carrying repeated ACA execution errors in the thread without a successful explicit-review outcome.\n\n## Verification\n\nVerified the deterministic lane against the repository’s actual CI contract: `docker compose up -d postgres`, `bun install`, `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`, focused rerun of `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test ./src/knowledge/wiki-voice-validator.test.ts`, full rerun of `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`, blocker isolation with `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test --bail=1`, and `bunx tsc --noEmit`. Results: Postgres startup passed, install passed, focused voice-validator rerun passed, typecheck passed, full test lane remained red after the bounded fix, and `--bail=1` isolated the next concrete blocker to the KnowledgeStore bigint comment-id assertion. Read-only GitHub checks confirmed PR #80 still has a failing `test` check and no successful explicit-review publication in the visible thread.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `docker compose up -d postgres` | 0 | ✅ pass | 6000ms |\n| 2 | `bun install` | 0 | ✅ pass | 4400ms |\n| 3 | `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test` | 1 | ❌ fail | 31100ms |\n| 4 | `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test ./src/knowledge/wiki-voice-validator.test.ts` | 0 | ✅ pass | 6300ms |\n| 5 | `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test` | 1 | ❌ fail | 25700ms |\n| 6 | `DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test --bail=1` | 1 | ❌ fail | 6900ms |\n| 7 | `bunx tsc --noEmit` | 0 | ✅ pass | 7700ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe CI-shaped `bun test` lane remains red with 11 failures after the bounded voice-validator fix. The first remaining blocker is `src/knowledge/store.test.ts`, where raw SQL reads of migrated BIGINT comment IDs return strings. Additional unfixed clusters remain in embedding/config expectation tests and one `extractPageStyle` timeout. PR #80 remains dirty with a failing `test` check and repeated ACA execution errors in the comment history.\n\n## Files Created/Modified\n\n- `src/knowledge/wiki-voice-validator.test.ts`\n- `.gsd/KNOWLEDGE.md`\n- `.gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md`\n",
+      "description": "Mirror the GitHub `test` job locally before touching any code. Use `.github/workflows/ci.yml` and `docker-compose.yml` as the source of truth: the workflow DB URL is `postgresql://kodiai:kodiai@localhost:5432/kodiai`, the service image is `pgvector/pgvector:pg17`, and the contract is `bun install` → `bun test` → `bunx tsc --noEmit`. Do not reuse the ambient shell `DATABASE_URL`, and do not pre-seed extra schema or shortcuts that CI does not run. If the CI-shaped run fails, isolate the first real blocker, fix only the closest test/setup defect when it is bounded, rerun the focused suite, then rerun the full contract. If the failure fans out beyond a single-context repair, stop with a blocker instead of turning S05 into an unbounded cleanup slice.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Local Postgres from `docker-compose.yml` | Treat missing/failed startup as infra noise, repair the local DB shape, and rerun before blaming the repo. | Wait for container health and rerun the exact workflow contract; do not switch to a remote DB. | If the DB does not match the workflow contract, reset to the declared image/env instead of hand-editing the test command. |\n| GitHub workflow contract in `.github/workflows/ci.yml` | Use the workflow as the only truth for DB URL and command order; do not improvise a new local contract. | Rerun the failing command in isolation, then rerun the full job order once localized. | Any mismatch between local execution and workflow steps is a planning failure; correct the command shape before continuing. |\n| DB-backed and timeout-prone suites (`src/knowledge/store.test.ts`, `src/knowledge/wiki-store.test.ts`, `src/contributor/profile-store.test.ts`, `src/telemetry/store.test.ts`, `src/knowledge/wiki-voice-validator.test.ts`) | Localize the first failing suite/assertion and fix only that defect when it is bounded. | Re-run the single failing file before spending another full-suite pass. | Treat unexpected schema/env assumptions or flaky timeouts as real blockers, not noise, until reproduced under the workflow DB URL. |\n\n## Load Profile\n\n- **Shared resources**: one local Postgres service on port 5432, the full Bun test suite, and the repo-wide typecheck.\n- **Per-operation cost**: one service startup, one `bun install`, one full `bun test`, and one `bunx tsc --noEmit`.\n- **10x breakpoint**: repeated full-suite reruns become the time sink; after the first red run, isolate the first failing suite before retrying the whole contract.\n\n## Negative Tests\n\n- **Malformed inputs**: ambient `DATABASE_URL` or shell env must not leak into the CI-shaped run.\n- **Error paths**: missing tables/extensions, DB connection failures, or the known `validateVoiceMatch` timeout must reproduce under the workflow contract before any fix is accepted.\n- **Boundary conditions**: if the first blocker expands beyond a bounded repair, stop and record the blocker rather than widening the slice silently.\n\n## Steps\n\n1. Start local Postgres from `docker-compose.yml` and confirm the test lane is running against `postgresql://kodiai:kodiai@localhost:5432/kodiai`.\n2. Run the GitHub workflow contract in order: `bun install`, `bun test`, then `bunx tsc --noEmit`.\n3. If the run fails, isolate the first real blocker, repair the closest local defect only when it is bounded, rerun the focused suite, then rerun the full contract.\n4. Write the exact command/env verdict, current PR #80 check state, and any remaining blocker into `T01-SUMMARY.md`.\n\n## Must-Haves\n\n- [ ] The PR proof lane is executed with the workflow `DATABASE_URL`, not the ambient shell env.\n- [ ] The first real CI blocker is localized to a specific suite/assertion if the contract is still red.\n- [ ] Any repair stays bounded to the first blocker and is re-verified with both focused and full-contract reruns.\n- [ ] `T01-SUMMARY.md` records the exact commands, verdict, and blocker/green outcome.",
+      "estimate": "90m",
+      "files": [
+        ".github/workflows/ci.yml",
+        "docker-compose.yml",
+        "src/knowledge/store.test.ts",
+        "src/knowledge/wiki-store.test.ts",
+        "src/contributor/profile-store.test.ts",
+        "src/telemetry/store.test.ts",
+        "src/knowledge/wiki-voice-validator.test.ts"
+      ],
+      "verify": "`docker compose up -d postgres`\n`bun install`\n`DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test`\n`bunx tsc --noEmit`",
+      "inputs": [
+        "`.github/workflows/ci.yml`",
+        "`docker-compose.yml`",
+        "`src/knowledge/store.test.ts`",
+        "`src/knowledge/wiki-store.test.ts`",
+        "`src/contributor/profile-store.test.ts`",
+        "`src/telemetry/store.test.ts`",
+        "`src/knowledge/wiki-voice-validator.test.ts`"
+      ],
+      "expected_output": [
+        "`.gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md`",
+        "`src/knowledge/store.test.ts`",
+        "`src/knowledge/wiki-store.test.ts`",
+        "`src/contributor/profile-store.test.ts`",
+        "`src/telemetry/store.test.ts`",
+        "`src/knowledge/wiki-voice-validator.test.ts`"
+      ],
+      "observability_impact": "- Signals added/changed: a CI-shaped proof transcript and, if needed, a precise first-blocker capture instead of ambient-shell noise\n- How a future agent inspects this: rerun the workflow command sequence with the local Postgres service and compare against `T01-SUMMARY.md`\n- Failure state exposed: exact failing suite/assertion, DB contract mismatch, or timeout path that kept PR #80 red",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M043",
+      "slice_id": "S05",
+      "id": "T02",
+      "title": "Correlate one live explicit-mention delivery to a truthful publish outcome",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Use the existing explicit-mention proof surfaces; do not invent a new verifier. The source of truth is `src/handlers/mention.ts`, `src/handlers/review-idempotency.ts`, `docs/runbooks/review-requested-debug.md`, and the live ACA revision/probes exposed by `deploy.sh` and `docs/deployment.md`. First capture the active revision, FQDN, `/healthz`, `/readiness`, and the current PR #80 comment baseline. Then correlate one fresh explicit-review delivery by `deliveryId` and `reviewOutputKey` through `ContainerAppConsoleLogs_CL` and the PR thread. Because a new `@kodiai review` comment is an outward-facing GitHub action, do not create one in auto-mode unless an explicit authorization already exists in the current operating context; if no authorized fresh trigger is available, stop after the read-only preflight and record that blocker precisely rather than improvising the action.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Active ACA revision and probe surfaces | Re-read the active revision, `/healthz`, and `/readiness` before assuming the publish lane regressed. | Retry the probe check once, then record the probe failure as the live blocker. | Treat inconsistent revision/probe output as deploy drift and capture it explicitly. |\n| GitHub delivery / PR thread state | If no authorized fresh trigger exists, stop with a blocker instead of posting a new comment. | Re-check the PR thread and delivery list for the current proof window before declaring the lane missing. | If comment/review output and delivery metadata disagree, use `deliveryId` plus `reviewOutputKey` as the truth source. |\n| Log Analytics `ContainerAppConsoleLogs_CL` queries | Use the runbook query flow and current handler log messages; do not invent alternate search strings. | Re-run the same bounded query window once, then record log unavailability explicitly. | Missing publish-path rows with `taskType=review.full` means a pre-publish executor failure until proven otherwise. |\n| Mention publish bridge semantics in source | Classify the outcome only from the shipped log strings and `publishResolution` states in source. | N/A | Treat `approval-bridge`, `idempotency-skip`, `duplicate-suppressed`, `publish-failure-fallback`, and `publish-failure-comment-failed` as distinct outcomes; do not collapse them into generic success/failure. |\n\n## Load Profile\n\n- **Shared resources**: GitHub PR thread state, webhook delivery metadata, and one bounded Log Analytics query window.\n- **Per-operation cost**: a few read-only GitHub calls, probe checks, and log searches around a single delivery.\n- **10x breakpoint**: thrashing across many stale deliveries; stay on one proof window and one delivery ID.\n\n## Negative Tests\n\n- **Malformed inputs**: stale delivery IDs or stale comment baselines must not be reused as fresh proof.\n- **Error paths**: `taskType=review.full` with no publish-path rows is a pre-publish failure, and `publish-failure-fallback` / `publish-failure-comment-failed` are real red outcomes, not passes.\n- **Boundary conditions**: `idempotency-skip` and `duplicate-suppressed` are acceptable only when the same delivery still has exactly one GitHub-visible outcome and matching `reviewOutputKey`.\n\n## Steps\n\n1. Capture the current production baseline: active revision, FQDN, `/healthz`, `/readiness`, and the latest PR #80 explicit-mention thread state.\n2. Use one authorized fresh explicit-review trigger if it already exists in the current operating context; otherwise stop before any outward GitHub action and record the blocker.\n3. Correlate the chosen delivery through `ContainerAppConsoleLogs_CL` and the PR thread by `deliveryId` and `reviewOutputKey`, then classify the terminal `publishResolution` truthfully.\n4. Confirm exactly one GitHub-visible outcome for that delivery and write the full live-proof chain into `T02-SUMMARY.md`.\n\n## Must-Haves\n\n- [ ] The task reuses the shipped runbook/source surfaces and does not add a new mention-proof script.\n- [ ] The active revision and probe baseline are captured before interpreting live logs.\n- [ ] One delivery is correlated end-to-end by `deliveryId` and `reviewOutputKey`, or the missing authorization/delivery is recorded as the exact blocker.\n- [ ] `T02-SUMMARY.md` records the active revision, delivery, publish outcome, GitHub-visible result, and blocker/pass verdict.",
+      "estimate": "90m",
+      "files": [
+        "src/handlers/mention.ts",
+        "src/handlers/review-idempotency.ts",
+        "docs/runbooks/review-requested-debug.md",
+        "docs/runbooks/mentions.md",
+        "deploy.sh",
+        "docs/deployment.md"
+      ],
+      "verify": "Manual review — using `docs/runbooks/review-requested-debug.md`, confirm one authorized explicit-review delivery reaches `taskType=review.full`, yields exactly one GitHub-visible outcome, and ends with `Mention execution completed` carrying the matching `reviewOutputKey` and truthful `publishResolution`. If no authorized fresh trigger exists, the task must stop with that blocker recorded in `T02-SUMMARY.md`.",
+      "inputs": [
+        "`src/handlers/mention.ts`",
+        "`src/handlers/review-idempotency.ts`",
+        "`docs/runbooks/review-requested-debug.md`",
+        "`docs/runbooks/mentions.md`",
+        "`deploy.sh`",
+        "`docs/deployment.md`"
+      ],
+      "expected_output": [
+        "`.gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md`"
+      ],
+      "observability_impact": "- Signals added/changed: delivery-correlated live-proof evidence keyed on active revision, `deliveryId`, `reviewOutputKey`, and terminal `publishResolution`\n- How a future agent inspects this: replay the runbook query flow from `T02-SUMMARY.md` and compare against the shipped mention-handler log strings\n- Failure state exposed: missing authorization, missing delivery, pre-publish executor failure, duplicate suppression, or publish fallback",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M043",
+      "slice_id": "S05",
+      "id": "T03",
+      "title": "Compress the two proof lanes into slice evidence and close or block M043 truthfully",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Close the slice on current facts, not optimism. Consume `T01-SUMMARY.md` and `T02-SUMMARY.md`, write `S05-SUMMARY.md`, and state the current PR #80 GitHub verdict, the active production proof verdict, the exact commands and identifiers used, and whether the milestone can close. If both lanes are green, run milestone validation/completion from the observed evidence. If either lane is red or blocked, do not close M043; instead, write the blocker, the missing signal, and the next required action into the slice summary so the next agent can resume without rereading the whole milestone.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `T01-SUMMARY.md` / `T02-SUMMARY.md` evidence | Re-read the task summaries and use their exact verdicts/identifiers rather than paraphrasing from memory. | N/A | Contradictory or missing evidence blocks milestone closure; write the blocker instead of guessing. |\n| `gsd_validate_milestone` / `gsd_complete_milestone` | Stop at `S05-SUMMARY.md` if validation rejects the evidence or the state machine refuses completion. | N/A | Any mismatch between slice evidence and milestone-close tools is a real blocker that must be named in the summary. |\n\n## Load Profile\n\n- **Shared resources**: GSD milestone state plus the two task summaries.\n- **Per-operation cost**: one slice summary write and, only when both lanes pass, one milestone validation plus one milestone completion.\n- **10x breakpoint**: none; the risk is truthfulness, not compute.\n\n## Negative Tests\n\n- **Malformed inputs**: missing task summaries or missing delivery/command details must block closure.\n- **Error paths**: a blocked live proof or red CI lane must prevent milestone validation/completion.\n- **Boundary conditions**: milestone closure is allowed only when both proof lanes are green on current evidence, not on earlier slice assumptions.\n\n## Steps\n\n1. Read `T01-SUMMARY.md` and `T02-SUMMARY.md` and extract the exact commands, GitHub state, delivery IDs, `reviewOutputKey`, and publish verdicts.\n2. Write `S05-SUMMARY.md` so it states plainly whether each proof lane passed, failed, or blocked and what exact evidence supports that verdict.\n3. If both lanes are green, run milestone validation and milestone completion using the observed S05 evidence.\n4. If either lane is not green, leave M043 open and make the blocker/resume condition explicit in `S05-SUMMARY.md`.\n\n## Must-Haves\n\n- [ ] `S05-SUMMARY.md` cites the exact CI-shaped command verdict and the exact live-delivery evidence.\n- [ ] The slice summary states whether M043 closed or stayed blocked and why.\n- [ ] Milestone validation/completion only run when both proof lanes are green.\n- [ ] A blocked slice still leaves one precise next action instead of broad “investigate further” prose.",
+      "estimate": "45m",
+      "files": [
+        ".gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md",
+        ".gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md",
+        ".gsd/milestones/M043/M043-ROADMAP.md",
+        ".gsd/DECISIONS.md",
+        ".gsd/REQUIREMENTS.md"
+      ],
+      "verify": "`test -s .gsd/milestones/M043/slices/S05/S05-SUMMARY.md`\nIf both lanes are green: milestone validation and milestone summary artifacts exist under `.gsd/milestones/M043/`.",
+      "inputs": [
+        "`.gsd/milestones/M043/slices/S05/tasks/T01-SUMMARY.md`",
+        "`.gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md`",
+        "`.gsd/milestones/M043/M043-ROADMAP.md`",
+        "`.gsd/DECISIONS.md`",
+        "`.gsd/REQUIREMENTS.md`"
+      ],
+      "expected_output": [
+        "`.gsd/milestones/M043/slices/S05/S05-SUMMARY.md`",
+        "`.gsd/milestones/M043/M043-VALIDATION.md`",
+        "`.gsd/milestones/M043/M043-SUMMARY.md`"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -14191,6 +14335,83 @@
       "verdict": "✅ pass",
       "duration_ms": 159,
       "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 254,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "docker compose up -d postgres",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6000,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 255,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "bun install",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4400,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 256,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 31100,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 257,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test ./src/knowledge/wiki-voice-validator.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6300,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 258,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 25700,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 259,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "DATABASE_URL=postgresql://kodiai:kodiai@localhost:5432/kodiai bun test --bail=1",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 6900,
+      "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 260,
+      "task_id": "T01",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "bunx tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7700,
+      "created_at": "2026-04-08T01:28:10.344Z"
     }
   ]
 }

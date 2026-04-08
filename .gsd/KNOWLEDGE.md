@@ -709,3 +709,35 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 **Testing pattern:** Assert on the structural section itself, not only the breaking-change helper. In `src/execution/review-prompt.test.ts`, extract the `## Structural Impact Evidence` section and require the partial-status wording there while preserving the rendered caller/file/test/evidence counters.
 
 **Established in:** M043/S04/T01.
+
+---
+
+## Active-Rules `totalActive` Is a Lower Bound When Prompt Injection Is Capped (M043/S04)
+
+**Context:** `getActiveRulesForPrompt()` in `src/knowledge/active-rules.ts` fetches `effectiveLimit + 1` rows so it can detect capping without a separate `COUNT(*)`. When the result is capped, `totalActive` is therefore the fetched lower bound (`effectiveLimit + 1`), not the exact store total.
+
+**Rule:** Tests and callers must treat capped `totalActive` as a lower-bound signal, not an exact count. To prove the capped path, stub `getActiveRulesForRepo()` with at least `effectiveLimit + 1` rows and assert that `totalActive === effectiveLimit + 1` while only `effectiveLimit` rules are injected.
+
+**Established in:** M043/S04/T02 (`src/knowledge/active-rules.test.ts`).
+
+---
+
+## Canonical Backfill Resume Ordering Must Follow `localeCompare`, Including Non-ASCII Paths (M043/S04)
+
+**Context:** `listFilesRecursive()` and `shouldResumeFromPath()` in `src/knowledge/canonical-code-backfill.ts` both use `localeCompare()` for canonical file ordering and resume checkpoint comparisons. ASCII-only fixtures can hide ordering bugs when filenames contain accented characters.
+
+**Rule:** Resume tests for canonical backfill must build expectations from the same `localeCompare()` ordering the production code uses, and should include non-ASCII filenames (for example `éclair.ts` or `ångström.ts`) so checkpoint behavior is proven against real collation-sensitive inputs. Do not assume byte-order or plain ASCII sorting when asserting resumed file sets.
+
+**Established in:** M043/S04/T02 (`src/knowledge/canonical-code-backfill.test.ts`).
+
+---
+
+## BIGINT Comment IDs Read Back as Strings from Raw SQL Rows (M043/S05)
+
+**Context:** `032-bigint-comment-ids.sql` promotes `findings.comment_id` (and sibling comment-id columns) from `INTEGER` to `BIGINT`. In the CI-shaped Postgres lane, direct `sql` reads of `comment_id` now come back as string values like `"1234"`, not numeric `1234`, even when the inserted input was a number.
+
+**Rule:** When tests or one-off diagnostics read `comment_id` / `partial_comment_id` directly from raw SQL rows after the bigint migration, treat the value as stringly typed unless the caller normalizes it explicitly. Assertions should either compare against the string form or coerce with `Number(...)` before comparing.
+
+**Why it matters:** Store-layer code that passes bigint IDs through raw row objects can fail deterministic tests with type-only mismatches even though the persisted value is correct. The first post-S05 red in `src/knowledge/store.test.ts` was exactly this shape.
+
+**Established in:** M043/S05/T01 (`src/knowledge/store.test.ts`, `src/db/migrations/032-bigint-comment-ids.sql`).
