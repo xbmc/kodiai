@@ -2304,6 +2304,21 @@ describe("buildReviewPrompt graph context integration", () => {
     expect(prompt).toContain("## Structural Impact Evidence");
     expect(prompt).toContain("### Structural Impact");
     expect(prompt).toContain("Structural evidence status: evidence-present");
+    expect(prompt).toContain("callers 1/1, files 1/1, tests 1/1, unchanged evidence 1/1");
+  });
+
+  test("structural impact section calls out partial evidence truthfully", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      structuralImpact: makeStructuralImpact({ status: "partial" }),
+    }));
+    const structuralSectionMatch = prompt.match(
+      /## Structural Impact Evidence[\s\S]*?(?=\n## |$)/,
+    );
+    expect(structuralSectionMatch).toBeDefined();
+    const structuralSection = structuralSectionMatch![0];
+    expect(structuralSection).toContain("Structural evidence status: partial-evidence");
+    expect(structuralSection).toContain("callers 1/1, files 1/1, tests 1/1, unchanged evidence 1/1");
+    expect(structuralSection).not.toContain("Structural evidence status: evidence-present");
   });
 
   test("breaking-change instructions use structural evidence when callers or impacted files are present", () => {
@@ -2315,6 +2330,7 @@ describe("buildReviewPrompt graph context integration", () => {
 
   test("breaking-change instructions fall back when structural impact is absent", () => {
     const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).not.toContain("## Structural Impact Evidence");
     expect(prompt).toContain("## Breaking-Change Evidence Handling");
     expect(prompt).toContain("Fallback status: fallback-used.");
     expect(prompt).toContain("Do not claim downstream callers, impacted files, or likely tests are affected unless this prompt includes concrete structural evidence.");

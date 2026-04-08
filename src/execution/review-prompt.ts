@@ -12,6 +12,10 @@ import type { SecurityContext, ChangelogContext } from "../lib/dep-bump-enrichme
 import type { MergeConfidenceLevel } from "../lib/merge-confidence.ts";
 import type { LinkResult } from "../knowledge/issue-linker.ts";
 import { buildStructuralImpactSection } from "../lib/structural-impact-formatter.ts";
+import { formatActiveRulesSection, type SanitizedActiveRule } from "../knowledge/active-rules.ts";
+import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
+import { buildGraphContextSection, type GraphContextOptions } from "../review-graph/prompt-context.ts";
+import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
@@ -1172,11 +1176,6 @@ export function formatWikiKnowledge(matches: WikiKnowledgeMatch[]): string {
 // Helper: Unified cross-corpus context formatting (KI-17)
 // ---------------------------------------------------------------------------
 
-import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
-import { formatActiveRulesSection, type SanitizedActiveRule } from "../knowledge/active-rules.ts";
-import { buildGraphContextSection, type GraphContextOptions } from "../review-graph/prompt-context.ts";
-import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
-
 const MAX_UNIFIED_CITATIONS = 8;
 
 /**
@@ -1436,6 +1435,8 @@ function buildStructuralImpactPromptSection(structuralImpact: StructuralImpactPa
     return "";
   }
 
+  const structuralStatus = structuralImpact.status === "partial" ? "partial-evidence" : "evidence-present";
+
   return [
     "## Structural Impact Evidence",
     "",
@@ -1443,7 +1444,7 @@ function buildStructuralImpactPromptSection(structuralImpact: StructuralImpactPa
     "Prefer structural evidence over generic speculation when caller, dependent, test, or unchanged-code evidence is present.",
     rendered.text.trimStart(),
     "",
-    `Structural evidence status: evidence-present (callers ${rendered.stats.callersRendered}/${rendered.stats.callersTotal}, files ${rendered.stats.filesRendered}/${rendered.stats.filesTotal}, tests ${rendered.stats.testsRendered}/${rendered.stats.testsTotal}, unchanged evidence ${rendered.stats.evidenceRendered}/${rendered.stats.evidenceTotal}).`,
+    `Structural evidence status: ${structuralStatus} (callers ${rendered.stats.callersRendered}/${rendered.stats.callersTotal}, files ${rendered.stats.filesRendered}/${rendered.stats.filesTotal}, tests ${rendered.stats.testsRendered}/${rendered.stats.testsTotal}, unchanged evidence ${rendered.stats.evidenceRendered}/${rendered.stats.evidenceTotal}).`,
   ].join("\n");
 }
 

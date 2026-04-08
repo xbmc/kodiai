@@ -687,3 +687,25 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 **Rule:** When a rendering utility needs a subset of an execution type's fields, inline the shape at the function parameter boundary rather than importing the full type. The minor duplication is worth the decoupling. Document the mapping in the call site comment if the shapes diverge.
 
 **Established in:** M034/S02.
+
+---
+
+## HEAD-Based Branch Hygiene Proofs Are Commit-Sensitive (M043/S03)
+
+**Context:** S03 used `origin/main...HEAD` and `fd67a48111...HEAD` diff proofs to confirm the rebased PR #80 branch had only the intended hotfix surface. Restoring tracked runtime files like `.gsd/event-log.jsonl` and `.gsd/state-manifest.json` in the working tree was not sufficient, because those proofs compare committed branch state. `gsd_complete_task` also re-touched the same tracked `.gsd` files as bookkeeping side effects, so they had to be restored back to `HEAD` before the final audit stayed clean.
+
+**Rule:** When a task or slice uses `...HEAD` diff proofs, cleanup of tracked runtime/planning files must be recorded in a real commit before rerunning the proof. After any `gsd_*complete*` step, re-check tracked `.gsd` files if they are part of the branch delta — the completion tooling may update them as side effects.
+
+**Established in:** M043/S03/T04.
+
+---
+
+## Structural-Impact Prompt Status Must Mirror Breaking-Change Status (M043/S04)
+
+**Context:** `buildStructuralImpactPromptSection()` and `buildBreakingChangeEvidenceInstructions()` both describe the same structural-impact payload in `src/execution/review-prompt.ts`. A live PR-review defect appeared when the structural section hardcoded `evidence-present` while the breaking-change section already used `partial-evidence` for `status: "partial"` payloads.
+
+**Rule:** Any prompt surface that summarizes structural impact must derive its status string from `structuralImpact.status` using the same contract: `partial` -> `partial-evidence`, everything else with renderable evidence -> `evidence-present`. Do not hardcode the structural status line independently of the breaking-change helper.
+
+**Testing pattern:** Assert on the structural section itself, not only the breaking-change helper. In `src/execution/review-prompt.test.ts`, extract the `## Structural Impact Evidence` section and require the partial-status wording there while preserving the rendered caller/file/test/evidence counters.
+
+**Established in:** M043/S04/T01.
