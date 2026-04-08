@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-08T01:28:10.374Z",
+  "exported_at": "2026-04-08T01:43:08.987Z",
   "milestones": [
     {
       "id": "M001",
@@ -10855,19 +10855,24 @@
       "milestone_id": "M043",
       "slice_id": "S05",
       "id": "T02",
-      "title": "Correlate one live explicit-mention delivery to a truthful publish outcome",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Captured active hotfix-125330 live-proof evidence and isolated PR #80 delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 as a pre-publish executor failure.",
+      "status": "complete",
+      "one_liner": "Captured active hotfix-125330 live-proof evidence and isolated PR #80 delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 as a pre-publish executor failure.",
+      "narrative": "Stayed read-only and used the shipped proof surfaces from docs/runbooks/review-requested-debug.md, docs/runbooks/mentions.md, src/handlers/mention.ts, src/handlers/review-idempotency.ts, deploy.sh, and docs/deployment.md. Captured the current production baseline first: active revision ca-kodiai--hotfix-125330, FQDN ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io, /healthz HTTP 200 with {\"status\":\"ok\",\"db\":\"connected\"}, and /readiness HTTP 200 with {\"status\":\"ready\"}. Captured the current PR #80 explicit-mention thread baseline before interpreting logs: the last GitHub-visible Kodiai outcome is fallback error comment 4201384796 at 2026-04-07T18:39:47Z, followed by three fresh @kodiai review trigger comments from @keithah at 19:28:47Z, 19:42:33Z, and 20:00:17Z with no later bot-visible outcome. Chose the newest trigger comment 4201840147 because it is the freshest authorized explicit-review request and it ran on the current active revision. Recovered deliveryId 66b4ee50-32bc-11f1-9eeb-89b961f025e8 from the ingress log chain in ContainerAppConsoleLogs_CL. Correlated the live outer chain on ca-kodiai--hotfix-125330: Webhook accepted and queued for dispatch, Router evaluated dispatch keys, mention job start, Creating workspace for mention execution, Task router resolved model with taskType=review.full, ACA Job start request prepared, ACA Job dispatched, and ACA Job completed with status=succeeded. Computed the deterministic reviewOutputKey from src/handlers/review-idempotency.ts and the current PR head SHA fa9e8cad5c63e2723598bd582a3f47538176ea61: kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61. Queried the live logs for that exact key and every shipped publish-path string from src/handlers/mention.ts; result was zero publish-path rows for the delivery window. The only terminal mention-handler row in that window is Mention execution completed at 2026-04-07T20:04:19.2617936Z with conclusion=\"failure\", published=false, writeEnabled=false, numTurns=13, durationMs=174283, and sessionId 6e00b2b5-a304-499f-944a-69255ec33d02. No reviewOutputKey, no publishResolution, and no approval/fallback publish evidence was emitted. GitHub-visible outcome count after the trigger is zero: the issue-comment list after 20:00:17Z contains only the trigger comment itself and the PR review list after 20:00:17Z is empty. Per the task contract, this is a real red live-lane blocker: an authorized fresh explicit-review delivery reached taskType=review.full, the ACA job itself succeeded, but the explicit-review path failed before any truthful publish outcome was recorded or delivered to GitHub. No outward GitHub action was taken during this task.",
+      "verification_result": "Re-ran the production baseline and the read-only correlation queries: active revision lookup, FQDN lookup, /healthz, /readiness, PR #80 comment/review baseline inspection, PR head SHA lookup, deterministic reviewOutputKey computation, Log Analytics review.full router scan, deliveryId-correlated log-chain scan, terminal Mention execution completed scan for the 20:00 delivery window, exact reviewOutputKey scan, and a bounded publish-path count query using the shipped handler log strings. These checks confirmed the active hotfix revision was healthy, the 20:00 PR #80 trigger produced delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 on taskType=review.full, the ACA job completed successfully, but the mention handler ended with conclusion=\"failure\", no reviewOutputKey log rows, zero publish-path rows, and zero GitHub-visible output after the trigger.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-08T01:43:08.959Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "The available gh token did not expose GitHub delivery metadata through repos/xbmc/kodiai/hooks, so I recovered the chosen delivery ID from the ingress log chain instead of GitHub delivery listings. This stayed within the shipped runbook/query surfaces and did not require any outward GitHub action.",
+      "known_issues": "The live explicit-review proof lane is still blocked on delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8: it reaches taskType=review.full on the active hotfix revision and the ACA job itself succeeds, but no reviewOutputKey, no publish-path log rows, and no GitHub-visible approval or fallback comment are produced. The earlier fresh trigger comments at 19:28:47Z and 19:42:33Z also remain unmatched in the PR thread, but this task intentionally stayed on the newest active-revision proof window.",
+      "key_files": [
+        ".gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Used the newest unmatched @kodiai review trigger on PR #80 because it is the only fresh explicit-review attempt that ran on the current active revision.",
+        "Classified the lane as a pre-publish executor failure once taskType=review.full and ACA job success were present but every publish-path signal and GitHub-visible outcome was absent."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S05\nmilestone: M043\nkey_files:\n  - .gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Used the newest unmatched @kodiai review trigger on PR #80 because it is the only fresh explicit-review attempt that ran on the current active revision.\n  - Classified the lane as a pre-publish executor failure once taskType=review.full and ACA job success were present but every publish-path signal and GitHub-visible outcome was absent.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-08T01:43:08.958Z\nblocker_discovered: false\n---\n\n# T02: Captured active hotfix-125330 live-proof evidence and isolated PR #80 delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 as a pre-publish executor failure.\n\n**Captured active hotfix-125330 live-proof evidence and isolated PR #80 delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 as a pre-publish executor failure.**\n\n## What Happened\n\nStayed read-only and used the shipped proof surfaces from docs/runbooks/review-requested-debug.md, docs/runbooks/mentions.md, src/handlers/mention.ts, src/handlers/review-idempotency.ts, deploy.sh, and docs/deployment.md. Captured the current production baseline first: active revision ca-kodiai--hotfix-125330, FQDN ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io, /healthz HTTP 200 with {\"status\":\"ok\",\"db\":\"connected\"}, and /readiness HTTP 200 with {\"status\":\"ready\"}. Captured the current PR #80 explicit-mention thread baseline before interpreting logs: the last GitHub-visible Kodiai outcome is fallback error comment 4201384796 at 2026-04-07T18:39:47Z, followed by three fresh @kodiai review trigger comments from @keithah at 19:28:47Z, 19:42:33Z, and 20:00:17Z with no later bot-visible outcome. Chose the newest trigger comment 4201840147 because it is the freshest authorized explicit-review request and it ran on the current active revision. Recovered deliveryId 66b4ee50-32bc-11f1-9eeb-89b961f025e8 from the ingress log chain in ContainerAppConsoleLogs_CL. Correlated the live outer chain on ca-kodiai--hotfix-125330: Webhook accepted and queued for dispatch, Router evaluated dispatch keys, mention job start, Creating workspace for mention execution, Task router resolved model with taskType=review.full, ACA Job start request prepared, ACA Job dispatched, and ACA Job completed with status=succeeded. Computed the deterministic reviewOutputKey from src/handlers/review-idempotency.ts and the current PR head SHA fa9e8cad5c63e2723598bd582a3f47538176ea61: kodiai-review-output:v1:inst-109141824:xbmc/kodiai:pr-80:action-mention-review:delivery-66b4ee50-32bc-11f1-9eeb-89b961f025e8:head-fa9e8cad5c63e2723598bd582a3f47538176ea61. Queried the live logs for that exact key and every shipped publish-path string from src/handlers/mention.ts; result was zero publish-path rows for the delivery window. The only terminal mention-handler row in that window is Mention execution completed at 2026-04-07T20:04:19.2617936Z with conclusion=\"failure\", published=false, writeEnabled=false, numTurns=13, durationMs=174283, and sessionId 6e00b2b5-a304-499f-944a-69255ec33d02. No reviewOutputKey, no publishResolution, and no approval/fallback publish evidence was emitted. GitHub-visible outcome count after the trigger is zero: the issue-comment list after 20:00:17Z contains only the trigger comment itself and the PR review list after 20:00:17Z is empty. Per the task contract, this is a real red live-lane blocker: an authorized fresh explicit-review delivery reached taskType=review.full, the ACA job itself succeeded, but the explicit-review path failed before any truthful publish outcome was recorded or delivered to GitHub. No outward GitHub action was taken during this task.\n\n## Verification\n\nRe-ran the production baseline and the read-only correlation queries: active revision lookup, FQDN lookup, /healthz, /readiness, PR #80 comment/review baseline inspection, PR head SHA lookup, deterministic reviewOutputKey computation, Log Analytics review.full router scan, deliveryId-correlated log-chain scan, terminal Mention execution completed scan for the 20:00 delivery window, exact reviewOutputKey scan, and a bounded publish-path count query using the shipped handler log strings. These checks confirmed the active hotfix revision was healthy, the 20:00 PR #80 trigger produced delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8 on taskType=review.full, the ACA job completed successfully, but the mention handler ended with conclusion=\"failure\", no reviewOutputKey log rows, zero publish-path rows, and zero GitHub-visible output after the trigger.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query \"[?properties.active].name | [0]\" --output tsv` | 0 | ✅ pass | 5502ms |\n| 2 | `az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn --output tsv` | 0 | ✅ pass | 1479ms |\n| 3 | `curl -fsS -w '\\nHTTP %{http_code}\\n' https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/healthz` | 0 | ✅ pass | 1003ms |\n| 4 | `curl -fsS -w '\\nHTTP %{http_code}\\n' https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/readiness` | 0 | ✅ pass | 272ms |\n| 5 | `gh api repos/xbmc/kodiai/issues/80/comments --paginate --jq '[.[] | select(.created_at >= \"2026-04-07T18:29:38Z\") | {id,user:.user.login,created_at,body}]'` | 0 | ✅ pass | 403ms |\n| 6 | `gh api repos/xbmc/kodiai/pulls/80/reviews --paginate --jq '[.[] | select(.submitted_at >= \"2026-04-07T20:00:17Z\") | {id,user:.user.login,submitted_at,state,body}]'` | 0 | ✅ pass | 485ms |\n| 7 | `gh api repos/xbmc/kodiai/pulls/80 --jq '{head_sha:.head.sha,head_ref:.head.ref,base_ref:.base.ref,updated_at,mergeable_state}'` | 0 | ✅ pass | 488ms |\n| 8 | `node - <<'NODE' # compute deterministic reviewOutputKey from review-idempotency.ts inputs for delivery 66b4ee50...` | 0 | ✅ pass | 21ms |\n| 9 | `az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<review.full router query>' -o json` | 0 | ✅ pass | 1314ms |\n| 10 | `az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<deliveryId 66b4ee50... chain query>' -o json` | 0 | ✅ pass | 1523ms |\n| 11 | `az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<20:00 delivery Mention execution completed query>' -o json` | 0 | ✅ pass | 2813ms |\n| 12 | `az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<exact reviewOutputKey query>' -o json` | 0 | ✅ pass | 1416ms |\n| 13 | `az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<publish-path signal count query>' -o json` | 0 | ✅ pass | 1453ms |\n\n## Deviations\n\nThe available gh token did not expose GitHub delivery metadata through repos/xbmc/kodiai/hooks, so I recovered the chosen delivery ID from the ingress log chain instead of GitHub delivery listings. This stayed within the shipped runbook/query surfaces and did not require any outward GitHub action.\n\n## Known Issues\n\nThe live explicit-review proof lane is still blocked on delivery 66b4ee50-32bc-11f1-9eeb-89b961f025e8: it reaches taskType=review.full on the active hotfix revision and the ACA job itself succeeds, but no reviewOutputKey, no publish-path log rows, and no GitHub-visible approval or fallback comment are produced. The earlier fresh trigger comments at 19:28:47Z and 19:42:33Z also remain unmatched in the PR thread, but this task intentionally stayed on the newest active-revision proof window.\n\n## Files Created/Modified\n\n- `.gsd/milestones/M043/slices/S05/tasks/T02-SUMMARY.md`\n",
       "description": "Use the existing explicit-mention proof surfaces; do not invent a new verifier. The source of truth is `src/handlers/mention.ts`, `src/handlers/review-idempotency.ts`, `docs/runbooks/review-requested-debug.md`, and the live ACA revision/probes exposed by `deploy.sh` and `docs/deployment.md`. First capture the active revision, FQDN, `/healthz`, `/readiness`, and the current PR #80 comment baseline. Then correlate one fresh explicit-review delivery by `deliveryId` and `reviewOutputKey` through `ContainerAppConsoleLogs_CL` and the PR thread. Because a new `@kodiai review` comment is an outward-facing GitHub action, do not create one in auto-mode unless an explicit authorization already exists in the current operating context; if no authorized fresh trigger is available, stop after the read-only preflight and record that blocker precisely rather than improvising the action.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Active ACA revision and probe surfaces | Re-read the active revision, `/healthz`, and `/readiness` before assuming the publish lane regressed. | Retry the probe check once, then record the probe failure as the live blocker. | Treat inconsistent revision/probe output as deploy drift and capture it explicitly. |\n| GitHub delivery / PR thread state | If no authorized fresh trigger exists, stop with a blocker instead of posting a new comment. | Re-check the PR thread and delivery list for the current proof window before declaring the lane missing. | If comment/review output and delivery metadata disagree, use `deliveryId` plus `reviewOutputKey` as the truth source. |\n| Log Analytics `ContainerAppConsoleLogs_CL` queries | Use the runbook query flow and current handler log messages; do not invent alternate search strings. | Re-run the same bounded query window once, then record log unavailability explicitly. | Missing publish-path rows with `taskType=review.full` means a pre-publish executor failure until proven otherwise. |\n| Mention publish bridge semantics in source | Classify the outcome only from the shipped log strings and `publishResolution` states in source. | N/A | Treat `approval-bridge`, `idempotency-skip`, `duplicate-suppressed`, `publish-failure-fallback`, and `publish-failure-comment-failed` as distinct outcomes; do not collapse them into generic success/failure. |\n\n## Load Profile\n\n- **Shared resources**: GitHub PR thread state, webhook delivery metadata, and one bounded Log Analytics query window.\n- **Per-operation cost**: a few read-only GitHub calls, probe checks, and log searches around a single delivery.\n- **10x breakpoint**: thrashing across many stale deliveries; stay on one proof window and one delivery ID.\n\n## Negative Tests\n\n- **Malformed inputs**: stale delivery IDs or stale comment baselines must not be reused as fresh proof.\n- **Error paths**: `taskType=review.full` with no publish-path rows is a pre-publish failure, and `publish-failure-fallback` / `publish-failure-comment-failed` are real red outcomes, not passes.\n- **Boundary conditions**: `idempotency-skip` and `duplicate-suppressed` are acceptable only when the same delivery still has exactly one GitHub-visible outcome and matching `reviewOutputKey`.\n\n## Steps\n\n1. Capture the current production baseline: active revision, FQDN, `/healthz`, `/readiness`, and the latest PR #80 explicit-mention thread state.\n2. Use one authorized fresh explicit-review trigger if it already exists in the current operating context; otherwise stop before any outward GitHub action and record the blocker.\n3. Correlate the chosen delivery through `ContainerAppConsoleLogs_CL` and the PR thread by `deliveryId` and `reviewOutputKey`, then classify the terminal `publishResolution` truthfully.\n4. Confirm exactly one GitHub-visible outcome for that delivery and write the full live-proof chain into `T02-SUMMARY.md`.\n\n## Must-Haves\n\n- [ ] The task reuses the shipped runbook/source surfaces and does not add a new mention-proof script.\n- [ ] The active revision and probe baseline are captured before interpreting live logs.\n- [ ] One delivery is correlated end-to-end by `deliveryId` and `reviewOutputKey`, or the missing authorization/delivery is recorded as the exact blocker.\n- [ ] `T02-SUMMARY.md` records the active revision, delivery, publish outcome, GitHub-visible result, and blocker/pass verdict.",
       "estimate": "90m",
       "files": [
@@ -14412,6 +14417,149 @@
       "verdict": "✅ pass",
       "duration_ms": 7700,
       "created_at": "2026-04-08T01:28:10.344Z"
+    },
+    {
+      "id": 261,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az containerapp revision list --name ca-kodiai --resource-group rg-kodiai --query \"[?properties.active].name | [0]\" --output tsv",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5502,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 262,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn --output tsv",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1479,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 263,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "curl -fsS -w '\\nHTTP %{http_code}\\n' https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/healthz",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1003,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 264,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "curl -fsS -w '\\nHTTP %{http_code}\\n' https://ca-kodiai.agreeableisland-d347f806.eastus.azurecontainerapps.io/readiness",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 272,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 265,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "gh api repos/xbmc/kodiai/issues/80/comments --paginate --jq '[.[] | select(.created_at >= \"2026-04-07T18:29:38Z\") | {id,user:.user.login,created_at,body}]'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 403,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 266,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "gh api repos/xbmc/kodiai/pulls/80/reviews --paginate --jq '[.[] | select(.submitted_at >= \"2026-04-07T20:00:17Z\") | {id,user:.user.login,submitted_at,state,body}]'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 485,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 267,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "gh api repos/xbmc/kodiai/pulls/80 --jq '{head_sha:.head.sha,head_ref:.head.ref,base_ref:.base.ref,updated_at,mergeable_state}'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 488,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 268,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "node - <<'NODE' # compute deterministic reviewOutputKey from review-idempotency.ts inputs for delivery 66b4ee50...",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 21,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 269,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<review.full router query>' -o json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1314,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 270,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<deliveryId 66b4ee50... chain query>' -o json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1523,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 271,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<20:00 delivery Mention execution completed query>' -o json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2813,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 272,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<exact reviewOutputKey query>' -o json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1416,
+      "created_at": "2026-04-08T01:43:08.959Z"
+    },
+    {
+      "id": 273,
+      "task_id": "T02",
+      "slice_id": "S05",
+      "milestone_id": "M043",
+      "command": "az monitor log-analytics query --workspace fb0d671a-6537-4c68-9f32-bef49c3d41d8 --analytics-query '<publish-path signal count query>' -o json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 1453,
+      "created_at": "2026-04-08T01:43:08.959Z"
     }
   ]
 }
