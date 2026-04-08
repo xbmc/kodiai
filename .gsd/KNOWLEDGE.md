@@ -763,3 +763,24 @@ This keeps the TypeScript type narrower and avoids null/undefined noise in downs
 - In `src/execution/executor.test.ts`, assert explicit review mentions (`eventType="issue_comment.created"`, `taskType="review.full"`, PR context) write `agent-config.json` with repo-config `maxTurns` and the full review tool set, while conversational mention requests still get the reduced tool set.
 
 **Established in:** M043/S05 post-close remediation (`src/handlers/mention.ts`, `src/execution/executor.ts`).
+
+---
+
+## Clean-DB CI Repros Must Start From a Fresh Database, Not the Warm `kodiai` DB (M043/S05)
+
+**Context:** PR #80 still failed in GitHub Actions after the deterministic and live mention-review fixes landed. The rerun exposed a hidden local false positive: `src/knowledge/store.test.ts` was passing only because the developer DB already had migrated tables. On a fresh CI database, the suite failed immediately with `PostgresError: relation "review_checkpoints" does not exist` from `truncateAll()` before the first `KnowledgeStore` assertion even ran.
+
+**Rule:** For any DB-shaped CI repro, prove the failure or fix against a **freshly created database** (for example `kodiai_ci_repro`), not just the long-lived local `kodiai` database. A warm local DB can hide missing test bootstrap. If a test file opens a direct `postgres(...)` connection, verify it explicitly runs `runMigrations(sql)` in `beforeAll` unless the schema is created some other way.
+
+**Concrete fix pattern:** Store/integration tests that own a Postgres connection should follow the same bootstrap pattern as `memory-store.test.ts`, `issue-store.test.ts`, and similar peers:
+```ts
+import { runMigrations } from "../db/migrate.ts";
+
+beforeAll(async () => {
+  sql = postgres(DATABASE_URL, ...);
+  await runMigrations(sql);
+  store = createKnowledgeStore({ sql, logger: mockLogger });
+});
+```
+
+**Established in:** M043/S05 clean-DB rerun after PR #80 CI surfaced `review_checkpoints` schema drift (`src/knowledge/store.test.ts`).
