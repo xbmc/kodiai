@@ -1,15 +1,21 @@
 # review_requested Debug Runbook
 
-Use this runbook when manual re-requesting kodiai on a PR does not trigger a review.
+Use this runbook when a manual Kodiai re-review does not trigger correctly. It covers both operator-visible lanes:
+
+- UI re-request via `pull_request.review_requested`
+- Explicit PR comment trigger via `@kodiai review`
 
 ## UI-based Re-review (Team Request)
 
 If you want a UI-only retrigger (no comment), request review from the team `ai-review` (or `aireview`).
 Kodiai treats `pull_request.review_requested` for that team as a re-review trigger.
 
-## 1) Confirm webhook delivery exists in GitHub
+## 1) Confirm the correct GitHub delivery exists
 
-Look for `pull_request` with action `review_requested` in GitHub App deliveries.
+There are two valid manual trigger shapes. Verify the one you actually used:
+
+- **UI re-request:** `pull_request` with action `review_requested`
+- **Explicit comment lane:** `issue_comment` with action `created` on the PR, and the comment body contains `@kodiai review`
 
 ```sh
 gh api repos/<owner>/<repo>/hooks --jq '.[].id'
@@ -17,26 +23,39 @@ gh api repos/<owner>/<repo>/hooks/<hook-id>/deliveries --jq '.[] | {id,event,act
 ```
 
 Expected signal:
-- A delivery exists with `event: "pull_request"` and `action: "review_requested"`.
+- A delivery exists for the trigger lane you used.
 - Delivery headers include `X-GitHub-Delivery` (this is the correlation key).
 
 ## 2) Correlate ingress and router logs by delivery ID
 
-Search application logs for the exact `X-GitHub-Delivery` value.
+Search application console logs for the exact `X-GitHub-Delivery` value.
 
 ```sh
-# Example Azure Log Analytics query
-AppTraces
-| where Message has "deliveryId"
-| where Message has "<delivery-id>"
-| project TimeGenerated, Message
+# Azure Log Analytics query: delivery correlation
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has "<delivery-id>"
+| project TimeGenerated, Log_s
+| order by TimeGenerated asc
+```
+
+If you need to prove the request stayed on the full-review lane, run the adjacent router query:
+
+```sh
+# Azure Log Analytics query: router resolution for taskType=review.full
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has "Task router resolved model"
+| where Log_s has "\"taskType\":\"review.full\""
+| project TimeGenerated, Log_s
 | order by TimeGenerated asc
 ```
 
 Expected log chain includes:
 - `Webhook accepted and queued for dispatch`
 - `Router evaluated dispatch keys`
-- Either `Dispatched to ... handler(s)` or explicit filtered/no-handler skip reason
+- `Task router resolved model` with `taskType=review.full` for a real review lane
+- Either `Dispatched to ... handler(s)` or an explicit filtered/no-handler skip reason
 
 ## Evidence Bundle (Review)
 
@@ -52,7 +71,47 @@ When review output is published or an approval is submitted, the handler emits a
   - `prNumber`
   - `reviewOutputKey`
 
-## 3) Verify review_requested gate decision
+## 3) Verify the explicit `@kodiai review` publish bridge
+
+On a PR comment, `@kodiai review` is handled by the mention handler as an explicit review request. The executor still runs on `taskType=review.full`, but the mention handler owns the GitHub approval publish bridge and the publish-resolution logs.
+
+Use the same delivery ID and search for `reviewOutputKey` / publish-resolution evidence:
+
+```sh
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where Log_s has "<delivery-id>"
+| where Log_s has "reviewOutputKey"
+| project TimeGenerated, Log_s
+| order by TimeGenerated asc
+```
+
+Expected success and recovery outcomes:
+
+- **Fresh approval publish**
+  - `Explicit mention review idempotency check passed`
+  - `Submitted approval review for explicit mention request`
+  - `Mention execution completed` with:
+    - `explicitReviewRequest=true`
+    - `publishResolution=approval-bridge`
+    - `reviewOutputKey=<key>`
+- **Already published / idempotent skip**
+  - `Skipping explicit mention review publish because output already exists`
+  - `reviewOutputPublicationState=skip-existing-output`
+  - `Mention execution completed` with `publishResolution=idempotency-skip`
+- **Approval API errored, but output already landed**
+  - `Explicit mention review publish error still produced output; suppressing fallback`
+  - `reviewOutputPublicationState=skip-existing-output`
+  - `Mention execution completed` with `publishResolution=duplicate-suppressed`
+
+Failure-path outcomes are also explicit:
+
+- `publishResolution=publish-failure-fallback` means the approval publish failed and Kodiai posted an error comment instead.
+- `publishResolution=publish-failure-comment-failed` means the approval publish failed and even the fallback error comment could not be delivered.
+
+`reviewOutputKey` is the durable correlation key across the idempotency logs, the evidence bundle, and the final completion log.
+
+## 4) Verify review_requested gate decision
 
 For the same `deliveryId`, check review handler gate logs.
 
@@ -70,7 +129,7 @@ If skip reason is `non-kodiai-reviewer`, confirm the re-request target is the ap
 
 If using team-based UI retrigger, confirm the requested team is `ai-review` or `aireview`.
 
-## 4) Verify queue lifecycle for same delivery
+## 5) Verify queue lifecycle for same delivery
 
 Look for queue logs with the same `deliveryId`:
 - `Review enqueue started`
@@ -90,7 +149,7 @@ These fields are the authoritative evidence for Azure Job start contract mismatc
 
 If `Review enqueue started` exists but no `Job execution started`, investigate queue saturation, process crash, or an ACA start rejection.
 
-## 5) Local replay check (fast isolation)
+## 6) Local replay check (fast isolation)
 
 Replay a captured payload to confirm webhook -> router -> handler flow.
 

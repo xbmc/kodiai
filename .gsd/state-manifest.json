@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-07T23:53:49.455Z",
+  "exported_at": "2026-04-08T00:10:46.343Z",
   "milestones": [
     {
       "id": "M001",
@@ -10519,28 +10519,37 @@
       "milestone_id": "M043",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Manually merge deploy and operator docs without importing hotfix corruption",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Aligned deploy.sh and operator docs with the explicit @kodiai review publish bridge and current deploy proof surfaces.",
+      "status": "complete",
+      "one_liner": "Aligned deploy.sh and operator docs with the explicit @kodiai review publish bridge and current deploy proof surfaces.",
+      "narrative": "Merged the remaining non-TypeScript hotfix surface by meaning rather than copying the hotfix branch verbatim. Kept the current origin/main ACA create/update flow intact in deploy.sh and added only the missing proof output for active revision, app URL, /healthz, /readiness, and the webhook URL. Updated docs/deployment.md to match the real deploy contract, restored the truthful required env var and secret/runtime-env sections, removed the stale /health alias, documented ACA job launch-contract values as runtime defaults from src/config.ts, and restored the post-deploy proof-surface guidance. Updated docs/runbooks/review-requested-debug.md to use ContainerAppConsoleLogs_CL again, restore the taskType=review.full router query, and document the explicit @kodiai review bridge with reviewOutputKey, reviewOutputPublicationState=skip-existing-output, and the current publishResolution outcomes.",
+      "verification_result": "Ran bash -n deploy.sh successfully. Ran bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts and all 104 tests passed, including the explicit-review approval bridge/idempotency/recovery cases. Ran rg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md and all required terms were present. Ran the task-plan anchored diff check against fd67a48111...HEAD successfully, then supplemented it with a working-tree filtered diff check to confirm there were no extra non-.gsd changes beyond deploy.sh and the two docs files.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-08T00:10:46.317Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
-      "description": "Why: the remaining non-code hotfix surface contains real deploy/readiness and operator guidance, but the hotfix branch also carries duplicated footer corruption and stale enum prose. Do: port those semantics by meaning instead of raw copy, update docs to current code truth (`skip-existing-output`, `idempotency-skip`, `duplicate-suppressed`, `ContainerAppConsoleLogs_CL`, explicit `@kodiai review` lane), and keep the local branch diff on the approved whitelist while leaving the branch push-ready but unpushed. Done when: `deploy.sh` passes shell syntax, docs grep to current log/enum names, targeted tests still pass, and no extra files appear in the local PR diff.",
+      "deviations": "Supplemented the plan's fd67a48111...HEAD diff check with a working-tree filtered diff check because the branch-delta form cannot see uncommitted task edits before auto-commit.",
+      "known_issues": "None.",
+      "key_files": [
+        "deploy.sh",
+        "docs/deployment.md",
+        "docs/runbooks/review-requested-debug.md",
+        ".gsd/milestones/M043/slices/S03/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Kept the current origin/main ACA create/update flow intact and added proof-surface output instead of reintroducing the hotfix branch's older launch-contract env injection.",
+        "Documented ACA job launch-contract values as runtime defaults from src/config.ts because deploy.sh no longer injects those env vars into the container app template."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M043\nkey_files:\n  - deploy.sh\n  - docs/deployment.md\n  - docs/runbooks/review-requested-debug.md\n  - .gsd/milestones/M043/slices/S03/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Kept the current origin/main ACA create/update flow intact and added proof-surface output instead of reintroducing the hotfix branch's older launch-contract env injection.\n  - Documented ACA job launch-contract values as runtime defaults from src/config.ts because deploy.sh no longer injects those env vars into the container app template.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-08T00:10:46.316Z\nblocker_discovered: false\n---\n\n# T02: Aligned deploy.sh and operator docs with the explicit @kodiai review publish bridge and current deploy proof surfaces.\n\n**Aligned deploy.sh and operator docs with the explicit @kodiai review publish bridge and current deploy proof surfaces.**\n\n## What Happened\n\nMerged the remaining non-TypeScript hotfix surface by meaning rather than copying the hotfix branch verbatim. Kept the current origin/main ACA create/update flow intact in deploy.sh and added only the missing proof output for active revision, app URL, /healthz, /readiness, and the webhook URL. Updated docs/deployment.md to match the real deploy contract, restored the truthful required env var and secret/runtime-env sections, removed the stale /health alias, documented ACA job launch-contract values as runtime defaults from src/config.ts, and restored the post-deploy proof-surface guidance. Updated docs/runbooks/review-requested-debug.md to use ContainerAppConsoleLogs_CL again, restore the taskType=review.full router query, and document the explicit @kodiai review bridge with reviewOutputKey, reviewOutputPublicationState=skip-existing-output, and the current publishResolution outcomes.\n\n## Verification\n\nRan bash -n deploy.sh successfully. Ran bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts and all 104 tests passed, including the explicit-review approval bridge/idempotency/recovery cases. Ran rg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md and all required terms were present. Ran the task-plan anchored diff check against fd67a48111...HEAD successfully, then supplemented it with a working-tree filtered diff check to confirm there were no extra non-.gsd changes beyond deploy.sh and the two docs files.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bash -n deploy.sh` | 0 | ✅ pass | 2ms |\n| 2 | `bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts` | 0 | ✅ pass | 4543ms |\n| 3 | `rg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md` | 0 | ✅ pass | 5ms |\n| 4 | `test -z \"$(git diff --name-only fd67a48111...HEAD | rg -v '^(deploy\\.sh|docs/deployment\\.md|docs/runbooks/review-requested-debug\\.md)$')\"` | 0 | ✅ pass | 3ms |\n| 5 | `test -z \"$(git diff --name-only -- | grep -vE '^(\\.gsd/.*|deploy\\.sh|docs/deployment\\.md|docs/runbooks/review-requested-debug\\.md)$')\"` | 0 | ✅ pass | 6ms |\n\n## Deviations\n\nSupplemented the plan's fd67a48111...HEAD diff check with a working-tree filtered diff check because the branch-delta form cannot see uncommitted task edits before auto-commit.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `deploy.sh`\n- `docs/deployment.md`\n- `docs/runbooks/review-requested-debug.md`\n- `.gsd/milestones/M043/slices/S03/tasks/T02-SUMMARY.md`\n",
+      "description": "Port the remaining non-TypeScript hotfix surface by meaning, not by raw copy. Update `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md` so they match the current rebased branch truth for `skip-existing-output`, `idempotency-skip`, `duplicate-suppressed`, `ContainerAppConsoleLogs_CL`, `taskType=review.full`, and the explicit `@kodiai review` lane. Use T01 commit `fd67a48111` as the stable anchor: after this task, the only post-T01 branch delta must be those three files. Preserve the current `origin/main` ACA YAML/update path and do not reintroduce the hotfix branch's duplicated footer/banner corruption.",
       "estimate": "90m",
       "files": [
         "deploy.sh",
         "docs/deployment.md",
         "docs/runbooks/review-requested-debug.md"
       ],
-      "verify": "- `bash -n deploy.sh`\n- `bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts`\n- `rg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md`\n- `test -z \"$(git diff --name-only origin/main...HEAD | rg -v '^(deploy\\\\.sh|docs/deployment\\\\.md|docs/runbooks/review-requested-debug\\\\.md|src/handlers/mention\\\\.ts|src/handlers/mention\\\\.test\\\\.ts|src/handlers/review-idempotency\\\\.ts|src/handlers/review-idempotency\\\\.test\\\\.ts|src/lib/errors\\\\.ts)$')\"`",
+      "verify": "bash -n deploy.sh\nbun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts\nrg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md\ntest -z \"$(git diff --name-only fd67a48111...HEAD | rg -v '^(deploy\\.sh|docs/deployment\\.md|docs/runbooks/review-requested-debug\\.md)$')\"",
       "inputs": [
+        ".gsd/milestones/M043/slices/S03/tasks/T01-SUMMARY.md",
         "deploy.sh",
         "docs/deployment.md",
         "docs/runbooks/review-requested-debug.md",
@@ -10620,6 +10629,63 @@
         "src/handlers/review-idempotency.ts",
         "src/handlers/review-idempotency.test.ts",
         "src/lib/errors.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M043",
+      "slice_id": "S03",
+      "id": "T04",
+      "title": "Strip tracked `.gsd` branch noise and prove the rebased PR surface truthfully",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Make the rebased PR branch a code/docs-only review surface by removing tracked planning/runtime artifacts that still appear in the PR diff (`.gsd/event-log.jsonl`, `.gsd/state-manifest.json`). Then run the final slice proof against the truthful branch model: the historical PR feature stack may still differ widely from `origin/main`, but after T01 the only intentional backport delta must be the deploy/docs merge plus these two artifact removals, and the final `origin/main...HEAD` diff must contain no `.gsd`, `.tmp`, `.gsd-id`, or `.gitignore` paths. Use `test -z \"$(...)\"` style checks so the noise grep fails correctly instead of negating only the left side of a pipeline.",
+      "estimate": "60m",
+      "files": [
+        ".gsd/event-log.jsonl",
+        ".gsd/state-manifest.json",
+        "deploy.sh",
+        "docs/deployment.md",
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts",
+        "src/lib/errors.ts"
+      ],
+      "verify": "bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts ./src/execution/agent-entrypoint.test.ts\nbun test ./src/jobs/aca-launcher.test.ts ./src/execution/executor.test.ts\nbash -n deploy.sh && ! rg -n '^( URL: https://\\$\\{FQDN\\}|/\\$\\{FQDN\\}\"|=========\"?$)' deploy.sh\ndiff -u <(printf '%s\\n' .gsd/event-log.jsonl .gsd/state-manifest.json deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md | sort) <(git diff --name-only fd67a48111...HEAD | sort)\ntest -z \"$(git diff --name-only origin/main...HEAD | rg '^(\\.gsd/|\\.tmp/|\\.gsd-id$|\\.gitignore$)')\"",
+      "inputs": [
+        ".gsd/milestones/M043/slices/S03/tasks/T01-SUMMARY.md",
+        ".gsd/milestones/M043/slices/S03/tasks/T02-PLAN.md",
+        ".gsd/event-log.jsonl",
+        ".gsd/state-manifest.json",
+        "deploy.sh",
+        "docs/deployment.md",
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts",
+        "src/lib/errors.ts"
+      ],
+      "expected_output": [
+        ".gsd/event-log.jsonl",
+        ".gsd/state-manifest.json",
+        "deploy.sh",
+        "docs/deployment.md",
+        "docs/runbooks/review-requested-debug.md"
       ],
       "observability_impact": "",
       "full_plan_md": "",
@@ -13757,6 +13823,61 @@
       "verdict": "❌ fail",
       "duration_ms": 18,
       "created_at": "2026-04-07T23:53:49.431Z"
+    },
+    {
+      "id": 232,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M043",
+      "command": "bash -n deploy.sh",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 2,
+      "created_at": "2026-04-08T00:10:46.317Z"
+    },
+    {
+      "id": 233,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M043",
+      "command": "bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4543,
+      "created_at": "2026-04-08T00:10:46.317Z"
+    },
+    {
+      "id": 234,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M043",
+      "command": "rg -n 'skip-existing-output|idempotency-skip|duplicate-suppressed|ContainerAppConsoleLogs_CL|taskType=review\\.full' docs/deployment.md docs/runbooks/review-requested-debug.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5,
+      "created_at": "2026-04-08T00:10:46.317Z"
+    },
+    {
+      "id": 235,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M043",
+      "command": "test -z \"$(git diff --name-only fd67a48111...HEAD | rg -v '^(deploy\\.sh|docs/deployment\\.md|docs/runbooks/review-requested-debug\\.md)$')\"",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3,
+      "created_at": "2026-04-08T00:10:46.317Z"
+    },
+    {
+      "id": 236,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M043",
+      "command": "test -z \"$(git diff --name-only -- | grep -vE '^(\\.gsd/.*|deploy\\.sh|docs/deployment\\.md|docs/runbooks/review-requested-debug\\.md)$')\"",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6,
+      "created_at": "2026-04-08T00:10:46.317Z"
     }
   ]
 }

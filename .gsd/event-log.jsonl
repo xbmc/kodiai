@@ -76,3 +76,5 @@
 {"cmd":"complete-slice","params":{"milestoneId":"M034","sliceId":"S02"},"ts":"2026-04-02T20:27:14.943Z","actor":"agent","hash":"631b0e6ba68c0497","session_id":"652ea923-fefe-4af1-8846-511ebab70072"}
 {"cmd":"complete-milestone","params":{"milestoneId":"M034"},"ts":"2026-04-02T20:30:44.322Z","actor":"agent","hash":"c4409c4de3e2e383","session_id":"652ea923-fefe-4af1-8846-511ebab70072"}
 {"cmd":"complete-task","params":{"milestoneId":"M043","sliceId":"S03","taskId":"T01"},"ts":"2026-04-07T23:53:49.464Z","actor":"agent","hash":"e5b3875da186189d","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
+{"cmd":"replan-slice","params":{"milestoneId":"M043","sliceId":"S03","blockerTaskId":"T01"},"ts":"2026-04-07T23:58:31.120Z","actor":"agent","hash":"cde1a6132ca60904","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}
+{"cmd":"complete-task","params":{"milestoneId":"M043","sliceId":"S03","taskId":"T02"},"ts":"2026-04-08T00:10:46.351Z","actor":"agent","hash":"56c27964d13045f1","session_id":"3cec25b1-382d-43e2-b1f3-5195d14e8809"}

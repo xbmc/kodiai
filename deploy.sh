@@ -494,12 +494,19 @@ FQDN=$(az containerapp show \
   --resource-group "$RESOURCE_GROUP" \
   --query properties.configuration.ingress.fqdn \
   --output tsv)
+HEALTH_URL="https://${FQDN}/healthz"
+READINESS_URL="https://${FQDN}/readiness"
+ACTIVE_REVISION=$(az containerapp revision list \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "[?properties.active].name | [0]" \
+  --output tsv 2>/dev/null || true)
 
 # -- Post-deploy health check --------------------------------------------------
 echo "==> Waiting for new revision to become healthy (up to 60s)..."
 HEALTH_OK=false
 for i in $(seq 1 12); do
-  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${FQDN}/healthz" 2>/dev/null || echo "000")
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
   if [[ "$HTTP_STATUS" == "200" ]]; then
     HEALTH_OK=true
     echo "  Health check passed (HTTP $HTTP_STATUS)"
@@ -524,7 +531,10 @@ echo ""
 echo "============================================================"
 echo "  Deployment complete!"
 echo ""
-echo "  Your app is running at: https://${FQDN}"
+echo "  Active revision: ${ACTIVE_REVISION:-unknown}"
+echo "  App URL: https://${FQDN}"
+echo "  Health URL: ${HEALTH_URL}"
+echo "  Readiness URL: ${READINESS_URL}"
 echo "  Webhook URL: https://${FQDN}/webhooks/github"
 echo ""
 echo "  Configure this URL in your GitHub App settings."
