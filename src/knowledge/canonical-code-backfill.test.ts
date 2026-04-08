@@ -200,12 +200,20 @@ describe("backfillCanonicalCodeSnapshot", () => {
     }
   });
 
-  it("resumes from stored lastFilePath when the commit sha still matches", async () => {
-    const fixture = await createWorkspaceFixture({
-      "a.ts": "export const a = 1;\n",
-      "b.ts": "export const b = 2;\n",
-      "c.ts": "export const c = 3;\n",
-    });
+  it("resumes from stored lastFilePath using localeCompare ordering, including non-ASCII filenames, when the commit sha still matches", async () => {
+    const filePaths = ["alpha.ts", "éclair.ts", "ångström.ts", "zeta.ts"];
+    const sortedPaths = [...filePaths].sort((a, b) => a.localeCompare(b));
+    const checkpointIndex = 1;
+    const checkpointFilePath = sortedPaths[checkpointIndex]!;
+    const processedBeforeResume = checkpointIndex + 1;
+    const expectedResumedPaths = sortedPaths.filter(
+      (filePath) => filePath.localeCompare(checkpointFilePath) > 0,
+    );
+    const fixture = await createWorkspaceFixture(
+      Object.fromEntries(
+        filePaths.map((filePath) => [filePath, `export const marker = ${JSON.stringify(filePath)};\n`]),
+      ),
+    );
 
     try {
       const existingState: CanonicalCorpusBackfillState = {
@@ -214,13 +222,13 @@ describe("backfillCanonicalCodeSnapshot", () => {
         canonicalRef: "main",
         runId: "run-existing",
         status: "running",
-        filesTotal: 3,
-        filesDone: 1,
+        filesTotal: filePaths.length,
+        filesDone: processedBeforeResume,
         chunksTotal: null,
-        chunksDone: 1,
+        chunksDone: processedBeforeResume,
         chunksSkipped: 0,
         chunksFailed: 0,
-        lastFilePath: "a.ts",
+        lastFilePath: checkpointFilePath,
         commitSha: fixture.sha,
         errorMessage: null,
         createdAt: new Date().toISOString(),
@@ -245,9 +253,9 @@ describe("backfillCanonicalCodeSnapshot", () => {
 
       expect(result.resumed).toBe(true);
       expect(result.runId).toBe("run-existing");
-      expect(harness.deleteCalls.map((call) => call.filePath)).toEqual(["b.ts", "c.ts"]);
-      expect(harness.savedStates[0]?.filesDone).toBe(1);
-      expect(harness.savedStates.at(-1)?.filesDone).toBe(3);
+      expect(harness.deleteCalls.map((call) => call.filePath)).toEqual(expectedResumedPaths);
+      expect(harness.savedStates[0]?.filesDone).toBe(processedBeforeResume);
+      expect(harness.savedStates.at(-1)?.filesDone).toBe(filePaths.length);
     } finally {
       await fixture.cleanup();
     }

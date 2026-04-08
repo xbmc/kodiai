@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-08T00:45:30.961Z",
+  "exported_at": "2026-04-08T00:51:33.819Z",
   "milestones": [
     {
       "id": "M001",
@@ -10745,19 +10745,26 @@
       "milestone_id": "M043",
       "slice_id": "S04",
       "id": "T02",
-      "title": "Close the remaining PR review surface with proof-hardening tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Closed the remaining PR review surface by fixing misleading test wording and hardening capped-count and non-ASCII resume regressions.",
+      "status": "complete",
+      "one_liner": "Closed the remaining PR review surface by fixing misleading test wording and hardening capped-count and non-ASCII resume regressions.",
+      "narrative": "Kept the work inside the planned test surface and did not reopen already-correct production code. Renamed the misleading calculateTierForProfile no-throw test so the title matches the assertion and actual contract. Added a focused capped-case regression in active-rules.test.ts that proves getActiveRulesForPrompt fetches effectiveLimit + 1 rows, caps injected rules at effectiveLimit, and reports totalActive as the lower-bound count from that one-extra-row fetch. Extended the git-backed canonical backfill resume test with mixed ASCII and non-ASCII filenames, deriving the checkpoint and expected resumed files with localeCompare so the regression follows the same comparator used in production. Re-ran the S03 deploy/runbook proof-surface grep and the broader slice-confidence verification bundle after the test changes landed.",
+      "verification_result": "Ran bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts, then reran the operator-surface grep across deploy.sh, docs/deployment.md, and docs/runbooks/review-requested-debug.md. For final-slice confidence, ran bun test ./src/execution/review-prompt.test.ts ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts plus bun run verify:m038:s02, bun run verify:m042:s02, and bun run verify:m042:s03. All commands exited 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-08T00:51:33.793Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/contributor/tier-calculator.test.ts",
+        "src/knowledge/active-rules.test.ts",
+        "src/knowledge/canonical-code-backfill.test.ts"
+      ],
+      "key_decisions": [
+        "Kept the change set test-only so already-correct runtime logic stayed untouched while the review surface became truthful.",
+        "Bound the canonical backfill resume proof to localeCompare-derived ordering so the regression follows the same comparator used in production."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S04\nmilestone: M043\nkey_files:\n  - src/contributor/tier-calculator.test.ts\n  - src/knowledge/active-rules.test.ts\n  - src/knowledge/canonical-code-backfill.test.ts\nkey_decisions:\n  - Kept the change set test-only so already-correct runtime logic stayed untouched while the review surface became truthful.\n  - Bound the canonical backfill resume proof to localeCompare-derived ordering so the regression follows the same comparator used in production.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-08T00:51:33.793Z\nblocker_discovered: false\n---\n\n# T02: Closed the remaining PR review surface by fixing misleading test wording and hardening capped-count and non-ASCII resume regressions.\n\n**Closed the remaining PR review surface by fixing misleading test wording and hardening capped-count and non-ASCII resume regressions.**\n\n## What Happened\n\nKept the work inside the planned test surface and did not reopen already-correct production code. Renamed the misleading calculateTierForProfile no-throw test so the title matches the assertion and actual contract. Added a focused capped-case regression in active-rules.test.ts that proves getActiveRulesForPrompt fetches effectiveLimit + 1 rows, caps injected rules at effectiveLimit, and reports totalActive as the lower-bound count from that one-extra-row fetch. Extended the git-backed canonical backfill resume test with mixed ASCII and non-ASCII filenames, deriving the checkpoint and expected resumed files with localeCompare so the regression follows the same comparator used in production. Re-ran the S03 deploy/runbook proof-surface grep and the broader slice-confidence verification bundle after the test changes landed.\n\n## Verification\n\nRan bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts, then reran the operator-surface grep across deploy.sh, docs/deployment.md, and docs/runbooks/review-requested-debug.md. For final-slice confidence, ran bun test ./src/execution/review-prompt.test.ts ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts plus bun run verify:m038:s02, bun run verify:m042:s02, and bun run verify:m042:s03. All commands exited 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts` | 0 | ✅ pass | 100ms |\n| 2 | `rg -n 'ACA_JOB_IMAGE|ACA_JOB_NAME|ACA_RESOURCE_GROUP|MCP_INTERNAL_BASE_URL|/healthz|/readiness|active revision|ContainerAppConsoleLogs_CL|taskType=review.full|skip-existing-output|idempotency-skip|duplicate-suppressed' deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md` | 0 | ✅ pass | 9ms |\n| 3 | `bun test ./src/execution/review-prompt.test.ts ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts` | 0 | ✅ pass | 109ms |\n| 4 | `bun run verify:m038:s02` | 0 | ✅ pass | 50ms |\n| 5 | `bun run verify:m042:s02` | 0 | ✅ pass | 195ms |\n| 6 | `bun run verify:m042:s03` | 0 | ✅ pass | 159ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/contributor/tier-calculator.test.ts`\n- `src/knowledge/active-rules.test.ts`\n- `src/knowledge/canonical-code-backfill.test.ts`\n",
       "description": "Finish the remaining non-bug PR review comments without reopening already-correct production code. Rename the misleading `calculateTierForProfile` test so its title matches the `.not.toThrow()` assertion. Add a narrow capped-case test to `src/knowledge/active-rules.test.ts` that proves `totalActive` preserves the lower-bound count when one extra row is fetched beyond the effective limit. Extend the existing git-backed resume test in `src/knowledge/canonical-code-backfill.test.ts` with non-ASCII file names so `localeCompare` ordering remains covered. Re-run the operator-surface grep across `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md` to preserve the R011-backed deploy/debug contract while the PR review branch changes.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `calculateTierForProfile()` contract in `src/contributor/tier-calculator.ts` | Re-read the implementation and keep the change to the test title only; do not mutate production tier logic unless the assertion proves it is wrong. | N/A | If the implementation and the test title still disagree after rename, add a clearer assertion or comment rather than leaving a misleading label. |\n| `getActiveRulesForPrompt()` capped-count semantics | Use a store stub that returns `effectiveLimit + 1` rows so the test proves the lower-bound `totalActive` contract instead of asserting on an uncapped path. | N/A | If the returned count shape differs from the documented contract, adjust the test to the real lower-bound behavior and surface any production mismatch explicitly. |\n| Git-backed canonical backfill fixture | Re-run the existing local git fixture flow and keep the new assertion inside the established resume test rather than building a new harness. | Re-run only the canonical backfill test file in isolation before touching unrelated suites. | If locale ordering differs from ASCII assumptions, fail the test on the observed ordering and keep the production `localeCompare` path as the source of truth. |\n\n## Load Profile\n\n- **Shared resources**: three focused unit test files plus a local git-backed fixture in `canonical-code-backfill.test.ts`\n- **Per-operation cost**: targeted unit-test edits, one local git fixture run, and one deploy/docs grep preservation check\n- **10x breakpoint**: repeated full-suite reruns are the only real cost; keep retries on the targeted test files and proof greps\n\n## Negative Tests\n\n- **Malformed inputs**: empty score lists for `calculateTierForProfile`, capped active-rule fetches with one extra row, and non-ASCII filenames around the resume checkpoint.\n- **Error paths**: the docs grep must fail if any S03 deploy/runbook proof strings disappear while this PR-cleanup work lands.\n- **Boundary conditions**: `totalActive` remains a lower-bound count when capped, and resume ordering skips only files at or before `lastFilePath` even when locale sorting differs from plain ASCII.\n\n## Steps\n\n1. Rename the misleading `calculateTierForProfile` test so the title matches the existing `.not.toThrow()` assertion and stays review-truthful.\n2. Add a capped-case regression test to `src/knowledge/active-rules.test.ts` that proves `totalActive` reports the lower-bound `effectiveLimit + 1` count when the fetch is capped.\n3. Extend the git-backed resume test in `src/knowledge/canonical-code-backfill.test.ts` with non-ASCII filenames so the `localeCompare` checkpoint behavior is covered explicitly.\n4. Rerun the three focused unit files plus the deploy/docs proof-surface grep; if anything fails, repair only the intended test/proof surface before handing off.\n\n## Must-Haves\n\n- [ ] `src/contributor/tier-calculator.test.ts` no longer claims a throw while asserting `.not.toThrow()`.\n- [ ] `src/knowledge/active-rules.test.ts` proves the capped `totalActive` lower-bound semantics described in `src/knowledge/active-rules.ts`.\n- [ ] `src/knowledge/canonical-code-backfill.test.ts` proves resume ordering with non-ASCII filenames using the existing git-backed fixture.\n- [ ] The S03 deploy/runbook proof strings required for R011 still appear in `deploy.sh`, `docs/deployment.md`, and `docs/runbooks/review-requested-debug.md`.",
       "estimate": "45m",
       "files": [
@@ -14118,6 +14125,72 @@
       "verdict": "✅ pass",
       "duration_ms": 17,
       "created_at": "2026-04-08T00:45:30.933Z"
+    },
+    {
+      "id": 248,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "bun test ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 100,
+      "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 249,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "rg -n 'ACA_JOB_IMAGE|ACA_JOB_NAME|ACA_RESOURCE_GROUP|MCP_INTERNAL_BASE_URL|/healthz|/readiness|active revision|ContainerAppConsoleLogs_CL|taskType=review.full|skip-existing-output|idempotency-skip|duplicate-suppressed' deploy.sh docs/deployment.md docs/runbooks/review-requested-debug.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9,
+      "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 250,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "bun test ./src/execution/review-prompt.test.ts ./src/contributor/tier-calculator.test.ts ./src/knowledge/active-rules.test.ts ./src/knowledge/canonical-code-backfill.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 109,
+      "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 251,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "bun run verify:m038:s02",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 252,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "bun run verify:m042:s02",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 195,
+      "created_at": "2026-04-08T00:51:33.793Z"
+    },
+    {
+      "id": 253,
+      "task_id": "T02",
+      "slice_id": "S04",
+      "milestone_id": "M043",
+      "command": "bun run verify:m042:s03",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 159,
+      "created_at": "2026-04-08T00:51:33.793Z"
     }
   ]
 }

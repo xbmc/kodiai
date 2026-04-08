@@ -130,7 +130,7 @@ describe("calculateTierForProfile", () => {
     expect(tier).toBe("senior");
   });
 
-  test("throws when the profile cannot be assigned after replacement", () => {
+  test("does not throw when the target profile is absent from the existing scores list", () => {
     expect(() =>
       calculateTierForProfile({
         profileId: 9,

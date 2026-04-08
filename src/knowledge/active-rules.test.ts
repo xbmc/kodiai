@@ -169,6 +169,25 @@ describe("getActiveRulesForPrompt", () => {
     expect(result.rules).toHaveLength(5);
   });
 
+  test("reports capped totalActive as the lower-bound count fetched past the effective limit", async () => {
+    const effectiveLimit = 5;
+    const lowerBoundCount = effectiveLimit + 1;
+    const rules = Array.from({ length: lowerBoundCount + 4 }, (_, i) =>
+      makeRule({ id: i + 1, title: `Rule ${i + 1}`, ruleText: `Text ${i + 1}` })
+    );
+    const store = makeStore(rules);
+    const result = await getActiveRulesForPrompt({
+      store,
+      repo: "acme/app",
+      logger: makeSilentLogger(),
+      limit: effectiveLimit,
+    });
+
+    expect(store.getActiveRulesForRepo).toHaveBeenCalledWith("acme/app", lowerBoundCount);
+    expect(result.rules).toHaveLength(effectiveLimit);
+    expect(result.totalActive).toBe(lowerBoundCount);
+  });
+
   test("applies absolute cap of 20 when limit exceeds it", async () => {
     const rules = Array.from({ length: 25 }, (_, i) =>
       makeRule({ id: i + 1, title: `Rule ${i + 1}`, ruleText: `Text ${i + 1}` })
