@@ -1,20 +1,18 @@
-import { readFile } from "node:fs/promises";
-import { z } from "zod";
 import {
-  assertValidFixtureManifest,
   loadFixtureManifest,
   sortFixtureManifest,
-  summarizeFixtureManifest,
   FIXTURE_COHORTS,
-  FIXTURE_EXCLUSION_REASONS,
   FIXTURE_SOURCE_STATUSES,
   type ContributorFixtureManifest,
-  type ExcludedContributorFixture,
   type FixtureCohort,
   type FixtureExclusionReason,
   type FixtureManifestSummary,
-  type RetainedContributorFixture,
 } from "../src/contributor/fixture-set.ts";
+import {
+  loadAndInspectXbmcFixtureSnapshot,
+  type XbmcFixtureSnapshot,
+  type XbmcFixtureSnapshotInspection,
+} from "../src/contributor/xbmc-fixture-snapshot.ts";
 import {
   refreshXbmcFixtureSnapshot,
   type XbmcFixtureRefreshResult,
@@ -110,152 +108,7 @@ type BuildProofHarnessOptions = EvaluateOptions & {
 };
 
 type SnapshotDiagnostics = NonNullable<EvaluationReport["diagnostics"]>;
-
-type SnapshotCore = {
-  fixtureSetVersion: number;
-  repository: string;
-  curatedAt: string;
-  retained: RetainedContributorFixture[];
-  excluded: ExcludedContributorFixture[];
-};
-
-type SnapshotProvenanceInspection = {
-  retainedWithoutRecords: number;
-  excludedWithoutRecords: number;
-  issues: string[];
-};
-
-type SnapshotDerived = {
-  raw: unknown;
-  parseError: string | null;
-  fullSnapshot: z.infer<typeof snapshotSchema> | null;
-  coreSnapshot: SnapshotCore | null;
-  snapshotIssues: string[];
-  counts: EvaluationReport["counts"];
-  diagnostics: EvaluationReport["diagnostics"];
-  summary: FixtureManifestSummary | null;
-  provenanceInspection: SnapshotProvenanceInspection;
-};
-
-const commitCountsSchema = z.object({
-  allTime: z.number().int().nonnegative(),
-  since2025: z.number().int().nonnegative(),
-});
-
-const provenanceSourceSchema = z.object({
-  status: z.enum(FIXTURE_SOURCE_STATUSES),
-  note: z.string().trim().min(1),
-  evidenceUrl: z.string().trim().url().nullable(),
-  workspacePath: z.string().trim().min(1).nullable(),
-});
-
-const provenanceSchema = z.object({
-  github: provenanceSourceSchema,
-  localGit: provenanceSourceSchema,
-});
-
-const retainedCoreSchema = z.object({
-  kind: z.literal("retained"),
-  normalizedId: z.string().trim().min(1),
-  displayName: z.string().trim().min(1),
-  githubUsername: z.string().trim().min(1).nullable(),
-  cohort: z.enum(FIXTURE_COHORTS),
-  selectionNotes: z.string().trim().min(1),
-  observedCommitCounts: commitCountsSchema,
-  provenance: provenanceSchema,
-});
-
-const excludedCoreSchema = z.object({
-  kind: z.literal("excluded"),
-  normalizedId: z.string().trim().min(1),
-  displayName: z.string().trim().min(1),
-  githubUsername: z.string().trim().min(1).nullable(),
-  exclusionReason: z.enum(FIXTURE_EXCLUSION_REASONS),
-  exclusionNotes: z.string().trim().min(1),
-  relatedNormalizedIds: z.array(z.string().trim().min(1)),
-  observedCommitCounts: commitCountsSchema,
-  provenance: provenanceSchema,
-});
-
-const snapshotCoreSchema = z.object({
-  fixtureSetVersion: z.number().int().positive(),
-  repository: z.string().trim().min(1),
-  curatedAt: z.string().trim().min(1),
-  retained: z.array(retainedCoreSchema),
-  excluded: z.array(excludedCoreSchema),
-});
-
-const provenanceRecordSchema = z.object({
-  source: z.string().trim().min(1),
-  status: z.enum(["available", "unavailable"]),
-  note: z.string().trim().min(1),
-  evidenceUrl: z.string().trim().url().nullable(),
-  workspacePath: z.string().trim().min(1).nullable(),
-  observedAt: z.string().trim().min(1).nullable(),
-  identity: z.string().trim().min(1).nullable(),
-  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
-});
-
-const snapshotDiagnosticsSchema = z.object({
-  statusCode: z.enum(["snapshot-refreshed", "snapshot-degraded"]),
-  retainedCount: z.number().int().nonnegative(),
-  excludedCount: z.number().int().nonnegative(),
-  cohortCoverage: z.object({
-    senior: z.number().int().nonnegative(),
-    "ambiguous-middle": z.number().int().nonnegative(),
-    newcomer: z.number().int().nonnegative(),
-  }),
-  exclusionsByReason: z.object({
-    bot: z.number().int().nonnegative(),
-    "alias-collision": z.number().int().nonnegative(),
-    "ambiguous-identity": z.number().int().nonnegative(),
-  }),
-  sourceAvailability: z.object({
-    github: z.object({
-      pending: z.number().int().nonnegative(),
-      available: z.number().int().nonnegative(),
-      unavailable: z.number().int().nonnegative(),
-    }),
-    localGit: z.object({
-      pending: z.number().int().nonnegative(),
-      available: z.number().int().nonnegative(),
-      unavailable: z.number().int().nonnegative(),
-    }),
-  }),
-  provenanceCompleteness: z.object({
-    retainedWithoutRecords: z.number().int().nonnegative(),
-    excludedWithoutRecords: z.number().int().nonnegative(),
-  }),
-  aliasCollisionDiagnostics: z.array(z.object({
-    normalizedId: z.string().trim().min(1),
-    exclusionReason: z.enum(["alias-collision", "ambiguous-identity"]),
-    relatedNormalizedIds: z.array(z.string().trim().min(1)),
-  })),
-  failures: z.array(z.object({
-    code: z.string().trim().min(1),
-    source: z.string().trim().min(1),
-    message: z.string().trim().min(1),
-    contributorNormalizedId: z.string().trim().min(1).nullable().optional(),
-  })),
-});
-
-const snapshotSchema = z.object({
-  fixtureSetVersion: z.number().int().positive(),
-  repository: z.string().trim().min(1),
-  curatedAt: z.string().trim().min(1),
-  manifestPath: z.string().trim().min(1),
-  snapshotPath: z.string().trim().min(1),
-  generatedAt: z.string().trim().min(1),
-  refreshCommand: z.string().trim().min(1),
-  status: z.enum(["ready", "degraded"]),
-  retained: z.array(retainedCoreSchema.extend({
-    provenanceRecords: z.array(provenanceRecordSchema),
-  })),
-  excluded: z.array(excludedCoreSchema.extend({
-    provenanceRecords: z.array(provenanceRecordSchema),
-  })),
-  diagnostics: snapshotDiagnosticsSchema,
-});
+type SnapshotDerived = XbmcFixtureSnapshotInspection;
 
 export async function evaluateM046S01(
   options: EvaluateOptions = {},
@@ -264,7 +117,7 @@ export async function evaluateM046S01(
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST_PATH;
   const snapshotPath = options.snapshotPath ?? DEFAULT_SNAPSHOT_PATH;
   const loadManifestImpl = options.loadManifest ?? loadFixtureManifest;
-  const readSnapshotFile = options.readSnapshotFile ?? readFileUtf8;
+  const readSnapshotFile = options.readSnapshotFile;
   const refreshSnapshot = options._refreshSnapshot ?? refreshXbmcFixtureSnapshot;
 
   let effectiveManifest: ContributorFixtureManifest | null = null;
@@ -340,7 +193,9 @@ export async function evaluateM046S01(
     }
   }
 
-  const snapshotDerived = await readAndInspectSnapshot(snapshotPath, readSnapshotFile);
+  const snapshotDerived = await loadAndInspectXbmcFixtureSnapshot(snapshotPath, {
+    readSnapshotFile,
+  });
 
   const snapshotCheck = snapshotDerived.parseError
     ? failCheck(
@@ -348,27 +203,27 @@ export async function evaluateM046S01(
         "fixture_snapshot_malformed_json",
         snapshotDerived.parseError,
       )
-    : snapshotDerived.fullSnapshot
+    : snapshotDerived.isValid
       ? passCheck("M046-S01-SNAPSHOT-VALID", "fixture_snapshot_valid")
       : failCheck(
           "M046-S01-SNAPSHOT-VALID",
           "fixture_snapshot_invalid",
-          snapshotDerived.snapshotIssues,
+          snapshotDerived.validationIssues,
         );
 
   const curatedSyncCheck = buildCuratedSyncCheck({
     manifest: effectiveManifest,
     manifestPath,
     snapshotPath,
-    snapshot: snapshotDerived.fullSnapshot,
+    snapshot: snapshotDerived.snapshot,
     snapshotCore: snapshotDerived.coreSnapshot,
   });
 
-  const snapshotStatusCheck = buildSnapshotStatusCheck(snapshotDerived.fullSnapshot);
-  const cohortCoverageCheck = buildCohortCoverageCheck(snapshotDerived.summary, snapshotDerived.fullSnapshot);
+  const snapshotStatusCheck = buildSnapshotStatusCheck(snapshotDerived.snapshot);
+  const cohortCoverageCheck = buildCohortCoverageCheck(snapshotDerived.summary, snapshotDerived.snapshot);
   const provenanceCheck = buildProvenanceCheck(snapshotDerived);
-  const sourceAvailabilityCheck = buildSourceAvailabilityCheck(snapshotDerived.summary, snapshotDerived.fullSnapshot);
-  const aliasDiagnosticsCheck = buildAliasDiagnosticsCheck(snapshotDerived.summary, snapshotDerived.fullSnapshot);
+  const sourceAvailabilityCheck = buildSourceAvailabilityCheck(snapshotDerived.summary, snapshotDerived.snapshot);
+  const aliasDiagnosticsCheck = buildAliasDiagnosticsCheck(snapshotDerived.summary, snapshotDerived.snapshot);
 
   const checks = [
     manifestCheck,
@@ -533,158 +388,13 @@ function applyManifestOverrides(
   });
 }
 
-async function readAndInspectSnapshot(
-  snapshotPath: string,
-  readSnapshotFile: (path: string) => Promise<string>,
-): Promise<SnapshotDerived> {
-  let raw: unknown = null;
-  let parseError: string | null = null;
-
-  try {
-    raw = JSON.parse(await readSnapshotFile(snapshotPath));
-  } catch (error) {
-    return {
-      raw: null,
-      parseError: error instanceof Error ? error.message : String(error),
-      fullSnapshot: null,
-      coreSnapshot: null,
-      snapshotIssues: [],
-      counts: null,
-      diagnostics: null,
-      summary: null,
-      provenanceInspection: {
-        retainedWithoutRecords: 0,
-        excludedWithoutRecords: 0,
-        issues: [error instanceof Error ? error.message : String(error)],
-      },
-    };
-  }
-
-  const fullParsed = snapshotSchema.safeParse(raw);
-  const coreParsed = snapshotCoreSchema.safeParse(raw);
-  const snapshotIssues = fullParsed.success
-    ? []
-    : fullParsed.error.issues.map(formatZodIssue);
-
-  let coreSnapshot: SnapshotCore | null = null;
-  let summary: FixtureManifestSummary | null = null;
-  if (coreParsed.success) {
-    const projectedManifest = sortFixtureManifest({
-      fixtureSetVersion: coreParsed.data.fixtureSetVersion,
-      repository: coreParsed.data.repository,
-      curatedAt: coreParsed.data.curatedAt,
-      snapshotPath: inferSnapshotPath(raw),
-      retained: coreParsed.data.retained,
-      excluded: coreParsed.data.excluded,
-    });
-
-    coreSnapshot = {
-      fixtureSetVersion: projectedManifest.fixtureSetVersion,
-      repository: projectedManifest.repository,
-      curatedAt: projectedManifest.curatedAt,
-      retained: projectedManifest.retained,
-      excluded: projectedManifest.excluded,
-    };
-    summary = summarizeFixtureManifest(projectedManifest);
-
-    try {
-      assertValidFixtureManifest(projectedManifest);
-    } catch (error) {
-      snapshotIssues.push(error instanceof Error ? error.message : String(error));
-    }
-  } else {
-    snapshotIssues.push(...coreParsed.error.issues.map(formatZodIssue));
-  }
-
-  const provenanceInspection = inspectProvenanceRecords(raw);
-  const counts = coreSnapshot
-    ? {
-        retained: coreSnapshot.retained.length,
-        excluded: coreSnapshot.excluded.length,
-      }
-    : null;
-  const diagnostics = fullParsed.success
-    ? {
-        statusCode: fullParsed.data.diagnostics.statusCode,
-        cohortCoverage: fullParsed.data.diagnostics.cohortCoverage,
-        sourceAvailability: fullParsed.data.diagnostics.sourceAvailability,
-        provenanceCompleteness: fullParsed.data.diagnostics.provenanceCompleteness,
-        aliasCollisionDiagnostics: fullParsed.data.diagnostics.aliasCollisionDiagnostics,
-        failures: fullParsed.data.diagnostics.failures.map((failure) => ({
-          ...failure,
-          contributorNormalizedId: failure.contributorNormalizedId ?? null,
-        })),
-      }
-    : null;
-
-  return {
-    raw,
-    parseError,
-    fullSnapshot: fullParsed.success ? fullParsed.data : null,
-    coreSnapshot,
-    snapshotIssues,
-    counts,
-    diagnostics,
-    summary,
-    provenanceInspection,
-  };
-}
-
-function inferSnapshotPath(raw: unknown): string {
-  if (!isRecord(raw) || typeof raw.snapshotPath !== "string" || raw.snapshotPath.trim().length === 0) {
-    return DEFAULT_SNAPSHOT_PATH;
-  }
-  return raw.snapshotPath;
-}
-
-function inspectProvenanceRecords(raw: unknown): SnapshotProvenanceInspection {
-  const issues: string[] = [];
-  let retainedWithoutRecords = 0;
-  let excludedWithoutRecords = 0;
-
-  if (!isRecord(raw)) {
-    return { retainedWithoutRecords, excludedWithoutRecords, issues };
-  }
-
-  const retained = Array.isArray(raw.retained) ? raw.retained : [];
-  const excluded = Array.isArray(raw.excluded) ? raw.excluded : [];
-
-  for (const entry of retained) {
-    const normalizedId = readNormalizedId(entry);
-    if (!hasUsableProvenanceRecords(entry)) {
-      retainedWithoutRecords += 1;
-      issues.push(`${normalizedId} is missing retained provenanceRecords.`);
-    }
-  }
-
-  for (const entry of excluded) {
-    const normalizedId = readNormalizedId(entry);
-    if (!hasUsableProvenanceRecords(entry)) {
-      excludedWithoutRecords += 1;
-      issues.push(`${normalizedId} is missing excluded provenanceRecords.`);
-    }
-  }
-
-  return {
-    retainedWithoutRecords,
-    excludedWithoutRecords,
-    issues,
-  };
-}
-
-function hasUsableProvenanceRecords(value: unknown): boolean {
-  if (!isRecord(value) || !Array.isArray(value.provenanceRecords)) {
-    return false;
-  }
-  return value.provenanceRecords.length > 0;
-}
 
 function buildCuratedSyncCheck(params: {
   manifest: ContributorFixtureManifest | null;
   manifestPath: string;
   snapshotPath: string;
-  snapshot: z.infer<typeof snapshotSchema> | null;
-  snapshotCore: SnapshotCore | null;
+  snapshot: XbmcFixtureSnapshot | null;
+  snapshotCore: SnapshotDerived["coreSnapshot"];
 }): Check {
   const { manifest, manifestPath, snapshotPath, snapshot, snapshotCore } = params;
 
@@ -724,7 +434,7 @@ function buildCuratedSyncCheck(params: {
 }
 
 function buildSnapshotStatusCheck(
-  snapshot: z.infer<typeof snapshotSchema> | null,
+  snapshot: XbmcFixtureSnapshot | null,
 ): Check {
   if (!snapshot) {
     return skippedCheck(
@@ -768,7 +478,7 @@ function buildSnapshotStatusCheck(
 
 function buildCohortCoverageCheck(
   summary: FixtureManifestSummary | null,
-  snapshot: z.infer<typeof snapshotSchema> | null,
+  snapshot: XbmcFixtureSnapshot | null,
 ): Check {
   if (!summary) {
     return skippedCheck(
@@ -810,17 +520,17 @@ function buildProvenanceCheck(snapshotDerived: SnapshotDerived): Check {
 
   const issues = [...snapshotDerived.provenanceInspection.issues];
 
-  if (!snapshotDerived.fullSnapshot) {
+  if (!snapshotDerived.snapshot) {
     issues.push("snapshot diagnostics were unavailable");
   } else {
     if (
-      snapshotDerived.fullSnapshot.diagnostics.provenanceCompleteness.retainedWithoutRecords
+      snapshotDerived.snapshot.diagnostics.provenanceCompleteness.retainedWithoutRecords
       !== snapshotDerived.provenanceInspection.retainedWithoutRecords
     ) {
       issues.push("retained provenance completeness drifted from diagnostics");
     }
     if (
-      snapshotDerived.fullSnapshot.diagnostics.provenanceCompleteness.excludedWithoutRecords
+      snapshotDerived.snapshot.diagnostics.provenanceCompleteness.excludedWithoutRecords
       !== snapshotDerived.provenanceInspection.excludedWithoutRecords
     ) {
       issues.push("excluded provenance completeness drifted from diagnostics");
@@ -834,7 +544,7 @@ function buildProvenanceCheck(snapshotDerived: SnapshotDerived): Check {
 
 function buildSourceAvailabilityCheck(
   summary: FixtureManifestSummary | null,
-  snapshot: z.infer<typeof snapshotSchema> | null,
+  snapshot: XbmcFixtureSnapshot | null,
 ): Check {
   if (!summary) {
     return skippedCheck(
@@ -861,7 +571,7 @@ function buildSourceAvailabilityCheck(
 
 function buildAliasDiagnosticsCheck(
   summary: FixtureManifestSummary | null,
-  snapshot: z.infer<typeof snapshotSchema> | null,
+  snapshot: XbmcFixtureSnapshot | null,
 ): Check {
   if (!summary) {
     return skippedCheck(
@@ -984,26 +694,6 @@ function normalizeDetail(detail: unknown): string {
     return detail;
   }
   return String(detail);
-}
-
-function formatZodIssue(issue: z.ZodIssue): string {
-  const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";
-  return `${path}${issue.message}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function readNormalizedId(value: unknown): string {
-  if (!isRecord(value) || typeof value.normalizedId !== "string" || value.normalizedId.trim().length === 0) {
-    return "unknown-record";
-  }
-  return value.normalizedId;
-}
-
-async function readFileUtf8(path: string): Promise<string> {
-  return readFile(path, "utf8");
 }
 
 if (import.meta.main) {

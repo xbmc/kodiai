@@ -189,3 +189,7 @@
 {"id":"fc03570d-9798-459f-bdf1-c0d458eb9617","ts":"2026-04-10T20:48:30.449Z","severity":"warning","message":"[safety] file-change: src/handlers/mention.test.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
 {"id":"65131c9c-3d87-465f-a067-deeca8e2ff2f","ts":"2026-04-10T20:48:30.449Z","severity":"warning","message":"[safety] file-change: src/handlers/mention.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
 {"id":"48ee731b-b5c2-4281-acef-3ad6b0dfac49","ts":"2026-04-10T20:48:30.449Z","severity":"warning","message":"Safety: 4 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"6cffa081-c9fe-4aeb-a3a0-d7de4828617f","ts":"2026-04-10T21:05:54.876Z","severity":"info","message":"Committed: feat: Shipped `verify:m046:s01`, refreshed the checked-in xbmc snapshot…","source":"notify","read":false}
+{"id":"9afacc9e-327b-4442-ae2f-c0b6d4951f5d","ts":"2026-04-10T21:05:54.884Z","severity":"warning","message":"[safety] file-change: src/contributor/xbmc-fixture-refresh.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"ae9a2bcc-34bc-4013-86f6-c3f20d1feba2","ts":"2026-04-10T21:05:54.884Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"87aa900d-b878-4454-b0bb-e59d2d3e5746","ts":"2026-04-10T21:06:05.062Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}

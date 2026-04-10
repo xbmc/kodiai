@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T21:05:43.441Z",
+  "exported_at": "2026-04-10T21:43:33.508Z",
   "milestones": [
     {
       "id": "M001",
@@ -6017,14 +6017,14 @@
       "milestone_id": "M046",
       "id": "S01",
       "title": "S01",
-      "status": "pending",
+      "status": "complete",
       "risk": "High — if contributor identities, exclusions, or signal provenance are wrong, every downstream calibration conclusion becomes false confidence.",
       "depends": [],
       "demo": "Run the new xbmc fixture refresh/verification entrypoint and inspect a checked-in contributor snapshot that shows normalized contributor identities, explicit bot/alias exclusions, curated coverage across clear senior/newcomer/ambiguous-middle cases, and machine-readable provenance for every retained sample.",
       "created_at": "2026-04-10T16:42:45.985Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-10T21:11:56.756Z",
+      "full_summary_md": "---\nid: S01\nparent: M046\nmilestone: M046\nprovides:\n  - A checked-in xbmc contributor fixture pack that separates curated contributor selection/exclusions from generated live evidence.\n  - A reusable `verify:m046:s01` refresh/verify entrypoint for downstream calibration work and operator reruns.\n  - Deterministic snapshot semantics, source-availability diagnostics, and alias-collision reporting that S02 can consume without reconstructing contributor truth ad hoc.\nrequires:\n  []\naffects:\n  - S02\n  - S03\n  - M046 milestone validation/completion\nkey_files:\n  - src/contributor/fixture-set.ts\n  - src/contributor/fixture-set.test.ts\n  - src/contributor/xbmc-fixture-refresh.ts\n  - src/contributor/xbmc-fixture-refresh.test.ts\n  - src/auth/github-app.ts\n  - scripts/verify-m046-s01.ts\n  - scripts/verify-m046-s01.test.ts\n  - fixtures/contributor-calibration/xbmc-manifest.json\n  - fixtures/contributor-calibration/xbmc-snapshot.json\n  - package.json\n  - .gsd/DECISIONS.md\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D075 — Persist xbmc contributor calibration truth as a checked-in manifest plus generated snapshot refreshed and verified by `verify:m046:s01`.\n  - D076 — Derive snapshot `generatedAt` deterministically from provenance evidence, with `curatedAt` fallback, instead of wall-clock time.\n  - D077 — Bound live GitHub evidence collection with explicit request timeouts and degrade to named `github-timeout` failures instead of hanging the refresh.\npatterns_established:\n  - Separate human-curated contributor truth from generated evidence: keep retained/excluded identity decisions in the manifest and regenerate the snapshot from live/public sources.\n  - Expose one stable proof harness with named `check_ids` and `status_code` values shared across human-readable and JSON modes so downstream slices can consume the same verifier surface programmatically.\n  - Treat source degradation explicitly rather than silently shrinking the corpus: keep unavailable GitHub or local-git evidence visible in provenance and diagnostics.\n  - Parse local git shortlog rows one-by-one and ignore malformed rows unless the entire shortlog is unusable.\nobservability_surfaces:\n  - `fixtures/contributor-calibration/xbmc-manifest.json` — human-curated retained/excluded selection, cohort anchors, and explicit exclusion reasons.\n  - `fixtures/contributor-calibration/xbmc-snapshot.json` — checked-in refreshed contributor snapshot with provenance records, source-availability counts, alias diagnostics, and ready/degraded status.\n  - `bun run verify:m046:s01 -- --json` — machine-readable proof report with stable `check_ids`, `status_code`, retained/excluded counts, cohort coverage, provenance completeness, and refresh diagnostics.\n  - `bun run verify:m046:s01 -- --refresh --json` — refreshes the checked-in snapshot through the shipped CLI path and re-verifies the same proof surface end-to-end.\ndrill_down_paths:\n  - .gsd/milestones/M046/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M046/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M046/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-10T21:11:56.757Z\nblocker_discovered: false\n---\n\n# S01: xbmc Fixture Set and Provenance Collector\n\n**Built and verified a checked-in xbmc contributor fixture pack plus `verify:m046:s01`, giving downstream calibration work a deterministic manifest/snapshot/provenance contract with explicit cohort coverage and exclusion truth.**\n\n## What Happened\n\n## What Happened\n\nS01 turned xbmc contributor calibration inputs into a checked-in proof surface instead of an ad hoc research artifact. The slice introduced a typed fixture contract in `src/contributor/fixture-set.ts`, validated by `src/contributor/fixture-set.test.ts`, and seeded `fixtures/contributor-calibration/xbmc-manifest.json` with three retained anchor contributors and six explicit exclusions. The retained set now covers the milestone’s required cohorts with one clear senior (`fuzzard`), one clear newcomer (`fkoemep`), and one ambiguous-middle sample (`KOPRajs`). Bot rows, alias-collision rows, and ambiguous-identity rows remain explicit in the manifest with reason codes and notes instead of being silently dropped or guessed into a merged identity.\n\nThe slice then implemented `src/contributor/xbmc-fixture-refresh.ts` to materialize that curated truth into a checked-in snapshot. Refresh now reads the manifest, normalizes identities, validates retained GitHub usernames, collects GitHub commit/PR/review evidence, enriches from local `tmp/xbmc` shortlog data, and writes a sorted snapshot with machine-readable provenance for both retained and excluded contributors. The refresh path also records source availability and alias diagnostics directly in the snapshot so downstream consumers do not need to reverse-engineer whether data was missing, unavailable, or intentionally excluded.\n\nDuring live verification work, the slice fixed two root-cause stability problems that would have made the proof surface untrustworthy for S02. First, GitHub enrichment is now bounded through the shared GitHub App seam so a slow API call degrades with a named `github-timeout` failure instead of hanging the refresh. Second, snapshot `generatedAt` is derived deterministically from the latest observed provenance timestamp, with `curatedAt` fallback, so two refreshes with unchanged evidence no longer create meaningless byte drift.\n\nFinally, S01 shipped `scripts/verify-m046-s01.ts` and the `verify:m046:s01` package entrypoint. The verifier exposes one stable human/JSON proof harness with named check IDs for manifest validity, refresh execution, snapshot validity, curated sync, snapshot status, cohort coverage, provenance completeness, source availability, and alias diagnostics. The final checked-in snapshot is in `ready` state with 3 retained contributors, 6 excluded contributors, complete provenance arrays for every row, cohort coverage of 1 senior / 1 ambiguous-middle / 1 newcomer, GitHub source availability of 5 available and 4 unavailable records, local-git availability of 9 available and 0 unavailable records, and explicit alias diagnostics for the `kai-sommerfeld`↔`ksooo` and `keith`↔`keith-herrington` identity-risk pairs.\n\n## Operational Readiness\n\n- **Health signal:** `bun run verify:m046:s01 -- --json` exits 0 with `overallPassed: true`, `counts.retained: 3`, `counts.excluded: 6`, `diagnostics.statusCode: \"snapshot-refreshed\"`, complete cohort coverage, and zero provenance-completeness failures.\n- **Failure signal:** the verifier exits non-zero with named `check_ids` / `status_code` values when manifest validity, curated sync, snapshot readiness, provenance completeness, source availability recording, or alias diagnostics drift. Refresh-time operational failures surface as named diagnostics such as `github-timeout`, `github-request-failed`, `local-git-workspace-missing`, `local-git-command-failed`, or `local-git-shortlog-unparseable`.\n- **Recovery procedure:** inspect `fixtures/contributor-calibration/xbmc-manifest.json`, rerun `bun run verify:m046:s01 -- --refresh --json`, review the emitted diagnostics/failures, fix missing GitHub auth or `tmp/xbmc` availability if those sources should be present, correct any manifest identity/exclusion drift, and rerun until the snapshot returns to `ready` with all checks passing.\n- **Monitoring gaps:** this slice provides a manual proof command, not scheduled monitoring. There is no automatic alert if GitHub evidence goes stale, if local `tmp/xbmc` disappears, or if the checked-in snapshot drifts from the curated manifest between runs.\n\n\n## Verification\n\nFresh slice verification passed:\n- `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts` → exit 0, 21 pass, 0 fail.\n- `bun run verify:m046:s01 -- --json` → exit 0, `overallPassed: true`, 9 stable `check_ids`, `counts.retained: 3`, `counts.excluded: 6`.\n- `bun run verify:m046:s01 -- --refresh --json` → exit 0, refreshed the checked-in snapshot through the shipped CLI and re-verified it successfully.\n- `bun run tsc --noEmit` → exit 0.\n\n## Requirements Advanced\n\n- R047 — Created the reusable xbmc fixture corpus, refresh path, and verifier that S02 will consume when comparing live incremental-path outcomes against the intended full-signal model.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\n- None.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone from the slice goal. Full slice verification did expose two root-cause stability issues — unbounded GitHub evidence collection and non-deterministic snapshot timestamps — and both were fixed inside the shipped refresh path because leaving either in place would have violated the slice contract.\n\n## Known Limitations\n\n- The fixture pack is intentionally curated, not comprehensive: it provides three retained anchor contributors plus six explicit exclusions for downstream calibration proof, not a statistically complete xbmc population sample.\n- Snapshot freshness is manual. The slice ships a repeatable refresh/verify command, but it does not schedule refreshes or alert automatically on staleness.\n- Alias-collision and ambiguous-identity rows remain excluded until a later slice or milestone decides how to resolve them; S02 must preserve that exclusion truth rather than infer merges.\n\n## Follow-ups\n\n- S02 should consume the checked-in manifest/snapshot/provenance contract directly and preserve retained vs excluded contributor truth.\n- Use the verifier’s stable `check_ids` and `status_code` values as the contract surface for downstream calibration reporting.\n- Rerun `bun run verify:m046:s01 -- --refresh --json` before live calibration analysis whenever GitHub evidence or the local `tmp/xbmc` workspace may have changed.\n\n## Files Created/Modified\n\n- `src/contributor/fixture-set.ts` — Added the typed xbmc fixture manifest/snapshot contract, identity normalization, validation, sorting, and manifest summary helpers.\n- `src/contributor/fixture-set.test.ts` — Pinned duplicate-identity, exclusion-reason, cohort, and provenance-placeholder contract failures plus the happy-path manifest checks.\n- `src/contributor/xbmc-fixture-refresh.ts` — Implemented live GitHub/local-git evidence collection, deterministic snapshot generation, provenance diagnostics, timeout/degrade behavior, and alias handling.\n- `src/contributor/xbmc-fixture-refresh.test.ts` — Added regression coverage for stable refresh output, deterministic timestamps, alias collisions, missing sources, timeouts, and malformed shortlog tolerance.\n- `src/auth/github-app.ts` — Added optional request-timeout plumbing so the refresh collector can bound GitHub App API calls.\n- `scripts/verify-m046-s01.ts` — Shipped the human/JSON proof harness with refresh support and named verifier checks.\n- `scripts/verify-m046-s01.test.ts` — Pinned report shape, drift detection, refresh behavior, and non-zero failure behavior for the verifier.\n- `fixtures/contributor-calibration/xbmc-manifest.json` — Checked in the curated retained/excluded xbmc contributor truth set with cohort anchors and explicit exclusion reasons.\n- `fixtures/contributor-calibration/xbmc-snapshot.json` — Checked in the refreshed xbmc contributor snapshot with machine-readable provenance, source availability, and alias diagnostics.\n- `package.json` — Added the `verify:m046:s01` package script.\n- `.gsd/DECISIONS.md` — Recorded D077 for bounded GitHub evidence collection during fixture refresh.\n- `.gsd/KNOWLEDGE.md` — Recorded deterministic snapshot timestamping, timeout/degrade handling, and malformed shortlog parsing rules.\n",
+      "full_uat_md": "# S01: xbmc Fixture Set and Provenance Collector — UAT\n\n**Milestone:** M046\n**Written:** 2026-04-10T21:11:56.757Z\n\n# S01: xbmc Fixture Set and Provenance Collector — UAT\n\n**Milestone:** M046\n**Written:** 2026-04-10T21:10:00Z\n\n## Preconditions\n\n- Run from the repository root with Bun installed.\n- If live GitHub enrichment is expected, GitHub App configuration is already available to the process; if it is unavailable, the verifier must report that state explicitly rather than hanging or silently shrinking the fixture set.\n- Local `tmp/xbmc` may be present for enrichment; if it is absent, the verifier must record that as source unavailability.\n- The shipped artifacts exist at `fixtures/contributor-calibration/xbmc-manifest.json`, `fixtures/contributor-calibration/xbmc-snapshot.json`, `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, and `scripts/verify-m046-s01.ts`.\n\n## Test Case 1 — Curated manifest exposes retained cohort anchors and explicit exclusions\n\n1. Open `fixtures/contributor-calibration/xbmc-manifest.json`.\n2. Confirm the `retained` section contains exactly three contributors.\n3. Expected outcome:\n   - one retained row has `cohort: \"senior\"` (`fuzzard`), one has `cohort: \"newcomer\"` (`fkoemep`), and one has `cohort: \"ambiguous-middle\"` (`KOPRajs`).\n   - every retained row has `normalizedId`, `displayName`, `selectionNotes`, `observedCommitCounts`, and placeholder `provenance.github` / `provenance.localGit` data.\n4. Confirm the `excluded` section contains explicit bot, alias-collision, and ambiguous-identity cases.\n5. Edge-case guard:\n   - `kai-sommerfeld` / `ksooo` remain explicit `alias-collision` exclusions.\n   - `keith` / `keith-herrington` remain explicit `ambiguous-identity` exclusions.\n   - no exclusion row is missing `exclusionReason`, `exclusionNotes`, or `relatedNormalizedIds`.\n\n## Test Case 2 — JSON verifier passes against the checked-in snapshot\n\n1. Run `bun run verify:m046:s01 -- --json`.\n2. Confirm the command exits 0.\n3. Expected outcome:\n   - the JSON root contains `\"command\": \"verify:m046:s01\"` and `\"overallPassed\": true`.\n   - `check_ids` lists exactly these nine checks:\n     - `M046-S01-MANIFEST-VALID`\n     - `M046-S01-REFRESH-EXECUTED`\n     - `M046-S01-SNAPSHOT-VALID`\n     - `M046-S01-CURATED-SYNC`\n     - `M046-S01-SNAPSHOT-STATUS`\n     - `M046-S01-COHORT-COVERAGE`\n     - `M046-S01-PROVENANCE-COMPLETE`\n     - `M046-S01-SOURCE-AVAILABILITY`\n     - `M046-S01-ALIAS-DIAGNOSTICS`\n   - `counts.retained` is `3` and `counts.excluded` is `6`.\n   - `diagnostics.cohortCoverage` reports `senior: 1`, `ambiguous-middle: 1`, and `newcomer: 1`.\n4. Edge-case guard:\n   - `M046-S01-REFRESH-EXECUTED` is `skipped: true` with `status_code: \"refresh_not_requested\"` in no-refresh mode.\n   - `diagnostics.failures` is empty.\n\n## Test Case 3 — Refresh mode rebuilds the snapshot through the shipped entrypoint\n\n1. Run `bun run verify:m046:s01 -- --refresh --json`.\n2. Confirm the command exits 0.\n3. Expected outcome:\n   - the JSON root contains `\"refreshed\": true`.\n   - `M046-S01-REFRESH-EXECUTED` is present with `passed: true`, `skipped: false`, and `status_code: \"snapshot_refreshed_before_verify\"`.\n   - the final `counts` and `diagnostics.cohortCoverage` values still match the checked-in truth set from Test Case 2.\n   - `diagnostics.statusCode` remains `\"snapshot-refreshed\"` and the verifier does not invent or delete contributors during refresh.\n4. Edge-case guard:\n   - rerunning the refresh with unchanged evidence should not cause semantic drift in the snapshot structure; deterministic `generatedAt` must come from evidence timestamps rather than wall-clock time.\n\n## Test Case 4 — Snapshot exposes machine-readable provenance, source availability, and alias diagnostics\n\n1. Open `fixtures/contributor-calibration/xbmc-snapshot.json` after Test Case 3.\n2. Confirm `status` is `\"ready\"` and `refreshCommand` is `\"bun run verify:m046:s01 -- --refresh --json\"`.\n3. Expected outcome:\n   - each retained contributor has a non-empty `provenanceRecords` array.\n   - each excluded contributor also has a non-empty `provenanceRecords` array.\n   - the retained rows include GitHub and local-git provenance metadata such as commit SHAs, PR numbers, review links, local author emails, or commit counts when available.\n   - `diagnostics.sourceAvailability.github` and `diagnostics.sourceAvailability.localGit` are present and machine-readable.\n   - `diagnostics.aliasCollisionDiagnostics` lists the `kai-sommerfeld` / `ksooo` and `keith` / `keith-herrington` pairs.\n4. Edge-case guard:\n   - unavailable GitHub review evidence for a contributor appears as an explicit `status: \"unavailable\"` provenance record, not as a missing array element.\n   - excluded rows stay visible in the snapshot instead of disappearing during refresh.\n\n## Test Case 5 — Regression suite and typecheck stay green\n\n1. Run `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts`.\n2. Confirm the command exits 0.\n3. Expected outcome:\n   - all 21 tests pass.\n   - fixture-contract tests fail if duplicate normalized IDs, unsupported cohorts, missing exclusion reasons, or missing provenance placeholders are introduced.\n   - refresh tests fail if alias collisions are silently merged, if GitHub timeout handling regresses, or if local-git shortlog parsing stops tolerating malformed rows.\n4. Run `bun run tsc --noEmit`.\n5. Confirm the command exits 0.\n6. Edge-case guard:\n   - the verifier, refresh module, and GitHub timeout plumbing compile cleanly together; no type drift is introduced between `fixture-set.ts`, `xbmc-fixture-refresh.ts`, and `scripts/verify-m046-s01.ts`.\n\n",
       "goal": "Build a checked-in xbmc contributor fixture pack with normalized identities, explicit alias/bot exclusions, curated cohort coverage, and machine-readable provenance, then expose one refresh/verify command that rebuilds and validates it for downstream calibration work.",
       "success_criteria": "- Checked-in fixture artifacts separate human-curated contributor selection/exclusions from generated xbmc evidence.\n- Retained contributors cover senior, newcomer, and ambiguous-middle cohorts with normalized identities and machine-readable provenance.\n- Excluded bot/alias/ambiguous cases are explicit, reasoned, and never dropped silently.\n- `bun run verify:m046:s01 -- --json` and `bun run verify:m046:s01 -- --refresh --json` fail on coverage, provenance, or normalization drift.\n- The fixture pack is ready for S02 to evaluate the live incremental path and intended full-signal path against the same xbmc corpus.",
       "proof_level": "- This slice proves: integration\n- Real runtime required: yes\n- Human/UAT required: no",
@@ -6036,22 +6036,20 @@
     {
       "milestone_id": "M046",
       "id": "S02",
-      "title": "Calibration Evaluator for Live vs Intended Model Paths",
+      "title": "S02",
       "status": "pending",
       "risk": "Highest product risk — the current runtime path may be structurally different from the intended scoring model, so a naive threshold retune could certify a mechanism Kodiai does not actually run.",
-      "depends": [
-        "S01"
-      ],
+      "depends": [],
       "demo": "Run the calibration verifier and get a per-contributor report showing fixture evidence, current live incremental-path outcomes, intended full-signal-path outcomes, percentile/tie instability checks, and freshness/unscored-profile findings mapped back to the M045 contract.",
       "created_at": "2026-04-10T16:42:45.985Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Convert the fixture truth set into hard calibration evidence by evaluating the current scorer, tier calculator, and profile freshness behavior in both the actual wired path and the intended full-signal path.",
-      "success_criteria": "- The verifier evaluates both the actual live incremental `pr_authored` path and the intended full-signal scoring path against the same checked-in fixtures.\n- Output separates data-collection fidelity problems from score/tier model problems instead of collapsing them into one pass/fail.\n- The report includes sensitivity checks for small cohorts, ties or near-ties, and linked-but-unscored profiles so structural instability is mechanically visible.\n- Results explain the impact on the M045 profile-backed contributor contract, not just raw tier strings.",
-      "proof_level": "Deterministic fixture-driven verifier with independent expectations and targeted module-level tests around scorer, tier calculator, and freshness semantics.",
-      "integration_closure": "Exercises `src/contributor/expertise-scorer.ts`, `src/contributor/tier-calculator.ts`, `src/contributor/profile-store.ts`, and the M045 contributor-experience contract seam together so the milestone evaluates integrated reality rather than isolated helpers.",
-      "observability_impact": "Adds structured status codes, contributor-by-contributor drift details, and machine-readable calibration summaries that make model failure, extraction gaps, and cohort instability independently inspectable.",
+      "goal": "Turn the checked-in xbmc contributor fixture pack into a deterministic calibration proof surface that compares Kodiai’s current live incremental path against the intended full-signal model path, projects both through the M045 contributor-experience contract, and emits an explicit keep/retune/replace recommendation without inventing missing file-level evidence.",
+      "success_criteria": "## Must-Haves\n\n- Consume the checked-in xbmc snapshot through one reusable source helper instead of duplicating S01’s snapshot schema inside every verifier.\n- Preserve S01 retained vs excluded contributor truth so retained anchors stay evaluable and excluded bot/alias/ambiguous identities remain visible controls, not silent inputs.\n- Produce a per-contributor evaluator result that includes fixture evidence, modeled live-path outcome, modeled intended-path outcome, M045 contract projection, percentile/tie-instability findings, and freshness/unscored-profile diagnostics.\n- Make the snapshot-only modeling choice explicit: do not fabricate changed-file arrays or silently hydrate live GitHub data during offline proof runs; surface fidelity/degradation reasons in the report.\n- Ship `bun run verify:m046:s02 -- --json` with stable check IDs / status codes and a report-level `keep` / `retune` / `replace` recommendation that directly advances R047.\n\n## Threat Surface\n\n- **Abuse**: Poisoned fixture rows, silent reintroduction of excluded identities, or invented file-level replay assumptions could falsely certify the current model as sound.\n- **Data exposure**: Only checked-in public contributor identifiers, provenance URLs, score/tier diagnostics, and verifier status codes should appear; never print GitHub app secrets, tokens, or private review data.\n- **Input trust**: `fixtures/contributor-calibration/xbmc-snapshot.json`, retained/excluded contributor rows, and any modeled live/intended assumptions are untrusted until validated through the shared snapshot contract.\n\n## Requirement Impact\n\n- **Requirements touched**: R047.\n- **Re-verify**: `bun run verify:m046:s01 -- --json`, the new snapshot loader tests, evaluator tests, and `bun run verify:m046:s02 -- --json` must all agree on retained/excluded truth and the final recommendation surface.\n- **Decisions revisited**: D072, D075.\n\n## Verification\n\n- `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts`\n- `bun run verify:m046:s01 -- --json`\n- `bun run verify:m046:s02 -- --json`\n- `bun run tsc --noEmit`",
+      "proof_level": "- This slice proves: integration.\n- Real runtime required: no.\n- Human/UAT required: no.",
+      "integration_closure": "- Upstream surfaces consumed: `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/expertise-scorer.ts`, `src/contributor/tier-calculator.ts`, `src/contributor/experience-contract.ts`, `src/handlers/review.ts`, `src/slack/slash-command-handler.ts`, and `scripts/verify-m046-s01.ts`.\n- New wiring introduced in this slice: a reusable snapshot loader, a pure calibration evaluator, and the `verify:m046:s02` CLI/report surface.\n- What remains before the milestone is truly usable end-to-end: downstream slices can consume the shipped verdict, but S02 itself should already emit the keep/retune/replace recommendation required by R047.",
+      "observability_impact": "- Runtime signals: evaluator fidelity/degradation reasons, per-contributor live/intended contract states, freshness/unscored diagnostics, percentile/tie-instability findings, and the final recommendation.\n- Inspection surfaces: `bun run verify:m046:s02 -- --json`, the human-readable verifier output, and the checked-in fixture snapshot consumed by the loader.\n- Failure visibility: named verifier `status_code` values plus per-contributor diagnostics when retained/excluded truth, recommendation generation, or modeled-path assumptions drift.\n- Redaction constraints: keep output limited to public contributor identifiers and checked-in provenance; never echo secrets or token-bearing env.",
       "sequence": 2,
       "replan_triggered_at": null
     },
@@ -12349,6 +12347,143 @@
       "observability_impact": "- Signals added/changed: stable verifier `check_ids`, `status_code`, retained/excluded counts, cohort coverage, provenance completeness, and source-availability diagnostics.\n- How a future agent inspects this: run `bun run verify:m046:s01 -- --json` or `bun run verify:m046:s01 -- --refresh --json` and inspect the emitted report plus the checked-in snapshot.\n- Failure state exposed: coverage drift, missing provenance, malformed fixture files, missing GitHub access, or refresh path regressions.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M046",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added a shared xbmc snapshot loader and moved verify:m046:s01 onto it.",
+      "status": "complete",
+      "one_liner": "Added a shared xbmc snapshot loader and moved verify:m046:s01 onto it.",
+      "narrative": "Wrote the new xbmc snapshot seam test-first, confirmed the missing-module red state, then implemented src/contributor/xbmc-fixture-snapshot.ts as the shared offline loader/validator/inspection module for the checked-in fixture snapshot. The helper now owns the snapshot shape, projects retained/excluded rows back through fixture-manifest validation to catch semantic drift such as duplicate contributor identities, preserves diagnostics and provenance inspection data for downstream evaluators, and exposes assert/load/inspect-style entrypoints. I refactored scripts/verify-m046-s01.ts to consume that helper instead of maintaining a private snapshot schema copy, kept its existing proof checks green, exported the new seam from src/contributor/index.ts, and recorded the downstream-facing architecture decision plus the semantic-validation gotcha in the GSD records.",
+      "verification_result": "Focused loader/verifier tests passed, the slice proof command still reported a passing checked-in xbmc snapshot with retained=3 and excluded=6 plus ready/provenance/alias diagnostics, and a barrel-export smoke check confirmed S02 can import loadXbmcFixtureSnapshot from src/contributor/index.ts.",
+      "duration": "",
+      "completed_at": "2026-04-10T21:43:33.480Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/contributor/xbmc-fixture-snapshot.ts",
+        "src/contributor/xbmc-fixture-snapshot.test.ts",
+        "scripts/verify-m046-s01.ts",
+        "src/contributor/index.ts",
+        ".gsd/milestones/M046/slices/S02/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "D079 — Centralize xbmc snapshot validation in a shared source module and make verify:m046:s01 consume it."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M046\nkey_files:\n  - src/contributor/xbmc-fixture-snapshot.ts\n  - src/contributor/xbmc-fixture-snapshot.test.ts\n  - scripts/verify-m046-s01.ts\n  - src/contributor/index.ts\n  - .gsd/milestones/M046/slices/S02/tasks/T01-SUMMARY.md\nkey_decisions:\n  - D079 — Centralize xbmc snapshot validation in a shared source module and make verify:m046:s01 consume it.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-10T21:43:33.479Z\nblocker_discovered: false\n---\n\n# T01: Added a shared xbmc snapshot loader and moved verify:m046:s01 onto it.\n\n**Added a shared xbmc snapshot loader and moved verify:m046:s01 onto it.**\n\n## What Happened\n\nWrote the new xbmc snapshot seam test-first, confirmed the missing-module red state, then implemented src/contributor/xbmc-fixture-snapshot.ts as the shared offline loader/validator/inspection module for the checked-in fixture snapshot. The helper now owns the snapshot shape, projects retained/excluded rows back through fixture-manifest validation to catch semantic drift such as duplicate contributor identities, preserves diagnostics and provenance inspection data for downstream evaluators, and exposes assert/load/inspect-style entrypoints. I refactored scripts/verify-m046-s01.ts to consume that helper instead of maintaining a private snapshot schema copy, kept its existing proof checks green, exported the new seam from src/contributor/index.ts, and recorded the downstream-facing architecture decision plus the semantic-validation gotcha in the GSD records.\n\n## Verification\n\nFocused loader/verifier tests passed, the slice proof command still reported a passing checked-in xbmc snapshot with retained=3 and excluded=6 plus ready/provenance/alias diagnostics, and a barrel-export smoke check confirmed S02 can import loadXbmcFixtureSnapshot from src/contributor/index.ts.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./scripts/verify-m046-s01.test.ts` | 0 | ✅ pass | 218ms |\n| 2 | `bun run verify:m046:s01 -- --json` | 0 | ✅ pass | 163ms |\n| 3 | `bun --eval \"import { loadXbmcFixtureSnapshot } from './src/contributor/index.ts'; if (typeof loadXbmcFixtureSnapshot !== 'function') throw new Error('missing loadXbmcFixtureSnapshot export');\"` | 0 | ✅ pass | 155ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/contributor/xbmc-fixture-snapshot.ts`\n- `src/contributor/xbmc-fixture-snapshot.test.ts`\n- `scripts/verify-m046-s01.ts`\n- `src/contributor/index.ts`\n- `.gsd/milestones/M046/slices/S02/tasks/T01-SUMMARY.md`\n",
+      "description": "---\nestimated_steps: 20\nestimated_files: 4\nskills_used:\n  - test-driven-development\n  - verification-before-completion\n---\n\nMove S01’s checked-in snapshot contract into a reusable source module so S02 can consume typed retained/excluded contributor rows without copying verifier-only Zod schemas. This task should add a loader/validator for `fixtures/contributor-calibration/xbmc-snapshot.json`, preserve provenance records plus diagnostics, and refactor `scripts/verify-m046-s01.ts` to reuse the shared helper. Keep the seam deterministic and offline-only: it should validate the checked-in snapshot exactly as written, not trigger refresh logic or live GitHub access.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Checked-in snapshot file `fixtures/contributor-calibration/xbmc-snapshot.json` | Fail fast with actionable validation errors instead of returning partial contributor rows. | N/A — local file only. | Reject malformed JSON or missing diagnostics/provenance fields rather than auto-healing them. |\n| Existing S01 verifier in `scripts/verify-m046-s01.ts` | Keep `verify:m046:s01` green by swapping it onto the shared loader instead of forking snapshot-contract logic. | N/A — local code only. | Treat loader/verifier contract drift as a regression test failure so S02 cannot consume stale semantics. |\n\n## Load Profile\n\n- **Shared resources**: one checked-in snapshot file plus local unit tests only.\n- **Per-operation cost**: one JSON parse, one schema validation pass, and small helper transforms.\n- **10x breakpoint**: schema drift hurts maintainability first, so keep the helper focused on loading/validation rather than report logic.\n\n## Negative Tests\n\n- **Malformed inputs**: bad JSON, missing `diagnostics`, missing `provenanceRecords`, and duplicate/malformed retained or excluded rows.\n- **Error paths**: snapshot parse or validation errors bubble up as explicit failures instead of empty arrays.\n- **Boundary conditions**: degraded snapshots still load with diagnostics intact, and excluded alias/bot rows remain visible to downstream evaluators.\n\n## Steps\n\n1. Write failing tests for snapshot loading/validation, covering valid checked-in data, malformed JSON, missing provenance records, and missing diagnostics.\n2. Add a dedicated source helper that exports the snapshot types the evaluator needs plus `loadXbmcFixtureSnapshot` / `assertValidXbmcFixtureSnapshot` style entrypoints.\n3. Refactor `scripts/verify-m046-s01.ts` (and its tests if needed) to consume the shared helper instead of its private snapshot-contract copy.\n4. Re-run the focused tests and keep the helper export surface small enough for S02’s evaluator and verifier to import directly.\n\n## Must-Haves\n\n- [ ] S02 can load typed retained/excluded snapshot rows plus diagnostics from one shared source module.\n- [ ] `verify:m046:s01` reuses the shared snapshot loader so S01 and S02 cannot silently drift on snapshot semantics.\n- [ ] Tests pin malformed snapshot failures and preserve degraded/excluded-row visibility.\n",
+      "estimate": "75m",
+      "files": [
+        "src/contributor/xbmc-fixture-snapshot.ts",
+        "src/contributor/xbmc-fixture-snapshot.test.ts",
+        "scripts/verify-m046-s01.ts",
+        "src/contributor/index.ts"
+      ],
+      "verify": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./scripts/verify-m046-s01.test.ts && bun run verify:m046:s01 -- --json",
+      "inputs": [
+        "`src/contributor/fixture-set.ts` — shared retained/excluded fixture vocabulary and manifest validation helpers.",
+        "`src/contributor/xbmc-fixture-refresh.ts` — exported snapshot/result types that define the checked-in snapshot shape.",
+        "`scripts/verify-m046-s01.ts` — current snapshot inspection logic that should be de-duplicated.",
+        "`fixtures/contributor-calibration/xbmc-snapshot.json` — checked-in retained/excluded contributor truth that the loader must validate."
+      ],
+      "expected_output": [
+        "`src/contributor/xbmc-fixture-snapshot.ts` — reusable loader/validator for the checked-in xbmc snapshot.",
+        "`src/contributor/xbmc-fixture-snapshot.test.ts` — regression coverage for valid, malformed, and degraded snapshot loading.",
+        "`scripts/verify-m046-s01.ts` — refactored to consume the shared loader instead of private snapshot parsing.",
+        "`src/contributor/index.ts` — exports the new loader seam for downstream evaluator/verifier code."
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M046",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Build the pure calibration evaluator for live-vs-intended model paths",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "---\nestimated_steps: 24\nestimated_files: 5\nskills_used:\n  - test-driven-development\n  - systematic-debugging\n  - verification-before-completion\n---\n\nImplement a deterministic evaluator that consumes the validated xbmc snapshot and produces the slice’s actual proof object. The evaluator must stay honest about what the fixture pack can and cannot prove: model current live behavior from the snapshot’s coarse evidence and known runtime constraints, model intended full-signal behavior without fabricating changed-file arrays, and attach explicit fidelity/degradation reasons anywhere the checked-in snapshot cannot replay the real scorer literally. Each retained contributor row should report fixture evidence, a modeled current live-path outcome, a modeled intended-path outcome, the resulting M045 contract state for each path, percentile/tie-instability findings, and freshness/unscored-profile diagnostics. Use the retained anchors (`fuzzard`, `KOPRajs`, `fkoemep`) as the cohort truth, and keep excluded rows visible only as control diagnostics.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Snapshot loader from `src/contributor/xbmc-fixture-snapshot.ts` | Stop evaluation with a typed error instead of inferring contributor truth from partial data. | N/A — local file/helper only. | Refuse to evaluate when retained/excluded truth or provenance diagnostics are malformed. |\n| Scoring/tiering helpers in `src/contributor/expertise-scorer.ts` and `src/contributor/tier-calculator.ts` | Keep runtime math reuse minimal and deterministic; if a helper cannot be reused honestly, isolate evaluator-only math rather than mutating live behavior. | N/A — local code only. | Treat tie-order or score-shape surprises as explicit evaluator diagnostics rather than silently normalizing them away. |\n| Contract projection in `src/contributor/experience-contract.ts` | Reuse the shipped M045 contract helper instead of re-describing contributor states in prose. | N/A — pure local projection. | Fail tests if evaluator output drifts from the actual contract states Kodiai uses in review/slack surfaces. |\n\n## Load Profile\n\n- **Shared resources**: in-memory snapshot rows, scoring helpers, percentile tiering, and contract projection only.\n- **Per-operation cost**: one deterministic evaluation pass over three retained contributors plus excluded control diagnostics.\n- **10x breakpoint**: tie/small-N instability and score-compression logic become the limiting factors before raw compute cost does.\n\n## Negative Tests\n\n- **Malformed inputs**: retained rows missing PR/review provenance, excluded rows accidentally entering the evaluated cohort, and malformed commit-count relationships.\n- **Error paths**: evaluator surfaces explicit fidelity/degradation reasons when file-level replay or review counts are unavailable from the checked-in snapshot.\n- **Boundary conditions**: two- and three-contributor cohorts, equal scores with reordered inputs, and linked-but-unscored profiles defaulting to profile-backed newcomer guidance.\n\n## Steps\n\n1. Write failing evaluator tests that pin per-contributor output shape, retained/excluded cohort handling, contract projection, tie instability, and linked-but-unscored freshness findings.\n2. Add a pure evaluator module that accepts the validated snapshot plus an optional reference time and returns deterministic live-path / intended-path report rows with explicit fidelity metadata.\n3. Reuse existing scorer/tier/contract helpers where they are truthful, but do not fabricate changed-file arrays or live GitHub hydration just to make the numbers look precise.\n4. Add report-level recommendation logic (`keep`, `retune`, `replace`) with rationale based on cohort ordering, live-vs-intended divergence, instability, and freshness diagnostics.\n5. Export the evaluator seam for the verifier and keep excluded rows available as control diagnostics instead of silently dropping them.\n\n## Must-Haves\n\n- [ ] Each retained contributor row includes fixture evidence, modeled live and intended outcomes, contract states, instability findings, and freshness/unscored diagnostics.\n- [ ] The evaluator makes the snapshot-only fidelity limits explicit instead of inventing file-level replay or hidden live hydration.\n- [ ] Report-level recommendation logic can explain why the current mechanism should be kept, retuned, or replaced.\n",
+      "estimate": "105m",
+      "files": [
+        "src/contributor/calibration-evaluator.ts",
+        "src/contributor/calibration-evaluator.test.ts",
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/tier-calculator.ts",
+        "src/contributor/index.ts"
+      ],
+      "verify": "bun test ./src/contributor/calibration-evaluator.test.ts",
+      "inputs": [
+        "`src/contributor/xbmc-fixture-snapshot.ts` — shared validated snapshot loader introduced in T01.",
+        "`src/contributor/expertise-scorer.ts` — current live and batch scoring math plus signal-weight helpers.",
+        "`src/contributor/tier-calculator.ts` — percentile tiering behavior and tie-order risk surface.",
+        "`src/contributor/experience-contract.ts` — M045 contract mapping that the evaluator must project through.",
+        "`src/handlers/review.ts` — actual runtime call path proving only `pr_authored` incremental updates run today.",
+        "`src/slack/slash-command-handler.ts` — linked-profile surface that treats default newcomer profiles as profile-backed."
+      ],
+      "expected_output": [
+        "`src/contributor/calibration-evaluator.ts` — deterministic evaluator and recommendation logic for live vs intended model paths.",
+        "`src/contributor/calibration-evaluator.test.ts` — regression tests for cohort truth, contract projection, tie instability, and freshness/unscored diagnostics.",
+        "`src/contributor/expertise-scorer.ts` — minimal deterministic extraction only if needed to reuse score math honestly without changing runtime behavior.",
+        "`src/contributor/index.ts` — exports the evaluator for the verifier script."
+      ],
+      "observability_impact": "Adds evaluator-level fidelity/degradation flags, per-contributor freshness diagnostics, and explicit instability findings that the verifier can expose verbatim when calibration assumptions break.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M046",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Ship verify:m046:s02 with stable per-contributor verdict reporting",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "---\nestimated_steps: 22\nestimated_files: 4\nskills_used:\n  - test-driven-development\n  - verification-before-completion\n---\n\nExpose the evaluator as the slice’s operator-facing proof harness. The verifier should first confirm the S01 fixture dependency is still sound, then load the checked-in snapshot, run the evaluator, and emit human-readable plus `--json` output with stable check IDs / status codes. The shipped report must show each retained contributor’s fixture evidence, modeled live-path outcome, modeled intended-path outcome, contract projection, percentile/tie-instability results, and freshness/unscored findings, while keeping excluded identities visible as explicit controls. Exit non-zero when prerequisite fixture validity fails, when the evaluator cannot produce a recommendation, or when retained/excluded contributor truth drifts from the S01 contract.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Upstream fixture verifier `verify:m046:s01` / shared snapshot loader | Fail with a named prerequisite status code rather than printing a misleading calibration verdict. | Use the existing bounded S01 verifier behavior; do not add new polling or live retries in S02. | Reject malformed snapshot/evaluator inputs as verifier failures with actionable detail. |\n| Calibration evaluator in `src/contributor/calibration-evaluator.ts` | Bubble evaluator failures into stable check IDs / status codes instead of swallowing them in prose. | N/A — pure local evaluation. | Treat missing recommendation, missing retained rows, or contract-state drift as failing checks. |\n| Package script wiring in `package.json` | Keep one canonical `verify:m046:s02` entrypoint so downstream slices do not reconstruct the proof flow ad hoc. | N/A — local config only. | Treat broken CLI args or mismatched human/JSON shapes as regression-test failures. |\n\n## Load Profile\n\n- **Shared resources**: local snapshot file, evaluator output, and one prerequisite S01 verifier invocation.\n- **Per-operation cost**: one proof script, one test file, one package script entry, and one evaluation pass.\n- **10x breakpoint**: human-readable output clarity degrades before compute does, so keep check IDs/status codes and contributor summaries concise.\n\n## Negative Tests\n\n- **Malformed inputs**: corrupted snapshot JSON, missing retained contributors, and excluded identities leaking into the evaluated cohort.\n- **Error paths**: failed upstream fixture verification, evaluator exceptions, and missing keep/retune/replace recommendation all produce non-zero exits with named status codes.\n- **Boundary conditions**: `--json` and human output stay aligned, and the report remains useful when the snapshot is degraded but still loadable.\n\n## Steps\n\n1. Write failing verifier tests that pin JSON structure, human-readable report sections, stable check IDs/status codes, and non-zero exits for prerequisite/evaluator failures.\n2. Implement `scripts/verify-m046-s02.ts` to call the shared snapshot loader and evaluator, compose per-contributor + report-level checks, and render human / JSON output from one report object.\n3. Add the `verify:m046:s02` package script and keep the report shape close to `verify:m046:s01` / `verify:m045:s03` patterns so future slices can consume it mechanically.\n4. Run the shipped verifier against the checked-in fixture snapshot and keep the final output explicit about live-path compression, intended-path gaps, instability, freshness, and the final recommendation.\n\n## Must-Haves\n\n- [ ] `bun run verify:m046:s02 -- --json` returns a stable machine-readable report with per-contributor diagnostics and a final keep/retune/replace recommendation.\n- [ ] Human-readable output and JSON are generated from the same report object so drift is testable.\n- [ ] Prerequisite fixture failures, evaluator failures, and missing recommendations all exit non-zero with named status codes.\n",
+      "estimate": "90m",
+      "files": [
+        "scripts/verify-m046-s02.ts",
+        "scripts/verify-m046-s02.test.ts",
+        "package.json",
+        "src/contributor/calibration-evaluator.ts"
+      ],
+      "verify": "bun test ./scripts/verify-m046-s02.test.ts && bun run verify:m046:s02 -- --json",
+      "inputs": [
+        "`src/contributor/xbmc-fixture-snapshot.ts` — shared snapshot loader from T01.",
+        "`src/contributor/calibration-evaluator.ts` — evaluator/report logic from T02.",
+        "`scripts/verify-m046-s01.ts` — prerequisite proof-harness pattern and stable check/report conventions.",
+        "`package.json` — canonical verifier script wiring."
+      ],
+      "expected_output": [
+        "`scripts/verify-m046-s02.ts` — shipped S02 proof harness for human and JSON calibration reports.",
+        "`scripts/verify-m046-s02.test.ts` — regression tests for report shape, status codes, and non-zero failure behavior.",
+        "`package.json` — `verify:m046:s02` script entrypoint.",
+        "`src/contributor/calibration-evaluator.ts` — any report-shape adjustments required to support the final verifier output."
+      ],
+      "observability_impact": "Exposes stable verifier check IDs/status codes plus per-contributor live/intended diagnostics so future agents can tell whether failures come from fixture truth, evaluator assumptions, or verdict generation.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -13260,6 +13395,42 @@
       "decision": "How xbmc fixture snapshot generatedAt is derived during refresh",
       "choice": "Derive generatedAt deterministically from the latest provenance record observedAt timestamp, with manifest curatedAt as the fallback, instead of using the current wall-clock time.",
       "rationale": "The fixture pack is a checked-in proof surface. Deterministic timestamps prevent refresh-only drift, preserve byte-stable snapshots when evidence is unchanged, and satisfy the pinned refresh contract tests without weakening provenance fidelity.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 111,
+      "id": "D077",
+      "when_context": "M046/S01/T02",
+      "scope": "operational",
+      "decision": "How xbmc fixture refresh should handle slow or stalled GitHub evidence collection",
+      "choice": "Pass explicit request timeouts into GitHub App Octokit calls and degrade the contributor's GitHub evidence to an unavailable github-timeout failure instead of letting the refresh hang.",
+      "rationale": "The checked-in fixture refresh is an operator-facing proof command. Live GitHub enrichment may run with Bun-loaded app credentials from .env, and an unbounded request can stall the whole refresh. Bounding the request and surfacing a named degraded failure keeps the snapshot truthful, preserves local-git evidence, and prevents S01/S02 verification from blocking indefinitely on external API latency.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 112,
+      "id": "D078",
+      "when_context": "M046/S02 planning",
+      "scope": "calibration",
+      "decision": "How should S02 compare live vs intended contributor-tier behavior when the checked-in xbmc snapshot lacks file-level replay data?",
+      "choice": "Model both paths from the checked-in snapshot only, and surface explicit fidelity/degradation diagnostics instead of hydrating live GitHub file lists or inventing changed-file arrays during offline proof runs.",
+      "rationale": "S01's snapshot is the deterministic truth source for M046, but it does not persist changed-file arrays or complete review counts. Snapshot-only evaluation keeps the proof harness repeatable, prevents hidden network dependencies, and makes structural gaps in the live and intended models visible instead of masking them with ad hoc enrichment.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 113,
+      "id": "D079",
+      "when_context": "M046/S02/T01",
+      "scope": "architecture",
+      "decision": "Authoritative xbmc fixture snapshot validation seam for M046 contributors",
+      "choice": "Centralize xbmc snapshot loading, shape validation, semantic fixture-manifest validation, and provenance inspection in src/contributor/xbmc-fixture-snapshot.ts, and make verify:m046:s01 consume that helper instead of maintaining its own snapshot schemas.",
+      "rationale": "S02 needs a reusable offline snapshot seam, and the verifier previously duplicated Zod-only parsing logic that could drift from downstream consumers. One shared module keeps retained/excluded rows, diagnostics, and provenance semantics aligned across the verifier and the upcoming calibration evaluator while still rejecting malformed or duplicate fixture data explicitly.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -16917,6 +17088,39 @@
       "verdict": "✅ pass",
       "duration_ms": 7619,
       "created_at": "2026-04-10T21:05:43.414Z"
+    },
+    {
+      "id": 334,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./scripts/verify-m046-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 218,
+      "created_at": "2026-04-10T21:43:33.480Z"
+    },
+    {
+      "id": 335,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 163,
+      "created_at": "2026-04-10T21:43:33.480Z"
+    },
+    {
+      "id": 336,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun --eval \"import { loadXbmcFixtureSnapshot } from './src/contributor/index.ts'; if (typeof loadXbmcFixtureSnapshot !== 'function') throw new Error('missing loadXbmcFixtureSnapshot export');\"",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 155,
+      "created_at": "2026-04-10T21:43:33.480Z"
     }
   ]
 }

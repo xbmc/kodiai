@@ -12,23 +12,25 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestones M043, M044, and M045 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, and M045 turned contributor experience into one explicit cross-surface product contract:
+Milestones M043, M044, and M045 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, and M045 turned contributor experience into one explicit cross-surface product contract.
 
-- GitHub review prompt shaping and Review Details use one explicit five-state contributor-experience contract (`profile-backed`, `coarse-fallback`, `generic-unknown`, `generic-opt-out`, `generic-degraded`).
-- Review-time retrieval consumes a contract-owned optional `authorHint` projection instead of raw tier strings, emitting normalized hints only for `profile-backed` and `coarse-fallback` states and suppressing hints entirely for generic states.
-- Slack `/kodiai profile`, `profile opt-in`, `profile opt-out`, and help output use contract-first wording, hide raw tier/score semantics on generic states, and suppress expertise whenever contributor guidance is generic.
-- Identity suggestion DMs use truthful linked-profile guidance plus `/kodiai profile opt-out` instead of promising personalized reviews, while keeping fail-open behavior intact.
-- `bun run verify:m045:s03` now gives one human-readable or JSON report with named pass/fail results for embedded GitHub contract checks, retrieval shaping/omission, Slack profile/help/opt flows, and identity-link DM truthfulness.
+M046 is now in progress with S01 complete. S01 established the checked-in xbmc calibration corpus and its proof surface:
 
-Fresh M045 milestone-close verification passed:
+- `fixtures/contributor-calibration/xbmc-manifest.json` now carries the curated xbmc retained/excluded truth set with explicit bot, alias-collision, and ambiguous-identity handling.
+- `fixtures/contributor-calibration/xbmc-snapshot.json` now carries the refreshed contributor snapshot with machine-readable provenance, source-availability diagnostics, and deterministic timestamps.
+- `bun run verify:m046:s01 -- --json` and `bun run verify:m046:s01 -- --refresh --json` now verify the fixture pack with stable `check_ids` / `status_code` values for manifest validity, snapshot sync, cohort coverage, provenance completeness, source availability, and alias diagnostics.
 
-- `bun run verify:m045:s03 -- --json`
+Fresh S01 verification passed:
+
+- `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts`
+- `bun run verify:m046:s01 -- --json`
+- `bun run verify:m046:s01 -- --refresh --json`
 - `bun run tsc --noEmit`
-- `git diff --stat HEAD $(git merge-base HEAD origin/main) -- ':!.gsd/'`
 
-What remains is the follow-on calibration and rollout work:
-- **M046:** contributor tier calibration and fixture audit.
-- **M047:** contributor-experience redesign/calibration rollout and shipped-surface coherence proof.
+What remains is the calibration verdict path:
+- **M046/S02:** evaluate live incremental-path behavior versus the intended full-signal model against the checked-in xbmc fixtures.
+- **M046/S03:** turn the fixture and evaluator evidence into an explicit keep/retune/replace verdict plus an M047 change contract.
+- **M047:** roll out the contributor-experience redesign/calibration changes and prove end-to-end cross-surface coherence.
 
 ## Architecture / Key Patterns
 
@@ -38,6 +40,7 @@ What remains is the follow-on calibration and rollout work:
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
+- **Calibration fixture proof seam:** `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, and `scripts/verify-m046-s01.ts` separate human-curated contributor truth from generated live evidence so downstream calibration work can rerun against a stable xbmc corpus.
 - **Cross-surface drift verifier:** `scripts/verify-m045-s03.ts` preserves the S01 GitHub proof report intact and adds independent retrieval, Slack, and identity-link checks so operators can confirm contributor-experience coherence from one command.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
@@ -63,7 +66,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Unified Slack, Opt-Out, and Retrieval Semantics
   - [x] S03: Operator Verifier for Cross-Surface Contract Drift
 - [ ] M046: Contributor Tier Calibration and Fixture Audit
-  - [ ] S01: Contributor Fixture Set
+  - [x] S01: Contributor Fixture Set
   - [ ] S02: Scoring and Tiering Evaluation
   - [ ] S03: Calibration Verdict and Change Contract
 - [ ] M047: Contributor Experience Redesign and Calibration Rollout

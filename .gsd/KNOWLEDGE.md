@@ -904,3 +904,33 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When `refreshXbmcFixtureSnapshot()` is called without an explicit `generatedAt`, derive it deterministically from the latest non-null `provenanceRecords[].observedAt` timestamp across retained and excluded contributors, with `manifest.curatedAt` as the fallback when no observed timestamps exist. Do not reintroduce wall-clock defaulting for checked-in fixture artifacts.
 
 **Established in:** M046/S01/T03 (`src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`).
+
+---
+
+## Live xbmc fixture refresh must bound GitHub evidence collection and degrade explicitly on timeout (M046/S01)
+
+**Context:** `refreshXbmcFixtureSnapshot()` can run with GitHub App credentials auto-loaded by Bun from `.env`. Without an explicit request timeout, a slow GitHub API call can stall `bun run verify:m046:s01 -- --refresh --json` indefinitely, turning an operator proof command into a hanging workflow.
+
+**Rule:** When fixture refresh performs live GitHub enrichment, pass explicit `requestTimeoutMs` through the GitHub App seam and convert timeout failures into named degraded refresh failures (for example `github-timeout`) instead of hanging or aborting the whole snapshot build. Preserve any local-git evidence that was already collected.
+
+**Established in:** M046/S01/T02 (`src/auth/github-app.ts`, `src/contributor/xbmc-fixture-refresh.ts`).
+
+---
+
+## Local git shortlog ingestion should ignore malformed rows unless the whole shortlog is unusable (M046/S01)
+
+**Context:** `git shortlog -sne --all` output can include malformed lines that do not match the expected `count name <email>` shape. Treating one bad row as a fatal error would degrade an otherwise valid fixture snapshot and silently discard useful contributor evidence.
+
+**Rule:** Parse local shortlog rows one-by-one. Ignore malformed rows, keep any rows that parse successfully, and mark local-git evidence unavailable only when the command fails or when no rows in the entire shortlog are parseable.
+
+**Established in:** M046/S01/T02 (`src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`).
+
+---
+
+## Checked-in xbmc snapshots need both shape validation and fixture-manifest semantic validation (M046/S02)
+
+**Context:** A full snapshot can satisfy the JSON/Zod shape while still violating fixture semantics that S02 depends on, such as duplicate `normalizedId` values across retained and excluded rows. Those semantic failures only appear when the snapshot is projected back through the shared fixture-manifest validator.
+
+**Rule:** Do not treat successful full-schema parsing as sufficient proof that an xbmc snapshot is valid. Always run the projected retained/excluded rows back through `assertValidFixtureManifest(...)` as part of snapshot validation, and fail the snapshot on those semantic errors instead of only failing downstream report logic.
+
+**Established in:** M046/S02/T01 (`src/contributor/xbmc-fixture-snapshot.ts`, `scripts/verify-m046-s01.ts`).
