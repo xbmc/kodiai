@@ -785,12 +785,13 @@ export function createMentionHandler(deps: {
     const normalized = stripIssueIntentWrappers(userQuestion).toLowerCase().trim();
     if (normalized.length === 0) return false;
 
-    // Direct: "review this", "review the PR", "review this PR", "do a review", "do a full review"
-    const reviewDirect =
-      /^(?:please\s+)?(?:do\s+(?:a\s+)?(?:full\s+)?review|review)\b/;
-    // Polite ask: "can you review", "can you do a review", "can you do a full review"
-    const reviewAsk =
-      /^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:do\s+(?:a\s+)?(?:full\s+)?review|review)\b/;
+    const reviewCommand =
+      "(?:do\\s+(?:a\\s+)?(?:full\\s+)?review|review|(?:retry|rerun|re-run)\\s+(?:the\\s+)?(?:full\\s+)?review)";
+
+    // Direct: "review this", "review the PR", "do a full review", "please retry review"
+    const reviewDirect = new RegExp(`^(?:please\\s+)?${reviewCommand}\\b`);
+    // Polite ask: "can you review", "can you do a review", "can you retry the review"
+    const reviewAsk = new RegExp(`^(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?${reviewCommand}\\b`);
 
     return reviewDirect.test(normalized) || reviewAsk.test(normalized);
   }
