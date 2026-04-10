@@ -1,7 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { formatReviewDetailsSummary } from "./review-utils.ts";
+import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 
-// Minimal valid params shared across all tests
 const BASE_PARAMS = {
   reviewOutputKey: "test-key-001",
   filesReviewed: 3,
@@ -14,32 +14,72 @@ const BASE_PARAMS = {
     linesChanged: 60,
     autoBand: null,
   },
+  contributorExperience: projectContributorExperienceContract({
+    source: "author-cache",
+    tier: "regular",
+  }).reviewDetails,
 };
 
 describe("formatReviewDetailsSummary", () => {
-  it("renders truthful author-tier wording for default, established, and senior contributors", () => {
-    const regularResult = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-    });
-    expect(regularResult).toContain("- Author tier: regular (developing guidance)");
-    expect(regularResult).not.toContain("established contributor guidance");
-    expect(regularResult).not.toContain("senior contributor guidance");
+  it("renders contributor-experience contract wording without raw tier leakage", () => {
+    const cases = [
+      {
+        projection: projectContributorExperienceContract({
+          source: "contributor-profile",
+          tier: "established",
+        }).reviewDetails,
+        expected:
+          "- Contributor experience: profile-backed (using linked contributor profile guidance)",
+      },
+      {
+        projection: projectContributorExperienceContract({
+          source: "author-cache",
+          tier: "regular",
+        }).reviewDetails,
+        expected:
+          "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
+      },
+      {
+        projection: projectContributorExperienceContract({
+          source: "none",
+          tier: null,
+        }).reviewDetails,
+        expected:
+          "- Contributor experience: generic-unknown (no reliable contributor signal available)",
+      },
+      {
+        projection: projectContributorExperienceContract({
+          source: "contributor-profile",
+          tier: "senior",
+          optedOut: true,
+        }).reviewDetails,
+        expected:
+          "- Contributor experience: generic-opt-out (contributor-specific guidance disabled by opt-out)",
+      },
+      {
+        projection: projectContributorExperienceContract({
+          source: "github-search",
+          tier: "regular",
+          degraded: true,
+          degradationPath: "search-api-rate-limit",
+        }).reviewDetails,
+        expected:
+          "- Contributor experience: generic-degraded (fallback signals unavailable: search-api-rate-limit)",
+      },
+    ];
 
-    const establishedResult = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      authorTier: "established",
-    });
-    expect(establishedResult).toContain("- Author tier: established (established contributor guidance)");
-    expect(establishedResult).not.toContain("developing guidance");
-    expect(establishedResult).not.toContain("newcomer guidance");
+    for (const testCase of cases) {
+      const result = formatReviewDetailsSummary({
+        ...BASE_PARAMS,
+        contributorExperience: testCase.projection,
+      });
 
-    const seniorResult = formatReviewDetailsSummary({
-      ...BASE_PARAMS,
-      authorTier: "senior",
-    });
-    expect(seniorResult).toContain("- Author tier: senior (senior contributor guidance)");
-    expect(seniorResult).not.toContain("developing guidance");
-    expect(seniorResult).not.toContain("newcomer guidance");
+      expect(result).toContain(testCase.expected);
+      expect(result).not.toContain("- Author tier:");
+      expect(result).not.toContain("developing guidance");
+      expect(result).not.toContain("established contributor guidance");
+      expect(result).not.toContain("senior contributor guidance");
+    }
   });
 
   it("renders usage line when usageLimit is present", () => {
@@ -55,7 +95,6 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("25% of seven_day limit remaining");
     expect(result).toContain("resets ");
 
-    // Calling without usageLimit should not contain the usage line
     const resultWithout = formatReviewDetailsSummary({ ...BASE_PARAMS });
     expect(resultWithout).not.toContain("Claude Code usage");
   });

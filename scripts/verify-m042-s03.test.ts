@@ -24,7 +24,8 @@ function makeFixture(overrides?: Partial<FixtureResult> & { scenario?: FixtureRe
     promptAuthorSection: overrides?.promptAuthorSection ?? [
       "## Author Experience Context",
       "",
-      "The PR author (CrystalP) is a core/senior contributor of this repository.",
+      "Contributor-experience contract: coarse-fallback.",
+      "The PR author (CrystalP) is being reviewed with only coarse fallback signals for this repository.",
       "",
       "- Be concise and assume familiarity with the codebase",
     ].join("\n"),
@@ -32,7 +33,7 @@ function makeFixture(overrides?: Partial<FixtureResult> & { scenario?: FixtureRe
       "<details>",
       "<summary>Review Details</summary>",
       "",
-      "- Author tier: core (senior contributor guidance)",
+      "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
       "</details>",
     ].join("\n"),
     summaryWithDisclosure: overrides?.summaryWithDisclosure,
@@ -40,18 +41,21 @@ function makeFixture(overrides?: Partial<FixtureResult> & { scenario?: FixtureRe
 }
 
 describe("runCacheHitSurfaceFixture", () => {
-  test("uses author-cache precedence and renders senior-style surfaces for cached core tier", () => {
+  test("uses author-cache precedence and renders coarse-fallback contract surfaces for cached core tier", () => {
     const fixture = runCacheHitSurfaceFixture();
 
     expect(fixture.scenario).toBe("cache-hit");
     expect(fixture.resolvedSource).toBe("author-cache");
     expect(fixture.resolvedTier).toBe("core");
-    expect(fixture.promptAuthorSection).toContain("core/senior contributor");
+    expect(fixture.promptAuthorSection).toContain("Contributor-experience contract: coarse-fallback.");
+    expect(fixture.promptAuthorSection).toContain("only coarse fallback signals");
     expect(fixture.promptAuthorSection).not.toContain("first-time or new contributor");
     expect(fixture.promptAuthorSection).not.toContain("developing contributor");
-    expect(fixture.reviewDetailsBody).toContain("- Author tier: core (senior contributor guidance)");
+    expect(fixture.reviewDetailsBody).toContain(
+      "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
+    );
+    expect(fixture.reviewDetailsBody).not.toContain("- Author tier:");
     expect(fixture.reviewDetailsBody).not.toContain("newcomer guidance");
-    expect(fixture.reviewDetailsBody).not.toContain("developing guidance");
   });
 });
 
@@ -62,23 +66,29 @@ describe("runProfileOverridesContradictoryCacheFixture", () => {
     expect(fixture.scenario).toBe("profile-over-cache");
     expect(fixture.resolvedSource).toBe("contributor-profile");
     expect(fixture.resolvedTier).toBe("established");
+    expect(fixture.promptAuthorSection).toContain("Contributor-experience contract: profile-backed.");
     expect(fixture.promptAuthorSection).toContain("established contributor");
     expect(fixture.promptAuthorSection).not.toContain("first-time or new contributor");
-    expect(fixture.reviewDetailsBody).toContain("- Author tier: established (established contributor guidance)");
+    expect(fixture.reviewDetailsBody).toContain(
+      "- Contributor experience: profile-backed (using linked contributor profile guidance)",
+    );
     expect(fixture.reviewDetailsBody).not.toContain("newcomer guidance");
   });
 });
 
 describe("runDegradedFallbackFixture", () => {
-  test("keeps fallback-tier wording truthful and includes degradation disclosure", () => {
+  test("keeps degraded contract wording truthful and includes degradation disclosure", () => {
     const fixture = runDegradedFallbackFixture();
 
     expect(fixture.scenario).toBe("degraded-fallback");
     expect(fixture.resolvedSource).toBe("fallback");
     expect(fixture.resolvedTier).toBe("regular");
-    expect(fixture.promptAuthorSection).toContain("developing contributor");
+    expect(fixture.promptAuthorSection).toContain("## Search API Degradation Context");
+    expect(fixture.promptAuthorSection).toContain("Contributor-experience contract: generic-degraded.");
     expect(fixture.promptAuthorSection).not.toContain("established contributor");
-    expect(fixture.reviewDetailsBody).toContain("- Author tier: regular (developing guidance)");
+    expect(fixture.reviewDetailsBody).toContain(
+      "- Contributor experience: generic-degraded (fallback signals unavailable: search-api-rate-limit)",
+    );
     expect(fixture.summaryWithDisclosure).toContain("Analysis is partial due to API limits.");
   });
 });
@@ -93,7 +103,7 @@ describe("M042-S03-CACHE-HIT-SURFACE-TRUTHFUL", () => {
     expect(result.status_code).toBe("cache_hit_surface_mapping_truthful");
   });
 
-  test("fails when cached tier output regresses to developing guidance", async () => {
+  test("fails when cached tier output regresses to established wording", async () => {
     const result = await runCacheHitSurfaceTruthfulCheck(() =>
       makeFixture({
         scenario: "cache-hit",
@@ -102,9 +112,10 @@ describe("M042-S03-CACHE-HIT-SURFACE-TRUTHFUL", () => {
         promptAuthorSection: [
           "## Author Experience Context",
           "",
-          "The PR author (CrystalP) is a developing contributor with growing familiarity in this area.",
+          "Contributor-experience contract: profile-backed.",
+          "The PR author (CrystalP) is an established contributor.",
         ].join("\n"),
-        reviewDetailsBody: "- Author tier: regular (developing guidance)",
+        reviewDetailsBody: "- Contributor experience: profile-backed (using linked contributor profile guidance)",
       }),
     );
 
@@ -133,9 +144,10 @@ describe("M042-S03-PROFILE-OVERRIDES-CONTRADICTORY-CACHE", () => {
         promptAuthorSection: [
           "## Author Experience Context",
           "",
+          "Contributor-experience contract: coarse-fallback.",
           "The PR author (CrystalP) appears to be a first-time or new contributor to this repository.",
         ].join("\n"),
-        reviewDetailsBody: "- Author tier: first-time (newcomer guidance)",
+        reviewDetailsBody: "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
       }),
     );
 
@@ -164,9 +176,10 @@ describe("M042-S03-DEGRADED-FALLBACK-NONCONTRADICTORY", () => {
         promptAuthorSection: [
           "## Author Experience Context",
           "",
+          "Contributor-experience contract: generic-degraded.",
           "The PR author (CrystalP) is an established contributor.",
         ].join("\n"),
-        reviewDetailsBody: "- Author tier: established (established contributor guidance)",
+        reviewDetailsBody: "- Contributor experience: profile-backed (using linked contributor profile guidance)",
         summaryWithDisclosure: "## What Changed\n\nSearch enrichment degraded.",
       }),
     );
@@ -195,8 +208,13 @@ describe("evaluateM042S03", () => {
           scenario: "degraded-fallback",
           resolvedSource: "fallback",
           resolvedTier: "regular",
-          promptAuthorSection: "## Author Experience Context\n\nThe PR author (CrystalP) is an established contributor.",
-          reviewDetailsBody: "- Author tier: established (established contributor guidance)",
+          promptAuthorSection: [
+            "## Author Experience Context",
+            "",
+            "Contributor-experience contract: generic-degraded.",
+            "The PR author (CrystalP) is an established contributor.",
+          ].join("\n"),
+          reviewDetailsBody: "- Contributor experience: profile-backed (using linked contributor profile guidance)",
           summaryWithDisclosure: "## What Changed\n\nMissing sentence.",
         }),
     });
@@ -232,8 +250,13 @@ describe("buildM042S03ProofHarness", () => {
           scenario: "profile-over-cache",
           resolvedSource: "author-cache",
           resolvedTier: "first-time",
-          promptAuthorSection: "## Author Experience Context\n\nThe PR author (CrystalP) appears to be a first-time or new contributor to this repository.",
-          reviewDetailsBody: "- Author tier: first-time (newcomer guidance)",
+          promptAuthorSection: [
+            "## Author Experience Context",
+            "",
+            "Contributor-experience contract: coarse-fallback.",
+            "The PR author (CrystalP) appears to be a first-time or new contributor to this repository.",
+          ].join("\n"),
+          reviewDetailsBody: "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
         }),
       stdout: { write: (chunk) => (stdout.push(chunk), true) },
       stderr: { write: (chunk) => (stderr.push(chunk), true) },

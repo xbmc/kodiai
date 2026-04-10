@@ -2,19 +2,33 @@
 
 ## What This Is
 
-Kodiai is an AI-powered GitHub bot that reviews pull requests, triages issues, answers questions via Slack, and runs autonomous coding tasks (write mode). It watches GitHub webhooks, runs Claude via the Anthropic Agent SDK in isolated Azure Container App jobs, and posts structured findings back to GitHub comments and Slack.
+Kodiai is an AI-powered GitHub bot that reviews pull requests, triages issues, answers questions via Slack, and runs autonomous coding tasks (write mode). It receives GitHub webhooks and Slack events, runs agent executions in isolated Azure Container App jobs, and publishes structured results back to GitHub and Slack.
 
 ## Core Value
 
-Automated, high-signal code review on every PR — findings land in a structured GitHub comment with severity, confidence, suppression, reviewer context, and execution details. The surrounding systems exist to make that review surface truthful, attributable, and safe to operate.
+High-signal, truthful automated review on every PR. Findings land in GitHub with severity, confidence, suppression, reviewer context, and execution details, while the surrounding systems keep that review surface attributable, explainable, and operationally safe.
 
 ## Current State
 
-The full review stack is deployed: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant, write-mode agent execution, MCP tooling, knowledge/wiki workflows, contributor profiling, and multi-model routing.
+The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-M043 is now closed in substance: the local deterministic workflow contract is green, the live production explicit `@kodiai review` path is green, and the remote PR surface has caught up. Production explicit `@kodiai review` is restored on revision `ca-kodiai--0000076`: fresh delivery `bab62150-3329-11f1-96a5-aecd0f6e5943` reached `taskType="review.full"`, emitted `reviewOutputPublicationState=publish`, ended with `publishResolution="approval-bridge"`, and produced one fresh `@kodiai[bot]` approval review on PR #80. After reconciling and pushing `pr/multi-m035-m042-clean`, GitHub reran PR #80’s `test` workflow successfully.
+Milestones M043 and M044 are complete. M043 restored explicit `@kodiai review` publication in production, and M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook.
 
-The original `/gsd auto` blocker is gone. The repo now passes the CI-shaped deterministic gate from a fresh database (`2945 pass, 61 skip, 0 fail` plus `bunx tsc --noEmit`), and the repaired explicit-review path no longer starves on the conversational mention turn/tool budget. The remaining local noise is limited to untracked `.gsd` runtime artifacts (`.gsd/journal/`, `.gsd/gsd.db-wal`, `.gsd/gsd.db-shm`), not product or CI failures.
+M045 is now active with S01 and S02 complete. The contributor-experience product contract no longer stops at GitHub prompt/details behavior:
+
+- GitHub review prompt shaping and Review Details use one explicit five-state contributor-experience contract (`profile-backed`, `coarse-fallback`, `generic-unknown`, `generic-opt-out`, `generic-degraded`).
+- Review-time retrieval now consumes a contract-owned optional `authorHint` projection instead of raw tier strings, emitting normalized hints only for profile-backed/coarse-fallback states and suppressing hints entirely for generic states.
+- Slack `/kodiai profile`, `profile opt-in`, `profile opt-out`, and help output now use contract-first wording, hide raw tier/score semantics on generic states, and suppress expertise when contributor guidance is generic.
+- Identity suggestion DMs now use truthful linked-profile guidance plus opt-out control instead of promising personalized reviews, while keeping fail-open behavior intact.
+
+Fresh M045 verification is green:
+
+- `bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/handlers/review.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts`
+- `bun run verify:m045:s01 -- --json`
+- `bun run tsc --noEmit`
+
+Remaining M045 work is now concentrated in one slice:
+- **S03:** add one operator-facing verifier that checks GitHub review wording, Slack/profile copy, retrieval hint presence/absence, and opt-out truthfulness together so cross-surface contract drift is visible from a single command.
 
 ## Architecture / Key Patterns
 
@@ -22,10 +36,10 @@ The original `/gsd auto` blocker is gone. The repo now passes the CI-shaped dete
 - **Execution:** Azure Container App Jobs dispatch per review; the agent writes `result.json` to a shared Azure Files mount.
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
-- **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, uses `src/handlers/review-idempotency.ts` for marker-based skip detection, and classifies terminal publish outcomes such as `skip-existing-output`, `idempotency-skip`, and `duplicate-suppressed`.
-- **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; the operator runbook uses `ContainerAppConsoleLogs_CL` queries keyed on `taskType=review.full`, `reviewOutputKey`, and publish-resolution logs.
-- **Workspace artifact debugging:** When a live ACA execution succeeds but the app has not yet emitted terminal publish logs, inspect Azure Files workspace artifacts (`agent-config.json`, `agent-diagnostics.log`, `result.json`) before guessing at handler behavior.
-- **Explicit review mention budget rule:** PR mentions promoted to `taskType="review.full"` must inherit repo-config `maxTurns` and the full review tool surface. Conversational mention caps are for `mention.response`, not explicit review.
+- **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
+- **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
+- **Cross-surface drift indicators:** retrieval query assertions in `src/handlers/review.test.ts`, exact Slack/profile response fixtures in `src/slack/slash-command-handler.test.ts`, exact DM/fail-open coverage in `src/handlers/identity-suggest.test.ts`, and `scripts/verify-m045-s01.ts` for the GitHub contract baseline.
+- **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
 ## Capability Contract
 
@@ -34,9 +48,25 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 ## Milestone Sequence
 
 - [x] M001–M042: MVP through contributor-tier truthfulness and mention-review production repair groundwork
-- [ ] M043: Restore Mention Review Publication and Reverify PR #80
+- [x] M043: Restore Mention Review Publication and Reverify PR #80
   - [x] S01: Live Mention Publish Repair
   - [x] S02: Publish Failure Hardening and Deploy Safety
   - [x] S03: Backport Hotfixes onto PR #80
   - [x] S04: Finish PR #80 Review Fixes
-  - [x] S05: Final Production and PR Proof — local deterministic proof and live production mention proof are both green, but the remote PR branch and GitHub `test` check are still stale until the repaired branch is reconciled and pushed.
+  - [x] S05: Final Production and PR Proof
+- [x] M044: Audit Recent XBMC Review Correctness
+  - [x] S01: Sample Selection and Recent Review Audit
+  - [x] S02: Audit-Driven Publication/Correctness Repair
+  - [x] S03: Repeatable Audit Verifier and Runbook
+- [ ] M045: Contributor Experience Product Contract and Architecture
+  - [x] S01: Contract-Driven GitHub Review Behavior
+  - [x] S02: Unified Slack, Opt-Out, and Retrieval Semantics
+  - [ ] S03: Operator Verifier for Cross-Surface Contract Drift
+- [ ] M046: Contributor Tier Calibration and Fixture Audit
+  - [ ] S01: Contributor Fixture Set
+  - [ ] S02: Scoring and Tiering Evaluation
+  - [ ] S03: Calibration Verdict and Change Contract
+- [ ] M047: Contributor Experience Redesign and Calibration Rollout
+  - [ ] S01: Review-Surface Rollout
+  - [ ] S02: Retrieval and Slack Surface Rollout
+  - [ ] S03: End-to-End Coherence Verification

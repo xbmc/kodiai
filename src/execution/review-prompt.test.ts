@@ -25,6 +25,7 @@ import {
   matchPathInstructions,
 } from "./review-prompt.ts";
 import type { ClusterPatternMatch } from "../knowledge/cluster-types.ts";
+import { projectContributorExperienceContract } from "../contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
 
 function baseContext(overrides: Record<string, unknown> = {}) {
@@ -597,6 +598,49 @@ test("buildReviewPrompt threads senior author tier without newcomer or developin
   expect(authorSection).not.toContain("developing contributor");
   expect(authorSection).not.toContain("Explain WHY each finding matters");
   expect(authorSection).not.toContain("Include doc links for project-specific patterns");
+});
+
+test("buildReviewPrompt uses coarse-fallback contract wording instead of senior shorthand for low-confidence core signals", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "CrystalP",
+      contributorExperienceContract: projectContributorExperienceContract({
+        source: "author-cache",
+        tier: "core",
+      }),
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("Contributor-experience contract: coarse-fallback.");
+  expect(authorSection).toContain("only coarse fallback signals");
+  expect(authorSection).not.toContain("core/senior contributor");
+  expect(authorSection).not.toContain("established contributor");
+  expect(authorSection).not.toContain("first-time or new contributor");
+});
+
+test("buildReviewPrompt falls back to generic guidance when the contributor contract is malformed", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      prAuthor: "mysterydev",
+      contributorExperienceContract: {
+        state: "profile-backed",
+      },
+    }),
+  );
+  const authorSectionMatch = prompt.match(
+    /## Author Experience Context[\s\S]*?(?=\n## |$)/,
+  );
+  expect(authorSectionMatch).toBeDefined();
+  const authorSection = authorSectionMatch![0];
+  expect(authorSection).toContain("Contributor-experience contract: generic-unknown.");
+  expect(authorSection).toContain("No reliable contributor signal is available for the PR author (mysterydev).");
+  expect(authorSection).not.toContain("established contributor");
+  expect(authorSection).not.toContain("core/senior contributor");
+  expect(authorSection).not.toContain("first-time or new contributor");
 });
 
 // ---------------------------------------------------------------------------

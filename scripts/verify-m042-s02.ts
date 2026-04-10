@@ -1,7 +1,9 @@
-import { buildReviewPrompt } from "../src/execution/review-prompt.ts";
-import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
 import { resolveAuthorTierFromSources } from "../src/handlers/review.ts";
-import type { ResolvedReviewProfile } from "../src/lib/auto-profile.ts";
+import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
+import {
+  buildGitHubReviewContractFixture,
+  getGitHubReviewContractScenario,
+} from "./verify-m045-s01.ts";
 import type { AuthorTier } from "../src/lib/author-classifier.ts";
 
 export const M042_S02_CHECK_IDS = [
@@ -34,76 +36,15 @@ type ReviewSurfaceFixtureResult = {
   reviewDetailsBody: string;
 };
 
-const ESTABLISHED_REQUIRED_PROMPT_PHRASES = [
-  "established contributor",
-  "Keep explanations brief",
-] as const;
-
-const ESTABLISHED_BANNED_PROMPT_PHRASES = [
-  "first-time or new contributor",
-  "developing contributor",
-  "Explain WHY each finding matters",
-  "learning opportunities",
-  "encouraging, welcoming",
-  "Include doc links for project-specific patterns",
-] as const;
-
-const ESTABLISHED_REQUIRED_DETAILS_PHRASES = [
-  "- Author tier: established (established contributor guidance)",
-] as const;
-
-const ESTABLISHED_BANNED_DETAILS_PHRASES = [
-  "newcomer guidance",
-  "developing guidance",
-  "senior contributor guidance",
-] as const;
-
-function basePromptContext(overrides?: { prAuthor?: string; authorTier?: AuthorTier }) {
-  return {
-    owner: "xbmc",
-    repo: "xbmc",
-    prNumber: 4242,
-    prTitle: "Fix CrystalP review surface regression",
-    prBody: "Ensure established contributors do not receive newcomer guidance.",
-    prAuthor: overrides?.prAuthor ?? "CrystalP",
-    baseBranch: "master",
-    headBranch: "crystalp/fix-review-surface",
-    changedFiles: ["xbmc/utils/StringUtils.cpp"],
-    mode: "standard" as const,
-    severityMinLevel: "medium" as const,
-    maxComments: 7,
-    focusAreas: [],
-    ignoredAreas: ["style"],
-    suppressions: [],
-    minConfidence: 0,
-    authorTier: overrides?.authorTier,
-  };
-}
-
-function buildAuthorSectionPrompt(authorTier: AuthorTier, prAuthor = "CrystalP"): string {
-  const prompt = buildReviewPrompt(basePromptContext({ prAuthor, authorTier }));
-  const authorSectionMatch = prompt.match(/## Author Experience Context[\s\S]*?(?=\n## |$)/);
-  return authorSectionMatch?.[0] ?? "";
-}
-
-function buildReviewDetails(authorTier: AuthorTier): string {
-  const profileSelection: ResolvedReviewProfile = {
-    selectedProfile: "balanced",
-    source: "auto",
-    linesChanged: 60,
-    autoBand: null,
-  };
-
-  return formatReviewDetailsSummary({
-    reviewOutputKey: "m042-s02-proof",
-    filesReviewed: 1,
-    linesAdded: 8,
-    linesRemoved: 2,
-    findingCounts: { critical: 0, major: 1, medium: 0, minor: 0 },
-    profileSelection,
-    authorTier,
-  });
-}
+const PROFILE_BACKED_SCENARIO = getGitHubReviewContractScenario("profile-backed");
+const ESTABLISHED_REQUIRED_PROMPT_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.requiredPromptPhrases;
+const ESTABLISHED_BANNED_PROMPT_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.bannedPromptPhrases;
+const ESTABLISHED_REQUIRED_DETAILS_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.requiredReviewDetailsPhrases;
+const ESTABLISHED_BANNED_DETAILS_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.bannedReviewDetailsPhrases;
 
 export function runEstablishedSurfaceFixture(): ReviewSurfaceFixtureResult {
   const resolved = resolveAuthorTierFromSources({
@@ -111,15 +52,21 @@ export function runEstablishedSurfaceFixture(): ReviewSurfaceFixtureResult {
     cachedTier: "first-time",
     fallbackTier: "first-time",
   });
-
-  const promptAuthorSection = buildAuthorSectionPrompt(resolved.tier, "CrystalP");
-  const reviewDetailsBody = buildReviewDetails(resolved.tier);
+  const contract = projectContributorExperienceContract({
+    source: "contributor-profile",
+    tier: resolved.tier,
+  });
+  const fixture = buildGitHubReviewContractFixture({
+    scenarioId: "profile-backed",
+    prAuthor: "CrystalP",
+    contract,
+  });
 
   return {
     resolvedTier: resolved.tier,
     resolvedSource: resolved.source,
-    promptAuthorSection,
-    reviewDetailsBody,
+    promptAuthorSection: fixture.promptAuthorSection,
+    reviewDetailsBody: fixture.reviewDetailsBody,
   };
 }
 
@@ -221,7 +168,7 @@ export async function runDetailsEstablishedTruthfulCheck(
       passed: true,
       skipped: false,
       status_code: "review_details_established_guidance_truthful",
-      detail: `authorTierLinePresent=true bannedAbsent=${ESTABLISHED_BANNED_DETAILS_PHRASES.length}`,
+      detail: `contractLinePresent=true bannedAbsent=${ESTABLISHED_BANNED_DETAILS_PHRASES.length}`,
     };
   }
 
@@ -243,17 +190,33 @@ export async function runCrystalPSurfacesStayEstablishedCheck(
   if (!result.promptAuthorSection.includes("CrystalP")) {
     problems.push("prompt author section did not include CrystalP");
   }
+  if (!result.promptAuthorSection.includes("Contributor-experience contract: profile-backed.")) {
+    problems.push("prompt author section did not preserve the profile-backed contract line");
+  }
   if (!result.promptAuthorSection.includes("established contributor")) {
     problems.push("prompt author section did not preserve established contributor wording");
   }
-  if (!result.reviewDetailsBody.includes("- Author tier: established (established contributor guidance)")) {
-    problems.push("review details did not preserve established contributor guidance line");
+  if (
+    !result.reviewDetailsBody.includes(
+      "- Contributor experience: profile-backed (using linked contributor profile guidance)",
+    )
+  ) {
+    problems.push("review details did not preserve the profile-backed contract line");
   }
-  if (result.promptAuthorSection.includes("first-time or new contributor") || result.reviewDetailsBody.includes("newcomer guidance")) {
+  if (
+    result.promptAuthorSection.includes("Contributor-experience contract: coarse-fallback.")
+    || result.reviewDetailsBody.includes("coarse-fallback")
+  ) {
+    problems.push("CrystalP repro regressed to coarse fallback guidance");
+  }
+  if (
+    result.promptAuthorSection.includes("Contributor-experience contract: generic-")
+    || result.reviewDetailsBody.includes("generic-")
+  ) {
+    problems.push("CrystalP repro regressed to generic guidance");
+  }
+  if (result.promptAuthorSection.includes("first-time or new contributor")) {
     problems.push("CrystalP repro regressed to newcomer guidance");
-  }
-  if (result.promptAuthorSection.includes("developing contributor") || result.reviewDetailsBody.includes("developing guidance")) {
-    problems.push("CrystalP repro regressed to developing guidance");
   }
 
   if (problems.length === 0) {
@@ -262,7 +225,8 @@ export async function runCrystalPSurfacesStayEstablishedCheck(
       passed: true,
       skipped: false,
       status_code: "crystalp_review_surfaces_remain_established",
-      detail: "prompt+review-details stayed established and excluded newcomer/developing guidance",
+      detail:
+        "prompt stayed profile-backed/established and review-details stayed profile-backed without coarse or generic regressions",
     };
   }
 

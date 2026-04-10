@@ -22,7 +22,7 @@ function makeInput(overrides: Partial<BuildRetrievalVariantsInput> = {}): BuildR
       "src/http/middleware.ts",
       "README.md",
     ],
-    authorTier: "first-time",
+    authorHint: "  New contributor  ",
     ...overrides,
   };
 }
@@ -58,13 +58,15 @@ describe("buildRetrievalVariants", () => {
 
     expect(variants).toHaveLength(3);
     expect(variants.map((v) => v.type)).toEqual(["intent", "file-path", "code-shape"]);
+    expect(variants[0]?.query).toContain("author: new contributor");
+    expect(variants[0]?.query).not.toContain("first-time");
     for (const variant of variants) {
       expect(variant.query.length).toBeGreaterThan(0);
       expect(variant.query.length).toBeLessThanOrEqual(800);
     }
   });
 
-  test("normalizes semantically equal whitespace/casing inputs", () => {
+  test("normalizes semantically equal whitespace and casing inputs", () => {
     const a = buildRetrievalVariants(makeInput());
     const b = buildRetrievalVariants(
       makeInput({
@@ -73,10 +75,18 @@ describe("buildRetrievalVariants", () => {
         conventionalType: "feat",
         prLanguages: ["typescript", "go"],
         riskSignals: ["auth", "token replay"],
+        authorHint: "new CONTRIBUTOR",
       }),
     );
 
     expect(a).toEqual(b);
+  });
+
+  test("intent variant drops empty author hints after normalization", () => {
+    const variants = buildRetrievalVariants(makeInput({ authorHint: "   \n\t  " }));
+
+    const intentVariant = variants.find((variant) => variant.type === "intent") as MultiQueryVariant;
+    expect(intentVariant.query).not.toContain("author:");
   });
 
   test("file-path variant emphasizes changed paths and trims count", () => {

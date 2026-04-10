@@ -4,7 +4,7 @@ export type RetrievalQuerySignals = {
   conventionalType?: string | null;
   detectedLanguages: string[];
   riskSignals: string[];
-  authorTier?: string;
+  authorHint?: string;
   topFilePaths: string[];
 };
 
@@ -13,6 +13,11 @@ const MAX_LANGUAGES = 5;
 const MAX_RISK_SIGNALS = 3;
 const MAX_FILE_PATHS = 15;
 const MAX_TOTAL_LENGTH = 800;
+
+function normalizeAuthorHint(value: string | null | undefined): string | null {
+  const normalized = (value ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  return normalized.length > 0 ? normalized : null;
+}
 
 export function buildRetrievalQuery(signals: RetrievalQuerySignals): string {
   const parts: string[] = [];
@@ -43,9 +48,10 @@ export function buildRetrievalQuery(signals: RetrievalQuerySignals): string {
     parts.push(`Risk: ${risks.join(", ")}`);
   }
 
-  // 6. Author tier (if present)
-  if (signals.authorTier) {
-    parts.push(`Author: ${signals.authorTier}`);
+  // 6. Author hint (if present after normalization)
+  const authorHint = normalizeAuthorHint(signals.authorHint);
+  if (authorHint) {
+    parts.push(`Author: ${authorHint}`);
   }
 
   // 7. File paths (first 15, newline-separated)

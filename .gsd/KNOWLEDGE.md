@@ -784,3 +784,93 @@ beforeAll(async () => {
 ```
 
 **Established in:** M043/S05 clean-DB rerun after PR #80 CI surfaced `review_checkpoints` schema drift (`src/knowledge/store.test.ts`).
+
+---
+
+## `reviewOutputKey` Retry Suffix Maps to Retry Delivery ID (M044/S01)
+
+**Context:** Automatic review retries in `src/handlers/review.ts` do not rebuild the key from scratch. They derive the retry key by appending `-retry-1` to the base `reviewOutputKey`, and they derive the retry delivery ID by appending the same suffix to the base webhook delivery ID (`${event.id}-retry-1`).
+
+**Rule:** When correlating retry-published review output, parse the base key first, then treat the retry suffix as a separate dimension:
+- `baseReviewOutputKey` = original marker-backed key without `-retry-N`
+- `retryAttempt` = `N`
+- `deliveryId` = base delivery from the key payload
+- `effectiveDeliveryId` = `${deliveryId}-retry-${retryAttempt}` when `retryAttempt` is present
+
+Do **not** treat the full retry-suffixed key as if it encoded a different base delivery payload. The suffix is transport-level retry identity layered on top of the same repo/PR/action/head key.
+
+**Established in:** M044/S01/T01 (`src/handlers/review-idempotency.ts`, `src/handlers/review-idempotency.test.ts`, `src/handlers/review.ts`).
+
+---
+
+## Recent Review Audits Must Recognize `kodiai:review-details` Markers (M044/S01)
+
+**Context:** Automatic clean reviews can legitimately publish only a standalone Review Details issue comment. That comment carries `<!-- kodiai:review-details:${reviewOutputKey} -->`, not the `kodiai:review-output-key:` marker used for summary comments and idempotency scans.
+
+**Rule:** Any retrospective review-audit collector that samples GitHub-visible Kodiai output must extract review identity from **both** marker shapes:
+- `<!-- kodiai:review-output-key:${reviewOutputKey} -->`
+- `<!-- kodiai:review-details:${reviewOutputKey} -->`
+
+If the collector only looks for `review-output-key`, it will silently miss valid clean-review outcomes on the automatic lane and bias the audit toward finding-bearing cases.
+
+**Established in:** M044/S01/T03 (`src/handlers/review-idempotency.ts`, `src/review-audit/recent-review-sample.ts`, `src/handlers/review.ts`).
+
+---
+
+## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
+
+**Context:** When DB-backed review evidence is unavailable, recent automatic-review classifications can still be resolved from Azure `ContainerAppConsoleLogs_CL` rows. The review handler emits `evidenceType="review"` with `outcome="submitted-approval"` for clean approval paths and `outcome="published-output"` when findings output was published.
+
+**Rule:** For recent-review auditing, treat these Azure evidence-bundle outcomes as first-class internal publication signals:
+- `submitted-approval` -> `clean-valid`
+- `published-output` -> `findings-published`
+
+These log outcomes should take precedence over DB fallbacks when they are present for the same `reviewOutputKey` / effective delivery identity. If Azure rows are absent or contradictory, fail open to `indeterminate` rather than guessing.
+
+**Related explicit-lane rule:** `Mention execution completed` with `publishResolution` drives explicit mention-review classification (`approval-bridge`, `idempotency-skip`, `duplicate-suppressed`, `publish-failure-*`).
+
+**Established in:** M044/S02/T02 (`src/review-audit/log-analytics.ts`, `src/review-audit/evidence-correlation.ts`, `scripts/verify-m044-s01.ts`).
+
+---
+
+## Contributor profile lookups hide opted-out rows unless callers opt in (M045/S01)
+
+**Context:** `ContributorProfileStore.getByGithubUsername()` filters out opted-out profiles by default. That is correct for user-facing lookups, but review-time/system code that needs to distinguish `generic-opt-out` from `generic-unknown` will silently miss opted-out contributors unless it explicitly requests the system-view path.
+
+**Rule:** For review-time or other internal contract resolution, call:
+```ts
+profileStore.getByGithubUsername(login, { includeOptedOut: true })
+```
+Then treat `profile.optedOut === true` as a generic contract outcome, not as permission to resume profile-backed personalization. Leave the default lookup behavior unchanged for user-facing call sites.
+
+**Established in:** M045/S01/T01 (`src/contributor/types.ts`, `src/contributor/profile-store.ts`, `src/handlers/review.ts`).
+
+---
+
+## Runtime review prompts must pass `contributorExperienceContract`; `authorTier` is legacy-only (M045/S01)
+
+**Context:** `buildReviewPrompt()` still accepts `authorTier` because older verifier/script callers outside the runtime review path were not migrated in T02. But the truthful GitHub review runtime now derives author-experience wording from `contributorExperienceContract.promptPolicy`, not from raw tiers.
+
+**Rule:** In runtime review code (`src/handlers/review.ts` and any future rebuild/retry paths), always pass the full `contributorExperienceContract` object and never rely on `authorTier` for prompt shaping. The `authorTier` parameter is a compatibility path for non-runtime callers only; using it in live review flow reintroduces prompt/details drift, especially for coarse fallback and generic states.
+
+**Established in:** M045/S01/T02 (`src/contributor/experience-contract.ts`, `src/execution/review-prompt.ts`, `src/handlers/review.ts`).
+
+---
+
+## RET-07 test fixtures must not use `author:` as the only intent-variant discriminator after generic hint suppression (M045/S02)
+
+**Context:** Before S02/T01, review retrieval always leaked a raw tier into the intent query, so RET-07 tests could infer the intent variant by checking for `author:`. Once generic contract states correctly emit no retrieval hint, the intent and code-shape queries can become textually identical for minimal PR fixtures, which makes that heuristic wrong and hides real regressions.
+
+**Rule:** In retrieval orchestration tests, identify intent/file-path/code-shape variants without depending on leaked contributor text. Use deterministic call order or explicit fixture signals instead of assuming the intent query always contains `author:`.
+
+**Established in:** M045/S02/T01 (`src/handlers/review.test.ts`).
+
+---
+
+## Reset in-memory cache state explicitly in tests for Slack identity suggestions (M045/S02)
+
+**Context:** `src/handlers/identity-suggest.ts` caches the Slack member list for one hour and remembers GitHub usernames it has already suggested. Without an explicit reset seam, unit tests bleed state across cases: later tests may skip `users.list`, suppress DMs, or silently stop exercising failure paths depending on execution order.
+
+**Rule:** Stateful modules with in-memory caches should expose a narrow test reset helper when deterministic per-test isolation matters. For `identity-suggest.ts`, call `resetIdentitySuggestionStateForTests()` in test setup/teardown before asserting Slack fetch order or fail-open behavior.
+
+**Established in:** M045/S02/T02 (`src/handlers/identity-suggest.ts`, `src/handlers/identity-suggest.test.ts`).

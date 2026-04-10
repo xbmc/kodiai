@@ -126,6 +126,24 @@ describe("ContributorProfileStore", () => {
     expect(bySlack!.optedOut).toBe(true);
   });
 
+  test("review-time system lookup can inspect opted-out github profiles without re-enabling them", async () => {
+    await store.linkIdentity({
+      slackUserId: "U006B",
+      githubUsername: "dev4b",
+      displayName: "Dev Four B",
+    });
+    await store.setOptedOut("dev4b", true);
+
+    const defaultLookup = await store.getByGithubUsername("dev4b");
+    expect(defaultLookup).toBeNull();
+
+    const systemLookup = await store.getByGithubUsername("dev4b", {
+      includeOptedOut: true,
+    });
+    expect(systemLookup).not.toBeNull();
+    expect(systemLookup!.optedOut).toBe(true);
+  });
+
   test("upsertExpertise creates and updates entries", async () => {
     const profile = await store.linkIdentity({
       slackUserId: "U007",

@@ -9,7 +9,7 @@ export type BuildRetrievalVariantsInput = {
   prLanguages: string[];
   riskSignals: string[];
   filePaths: string[];
-  authorTier?: string;
+  authorHint?: string;
 };
 
 export type MultiQueryVariant = {
@@ -120,7 +120,7 @@ export function buildRetrievalVariants(input: BuildRetrievalVariantsInput): Mult
   const title = normalizeText(input.title);
   const body = normalizeText(input.body).slice(0, MAX_BODY_LENGTH);
   const conventionalType = normalizeText(input.conventionalType);
-  const authorTier = normalizeText(input.authorTier);
+  const authorHint = normalizeText(input.authorHint);
   const prLanguages = normalizeList(input.prLanguages, MAX_LANGUAGES);
   const riskSignals = normalizeList(input.riskSignals, MAX_RISK_SIGNALS);
   const filePaths = normalizeList(input.filePaths, MAX_FILE_PATHS, false);
@@ -129,7 +129,7 @@ export function buildRetrievalVariants(input: BuildRetrievalVariantsInput): Mult
     title,
     body,
     conventionalType ? `[${conventionalType}]` : "",
-    authorTier ? `author: ${authorTier}` : "",
+    authorHint ? `author: ${authorHint}` : "",
   ]);
 
   const filePath = boundedJoin([

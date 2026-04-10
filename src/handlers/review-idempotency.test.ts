@@ -5,6 +5,8 @@ import {
   buildReviewOutputMarker,
   buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
+  extractReviewOutputKey,
+  parseReviewOutputKey,
 } from "./review-idempotency.ts";
 
 function createOctokitStub(options: {
@@ -78,6 +80,93 @@ describe("review idempotency helpers", () => {
     expect(buildReviewOutputKey({ ...base, deliveryId: "delivery-456" })).not.toBe(baseKey);
     expect(buildReviewOutputKey({ ...base, headSha: "fedcba9876" })).not.toBe(baseKey);
     expect(buildReviewOutputKey({ ...base, prNumber: 102 })).not.toBe(baseKey);
+  });
+
+  test("parseReviewOutputKey returns structured identity for a base key", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "Acme",
+      repo: "Repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "DELIVERY-123",
+      headSha: "ABCDEF1234",
+    });
+
+    const result = parseReviewOutputKey(reviewOutputKey);
+
+    expect(result).not.toBeNull();
+    expect(result?.reviewOutputKey).toBe(reviewOutputKey);
+    expect(result?.baseReviewOutputKey).toBe(reviewOutputKey);
+    expect(result?.retryAttempt).toBeNull();
+    expect(result?.installationId).toBe(42);
+    expect(result?.owner).toBe("acme");
+    expect(result?.repo).toBe("repo");
+    expect(result?.repoFullName).toBe("acme/repo");
+    expect(result?.prNumber).toBe(101);
+    expect(result?.action).toBe("review_requested");
+    expect(result?.deliveryId).toBe("delivery-123");
+    expect(result?.effectiveDeliveryId).toBe("delivery-123");
+    expect(result?.headSha).toBe("abcdef1234");
+  });
+
+  test("parseReviewOutputKey normalizes retry-suffixed keys", () => {
+    const baseReviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = parseReviewOutputKey(`${baseReviewOutputKey}-retry-1`);
+
+    expect(result).not.toBeNull();
+    expect(result?.reviewOutputKey).toBe(`${baseReviewOutputKey}-retry-1`);
+    expect(result?.baseReviewOutputKey).toBe(baseReviewOutputKey);
+    expect(result?.retryAttempt).toBe(1);
+    expect(result?.deliveryId).toBe("delivery-123");
+    expect(result?.effectiveDeliveryId).toBe("delivery-123-retry-1");
+  });
+
+  test("parseReviewOutputKey returns null for malformed keys", () => {
+    expect(parseReviewOutputKey("kodiai-review-output:v1:bad")).toBeNull();
+    expect(parseReviewOutputKey("not-a-review-output-key")).toBeNull();
+    expect(parseReviewOutputKey("kodiai-review-output:v2:inst-42:acme/repo:pr-101:action-review_requested:delivery-d:head-h")).toBeNull();
+  });
+
+  test("extractReviewOutputKey finds a review-output marker in a body", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "mention-review",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = extractReviewOutputKey(`Before\n\n${buildReviewOutputMarker(reviewOutputKey)}\n\nAfter`);
+
+    expect(result).toBe(reviewOutputKey);
+  });
+
+  test("extractReviewOutputKey also finds a review-details marker in a body", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = extractReviewOutputKey(`Before\n\n<!-- kodiai:review-details:${reviewOutputKey} -->\n\nAfter`);
+
+    expect(result).toBe(reviewOutputKey);
   });
 
   test("buildApprovedReviewBody returns a review-structured approval body with marker", () => {

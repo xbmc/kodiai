@@ -3,6 +3,7 @@ import type {
   ContributorProfileStore,
   ContributorExpertise,
 } from "../contributor/types.ts";
+import { resolveContributorExperienceSlackProfileProjection } from "../contributor/experience-contract.ts";
 
 export type SlashCommandResult = {
   responseType: "ephemeral" | "in_channel";
@@ -12,24 +13,28 @@ export type SlashCommandResult = {
 
 const GITHUB_USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 
-function formatProfileCard(profile: {
-  githubUsername: string;
-  overallTier: string;
-  overallScore: number;
-  optedOut: boolean;
-}, expertise: ContributorExpertise[]): string {
+function formatProfileCard(
+  profile: {
+    githubUsername: string;
+    overallTier: string;
+    optedOut: boolean;
+  },
+  expertise: ContributorExpertise[],
+): string {
+  const projection = resolveContributorExperienceSlackProfileProjection({
+    source: "contributor-profile",
+    tier: profile.overallTier,
+    optedOut: profile.optedOut,
+  });
+
   const lines: string[] = [
     `*Contributor Profile*`,
     `GitHub: \`${profile.githubUsername}\``,
-    `Tier: ${profile.overallTier}`,
-    `Score: ${profile.overallScore.toFixed(2)}`,
+    projection.statusLine,
+    projection.summaryLine,
   ];
 
-  if (profile.optedOut) {
-    lines.push(`Status: Opted out (generic reviews)`);
-  }
-
-  if (expertise.length > 0) {
+  if (projection.showExpertise && expertise.length > 0) {
     lines.push(``, `*Top Expertise:*`);
     const top = expertise.slice(0, 5);
     for (const entry of top) {
@@ -109,7 +114,7 @@ export async function handleKodiaiCommand(params: {
       await profileStore.setOptedOut(profile.githubUsername, true);
       return {
         responseType: "ephemeral",
-        text: "Opted out of contributor profiling. You will receive generic (non-adapted) reviews.",
+        text: "Contributor-specific guidance is now off. Kodiai will keep your reviews generic until you run `/kodiai profile opt-in`. Check `/kodiai profile` any time to review your current status.",
       };
     }
 
@@ -124,7 +129,7 @@ export async function handleKodiaiCommand(params: {
       await profileStore.setOptedOut(profile.githubUsername, false);
       return {
         responseType: "ephemeral",
-        text: "Opted back in to contributor profiling.",
+        text: "Contributor-specific guidance is now on for your linked profile. Use `/kodiai profile` to review your status, or `/kodiai profile opt-out` to return to generic guidance.",
       };
     }
 
@@ -146,6 +151,6 @@ export async function handleKodiaiCommand(params: {
 
   return {
     responseType: "ephemeral",
-    text: "Unknown command. Available: `link <github-username>`, `unlink`, `profile`, `profile opt-out`",
+    text: "Unknown command. Available: `link <github-username>`, `unlink`, `profile`, `profile opt-in`, `profile opt-out`",
   };
 }

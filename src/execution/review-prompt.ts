@@ -17,6 +17,11 @@ import type { UnifiedRetrievalChunk } from "../knowledge/cross-corpus-rrf.ts";
 import { buildGraphContextSection, type GraphContextOptions } from "../review-graph/prompt-context.ts";
 import type { ReviewGraphBlastRadiusResult } from "../review-graph/query.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
+import {
+  buildContributorExperiencePromptSection,
+  projectLegacyContributorExperienceContract,
+  type ContributorExperienceContract,
+} from "../contributor/experience-contract.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -342,86 +347,11 @@ export function buildAuthorExperienceSection(params: {
   authorLogin: string;
   areaExpertise?: { dimension: string; topic: string; score: number }[];
 }): string {
-  const { tier, authorLogin, areaExpertise } = params;
-
-  // Newcomer prompt (first-time and newcomer tiers)
-  if (tier === "first-time" || tier === "newcomer") {
-    return [
-      "## Author Experience Context",
-      "",
-      `The PR author (${authorLogin}) appears to be a first-time or new contributor to this repository.`,
-      "",
-      "Adapt your review tone accordingly:",
-      "- Use encouraging, welcoming language",
-      "- Explain WHY each finding matters, not just WHAT is wrong",
-      "- Link to relevant documentation or examples when suggesting fixes",
-      "- Frame suggestions as learning opportunities rather than corrections",
-      "- Acknowledge what was done well before noting issues",
-      "- Use phrases like \"A common pattern here is...\" instead of \"You should...\"",
-      "- For MINOR findings, prefer a brief explanation over terse labels",
-      "- When suggesting fixes, include a brief code example if the pattern might be unfamiliar",
-    ].join("\n");
-  }
-
-  // Developing prompt (regular and developing tiers)
-  if (tier === "regular" || tier === "developing") {
-    return [
-      "## Author Experience Context",
-      "",
-      `The PR author (${authorLogin}) is a developing contributor with growing familiarity in this area.`,
-      "",
-      "- Provide moderate explanation — mention WHY for non-obvious issues, skip for basic ones",
-      "- Include doc links for project-specific patterns but not general language features",
-      "- Use a balanced, collaborative tone",
-      "- Comment on both style concerns and substantive issues",
-    ].join("\n");
-  }
-
-  // Established prompt
-  if (tier === "established") {
-    return [
-      "## Author Experience Context",
-      "",
-      `The PR author (${authorLogin}) is an established contributor.`,
-      "",
-      "- Keep explanations brief — one sentence on WHY, then the suggestion",
-      "- Skip style-only nitpicks unless they violate project conventions",
-      "- Focus on correctness and maintainability over pedagogy",
-    ].join("\n");
-  }
-
-  // Senior prompt (core and senior tiers)
-  if (tier === "core" || tier === "senior") {
-    const lines = [
-      "## Author Experience Context",
-      "",
-      `The PR author (${authorLogin}) is a core/senior contributor of this repository.`,
-      "",
-      "Adapt your review tone accordingly:",
-      "- Be concise and assume familiarity with the codebase",
-      "- Skip explanations of well-known patterns; focus on the specific issue",
-      "- Use terse finding descriptions (issue + consequence only)",
-      "- Omit links to basic documentation",
-      "- For MINOR findings, a one-liner is sufficient",
-      "- Focus on architecture and design, not syntax or style",
-      "- Use peer-to-peer tone: direct, brief, no hedging",
-    ];
-
-    // Add expertise context if author has deep expertise in relevant areas
-    if (areaExpertise && areaExpertise.length > 0) {
-      const strongAreas = areaExpertise.filter((e) => e.score >= 0.7);
-      if (strongAreas.length > 0) {
-        const topics = strongAreas.map((e) => `${e.topic}`).join(", ");
-        lines.push(
-          `- The author has deep expertise in ${topics}. Only flag issues you're highly confident about.`,
-        );
-      }
-    }
-
-    return lines.join("\n");
-  }
-
-  return "";
+  return buildContributorExperiencePromptSection({
+    contract: projectLegacyContributorExperienceContract(params.tier),
+    authorLogin: params.authorLogin,
+    areaExpertise: params.areaExpertise,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1700,6 +1630,12 @@ export function buildReviewPrompt(context: {
     totalFiles: number;
   } | null;
   authorTier?: AuthorTier;
+  contributorExperienceContract?: Partial<
+    Pick<
+      ContributorExperienceContract,
+      "state" | "promptPolicy" | "promptTier" | "degradationPath"
+    >
+  > | null;
   authorExpertise?: { dimension: string; topic: string; score: number }[];
   depBumpContext?: DepBumpContext | null;
   searchRateLimitDegradation?: {
@@ -2019,14 +1955,20 @@ export function buildReviewPrompt(context: {
   // --- Tone and language guidelines ---
   lines.push("", buildToneGuidelinesSection());
 
-  if (context.authorTier) {
-    const authorExpSection = buildAuthorExperienceSection({
-      tier: context.authorTier,
-      authorLogin: context.prAuthor,
-      areaExpertise: context.authorExpertise,
-    });
-    if (authorExpSection) lines.push("", authorExpSection);
-  }
+  const authorExpSection = context.contributorExperienceContract
+    ? buildContributorExperiencePromptSection({
+        contract: context.contributorExperienceContract,
+        authorLogin: context.prAuthor,
+        areaExpertise: context.authorExpertise,
+      })
+    : context.authorTier
+    ? buildAuthorExperienceSection({
+        tier: context.authorTier,
+        authorLogin: context.prAuthor,
+        areaExpertise: context.authorExpertise,
+      })
+    : "";
+  if (authorExpSection) lines.push("", authorExpSection);
 
   // --- Dependency bump context (DEP-01/02/03) ---
   if (context.depBumpContext) {

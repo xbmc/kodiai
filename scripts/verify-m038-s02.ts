@@ -1,6 +1,7 @@
 import pino from "pino";
 import { buildReviewPrompt } from "../src/execution/review-prompt.ts";
 import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 import type { StructuralImpactPayload } from "../src/structural-impact/types.ts";
 
 export const M038_S02_CHECK_IDS = [
@@ -283,7 +284,10 @@ export function renderM038S02Scenario(fixture: M038S02ScenarioFixture): {
       linesChanged: fixture.id === "cpp" ? 38 : 27,
       autoBand: "small",
     },
-    authorTier: "regular",
+    contributorExperience: projectContributorExperienceContract({
+      source: "author-cache",
+      tier: "regular",
+    }).reviewDetails,
     structuralImpact: fixture.structuralImpact,
   });
 

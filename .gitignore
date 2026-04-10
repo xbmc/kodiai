@@ -92,3 +92,6 @@ coverage/
 
 # ── GSD baseline (auto-generated) ──
 .gsd-id
+
+# ── GSD baseline (auto-generated) ──
+.bg-shell/

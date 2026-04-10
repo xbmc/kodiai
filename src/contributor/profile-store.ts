@@ -48,8 +48,14 @@ export function createContributorProfileStore(opts: {
   const store: ContributorProfileStore = {
     async getByGithubUsername(
       username: string,
+      options: { includeOptedOut?: boolean } = {},
     ): Promise<ContributorProfile | null> {
-      const rows = await sql`
+      const rows = options.includeOptedOut
+        ? await sql`
+        SELECT * FROM contributor_profiles
+        WHERE github_username = ${username}
+      `
+        : await sql`
         SELECT * FROM contributor_profiles
         WHERE github_username = ${username} AND opted_out = false
       `;

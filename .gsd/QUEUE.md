@@ -31,3 +31,27 @@
 - Added: 2026-03-29
 - Summary: Move Claude agent subprocess into an ephemeral Azure Container Apps Job with zero application secrets. MCP servers exposed over authenticated HTTP from the orchestrator. Workspace shared via Azure Files mount. Orchestrator polls ACA Job API for completion and reads result.json. Closes the /proc/<ppid>/environ attack path confirmed in post-M031 security testing.
 - Context: `.gsd/milestones/M032/M032-CONTEXT.md`
+
+### M044 — Audit Recent XBMC Review Correctness
+- Status: queued
+- Added: 2026-04-08
+- Summary: Audit the most recent ~12 Kodiai-reviewed `xbmc/xbmc` PRs across automatic and explicit review lanes, distinguish valid clean approvals from missing or unpublished findings using GitHub-visible and internal publication evidence, fix any defects exposed by the audit, and leave behind a repeatable audit/verification surface.
+- Context: `.gsd/milestones/M044/M044-CONTEXT.md`
+
+### M045 — Contributor Experience Product Contract and Architecture
+- Status: queued
+- Added: 2026-04-08
+- Summary: Define the long-term contributor-experience product contract, decide how contributor status should affect Kodiai across all tier-related surfaces, and implement the architectural unification needed to express that contract coherently.
+- Context: `.gsd/milestones/M045/M045-CONTEXT.md`
+
+### M046 — Contributor Tier Calibration and Fixture Audit
+- Status: queued
+- Added: 2026-04-08
+- Summary: Build an xbmc/xbmc-first contributor fixture set, evaluate Kodiai's current scoring and percentile tiering against that evidence under the M045 contract, and produce an explicit calibration verdict.
+- Context: `.gsd/milestones/M046/M046-CONTEXT.md`
+
+### M047 — Contributor Experience Redesign and Calibration Rollout
+- Status: queued
+- Added: 2026-04-08
+- Summary: Ship the contributor-experience redesign and approved recalibration across review, retrieval, Slack, and contributor-model plumbing, then prove cross-surface coherence end to end.
+- Context: `.gsd/milestones/M047/M047-CONTEXT.md`

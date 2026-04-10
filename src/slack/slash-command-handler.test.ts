@@ -1,7 +1,7 @@
-import { describe, test, expect } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
-import { handleKodiaiCommand, type SlashCommandResult } from "./slash-command-handler.ts";
-import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
+import { handleKodiaiCommand } from "./slash-command-handler.ts";
+import type { ContributorProfileStore } from "../contributor/types.ts";
 
 const mockLogger = {
   info: () => {},
@@ -14,7 +14,9 @@ const mockLogger = {
   level: "silent",
 } as unknown as Logger;
 
-function createMockProfileStore(overrides: Partial<ContributorProfileStore> = {}): ContributorProfileStore {
+function createMockProfileStore(
+  overrides: Partial<ContributorProfileStore> = {},
+): ContributorProfileStore {
   return {
     getByGithubUsername: async () => null,
     getBySlackUserId: async () => null,
@@ -161,7 +163,7 @@ describe("handleKodiaiCommand", () => {
     expect(result.text).toContain("No linked GitHub account");
   });
 
-  test("profile with linked profile returns formatted card", async () => {
+  test("profile with linked profile returns contract-first card", async () => {
     const store = createMockProfileStore({
       getBySlackUserId: async () => ({
         id: 1,
@@ -199,12 +201,103 @@ describe("handleKodiaiCommand", () => {
     });
 
     expect(result.responseType).toBe("ephemeral");
-    expect(result.text).toContain("octocat");
-    expect(result.text).toContain("established");
-    expect(result.text).toContain("typescript");
+    expect(result.text).toBe([
+      "*Contributor Profile*",
+      "GitHub: `octocat`",
+      "Status: Linked contributor guidance is active.",
+      "Kodiai can adapt review guidance using your linked contributor profile.",
+      "",
+      "*Top Expertise:*",
+      "  language/typescript: 0.90",
+    ].join("\n"));
+    expect(result.text).not.toContain("Tier:");
+    expect(result.text).not.toContain("Score:");
   });
 
-  test("profile opt-out sets opted_out to true", async () => {
+  test("profile with opted-out profile stays generic and hides expertise", async () => {
+    const store = createMockProfileStore({
+      getBySlackUserId: async () => ({
+        id: 1,
+        githubUsername: "octocat",
+        slackUserId: "U001",
+        displayName: "Octo",
+        overallTier: "senior" as const,
+        overallScore: 0.98,
+        optedOut: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastScoredAt: new Date(),
+      }),
+      getExpertise: async () => [
+        {
+          id: 1,
+          profileId: 1,
+          dimension: "language" as const,
+          topic: "typescript",
+          score: 0.9,
+          rawSignals: 50,
+          lastActive: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+    });
+
+    const result = await handleKodiaiCommand({
+      text: "profile",
+      slackUserId: "U001",
+      slackUserName: "Test",
+      profileStore: store,
+      logger: mockLogger,
+    });
+
+    expect(result.text).toBe([
+      "*Contributor Profile*",
+      "GitHub: `octocat`",
+      "Status: Generic contributor guidance is active.",
+      "You opted out of contributor-specific guidance. Kodiai will keep reviews generic until you opt back in.",
+    ].join("\n"));
+    expect(result.text).not.toContain("Tier:");
+    expect(result.text).not.toContain("Score:");
+    expect(result.text).not.toContain("Top Expertise");
+  });
+
+  test("profile with malformed stored tier data falls back to neutral contract copy", async () => {
+    const store = createMockProfileStore({
+      getBySlackUserId: async () => ({
+        id: 1,
+        githubUsername: "octocat",
+        slackUserId: "U001",
+        displayName: "Octo",
+        overallTier: "mystery-tier" as never,
+        overallScore: 0.42,
+        optedOut: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastScoredAt: new Date(),
+      }),
+      getExpertise: async () => [],
+    });
+
+    const result = await handleKodiaiCommand({
+      text: "profile",
+      slackUserId: "U001",
+      slackUserName: "Test",
+      profileStore: store,
+      logger: mockLogger,
+    });
+
+    expect(result.text).toBe([
+      "*Contributor Profile*",
+      "GitHub: `octocat`",
+      "Status: Generic contributor guidance is active.",
+      "Kodiai does not have a reliable contributor signal for this profile yet, so reviews stay generic.",
+    ].join("\n"));
+    expect(result.text).not.toContain("Tier:");
+    expect(result.text).not.toContain("Score:");
+  });
+
+  test("profile opt-out sets opted_out to true and advertises opt-in", async () => {
     let optedOutGithub = "";
     const store = createMockProfileStore({
       getBySlackUserId: async () => ({
@@ -234,10 +327,12 @@ describe("handleKodiaiCommand", () => {
     });
 
     expect(optedOutGithub).toBe("octocat");
-    expect(result.text).toContain("Opted out");
+    expect(result.text).toBe(
+      "Contributor-specific guidance is now off. Kodiai will keep your reviews generic until you run `/kodiai profile opt-in`. Check `/kodiai profile` any time to review your current status.",
+    );
   });
 
-  test("unknown subcommand returns help text", async () => {
+  test("unknown subcommand returns help text with both opt controls", async () => {
     const store = createMockProfileStore();
     const result = await handleKodiaiCommand({
       text: "foobar",
@@ -246,13 +341,12 @@ describe("handleKodiaiCommand", () => {
       profileStore: store,
       logger: mockLogger,
     });
-    expect(result.text).toContain("Unknown command");
-    expect(result.text).toContain("link");
-    expect(result.text).toContain("unlink");
-    expect(result.text).toContain("profile");
+    expect(result.text).toBe(
+      "Unknown command. Available: `link <github-username>`, `unlink`, `profile`, `profile opt-in`, `profile opt-out`",
+    );
   });
 
-  test("profile opt-in re-enables profiling", async () => {
+  test("profile opt-in re-enables profiling and advertises opt-out", async () => {
     let optedIn = false;
     const store = createMockProfileStore({
       getBySlackUserId: async () => ({
@@ -281,6 +375,8 @@ describe("handleKodiaiCommand", () => {
     });
 
     expect(optedIn).toBe(true);
-    expect(result.text).toContain("Opted back in");
+    expect(result.text).toBe(
+      "Contributor-specific guidance is now on for your linked profile. Use `/kodiai profile` to review your status, or `/kodiai profile opt-out` to return to generic guidance.",
+    );
   });
 });
