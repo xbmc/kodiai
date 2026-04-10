@@ -1,0 +1,19 @@
+{
+  "fixtureSetVersion": 1,
+  "repository": "xbmc/xbmc",
+  "manifestPath": "fixtures/contributor-calibration/xbmc-manifest.json",
+  "generatedAt": null,
+  "refreshCommand": "bun run verify:m046:s01 -- --refresh --json",
+  "status": "scaffold",
+  "retained": [],
+  "excluded": [],
+  "diagnostics": {
+    "statusCode": "snapshot-not-refreshed",
+    "retainedCount": 0,
+    "excludedCount": 0,
+    "notes": [
+      "T01 seeds a deterministic scaffold only.",
+      "T02 replaces this file with refreshed evidence and verifier diagnostics."
+    ]
+  }
+}

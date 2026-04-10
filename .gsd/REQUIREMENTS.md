@@ -74,9 +74,10 @@ This file is the explicit capability and coverage contract for the project.
 - Description: Kodiai can calibrate its contributor-tier model against a reusable xbmc/xbmc contributor fixture set and state whether the current scoring/tiering mechanism is sound, needs retuning, or needs replacement.
 - Why it matters: The current scoring and percentile tiering need evidence from real contributors, not one-off anecdotes or a single bug repro.
 - Source: issue-78
-- Primary owning slice: M046
-- Supporting slices: M047
-- Validation: M046 produces reusable xbmc/xbmc calibration fixtures and a repeatable evaluation surface that yields an explicit verdict on the current contributor model.
+- Primary owning slice: M046/S02
+- Supporting slices: M046/S01,M046/S03
+- Validation: Checked-in xbmc contributor fixtures plus repeatable verifier reports showing live-path vs intended-model outcomes and an explicit keep/retune/replace recommendation.
+- Notes: Mapped during M046 planning: S01 establishes the trusted xbmc fixture truth set, S02 is the primary calibration evaluator against the M045 contributor contract, and S03 emits the explicit keep/retune/replace verdict plus M047 change contract.
 
 ### R048 — The contributor-experience redesign and any approved contributor-tier recalibration ship coherently across all in-scope tier-related surfaces.
 - Class: functional
@@ -555,7 +556,7 @@ This file is the explicit capability and coverage contract for the project.
 | R044 | operational | validated | M043 | none | M043/S01 closure reran `bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts` (102 pass) and `bash -n deploy.sh` (exit 0). Verified deploy.sh preserves ACA job/app wiring via full-YAML updates and surfaces active revision + /healthz + /readiness evidence; mention publish-path regressions prove `reviewOutputKey`/idempotency/publish-resolution logs and actionable publish-failure fallback comments. |
 | R045 | operational | validated | M044/S03 | M044/S01, M044/S02 | `bun run verify:m044 -- --repo xbmc/xbmc --limit 12 --json` produced a deterministic 12-PR recent sample over xbmc/xbmc with verdict summary `clean-valid=11`, `findings-published=1`, `publish-failure=0`, `suspicious-approval=0`, `indeterminate=0`, using GitHub-visible output plus Azure internal publication evidence. `docs/runbooks/recent-review-audit.md` documents the rerun and drill-down flow. |
 | R046 | functional | active | M045/S01 | M045/S02, M045/S03 | M045 defines and implements the contributor-experience product/architecture contract across all chosen tier-related surfaces, and M047 proves the shipped surfaces reflect that contract coherently. |
-| R047 | operational | active | M046 | M047 | M046 produces reusable xbmc/xbmc calibration fixtures and a repeatable evaluation surface that yields an explicit verdict on the current contributor model. |
+| R047 | operational | active | M046/S02 | M046/S01,M046/S03 | Checked-in xbmc contributor fixtures plus repeatable verifier reports showing live-path vs intended-model outcomes and an explicit keep/retune/replace recommendation. |
 | R048 | functional | active | M047 | M045, M046 | M047 verifies end-to-end that the live review/output, retrieval, Slack/profile, and contributor-model paths all use the same shipped contributor-experience behavior. |
 
 ## Coverage Summary
