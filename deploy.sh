@@ -144,10 +144,14 @@ az role assignment create \
 
 # -- Build & Push Image -------------------------------------------------------
 echo "==> Building and pushing image via ACR (remote build)..."
-az acr build \
+APP_IMAGE_DIGEST=$(az acr build \
   --registry "$ACR_NAME" \
   --image kodiai:latest \
-  .
+  --no-logs \
+  . \
+  --query 'outputImages[0].digest' \
+  --output tsv)
+APP_IMAGE="${ACR_NAME}.azurecr.io/kodiai@${APP_IMAGE_DIGEST}"
 
 # -- Azure Storage Account (for Azure Files workspace share) ------------------
 STORAGE_ACCOUNT_NAME="kodiaistg"   # globally unique, lowercase alphanumeric
@@ -208,17 +212,20 @@ az containerapp env storage set \
 
 # -- Build agent image ---------------------------------------------------------
 echo "==> Building and pushing agent image via ACR (remote build)..."
-az acr build \
+ACA_JOB_IMAGE_DIGEST=$(az acr build \
   --registry "$ACR_NAME" \
   --image kodiai-agent:latest \
   --file Dockerfile.agent \
-  .
+  --no-logs \
+  . \
+  --query 'outputImages[0].digest' \
+  --output tsv)
 
 # -- ACA Job (agent runner) ---------------------------------------------------
 ACA_JOB_NAME="caj-kodiai-agent"
 echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
 
-ACA_JOB_IMAGE="${ACR_NAME}.azurecr.io/kodiai-agent:latest"
+ACA_JOB_IMAGE="${ACR_NAME}.azurecr.io/kodiai-agent@${ACA_JOB_IMAGE_DIGEST}"
 ACA_JOB_YAML=$(mktemp --suffix=.yaml)
 cat > "$ACA_JOB_YAML" <<ACAYAML
 properties:
@@ -258,7 +265,7 @@ else
     --trigger-type Manual \
     --replica-timeout 600 \
     --replica-retry-limit 0 \
-    --image "$ACR_NAME.azurecr.io/kodiai-agent:latest" \
+    --image "$ACA_JOB_IMAGE" \
     --user-assigned "$IDENTITY_RESOURCE_ID" \
     --registry-server "$ACR_NAME.azurecr.io" \
     --registry-identity "$IDENTITY_RESOURCE_ID" \
@@ -308,13 +315,14 @@ properties:
       - name: database-url
         value: ${DATABASE_URL}
   template:
+    revisionSuffix: ${REVISION_SUFFIX}
     terminationGracePeriodSeconds: 600
     scale:
       minReplicas: 1
       maxReplicas: 1
     containers:
       - name: ${APP_NAME}
-        image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        image: ${APP_IMAGE}
         env:
           - name: GITHUB_APP_ID
             secretRef: github-app-id
@@ -385,7 +393,7 @@ else
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
     --environment "$ENVIRONMENT" \
-    --image "$ACR_NAME.azurecr.io/kodiai:latest" \
+    --image "$APP_IMAGE" \
     --user-assigned "$IDENTITY_RESOURCE_ID" \
     --registry-server "$ACR_NAME.azurecr.io" \
     --registry-identity "$IDENTITY_RESOURCE_ID" \
@@ -428,7 +436,7 @@ properties:
   template:
     containers:
       - name: ca-kodiai
-        image: ${ACR_NAME}.azurecr.io/kodiai:latest
+        image: ${APP_IMAGE}
         env:
           - name: GITHUB_APP_ID
             secretRef: github-app-id
