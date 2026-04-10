@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M046/S02/T01",
+  "timestamp": 1775857419439,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./scripts/verify-m046-s01.test.ts",
+      "exitCode": 0,
+      "durationMs": 133,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046:s01 -- --json",
+      "exitCode": 0,
+      "durationMs": 95,
+      "verdict": "pass"
+    }
+  ]
+}

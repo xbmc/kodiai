@@ -11,7 +11,7 @@ import type {
 const DECAY_HALF_LIFE_DAYS = 180;
 const DECAY_LAMBDA = Math.LN2 / DECAY_HALF_LIFE_DAYS;
 
-const SIGNAL_WEIGHTS = {
+export const ACTIVITY_SIGNAL_WEIGHTS = {
   commit: 1,
   pr_review: 2,
   pr_authored: 3,
@@ -49,7 +49,7 @@ export function computeDecayedScore(signals: ActivitySignal[]): number {
 
   for (const signal of signals) {
     const daysSince = (now - signal.date.getTime()) / (1000 * 60 * 60 * 24);
-    const weight = SIGNAL_WEIGHTS[signal.type];
+    const weight = ACTIVITY_SIGNAL_WEIGHTS[signal.type];
     total += weight * Math.exp(-DECAY_LAMBDA * daysSince);
   }
 

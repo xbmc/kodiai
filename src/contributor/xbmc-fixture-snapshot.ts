@@ -70,8 +70,16 @@ const snapshotCoreSchema = z.object({
   excluded: z.array(excludedCoreSchema),
 });
 
+const FIXTURE_PROVENANCE_SOURCES = [
+  "github-identity",
+  "github-commit",
+  "github-pull",
+  "github-review",
+  "local-git-shortlog",
+] as const;
+
 const provenanceRecordSchema = z.object({
-  source: z.string().trim().min(1),
+  source: z.enum(FIXTURE_PROVENANCE_SOURCES),
   status: z.enum(["available", "unavailable"]),
   note: z.string().trim().min(1),
   evidenceUrl: z.string().trim().url().nullable(),

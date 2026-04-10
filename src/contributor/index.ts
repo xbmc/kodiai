@@ -6,3 +6,4 @@ export * from "./identity-matcher.ts";
 export * from "./fixture-set.ts";
 export * from "./xbmc-fixture-snapshot.ts";
 export * from "./xbmc-fixture-refresh.ts";
+export * from "./calibration-evaluator.ts";

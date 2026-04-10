@@ -91,7 +91,7 @@ Move S01’s checked-in snapshot contract into a reusable source module so S02 c
   - Files: `src/contributor/xbmc-fixture-snapshot.ts`, `src/contributor/xbmc-fixture-snapshot.test.ts`, `scripts/verify-m046-s01.ts`, `src/contributor/index.ts`
   - Verify: bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./scripts/verify-m046-s01.test.ts && bun run verify:m046:s01 -- --json
 
-- [ ] **T02: Build the pure calibration evaluator for live-vs-intended model paths** `est:105m`
+- [x] **T02: Build the pure calibration evaluator for live-vs-intended model paths** `est:105m`
   ---
 estimated_steps: 24
 estimated_files: 5

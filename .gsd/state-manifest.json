@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T21:43:33.508Z",
+  "exported_at": "2026-04-10T21:58:53.370Z",
   "milestones": [
     {
       "id": "M001",
@@ -12402,19 +12402,29 @@
       "milestone_id": "M046",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Build the pure calibration evaluator for live-vs-intended model paths",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a deterministic calibration evaluator for live-vs-intended contributor-model paths.",
+      "status": "complete",
+      "one_liner": "Added a deterministic calibration evaluator for live-vs-intended contributor-model paths.",
+      "narrative": "Added a pure calibration evaluator over the validated xbmc snapshot, with test-first coverage for cohort truth, malformed retained provenance, malformed commit-count relationships, tied/small-cohort instability, freshness findings, and live-vs-intended contract projection. The evaluator now models the current live path honestly as linked-but-unscored newcomer guidance when changed-file replay is unavailable, models the intended full-signal path from checked-in commit counts plus PR/review provenance using the shipped weights and percentile tiering, preserves excluded rows as explicit control diagnostics, emits a keep/retune/replace recommendation, and exports the seam for the upcoming verifier. While running broader verification I also fixed an existing provenance-source typing hole in the shared snapshot loader so TypeScript typecheck stays green.",
+      "verification_result": "Task-specific evaluator tests passed, broader contributor snapshot and S01 verifier suites stayed green, `bun run verify:m046:s01 -- --json` passed against the checked-in snapshot, and `bun run tsc --noEmit` passed after tightening snapshot provenance source typing. The only failing slice-level check is the still-missing `verify:m046:s02` entrypoint, which belongs to T03 rather than this task.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-10T21:58:53.339Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "`bun run verify:m046:s02 -- --json` still fails because the T03 verifier script/package entrypoint has not been implemented yet.",
+      "key_files": [
+        "src/contributor/calibration-evaluator.ts",
+        "src/contributor/calibration-evaluator.test.ts",
+        "src/contributor/expertise-scorer.ts",
+        "src/contributor/xbmc-fixture-snapshot.ts",
+        "src/contributor/index.ts",
+        ".gsd/KNOWLEDGE.md",
+        ".gsd/milestones/M046/slices/S02/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "D080 — Model current live calibration as linked-but-unscored newcomer guidance unless changed-file replay is available, and approximate intended full-signal differentiation from checked-in commit counts plus PR/review provenance using shipped weights."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M046\nkey_files:\n  - src/contributor/calibration-evaluator.ts\n  - src/contributor/calibration-evaluator.test.ts\n  - src/contributor/expertise-scorer.ts\n  - src/contributor/xbmc-fixture-snapshot.ts\n  - src/contributor/index.ts\n  - .gsd/KNOWLEDGE.md\n  - .gsd/milestones/M046/slices/S02/tasks/T02-SUMMARY.md\nkey_decisions:\n  - D080 — Model current live calibration as linked-but-unscored newcomer guidance unless changed-file replay is available, and approximate intended full-signal differentiation from checked-in commit counts plus PR/review provenance using shipped weights.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-10T21:58:53.338Z\nblocker_discovered: false\n---\n\n# T02: Added a deterministic calibration evaluator for live-vs-intended contributor-model paths.\n\n**Added a deterministic calibration evaluator for live-vs-intended contributor-model paths.**\n\n## What Happened\n\nAdded a pure calibration evaluator over the validated xbmc snapshot, with test-first coverage for cohort truth, malformed retained provenance, malformed commit-count relationships, tied/small-cohort instability, freshness findings, and live-vs-intended contract projection. The evaluator now models the current live path honestly as linked-but-unscored newcomer guidance when changed-file replay is unavailable, models the intended full-signal path from checked-in commit counts plus PR/review provenance using the shipped weights and percentile tiering, preserves excluded rows as explicit control diagnostics, emits a keep/retune/replace recommendation, and exports the seam for the upcoming verifier. While running broader verification I also fixed an existing provenance-source typing hole in the shared snapshot loader so TypeScript typecheck stays green.\n\n## Verification\n\nTask-specific evaluator tests passed, broader contributor snapshot and S01 verifier suites stayed green, `bun run verify:m046:s01 -- --json` passed against the checked-in snapshot, and `bun run tsc --noEmit` passed after tightening snapshot provenance source typing. The only failing slice-level check is the still-missing `verify:m046:s02` entrypoint, which belongs to T03 rather than this task.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/calibration-evaluator.test.ts` | 0 | ✅ pass | 78ms |\n| 2 | `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts` | 0 | ✅ pass | 157ms |\n| 3 | `bun run verify:m046:s01 -- --json` | 0 | ✅ pass | 93ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 7638ms |\n| 5 | `bun run verify:m046:s02 -- --json` | 1 | ❌ fail | 4ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`bun run verify:m046:s02 -- --json` still fails because the T03 verifier script/package entrypoint has not been implemented yet.\n\n## Files Created/Modified\n\n- `src/contributor/calibration-evaluator.ts`\n- `src/contributor/calibration-evaluator.test.ts`\n- `src/contributor/expertise-scorer.ts`\n- `src/contributor/xbmc-fixture-snapshot.ts`\n- `src/contributor/index.ts`\n- `.gsd/KNOWLEDGE.md`\n- `.gsd/milestones/M046/slices/S02/tasks/T02-SUMMARY.md`\n",
       "description": "---\nestimated_steps: 24\nestimated_files: 5\nskills_used:\n  - test-driven-development\n  - systematic-debugging\n  - verification-before-completion\n---\n\nImplement a deterministic evaluator that consumes the validated xbmc snapshot and produces the slice’s actual proof object. The evaluator must stay honest about what the fixture pack can and cannot prove: model current live behavior from the snapshot’s coarse evidence and known runtime constraints, model intended full-signal behavior without fabricating changed-file arrays, and attach explicit fidelity/degradation reasons anywhere the checked-in snapshot cannot replay the real scorer literally. Each retained contributor row should report fixture evidence, a modeled current live-path outcome, a modeled intended-path outcome, the resulting M045 contract state for each path, percentile/tie-instability findings, and freshness/unscored-profile diagnostics. Use the retained anchors (`fuzzard`, `KOPRajs`, `fkoemep`) as the cohort truth, and keep excluded rows visible only as control diagnostics.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Snapshot loader from `src/contributor/xbmc-fixture-snapshot.ts` | Stop evaluation with a typed error instead of inferring contributor truth from partial data. | N/A — local file/helper only. | Refuse to evaluate when retained/excluded truth or provenance diagnostics are malformed. |\n| Scoring/tiering helpers in `src/contributor/expertise-scorer.ts` and `src/contributor/tier-calculator.ts` | Keep runtime math reuse minimal and deterministic; if a helper cannot be reused honestly, isolate evaluator-only math rather than mutating live behavior. | N/A — local code only. | Treat tie-order or score-shape surprises as explicit evaluator diagnostics rather than silently normalizing them away. |\n| Contract projection in `src/contributor/experience-contract.ts` | Reuse the shipped M045 contract helper instead of re-describing contributor states in prose. | N/A — pure local projection. | Fail tests if evaluator output drifts from the actual contract states Kodiai uses in review/slack surfaces. |\n\n## Load Profile\n\n- **Shared resources**: in-memory snapshot rows, scoring helpers, percentile tiering, and contract projection only.\n- **Per-operation cost**: one deterministic evaluation pass over three retained contributors plus excluded control diagnostics.\n- **10x breakpoint**: tie/small-N instability and score-compression logic become the limiting factors before raw compute cost does.\n\n## Negative Tests\n\n- **Malformed inputs**: retained rows missing PR/review provenance, excluded rows accidentally entering the evaluated cohort, and malformed commit-count relationships.\n- **Error paths**: evaluator surfaces explicit fidelity/degradation reasons when file-level replay or review counts are unavailable from the checked-in snapshot.\n- **Boundary conditions**: two- and three-contributor cohorts, equal scores with reordered inputs, and linked-but-unscored profiles defaulting to profile-backed newcomer guidance.\n\n## Steps\n\n1. Write failing evaluator tests that pin per-contributor output shape, retained/excluded cohort handling, contract projection, tie instability, and linked-but-unscored freshness findings.\n2. Add a pure evaluator module that accepts the validated snapshot plus an optional reference time and returns deterministic live-path / intended-path report rows with explicit fidelity metadata.\n3. Reuse existing scorer/tier/contract helpers where they are truthful, but do not fabricate changed-file arrays or live GitHub hydration just to make the numbers look precise.\n4. Add report-level recommendation logic (`keep`, `retune`, `replace`) with rationale based on cohort ordering, live-vs-intended divergence, instability, and freshness diagnostics.\n5. Export the evaluator seam for the verifier and keep excluded rows available as control diagnostics instead of silently dropping them.\n\n## Must-Haves\n\n- [ ] Each retained contributor row includes fixture evidence, modeled live and intended outcomes, contract states, instability findings, and freshness/unscored diagnostics.\n- [ ] The evaluator makes the snapshot-only fidelity limits explicit instead of inventing file-level replay or hidden live hydration.\n- [ ] Report-level recommendation logic can explain why the current mechanism should be kept, retuned, or replaced.\n",
       "estimate": "105m",
       "files": [
@@ -13431,6 +13441,18 @@
       "decision": "Authoritative xbmc fixture snapshot validation seam for M046 contributors",
       "choice": "Centralize xbmc snapshot loading, shape validation, semantic fixture-manifest validation, and provenance inspection in src/contributor/xbmc-fixture-snapshot.ts, and make verify:m046:s01 consume that helper instead of maintaining its own snapshot schemas.",
       "rationale": "S02 needs a reusable offline snapshot seam, and the verifier previously duplicated Zod-only parsing logic that could drift from downstream consumers. One shared module keeps retained/excluded rows, diagnostics, and provenance semantics aligned across the verifier and the upcoming calibration evaluator while still rejecting malformed or duplicate fixture data explicitly.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 114,
+      "id": "D080",
+      "when_context": "M046/S02/T02",
+      "scope": "calibration",
+      "decision": "How M046/S02 models current live and intended contributor-profile paths from the checked-in xbmc snapshot",
+      "choice": "Model the current live path as a linked-but-unscored profile-backed newcomer outcome unless the snapshot can honestly replay changed-file arrays, and model the intended full-signal path from checked-in since2025 commit counts plus PR/review provenance using the shipped signal weights and percentile tiering.",
+      "rationale": "The live runtime only updates expertise on incremental pr_authored events and cannot truthfully replay retrospective fixture history without file-level evidence. The snapshot still contains enough public coarse evidence to approximate intended full-signal differentiation if the evaluator stays explicit about degradation and avoids fabricating hidden hydration.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -17121,6 +17143,61 @@
       "verdict": "✅ pass",
       "duration_ms": 155,
       "created_at": "2026-04-10T21:43:33.480Z"
+    },
+    {
+      "id": 337,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/calibration-evaluator.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 78,
+      "created_at": "2026-04-10T21:58:53.339Z"
+    },
+    {
+      "id": 338,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 157,
+      "created_at": "2026-04-10T21:58:53.339Z"
+    },
+    {
+      "id": 339,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 93,
+      "created_at": "2026-04-10T21:58:53.339Z"
+    },
+    {
+      "id": 340,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7638,
+      "created_at": "2026-04-10T21:58:53.339Z"
+    },
+    {
+      "id": 341,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s02 -- --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 4,
+      "created_at": "2026-04-10T21:58:53.339Z"
     }
   ]
 }

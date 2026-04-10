@@ -934,3 +934,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** Do not treat successful full-schema parsing as sufficient proof that an xbmc snapshot is valid. Always run the projected retained/excluded rows back through `assertValidFixtureManifest(...)` as part of snapshot validation, and fail the snapshot on those semantic errors instead of only failing downstream report logic.
 
 **Established in:** M046/S02/T01 (`src/contributor/xbmc-fixture-snapshot.ts`, `scripts/verify-m046-s01.ts`).
+
+---
+
+## Zero-score contributor ties can move percentile rank without changing the newcomer contract (M046/S02)
+
+**Context:** `calculateTierAssignments(...)` is percentile-based, so tied scores usually create order sensitivity in small cohorts. But `tierFromPercentile(...)` has a special-case override: any `overallScore === 0` is always `newcomer` regardless of percentile. In calibration work this means a three-way zero-score tie can permute ranks 1..3 while every contributor still projects to the same `profile-backed` newcomer contract.
+
+**Rule:** When reporting calibration instability for snapshot-only contributor models, distinguish **rank instability** from **contract instability**. A zero-score tie should still be flagged as score/rank compression, but downstream verifiers should not claim tier drift if every tied row remains `newcomer` under the zero-score override.
+
+**Established in:** M046/S02/T02 (`src/contributor/calibration-evaluator.ts`, `src/contributor/tier-calculator.ts`).
