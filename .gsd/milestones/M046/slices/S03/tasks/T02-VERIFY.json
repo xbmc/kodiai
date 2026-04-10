@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T02",
+  "unitId": "M046/S03/T02",
+  "timestamp": 1775862544481,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m046.test.ts",
+      "exitCode": 0,
+      "durationMs": 138,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046",
+      "exitCode": 0,
+      "durationMs": 111,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046 -- --json",
+      "exitCode": 0,
+      "durationMs": 114,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts",
+      "exitCode": 0,
+      "durationMs": 198,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046:s01 -- --json",
+      "exitCode": 0,
+      "durationMs": 109,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046:s02 -- --json",
+      "exitCode": 0,
+      "durationMs": 117,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m046 -- --json",
+      "exitCode": 0,
+      "durationMs": 116,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 7883,
+      "verdict": "pass"
+    }
+  ]
+}

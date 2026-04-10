@@ -964,3 +964,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When a slice verification command mixes existing test paths with a not-yet-created file, do not treat a zero exit code as proof that every requested file ran. Probe any suspected missing path with its own `bun test ./path/to/file.test.ts` command before declaring the full suite complete.
 
 **Established in:** M046/S03/T01 (`bun test` verification behavior while `scripts/verify-m046.test.ts` was still absent).
+
+---
+
+## Integrated proof harnesses should preserve nested evidence and report negative domain verdicts as data, not failures (M046/S03)
+
+**Context:** `verify:m046` composes the S01 fixture verifier and S02 calibration verifier into one milestone-closeout surface. The truthful domain outcome is currently `replace`, but that recommendation is not the same thing as a broken verifier. If the harness exits non-zero just because the recommendation is negative, automation cannot distinguish "the system should change" from "the proof surface is malformed."
+
+**Rule:** When building milestone-closeout proof harnesses, preserve the nested prerequisite reports intact, add dedicated top-level checks for composition health, and treat `keep`/`retune`/`replace` as machine-readable verdict data. Reserve non-zero exits for malformed nested evidence, count drift, missing recommendations, or contradictory change-contract state — not for a truthful negative recommendation.
+
+**Established in:** M046/S03/T02 (`scripts/verify-m046.ts`, `src/contributor/calibration-change-contract.ts`).
