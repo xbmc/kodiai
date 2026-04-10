@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T01",
+  "unitId": "M046/S03/T01",
+  "timestamp": 1775861664874,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/contributor/calibration-change-contract.test.ts",
+      "exitCode": 0,
+      "durationMs": 67,
+      "verdict": "pass"
+    }
+  ]
+}

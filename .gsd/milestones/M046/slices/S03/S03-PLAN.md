@@ -60,7 +60,7 @@
   - Verify: `bun test ./src/contributor/calibration-change-contract.test.ts`
   - Done when: A reusable typed contract helper returns the current `replace` verdict with explicit keep/change/replace buckets, and focused unit tests prove the contract stays aligned with the live runtime surfaces M047 must address.
 
-- [ ] **T02: Ship the integrated verify:m046 proof harness** `est:90m`
+- [x] **T02: Ship the integrated verify:m046 proof harness** `est:90m`
   - Why: The slice only closes when operators can run one command that composes S01 and S02 into a truthful milestone-level verdict plus the concrete M047 change contract.
   - Files: `scripts/verify-m046.ts`, `scripts/verify-m046.test.ts`, `package.json`, `scripts/verify-m046-s01.ts`, `scripts/verify-m046-s02.ts`, `src/contributor/calibration-change-contract.ts`
   - Do: Add `scripts/verify-m046.ts` and `scripts/verify-m046.test.ts`, evaluate S01 once, feed that exact report into S02 via the existing injection seam, preserve both nested reports intact, derive `m047ChangeContract`, add stable top-level consistency checks and status codes, render human and JSON output from one report object, and wire `verify:m046` in `package.json`.

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T22:54:18.816Z",
+  "exported_at": "2026-04-10T23:08:57.790Z",
   "milestones": [
     {
       "id": "M001",
@@ -12556,19 +12556,27 @@
       "milestone_id": "M046",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Ship the integrated verify:m046 proof harness",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Shipped the integrated `verify:m046` proof harness with a truthful `replace` verdict and structured M047 change contract.",
+      "status": "complete",
+      "one_liner": "Shipped the integrated `verify:m046` proof harness with a truthful `replace` verdict and structured M047 change contract.",
+      "narrative": "Added `scripts/verify-m046.ts` as the integrated milestone-closeout proof harness for S03. The new evaluator runs S01 once, injects that exact cached report into S02 through the existing `_evaluateS01` seam, preserves both nested reports intact, derives a dedicated top-level verdict block, derives `m047ChangeContract` from the T01 helper, and validates the integrated surface with explicit top-level check IDs and named status codes. Added `scripts/verify-m046.test.ts` to pin the composition contract, truthful `replace` exit semantics, malformed nested-report handling, retained/excluded count drift detection, missing recommendation handling, contradictory contract handling, human/JSON alignment, and canonical script wiring. Added the `verify:m046` package script and recorded D084 so downstream work knows the integrated verifier treats `replace` as a truthful outcome while reserving non-zero exits for broken proof surfaces or contradictory contract state.",
+      "verification_result": "Passed the focused integrated verifier regression test, the broader slice regression bundle across xbmc fixture snapshot + calibration + S01/S02/integrated verifier tests, the shipped `verify:m046` command in human and JSON modes, the nested `verify:m046:s01`/`verify:m046:s02`/`verify:m046` JSON chain, and `bun run tsc --noEmit`.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-10T23:08:57.761Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m046.ts",
+        "scripts/verify-m046.test.ts",
+        "package.json",
+        ".gsd/DECISIONS.md",
+        ".gsd/milestones/M046/slices/S03/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "D084 — Separate top-level proof-surface success from the keep/retune/replace recommendation so the truthful `replace` outcome exits 0 while malformed composition and contradictory contract state still fail non-zero."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M046\nkey_files:\n  - scripts/verify-m046.ts\n  - scripts/verify-m046.test.ts\n  - package.json\n  - .gsd/DECISIONS.md\n  - .gsd/milestones/M046/slices/S03/tasks/T02-SUMMARY.md\nkey_decisions:\n  - D084 — Separate top-level proof-surface success from the keep/retune/replace recommendation so the truthful `replace` outcome exits 0 while malformed composition and contradictory contract state still fail non-zero.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-10T23:08:57.760Z\nblocker_discovered: false\n---\n\n# T02: Shipped the integrated `verify:m046` proof harness with a truthful `replace` verdict and structured M047 change contract.\n\n**Shipped the integrated `verify:m046` proof harness with a truthful `replace` verdict and structured M047 change contract.**\n\n## What Happened\n\nAdded `scripts/verify-m046.ts` as the integrated milestone-closeout proof harness for S03. The new evaluator runs S01 once, injects that exact cached report into S02 through the existing `_evaluateS01` seam, preserves both nested reports intact, derives a dedicated top-level verdict block, derives `m047ChangeContract` from the T01 helper, and validates the integrated surface with explicit top-level check IDs and named status codes. Added `scripts/verify-m046.test.ts` to pin the composition contract, truthful `replace` exit semantics, malformed nested-report handling, retained/excluded count drift detection, missing recommendation handling, contradictory contract handling, human/JSON alignment, and canonical script wiring. Added the `verify:m046` package script and recorded D084 so downstream work knows the integrated verifier treats `replace` as a truthful outcome while reserving non-zero exits for broken proof surfaces or contradictory contract state.\n\n## Verification\n\nPassed the focused integrated verifier regression test, the broader slice regression bundle across xbmc fixture snapshot + calibration + S01/S02/integrated verifier tests, the shipped `verify:m046` command in human and JSON modes, the nested `verify:m046:s01`/`verify:m046:s02`/`verify:m046` JSON chain, and `bun run tsc --noEmit`.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m046.test.ts` | 0 | ✅ pass | 137ms |\n| 2 | `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts` | 0 | ✅ pass | 195ms |\n| 3 | `bun run verify:m046` | 0 | ✅ pass | 109ms |\n| 4 | `bun run verify:m046 -- --json` | 0 | ✅ pass | 102ms |\n| 5 | `bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json` | 0 | ✅ pass | 311ms |\n| 6 | `bun run tsc --noEmit` | 0 | ✅ pass | 8630ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m046.ts`\n- `scripts/verify-m046.test.ts`\n- `package.json`\n- `.gsd/DECISIONS.md`\n- `.gsd/milestones/M046/slices/S03/tasks/T02-SUMMARY.md`\n",
       "description": "Why: The slice only closes when operators can run one command that composes S01 and S02 into a truthful milestone-level verdict plus the concrete M047 change contract.\nDo: Add `scripts/verify-m046.ts` and `scripts/verify-m046.test.ts`, evaluate S01 once, feed that exact report into S02 via the existing injection seam, preserve both nested reports intact, derive `m047ChangeContract`, add stable top-level consistency checks and status codes, render human and JSON output from one report object, and wire `verify:m046` in `package.json`.\nDone when: `bun run verify:m046` and `bun run verify:m046 -- --json` report the current truthful `replace` verdict plus the structured change contract, while malformed nested reports, count drift, missing recommendation, or contradictory contract state fail with named status codes.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `scripts/verify-m046-s01.ts` and `scripts/verify-m046-s02.ts` | Fail with named top-level status codes instead of inferring a verdict from broken prerequisites. | Reuse the existing bounded local proof behavior; do not add new retries or hidden network work. | Reject malformed nested reports, missing counts, or missing recommendation data as proof-surface failures. |\n| `src/contributor/calibration-change-contract.ts` | Treat missing or contradictory contract output as a top-level verifier failure. | N/A — pure local helper. | Reject empty buckets or duplicate mechanisms rather than rendering an ambiguous M047 contract. |\n| `package.json` script wiring | Keep one canonical `verify:m046` entrypoint so future slices do not reconstruct the composition flow ad hoc. | N/A — local config only. | Treat broken arg parsing or script drift as regression-test failures. |\n\n## Load Profile\n\n- **Shared resources**: one checked-in fixture snapshot, one S01 evaluation, one S02 evaluation against that same S01 report, and one top-level renderer.\n- **Per-operation cost**: one integrated proof pass plus report rendering in human or JSON mode.\n- **10x breakpoint**: duplicated prerequisite evaluation and report drift matter before compute, so preserve one S01 report object and one shared renderer.\n\n## Negative Tests\n\n- **Malformed inputs**: malformed nested S01 report, malformed nested S02 report, missing final recommendation, or contradictory `m047ChangeContract` output.\n- **Error paths**: retained/excluded count drift, missing verdict, and unknown CLI args all fail non-zero with named status codes.\n- **Boundary conditions**: the current truthful `replace` verdict exits 0, human and JSON output stay aligned, and retained/excluded counts agree across nested reports.\n\n## Steps\n\n1. Write failing tests for `scripts/verify-m046.ts` that pin report shape, top-level check IDs/status codes, truthful `replace` exit 0, malformed nested report failures, and canonical package-script wiring.\n2. Implement `scripts/verify-m046.ts` with report types, nested S01/S02 composition, one-shot S01 reuse via `_evaluateS01`, contract derivation, and shared human/JSON rendering.\n3. Add the `verify:m046` package script and keep the top-level report close to `verify:m045:s03` / `verify:m027:s04` composition patterns so downstream tooling can consume it mechanically.\n4. Run the focused verifier tests plus the shipped command in human and JSON modes, then rerun the full M046 regression bundle and `bun run tsc --noEmit`.\n\n## Must-Haves\n\n- [ ] `scripts/verify-m046.ts` returns one stable machine-readable report containing nested S01 and S02 evidence, a top-level verdict block, and `m047ChangeContract`.\n- [ ] The current truthful `replace` verdict exits 0; only broken proof surfaces or contradictory contract state exit non-zero.\n- [ ] Human-readable output and `--json` output come from one report object and stay pinned by regression tests.\n- [ ] `package.json` exposes one canonical `verify:m046` script entrypoint.",
       "estimate": "90m",
       "files": [
@@ -13589,6 +13597,18 @@
       "decision": "How the M047 change contract is represented for milestone verification and downstream reuse",
       "choice": "Represent the change contract as a pure typed inventory filtered by calibration verdict, with explicit validation for malformed recommendations, missing impacted surfaces, duplicate mechanisms, and contradictory bucket assignments.",
       "rationale": "A pure helper keeps the milestone verifier and future M047 consumers on one deterministic seam, preserves stable keep/change/replace mechanism ids and evidence strings, and fails fast when the contract inventory drifts into ambiguity.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 118,
+      "id": "D084",
+      "when_context": "M046/S03/T02",
+      "scope": "observability",
+      "decision": "How the integrated M046 verifier reports verdicts and exits",
+      "choice": "Keep the top-level `verify:m046` proof surface separate from the calibration recommendation: surface `keep`/`retune`/`replace` in a dedicated verdict block, exit 0 for the current truthful `replace` outcome, and reserve non-zero exits for malformed nested evidence, count drift, missing recommendation, or contradictory M047 contract state.",
+      "rationale": "Downstream milestone-closeout tooling needs a truthful keep/retune/replace recommendation without conflating that recommendation with verifier breakage. Separating proof-surface success from the recommendation preserves the current replace verdict, keeps human and JSON output aligned, and gives future slices stable top-level check IDs/status codes for diagnosing malformed composition or contract drift.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -17466,6 +17486,72 @@
       "verdict": "❌ fail",
       "duration_ms": 257,
       "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 354,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun test ./scripts/verify-m046.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 137,
+      "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 355,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 195,
+      "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 356,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 109,
+      "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 357,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 102,
+      "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 358,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 311,
+      "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 359,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8630,
+      "created_at": "2026-04-10T23:08:57.761Z"
     }
   ]
 }
