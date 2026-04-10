@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T11:58:09.387Z",
+  "exported_at": "2026-04-10T16:18:36.674Z",
   "milestones": [
     {
       "id": "M001",
@@ -1478,10 +1478,10 @@
     {
       "id": "M045",
       "title": "Contributor Experience Product Contract and Architecture",
-      "status": "active",
+      "status": "complete",
       "depends_on": [],
       "created_at": "2026-04-08T23:04:42.256Z",
-      "completed_at": null,
+      "completed_at": "2026-04-10T16:18:36.647Z",
       "vision": "Turn contributor experience from mixed tier strings and surface-specific heuristics into one explicit product contract that governs GitHub review behavior, Slack profile semantics, retrieval shaping, and opt-out handling through a single coherent architecture.",
       "success_criteria": [
         "GitHub review prompt and Review Details consume one explicit contributor-experience contract instead of raw mixed taxonomy strings.",

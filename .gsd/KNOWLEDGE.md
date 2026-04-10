@@ -884,3 +884,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When building an operator-facing drift verifier around existing surfaces, preserve upstream verifier reports intact as nested evidence and keep the new surface expectations local to the verifier. For S03 this means: embed the full S01 report with its original check IDs/status codes, but author retrieval/Slack/identity required and banned phrases directly in the S03 fixture matrix instead of regenerating them from the same helper path being checked.
 
 **Established in:** M045/S03 (`scripts/verify-m045-s03.ts`, `scripts/verify-m045-s03.test.ts`).
+
+---
+
+## Nullable contract projections are the cleanest suppression seam for generic contributor states (M045/S02)
+
+**Context:** Retrieval builders originally assumed contributor context would always become text. Once M045 introduced truthful generic states, placeholder strings would have reintroduced hidden semantics and made downstream query/tests drift-prone. S02 solved this by projecting an optional `authorHint` from the contributor-experience contract: profile-backed and coarse-fallback states emit a normalized hint, while generic states emit `null` and the query builders omit the clause entirely.
+
+**Rule:** When a product contract says a signal is absent by design, project that absence as `null`/`undefined` through the downstream seam and let the consumer omit the feature entirely. Do not substitute placeholder generic text just to keep an old API shape alive — that recreates drift and makes tests depend on accidental wording.
+
+**Established in:** M045/S02/T01 (`src/contributor/experience-contract.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/knowledge/retrieval-query.ts`).

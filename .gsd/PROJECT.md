@@ -12,9 +12,7 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestones M043 and M044 are complete. M043 restored explicit `@kodiai review` publication in production, and M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook.
-
-M045 implementation is now complete at the slice level. The contributor-experience product contract is defined and wired across all chosen surfaces, and S03 added the final operator-facing coherence verifier:
+Milestones M043, M044, and M045 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, and M045 turned contributor experience into one explicit cross-surface product contract:
 
 - GitHub review prompt shaping and Review Details use one explicit five-state contributor-experience contract (`profile-backed`, `coarse-fallback`, `generic-unknown`, `generic-opt-out`, `generic-degraded`).
 - Review-time retrieval consumes a contract-owned optional `authorHint` projection instead of raw tier strings, emitting normalized hints only for `profile-backed` and `coarse-fallback` states and suppressing hints entirely for generic states.
@@ -22,18 +20,15 @@ M045 implementation is now complete at the slice level. The contributor-experien
 - Identity suggestion DMs use truthful linked-profile guidance plus `/kodiai profile opt-out` instead of promising personalized reviews, while keeping fail-open behavior intact.
 - `bun run verify:m045:s03` now gives one human-readable or JSON report with named pass/fail results for embedded GitHub contract checks, retrieval shaping/omission, Slack profile/help/opt flows, and identity-link DM truthfulness.
 
-Fresh M045 verification is green:
+Fresh M045 milestone-close verification passed:
 
-- `bun test ./scripts/verify-m045-s03.test.ts`
-- `bun run verify:m045:s03`
 - `bun run verify:m045:s03 -- --json`
-- `bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts ./scripts/verify-m045-s01.test.ts ./scripts/verify-m045-s03.test.ts`
 - `bun run tsc --noEmit`
+- `git diff --stat HEAD $(git merge-base HEAD origin/main) -- ':!.gsd/'`
 
-What remains is milestone-level validation/completion for M045, then the follow-on calibration and rollout milestones:
-- **M045 validation/completion:** use `verify:m045:s03` as the milestone proof surface and close the milestone.
+What remains is the follow-on calibration and rollout work:
 - **M046:** contributor tier calibration and fixture audit.
-- **M047:** contributor-experience redesign/calibration rollout and end-to-end shipped-surface coherence proof.
+- **M047:** contributor-experience redesign/calibration rollout and shipped-surface coherence proof.
 
 ## Architecture / Key Patterns
 
@@ -63,7 +58,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Sample Selection and Recent Review Audit
   - [x] S02: Audit-Driven Publication/Correctness Repair
   - [x] S03: Repeatable Audit Verifier and Runbook
-- [ ] M045: Contributor Experience Product Contract and Architecture
+- [x] M045: Contributor Experience Product Contract and Architecture
   - [x] S01: Contract-Driven GitHub Review Behavior
   - [x] S02: Unified Slack, Opt-Out, and Retrieval Semantics
   - [x] S03: Operator Verifier for Cross-Surface Contract Drift
