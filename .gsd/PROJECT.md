@@ -14,21 +14,26 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043 and M044 are complete. M043 restored explicit `@kodiai review` publication in production, and M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook.
 
-M045 is now active with S01 and S02 complete. The contributor-experience product contract no longer stops at GitHub prompt/details behavior:
+M045 implementation is now complete at the slice level. The contributor-experience product contract is defined and wired across all chosen surfaces, and S03 added the final operator-facing coherence verifier:
 
 - GitHub review prompt shaping and Review Details use one explicit five-state contributor-experience contract (`profile-backed`, `coarse-fallback`, `generic-unknown`, `generic-opt-out`, `generic-degraded`).
-- Review-time retrieval now consumes a contract-owned optional `authorHint` projection instead of raw tier strings, emitting normalized hints only for profile-backed/coarse-fallback states and suppressing hints entirely for generic states.
-- Slack `/kodiai profile`, `profile opt-in`, `profile opt-out`, and help output now use contract-first wording, hide raw tier/score semantics on generic states, and suppress expertise when contributor guidance is generic.
-- Identity suggestion DMs now use truthful linked-profile guidance plus opt-out control instead of promising personalized reviews, while keeping fail-open behavior intact.
+- Review-time retrieval consumes a contract-owned optional `authorHint` projection instead of raw tier strings, emitting normalized hints only for `profile-backed` and `coarse-fallback` states and suppressing hints entirely for generic states.
+- Slack `/kodiai profile`, `profile opt-in`, `profile opt-out`, and help output use contract-first wording, hide raw tier/score semantics on generic states, and suppress expertise whenever contributor guidance is generic.
+- Identity suggestion DMs use truthful linked-profile guidance plus `/kodiai profile opt-out` instead of promising personalized reviews, while keeping fail-open behavior intact.
+- `bun run verify:m045:s03` now gives one human-readable or JSON report with named pass/fail results for embedded GitHub contract checks, retrieval shaping/omission, Slack profile/help/opt flows, and identity-link DM truthfulness.
 
 Fresh M045 verification is green:
 
-- `bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/handlers/review.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts`
-- `bun run verify:m045:s01 -- --json`
+- `bun test ./scripts/verify-m045-s03.test.ts`
+- `bun run verify:m045:s03`
+- `bun run verify:m045:s03 -- --json`
+- `bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts ./scripts/verify-m045-s01.test.ts ./scripts/verify-m045-s03.test.ts`
 - `bun run tsc --noEmit`
 
-Remaining M045 work is now concentrated in one slice:
-- **S03:** add one operator-facing verifier that checks GitHub review wording, Slack/profile copy, retrieval hint presence/absence, and opt-out truthfulness together so cross-surface contract drift is visible from a single command.
+What remains is milestone-level validation/completion for M045, then the follow-on calibration and rollout milestones:
+- **M045 validation/completion:** use `verify:m045:s03` as the milestone proof surface and close the milestone.
+- **M046:** contributor tier calibration and fixture audit.
+- **M047:** contributor-experience redesign/calibration rollout and end-to-end shipped-surface coherence proof.
 
 ## Architecture / Key Patterns
 
@@ -38,7 +43,7 @@ Remaining M045 work is now concentrated in one slice:
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
-- **Cross-surface drift indicators:** retrieval query assertions in `src/handlers/review.test.ts`, exact Slack/profile response fixtures in `src/slack/slash-command-handler.test.ts`, exact DM/fail-open coverage in `src/handlers/identity-suggest.test.ts`, and `scripts/verify-m045-s01.ts` for the GitHub contract baseline.
+- **Cross-surface drift verifier:** `scripts/verify-m045-s03.ts` preserves the S01 GitHub proof report intact and adds independent retrieval, Slack, and identity-link checks so operators can confirm contributor-experience coherence from one command.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
 ## Capability Contract
@@ -61,7 +66,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [ ] M045: Contributor Experience Product Contract and Architecture
   - [x] S01: Contract-Driven GitHub Review Behavior
   - [x] S02: Unified Slack, Opt-Out, and Retrieval Semantics
-  - [ ] S03: Operator Verifier for Cross-Surface Contract Drift
+  - [x] S03: Operator Verifier for Cross-Surface Contract Drift
 - [ ] M046: Contributor Tier Calibration and Fixture Audit
   - [ ] S01: Contributor Fixture Set
   - [ ] S02: Scoring and Tiering Evaluation

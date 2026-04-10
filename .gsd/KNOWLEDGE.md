@@ -874,3 +874,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** Stateful modules with in-memory caches should expose a narrow test reset helper when deterministic per-test isolation matters. For `identity-suggest.ts`, call `resetIdentitySuggestionStateForTests()` in test setup/teardown before asserting Slack fetch order or fail-open behavior.
 
 **Established in:** M045/S02/T02 (`src/handlers/identity-suggest.ts`, `src/handlers/identity-suggest.test.ts`).
+
+---
+
+## Cross-surface verifier expectations must stay independent from the helpers they validate (M045/S03)
+
+**Context:** `scripts/verify-m045-s03.ts` composes the existing S01 GitHub proof report and also validates retrieval, Slack, and identity-link wording. If the verifier derives its expected phrases by calling the same projection/helper logic under test, drift can go false-green because both the implementation and the verifier change together.
+
+**Rule:** When building an operator-facing drift verifier around existing surfaces, preserve upstream verifier reports intact as nested evidence and keep the new surface expectations local to the verifier. For S03 this means: embed the full S01 report with its original check IDs/status codes, but author retrieval/Slack/identity required and banned phrases directly in the S03 fixture matrix instead of regenerating them from the same helper path being checked.
+
+**Established in:** M045/S03 (`scripts/verify-m045-s03.ts`, `scripts/verify-m045-s03.test.ts`).
