@@ -504,11 +504,17 @@ FQDN=$(az containerapp show \
   --output tsv)
 HEALTH_URL="https://${FQDN}/healthz"
 READINESS_URL="https://${FQDN}/readiness"
-ACTIVE_REVISION=$(az containerapp revision list \
+TRAFFIC_ACTIVE_REVISION=$(az containerapp revision list \
   --name "$APP_NAME" \
   --resource-group "$RESOURCE_GROUP" \
-  --query "[?properties.active].name | [0]" \
+  --query '[?properties.active && properties.trafficWeight > `0`] | sort_by(@, &properties.createdTime) | [-1].name' \
   --output tsv 2>/dev/null || true)
+NEWEST_ACTIVE_REVISION=$(az containerapp revision list \
+  --name "$APP_NAME" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query '[?properties.active] | sort_by(@, &properties.createdTime) | [-1].name' \
+  --output tsv 2>/dev/null || true)
+ACTIVE_REVISION=${TRAFFIC_ACTIVE_REVISION:-$NEWEST_ACTIVE_REVISION}
 
 # -- Post-deploy health check --------------------------------------------------
 echo "==> Waiting for new revision to become healthy (up to 60s)..."

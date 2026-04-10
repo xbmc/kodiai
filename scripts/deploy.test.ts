@@ -21,4 +21,10 @@ describe("deploy.sh", () => {
   test("wires revisionSuffix into the container app template", () => {
     expect(deployScript).toContain('revisionSuffix: ${REVISION_SUFFIX}');
   });
+
+  test("reports the traffic-bearing active revision before falling back to the newest active revision", () => {
+    expect(deployScript).toContain('properties.trafficWeight > `0`');
+    expect(deployScript).toContain('sort_by(@, &properties.createdTime) | [-1].name');
+    expect(deployScript).toContain('ACTIVE_REVISION=${TRAFFIC_ACTIVE_REVISION:-$NEWEST_ACTIVE_REVISION}');
+  });
 });
