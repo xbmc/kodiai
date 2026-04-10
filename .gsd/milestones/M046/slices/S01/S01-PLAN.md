@@ -57,7 +57,7 @@
   - Do: Add typed fixture records and normalization checks, write failing tests for duplicate identities/missing exclusion reasons/missing provenance placeholders, and seed a curated manifest plus snapshot scaffold that already covers senior, newcomer, and ambiguous-middle retained samples.
   - Verify: `bun test ./src/contributor/fixture-set.test.ts`
   - Done when: the manifest distinguishes retained contributors from explicit exclusions, tests fail on malformed rows, and the curated set covers the milestone demo cohorts.
-- [ ] **T02: Build the live xbmc collector and checked-in snapshot writer** `est:90m`
+- [x] **T02: Build the live xbmc collector and checked-in snapshot writer** `est:90m`
   - Why: The milestone needs real xbmc evidence, not hand-written anecdotes, and the checked-in snapshot must stay stable across refreshes.
   - Files: `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`, `fixtures/contributor-calibration/xbmc-manifest.json`, `fixtures/contributor-calibration/xbmc-snapshot.json`
   - Do: Implement the refresh module that reads the curated manifest, collects GitHub evidence through the existing app seam, optionally enriches from `tmp/xbmc`, normalizes aliases, and writes stable retained/excluded snapshot sections with machine-readable provenance and explicit source-availability reporting.

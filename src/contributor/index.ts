@@ -4,3 +4,4 @@ export * from "./expertise-scorer.ts";
 export * from "./tier-calculator.ts";
 export * from "./identity-matcher.ts";
 export * from "./fixture-set.ts";
+export * from "./xbmc-fixture-refresh.ts";
