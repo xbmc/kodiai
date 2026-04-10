@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T11:38:59.725Z",
+  "exported_at": "2026-04-10T11:53:02.557Z",
   "milestones": [
     {
       "id": "M001",
@@ -12046,19 +12046,26 @@
       "milestone_id": "M045",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Add Slack and identity-link truthfulness checks to finalize the operator proof surface",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Extended the M045 S03 operator verifier to prove Slack profile/opt-control copy and identity-link DM truthfulness alongside the existing GitHub and retrieval checks.",
+      "status": "complete",
+      "one_liner": "Extended the M045 S03 operator verifier to prove Slack profile/opt-control copy and identity-link DM truthfulness alongside the existing GitHub and retrieval checks.",
+      "narrative": "Started with TDD by extending `scripts/verify-m045-s03.test.ts` to cover the missing Slack and identity proof surfaces, confirmed the red state when the new fixture builders were absent, and then implemented the verifier changes in `scripts/verify-m045-s03.ts`. Added synthetic in-memory `ContributorProfileStore` fixtures that drive the real `handleKodiaiCommand()` seam for linked profile output, opted-out output, malformed-tier fallback output, `profile opt-out`, `profile opt-in`, and unknown-command help. Added identity-link fixtures that reset `identity-suggest` state per scenario, stub `globalThis.fetch`, call the real `suggestIdentityLink()` seam, capture DM text and warning logs, and verify truthful high-confidence-match and fail-open warning behavior without live Slack traffic. Extended the S03 report/check model, human renderer, JSON output, and exit handling so Slack and identity surfaces now sit beside the embedded S01 GitHub report and retrieval checks under one operator-facing verdict. Recorded the verifier design choice in GSD as D071.",
+      "verification_result": "Ran the slice regression suite across contributor contract, retrieval helpers, Slack handler, identity-suggest, S01, and S03 tests; then ran `bun run verify:m045:s03` and `bun run verify:m045:s03 -- --json` to confirm the new Slack and identity sections, status codes, and diagnostics in both report modes; then finished with `bun run tsc --noEmit` to confirm the expanded verifier and tests typecheck cleanly.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-10T11:53:02.527Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m045-s03.test.ts",
+        ".gsd/DECISIONS.md",
+        ".gsd/milestones/M045/slices/S03/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Verified Slack and identity-link contract surfaces by driving the real exported seams with synthetic stores/fetch stubs while keeping phrase expectations independent so the verifier can detect drift instead of replaying helper logic under test."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M045\nkey_files:\n  - scripts/verify-m045-s03.ts\n  - scripts/verify-m045-s03.test.ts\n  - .gsd/DECISIONS.md\n  - .gsd/milestones/M045/slices/S03/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Verified Slack and identity-link contract surfaces by driving the real exported seams with synthetic stores/fetch stubs while keeping phrase expectations independent so the verifier can detect drift instead of replaying helper logic under test.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-10T11:53:02.527Z\nblocker_discovered: false\n---\n\n# T02: Extended the M045 S03 operator verifier to prove Slack profile/opt-control copy and identity-link DM truthfulness alongside the existing GitHub and retrieval checks.\n\n**Extended the M045 S03 operator verifier to prove Slack profile/opt-control copy and identity-link DM truthfulness alongside the existing GitHub and retrieval checks.**\n\n## What Happened\n\nStarted with TDD by extending `scripts/verify-m045-s03.test.ts` to cover the missing Slack and identity proof surfaces, confirmed the red state when the new fixture builders were absent, and then implemented the verifier changes in `scripts/verify-m045-s03.ts`. Added synthetic in-memory `ContributorProfileStore` fixtures that drive the real `handleKodiaiCommand()` seam for linked profile output, opted-out output, malformed-tier fallback output, `profile opt-out`, `profile opt-in`, and unknown-command help. Added identity-link fixtures that reset `identity-suggest` state per scenario, stub `globalThis.fetch`, call the real `suggestIdentityLink()` seam, capture DM text and warning logs, and verify truthful high-confidence-match and fail-open warning behavior without live Slack traffic. Extended the S03 report/check model, human renderer, JSON output, and exit handling so Slack and identity surfaces now sit beside the embedded S01 GitHub report and retrieval checks under one operator-facing verdict. Recorded the verifier design choice in GSD as D071.\n\n## Verification\n\nRan the slice regression suite across contributor contract, retrieval helpers, Slack handler, identity-suggest, S01, and S03 tests; then ran `bun run verify:m045:s03` and `bun run verify:m045:s03 -- --json` to confirm the new Slack and identity sections, status codes, and diagnostics in both report modes; then finished with `bun run tsc --noEmit` to confirm the expanded verifier and tests typecheck cleanly.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts ./scripts/verify-m045-s01.test.ts ./scripts/verify-m045-s03.test.ts` | 0 | ✅ pass | 67ms |\n| 2 | `bun run verify:m045:s03` | 0 | ✅ pass | 43ms |\n| 3 | `bun run verify:m045:s03 -- --json` | 0 | ✅ pass | 50ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 8123ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m045-s03.ts`\n- `scripts/verify-m045-s03.test.ts`\n- `.gsd/DECISIONS.md`\n- `.gsd/milestones/M045/slices/S03/tasks/T02-SUMMARY.md`\n",
       "description": "This task finishes the operator verifier by proving the lesser-used downstream surfaces that can still drift after S01/S02: Slack `/kodiai profile` / opt controls / help text and identity-link DM wording. Drive the checks through the real exported seams (`handleKodiaiCommand()` and `suggestIdentityLink()`), but keep the expectations independent inside `scripts/verify-m045-s03.ts` so the verifier can actually catch copy drift. Reset `identity-suggest` process state between scenarios and stub `globalThis.fetch` deterministically; do not introduce live Slack calls.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `handleKodiaiCommand()` Slack fixtures | Fail the named Slack surface check and keep the rest of the report running. | N/A — local in-memory store only. | Treat malformed stored tier data as the generic fallback scenario and assert neutral copy instead of raw-tier leakage. |\n| `suggestIdentityLink()` fetch stubs and reset seam | Restore `globalThis.fetch`, reset cached suggestion state, and fail the named identity check instead of leaking state across fixtures. | Simulate timeout/error as part of the fail-open warning fixture; do not block the verifier. | Treat malformed Slack API payloads as the fail-open path and assert warning visibility when appropriate. |\n| S03 report renderer / exit handling | Keep human and JSON output in sync and return a non-zero exit code on any failed Slack or identity check. | N/A — local rendering only. | Surface missing sections or absent check IDs as verifier failures instead of producing partial success output. |\n\n## Load Profile\n\n- **Shared resources**: process-local identity-suggestion cache, mocked Slack fetch call log, and one combined verifier report.\n- **Per-operation cost**: a handful of in-memory slash-command calls plus deterministic stubbed Slack HTTP sequences for DM cases.\n- **10x breakpoint**: stale cached suggestion state or noisy report output would fail first, so reset module state per fixture and keep the surface matrix small and explicit.\n\n## Negative Tests\n\n- **Malformed inputs**: malformed stored tier data, unknown slash subcommands, and empty expertise arrays still yield contract-first generic output.\n- **Error paths**: missing linked profile, existing linked profile, high-confidence match, and Slack API failure all stay deterministic and non-blocking.\n- **Boundary conditions**: opted-out Slack output hides expertise, help text advertises both opt controls, the DM body includes `/kodiai profile opt-out`, and the verifier bans `personalized code reviews` wording.\n\n## Steps\n\n1. Add in-memory `ContributorProfileStore` fixture helpers and Slack surface checks in `scripts/verify-m045-s03.ts` for linked-profile, opted-out, malformed-tier, `profile opt-out`, `profile opt-in`, and unknown-command help output.\n2. Add identity-link fixture runners that stub `globalThis.fetch`, call `resetIdentitySuggestionStateForTests()`, capture posted DM text, and assert both truthful high-confidence-match wording and fail-open warning behavior.\n3. Extend the S03 report types, check IDs, renderer, and JSON output so Slack and identity results sit alongside embedded GitHub and retrieval checks with one overall verdict.\n4. Expand `scripts/verify-m045-s03.test.ts` to cover Slack copy drift, DM wording drift, JSON serialization, and non-zero exit-code behavior, then finish with the broader regression suite.\n\n## Must-Haves\n\n- [ ] Slack verification uses real handler output for `/kodiai profile`, `profile opt-out`, `profile opt-in`, and unknown-command help rather than copied constants.\n- [ ] Identity-link verification uses the exported reset seam plus stubbed fetches to prove truthful DM wording and fail-open warning behavior without live Slack traffic.\n- [ ] The final S03 report gives named pass/fail results for GitHub review, retrieval, Slack, and identity surfaces in both human-readable and JSON modes.",
       "estimate": "2h",
       "files": [
@@ -12921,6 +12928,18 @@
       "decision": "How the M045/S03 operator verifier composes upstream GitHub proof checks with downstream surface drift checks",
       "choice": "Keep the S01 GitHub verifier report nested and intact inside S03, and add independent surface-group checks whose retrieval expectations are authored locally rather than derived from the helper under test.",
       "rationale": "Embedding the full S01 report preserves its named check IDs, status codes, and scenario detail without duplicating GitHub contract logic. Local retrieval expectations keep the operator verifier capable of detecting author-hint drift instead of reusing the same mapping logic it is supposed to validate. The resulting report shape gives operators one top-level verdict plus nested scenario diagnostics for triage.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 105,
+      "id": "D071",
+      "when_context": "M045/S03/T02",
+      "scope": "observability",
+      "decision": "How the M045 S03 verifier proves Slack and identity-link contract surfaces",
+      "choice": "Run the real Slack slash-command and identity-suggestion seams against synthetic in-memory fixtures, while keeping the verifier’s phrase expectations and failure diagnostics independent from the helpers under test.",
+      "rationale": "Using the shipped seams preserves runtime behavior, but independent expectations let the operator-facing verifier detect copy drift, stale cache state, DM wording regressions, and opt-out/help-text contradictions instead of reusing the same implementation logic and masking failures.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -16347,6 +16366,50 @@
       "verdict": "✅ pass",
       "duration_ms": 8013,
       "created_at": "2026-04-10T11:38:59.684Z"
+    },
+    {
+      "id": 313,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M045",
+      "command": "bun test ./src/contributor/experience-contract.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./src/knowledge/retrieval-query.test.ts ./src/slack/slash-command-handler.test.ts ./src/handlers/identity-suggest.test.ts ./scripts/verify-m045-s01.test.ts ./scripts/verify-m045-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 67,
+      "created_at": "2026-04-10T11:53:02.527Z"
+    },
+    {
+      "id": 314,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M045",
+      "command": "bun run verify:m045:s03",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 43,
+      "created_at": "2026-04-10T11:53:02.528Z"
+    },
+    {
+      "id": 315,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M045",
+      "command": "bun run verify:m045:s03 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 50,
+      "created_at": "2026-04-10T11:53:02.528Z"
+    },
+    {
+      "id": 316,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M045",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8123,
+      "created_at": "2026-04-10T11:53:02.528Z"
     }
   ]
 }

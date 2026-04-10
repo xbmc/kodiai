@@ -86,7 +86,7 @@
   - Files: `scripts/verify-m045-s03.ts`, `scripts/verify-m045-s03.test.ts`, `package.json`
   - Verify: bun test ./scripts/verify-m045-s03.test.ts && bun run verify:m045:s03 -- --json
 
-- [ ] **T02: Add Slack and identity-link truthfulness checks to finalize the operator proof surface** `est:2h`
+- [x] **T02: Add Slack and identity-link truthfulness checks to finalize the operator proof surface** `est:2h`
   This task finishes the operator verifier by proving the lesser-used downstream surfaces that can still drift after S01/S02: Slack `/kodiai profile` / opt controls / help text and identity-link DM wording. Drive the checks through the real exported seams (`handleKodiaiCommand()` and `suggestIdentityLink()`), but keep the expectations independent inside `scripts/verify-m045-s03.ts` so the verifier can actually catch copy drift. Reset `identity-suggest` process state between scenarios and stub `globalThis.fetch` deterministically; do not introduce live Slack calls.
 
 ## Failure Modes
