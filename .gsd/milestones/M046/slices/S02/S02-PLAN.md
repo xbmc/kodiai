@@ -139,7 +139,7 @@ Implement a deterministic evaluator that consumes the validated xbmc snapshot an
   - Files: `src/contributor/calibration-evaluator.ts`, `src/contributor/calibration-evaluator.test.ts`, `src/contributor/expertise-scorer.ts`, `src/contributor/tier-calculator.ts`, `src/contributor/index.ts`
   - Verify: bun test ./src/contributor/calibration-evaluator.test.ts
 
-- [ ] **T03: Ship verify:m046:s02 with stable per-contributor verdict reporting** `est:90m`
+- [x] **T03: Ship verify:m046:s02 with stable per-contributor verdict reporting** `est:90m`
   ---
 estimated_steps: 22
 estimated_files: 4

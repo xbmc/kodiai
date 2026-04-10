@@ -195,3 +195,7 @@
 {"id":"87aa900d-b878-4454-b0bb-e59d2d3e5746","ts":"2026-04-10T21:06:05.062Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
 {"id":"fcf392f4-c7cf-4e67-add2-256c9d42130c","ts":"2026-04-10T21:43:39.430Z","severity":"info","message":"Committed: feat: Added a shared xbmc snapshot loader and moved verify:m046:s01 ont…","source":"notify","read":false}
 {"id":"a52725b0-0f59-4dc4-b166-ae8c2160ede9","ts":"2026-04-10T21:43:39.677Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"68338782-a6de-4514-9ffb-8b3e97894888","ts":"2026-04-10T21:59:02.230Z","severity":"info","message":"Committed: feat: Added a deterministic calibration evaluator for live-vs-intended…","source":"notify","read":false}
+{"id":"df27a093-8bb8-467a-8f69-6c8bf5e00f8f","ts":"2026-04-10T21:59:02.238Z","severity":"warning","message":"[safety] file-change: src/contributor/xbmc-fixture-snapshot.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"4f551780-0220-4d01-a8a1-a006bd817894","ts":"2026-04-10T21:59:02.238Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"9636cf0c-e0dd-4a2e-80b6-ac0899434847","ts":"2026-04-10T21:59:02.323Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
