@@ -944,3 +944,23 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When reporting calibration instability for snapshot-only contributor models, distinguish **rank instability** from **contract instability**. A zero-score tie should still be flagged as score/rank compression, but downstream verifiers should not claim tier drift if every tied row remains `newcomer` under the zero-score override.
 
 **Established in:** M046/S02/T02 (`src/contributor/calibration-evaluator.ts`, `src/contributor/tier-calculator.ts`).
+
+---
+
+## Prerequisite-gated proof harnesses should keep loadable artifact diagnostics visible even when they skip the main verdict (M046/S02)
+
+**Context:** `verify:m046:s02` depends on `verify:m046:s01`. If the harness hard-fails immediately on the prerequisite, operators lose the most useful debugging evidence: whether the checked-in snapshot still parses, loads, and preserves retained/excluded counts. That makes it harder to distinguish "fixture contract broken" from "fixture file itself is unreadable."
+
+**Rule:** For proof harnesses with prerequisite verifiers, run the prerequisite first but still inspect any local artifact that can be loaded safely. Surface those artifact diagnostics in the report, emit a named prerequisite failure status code, and skip the downstream evaluator or final verdict until the prerequisite passes.
+
+**Established in:** M046/S02/T03 (`scripts/verify-m046-s02.ts`, `scripts/verify-m046-s02.test.ts`).
+
+---
+
+## `bun test` can ignore one missing file filter if other file paths still match (M046/S03)
+
+**Context:** During S03/T01, `bun test ./scripts/verify-m046.test.ts` failed immediately because the file does not exist yet, but the broader slice command `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts` still exited 0 and ran the four existing files. Bun treated the missing `./scripts/verify-m046.test.ts` argument as an unmatched filter while happily executing the remaining matches.
+
+**Rule:** When a slice verification command mixes existing test paths with a not-yet-created file, do not treat a zero exit code as proof that every requested file ran. Probe any suspected missing path with its own `bun test ./path/to/file.test.ts` command before declaring the full suite complete.
+
+**Established in:** M046/S03/T01 (`bun test` verification behavior while `scripts/verify-m046.test.ts` was still absent).

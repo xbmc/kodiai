@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T22:10:25.923Z",
+  "exported_at": "2026-04-10T22:54:18.816Z",
   "milestones": [
     {
       "id": "M001",
@@ -6037,14 +6037,14 @@
       "milestone_id": "M046",
       "id": "S02",
       "title": "S02",
-      "status": "pending",
+      "status": "complete",
       "risk": "Highest product risk — the current runtime path may be structurally different from the intended scoring model, so a naive threshold retune could certify a mechanism Kodiai does not actually run.",
       "depends": [],
       "demo": "Run the calibration verifier and get a per-contributor report showing fixture evidence, current live incremental-path outcomes, intended full-signal-path outcomes, percentile/tie instability checks, and freshness/unscored-profile findings mapped back to the M045 contract.",
       "created_at": "2026-04-10T16:42:45.985Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-10T22:15:34.025Z",
+      "full_summary_md": "---\nid: S02\nparent: M046\nmilestone: M046\nprovides:\n  - A shared xbmc snapshot contract (`src/contributor/xbmc-fixture-snapshot.ts`) that keeps retained/excluded contributor truth aligned across proofs.\n  - A pure calibration evaluator (`src/contributor/calibration-evaluator.ts`) that compares live incremental behavior with the intended full-signal model and emits an explicit keep/retune/replace recommendation.\n  - An operator-facing `verify:m046:s02` proof surface with stable JSON/human report shapes for downstream milestone and rollout slices.\nrequires:\n  - slice: S01\n    provides: The checked-in xbmc manifest/snapshot corpus with retained and excluded contributor truth, provenance records, source-availability diagnostics, and the prerequisite `verify:m046:s01` proof surface.\naffects:\n  - S03\n  - M047\nkey_files:\n  - src/contributor/xbmc-fixture-snapshot.ts\n  - src/contributor/calibration-evaluator.ts\n  - scripts/verify-m046-s01.ts\n  - scripts/verify-m046-s02.ts\n  - src/contributor/index.ts\n  - src/contributor/xbmc-fixture-snapshot.test.ts\n  - src/contributor/calibration-evaluator.test.ts\n  - scripts/verify-m046-s02.test.ts\n  - package.json\n  - .gsd/PROJECT.md\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D079 — Centralize xbmc snapshot loading, validation, and provenance inspection in a shared source module used by both S01 and S02 surfaces.\n  - D080 — Model the current live path as linked-but-unscored newcomer guidance unless changed-file replay is available, and model the intended full-signal path from checked-in commit counts plus PR/review provenance using shipped weights.\n  - D081 — Gate `verify:m046:s02` on the S01 verifier, preserve retained/excluded truth checks against the manifest, and keep loadable snapshot diagnostics visible even when prerequisite failures suppress the calibration verdict.\npatterns_established:\n  - Use one authoritative offline snapshot loader to enforce both schema validity and fixture-manifest semantic truth before any downstream evaluation.\n  - When snapshot-only calibration cannot honestly replay runtime evidence, model degradation explicitly and report fidelity limits instead of fabricating precision.\n  - For percentile-based contributor calibration, separate score/rank instability from contract-state instability so zero-score ties do not get overstated as tier drift.\n  - For prerequisite-gated proof harnesses, still surface loadable local-artifact diagnostics while skipping the main verdict until the prerequisite passes.\nobservability_surfaces:\n  - `bun run verify:m046:s02 -- --json` machine-readable report with stable check IDs/status codes, prerequisite state, snapshot counts, per-contributor live/intended projections, and final recommendation.\n  - `bun run verify:m046:s02` human-readable report rendered from the same normalized report object.\n  - Evaluator findings for live-score compression, divergent contributor IDs, stale contributors, excluded controls, percentile/tie instability, and freshness/unscored-profile caveats.\ndrill_down_paths:\n  - .gsd/milestones/M046/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M046/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M046/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-10T22:15:34.026Z\nblocker_discovered: false\n---\n\n# S02: Calibration Evaluator for Live vs Intended Model Paths\n\n**Turned the checked-in xbmc contributor fixture pack into a repeatable calibration proof that compares Kodiai’s live incremental path to the intended full-signal model and currently recommends replacement.**\n\n## What Happened\n\nS02 converted the S01 xbmc fixture corpus from static evidence into an operator-facing calibration proof surface. First, the slice extracted `src/contributor/xbmc-fixture-snapshot.ts` as the shared offline loader/validator for `fixtures/contributor-calibration/xbmc-snapshot.json`, so both verifiers and downstream evaluators consume one authoritative retained/excluded snapshot contract with diagnostics and provenance intact instead of duplicating schema logic.\n\nWith that seam in place, the slice added `src/contributor/calibration-evaluator.ts` as a pure evaluator over the validated snapshot. The evaluator keeps the modeling honest: it treats the current live path as linked-but-unscored newcomer guidance when historical changed-file replay is unavailable, derives the intended full-signal path from checked-in commit counts plus PR/review provenance using the shipped scoring/tiering helpers, projects both through the M045 contributor-experience contract, reports tie/rank instability separately from contract stability, preserves excluded bot/alias/ambiguous rows as explicit controls, and surfaces freshness/degradation reasons instead of fabricating missing evidence.\n\nFinally, the slice shipped `scripts/verify-m046-s02.ts` and the canonical `verify:m046:s02` package entrypoint. The verifier gates on `verify:m046:s01`, compares retained and excluded truth against the checked-in manifest, still exposes loadable snapshot diagnostics when the prerequisite would fail, and renders human-readable and `--json` output from one normalized report object with stable check IDs and status codes. Against the checked-in xbmc cohort, the current proof shows that the live incremental path collapses all retained contributors into the newcomer default, while the intended full-signal model differentiates `fuzzard` to senior and `KOPRajs` to established; `fkoemep` stays newcomer but carries stale-evidence and missing-review caveats. The resulting slice-level recommendation is `replace`, which gives S03 and M047 a concrete calibration baseline instead of an abstract tuning discussion.\n\n## Verification\n\nFresh slice-level verification passed end to end. `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts` passed 23/23 tests and covered malformed snapshots, cohort drift, missing recommendations, prerequisite failure handling, and report-shape alignment. `bun run verify:m046:s01 -- --json` passed with retained=3, excluded=6, complete provenance, and alias/source diagnostics intact. `bun run verify:m046:s02 -- --json` passed with all six stable S02 checks green and produced a `replace` recommendation plus per-contributor live/intended diagnostics. `bun run verify:m046:s02` rendered the matching human-readable report. `bun run tsc --noEmit` passed cleanly.\n\n## Requirements Advanced\n\n- R047 — Added the reusable xbmc snapshot loader, pure calibration evaluator, and repeatable `verify:m046:s02` proof surface required to compare live and intended contributor-tier behavior.\n\n## Requirements Validated\n\n- R047 — `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts`, `bun run verify:m046:s01 -- --json`, `bun run verify:m046:s02 -- --json`, and `bun run tsc --noEmit` all passed; the verifier emitted a stable `replace` recommendation with per-contributor live-vs-intended diagnostics.\n\n## New Requirements Surfaced\n\n- None.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThis proof surface is deliberately snapshot-only. It does not replay historical webhooks, fabricate changed-file arrays, or hydrate live GitHub data during offline runs. The current report therefore proves divergence between the live incremental path and the intended full-signal model for the checked-in xbmc cohort, but it still carries explicit degradation caveats — especially `fkoemep`'s stale evidence and missing review signal.\n\n## Follow-ups\n\nS03 should compose the S01 fixture proof and S02 calibration proof into one milestone-level keep/retune/replace verdict plus the concrete M047 change contract. M047 should replace or redesign the live incremental-only contributor-calibration path while preserving explicit freshness/degradation reporting in operator surfaces.\n\n## Files Created/Modified\n\n- `src/contributor/xbmc-fixture-snapshot.ts` — Added the shared offline xbmc snapshot loader/validator and manifest-semantic truth checks.\n- `src/contributor/calibration-evaluator.ts` — Added the pure calibration evaluator that models live vs intended contributor-profile outcomes with freshness and instability diagnostics.\n- `scripts/verify-m046-s01.ts` — Refactored the S01 proof harness to consume the shared snapshot loader instead of private snapshot schemas.\n- `scripts/verify-m046-s02.ts` — Added the operator-facing S02 verifier with prerequisite gating, stable check/status codes, and human/JSON report rendering.\n- `scripts/verify-m046-s02.test.ts` — Pinned report shape, prerequisite failure behavior, recommendation handling, and human/JSON alignment.\n- `package.json` — Added the canonical `verify:m046:s02` package script.\n- `.gsd/KNOWLEDGE.md` — Recorded reusable proof-harness and calibration gotchas discovered during S02.\n- `.gsd/PROJECT.md` — Refreshed the project state to mark M046/S02 complete and capture the new calibration-proof surfaces.\n",
+      "full_uat_md": "# S02: Calibration Evaluator for Live vs Intended Model Paths — UAT\n\n**Milestone:** M046\n**Written:** 2026-04-10T22:15:34.026Z\n\n# S02 UAT — xbmc Calibration Evaluator and Verifier\n\n## Preconditions\n\n- Repository root is `/home/keith/src/kodiai`.\n- Dependencies are installed (`bun install`).\n- The checked-in fixture files exist at `fixtures/contributor-calibration/xbmc-manifest.json` and `fixtures/contributor-calibration/xbmc-snapshot.json`.\n- No network access or secrets are required; this proof is intentionally offline-only.\n\n## Test Case 1 — Machine-readable calibration proof\n\n1. Run `bun run verify:m046:s02 -- --json`.\n2. Confirm the command exits with code 0.\n3. Inspect the JSON output.\n\n### Expected Results\n\n- `overallPassed` is `true`.\n- `check_ids` exactly contain:\n  - `M046-S02-S01-PREREQUISITE`\n  - `M046-S02-SNAPSHOT-VALID`\n  - `M046-S02-RETAINED-COHORT-TRUTH`\n  - `M046-S02-EXCLUDED-CONTROLS-TRUTH`\n  - `M046-S02-EVALUATOR-REPORT`\n  - `M046-S02-RECOMMENDATION`\n- `prerequisite.overallPassed` is `true` and `prerequisite.counts` reports `retained=3` and `excluded=6`.\n- `snapshot.isLoadable` and `snapshot.isValid` are both `true`.\n- `calibration.rows` contains exactly the retained contributors `fuzzard`, `koprajs`, and `fkoemep`.\n- `calibration.recommendation.verdict` is `replace`.\n- `calibration.findings.liveScoreCompression` is `true`.\n- `calibration.findings.divergentContributorIds` contains `fuzzard` and `koprajs`.\n- `calibration.findings.staleContributorIds` contains `fkoemep`.\n- Every object in `calibration.excludedControls` has `includedInEvaluation: false`.\n\n## Test Case 2 — Human-readable operator report\n\n1. Run `bun run verify:m046:s02`.\n2. Confirm the command exits with code 0.\n3. Review the rendered report text.\n\n### Expected Results\n\n- The header identifies the command as the M046 S02 live-vs-intended calibration verifier.\n- The report includes `Recommendation: replace`.\n- The retained-contributor section shows:\n  - `fuzzard` live=`profile-backed/newcomer`, intended=`profile-backed/senior`\n  - `koprajs` live=`profile-backed/newcomer`, intended=`profile-backed/established`\n  - `fkoemep` live=`profile-backed/newcomer`, intended=`profile-backed/newcomer`\n- The report calls out `Findings: liveCompression=yes divergent=fuzzard, koprajs stale=fkoemep`.\n- The excluded-controls section lists all six excluded identities and their reasons.\n- The checks section shows all six `M046-S02-*` checks as `PASS`.\n\n## Test Case 3 — Upstream fixture truth remains aligned\n\n1. Run `bun run verify:m046:s01 -- --json`.\n2. Confirm the command exits with code 0.\n3. Inspect the S01 JSON output.\n4. Re-run `bun run verify:m046:s02 -- --json`.\n\n### Expected Results\n\n- S01 reports `retained=3` and `excluded=6`.\n- S01 `cohortCoverage` is `senior=1`, `ambiguous-middle=1`, `newcomer=1`.\n- S01 reports `retainedWithoutRecords=0` and `excludedWithoutRecords=0`.\n- S01 records alias/ambiguity diagnostics for `kai-sommerfeld`/`ksooo` and `keith`/`keith-herrington`.\n- The subsequent S02 report shows the same retained/excluded counts in both `prerequisite.counts` and `snapshot.counts`.\n\n## Test Case 4 — Regression and edge-case coverage\n\n1. Run `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts`.\n2. Run `bun run tsc --noEmit`.\n\n### Expected Results\n\n- The focused test suite passes with no failures.\n- The tests cover malformed snapshot JSON, missing diagnostics/provenance, duplicate contributor identities, retained-cohort drift, missing recommendations, human/JSON report alignment, and prerequisite failure behavior.\n- TypeScript exits cleanly with no diagnostics.\n\n## Edge Conditions to Watch\n\n- `fkoemep` is intentionally reported with stale evidence and missing review provenance; that is expected, not a failure.\n- Live-path rank ranges may be unstable because zero-score ties compress the cohort, but the report should keep that separate from contract-state drift.\n- If S01 ever fails, S02 should still surface loadable snapshot diagnostics while withholding the final calibration verdict.\n",
       "goal": "Turn the checked-in xbmc contributor fixture pack into a deterministic calibration proof surface that compares Kodiai’s current live incremental path against the intended full-signal model path, projects both through the M045 contributor-experience contract, and emits an explicit keep/retune/replace recommendation without inventing missing file-level evidence.",
       "success_criteria": "## Must-Haves\n\n- Consume the checked-in xbmc snapshot through one reusable source helper instead of duplicating S01’s snapshot schema inside every verifier.\n- Preserve S01 retained vs excluded contributor truth so retained anchors stay evaluable and excluded bot/alias/ambiguous identities remain visible controls, not silent inputs.\n- Produce a per-contributor evaluator result that includes fixture evidence, modeled live-path outcome, modeled intended-path outcome, M045 contract projection, percentile/tie-instability findings, and freshness/unscored-profile diagnostics.\n- Make the snapshot-only modeling choice explicit: do not fabricate changed-file arrays or silently hydrate live GitHub data during offline proof runs; surface fidelity/degradation reasons in the report.\n- Ship `bun run verify:m046:s02 -- --json` with stable check IDs / status codes and a report-level `keep` / `retune` / `replace` recommendation that directly advances R047.\n\n## Threat Surface\n\n- **Abuse**: Poisoned fixture rows, silent reintroduction of excluded identities, or invented file-level replay assumptions could falsely certify the current model as sound.\n- **Data exposure**: Only checked-in public contributor identifiers, provenance URLs, score/tier diagnostics, and verifier status codes should appear; never print GitHub app secrets, tokens, or private review data.\n- **Input trust**: `fixtures/contributor-calibration/xbmc-snapshot.json`, retained/excluded contributor rows, and any modeled live/intended assumptions are untrusted until validated through the shared snapshot contract.\n\n## Requirement Impact\n\n- **Requirements touched**: R047.\n- **Re-verify**: `bun run verify:m046:s01 -- --json`, the new snapshot loader tests, evaluator tests, and `bun run verify:m046:s02 -- --json` must all agree on retained/excluded truth and the final recommendation surface.\n- **Decisions revisited**: D072, D075.\n\n## Verification\n\n- `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts`\n- `bun run verify:m046:s01 -- --json`\n- `bun run verify:m046:s02 -- --json`\n- `bun run tsc --noEmit`",
       "proof_level": "- This slice proves: integration.\n- Real runtime required: no.\n- Human/UAT required: no.",
@@ -6056,22 +6056,20 @@
     {
       "milestone_id": "M046",
       "id": "S03",
-      "title": "Explicit Calibration Verdict and M047 Change Contract",
+      "title": "S03",
       "status": "pending",
       "risk": "Medium — without an explicit end-state, the milestone can finish with data but still leave M047 unconstrained, leading to opportunistic tuning instead of a deliberate system change contract.",
-      "depends": [
-        "S02"
-      ],
+      "depends": [],
       "demo": "Run the top-level M046 verifier and receive one integrated report that composes fixture coverage and calibration findings into an explicit keep/retune/replace verdict, plus a concrete M047 change contract naming which mechanisms must stay, change, or be replaced.",
       "created_at": "2026-04-10T16:42:45.985Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Close the milestone with an operator-usable decision surface that states the calibration verdict and next-step implementation contract plainly, rather than leaving scattered notes across scripts and fixture reports.",
-      "success_criteria": "- A top-level `verify:m046` entrypoint composes the lower-level outputs into one human-readable and JSON verdict surface.\n- The verdict is explicit — keep as-is, retune, or replace — with rationale tied to fixture evidence and M045 contract impact.\n- The report names the exact M047 change targets (signal extraction, refresh/seeding path, percentile mechanism, freshness gating, or no change) instead of vague follow-up language.\n- Requirement coverage and degraded-access states are included so milestone closure remains truthful even when live refresh cannot run.",
-      "proof_level": "Integrated milestone report with named completeness checks for verdict presence, rationale quality, and M047 actionability.",
-      "integration_closure": "Provides the single completion surface that downstream milestone work can consume, linking S01 fixture truth and S02 calibration evidence into a stable decision contract without prematurely changing production behavior.",
-      "observability_impact": "Introduces final milestone-level status codes and summary fields that let operators rerun the audit, compare outcomes over time, and attach one explicit verdict artifact to milestone completion.",
+      "goal": "Ship one milestone-closeout proof surface that composes the existing xbmc fixture and calibration verifiers into an explicit keep/retune/replace verdict plus a structured M047 keep/change/replace contract, without changing live contributor-scoring behavior.",
+      "success_criteria": "- Add a canonical `verify:m046` command that preserves nested S01 fixture evidence and nested S02 calibration evidence in one integrated report.\n- Separate proof-harness success from the underlying `keep` / `retune` / `replace` verdict so the current truthful `replace` outcome still exits 0.\n- Emit a structured `m047ChangeContract` block naming which mechanisms to keep, change, or replace, with evidence and impacted surfaces rooted in current runtime code.\n- Keep human-readable output and `--json` output derived from the same report object with stable top-level check IDs and status codes.\n- Prove the integrated surface with `scripts/verify-m046.test.ts`, the shipped `verify:m046` command, the existing S01/S02 verifiers, and `bun run tsc --noEmit`.",
+      "proof_level": "final-assembly",
+      "integration_closure": "Consume `scripts/verify-m046-s01.ts`, `scripts/verify-m046-s02.ts`, `src/handlers/review.ts`, `src/slack/slash-command-handler.ts`, and `src/contributor/experience-contract.ts`; add `src/contributor/calibration-change-contract.ts`, `scripts/verify-m046.ts`, and the `verify:m046` package entrypoint so M046 closes with one explicit verdict surface and M047 can consume a concrete change contract.",
+      "observability_impact": "Expose stable top-level check IDs and status codes, nested fixture/calibration summaries, and an `m047ChangeContract` block through `bun run verify:m046` and `bun run verify:m046 -- --json`, so future agents can distinguish broken proof inputs from an inconvenient but truthful `replace` verdict.",
       "sequence": 3,
       "replan_triggered_at": null
     }
@@ -12501,6 +12499,101 @@
       "observability_impact": "Exposes stable verifier check IDs/status codes plus per-contributor live/intended diagnostics so future agents can tell whether failures come from fixture truth, evaluator assumptions, or verdict generation.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M046",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Added the reusable M047 calibration change-contract helper and pinned the current replace inventory with focused tests.",
+      "status": "complete",
+      "one_liner": "Added the reusable M047 calibration change-contract helper and pinned the current replace inventory with focused tests.",
+      "narrative": "Added a pure `buildCalibrationChangeContract` helper that converts the S02 calibration recommendation into a deterministic M047 keep/change/replace contract with stable mechanism ids, evidence strings, and impacted-surface identifiers. The emitted replace contract preserves the M045 contributor-experience vocabulary in a keep bucket, classifies the current stored-tier review and Slack consumer surfaces as change targets, and isolates the live `pr_authored`-only incremental scoring path as the explicit replace target. Added `CalibrationChangeContractError` with named codes for missing verdict/rationale, unsupported verdicts, missing impacted surfaces, duplicate mechanisms, and contradictory bucket assignments. Wrote focused regression tests that pin the current replace inventory, validate the referenced review/slack/experience source markers, and prove the negative paths. Exported the helper from `src/contributor/index.ts` and recorded the Bun unmatched-filter verification gotcha in `.gsd/KNOWLEDGE.md`.",
+      "verification_result": "Task-level verification passed with `bun test ./src/contributor/calibration-change-contract.test.ts` and `bun run tsc --noEmit`. Intermediate slice-level verification was also exercised: `bun test ./scripts/verify-m046.test.ts`, `bun run verify:m046`, `bun run verify:m046 -- --json`, and `bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json` all fail as expected because the integrated T02 proof surface does not exist yet. The broader test bundle command still exited 0 because Bun ignored the unmatched `./scripts/verify-m046.test.ts` filter while running the four existing files, so the missing integrated test was confirmed separately with the direct single-file command.",
+      "duration": "",
+      "completed_at": "2026-04-10T22:54:18.786Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "Integrated `verify:m046` artifacts (`scripts/verify-m046.test.ts` and the `verify:m046` package script) do not exist yet, so slice-level end-to-end verification remains partial until T02 lands.",
+      "key_files": [
+        "src/contributor/calibration-change-contract.ts",
+        "src/contributor/calibration-change-contract.test.ts",
+        "src/contributor/index.ts",
+        ".gsd/KNOWLEDGE.md",
+        ".gsd/milestones/M046/slices/S03/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "D083 — Represent the change contract as a pure verdict-filtered inventory with explicit malformed-input and contradiction validation."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M046\nkey_files:\n  - src/contributor/calibration-change-contract.ts\n  - src/contributor/calibration-change-contract.test.ts\n  - src/contributor/index.ts\n  - .gsd/KNOWLEDGE.md\n  - .gsd/milestones/M046/slices/S03/tasks/T01-SUMMARY.md\nkey_decisions:\n  - D083 — Represent the change contract as a pure verdict-filtered inventory with explicit malformed-input and contradiction validation.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-10T22:54:18.785Z\nblocker_discovered: false\n---\n\n# T01: Added the reusable M047 calibration change-contract helper and pinned the current replace inventory with focused tests.\n\n**Added the reusable M047 calibration change-contract helper and pinned the current replace inventory with focused tests.**\n\n## What Happened\n\nAdded a pure `buildCalibrationChangeContract` helper that converts the S02 calibration recommendation into a deterministic M047 keep/change/replace contract with stable mechanism ids, evidence strings, and impacted-surface identifiers. The emitted replace contract preserves the M045 contributor-experience vocabulary in a keep bucket, classifies the current stored-tier review and Slack consumer surfaces as change targets, and isolates the live `pr_authored`-only incremental scoring path as the explicit replace target. Added `CalibrationChangeContractError` with named codes for missing verdict/rationale, unsupported verdicts, missing impacted surfaces, duplicate mechanisms, and contradictory bucket assignments. Wrote focused regression tests that pin the current replace inventory, validate the referenced review/slack/experience source markers, and prove the negative paths. Exported the helper from `src/contributor/index.ts` and recorded the Bun unmatched-filter verification gotcha in `.gsd/KNOWLEDGE.md`.\n\n## Verification\n\nTask-level verification passed with `bun test ./src/contributor/calibration-change-contract.test.ts` and `bun run tsc --noEmit`. Intermediate slice-level verification was also exercised: `bun test ./scripts/verify-m046.test.ts`, `bun run verify:m046`, `bun run verify:m046 -- --json`, and `bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json` all fail as expected because the integrated T02 proof surface does not exist yet. The broader test bundle command still exited 0 because Bun ignored the unmatched `./scripts/verify-m046.test.ts` filter while running the four existing files, so the missing integrated test was confirmed separately with the direct single-file command.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/calibration-change-contract.test.ts` | 0 | ✅ pass | 78ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 7752ms |\n| 3 | `bun test ./scripts/verify-m046.test.ts` | 1 | ❌ fail | 7ms |\n| 4 | `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts` | 0 | ✅ pass | 215ms |\n| 5 | `bun run verify:m046` | 1 | ❌ fail | 2ms |\n| 6 | `bun run verify:m046 -- --json` | 1 | ❌ fail | 3ms |\n| 7 | `bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json` | 1 | ❌ fail | 257ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nIntegrated `verify:m046` artifacts (`scripts/verify-m046.test.ts` and the `verify:m046` package script) do not exist yet, so slice-level end-to-end verification remains partial until T02 lands.\n\n## Files Created/Modified\n\n- `src/contributor/calibration-change-contract.ts`\n- `src/contributor/calibration-change-contract.test.ts`\n- `src/contributor/index.ts`\n- `.gsd/KNOWLEDGE.md`\n- `.gsd/milestones/M046/slices/S03/tasks/T01-SUMMARY.md`\n",
+      "description": "Why: M047 needs a machine-readable keep/change/replace contract instead of prose, and the milestone verifier should derive that contract from one pure seam instead of hard-coding report text.\nDo: Add a pure `src/contributor/calibration-change-contract.ts` helper that converts the S02 recommendation plus current runtime seams into stable keep/change/replace entries with verdict, rationale, evidence strings, and impacted surfaces; export it from `src/contributor/index.ts`; and cover it with focused tests that pin the current `replace` inventory without touching the CLI.\nDone when: A reusable typed contract helper returns the current `replace` verdict with explicit keep/change/replace buckets, and focused unit tests prove the contract stays aligned with the live runtime surfaces M047 must address.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `scripts/verify-m046-s02.ts` recommendation shape | Fail fast if the verdict or rationale is missing rather than inventing contract buckets. | N/A — local code only. | Reject unsupported verdicts or missing rationale as contract-construction failures. |\n| `src/handlers/review.ts`, `src/slack/slash-command-handler.ts`, and `src/contributor/experience-contract.ts` runtime seams | Keep the contract grounded in current code paths; if those seams drift, fail tests rather than leaving stale M047 guidance. | N/A — local code only. | Treat missing impacted-surface evidence as a regression instead of silently dropping a keep/change/replace entry. |\n\n## Load Profile\n\n- **Shared resources**: local source modules and focused unit tests only.\n- **Per-operation cost**: one pure mapping over the small recommendation object plus a fixed set of evidence strings.\n- **10x breakpoint**: maintainability drift matters before compute, so keep the helper small, typed, and deterministic.\n\n## Negative Tests\n\n- **Malformed inputs**: missing verdict, empty rationale, unsupported verdict, or missing impacted surfaces.\n- **Error paths**: contradictory keep/change/replace entries or duplicate mechanisms fail tests instead of producing ambiguous contract output.\n- **Boundary conditions**: the current truthful `replace` verdict still includes non-empty keep and change buckets, and evidence ordering stays stable.\n\n## Steps\n\n1. Write failing unit tests for the change-contract helper that pin the current keep/change/replace inventory, evidence strings, and contradiction handling.\n2. Implement `src/contributor/calibration-change-contract.ts` as a pure typed helper that derives the M047 contract from the S02 recommendation while referencing the current runtime seams explicitly.\n3. Export the helper from `src/contributor/index.ts` and keep the file enduring rather than milestone-coded so M047 can reuse it directly.\n4. Re-run the focused tests and confirm the helper returns a stable `replace` contract with populated keep, change, and replace buckets.\n\n## Must-Haves\n\n- [ ] `src/contributor/calibration-change-contract.ts` emits a stable typed keep/change/replace contract rooted in the current runtime code.\n- [ ] Tests pin the current keep/change/replace mechanisms, evidence strings, and contradiction handling.\n- [ ] The helper is exported for reuse by the top-level verifier and downstream M047 work.",
+      "estimate": "75m",
+      "files": [
+        "src/contributor/calibration-change-contract.ts",
+        "src/contributor/calibration-change-contract.test.ts",
+        "src/contributor/index.ts",
+        "scripts/verify-m046-s02.ts",
+        "src/handlers/review.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/contributor/experience-contract.ts"
+      ],
+      "verify": "bun test ./src/contributor/calibration-change-contract.test.ts",
+      "inputs": [
+        "scripts/verify-m046-s02.ts",
+        "src/handlers/review.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/contributor/experience-contract.ts"
+      ],
+      "expected_output": [
+        "src/contributor/calibration-change-contract.ts",
+        "src/contributor/calibration-change-contract.test.ts",
+        "src/contributor/index.ts"
+      ],
+      "observability_impact": "Adds stable contract bucket names, evidence strings, and impacted-surface identifiers that the top-level verifier and future agents can inspect directly when the M047 handoff drifts.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M046",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Ship the integrated verify:m046 proof harness",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Why: The slice only closes when operators can run one command that composes S01 and S02 into a truthful milestone-level verdict plus the concrete M047 change contract.\nDo: Add `scripts/verify-m046.ts` and `scripts/verify-m046.test.ts`, evaluate S01 once, feed that exact report into S02 via the existing injection seam, preserve both nested reports intact, derive `m047ChangeContract`, add stable top-level consistency checks and status codes, render human and JSON output from one report object, and wire `verify:m046` in `package.json`.\nDone when: `bun run verify:m046` and `bun run verify:m046 -- --json` report the current truthful `replace` verdict plus the structured change contract, while malformed nested reports, count drift, missing recommendation, or contradictory contract state fail with named status codes.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `scripts/verify-m046-s01.ts` and `scripts/verify-m046-s02.ts` | Fail with named top-level status codes instead of inferring a verdict from broken prerequisites. | Reuse the existing bounded local proof behavior; do not add new retries or hidden network work. | Reject malformed nested reports, missing counts, or missing recommendation data as proof-surface failures. |\n| `src/contributor/calibration-change-contract.ts` | Treat missing or contradictory contract output as a top-level verifier failure. | N/A — pure local helper. | Reject empty buckets or duplicate mechanisms rather than rendering an ambiguous M047 contract. |\n| `package.json` script wiring | Keep one canonical `verify:m046` entrypoint so future slices do not reconstruct the composition flow ad hoc. | N/A — local config only. | Treat broken arg parsing or script drift as regression-test failures. |\n\n## Load Profile\n\n- **Shared resources**: one checked-in fixture snapshot, one S01 evaluation, one S02 evaluation against that same S01 report, and one top-level renderer.\n- **Per-operation cost**: one integrated proof pass plus report rendering in human or JSON mode.\n- **10x breakpoint**: duplicated prerequisite evaluation and report drift matter before compute, so preserve one S01 report object and one shared renderer.\n\n## Negative Tests\n\n- **Malformed inputs**: malformed nested S01 report, malformed nested S02 report, missing final recommendation, or contradictory `m047ChangeContract` output.\n- **Error paths**: retained/excluded count drift, missing verdict, and unknown CLI args all fail non-zero with named status codes.\n- **Boundary conditions**: the current truthful `replace` verdict exits 0, human and JSON output stay aligned, and retained/excluded counts agree across nested reports.\n\n## Steps\n\n1. Write failing tests for `scripts/verify-m046.ts` that pin report shape, top-level check IDs/status codes, truthful `replace` exit 0, malformed nested report failures, and canonical package-script wiring.\n2. Implement `scripts/verify-m046.ts` with report types, nested S01/S02 composition, one-shot S01 reuse via `_evaluateS01`, contract derivation, and shared human/JSON rendering.\n3. Add the `verify:m046` package script and keep the top-level report close to `verify:m045:s03` / `verify:m027:s04` composition patterns so downstream tooling can consume it mechanically.\n4. Run the focused verifier tests plus the shipped command in human and JSON modes, then rerun the full M046 regression bundle and `bun run tsc --noEmit`.\n\n## Must-Haves\n\n- [ ] `scripts/verify-m046.ts` returns one stable machine-readable report containing nested S01 and S02 evidence, a top-level verdict block, and `m047ChangeContract`.\n- [ ] The current truthful `replace` verdict exits 0; only broken proof surfaces or contradictory contract state exit non-zero.\n- [ ] Human-readable output and `--json` output come from one report object and stay pinned by regression tests.\n- [ ] `package.json` exposes one canonical `verify:m046` script entrypoint.",
+      "estimate": "90m",
+      "files": [
+        "scripts/verify-m046.ts",
+        "scripts/verify-m046.test.ts",
+        "package.json",
+        "scripts/verify-m046-s01.ts",
+        "scripts/verify-m046-s02.ts",
+        "src/contributor/calibration-change-contract.ts"
+      ],
+      "verify": "bun test ./scripts/verify-m046.test.ts && bun run verify:m046 && bun run verify:m046 -- --json && bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts && bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json && bun run tsc --noEmit",
+      "inputs": [
+        "src/contributor/calibration-change-contract.ts",
+        "scripts/verify-m046-s01.ts",
+        "scripts/verify-m046-s02.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m046.ts",
+        "scripts/verify-m046.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "Adds top-level check IDs/status codes, nested fixture/calibration summaries, and explicit contract diagnostics to `verify:m046` so future agents can tell broken proof inputs from a truthful but inconvenient verdict.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -13472,6 +13565,30 @@
       "decision": "How verify:m046:s02 should validate contributor truth and behave when the S01 prerequisite fails",
       "choice": "Use the S01 verifier as a prerequisite gate, compare retained/excluded truth against the checked-in manifest, keep snapshot inspection visible on prerequisite failure, and skip calibration evaluation until prerequisites pass",
       "rationale": "This preserves deterministic retained/excluded truth checks without hardcoding fixture identities in the verifier, keeps degraded but loadable snapshots inspectable for debugging, and prevents the operator-facing report from emitting a misleading keep/retune/replace verdict when the fixture contract is already broken.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 116,
+      "id": "D082",
+      "when_context": "M046/S03 planning",
+      "scope": "verification",
+      "decision": "How should M046/S03 publish the final calibration verdict and downstream M047 contract?",
+      "choice": "Ship a top-level `verify:m046` proof harness that composes S01 once, feeds that same prerequisite report into S02, keeps proof-harness success separate from the keep/retune/replace verdict, and derives a structured keep/change/replace M047 contract from a reusable pure helper.",
+      "rationale": "This keeps the milestone-closeout report honest about whether the proof surface is healthy while preserving the current truthful `replace` outcome as exit 0, avoids drift between the S01 and S02 evidence surfaces, and gives M047 a machine-consumable change contract instead of prose.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 117,
+      "id": "D083",
+      "when_context": "M046/S03/T01",
+      "scope": "pattern",
+      "decision": "How the M047 change contract is represented for milestone verification and downstream reuse",
+      "choice": "Represent the change contract as a pure typed inventory filtered by calibration verdict, with explicit validation for malformed recommendations, missing impacted surfaces, duplicate mechanisms, and contradictory bucket assignments.",
+      "rationale": "A pure helper keeps the milestone verifier and future M047 consumers on one deterministic seam, preserves stable keep/change/replace mechanism ids and evidence strings, and fails fast when the contract inventory drifts into ambiguity.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -17272,6 +17389,83 @@
       "verdict": "✅ pass",
       "duration_ms": 7624,
       "created_at": "2026-04-10T22:10:25.895Z"
+    },
+    {
+      "id": 347,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/calibration-change-contract.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 78,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 348,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7752,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 349,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun test ./scripts/verify-m046.test.ts",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 7,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 350,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 215,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 351,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 2,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 352,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046 -- --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 3,
+      "created_at": "2026-04-10T22:54:18.786Z"
+    },
+    {
+      "id": 353,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --json && bun run verify:m046:s02 -- --json && bun run verify:m046 -- --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 257,
+      "created_at": "2026-04-10T22:54:18.786Z"
     }
   ]
 }

@@ -199,3 +199,10 @@
 {"id":"df27a093-8bb8-467a-8f69-6c8bf5e00f8f","ts":"2026-04-10T21:59:02.238Z","severity":"warning","message":"[safety] file-change: src/contributor/xbmc-fixture-snapshot.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
 {"id":"4f551780-0220-4d01-a8a1-a006bd817894","ts":"2026-04-10T21:59:02.238Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
 {"id":"9636cf0c-e0dd-4a2e-80b6-ac0899434847","ts":"2026-04-10T21:59:02.323Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"e70665cc-83a1-426d-b5b4-e45191970c0d","ts":"2026-04-10T22:10:41.881Z","severity":"info","message":"Committed: feat: Shipped `verify:m046:s02` with stable per-contributor calibration…","source":"notify","read":false}
+{"id":"2b7afcb8-8190-4cb5-a7f2-3113b2fb99be","ts":"2026-04-10T22:10:42.136Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"282149dc-eb07-4b81-b820-1b551ac822e0","ts":"2026-04-10T22:22:12.306Z","severity":"info","message":"Auto-mode stopped — User requested stop. Session: $463.82 · 982.62M tokens · 1329 units","source":"notify","read":false}
+{"id":"a19aa763-f914-40d8-ad15-36f50c5c7d7b","ts":"2026-04-10T22:22:12.307Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":false}
+{"id":"fc81741d-b970-4160-99ea-b5a15800a798","ts":"2026-04-10T22:27:19.329Z","severity":"info","message":"Auto-mode started. Will loop through 2 milestones.","source":"notify","read":false}
+{"id":"4a7c70aa-eba0-4823-aed7-8f58b2670b8c","ts":"2026-04-10T22:27:19.334Z","severity":"info","message":"Pre-flight: 39 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"d46acf5b-1125-4c28-bd8d-2d8b5926223b","ts":"2026-04-10T22:44:28.674Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 33m of uncommitted changes","source":"notify","read":false}
