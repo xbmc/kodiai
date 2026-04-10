@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T20:48:20.873Z",
+  "exported_at": "2026-04-10T21:05:43.441Z",
   "milestones": [
     {
       "id": "M001",
@@ -12300,19 +12300,29 @@
       "milestone_id": "M046",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Ship the xbmc refresh/verify entrypoint and proof report",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Shipped `verify:m046:s01`, refreshed the checked-in xbmc snapshot through that CLI, and made refresh timestamps deterministic.",
+      "status": "complete",
+      "one_liner": "Shipped `verify:m046:s01`, refreshed the checked-in xbmc snapshot through that CLI, and made refresh timestamps deterministic.",
+      "narrative": "Replaced the placeholder verifier test with a real red-green spec, implemented `scripts/verify-m046-s01.ts` as the shipped refresh/verify proof harness, wired `verify:m046:s01` into `package.json`, and refreshed the checked-in xbmc snapshot through that final CLI path. The verifier now emits stable named checks for manifest validity, refresh execution, snapshot validity, curated sync, snapshot status, cohort coverage, provenance completeness, source availability, and alias diagnostics in both human-readable and JSON forms. While running the full slice verification suite, I found that `refreshXbmcFixtureSnapshot()` still defaulted `generatedAt` to wall-clock time, which caused unstable snapshot bytes; I fixed that root cause by deriving the timestamp deterministically from provenance evidence and then reran the refresh/verify flow to regenerate the checked-in snapshot.",
+      "verification_result": "Verified the slice test bundle, both shipped verifier modes, and a clean typecheck. `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts` passed with 21/21 tests green. `bun run verify:m046:s01 -- --json` passed against the final checked-in snapshot. `bun run verify:m046:s01 -- --refresh --json` rebuilt `fixtures/contributor-calibration/xbmc-snapshot.json` through the shipped entrypoint and then re-verified it successfully. `bun run tsc --noEmit` exited 0.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-10T21:05:43.414Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Full slice verification exposed a pre-existing nondeterministic `generatedAt` bug in `src/contributor/xbmc-fixture-refresh.ts`; I fixed it because the slice contract requires stable checked-in refresh output.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m046-s01.ts",
+        "scripts/verify-m046-s01.test.ts",
+        "src/contributor/xbmc-fixture-refresh.ts",
+        "fixtures/contributor-calibration/xbmc-snapshot.json",
+        "package.json",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Derive xbmc snapshot `generatedAt` from the latest provenance `observedAt` timestamp, with `curatedAt` fallback, instead of wall-clock time.",
+        "Emit one stable verifier report with explicit `check_ids`/`status_code` values across human and JSON modes so downstream slices can consume the same proof surface programmatically."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M046\nkey_files:\n  - scripts/verify-m046-s01.ts\n  - scripts/verify-m046-s01.test.ts\n  - src/contributor/xbmc-fixture-refresh.ts\n  - fixtures/contributor-calibration/xbmc-snapshot.json\n  - package.json\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Derive xbmc snapshot `generatedAt` from the latest provenance `observedAt` timestamp, with `curatedAt` fallback, instead of wall-clock time.\n  - Emit one stable verifier report with explicit `check_ids`/`status_code` values across human and JSON modes so downstream slices can consume the same proof surface programmatically.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-10T21:05:43.413Z\nblocker_discovered: false\n---\n\n# T03: Shipped `verify:m046:s01`, refreshed the checked-in xbmc snapshot through that CLI, and made refresh timestamps deterministic.\n\n**Shipped `verify:m046:s01`, refreshed the checked-in xbmc snapshot through that CLI, and made refresh timestamps deterministic.**\n\n## What Happened\n\nReplaced the placeholder verifier test with a real red-green spec, implemented `scripts/verify-m046-s01.ts` as the shipped refresh/verify proof harness, wired `verify:m046:s01` into `package.json`, and refreshed the checked-in xbmc snapshot through that final CLI path. The verifier now emits stable named checks for manifest validity, refresh execution, snapshot validity, curated sync, snapshot status, cohort coverage, provenance completeness, source availability, and alias diagnostics in both human-readable and JSON forms. While running the full slice verification suite, I found that `refreshXbmcFixtureSnapshot()` still defaulted `generatedAt` to wall-clock time, which caused unstable snapshot bytes; I fixed that root cause by deriving the timestamp deterministically from provenance evidence and then reran the refresh/verify flow to regenerate the checked-in snapshot.\n\n## Verification\n\nVerified the slice test bundle, both shipped verifier modes, and a clean typecheck. `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts` passed with 21/21 tests green. `bun run verify:m046:s01 -- --json` passed against the final checked-in snapshot. `bun run verify:m046:s01 -- --refresh --json` rebuilt `fixtures/contributor-calibration/xbmc-snapshot.json` through the shipped entrypoint and then re-verified it successfully. `bun run tsc --noEmit` exited 0.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts` | 0 | ✅ pass | 178ms |\n| 2 | `bun run verify:m046:s01 -- --json` | 0 | ✅ pass | 112ms |\n| 3 | `bun run verify:m046:s01 -- --refresh --json` | 0 | ✅ pass | 10463ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 7619ms |\n\n## Deviations\n\nFull slice verification exposed a pre-existing nondeterministic `generatedAt` bug in `src/contributor/xbmc-fixture-refresh.ts`; I fixed it because the slice contract requires stable checked-in refresh output.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m046-s01.ts`\n- `scripts/verify-m046-s01.test.ts`\n- `src/contributor/xbmc-fixture-refresh.ts`\n- `fixtures/contributor-calibration/xbmc-snapshot.json`\n- `package.json`\n- `.gsd/KNOWLEDGE.md`\n",
       "description": "Complete the slice by exposing one operator-facing entrypoint that refreshes and verifies the checked-in fixture pack. The CLI should support human-readable and JSON output, bounded live refresh through the collector, and explicit non-zero failures when coverage, provenance, normalization, or source-availability guarantees break. Wire a package script so S02 can call the same command, then refresh the checked-in snapshot through the final path so the demo is true without manual JSON surgery.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Verifier CLI/report assembly | Emit a named failing `status_code` and keep JSON/human output structurally valid. | Keep refresh timeouts bounded and report the source as unavailable instead of hanging. | Reject malformed snapshot/manifest content as a verifier failure with actionable diagnostics. |\n| Package script wiring in `package.json` | Fix the entrypoint path instead of telling later slices to run the script ad hoc. | N/A — local config only. | Treat mismatched CLI args/output modes as regression-test failures. |\n| Checked-in snapshot + manifest pair | Fail when coverage/provenance drift appears instead of silently passing stale data. | N/A — file inputs only. | Detect manifest/snapshot mismatches and fail non-zero with the exact missing coverage or provenance field. |\n\n## Load Profile\n\n- **Shared resources**: the checked-in fixture files plus one bounded live refresh pass.\n- **Per-operation cost**: one verifier script, one test file, one package script, and one snapshot refresh.\n- **10x breakpoint**: verbose diagnostics becoming unreadable; keep check IDs and status codes concise and stable.\n\n## Negative Tests\n\n- **Malformed inputs**: corrupted snapshot JSON, missing cohort coverage, missing provenance arrays, and alias collisions reported by the refresh module.\n- **Error paths**: missing GitHub env/install, refresh source unavailability, and mismatched manifest/snapshot counts.\n- **Boundary conditions**: `--json` and human-readable output both expose the same verdicts, and `--refresh` rewrites the snapshot before verifying it.\n\n## Steps\n\n1. Write failing verifier tests that pin human-readable output, JSON structure, named check IDs/status codes, and non-zero failures for coverage/provenance drift.\n2. Implement `scripts/verify-m046-s01.ts` with `--json`, `--refresh`, `--repo`, and optional `--workspace` support using the refresh module and checked-in fixture files as the proof surfaces.\n3. Wire `verify:m046:s01` into `package.json`, then run the final refresh path to regenerate the checked-in snapshot through the shipped CLI.\n4. Re-run verifier tests, human/json CLI modes, and typecheck so the slice ends with one durable proof command.\n\n## Must-Haves\n\n- [ ] `bun run verify:m046:s01 -- --json` verifies the checked-in fixture pack without rewriting it.\n- [ ] `bun run verify:m046:s01 -- --refresh --json` rebuilds the snapshot and then verifies it.\n- [ ] Human and JSON output surface retained/excluded counts, cohort coverage, provenance completeness, and source availability with stable check IDs/status codes.",
       "estimate": "90m",
       "files": [
@@ -13238,6 +13248,18 @@
       "decision": "How should M046/S01 persist xbmc contributor fixture truth for downstream evaluation?",
       "choice": "Use a checked-in fixture pack under `fixtures/contributor-calibration/` with a human-curated manifest plus a generated snapshot refreshed and verified by `verify:m046:s01`.",
       "rationale": "Separating the curated manifest from the generated snapshot keeps alias/exclusion decisions explicit, preserves machine-readable provenance for every retained sample, and gives S02 a deterministic offline corpus that can still be refreshed from live xbmc evidence when needed.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 110,
+      "id": "D076",
+      "when_context": "M046/S01/T03",
+      "scope": "data",
+      "decision": "How xbmc fixture snapshot generatedAt is derived during refresh",
+      "choice": "Derive generatedAt deterministically from the latest provenance record observedAt timestamp, with manifest curatedAt as the fallback, instead of using the current wall-clock time.",
+      "rationale": "The fixture pack is a checked-in proof surface. Deterministic timestamps prevent refresh-only drift, preserve byte-stable snapshots when evidence is unchanged, and satisfy the pinned refresh contract tests without weakening provenance fidelity.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -16851,6 +16873,50 @@
       "verdict": "✅ pass",
       "duration_ms": 9984,
       "created_at": "2026-04-10T20:48:20.846Z"
+    },
+    {
+      "id": 330,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M046",
+      "command": "bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 178,
+      "created_at": "2026-04-10T21:05:43.414Z"
+    },
+    {
+      "id": 331,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 112,
+      "created_at": "2026-04-10T21:05:43.414Z"
+    },
+    {
+      "id": 332,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M046",
+      "command": "bun run verify:m046:s01 -- --refresh --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10463,
+      "created_at": "2026-04-10T21:05:43.414Z"
+    },
+    {
+      "id": 333,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M046",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7619,
+      "created_at": "2026-04-10T21:05:43.414Z"
     }
   ]
 }

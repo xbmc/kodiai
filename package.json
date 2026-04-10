@@ -50,6 +50,7 @@
     "verify:m044": "bun scripts/verify-m044-s01.ts",
     "verify:m045:s01": "bun scripts/verify-m045-s01.ts",
     "verify:m045:s03": "bun scripts/verify-m045-s03.ts",
+    "verify:m046:s01": "bun scripts/verify-m046-s01.ts",
     "verify:m044:s01": "bun scripts/verify-m044-s01.ts"
   },
   "devDependencies": {

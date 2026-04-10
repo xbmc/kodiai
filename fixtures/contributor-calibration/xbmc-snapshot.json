@@ -4,7 +4,7 @@
   "curatedAt": "2026-04-10T20:00:00.000Z",
   "manifestPath": "fixtures/contributor-calibration/xbmc-manifest.json",
   "snapshotPath": "fixtures/contributor-calibration/xbmc-snapshot.json",
-  "generatedAt": "2026-04-10T20:47:03.309Z",
+  "generatedAt": "2026-04-10T20:42:03.000Z",
   "refreshCommand": "bun run verify:m046:s01 -- --refresh --json",
   "status": "ready",
   "retained": [

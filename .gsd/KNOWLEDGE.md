@@ -894,3 +894,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When a product contract says a signal is absent by design, project that absence as `null`/`undefined` through the downstream seam and let the consumer omit the feature entirely. Do not substitute placeholder generic text just to keep an old API shape alive — that recreates drift and makes tests depend on accidental wording.
 
 **Established in:** M045/S02/T01 (`src/contributor/experience-contract.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/knowledge/retrieval-query.ts`).
+
+---
+
+## Checked-in xbmc snapshots must derive `generatedAt` from evidence, not wall clock (M046/S01)
+
+**Context:** `src/contributor/xbmc-fixture-refresh.ts` writes a checked-in proof artifact. If `generatedAt` comes from `new Date().toISOString()`, two refreshes with identical evidence produce different snapshot bytes, which breaks the deterministic refresh contract and creates meaningless drift in `fixtures/contributor-calibration/xbmc-snapshot.json`.
+
+**Rule:** When `refreshXbmcFixtureSnapshot()` is called without an explicit `generatedAt`, derive it deterministically from the latest non-null `provenanceRecords[].observedAt` timestamp across retained and excluded contributors, with `manifest.curatedAt` as the fallback when no observed timestamps exist. Do not reintroduce wall-clock defaulting for checked-in fixture artifacts.
+
+**Established in:** M046/S01/T03 (`src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`).

@@ -167,7 +167,6 @@ export async function refreshXbmcFixtureSnapshot(
 ): Promise<XbmcFixtureRefreshResult> {
   const manifestPath = options.manifestPath ?? DEFAULT_MANIFEST_PATH;
   const snapshotPath = options.snapshotPath ?? DEFAULT_SNAPSHOT_PATH;
-  const generatedAt = options.generatedAt ?? new Date().toISOString();
   const refreshCommand = options.refreshCommand ?? DEFAULT_REFRESH_COMMAND;
   const githubTimeoutMs = options.githubTimeoutMs ?? DEFAULT_GITHUB_TIMEOUT_MS;
   const loadManifest = options.loadManifest ?? loadFixtureManifest;
@@ -221,6 +220,13 @@ export async function refreshXbmcFixtureSnapshot(
     });
     excluded.push(snapshotContributor as XbmcExcludedContributorSnapshot);
   }
+
+  const generatedAt = options.generatedAt
+    ?? deriveDeterministicGeneratedAt({
+      curatedAt: manifest.curatedAt,
+      retained,
+      excluded,
+    });
 
   const sortedSnapshot = sortSnapshot({
     fixtureSetVersion: manifest.fixtureSetVersion,
@@ -699,6 +705,25 @@ function sortSnapshot(snapshot: XbmcFixtureSnapshot): XbmcFixtureSnapshot {
       };
     }),
   };
+}
+
+function deriveDeterministicGeneratedAt(params: {
+  curatedAt: string;
+  retained: XbmcRetainedContributorSnapshot[];
+  excluded: XbmcExcludedContributorSnapshot[];
+}): string {
+  const observedTimestamps = [...params.retained, ...params.excluded]
+    .flatMap((entry) => entry.provenanceRecords)
+    .map((record) => record.observedAt)
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value));
+
+  if (observedTimestamps.length === 0) {
+    return params.curatedAt;
+  }
+
+  return new Date(Math.max(...observedTimestamps)).toISOString();
 }
 
 function dedupeFailures(

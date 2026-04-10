@@ -63,7 +63,7 @@
   - Do: Implement the refresh module that reads the curated manifest, collects GitHub evidence through the existing app seam, optionally enriches from `tmp/xbmc`, normalizes aliases, and writes stable retained/excluded snapshot sections with machine-readable provenance and explicit source-availability reporting.
   - Verify: `bun test ./src/contributor/xbmc-fixture-refresh.test.ts && test -s fixtures/contributor-calibration/xbmc-snapshot.json`
   - Done when: repeated refresh runs produce a stable checked-in snapshot, exclusions remain visible with reason codes, and missing GitHub/local-git sources surface explicitly instead of silently shrinking provenance.
-- [ ] **T03: Ship the xbmc refresh/verify entrypoint and proof report** `est:90m`
+- [x] **T03: Ship the xbmc refresh/verify entrypoint and proof report** `est:90m`
   - Why: Downstream slices need one durable command that refreshes and verifies the fixture pack instead of reconstructing snapshot checks ad hoc.
   - Files: `scripts/verify-m046-s01.ts`, `scripts/verify-m046-s01.test.ts`, `package.json`, `fixtures/contributor-calibration/xbmc-manifest.json`, `fixtures/contributor-calibration/xbmc-snapshot.json`
   - Do: Build a human/JSON verifier with `--refresh` support, stable check IDs/status codes, explicit non-zero failures for coverage/provenance/normalization drift, wire `verify:m046:s01` into `package.json`, and regenerate the checked-in snapshot through the shipped CLI.
