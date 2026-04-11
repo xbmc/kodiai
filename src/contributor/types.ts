@@ -13,6 +13,7 @@ export type ContributorProfile = {
   createdAt: Date;
   updatedAt: Date;
   lastScoredAt: Date | null;
+  trustMarker?: string | null;
 };
 
 export type ContributorExpertise = {

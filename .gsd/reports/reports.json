@@ -35,6 +35,22 @@
       "doneMilestones": 37,
       "totalMilestones": 39,
       "phase": "pre-planning"
+    },
+    {
+      "filename": "M046-2026-04-10T23-48-31.html",
+      "generatedAt": "2026-04-10T23:48:31.042Z",
+      "milestoneId": "M046",
+      "milestoneTitle": "Contributor Tier Calibration and Fixture Audit",
+      "label": "M046: Contributor Tier Calibration and Fixture Audit",
+      "kind": "milestone",
+      "totalCost": 471.99836029999994,
+      "totalTokens": 997977140,
+      "totalDuration": 149888029,
+      "doneSlices": 185,
+      "totalSlices": 185,
+      "doneMilestones": 38,
+      "totalMilestones": 39,
+      "phase": "pre-planning"
     }
   ]
 }

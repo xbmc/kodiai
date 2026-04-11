@@ -974,3 +974,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When building milestone-closeout proof harnesses, preserve the nested prerequisite reports intact, add dedicated top-level checks for composition health, and treat `keep`/`retune`/`replace` as machine-readable verdict data. Reserve non-zero exits for malformed nested evidence, count drift, missing recommendations, or contradictory change-contract state — not for a truthful negative recommendation.
 
 **Established in:** M046/S03/T02 (`scripts/verify-m046.ts`, `src/contributor/calibration-change-contract.ts`).
+
+---
+
+## `bun test` path lists are not proof that every requested file exists or ran (M047/S01)
+
+**Context:** While executing M047/S01/T01, the slice-level bundle `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` exited 0 even though `src/contributor/review-author-resolution.test.ts` and `scripts/verify-m047-s01.test.ts` did not exist yet. Bun simply ran the matching files and ignored the missing filters.
+
+**Rule:** When a slice verification command names multiple test files, explicitly probe any expected new file paths (and related package scripts) before treating the bundle as full coverage. A passing multi-path `bun test` command only proves the matched files passed; it does not prove every requested path existed or ran.
+
+**Established in:** M047/S01/T01 (`bun test` bundle behavior plus explicit missing-path checks for `src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`, and `package.json` script wiring).

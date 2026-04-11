@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-10T23:47:08.838Z",
+  "exported_at": "2026-04-11T00:31:52.089Z",
   "milestones": [
     {
       "id": "M001",
@@ -1593,22 +1593,65 @@
     },
     {
       "id": "M047",
-      "title": "",
-      "status": "queued",
+      "title": "Contributor Experience Redesign and Calibration Rollout",
+      "status": "active",
       "depends_on": [],
       "created_at": "2026-04-08T23:08:12.693Z",
       "completed_at": null,
-      "vision": "",
-      "success_criteria": [],
-      "key_risks": [],
-      "proof_strategy": [],
-      "verification_contract": "",
-      "verification_integration": "",
-      "verification_operational": "",
-      "verification_uat": "",
-      "definition_of_done": [],
-      "requirement_coverage": "",
-      "boundary_map_markdown": ""
+      "vision": "Turn the M045 contributor-experience contract and M046 replace verdict into shipped behavior by making persisted contributor state trustworthy, rolling that shared resolution through GitHub review, Slack, retrieval, and profile-plumbing surfaces, and proving cross-surface coherence end to end.",
+      "success_criteria": [
+        "GitHub review behavior, Review Details, retrieval query shaping, and Slack profile output all resolve from one shipped contributor model rather than mixed raw-tier semantics.",
+        "Linked-but-unscored and legacy/pre-M047 persisted profiles fail open truthfully instead of surfacing `profile-backed` newcomer guidance.",
+        "The replacement calibrated/full-signal producer path yields the M046-expected outcomes for the retained fixture set while preserving explicit degradation and freshness reporting when evidence is stale or incomplete.",
+        "A canonical `verify:m047` proof surface demonstrates cross-surface coherence and the absence of the old mixed-taxonomy regression."
+      ],
+      "key_risks": [
+        {
+          "risk": "Persisted contributor rows may continue to collapse linked, legacy, and calibrated states into the same outward newcomer semantics.",
+          "whyItMatters": "If the trust boundary stays ambiguous, every downstream surface can look coherent while still being wrong."
+        },
+        {
+          "risk": "Replacing the `pr_authored`-only live producer may still happen too late in the request lifecycle to affect the review being published.",
+          "whyItMatters": "A post-review recalculation would preserve the current blind spot where the shipped review uses stale or placeholder contributor truth."
+        },
+        {
+          "risk": "Slack/profile and retrieval consumers may drift if the rollout fixes only the review resolver.",
+          "whyItMatters": "R048 fails if one surface keeps reading raw stored tiers while another surface uses the new contract."
+        },
+        {
+          "risk": "The final verifier could accidentally re-use helper logic and miss real source-resolution regressions.",
+          "whyItMatters": "Copy-level proof is not enough for this milestone; the operator surface must catch runtime truth-source mistakes."
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "Persisted contributor rows do not currently encode trust or rollout version, so linked or legacy rows can masquerade as scored newcomer guidance.",
+          "retireIn": "S01",
+          "whatWillBeProven": "The live review resolver can distinguish linked-unscored, legacy, calibrated, opted-out, and degraded states before publishing prompt or Review Details behavior."
+        },
+        {
+          "riskOrUnknown": "Downstream Slack and retrieval surfaces may keep consuming raw stored tiers even after review resolution is fixed.",
+          "retireIn": "S02",
+          "whatWillBeProven": "Slack/profile continuity and retrieval hints use the same contract/resolution outputs as the GitHub review surface with no raw-tier leakage."
+        },
+        {
+          "riskOrUnknown": "Existing contract renderers can stay green while runtime source resolution is still wrong.",
+          "retireIn": "S03",
+          "whatWillBeProven": "An operator-facing integrated verifier catches source-resolution regressions using real stored-profile, cache, and fallback scenarios while preserving nested M045/M046 evidence."
+        }
+      ],
+      "verification_contract": "Contract proof for M047 must exercise real stored contributor states and resolver logic, not only direct projections from `experience-contract.ts`. Slice completion requires mechanical evidence that persisted state -> contract -> surface behavior stays truthful across trusted, unscored, legacy, degraded, opt-out, and coarse-fallback paths.",
+      "verification_integration": "Milestone closeout requires one scenario matrix to reach the shipped review prompt, Review Details, retrieval hint shaping, Slack/profile output, and contributor-profile plumbing without raw-tier drift. `verify:m047` should compose the upstream M045 and M046 proof surfaces rather than replacing them.",
+      "verification_operational": "The rollout must preserve fail-open behavior when contributor data is missing, stale, malformed, or not yet recalibrated, and it must emit named diagnostics for legacy, unscored, degraded, and fallback resolution paths.",
+      "verification_uat": "Exercise representative scenarios for linked-but-unscored, calibrated retained contributor, stale or degraded contributor, opt-out, and coarse-fallback cache states. Confirm that the observable GitHub review surfaces, Slack profile output, and retrieval hint behavior all match the same contributor-experience contract.",
+      "definition_of_done": [
+        "No in-scope tier-related surface treats a merely linked or legacy profile row as trustworthy `profile-backed` guidance.",
+        "GitHub review, Review Details, retrieval hints, Slack profile output, and continuity messaging all consume one contributor-state interpretation.",
+        "`verify:m047`, its targeted tests, and the relevant existing verifier suites pass with human and JSON outputs aligned.",
+        "Active requirements relevant to this milestone are explicitly mapped to owning/supporting slices and the milestone decisions are recorded in `.gsd/DECISIONS.md`."
+      ],
+      "requirement_coverage": "- R046 (active): supported by S01, S02, and S03. S01 re-establishes truthful review-time resolution on the M045 contract, S02 extends the same contract across Slack/retrieval/profile continuity surfaces, and S03 proves the shipped surfaces reflect that contract coherently.\n- R048 (active): primary closeout requirement for this milestone. S01 fixes producer truth and persisted trust semantics, S02 rolls that truth through every remaining live consumer surface, and S03 provides the end-to-end runtime coherence proof required for validation.\n- No additional active requirements are directly expanded by M047; previously validated M042/M045/M046 contributor requirements remain continuity constraints exercised by slice verification rather than reopened scope.",
+      "boundary_map_markdown": "| Boundary | Stable interface | What changes in M047 | Closed by |\n| --- | --- | --- | --- |\n| Persisted contributor state | `contributor_profiles` + profile-store API | Add trust/version semantics that distinguish linked-unscored, legacy, calibrated, and degraded rows | S01 |\n| Review-time resolution | `resolveAuthorTier()` -> `ContributorExperienceContract` | Stop trusting raw stored tiers as truth; make the review entrypoint consume trustworthy calibrated state or fail open | S01 |\n| Shared contract seam | `src/contributor/experience-contract.ts` projections | Keep M045 vocabulary stable while feeding it better source-resolution inputs | S01, S02 |\n| Downstream consumers | Slack profile/link/opt flows and retrieval hints | Remove raw-tier consumption and align every consumer with the shared contract/resolution seam | S02 |\n| Operator proof surface | milestone verifier commands | Add `verify:m047` that composes M045/M046 proof with real runtime source-resolution scenarios | S03 |"
     }
   ],
   "slices": [
@@ -6070,6 +6113,71 @@
       "proof_level": "final-assembly",
       "integration_closure": "Consume `scripts/verify-m046-s01.ts`, `scripts/verify-m046-s02.ts`, `src/handlers/review.ts`, `src/slack/slash-command-handler.ts`, and `src/contributor/experience-contract.ts`; add `src/contributor/calibration-change-contract.ts`, `scripts/verify-m046.ts`, and the `verify:m046` package entrypoint so M046 closes with one explicit verdict surface and M047 can consume a concrete change contract.",
       "observability_impact": "Expose stable top-level check IDs and status codes, nested fixture/calibration summaries, and an `m047ChangeContract` block through `bun run verify:m046` and `bun run verify:m046 -- --json`, so future agents can distinguish broken proof inputs from an inconvenient but truthful `replace` verdict.",
+      "sequence": 3,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M047",
+      "id": "S01",
+      "title": "S01",
+      "status": "pending",
+      "risk": "High — linked-but-unscored and legacy profile rows currently masquerade as trustworthy `profile-backed` newcomer guidance inside the live review entrypoint.",
+      "depends": [],
+      "demo": "A review-path scenario using real stored profile states shows linked-but-unscored and legacy profiles fail open instead of surfacing `profile-backed` newcomer guidance, while a calibrated retained contributor drives the shipped prompt and Review Details coherently on the GitHub review surface.",
+      "created_at": "2026-04-11T00:03:51.454Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Make GitHub review-time contributor resolution truthful by distinguishing trustworthy calibrated contributor-profile rows from linked-but-unscored, legacy, stale, or malformed persisted rows, then proving the live review entrypoint falls open to coarse/generic behavior unless a retained contributor profile is explicitly trustworthy.",
+      "success_criteria": "Persist explicit contributor-profile trust metadata so review-time code can distinguish linked-unscored, legacy, stale, malformed, and M047-calibrated rows without inferring trust from `overall_tier` alone.\nOnly trustworthy calibrated contributor profiles may resolve to `profile-backed`; untrusted stored rows must fall through to author-cache/search/generic behavior instead of masquerading as newcomer truth.\nGitHub review prompt shaping, Review Details, and author-classification logs must stay coherent when the stored profile is linked-unscored, legacy, stale, opted-out, calibrated, or contradicted by low-confidence cache data.\n`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`\n`bun run verify:m045:s01 && bun run verify:m047:s01`\n`bun run tsc --noEmit`",
+      "proof_level": "integration proof on deterministic GitHub review-path scenarios seeded from real stored contributor-profile row states",
+      "integration_closure": "- Upstream surfaces consumed: `src/db/migrations/011-contributor-profiles.sql`, `src/contributor/profile-store.ts`, `src/contributor/expertise-scorer.ts`, `src/contributor/experience-contract.ts`, `src/handlers/review.ts`, and the existing `verify:m045:s01` contract harness.\n- New wiring introduced in this slice: a persisted contributor-profile trust boundary feeds review-time source resolution before prompt shaping and Review Details rendering.\n- What remains before the milestone is truly usable end-to-end: S02 must roll the same trust-aware resolution through Slack/profile continuity and retrieval surfaces; S03 must compose this runtime resolver proof into `verify:m047`.",
+      "observability_impact": "- `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`\n- `bun run verify:m045:s01 && bun run verify:m047:s01`\n- `bun run tsc --noEmit`",
+      "sequence": 1,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M047",
+      "id": "S02",
+      "title": "Contract-first Slack, retrieval, and profile continuity rollout",
+      "status": "pending",
+      "risk": "Medium — downstream raw-tier consumers remain on Slack/profile surfaces and route-level continuity can drift even if the review resolver is fixed.",
+      "depends": [
+        "S01"
+      ],
+      "demo": "The same contributor state produces consistent `/kodiai profile`, link/opt continuity messaging where applicable, and review retrieval hints with no raw-tier leakage or false 'active profile-backed' claims.",
+      "created_at": "2026-04-11T00:03:51.454Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Roll the S01 truth boundary through Slack profile/link/opt surfaces, retrieval hint shaping, and contributor-profile update plumbing so all live tier-related consumers share one contributor-experience interpretation.",
+      "success_criteria": "- Slack profile output resolves contributor status from the trusted contract/resolution path rather than trusting raw `profile.overallTier` alone.\n- Link, opt-in, and opt-out continuity text stays truthful about whether contributor-specific guidance is active, pending calibration, generic, or degraded.\n- Retrieval query shaping continues to consume only contract-derived hints, with regression coverage proving parity with review-time contributor behavior.\n- Migration, compatibility, or backfill handling prevents mixed legacy/new semantics from surfacing across persisted contributor rows during rollout.",
+      "proof_level": "Route and handler tests plus source-state scenario coverage across Slack and retrieval seams using migrated profile rows and representative calibrated, unscored, degraded, and fallback states.",
+      "integration_closure": "This slice closes the live consumer rollout on the shared resolution seam so every in-scope tier-related surface reads the same contributor-state truth.",
+      "observability_impact": "Expose logs or helper diagnostics that reveal legacy, unscored, calibrated, and degraded resolution paths for Slack/profile consumers and any rollout/backfill transitions.",
+      "sequence": 2,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M047",
+      "id": "S03",
+      "title": "Integrated M047 coherence verifier",
+      "status": "pending",
+      "risk": "Medium — the milestone can look complete while still hiding runtime source-resolution drift unless the assembled system is proven through one operator-facing proof surface.",
+      "depends": [
+        "S01",
+        "S02"
+      ],
+      "demo": "`bun run verify:m047 -- --json` passes and shows linked-unscored, calibrated-retained, stale/degraded, opt-out, and coarse-fallback scenarios resolving consistently across review, Review Details, retrieval hints, Slack/profile output, and contributor-model plumbing while preserving nested M045/M046 evidence.",
+      "created_at": "2026-04-11T00:03:51.455Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Ship the canonical operator-facing proof surface for M047 so rollout acceptance depends on real runtime source resolution and cross-surface coherence, not copy-only contract projections.",
+      "success_criteria": "- A new `verify:m047` command composes upstream `verify:m045:s03` and `verify:m046` evidence instead of duplicating or hiding them.\n- The verifier exercises real stored-profile, cache, and fallback inputs and catches the old mixed-taxonomy / false-profile-backed-newcomer regression.\n- Human and JSON output stay aligned with stable check ids, named failure diagnostics, and fixture-backed calibration expectations.\n- At least one representative end-to-end scenario proves the assembled system no longer exhibits the old mismatched-surface behavior.",
+      "proof_level": "Operator-facing integrated verifier plus targeted tests. Proof is mechanical, repeatable, and grounded in runtime source-resolution scenarios rather than direct projection helpers.",
+      "integration_closure": "This slice retires milestone-closeout risk by proving the assembled review, Slack, retrieval, and persistence surfaces no longer drift by contributor taxonomy or trust semantics.",
+      "observability_impact": "Add named verifier diagnostics for trust-boundary misses, Slack drift, retrieval drift, legacy-row leakage, and calibration-fixture mismatch.",
       "sequence": 3,
       "replan_triggered_at": null
     }
@@ -12602,6 +12710,153 @@
       "observability_impact": "Adds top-level check IDs/status codes, nested fixture/calibration summaries, and explicit contract diagnostics to `verify:m046` so future agents can tell broken proof inputs from a truthful but inconvenient verdict.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Added persisted contributor-profile trust markers and trust-state classification so linked-unscored or legacy rows stay untrusted until a fresh scored update stamps the M047 marker.",
+      "status": "complete",
+      "one_liner": "Added persisted contributor-profile trust markers and trust-state classification so linked-unscored or legacy rows stay untrusted until a fresh scored update stamps the M047 marker.",
+      "narrative": "Added migration 037 to persist a nullable versioned `trust_marker` on `contributor_profiles`, then introduced `src/contributor/profile-trust.ts` as the pure persisted-row trust boundary for `linked-unscored`, `legacy`, `calibrated`, `stale`, and `malformed` states. `createContributorProfileStore(...)` now maps the new column, fails fast when the migrated column is missing, and stamps `m047-calibrated-v1` whenever `updateTier(...)` writes a fresh score so newly linked placeholder rows remain visibly untrusted while freshly scored rows are distinguishable from legacy data. Added focused helper tests plus DB-backed store tests that run migrations, verify the new column exists, prove link-created newcomer rows stay untrusted, and prove `updateTier(...)` stamps the current marker. The store-test harness now uses `TEST_DATABASE_URL` or the localhost default instead of the repo’s remote `DATABASE_URL`, avoiding verification hangs against the unreachable Azure database.",
+      "verification_result": "`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts` passed (19/19). The broader slice-level `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` command also exited 0, but explicit path checks confirmed Bun ignored the still-missing future-file filters (`src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`). `bun run verify:m045:s01` passed. `bun run verify:m047:s01` failed because the package script is not present yet, which is expected until T03 ships the verifier. `bun run tsc --noEmit` passed.",
+      "duration": "",
+      "completed_at": "2026-04-11T00:31:52.061Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "The downstream slice proof surfaces are intentionally not present yet: `src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`, and package script `verify:m047:s01` remain for T02/T03. Because Bun can ignore missing file filters when other test paths match, the slice-level multi-path `bun test` bundle is not by itself proof that those future files exist.",
+      "key_files": [
+        "src/db/migrations/037-contributor-profile-trust.sql",
+        "src/db/migrations/037-contributor-profile-trust.down.sql",
+        "src/contributor/profile-trust.ts",
+        "src/contributor/profile-trust.test.ts",
+        "src/contributor/profile-store.ts",
+        "src/contributor/profile-store.test.ts",
+        "src/contributor/types.ts",
+        "src/contributor/index.ts",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Persist one nullable versioned `trust_marker` (`m047-calibrated-v1`) on `contributor_profiles` and derive trust from that marker plus `lastScoredAt` instead of inferring trust from raw `overall_tier`.",
+        "Fail fast on store reads when the migrated `trust_marker` column is absent, but classify null, stale, and unsupported marker values as explicit untrusted states through one shared helper."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M047\nkey_files:\n  - src/db/migrations/037-contributor-profile-trust.sql\n  - src/db/migrations/037-contributor-profile-trust.down.sql\n  - src/contributor/profile-trust.ts\n  - src/contributor/profile-trust.test.ts\n  - src/contributor/profile-store.ts\n  - src/contributor/profile-store.test.ts\n  - src/contributor/types.ts\n  - src/contributor/index.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Persist one nullable versioned `trust_marker` (`m047-calibrated-v1`) on `contributor_profiles` and derive trust from that marker plus `lastScoredAt` instead of inferring trust from raw `overall_tier`.\n  - Fail fast on store reads when the migrated `trust_marker` column is absent, but classify null, stale, and unsupported marker values as explicit untrusted states through one shared helper.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-11T00:31:52.060Z\nblocker_discovered: false\n---\n\n# T01: Added persisted contributor-profile trust markers and trust-state classification so linked-unscored or legacy rows stay untrusted until a fresh scored update stamps the M047 marker.\n\n**Added persisted contributor-profile trust markers and trust-state classification so linked-unscored or legacy rows stay untrusted until a fresh scored update stamps the M047 marker.**\n\n## What Happened\n\nAdded migration 037 to persist a nullable versioned `trust_marker` on `contributor_profiles`, then introduced `src/contributor/profile-trust.ts` as the pure persisted-row trust boundary for `linked-unscored`, `legacy`, `calibrated`, `stale`, and `malformed` states. `createContributorProfileStore(...)` now maps the new column, fails fast when the migrated column is missing, and stamps `m047-calibrated-v1` whenever `updateTier(...)` writes a fresh score so newly linked placeholder rows remain visibly untrusted while freshly scored rows are distinguishable from legacy data. Added focused helper tests plus DB-backed store tests that run migrations, verify the new column exists, prove link-created newcomer rows stay untrusted, and prove `updateTier(...)` stamps the current marker. The store-test harness now uses `TEST_DATABASE_URL` or the localhost default instead of the repo’s remote `DATABASE_URL`, avoiding verification hangs against the unreachable Azure database.\n\n## Verification\n\n`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts` passed (19/19). The broader slice-level `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` command also exited 0, but explicit path checks confirmed Bun ignored the still-missing future-file filters (`src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`). `bun run verify:m045:s01` passed. `bun run verify:m047:s01` failed because the package script is not present yet, which is expected until T03 ships the verifier. `bun run tsc --noEmit` passed.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts` | 0 | ✅ pass | 215ms |\n| 2 | `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` | 0 | ✅ pass | 3637ms |\n| 3 | `printf 'review-author-resolution.test.ts=%s\\n' \"$(test -f src/contributor/review-author-resolution.test.ts && echo present || echo missing)\"; printf 'verify-m047-s01.test.ts=%s\\n' \"$(test -f scripts/verify-m047-s01.test.ts && echo present || echo missing)\"; jq -r '.scripts[\"verify:m047:s01\"] // \"missing\"' package.json` | 0 | ✅ pass | 27ms |\n| 4 | `bun run verify:m045:s01` | 0 | ✅ pass | 60ms |\n| 5 | `bun run verify:m047:s01` | 1 | ❌ fail | 27ms |\n| 6 | `bun run tsc --noEmit` | 0 | ✅ pass | 7953ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe downstream slice proof surfaces are intentionally not present yet: `src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`, and package script `verify:m047:s01` remain for T02/T03. Because Bun can ignore missing file filters when other test paths match, the slice-level multi-path `bun test` bundle is not by itself proof that those future files exist.\n\n## Files Created/Modified\n\n- `src/db/migrations/037-contributor-profile-trust.sql`\n- `src/db/migrations/037-contributor-profile-trust.down.sql`\n- `src/contributor/profile-trust.ts`\n- `src/contributor/profile-trust.test.ts`\n- `src/contributor/profile-store.ts`\n- `src/contributor/profile-store.test.ts`\n- `src/contributor/types.ts`\n- `src/contributor/index.ts`\n- `.gsd/KNOWLEDGE.md`\n",
+      "description": "**Slice:** S01 — Truthful contributor resolution on GitHub review\n**Milestone:** M047\n\n## Description\n\nPersist the minimum metadata needed to tell a newly linked or legacy contributor profile row apart from a trustworthy M047-calibrated row. This task gives later review logic one narrow trust primitive instead of re-inferring certainty from `overall_tier='newcomer'`.\n\n## Steps\n\n1. Add a contributor-profile trust helper plus migration-backed metadata that can distinguish linked-unscored, legacy, calibrated, stale, and malformed stored rows.\n2. Teach `createContributorProfileStore(...)` to read the new metadata and stamp the current M047 calibration marker whenever `updateTier(...)` persists a fresh scored tier.\n3. Cover the new states with focused unit tests and DB-backed profile-store tests, including the default newcomer row created by identity linking.\n4. Keep the helper small and reusable so later slices can share the same persisted trust boundary.\n\n## Must-Haves\n\n- [ ] Stored contributor rows can distinguish linked-unscored, legacy, calibrated, stale, and malformed trust states without relying on raw `overall_tier`.\n- [ ] Fresh score persistence stamps the current M047 calibration marker instead of leaving scored rows indistinguishable from legacy data.\n- [ ] Tests prove newly linked rows stay untrusted until a scored update lands.",
+      "estimate": "2h",
+      "files": [
+        "src/db/migrations/037-contributor-profile-trust.sql",
+        "src/db/migrations/037-contributor-profile-trust.down.sql",
+        "src/contributor/types.ts",
+        "src/contributor/profile-store.ts",
+        "src/contributor/profile-store.test.ts",
+        "src/contributor/profile-trust.ts",
+        "src/contributor/profile-trust.test.ts"
+      ],
+      "verify": "bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts",
+      "inputs": [
+        "src/db/migrations/011-contributor-profiles.sql",
+        "src/contributor/types.ts",
+        "src/contributor/profile-store.ts",
+        "src/contributor/profile-store.test.ts",
+        "src/contributor/expertise-scorer.ts"
+      ],
+      "expected_output": [
+        "src/db/migrations/037-contributor-profile-trust.sql",
+        "src/db/migrations/037-contributor-profile-trust.down.sql",
+        "src/contributor/types.ts",
+        "src/contributor/profile-store.ts",
+        "src/contributor/profile-store.test.ts",
+        "src/contributor/profile-trust.ts",
+        "src/contributor/profile-trust.test.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Route GitHub review resolution through the trust-aware profile boundary",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "**Slice:** S01 — Truthful contributor resolution on GitHub review\n**Milestone:** M047\n\n## Description\n\nMake the GitHub review entrypoint consume the new stored-profile trust boundary before it decides whether contributor experience is `profile-backed`, coarse fallback, or generic. The review path must stay truthful when a stored profile is opted out, linked-but-unscored, legacy, stale, malformed, or contradicted by lower-confidence cache signals.\n\n## Steps\n\n1. Wire the trust helper into review-time author classification, ideally behind a focused helper seam that the proof harness can reuse.\n2. Keep opt-out precedence unchanged, allow only trustworthy calibrated rows to stay `profile-backed`, and make untrusted stored rows fall through to author-cache/search/generic behavior instead of masquerading as newcomer certainty.\n3. Extend review-path tests/helpers to seed linked-unscored, legacy, calibrated, stale, opt-out, and contradictory-cache scenarios through the stored-profile seam.\n4. Emit explicit trust-state and fallback diagnostics in the author-classification log so failures are inspectable without re-reading the code.\n\n## Must-Haves\n\n- [ ] Review-time resolution only returns `profile-backed` when the stored profile is explicitly trustworthy under the new persisted trust boundary.\n- [ ] Linked-unscored, legacy, stale, malformed, and opted-out rows fail open to coarse/generic behavior without overclaiming newcomer truth.\n- [ ] Handler tests prove prompt text, Review Details, and logs stay coherent for calibrated, fallback, and fail-open scenarios.",
+      "estimate": "2h",
+      "files": [
+        "src/contributor/profile-trust.ts",
+        "src/contributor/review-author-resolution.ts",
+        "src/contributor/review-author-resolution.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts",
+      "inputs": [
+        "src/contributor/profile-trust.ts",
+        "src/contributor/experience-contract.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "expected_output": [
+        "src/contributor/review-author-resolution.ts",
+        "src/contributor/review-author-resolution.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "observability_impact": "Expose the stored-profile trust state, trust reason, calibration marker, and fallback path on the existing author-classification log entry so future agents can tell why a contributor profile was trusted or bypassed.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Ship an operator proof harness for stored-profile review resolution",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "**Slice:** S01 — Truthful contributor resolution on GitHub review\n**Milestone:** M047\n\n## Description\n\nProve the runtime resolver rather than just the public contract fixtures. The slice needs one shipped verifier that seeds stored contributor-profile states through the real review-resolution seam and shows linked-but-unscored and legacy rows fail open while a calibrated retained contributor still drives coherent prompt and Review Details output.\n\n## Steps\n\n1. Write failing verifier tests for linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback scenarios, including stable human/JSON output and package-script wiring.\n2. Implement `scripts/verify-m047-s01.ts` by reusing the trust-aware review-resolution helper plus prompt/details builders to render each stored-profile scenario end to end.\n3. Add the `verify:m047:s01` package script and keep M045 proof compatibility by rerunning `verify:m045:s01` alongside the new runtime verifier.\n4. Make the report expose trust state, contract state, source, and fallback/degradation reason so S03 can compose it into the final `verify:m047` surface.\n\n## Must-Haves\n\n- [ ] `bun run verify:m047:s01` proves stored-profile resolution instead of direct contract fixtures.\n- [ ] The verifier reports linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback outcomes with stable check IDs and scenario details.\n- [ ] Existing `verify:m045:s01` contract proof stays green alongside the new runtime resolver proof.",
+      "estimate": "90m",
+      "files": [
+        "scripts/verify-m047-s01.ts",
+        "scripts/verify-m047-s01.test.ts",
+        "package.json",
+        "src/contributor/review-author-resolution.ts",
+        "src/handlers/review.ts"
+      ],
+      "verify": "bun test ./scripts/verify-m047-s01.test.ts && bun run verify:m045:s01 && bun run verify:m047:s01 && bun run tsc --noEmit",
+      "inputs": [
+        "src/contributor/review-author-resolution.ts",
+        "src/handlers/review.ts",
+        "scripts/verify-m045-s01.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m047-s01.ts",
+        "scripts/verify-m047-s01.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "The verifier becomes the operator inspection surface for stored-profile trust failures by reporting trust state, contract state, source, and fallback/degradation reason for each scenario.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -13609,6 +13864,66 @@
       "decision": "How the integrated M046 verifier reports verdicts and exits",
       "choice": "Keep the top-level `verify:m046` proof surface separate from the calibration recommendation: surface `keep`/`retune`/`replace` in a dedicated verdict block, exit 0 for the current truthful `replace` outcome, and reserve non-zero exits for malformed nested evidence, count drift, missing recommendation, or contradictory M047 contract state.",
       "rationale": "Downstream milestone-closeout tooling needs a truthful keep/retune/replace recommendation without conflating that recommendation with verifier breakage. Separating proof-surface success from the recommendation preserves the current replace verdict, keeps human and JSON output aligned, and gives future slices stable top-level check IDs/status codes for diagnosing malformed composition or contract drift.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 119,
+      "id": "D085",
+      "when_context": "M047 planning",
+      "scope": "roadmap",
+      "decision": "How to order the M047 rollout work",
+      "choice": "Plan M047 in three risk-ordered slices: first fix persisted contributor trust and GitHub review-time resolution, then roll that shared truth boundary through Slack/retrieval/profile continuity surfaces, then close with an integrated `verify:m047` coherence verifier.",
+      "rationale": "The highest-risk failure is the live review entrypoint treating linked or legacy profiles as trustworthy newcomer guidance. Once the producer and review resolver are truthful, downstream Slack and retrieval consumers become mechanical contract-rollout work. The final operator-facing verifier is only meaningful after the real runtime surfaces share the same resolution seam.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 120,
+      "id": "D086",
+      "when_context": "M047 planning",
+      "scope": "architecture",
+      "decision": "Trust boundary for persisted contributor profile state in M047",
+      "choice": "Treat persisted contributor profile data as trustworthy for `profile-backed` guidance only when the row is explicitly distinguishable as calibrated/trustworthy; linked-but-unscored, legacy, stale, or malformed rows must fail open to generic/degraded or coarse-fallback behavior instead of masquerading as newcomer truth.",
+      "rationale": "The current default `overall_tier='newcomer'` behavior lets newly linked or legacy rows overclaim certainty across review and Slack surfaces. M047's root cause is source resolution, not public vocabulary. Making trust state explicit preserves the M045 contract while retiring the most dangerous rollout lie.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 121,
+      "id": "D087",
+      "when_context": "M047 planning",
+      "scope": "verification",
+      "decision": "How M047 should prove cross-surface contributor coherence",
+      "choice": "Build `verify:m047` as the canonical operator proof surface by composing the existing M045 and M046 verifiers with new runtime source-resolution scenarios that exercise real stored-profile, cache, and fallback states.",
+      "rationale": "The existing M045 verifier is strong at contract drift detection and M046 already owns calibration evidence, but neither proves that live source resolution is truthful. Composing them under a new M047 scenario matrix preserves stable upstream evidence while catching the runtime regressions this milestone actually exists to retire.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 122,
+      "id": "D088",
+      "when_context": "M047/S01 planning",
+      "scope": "architecture",
+      "decision": "How runtime review resolution should distinguish trustworthy stored contributor profiles in M047",
+      "choice": "Add explicit contributor-profile calibration metadata in persistence and treat only rows stamped by the current M047 scorer as trustworthy for `profile-backed` GitHub review guidance; linked-but-unscored, legacy, stale, or malformed rows must fall through to lower-confidence or generic behavior.",
+      "rationale": "`overall_tier` plus `last_scored_at` alone cannot distinguish a newly linked placeholder row from a genuinely calibrated contributor profile, nor can they separate legacy pre-M047 scores from the new truthful rollout boundary. Persisting an explicit calibration marker gives review-time resolution one reusable trust seam for GitHub review now and downstream Slack/retrieval surfaces later.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 123,
+      "id": "D089",
+      "when_context": "M047/S01/T01",
+      "scope": "architecture",
+      "decision": "How persisted contributor-profile trust should be represented for M047 review-time resolution",
+      "choice": "Add one nullable versioned `trust_marker` column (`m047-calibrated-v1`) on `contributor_profiles`, and classify trust purely from `overallTier`, `lastScoredAt`, and that marker via `src/contributor/profile-trust.ts`.",
+      "rationale": "A single versioned marker is the minimum durable metadata that cleanly distinguishes linked-unscored rows from legacy scored rows while letting fresh scored rows prove they were written by the M047-calibrated path. Keeping trust classification in one pure helper avoids re-inferring certainty from `overall_tier='newcomer'`, makes malformed/unsupported rows fail open to untrusted states, and gives later review/runtime slices one reusable seam instead of duplicating trust logic.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -17552,6 +17867,72 @@
       "verdict": "✅ pass",
       "duration_ms": 8630,
       "created_at": "2026-04-10T23:08:57.761Z"
+    },
+    {
+      "id": 360,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 215,
+      "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 361,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3637,
+      "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 362,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "printf 'review-author-resolution.test.ts=%s\\n' \"$(test -f src/contributor/review-author-resolution.test.ts && echo present || echo missing)\"; printf 'verify-m047-s01.test.ts=%s\\n' \"$(test -f scripts/verify-m047-s01.test.ts && echo present || echo missing)\"; jq -r '.scripts[\"verify:m047:s01\"] // \"missing\"' package.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 27,
+      "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 363,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 60,
+      "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 364,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s01",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 27,
+      "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 365,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7953,
+      "created_at": "2026-04-11T00:31:52.061Z"
     }
   ]
 }
