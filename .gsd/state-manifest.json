@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T00:31:52.089Z",
+  "exported_at": "2026-04-11T00:50:16.800Z",
   "milestones": [
     {
       "id": "M001",
@@ -12777,19 +12777,27 @@
       "milestone_id": "M047",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Route GitHub review resolution through the trust-aware profile boundary",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Routed GitHub review author resolution through the trust-aware stored-profile boundary.",
+      "status": "complete",
+      "one_liner": "Routed GitHub review author resolution through the trust-aware stored-profile boundary.",
+      "narrative": "Extracted GitHub review-time author resolution into `src/contributor/review-author-resolution.ts` and routed the handler through that shared trust-aware boundary. The resolver now classifies persisted contributor rows with the M047 trust helper, preserves opt-out precedence, only keeps explicitly trustworthy calibrated rows `profile-backed`, and otherwise fails open into author-cache, GitHub search, author-association, or generic/degraded behavior. It also fixes the old inline-path bug where an expertise lookup failure could leave a previously assigned trusted tier behind. Updated `src/handlers/review.ts` to log stored-profile trust state, trust reason, calibration marker/version, and fallback path on the existing author-classification log entry without exposing calibration-only metadata in Review Details. Added resolver-level tests plus handler integration coverage for calibrated, linked-unscored, legacy, stale, opt-out, contradictory-cache, and fail-open scenarios.",
+      "verification_result": "`bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts` passed. The slice-level bundle `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` passed, and an explicit presence check confirmed the future T03 verifier file/script are still absent. `bun run verify:m045:s01` passed. `bun run verify:m047:s01` and the exact combined `bun run verify:m045:s01 && bun run verify:m047:s01` command fail because the T03 verifier script has not been added yet. `bun run tsc --noEmit` passed.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-11T00:50:16.677Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "`scripts/verify-m047-s01.test.ts` and package script `verify:m047:s01` are still intentionally missing because they belong to T03, so the exact slice verifier remains partially red until that task lands.",
+      "key_files": [
+        "src/contributor/review-author-resolution.ts",
+        "src/contributor/review-author-resolution.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "src/contributor/index.ts"
+      ],
+      "key_decisions": [
+        "Extract review-time author resolution into a shared contributor module and keep stored-profile trust diagnostics in handler logs while Review Details stays contract-level and redacted."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M047\nkey_files:\n  - src/contributor/review-author-resolution.ts\n  - src/contributor/review-author-resolution.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - src/contributor/index.ts\nkey_decisions:\n  - Extract review-time author resolution into a shared contributor module and keep stored-profile trust diagnostics in handler logs while Review Details stays contract-level and redacted.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-11T00:50:16.673Z\nblocker_discovered: false\n---\n\n# T02: Routed GitHub review author resolution through the trust-aware stored-profile boundary.\n\n**Routed GitHub review author resolution through the trust-aware stored-profile boundary.**\n\n## What Happened\n\nExtracted GitHub review-time author resolution into `src/contributor/review-author-resolution.ts` and routed the handler through that shared trust-aware boundary. The resolver now classifies persisted contributor rows with the M047 trust helper, preserves opt-out precedence, only keeps explicitly trustworthy calibrated rows `profile-backed`, and otherwise fails open into author-cache, GitHub search, author-association, or generic/degraded behavior. It also fixes the old inline-path bug where an expertise lookup failure could leave a previously assigned trusted tier behind. Updated `src/handlers/review.ts` to log stored-profile trust state, trust reason, calibration marker/version, and fallback path on the existing author-classification log entry without exposing calibration-only metadata in Review Details. Added resolver-level tests plus handler integration coverage for calibrated, linked-unscored, legacy, stale, opt-out, contradictory-cache, and fail-open scenarios.\n\n## Verification\n\n`bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts` passed. The slice-level bundle `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` passed, and an explicit presence check confirmed the future T03 verifier file/script are still absent. `bun run verify:m045:s01` passed. `bun run verify:m047:s01` and the exact combined `bun run verify:m045:s01 && bun run verify:m047:s01` command fail because the T03 verifier script has not been added yet. `bun run tsc --noEmit` passed.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 5126ms |\n| 2 | `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` | 0 | ✅ pass | 5496ms |\n| 3 | `printf 'review-author-resolution.test.ts=%s\\n' \"$(test -f src/contributor/review-author-resolution.test.ts && echo present || echo missing)\"; printf 'verify-m047-s01.test.ts=%s\\n' \"$(test -f scripts/verify-m047-s01.test.ts && echo present || echo missing)\"; jq -r '.scripts[\"verify:m047:s01\"] // \"missing\"' package.json` | 0 | ✅ pass | 28ms |\n| 4 | `bun run verify:m045:s01` | 0 | ✅ pass | 48ms |\n| 5 | `bun run verify:m047:s01` | 1 | ❌ fail | 9ms |\n| 6 | `bun run verify:m045:s01 && bun run verify:m047:s01` | 1 | ❌ fail | 44ms |\n| 7 | `bun run tsc --noEmit` | 0 | ✅ pass | 10323ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`scripts/verify-m047-s01.test.ts` and package script `verify:m047:s01` are still intentionally missing because they belong to T03, so the exact slice verifier remains partially red until that task lands.\n\n## Files Created/Modified\n\n- `src/contributor/review-author-resolution.ts`\n- `src/contributor/review-author-resolution.test.ts`\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n- `src/contributor/index.ts`\n",
       "description": "**Slice:** S01 — Truthful contributor resolution on GitHub review\n**Milestone:** M047\n\n## Description\n\nMake the GitHub review entrypoint consume the new stored-profile trust boundary before it decides whether contributor experience is `profile-backed`, coarse fallback, or generic. The review path must stay truthful when a stored profile is opted out, linked-but-unscored, legacy, stale, malformed, or contradicted by lower-confidence cache signals.\n\n## Steps\n\n1. Wire the trust helper into review-time author classification, ideally behind a focused helper seam that the proof harness can reuse.\n2. Keep opt-out precedence unchanged, allow only trustworthy calibrated rows to stay `profile-backed`, and make untrusted stored rows fall through to author-cache/search/generic behavior instead of masquerading as newcomer certainty.\n3. Extend review-path tests/helpers to seed linked-unscored, legacy, calibrated, stale, opt-out, and contradictory-cache scenarios through the stored-profile seam.\n4. Emit explicit trust-state and fallback diagnostics in the author-classification log so failures are inspectable without re-reading the code.\n\n## Must-Haves\n\n- [ ] Review-time resolution only returns `profile-backed` when the stored profile is explicitly trustworthy under the new persisted trust boundary.\n- [ ] Linked-unscored, legacy, stale, malformed, and opted-out rows fail open to coarse/generic behavior without overclaiming newcomer truth.\n- [ ] Handler tests prove prompt text, Review Details, and logs stay coherent for calibrated, fallback, and fail-open scenarios.",
       "estimate": "2h",
       "files": [
@@ -17933,6 +17941,83 @@
       "verdict": "✅ pass",
       "duration_ms": 7953,
       "created_at": "2026-04-11T00:31:52.061Z"
+    },
+    {
+      "id": 366,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5126,
+      "created_at": "2026-04-11T00:50:16.677Z"
+    },
+    {
+      "id": 367,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5496,
+      "created_at": "2026-04-11T00:50:16.678Z"
+    },
+    {
+      "id": 368,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "printf 'review-author-resolution.test.ts=%s\\n' \"$(test -f src/contributor/review-author-resolution.test.ts && echo present || echo missing)\"; printf 'verify-m047-s01.test.ts=%s\\n' \"$(test -f scripts/verify-m047-s01.test.ts && echo present || echo missing)\"; jq -r '.scripts[\"verify:m047:s01\"] // \"missing\"' package.json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 28,
+      "created_at": "2026-04-11T00:50:16.678Z"
+    },
+    {
+      "id": 369,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 48,
+      "created_at": "2026-04-11T00:50:16.679Z"
+    },
+    {
+      "id": 370,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s01",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 9,
+      "created_at": "2026-04-11T00:50:16.679Z"
+    },
+    {
+      "id": 371,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s01 && bun run verify:m047:s01",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 44,
+      "created_at": "2026-04-11T00:50:16.679Z"
+    },
+    {
+      "id": 372,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10323,
+      "created_at": "2026-04-11T00:50:16.679Z"
     }
   ]
 }

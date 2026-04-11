@@ -114,6 +114,10 @@ import {
   type ContributorExperienceContract,
   type ContributorExperienceSource,
 } from "../contributor/experience-contract.ts";
+import {
+  resolveReviewAuthorClassification,
+  type ReviewAuthorClassification,
+} from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
 import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
@@ -473,15 +477,7 @@ async function resolveAuthorTier(params: {
   searchCache?: SearchCache<number>;
   contributorProfileStore?: ContributorProfileStore;
   logger: Logger;
-}): Promise<{
-  tier: AuthorTier;
-  prCount: number | null;
-  fromCache: boolean;
-  searchCacheHit: boolean;
-  searchEnrichment: AuthorTierSearchEnrichment;
-  contract: ContributorExperienceContract;
-  expertise?: ContributorExpertise[];
-}> {
+}): Promise<ReviewAuthorClassification> {
   const {
     authorLogin,
     authorAssociation,
@@ -495,239 +491,20 @@ async function resolveAuthorTier(params: {
     logger,
   } = params;
 
-  const searchEnrichment: AuthorTierSearchEnrichment = {
-    degraded: false,
-    retryAttempts: 0,
-    skippedQueries: 0,
-    degradationPath: "none",
-  };
-  let searchCacheHit = false;
-
-  let contributorTier: AuthorTier | null = null;
-  let contributorExpertise: ContributorExpertise[] | undefined;
-
-  if (contributorProfileStore) {
-    try {
-      const profile = await contributorProfileStore.getByGithubUsername(authorLogin, {
-        includeOptedOut: true,
-      });
-      if (profile) {
-        const normalizedProfileTier = normalizeContributorProfileTier(profile.overallTier);
-
-        if (profile.optedOut) {
-          return {
-            tier: normalizedProfileTier ?? "regular",
-            prCount: null,
-            fromCache: false,
-            searchCacheHit: false,
-            searchEnrichment,
-            contract: projectContributorExperienceContract({
-              source: "contributor-profile",
-              tier: normalizedProfileTier,
-              optedOut: true,
-            }),
-          };
-        }
-
-        if (normalizedProfileTier) {
-          contributorTier = normalizedProfileTier;
-          contributorExpertise = await contributorProfileStore.getExpertise(profile.id);
-        } else {
-          logger.warn(
-            { authorLogin, overallTier: profile.overallTier },
-            "Ignoring malformed contributor profile tier; continuing with lower-confidence resolution",
-          );
-        }
-      }
-    } catch (err) {
-      logger.warn({ err, authorLogin }, "Contributor profile lookup failed (fail-open)");
-    }
-  }
-
-  let cached: AuthorCacheEntry | null = null;
-  if (knowledgeStore) {
-    try {
-      const rawCached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
-      cached = normalizeAuthorCacheEntry(rawCached);
-      if (rawCached && !cached) {
-        logger.warn(
-          { authorLogin, cachedTier: rawCached.tier },
-          "Ignoring unsupported author cache tier; only fallback taxonomy tiers may be reused from cache",
-        );
-      }
-    } catch (err) {
-      logger.warn({ err, authorLogin }, "Author cache read failed (fail-open)");
-    }
-  }
-
-  if (contributorTier) {
-    return {
-      tier: contributorTier,
-      prCount: null,
-      fromCache: false,
-      searchCacheHit: false,
-      searchEnrichment,
-      contract: projectContributorExperienceContract({
-        source: "contributor-profile",
-        tier: contributorTier,
-      }),
-      expertise: contributorExpertise,
-    };
-  }
-
-  if (cached) {
-    return {
-      tier: cached.tier,
-      prCount: cached.prCount ?? null,
-      fromCache: true,
-      searchCacheHit,
-      searchEnrichment,
-      contract: projectContributorExperienceContract({
-        source: "author-cache",
-        tier: cached.tier,
-      }),
-    };
-  }
-
-  const ambiguousAssociations = new Set(["NONE", "MANNEQUIN", "COLLABORATOR", "CONTRIBUTOR"]);
-  const normalizedAssociation = (authorAssociation || "NONE").toUpperCase();
-  let prCount: number | null = null;
-  let fallbackSource: ContributorExperienceSource = hasAssociationFallbackSignal(normalizedAssociation)
-    ? "author-association"
-    : "none";
-
-  if (ambiguousAssociations.has(normalizedAssociation)) {
-    const query = `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`;
-
-    const loadPrCount = async (): Promise<number> => {
-      const { data } = await octokit.rest.search.issuesAndPullRequests({
-        q: query,
-        per_page: 1,
-      });
-      return data.total_count;
-    };
-
-    try {
-      if (searchCache) {
-        const cacheKey = buildSearchCacheKey({
-          repo: repoSlug,
-          searchType: "issuesAndPullRequests",
-          query,
-          extra: { per_page: 1 },
-        });
-
-        const searchOutcome = await executeSearchWithRateLimitRetry({
-          operation: async () => {
-            let loaderExecuted = false;
-            const value = await searchCache.getOrLoad(
-              cacheKey,
-              async () => {
-                loaderExecuted = true;
-                return loadPrCount();
-              },
-              AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
-            );
-            searchCacheHit = !loaderExecuted;
-            return value;
-          },
-          logger,
-          authorLogin,
-        });
-
-        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-        searchEnrichment.degraded = searchOutcome.degraded;
-        prCount = searchOutcome.value;
-
-        if (searchOutcome.degraded) {
-          searchCacheHit = false;
-        }
-      } else {
-        const searchOutcome = await executeSearchWithRateLimitRetry({
-          operation: () => loadPrCount(),
-          logger,
-          authorLogin,
-        });
-
-        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-        searchEnrichment.degraded = searchOutcome.degraded;
-        prCount = searchOutcome.value;
-      }
-
-      if (searchEnrichment.degraded) {
-        searchEnrichment.skippedQueries = 1;
-        searchEnrichment.degradationPath = "search-api-rate-limit";
-      }
-    } catch (err) {
-      if (searchCache) {
-        logger.warn({ err, authorLogin }, "Author PR-count cache failed (fail-open, falling back to direct lookup)");
-
-        try {
-          const searchOutcome = await executeSearchWithRateLimitRetry({
-            operation: () => loadPrCount(),
-            logger,
-            authorLogin,
-          });
-
-          searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-          searchEnrichment.degraded = searchOutcome.degraded;
-          prCount = searchOutcome.value;
-
-          if (searchEnrichment.degraded) {
-            searchEnrichment.skippedQueries = 1;
-            searchEnrichment.degradationPath = "search-api-rate-limit";
-          }
-        } catch (fallbackErr) {
-          logger.warn({ err: fallbackErr, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
-        }
-      } else {
-        logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
-      }
-    }
-
-    if (prCount !== null || searchEnrichment.degraded) {
-      fallbackSource = "github-search";
-    }
-  }
-
-  const tier = classifyAuthor({
-    authorAssociation: normalizedAssociation,
-    prCount,
-  }).tier;
-
-  const contract = projectContributorExperienceContract({
-    source: fallbackSource,
-    tier: fallbackSource === "none" ? null : tier,
-    degraded: searchEnrichment.degraded,
-    degradationPath: searchEnrichment.degraded ? searchEnrichment.degradationPath : null,
+  return resolveReviewAuthorClassification({
+    authorLogin,
+    authorAssociation,
+    repo,
+    owner,
+    repoSlug,
+    searchIssuesAndPullRequests: (searchParams) =>
+      octokit.rest.search.issuesAndPullRequests(searchParams),
+    knowledgeStore,
+    searchCache,
+    contributorProfileStore,
+    logger,
   });
-
-  if (knowledgeStore && contract.state === "coarse-fallback") {
-    const cacheTier: AuthorCacheTier = tier === "core" ? "core" : tier === "regular" ? "regular" : "first-time";
-
-    try {
-      await knowledgeStore.upsertAuthorCache?.({
-        repo: repoSlug,
-        authorLogin,
-        tier: cacheTier,
-        authorAssociation: normalizedAssociation,
-        prCount,
-      });
-    } catch (err) {
-      logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
-    }
-  }
-
-  return {
-    tier,
-    prCount,
-    fromCache: false,
-    searchCacheHit,
-    searchEnrichment,
-    contract,
-  };
 }
-
-
 
 async function extractFindingsFromReviewComments(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
@@ -1634,15 +1411,7 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        let authorClassification: {
-          tier: AuthorTier;
-          prCount: number | null;
-          fromCache: boolean;
-          searchCacheHit: boolean;
-          searchEnrichment: AuthorTierSearchEnrichment;
-          contract: ContributorExperienceContract;
-          expertise?: ContributorExpertise[];
-        } = {
+        let authorClassification: ReviewAuthorClassification = {
           tier: "regular",
           prCount: null,
           fromCache: false,
@@ -1657,6 +1426,8 @@ export function createReviewHandler(deps: {
             source: "none",
             tier: null,
           }),
+          storedProfileTrust: null,
+          fallbackPath: "no-stored-profile->generic-unknown",
         };
 
         try {
@@ -1679,6 +1450,15 @@ export function createReviewHandler(deps: {
               authorPrCount: authorClassification.prCount,
               fromCache: authorClassification.fromCache,
               searchCacheHit: authorClassification.searchCacheHit,
+              storedProfileTrustState:
+                authorClassification.storedProfileTrust?.state ?? null,
+              storedProfileTrustReason:
+                authorClassification.storedProfileTrust?.reason ?? null,
+              storedProfileCalibrationMarker:
+                authorClassification.storedProfileTrust?.calibrationMarker ?? null,
+              storedProfileCalibrationVersion:
+                authorClassification.storedProfileTrust?.calibrationVersion ?? null,
+              storedProfileFallbackPath: authorClassification.fallbackPath,
               contributorExperienceState: authorClassification.contract.state,
               contributorExperienceSource: authorClassification.contract.source,
               contributorExperienceReviewBehavior: authorClassification.contract.reviewBehavior,

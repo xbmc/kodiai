@@ -56,7 +56,7 @@
   - Verify: `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts`
   - Done when: Stored contributor rows can be classified truthfully without inferring trust from raw `overall_tier`, and freshly scored rows are stamped as current M047-calibrated data.
 
-- [ ] **T02: Route GitHub review resolution through the trust-aware profile boundary** `est:2h`
+- [x] **T02: Route GitHub review resolution through the trust-aware profile boundary** `est:2h`
   - Why: The live review entrypoint is the root-cause surface; it must use the new persisted trust boundary before it decides whether contributor experience is `profile-backed`, coarse fallback, or generic.
   - Files: `src/contributor/profile-trust.ts`, `src/contributor/review-author-resolution.ts`, `src/contributor/review-author-resolution.test.ts`, `src/handlers/review.ts`, `src/handlers/review.test.ts`
   - Do: Wire the trust helper into review-time author classification, keep opt-out precedence, allow only trustworthy calibrated rows to stay `profile-backed`, and make untrusted rows fall through to cache/search/generic behavior while logging the trust/fallback path.

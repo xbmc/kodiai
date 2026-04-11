@@ -7,7 +7,11 @@ import type { Logger } from "pino";
 import { createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
-import type { ContributorProfileStore } from "../contributor/types.ts";
+import type {
+  ContributorProfile,
+  ContributorProfileStore,
+} from "../contributor/types.ts";
+import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "../contributor/profile-trust.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
@@ -61,6 +65,25 @@ function createCaptureLogger() {
   } as unknown as Logger;
 
   return { logger, entries };
+}
+
+function buildContributorProfileFixture(
+  overrides: Partial<ContributorProfile> & { overallTier?: string } = {},
+): ContributorProfile {
+  return {
+    id: 1,
+    githubUsername: "octocat",
+    slackUserId: null,
+    displayName: "Octo Cat",
+    overallTier: "established",
+    overallScore: 0.82,
+    optedOut: false,
+    createdAt: new Date("2026-04-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+    lastScoredAt: new Date("2026-04-09T00:00:00.000Z"),
+    trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+    ...overrides,
+  } as ContributorProfile;
 }
 
 function createKnowledgeStoreStub(overrides: Record<string, unknown> = {}) {
@@ -512,8 +535,11 @@ describe("createReviewHandler auto profile selection", () => {
     manualProfile?: "strict" | "balanced" | "minimal";
     additions: number;
     deletions: number;
-    contributorTier?: "first-time" | "regular" | "established" | "senior";
+    contributorTier?: "newcomer" | "developing" | "established" | "senior";
     contributorOptedOut?: boolean;
+    contributorProfile?:
+      | (Partial<ContributorProfile> & { overallTier?: string })
+      | null;
     prAuthor?: string;
     authorAssociation?: string;
     searchPrCount?: number;
@@ -616,18 +642,20 @@ describe("createReviewHandler auto profile selection", () => {
         },
       } as never,
       telemetryStore: noopTelemetryStore,
-      contributorProfileStore: options.contributorTier
-        ? {
-          getByGithubUsername: async (login: string) => login === (options.prAuthor ?? "octocat")
-            ? {
-              id: 1,
-              overallTier: options.contributorTier,
-              optedOut: options.contributorOptedOut ?? false,
-            }
-            : null,
-          getExpertise: async () => [],
-        } as never
-        : undefined,
+      contributorProfileStore:
+        options.contributorProfile || options.contributorTier
+          ? {
+            getByGithubUsername: async (login: string) =>
+              login === (options.prAuthor ?? "octocat")
+                ? buildContributorProfileFixture({
+                  overallTier: options.contributorTier,
+                  optedOut: options.contributorOptedOut ?? false,
+                  ...(options.contributorProfile ?? {}),
+                })
+                : null,
+            getExpertise: async () => [],
+          } as never
+          : undefined,
       logger: createNoopLogger(),
     });
 
@@ -695,6 +723,68 @@ describe("createReviewHandler auto profile selection", () => {
       "- Contributor experience: profile-backed (using linked contributor profile guidance)",
     );
     expect(result.detailsCommentBody).not.toContain("- Author tier:");
+  });
+
+  test("linked-unscored stored profiles fail open to coarse fallback instead of profile-backed newcomer guidance", async () => {
+    const result = await runProfileScenario({
+      additions: 90,
+      deletions: 20,
+      contributorProfile: {
+        overallTier: "newcomer",
+        overallScore: 0,
+        lastScoredAt: null,
+        trustMarker: null,
+      },
+      searchPrCount: 4,
+    });
+
+    expect(result.prompt).toContain("Contributor-experience contract: coarse-fallback.");
+    expect(result.prompt).toContain("only coarse fallback signals");
+    expect(result.prompt).not.toContain("first-time or new contributor to this repository.");
+    expect(result.detailsCommentBody).toContain(
+      "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
+    );
+    expect(result.detailsCommentBody).not.toContain("profile-backed");
+  });
+
+  test("legacy stored profiles fail open to coarse fallback instead of retained established guidance", async () => {
+    const result = await runProfileScenario({
+      additions: 90,
+      deletions: 20,
+      contributorProfile: {
+        overallTier: "established",
+        trustMarker: null,
+      },
+      searchPrCount: 4,
+    });
+
+    expect(result.prompt).toContain("Contributor-experience contract: coarse-fallback.");
+    expect(result.prompt).toContain("only coarse fallback signals");
+    expect(result.prompt).not.toContain("The PR author (octocat) is an established contributor.");
+    expect(result.detailsCommentBody).toContain(
+      "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
+    );
+    expect(result.detailsCommentBody).not.toContain("profile-backed");
+  });
+
+  test("stale calibrated stored profiles fail open to coarse fallback instead of retained established guidance", async () => {
+    const result = await runProfileScenario({
+      additions: 90,
+      deletions: 20,
+      contributorProfile: {
+        overallTier: "established",
+        lastScoredAt: new Date("2025-09-01T00:00:00.000Z"),
+      },
+      searchPrCount: 4,
+    });
+
+    expect(result.prompt).toContain("Contributor-experience contract: coarse-fallback.");
+    expect(result.prompt).toContain("only coarse fallback signals");
+    expect(result.prompt).not.toContain("The PR author (octocat) is an established contributor.");
+    expect(result.detailsCommentBody).toContain(
+      "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
+    );
+    expect(result.detailsCommentBody).not.toContain("profile-backed");
   });
 
   test("coarse fallback keeps contract-scoped wording without overclaiming profile-backed certainty", async () => {
@@ -804,7 +894,7 @@ describe("createReviewHandler auto profile selection", () => {
     );
   });
 
-  test("logs contributor-experience state, source, and degradation path for inspection", async () => {
+  test("logs stored-profile trust diagnostics when an untrusted linked row is bypassed", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
     const { logger, entries } = createCaptureLogger();
@@ -851,20 +941,9 @@ describe("createReviewHandler auto profile selection", () => {
           createForIssue: async () => ({ data: {} }),
         },
         search: {
-          issuesAndPullRequests: async () => {
-            throw {
-              status: 429,
-              message: "secondary rate limit",
-              response: {
-                headers: {
-                  "retry-after": "0",
-                },
-                data: {
-                  message: "You have exceeded a secondary rate limit",
-                },
-              },
-            };
-          },
+          issuesAndPullRequests: async () => ({
+            data: { total_count: 4 },
+          }),
         },
       },
     };
@@ -884,10 +963,20 @@ describe("createReviewHandler auto profile selection", () => {
           costUsd: 0,
           numTurns: 1,
           durationMs: 1,
-          sessionId: "session-contract-log",
+          sessionId: "session-stored-profile-log",
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
+      contributorProfileStore: {
+        getByGithubUsername: async () =>
+          buildContributorProfileFixture({
+            overallTier: "newcomer",
+            overallScore: 0,
+            lastScoredAt: null,
+            trustMarker: null,
+          }),
+        getExpertise: async () => [],
+      } as never,
       logger,
     });
 
@@ -900,7 +989,7 @@ describe("createReviewHandler auto profile selection", () => {
         pull_request: {
           number: 101,
           draft: false,
-          title: "Contract observability scenario",
+          title: "Stored profile observability scenario",
           body: "",
           commits: 0,
           additions: 90,
@@ -928,11 +1017,15 @@ describe("createReviewHandler auto profile selection", () => {
       entry.message === "Author experience classification resolved"
     );
     expect(resolvedLog).toBeDefined();
-    expect(resolvedLog?.data?.contributorExperienceState).toBe("generic-degraded");
-    expect(resolvedLog?.data?.contributorExperienceSource).toBe("github-search");
-    expect(resolvedLog?.data?.contributorExperienceDegradationPath).toBe(
-      "search-api-rate-limit",
+    expect(resolvedLog?.data?.storedProfileTrustState).toBe("linked-unscored");
+    expect(resolvedLog?.data?.storedProfileTrustReason).toBe("never-scored");
+    expect(resolvedLog?.data?.storedProfileCalibrationMarker).toBe(null);
+    expect(resolvedLog?.data?.storedProfileCalibrationVersion).toBe(null);
+    expect(resolvedLog?.data?.storedProfileFallbackPath).toBe(
+      "stored-profile-linked-unscored->github-search",
     );
+    expect(resolvedLog?.data?.contributorExperienceState).toBe("coarse-fallback");
+    expect(resolvedLog?.data?.contributorExperienceSource).toBe("github-search");
   });
 
   test("large PRs default to minimal profile", async () => {
@@ -7646,7 +7739,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
       },
       contributorProfileStore: {
         getByGithubUsername: async (login: string) => login === "octocat"
-          ? { id: "profile-1", overallTier: "established" }
+          ? buildContributorProfileFixture({ overallTier: "established" })
           : null,
         getExpertise: async () => [],
       } as never,
@@ -7681,7 +7774,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
       },
       contributorProfileStore: {
         getByGithubUsername: async (login: string) => login === "octocat"
-          ? { id: "profile-1", overallTier: "established" }
+          ? buildContributorProfileFixture({ overallTier: "established" })
           : null,
         getExpertise: async () => [],
       } as never,
@@ -7700,11 +7793,8 @@ describe("createReviewHandler author-tier search cache integration", () => {
     const { executeCount, queries } = await captureReviewRetrievalQueries({
       issuesAndPullRequests: async () => ({ data: { total_count: 0 } }),
       contributorProfileStore: {
-        getByGithubUsername: async () => ({
-          id: 1,
-          overallTier: "newcomer",
-          optedOut: false,
-        }),
+        getByGithubUsername: async () =>
+          buildContributorProfileFixture({ overallTier: "newcomer", optedOut: false }),
         getExpertise: async () => [],
       } as never,
     });
@@ -7720,11 +7810,8 @@ describe("createReviewHandler author-tier search cache integration", () => {
     const { executeCount, queries } = await captureReviewRetrievalQueries({
       issuesAndPullRequests: async () => ({ data: { total_count: 9 } }),
       contributorProfileStore: {
-        getByGithubUsername: async () => ({
-          id: 1,
-          overallTier: "senior",
-          optedOut: true,
-        }),
+        getByGithubUsername: async () =>
+          buildContributorProfileFixture({ overallTier: "senior", optedOut: true }),
         getExpertise: async () => [],
       } as never,
     });
