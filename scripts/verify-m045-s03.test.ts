@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "../src/contributor/profile-trust.ts";
 import {
   M045_S03_CHECK_IDS,
   buildM045S03IdentityFixtures,
@@ -11,6 +12,19 @@ import {
 } from "./verify-m045-s03.ts";
 
 describe("evaluateM045S03", () => {
+  test("keeps trusted Slack fixtures explicit so active linked copy depends on the current trust marker", () => {
+    const fixtures = buildM045S03SlackFixtures();
+    const linkedProfile = fixtures.find((fixture) => fixture.scenarioId === "linked-profile");
+    const activeOptIn = fixtures.find((fixture) => fixture.scenarioId === "profile-opt-in");
+
+    expect(linkedProfile?.profiles[0]).toMatchObject({
+      trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+    });
+    expect(activeOptIn?.profiles[0]).toMatchObject({
+      trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+    });
+  });
+
   test("embeds GitHub proof and passes retrieval, Slack, and identity contract checks for the default fixture matrix", async () => {
     const report = await evaluateM045S03();
 

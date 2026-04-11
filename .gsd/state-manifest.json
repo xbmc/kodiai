@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T01:58:37.383Z",
+  "exported_at": "2026-04-11T02:22:13.981Z",
   "milestones": [
     {
       "id": "M001",
@@ -12982,19 +12982,28 @@
       "milestone_id": "M047",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Ship trust-aware Slack/retrieval proof for S02",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Composed `verify:m047:s02` from S01 runtime truth and fixed trust-aware M045 Slack fixtures.",
+      "status": "complete",
+      "one_liner": "Composed `verify:m047:s02` from S01 runtime truth and fixed trust-aware M045 Slack fixtures.",
+      "narrative": "Reproduced the existing M045 verifier drift, tightened the M045 tests to require explicit trusted Slack fixtures, and updated the in-memory contributor-profile store to preserve `trustMarker` plus default `includeOptedOut` lookup behavior. Reworked `scripts/verify-m047-s02.ts` into the slice-close downstream proof harness: it now embeds `verify:m047:s01`, evaluates the stored-profile state matrix (`linked-unscored`, `legacy`, `stale`, `calibrated`, `malformed`, `opt-out`), and proves `/kodiai profile`, link/opt-in continuity copy, retrieval multi-query/legacy-query author hints, and opted-out identity-suggestion suppression with local expectations. Rewrote `scripts/verify-m047-s02.test.ts` to pin the new schema, prerequisite drift handling, and human/JSON report surfaces.",
+      "verification_result": "Passed the slice-close test bundle for profile-surface resolution, Slack handler/routes, identity suggestions, retrieval query builders, and both verifier test suites. Passed `bun run verify:m047:s01`, `bun run verify:m045:s03`, `bun run verify:m047:s02`, `bun run verify:m047:s02 -- --json`, and `bun run tsc --noEmit`.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-11T02:22:13.953Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "The repo already contained a narrower `verify:m047:s02` proof script from T02, so I extended and replaced that local implementation instead of creating a brand-new verifier file. This was a local execution adaptation, not a slice-goal change.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m047-s02.test.ts",
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m045-s03.test.ts",
+        ".gsd/milestones/M047/slices/S02/tasks/T03-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Compose `verify:m047:s02` from the embedded `verify:m047:s01` runtime report plus a local downstream scenario matrix instead of re-implementing review-resolution logic.",
+        "Keep M045 Slack proof fixtures explicitly trusted by carrying `trustMarker` through the in-memory contributor-profile store and honoring `includeOptedOut` lookup semantics."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M047\nkey_files:\n  - scripts/verify-m047-s02.ts\n  - scripts/verify-m047-s02.test.ts\n  - scripts/verify-m045-s03.ts\n  - scripts/verify-m045-s03.test.ts\n  - .gsd/milestones/M047/slices/S02/tasks/T03-SUMMARY.md\nkey_decisions:\n  - Compose `verify:m047:s02` from the embedded `verify:m047:s01` runtime report plus a local downstream scenario matrix instead of re-implementing review-resolution logic.\n  - Keep M045 Slack proof fixtures explicitly trusted by carrying `trustMarker` through the in-memory contributor-profile store and honoring `includeOptedOut` lookup semantics.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-11T02:22:13.952Z\nblocker_discovered: false\n---\n\n# T03: Composed `verify:m047:s02` from S01 runtime truth and fixed trust-aware M045 Slack fixtures.\n\n**Composed `verify:m047:s02` from S01 runtime truth and fixed trust-aware M045 Slack fixtures.**\n\n## What Happened\n\nReproduced the existing M045 verifier drift, tightened the M045 tests to require explicit trusted Slack fixtures, and updated the in-memory contributor-profile store to preserve `trustMarker` plus default `includeOptedOut` lookup behavior. Reworked `scripts/verify-m047-s02.ts` into the slice-close downstream proof harness: it now embeds `verify:m047:s01`, evaluates the stored-profile state matrix (`linked-unscored`, `legacy`, `stale`, `calibrated`, `malformed`, `opt-out`), and proves `/kodiai profile`, link/opt-in continuity copy, retrieval multi-query/legacy-query author hints, and opted-out identity-suggestion suppression with local expectations. Rewrote `scripts/verify-m047-s02.test.ts` to pin the new schema, prerequisite drift handling, and human/JSON report surfaces.\n\n## Verification\n\nPassed the slice-close test bundle for profile-surface resolution, Slack handler/routes, identity suggestions, retrieval query builders, and both verifier test suites. Passed `bun run verify:m047:s01`, `bun run verify:m045:s03`, `bun run verify:m047:s02`, `bun run verify:m047:s02 -- --json`, and `bun run tsc --noEmit`.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts` | 0 | ✅ pass | 116ms |\n| 2 | `bun run verify:m047:s01` | 0 | ✅ pass | 45ms |\n| 3 | `bun run verify:m045:s03` | 0 | ✅ pass | 47ms |\n| 4 | `bun run verify:m047:s02` | 0 | ✅ pass | 47ms |\n| 5 | `bun run verify:m047:s02 -- --json` | 0 | ✅ pass | 47ms |\n| 6 | `bun run tsc --noEmit` | 0 | ✅ pass | 8675ms |\n\n## Deviations\n\nThe repo already contained a narrower `verify:m047:s02` proof script from T02, so I extended and replaced that local implementation instead of creating a brand-new verifier file. This was a local execution adaptation, not a slice-goal change.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m047-s02.ts`\n- `scripts/verify-m047-s02.test.ts`\n- `scripts/verify-m045-s03.ts`\n- `scripts/verify-m045-s03.test.ts`\n- `.gsd/milestones/M047/slices/S02/tasks/T03-SUMMARY.md`\n",
       "description": "**Slice:** S02 — Contract-first Slack, retrieval, and profile continuity rollout\n**Milestone:** M047\n\n## Description\n\nTurn the slice into a durable proof surface instead of a one-off set of handler tests. Keep `verify:m045:s03` honest by making its positive Slack/profile fixtures explicitly trusted, then add a new `verify:m047:s02` harness that composes S01’s stored-profile state matrix with Slack/profile continuity, retrieval author hints, and opted-out identity suppression.\n\n## Steps\n\n1. Make `scripts/verify-m045-s03.ts` truth-aware by carrying `trustMarker` through its in-memory contributor-profile fixtures, preserving `includeOptedOut` behavior, and updating its tests so active linked scenarios are genuinely trusted.\n2. Implement `scripts/verify-m047-s02.ts` and tests with stable scenarios for calibrated, linked-unscored, legacy, stale, malformed, and opted-out stored profiles across Slack/profile output, link/opt continuity copy, retrieval author hints, and identity-suggestion suppression.\n3. Keep expected phrases local to the verifier instead of deriving them from the same helper under test, and reuse `verify:m047:s01` outputs or seams where that reduces drift without importing review logic twice.\n4. Add `verify:m047:s02` to `package.json` and rerun `verify:m047:s01`, `verify:m045:s03`, the new verifier, and focused retrieval tests together as the slice-close proof bundle.\n\n## Must-Haves\n\n- [ ] `verify:m045:s03` no longer certifies active linked Slack/profile behavior from fixtures that lack the current trust marker.\n- [ ] `verify:m047:s02` reports stable scenario diagnostics for trusted and untrusted stored-profile states across Slack/profile, retrieval, and identity surfaces.\n- [ ] The full proof bundle keeps `verify:m047:s01` and retrieval tests green while adding the new slice-level verifier.",
       "estimate": "90m",
       "files": [
@@ -14141,6 +14150,18 @@
       "decision": "How to prove M047/S02 signed slash continuity and identity-suggestion suppression",
       "choice": "Add a focused `verify:m047:s02` proof harness that exercises the real signed Hono slash-command route and the identity-suggestion handler with fixed fixtures, rather than widening route dependencies or recalculating link state in the route layer.",
       "rationale": "This keeps the route dependency surface narrow, preserves the existing fail-open runtime behavior, and gives future agents a stable JSON inspection surface with named status codes that stays independent from the helpers under test.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 128,
+      "id": "D094",
+      "when_context": "M047 S02 T03",
+      "scope": "verification",
+      "decision": "How S02 cross-surface proof should validate stored-profile downstream behavior",
+      "choice": "Compose verify:m047:s02 from the embedded verify:m047:s01 runtime report plus a local downstream scenario matrix for Slack/profile, continuity, retrieval hints, and opt-out identity suppression.",
+      "rationale": "S01 remains the authoritative proof of stored-profile contract resolution, while S02 proves downstream surfaces consume those states truthfully without re-implementing review-resolution logic or deriving expectations from the same helpers under test.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -18381,6 +18402,72 @@
       "verdict": "✅ pass",
       "duration_ms": 7900,
       "created_at": "2026-04-11T01:58:37.355Z"
+    },
+    {
+      "id": 387,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 116,
+      "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 388,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 45,
+      "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 389,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s03",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 47,
+      "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 390,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 47,
+      "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 391,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 47,
+      "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 392,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8675,
+      "created_at": "2026-04-11T02:22:13.953Z"
     }
   ]
 }

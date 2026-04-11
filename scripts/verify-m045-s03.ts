@@ -5,6 +5,7 @@ import {
   type ContributorExperienceContract,
   type ContributorExperienceContractState,
 } from "../src/contributor/experience-contract.ts";
+import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "../src/contributor/profile-trust.ts";
 import type {
   ContributorExpertise,
   ContributorProfile,
@@ -78,6 +79,7 @@ type SurfaceDrift = {
 
 type SlackProfileSeed = Omit<ContributorProfile, "overallTier"> & {
   overallTier: string;
+  trustMarker?: string | null;
   expertise: ContributorExpertise[];
 };
 
@@ -427,6 +429,7 @@ function buildSlackProfileSeed(params: {
   overallTier: string;
   overallScore: number;
   optedOut: boolean;
+  trustMarker?: string | null;
   expertise?: ContributorExpertise[];
 }): SlackProfileSeed {
   return {
@@ -440,6 +443,7 @@ function buildSlackProfileSeed(params: {
     createdAt: new Date(FIXTURE_TIME),
     updatedAt: new Date(FIXTURE_TIME),
     lastScoredAt: new Date(FIXTURE_TIME),
+    trustMarker: params.trustMarker ?? null,
     expertise: params.expertise ? params.expertise.map(cloneExpertise) : [],
   };
 }
@@ -477,12 +481,18 @@ function toContributorProfile(seed: SlackProfileSeed): ContributorProfile {
     createdAt: new Date(seed.createdAt),
     updatedAt: new Date(seed.updatedAt),
     lastScoredAt: seed.lastScoredAt ? new Date(seed.lastScoredAt) : null,
+    trustMarker: seed.trustMarker ?? null,
   };
 }
 
 function createInMemoryContributorProfileStore(params: {
   profiles?: SlackProfileSeed[];
-  githubProfile?: { githubUsername: string; slackUserId: string | null } | null;
+  githubProfile?: {
+    githubUsername: string;
+    slackUserId: string | null;
+    optedOut?: boolean;
+    trustMarker?: string | null;
+  } | null;
 }): {
   store: ContributorProfileStore;
   setOptedOutCalls: Array<{ githubUsername: string; optedOut: boolean }>;
@@ -501,10 +511,12 @@ function createInMemoryContributorProfileStore(params: {
       displayName: githubProfile.githubUsername,
       overallTier: "established",
       overallScore: 0.8,
-      optedOut: false,
+      optedOut: githubProfile.optedOut ?? false,
       createdAt: new Date(FIXTURE_TIME),
       updatedAt: new Date(FIXTURE_TIME),
       lastScoredAt: new Date(FIXTURE_TIME),
+      trustMarker:
+        githubProfile.trustMarker ?? CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
       expertise: [],
     });
   }
@@ -521,9 +533,15 @@ function createInMemoryContributorProfileStore(params: {
   }
 
   const store: ContributorProfileStore = {
-    async getByGithubUsername(username) {
+    async getByGithubUsername(username, options = {}) {
       const record = records.get(username);
-      return record ? toContributorProfile(record) : null;
+      if (!record) {
+        return null;
+      }
+      if (record.optedOut && !options.includeOptedOut) {
+        return null;
+      }
+      return toContributorProfile(record);
     },
     async getBySlackUserId(slackUserId) {
       const record = findBySlackUserId(slackUserId);
@@ -549,6 +567,7 @@ function createInMemoryContributorProfileStore(params: {
             createdAt: new Date(),
             updatedAt: new Date(),
             lastScoredAt: null,
+            trustMarker: null,
             expertise: [],
           };
       records.set(record.githubUsername, record);
@@ -623,6 +642,7 @@ function createInMemoryContributorProfileStore(params: {
         createdAt: new Date(),
         updatedAt: new Date(),
         lastScoredAt: null,
+        trustMarker: null,
         expertise: [],
       };
       records.set(username, created);
@@ -766,6 +786,7 @@ export function buildM045S03SlackFixtures(): SlackFixture[] {
           overallTier: "established",
           overallScore: 0.75,
           optedOut: false,
+          trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
           expertise: linkedExpertise,
         }),
       ],
@@ -795,6 +816,7 @@ export function buildM045S03SlackFixtures(): SlackFixture[] {
           overallTier: "senior",
           overallScore: 0.98,
           optedOut: true,
+          trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
           expertise: linkedExpertise.map((entry) => ({
             ...cloneExpertise(entry),
             id: 2,
@@ -826,6 +848,7 @@ export function buildM045S03SlackFixtures(): SlackFixture[] {
           overallTier: "mystery-tier",
           overallScore: 0.42,
           optedOut: false,
+          trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
           expertise: [],
         }),
       ],
@@ -880,6 +903,7 @@ export function buildM045S03SlackFixtures(): SlackFixture[] {
           overallTier: "newcomer",
           overallScore: 0.1,
           optedOut: true,
+          trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
           expertise: [],
         }),
       ],

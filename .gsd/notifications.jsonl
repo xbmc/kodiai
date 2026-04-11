@@ -238,3 +238,9 @@
 {"id":"5033de53-9b90-4a0c-8cef-09b117a4da73","ts":"2026-04-11T01:02:54.302Z","severity":"info","message":"Verification gate: 4/4 checks passed","source":"notify","read":false}
 {"id":"9146e057-0259-41fe-a828-5ced6f53a8c1","ts":"2026-04-11T01:44:06.154Z","severity":"info","message":"Committed: feat: Added a stored-profile Slack/profile resolver so link, profile, a…","source":"notify","read":false}
 {"id":"3039e220-044e-4ac5-8e7a-da435f5db615","ts":"2026-04-11T01:44:06.193Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"099d8b24-c93c-4102-b44e-3c8d9c522f6a","ts":"2026-04-11T01:58:44.578Z","severity":"info","message":"Committed: test: Suppressed opted-out identity suggestion DMs and added signed sla…","source":"notify","read":false}
+{"id":"edb6648d-14de-4422-9efc-544bb34b73d8","ts":"2026-04-11T01:58:44.585Z","severity":"warning","message":"[safety] file-change: package.json — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"8dddf1e9-30d2-499e-8de6-f48f19a8828b","ts":"2026-04-11T01:58:44.585Z","severity":"warning","message":"[safety] file-change: scripts/verify-m047-s02.test.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"fcdbd078-3a10-426e-bc51-97aaa185fb08","ts":"2026-04-11T01:58:44.585Z","severity":"warning","message":"[safety] file-change: scripts/verify-m047-s02.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"8466f4e9-abf4-442e-ae31-a950ca62608b","ts":"2026-04-11T01:58:44.585Z","severity":"warning","message":"Safety: 3 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"0940418b-8d5c-42c6-a073-6929566de702","ts":"2026-04-11T01:58:44.632Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

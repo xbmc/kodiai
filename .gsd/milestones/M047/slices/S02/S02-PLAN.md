@@ -62,7 +62,7 @@
   - Verify: `bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts`
   - Done when: Opted-out linked contributors no longer receive link suggestions, Slack API failures remain non-blocking, and route tests confirm the truthful continuity copy reaches the slash-command HTTP response.
 
-- [ ] **T03: Ship trust-aware Slack/retrieval proof for S02** `est:90m`
+- [x] **T03: Ship trust-aware Slack/retrieval proof for S02** `est:90m`
   - Why: S02 needs an operator-facing proof surface and trust-aware fixture updates so retrieval, Slack/profile, and identity continuity stay aligned with the S01 resolver instead of certifying legacy raw-tier optimism.
   - Files: `scripts/verify-m047-s02.ts`, `scripts/verify-m047-s02.test.ts`, `scripts/verify-m045-s03.ts`, `scripts/verify-m045-s03.test.ts`, `package.json`
   - Do: Make `verify:m045:s03` fixtures truth-aware, add a new `verify:m047:s02` harness that composes S01 scenarios with Slack/profile output, link/opt continuity, retrieval author hints, and opted-out identity suppression, and wire the new script into `package.json`.
