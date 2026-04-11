@@ -1004,3 +1004,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** Any Slack/profile surface that renders persisted contributor state must first run the full stored row through `resolveContributorProfileSurface(...)` (which itself classifies via `classifyContributorProfileTrust(...)`). Only `projection.state === "profile-backed"` may claim active linked guidance or call `getExpertise(...)`. Linked-unscored, legacy, stale, malformed, and fail-open states collapse to `generic-unknown` on this surface; they do **not** reuse review-time `generic-degraded` wording because this is describing the persisted linked profile itself, not transient fallback-search degradation.
 
 **Established in:** M047/S02/T01 (`src/contributor/profile-surface-resolution.ts`, `src/slack/slash-command-handler.ts`).
+
+---
+
+## Opt-out milestone checks must reject leaked linked continuity evidence (M047/S03)
+
+**Context:** During M047/S03/T02, `verify:m047` still passed if the nested opt-out scenario unexpectedly regained a `linkContinuity` payload. The milestone harness only required continuity when it should exist; it never failed when continuity reappeared on a surface that should stay opt-out/generic.
+
+**Rule:** For milestone-level Slack/profile evidence, validate both sides of the contract: require linked continuity when the scenario is supposed to preserve it, and explicitly fail when opt-out/generic scenarios surface linked continuity at all. Otherwise the composed verifier can go false-green on contradictory downstream evidence.
+
+**Established in:** M047/S03/T02 (`scripts/verify-m047.ts`, `scripts/verify-m047.test.ts`).

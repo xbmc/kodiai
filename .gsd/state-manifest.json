@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T03:07:32.234Z",
+  "exported_at": "2026-04-11T03:13:11.479Z",
   "milestones": [
     {
       "id": "M001",
@@ -13082,19 +13082,26 @@
       "milestone_id": "M047",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Lock the integrated verifier with drift-focused regression tests",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Closed the `verify:m047` opt-out continuity false-green hole and locked it with drift-focused regression coverage.",
+      "status": "complete",
+      "one_liner": "Closed the `verify:m047` opt-out continuity false-green hole and locked it with drift-focused regression coverage.",
+      "narrative": "Started from the existing integrated verifier/test surface and looked for the remaining false-green seam instead of broadening the harness blindly. The concrete gap was in the composed Slack/profile check: `buildSlackProfileEvidence(...)` required linked continuity when it should exist, but it did not fail when the opt-out scenario unexpectedly regained linked-continuity evidence. I added a regression to `scripts/verify-m047.test.ts` that injects contradictory opt-out continuity into the real nested S02/M045/M046 reports, watched the suite fail with exitCode 0 instead of 1, then tightened `scripts/verify-m047.ts` so opt-out Slack/profile evidence now reports `slack_profile_evidence_drift` when linked continuity appears where it should be absent. I also appended the gotcha to `.gsd/KNOWLEDGE.md` so future verifier work validates forbidden evidence as well as required evidence.",
+      "verification_result": "Verified the red-green regression with `bun test ./scripts/verify-m047.test.ts`, then reran the full slice-close bundle: `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. All commands exited 0 after the harness change, and the milestone JSON report still preserved the nested S02/M045/M046 evidence plus the expected five milestone scenarios.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-11T03:13:11.448Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m047.ts",
+        "scripts/verify-m047.test.ts",
+        ".gsd/KNOWLEDGE.md",
+        ".gsd/milestones/M047/slices/S03/tasks/T02-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Treat opt-out linked-continuity evidence as a hard milestone-drift failure instead of ignoring it in the composed Slack/profile check."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M047\nkey_files:\n  - scripts/verify-m047.ts\n  - scripts/verify-m047.test.ts\n  - .gsd/KNOWLEDGE.md\n  - .gsd/milestones/M047/slices/S03/tasks/T02-SUMMARY.md\nkey_decisions:\n  - Treat opt-out linked-continuity evidence as a hard milestone-drift failure instead of ignoring it in the composed Slack/profile check.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-11T03:13:11.448Z\nblocker_discovered: false\n---\n\n# T02: Closed the `verify:m047` opt-out continuity false-green hole and locked it with drift-focused regression coverage.\n\n**Closed the `verify:m047` opt-out continuity false-green hole and locked it with drift-focused regression coverage.**\n\n## What Happened\n\nStarted from the existing integrated verifier/test surface and looked for the remaining false-green seam instead of broadening the harness blindly. The concrete gap was in the composed Slack/profile check: `buildSlackProfileEvidence(...)` required linked continuity when it should exist, but it did not fail when the opt-out scenario unexpectedly regained linked-continuity evidence. I added a regression to `scripts/verify-m047.test.ts` that injects contradictory opt-out continuity into the real nested S02/M045/M046 reports, watched the suite fail with exitCode 0 instead of 1, then tightened `scripts/verify-m047.ts` so opt-out Slack/profile evidence now reports `slack_profile_evidence_drift` when linked continuity appears where it should be absent. I also appended the gotcha to `.gsd/KNOWLEDGE.md` so future verifier work validates forbidden evidence as well as required evidence.\n\n## Verification\n\nVerified the red-green regression with `bun test ./scripts/verify-m047.test.ts`, then reran the full slice-close bundle: `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. All commands exited 0 after the harness change, and the milestone JSON report still preserved the nested S02/M045/M046 evidence plus the expected five milestone scenarios.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m047.test.ts` | 0 | ✅ pass | 470ms |\n| 2 | `bun run verify:m047 -- --json` | 0 | ✅ pass | 430ms |\n| 3 | `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json` | 0 | ✅ pass | 480ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 10640ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m047.ts`\n- `scripts/verify-m047.test.ts`\n- `.gsd/KNOWLEDGE.md`\n- `.gsd/milestones/M047/slices/S03/tasks/T02-SUMMARY.md`\n",
       "description": "- Why: The milestone-close verifier is only useful if scenario mapping, nested evidence preservation, CLI parsing, and script wiring fail loudly instead of going false-green.\n  - Do: Add `scripts/verify-m047.test.ts` with real nested happy-path coverage plus injected malformed and failed nested reports, missing scenario evidence, calibrated-retained and stale-degraded drift, coarse-fallback not-applicable expectations, human/JSON output alignment, invalid-arg handling, and `package.json` script wiring assertions; adjust `scripts/verify-m047.ts` only as needed to keep those tests green.\n  - Done when: the dedicated verifier test plus the prerequisite S02/M045/M046 proof bundle and `bun run tsc --noEmit` all pass, leaving `verify:m047` as the single milestone-close inspection surface.",
       "estimate": "90m",
       "files": [
@@ -18619,6 +18626,50 @@
       "verdict": "✅ pass",
       "duration_ms": 10710,
       "created_at": "2026-04-11T03:07:32.185Z"
+    },
+    {
+      "id": 397,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun test ./scripts/verify-m047.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 470,
+      "created_at": "2026-04-11T03:13:11.449Z"
+    },
+    {
+      "id": 398,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 430,
+      "created_at": "2026-04-11T03:13:11.449Z"
+    },
+    {
+      "id": 399,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 480,
+      "created_at": "2026-04-11T03:13:11.449Z"
+    },
+    {
+      "id": 400,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10640,
+      "created_at": "2026-04-11T03:13:11.449Z"
     }
   ]
 }

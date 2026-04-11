@@ -718,6 +718,8 @@ function buildSlackProfileEvidence(params: {
     } else if (params.scenario.linkContinuity.passed !== true) {
       problems.push(`link continuity failed: ${params.scenario.linkContinuity.statusCode}`);
     }
+  } else if (params.scenario.linkContinuity) {
+    problems.push(`unexpected link continuity was present: ${params.scenario.linkContinuity.statusCode}`);
   }
 
   const passed = problems.length === 0;

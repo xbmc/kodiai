@@ -49,7 +49,7 @@
   - Files: `scripts/verify-m047.ts`, `package.json`
   - Verify: `bun run verify:m047 -- --json`
 
-- [ ] **T02: Lock the integrated verifier with drift-focused regression tests** `est:90m`
+- [x] **T02: Lock the integrated verifier with drift-focused regression tests** `est:90m`
   - Why: The milestone-close verifier is only useful if scenario mapping, nested evidence preservation, CLI parsing, and script wiring fail loudly instead of going false-green.
   - Do: Add `scripts/verify-m047.test.ts` with real nested happy-path coverage plus injected malformed and failed nested reports, missing scenario evidence, calibrated-retained and stale-degraded drift, coarse-fallback not-applicable expectations, human/JSON output alignment, invalid-arg handling, and `package.json` script wiring assertions; adjust `scripts/verify-m047.ts` only as needed to keep those tests green.
   - Done when: the dedicated verifier test plus the prerequisite S02/M045/M046 proof bundle and `bun run tsc --noEmit` all pass, leaving `verify:m047` as the single milestone-close inspection surface.

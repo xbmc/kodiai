@@ -651,6 +651,70 @@ describe("verify m047 integrated milestone proof harness", () => {
     expect(anchorStderr.join(" ")).toContain("milestone_scenario_drift");
   });
 
+  test("fails when opt-out unexpectedly regains linked continuity evidence", async () => {
+    const verifyModule = await loadVerifyModule();
+
+    expect(verifyModule).not.toBeNull();
+    if (!verifyModule?.buildM047ProofHarness) {
+      return;
+    }
+
+    const nested = await loadNestedModules();
+    const [s02Report, m045Report, m046Report] = await Promise.all([
+      nested.evaluateM047S02({ generatedAt: "2026-04-10T23:32:00.000Z" }),
+      nested.evaluateM045S03({ generatedAt: "2026-04-10T23:32:00.000Z" }),
+      nested.evaluateM046({
+        generatedAt: "2026-04-10T23:32:00.000Z",
+        referenceTime: "2026-04-10T20:42:03.000Z",
+      }),
+    ]);
+
+    const optOutContinuityDrift = clone(s02Report);
+    const optOutScenario = optOutContinuityDrift.scenarios.find(
+      (scenario) => scenario.scenarioId === "opt-out",
+    );
+    expect(optOutScenario).toBeDefined();
+    if (optOutScenario) {
+      optOutScenario.linkContinuity = {
+        passed: true,
+        statusCode: "opt_out_link_continuity_truthful",
+        text: "Unexpected linked continuity copy leaked into opt-out.",
+      };
+    }
+
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const drift = await verifyModule.buildM047ProofHarness({
+      json: true,
+      stdout: { write: (chunk: string) => void stdout.push(chunk) },
+      stderr: { write: (chunk: string) => void stderr.push(chunk) },
+      _evaluateM047S02: async () => optOutContinuityDrift,
+      _evaluateM045S03: async () => m045Report,
+      _evaluateM046: async () => m046Report,
+    });
+
+    const driftReport = JSON.parse(stdout.join("")) as EvaluationReport;
+    const optOut = driftReport.scenarios.find((scenario) => scenario.scenarioId === "opt-out");
+
+    expect(drift.exitCode).toBe(1);
+    expect(optOut).toMatchObject({
+      passed: false,
+      statusCode: "scenario_evidence_drift",
+      slackProfile: {
+        applicable: true,
+        passed: false,
+        statusCode: "slack_profile_evidence_drift",
+      },
+    });
+    expect(optOut?.slackProfile.detail).toContain("unexpected link continuity");
+    expect(findCheck(driftReport, "M047-S03-MILESTONE-SCENARIOS")).toMatchObject({
+      passed: false,
+      status_code: "milestone_scenario_drift",
+    });
+    expect(findCheck(driftReport, "M047-S03-MILESTONE-SCENARIOS").detail).toContain("opt-out");
+    expect(stderr.join(" ")).toContain("milestone_scenario_drift");
+  });
+
   test("keeps human and json output aligned and wires the canonical package script", async () => {
     const verifyModule = await loadVerifyModule();
     const packageJson = JSON.parse(

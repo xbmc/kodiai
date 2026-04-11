@@ -246,3 +246,6 @@
 {"id":"0940418b-8d5c-42c6-a073-6929566de702","ts":"2026-04-11T01:58:44.632Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"0874fa18-5d65-47bb-8566-e28c7c84c2a9","ts":"2026-04-11T02:22:22.170Z","severity":"info","message":"Committed: fix: Composed `verify:m047:s02` from S01 runtime truth and fixed trust-…","source":"notify","read":false}
 {"id":"df927ac5-dc36-49a4-b20b-69efab2ed152","ts":"2026-04-11T02:22:31.447Z","severity":"info","message":"Verification gate: 5/5 checks passed","source":"notify","read":false}
+{"id":"0ac25433-6ef3-4fe1-8a29-543f5e3557a5","ts":"2026-04-11T03:07:41.187Z","severity":"info","message":"Committed: test: Added the milestone-level `verify:m047` composition harness with…","source":"notify","read":false}
+{"id":"ba5faac0-91d7-4f9b-a71a-c6fe1b70793e","ts":"2026-04-11T03:07:41.201Z","severity":"warning","message":"[safety] file-change: scripts/verify-m047.test.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"dc7b08f3-a2a0-4a63-a1b1-7a903c55af82","ts":"2026-04-11T03:07:41.201Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
