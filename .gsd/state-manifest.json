@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T02:22:13.981Z",
+  "exported_at": "2026-04-11T03:07:32.234Z",
   "milestones": [
     {
       "id": "M001",
@@ -6140,14 +6140,14 @@
       "milestone_id": "M047",
       "id": "S02",
       "title": "S02",
-      "status": "pending",
+      "status": "complete",
       "risk": "Medium — downstream raw-tier consumers remain on Slack/profile surfaces and route-level continuity can drift even if the review resolver is fixed.",
       "depends": [],
       "demo": "The same contributor state produces consistent `/kodiai profile`, link/opt continuity messaging where applicable, and review retrieval hints with no raw-tier leakage or false 'active profile-backed' claims.",
       "created_at": "2026-04-11T00:03:51.454Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-11T02:28:08.575Z",
+      "full_summary_md": "---\nid: S02\nparent: M047\nmilestone: M047\nprovides:\n  - A reusable stored-profile surface resolver for Slack/profile continuity and expertise gating.\n  - System-view opted-out identity suppression that prevents duplicate link DMs for existing opted-out contributors.\n  - `verify:m047:s02`, the canonical downstream proof surface for Slack/profile, continuity, retrieval, and identity alignment.\nrequires:\n  - slice: S01\n    provides: Persisted-row trust classification, trust-aware review-time resolution, and the embedded `verify:m047:s01` runtime proof surface.\naffects:\n  - S03\nkey_files:\n  - src/contributor/profile-surface-resolution.ts\n  - src/contributor/profile-surface-resolution.test.ts\n  - src/slack/slash-command-handler.ts\n  - src/slack/slash-command-handler.test.ts\n  - src/handlers/identity-suggest.ts\n  - src/handlers/identity-suggest.test.ts\n  - src/routes/slack-commands.test.ts\n  - scripts/verify-m047-s02.ts\n  - scripts/verify-m047-s02.test.ts\n  - scripts/verify-m045-s03.ts\n  - scripts/verify-m045-s03.test.ts\n  - package.json\nkey_decisions:\n  - Use a dedicated stored-profile surface resolver instead of reading raw `overallTier` directly on Slack/profile surfaces.\n  - Use system-view `getByGithubUsername(..., { includeOptedOut: true })` lookups in the identity-suggestion path so opted-out linked contributors suppress DMs without re-enabling profile-backed guidance.\n  - Compose `verify:m047:s02` from the embedded `verify:m047:s01` runtime report plus a local downstream scenario matrix instead of re-implementing review-resolution logic.\npatterns_established:\n  - Persisted-profile Slack/profile surfaces must resolve full stored rows through `resolveContributorProfileSurface(...)`; only `profile-backed` surfaces may claim active linked guidance or fetch expertise.\n  - Identity-suggestion suppression for linked contributors must use system-view opted-out lookups to distinguish an opted-out existing profile from an absent contributor.\n  - Downstream proof harnesses should compose authoritative upstream verifier reports plus a local scenario matrix, rather than deriving expectations from the same helpers under test.\nobservability_surfaces:\n  - `bun run verify:m047:s02 -- --json` exposes the downstream stored-profile matrix with stable check IDs and scenario status codes.\n  - `bun run verify:m045:s03 -- --json` remains the cross-surface contract-drift guard for retrieval, Slack, and identity behavior.\n  - `bun run verify:m047:s01 -- --json` remains the authoritative embedded source-resolution proof that S02 composes rather than re-derives.\n  - `src/slack/slash-command-handler.test.ts` and `src/routes/slack-commands.test.ts` prove direct-handler and signed-route continuity copy stay aligned.\n  - `src/handlers/identity-suggest.test.ts` exposes opt-out suppression, fail-open warning, and duplicate-DM diagnostics for the identity path.\ndrill_down_paths:\n  - .gsd/milestones/M047/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M047/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M047/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-11T02:28:08.576Z\nblocker_discovered: false\n---\n\n# S02: Contract-first Slack, retrieval, and profile continuity rollout\n\n**Slack/profile continuity, retrieval hints, and identity-suggestion suppression now consume the stored-profile trust seam, keeping downstream contributor output truthful for calibrated, untrusted, and opted-out states.**\n\n## What Happened\n\nS02 carried the S01 stored-profile truth boundary through every downstream persisted-profile surface. `src/contributor/profile-surface-resolution.ts` now classifies full contributor rows through `classifyContributorProfileTrust(...)` and is the only path Slack/profile continuity uses before rendering copy or looking up expertise. `/kodiai profile`, `link`, and `profile opt-in` now show active linked guidance and expertise only for current trusted calibrated rows; linked-unscored, legacy, stale, malformed, and fail-open rows collapse to generic continuity, while opted-out rows stay generic-opt-out. This removed raw-tier optimism from Slack/profile output and kept persisted-profile copy distinct from review-time fallback and degradation semantics.\n\nThe slice also fixed downstream continuity behavior that still treated opted-out linked contributors as absent. `src/handlers/identity-suggest.ts` now performs system-view profile lookups with `includeOptedOut: true`, which suppresses duplicate link DMs for opted-out linked rows without re-enabling profile-backed guidance. Signed slash-route coverage in `src/routes/slack-commands.test.ts` proves the truthful continuity copy reaches the real Hono response surface, and Slack API failures remain fail-open with warnings instead of blocking the handler.\n\nFinally, S02 shipped the operator-facing downstream proof surface. `scripts/verify-m047-s02.ts` composes the embedded `verify:m047:s01` runtime report with a local stored-profile scenario matrix covering linked-unscored, legacy, stale, calibrated, malformed, and opt-out states across Slack/profile output, link/opt continuity, retrieval hints, and opt-out identity suppression. `scripts/verify-m045-s03.ts` was updated so the existing contract verifier stays trust-aware rather than certifying pre-S02 raw-tier optimism. The result is one consistent contract-first downstream story for review-time resolution, Slack/profile output, retrieval hints, and identity suggestions, leaving only S03’s top-level `verify:m047` composition layer.\n\n## Verification\n\nFresh slice-close verification passed:\n\n- `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts`\n- `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02`\n- `bun run verify:m047:s01 -- --json`\n- `bun run verify:m045:s03 -- --json`\n- `bun run verify:m047:s02 -- --json`\n- `bun run tsc --noEmit`\n\nThe regression bundle reported 64 passing tests and 0 failures across the focused Slack/profile, route, identity, retrieval, and verifier suites. `verify:m047:s02 -- --json` passed all six top-level checks and showed the expected stored-profile matrix: linked-unscored, legacy, and malformed rows stayed generic on Slack while retrieval used only coarse `returning contributor` hints; stale rows stayed generic with retrieval author hints suppressed under degraded fallback; calibrated rows stayed `profile-backed` across Slack/profile, continuity, and retrieval; and opted-out rows stayed generic, suppressed retrieval hints, and skipped identity DMs. `verify:m045:s03 -- --json` also remained green, confirming the older contract verifier now reads trusted Slack fixtures and continues to pass retrieval, Slack, and identity drift checks.\n\n### Operational Readiness\n- **Health signal:** `bun run verify:m047:s02 -- --json` reports PASS for `M047-S02-SLACK-PROFILE-CONTRACT`, `M047-S02-CONTINUITY-CONTRACT`, `M047-S02-RETRIEVAL-MULTI-QUERY-CONTRACT`, `M047-S02-RETRIEVAL-LEGACY-QUERY-CONTRACT`, and `M047-S02-IDENTITY-SUPPRESSION-CONTRACT`; the signed route and identity-suggestion test suites stay green.\n- **Failure signal:** regressions surface as false “Linked contributor guidance is active” Slack/profile copy for untrusted rows, unexpected expertise exposure on generic states, author hints appearing for generic/opt-out/degraded retrieval queries, or an identity DM being sent to an opted-out linked contributor.\n- **Recovery procedure:** rerun the focused regression bundle plus `bun run verify:m047:s02 -- --json`, inspect the failing scenario/status code, then repair the relevant seam (`resolveContributorProfileSurface(...)`, slash-command continuity copy, retrieval hint mapping, or `getByGithubUsername(..., { includeOptedOut: true })`) and rerun until all scenarios return PASS.\n- **Monitoring gaps:** these protections are still verifier- and test-driven; there is no live production alert yet for downstream false active linked guidance, so S03 remains the next place to consolidate milestone-level proof and inspection.\n\n## Requirements Advanced\n\n- R046 — Rolled the contributor-experience contract through Slack/profile continuity, retrieval hints, and identity-suggestion suppression using the stored-profile trust seam instead of raw stored tiers.\n- R048 — Added the downstream `verify:m047:s02` proof surface and aligned Slack/profile, retrieval, and identity behavior with the same stored-profile scenario matrix that S03 will compose into milestone-level coherence proof.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\n- None.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone. The existing narrower `verify:m047:s02` stub from T02 was extended into the final slice-close downstream proof harness, but the slice scope and promised outputs did not change.\n\n## Known Limitations\n\nS03 still needs to compose `verify:m047:s01`, `verify:m045:s03`, `verify:m047:s02`, and the M046 proof surfaces into the milestone-level `verify:m047` command. Downstream protection is still verifier-driven rather than backed by live production alerting, and Slack/profile continuity intentionally stays generic for linked-unscored, legacy, stale, and malformed stored rows even when review-time fallback can still derive coarse or degraded context from cache/search.\n\n## Follow-ups\n\nBuild the milestone-level `verify:m047` composition harness in S03, preserve the nested `verify:m047:s01` and `verify:m047:s02` evidence surfaces inside it, and consider adding operator-facing alerting if any downstream surface reintroduces false active linked guidance.\n\n## Files Created/Modified\n\n- `src/contributor/profile-surface-resolution.ts` — Added the stored-profile Slack/profile resolver that classifies persisted rows through the S01 trust seam and gates active linked guidance plus expertise lookup.\n- `src/contributor/profile-surface-resolution.test.ts` — Added matrix coverage for calibrated, opted-out, linked-unscored, legacy, stale, malformed, and fail-open surface projections.\n- `src/slack/slash-command-handler.ts` — Rewired `/kodiai profile`, `link`, and `profile opt-in` to use the stored-profile surface resolver before rendering continuity copy or fetching expertise.\n- `src/slack/slash-command-handler.test.ts` — Added contract-first Slack/profile regression coverage for generic continuity, trusted active continuity, and expertise lookup fail-open behavior.\n- `src/handlers/identity-suggest.ts` — Switched existing-profile checks to system-view `includeOptedOut: true` lookups so opted-out linked contributors suppress DMs.\n- `src/handlers/identity-suggest.test.ts` — Added suppression, duplicate-DM, malformed Slack response, and fail-open warning coverage for the identity-suggestion path.\n- `src/routes/slack-commands.test.ts` — Proved the truthful continuity copy through the signed Hono slash-command route.\n- `scripts/verify-m047-s02.ts` — Added the downstream S02 proof harness across Slack/profile output, continuity copy, retrieval hints, and opt-out identity suppression.\n- `scripts/verify-m047-s02.test.ts` — Pinned the scenario matrix, JSON schema, and prerequisite drift behavior for the S02 proof harness.\n- `scripts/verify-m045-s03.ts` — Updated the existing cross-surface verifier so Slack and retrieval fixtures remain trust-aware after the S02 rollout.\n- `scripts/verify-m045-s03.test.ts` — Added regression guards for trusted Slack fixtures and downstream contract drift.\n- `package.json` — Wired the `verify:m047:s02` package script for operator and slice-close verification.\n",
+      "full_uat_md": "# S02: Contract-first Slack, retrieval, and profile continuity rollout — UAT\n\n**Milestone:** M047\n**Written:** 2026-04-11T02:28:08.576Z\n\n# S02: Contract-first Slack, retrieval, and profile continuity rollout — UAT\n\n**Milestone:** M047\n**Written:** 2026-04-10T19:22:31-07:00\n\n# S02 UAT — Contract-first Slack, retrieval, and profile continuity rollout\n\n## Preconditions\n\n- Repository is at the completed M047/S02 state.\n- Dependencies are installed and `bun` is available.\n- No live Slack or GitHub credentials are required; all verification is deterministic and fixture-backed.\n- The S01 runtime proof surface (`verify:m047:s01`) is available because S02 embeds it as a prerequisite.\n\n## Test Case 1 — Full slice regression bundle stays green\n\n1. Run:\n   - `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts`\n2. Confirm the command exits 0.\n3. Confirm the output reports passing coverage for all eight named files.\n4. Confirm the bundle finishes with no failures.\n\n**Expected outcome:**\n- Slack/profile resolution, signed slash-command continuity, identity suppression, retrieval hint shaping, and both verifier suites all pass together.\n- No test in the bundle reports false active linked guidance for untrusted stored rows.\n\n## Test Case 2 — The nested verifier chain stays coherent\n\n1. Run:\n   - `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02`\n2. Inspect the output from each verifier.\n3. Confirm all three commands report `PASS`.\n\n**Expected outcome:**\n- `verify:m047:s01` preserves truthful stored-profile runtime resolution.\n- `verify:m045:s03` remains green after the Slack/retrieval rollout.\n- `verify:m047:s02` reports the downstream stored-profile matrix without contradiction.\n\n## Test Case 3 — JSON proof surfaces expose the correct downstream state matrix\n\n1. Run:\n   - `bun run verify:m047:s01 -- --json`\n   - `bun run verify:m045:s03 -- --json`\n   - `bun run verify:m047:s02 -- --json`\n2. In the `verify:m047:s02` JSON output, confirm the top-level checks all pass:\n   - `M047-S02-SLACK-PROFILE-CONTRACT`\n   - `M047-S02-CONTINUITY-CONTRACT`\n   - `M047-S02-RETRIEVAL-MULTI-QUERY-CONTRACT`\n   - `M047-S02-RETRIEVAL-LEGACY-QUERY-CONTRACT`\n   - `M047-S02-IDENTITY-SUPPRESSION-CONTRACT`\n3. Confirm these scenario-specific expectations:\n   - `linked-unscored`, `legacy`, and `malformed` stay generic on Slack/profile surfaces and use only `returning contributor` retrieval hints.\n   - `stale` stays generic on Slack/profile surfaces and omits retrieval author hints under degraded fallback behavior.\n   - `calibrated` stays `profile-backed` across Slack/profile, continuity, and retrieval surfaces.\n   - `opt-out` stays generic, suppresses retrieval author hints, and reports identity suppression with no DM sent.\n4. In the `verify:m045:s03` JSON output, confirm Slack and identity sections still pass after the S02 changes.\n\n**Expected outcome:**\n- The downstream proof surface is machine-consumable and nested verifier composition remains intact.\n- Status codes and scenario diagnostics make drift obvious without manual log spelunking.\n\n## Test Case 4 — Slack/profile continuity stays truthful on the real route and handler surfaces\n\n1. Run:\n   - `bun test ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts`\n2. Inspect the passing test names.\n3. Confirm the suite covers:\n   - generic continuity for `link` when a newly linked profile is still untrusted\n   - generic continuity for `profile opt-in` when current contributor signals are still unavailable\n   - active linked continuity only when the stored profile is trusted\n   - generic `/kodiai profile` output for opted-out, legacy, stale, and malformed rows\n   - expertise lookup fail-open behavior\n\n**Expected outcome:**\n- Untrusted stored rows never claim active linked guidance on Slack/profile surfaces.\n- Trusted calibrated rows do claim active linked guidance and may show expertise.\n- The signed Hono route returns the same truthful continuity copy as the direct handler path.\n\n## Test Case 5 — Opted-out linked contributors suppress identity suggestions without breaking fail-open behavior\n\n1. Run:\n   - `bun test ./src/handlers/identity-suggest.test.ts`\n2. Inspect the passing test names.\n3. Confirm the suite includes passing cases for:\n   - existing linked profiles skipping Slack lookup entirely\n   - opted-out linked profiles being treated as existing and receiving no DM\n   - low-confidence matches staying non-blocking\n   - malformed Slack DM responses logging warnings without throwing\n   - missing opted-out-lookup support staying fail-open with a warning\n\n**Expected outcome:**\n- Opted-out linked contributors are not treated as absent.\n- Slack API problems remain warnings, not blockers.\n- Only high-confidence, non-opted-out matches send the truthful DM copy.\n\n## Test Case 6 — Retrieval hint shaping stays aligned with downstream truth\n\n1. Run:\n   - `bun test ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts`\n2. Confirm the command exits 0.\n3. Confirm the passing cases cover:\n   - `established contributor` hints only for trusted `profile-backed` states\n   - `returning contributor` hints only for coarse-fallback states\n   - no author hint for generic-unknown, generic-opt-out, or generic-degraded states\n   - downstream verifier drift detection when scenario expectations are blank or contradictory\n\n**Expected outcome:**\n- Retrieval author hints remain contract-first and do not leak false contributor certainty.\n- The verifier fixtures catch regressions instead of certifying legacy optimism.\n\n## Test Case 7 — Type safety stays intact after the rollout wiring\n\n1. Run:\n   - `bun run tsc --noEmit`\n2. Confirm the command exits 0.\n\n**Expected outcome:**\n- The new resolver, handler wiring, retrieval/verifier updates, and route/identity coverage compile cleanly.\n\n## Edge Cases To Explicitly Check\n\n- Linked-unscored, legacy, stale, and malformed stored rows must not show active linked guidance on `/kodiai profile`.\n- `link` and `profile opt-in` must keep continuity generic for untrusted stored rows by saying current contributor signals are not yet available.\n- Opted-out linked contributors must suppress identity DMs even though user-facing lookups normally hide opted-out rows.\n- Degraded fallback retrieval scenarios must omit contributor author hints instead of inventing contributor certainty.\n- Signed slash-command responses must match the direct handler copy for the same stored-profile state.\n- Slack/profile, verifier, and route output must stay redacted from Slack IDs and contributor profile IDs.\n\n## UAT Exit Criteria\n\nS02 is accepted only if:\n\n- the full slice regression bundle passes,\n- `verify:m047:s01`, `verify:m045:s03`, and `verify:m047:s02` all pass together,\n- the three `--json` proof surfaces expose the expected stored-profile and downstream scenario diagnostics,\n- `tsc` passes,\n- and no edge-case check reintroduces false active linked guidance, retrieval-hint leakage, or opted-out identity DMs.\n",
       "goal": "Roll the persisted contributor-profile truth boundary from S01 through Slack/profile continuity, link/opt messaging, identity-suggestion suppression, and retrieval proof so downstream surfaces no longer trust raw stored tiers or overclaim active linked guidance.",
       "success_criteria": "- `/kodiai profile`, `link`, and `profile opt-in` resolve contributor guidance from stored-profile trust state rather than raw `overallTier`, and linked-unscored, legacy, stale, or malformed rows never claim active linked guidance.\n- Slack profile output only shows expertise for trustworthy calibrated profiles; opted-out or generic states stay redacted and truthful.\n- Identity-link suggestions treat opted-out linked rows as existing profiles and suppress new DMs instead of pretending the contributor is absent.\n- Retrieval-hint proof stays aligned with S01's contract-first review resolver, and trust-aware verifier fixtures stop certifying unmarked stored tiers as active linked profiles.\n- `verify:m047:s02` proves Slack/profile continuity, retrieval alignment, and opted-out identity behavior while `verify:m047:s01` and `verify:m045:s03` remain green.",
       "proof_level": "integration proof on deterministic slash-command, identity-suggestion, retrieval, and verifier scenarios seeded from stored contributor-profile states; real runtime required: no; human/UAT required: no.",
@@ -6159,23 +6159,20 @@
     {
       "milestone_id": "M047",
       "id": "S03",
-      "title": "Integrated M047 coherence verifier",
+      "title": "S03",
       "status": "pending",
       "risk": "Medium — the milestone can look complete while still hiding runtime source-resolution drift unless the assembled system is proven through one operator-facing proof surface.",
-      "depends": [
-        "S01",
-        "S02"
-      ],
+      "depends": [],
       "demo": "`bun run verify:m047 -- --json` passes and shows linked-unscored, calibrated-retained, stale/degraded, opt-out, and coarse-fallback scenarios resolving consistently across review, Review Details, retrieval hints, Slack/profile output, and contributor-model plumbing while preserving nested M045/M046 evidence.",
       "created_at": "2026-04-11T00:03:51.455Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Ship the canonical operator-facing proof surface for M047 so rollout acceptance depends on real runtime source resolution and cross-surface coherence, not copy-only contract projections.",
-      "success_criteria": "- A new `verify:m047` command composes upstream `verify:m045:s03` and `verify:m046` evidence instead of duplicating or hiding them.\n- The verifier exercises real stored-profile, cache, and fallback inputs and catches the old mixed-taxonomy / false-profile-backed-newcomer regression.\n- Human and JSON output stay aligned with stable check ids, named failure diagnostics, and fixture-backed calibration expectations.\n- At least one representative end-to-end scenario proves the assembled system no longer exhibits the old mismatched-surface behavior.",
-      "proof_level": "Operator-facing integrated verifier plus targeted tests. Proof is mechanical, repeatable, and grounded in runtime source-resolution scenarios rather than direct projection helpers.",
-      "integration_closure": "This slice retires milestone-closeout risk by proving the assembled review, Slack, retrieval, and persistence surfaces no longer drift by contributor taxonomy or trust semantics.",
-      "observability_impact": "Add named verifier diagnostics for trust-boundary misses, Slack drift, retrieval drift, legacy-row leakage, and calibration-fixture mismatch.",
+      "goal": "Ship the milestone-level `verify:m047` proof surface that composes the already-shipped M047/S02 downstream truth, M045 contract-drift evidence, and M046 calibration evidence into one operator-facing coherence verifier without reopening product logic.",
+      "success_criteria": "- `verify:m047` exists as the milestone-level package script and composes `evaluateM047S02()`, `evaluateM045S03()`, and `evaluateM046()` as the only top-level evidence sources.\n- The integrated report preserves nested S02, M045, and M046 JSON objects and exposes stable top-level check IDs plus five milestone scenario ids: `linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, and `coarse-fallback`.\n- Each milestone scenario surfaces coherent review/runtime, retrieval, Slack/profile, identity, and contributor-model evidence or explicit not-applicable status where the surface does not apply, with `koprajs` anchoring calibrated-retained and `fkoemep` anchoring stale-degraded.\n- Malformed or failing nested reports, missing scenario evidence, mapping drift, invalid CLI args, or package-script mismatches fail the proof surface loudly, while the truthful M046 `replace` verdict remains reported as machine-readable data instead of a harness failure.\n- `scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, the prerequisite proof scripts, and `bun run tsc --noEmit` all pass together.",
+      "proof_level": "final-assembly proof on the real milestone-close CLI entrypoint (`bun run verify:m047`) by composing deterministic nested proof surfaces; real runtime required: no; human/UAT required: no.",
+      "integration_closure": "- Upstream surfaces consumed: `scripts/verify-m047-s02.ts`, `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, and the package-script contract in `package.json`.\n- New wiring introduced in this slice: `scripts/verify-m047.ts` becomes the single milestone-close entrypoint that maps five operator-facing scenarios onto nested S02/M045/M046 evidence without re-running deeper business logic.\n- What remains before the milestone is truly usable end-to-end: nothing inside M047 once the integrated verifier, prerequisite proof scripts, and TypeScript check all pass.",
+      "observability_impact": "- `bun test ./scripts/verify-m047.test.ts`\n- `bun run verify:m047 -- --json`\n- `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`\n- `bun run tsc --noEmit`",
       "sequence": 3,
       "replan_triggered_at": null
     }
@@ -13035,6 +13032,92 @@
       "observability_impact": "- Signals added/changed: `verify:m047:s02` becomes the operator inspection surface for Slack/profile continuity, retrieval-hint alignment, and opted-out identity suppression.\n- How a future agent inspects this: run `bun run verify:m047:s02 -- --json` and compare its scenario report with `bun run verify:m047:s01 -- --json` and `bun run verify:m045:s03 -- --json`.\n- Failure state exposed: named scenario/status-code drift for trusted vs untrusted Slack output, retrieval author hints, or identity-suggestion suppression.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Added the milestone-level `verify:m047` composition harness with stable scenario mapping, preserved nested S02/M045/M046 evidence, and regression coverage for malformed reports, anchor drift, and CLI behavior.",
+      "status": "complete",
+      "one_liner": "Added the milestone-level `verify:m047` composition harness with stable scenario mapping, preserved nested S02/M045/M046 evidence, and regression coverage for malformed reports, anchor drift, and CLI behavior.",
+      "narrative": "Added `scripts/verify-m047.ts` as the milestone-level composition harness for M047. The new verifier validates nested S02, M045, and M046 report shapes, preserves their full JSON payloads verbatim, maps the five milestone scenarios from nested evidence only, and keeps the truthful M046 `replace` verdict as data instead of treating it as a harness failure. Added `scripts/verify-m047.test.ts` first to lock the contract for stable check ids, scenario ids, malformed nested reports, missing anchors, coarse-fallback not-applicable handling, human/JSON output alignment, and package wiring. Wired `verify:m047` into `package.json`, fixed the compiler issues caught by `tsc`, and confirmed the dedicated test suite, the milestone CLI, the prerequisite proof bundle, and TypeScript compilation all pass.",
+      "verification_result": "Verified with the dedicated `scripts/verify-m047.test.ts` regression suite, the real `bun run verify:m047 -- --json` CLI smoke check, the prerequisite proof bundle `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. All four commands exited 0 after the final syntax and readonly-tuple fixes.",
+      "duration": "",
+      "completed_at": "2026-04-11T03:07:32.185Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m047.ts",
+        "scripts/verify-m047.test.ts",
+        "package.json",
+        ".gsd/milestones/M047/slices/S03/tasks/T01-SUMMARY.md"
+      ],
+      "key_decisions": [
+        "Compose `verify:m047` only from `evaluateM047S02()`, `evaluateM045S03()`, and `evaluateM046()`, and map coarse-fallback to S01 cache runtime plus M045 retrieval while marking Slack/profile continuity not applicable."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M047\nkey_files:\n  - scripts/verify-m047.ts\n  - scripts/verify-m047.test.ts\n  - package.json\n  - .gsd/milestones/M047/slices/S03/tasks/T01-SUMMARY.md\nkey_decisions:\n  - Compose `verify:m047` only from `evaluateM047S02()`, `evaluateM045S03()`, and `evaluateM046()`, and map coarse-fallback to S01 cache runtime plus M045 retrieval while marking Slack/profile continuity not applicable.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-11T03:07:32.184Z\nblocker_discovered: false\n---\n\n# T01: Added the milestone-level `verify:m047` composition harness with stable scenario mapping, preserved nested S02/M045/M046 evidence, and regression coverage for malformed reports, anchor drift, and CLI behavior.\n\n**Added the milestone-level `verify:m047` composition harness with stable scenario mapping, preserved nested S02/M045/M046 evidence, and regression coverage for malformed reports, anchor drift, and CLI behavior.**\n\n## What Happened\n\nAdded `scripts/verify-m047.ts` as the milestone-level composition harness for M047. The new verifier validates nested S02, M045, and M046 report shapes, preserves their full JSON payloads verbatim, maps the five milestone scenarios from nested evidence only, and keeps the truthful M046 `replace` verdict as data instead of treating it as a harness failure. Added `scripts/verify-m047.test.ts` first to lock the contract for stable check ids, scenario ids, malformed nested reports, missing anchors, coarse-fallback not-applicable handling, human/JSON output alignment, and package wiring. Wired `verify:m047` into `package.json`, fixed the compiler issues caught by `tsc`, and confirmed the dedicated test suite, the milestone CLI, the prerequisite proof bundle, and TypeScript compilation all pass.\n\n## Verification\n\nVerified with the dedicated `scripts/verify-m047.test.ts` regression suite, the real `bun run verify:m047 -- --json` CLI smoke check, the prerequisite proof bundle `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. All four commands exited 0 after the final syntax and readonly-tuple fixes.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m047.test.ts` | 0 | ✅ pass | 190ms |\n| 2 | `bun run verify:m047 -- --json` | 0 | ✅ pass | 153ms |\n| 3 | `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json` | 0 | ✅ pass | 226ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 10710ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m047.ts`\n- `scripts/verify-m047.test.ts`\n- `package.json`\n- `.gsd/milestones/M047/slices/S03/tasks/T01-SUMMARY.md`\n",
+      "description": "- Why: S03 owns R048 and needs the operator-facing `verify:m047` entrypoint that composes the already-shipped S02, M045, and M046 proof surfaces without re-deriving lower-level contributor logic.\n  - Do: Add `scripts/verify-m047.ts` to call `evaluateM047S02`, `evaluateM045S03`, and `evaluateM046`, validate nested report shapes and failure states, map the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`), preserve full nested report JSON, and wire `verify:m047` into `package.json` with human and `--json` output.\n  - Done when: `bun run verify:m047 -- --json` emits stable top-level check IDs, five milestone scenarios, explicit not-applicable handling for coarse-fallback Slack/profile continuity, and nested S02/M045/M046 evidence without failing just because M046's verdict is `replace`.",
+      "estimate": "2h",
+      "files": [
+        "scripts/verify-m047.ts",
+        "package.json"
+      ],
+      "verify": "`bun run verify:m047 -- --json`",
+      "inputs": [
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m046.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m047.ts",
+        "package.json"
+      ],
+      "observability_impact": "- Signals added/changed: `verify:m047` becomes the milestone-close JSON and human inspection surface with stable top-level check IDs, scenario ids, and failure status codes.\n- How a future agent inspects this: run `bun run verify:m047 -- --json` and compare the nested S02, M045, and M046 payloads plus scenario summaries.\n- Failure state exposed: malformed nested reports, prerequisite proof failures, missing scenario anchors, or false-green composition drift show up as named failing checks instead of silent report gaps.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Lock the integrated verifier with drift-focused regression tests",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "- Why: The milestone-close verifier is only useful if scenario mapping, nested evidence preservation, CLI parsing, and script wiring fail loudly instead of going false-green.\n  - Do: Add `scripts/verify-m047.test.ts` with real nested happy-path coverage plus injected malformed and failed nested reports, missing scenario evidence, calibrated-retained and stale-degraded drift, coarse-fallback not-applicable expectations, human/JSON output alignment, invalid-arg handling, and `package.json` script wiring assertions; adjust `scripts/verify-m047.ts` only as needed to keep those tests green.\n  - Done when: the dedicated verifier test plus the prerequisite S02/M045/M046 proof bundle and `bun run tsc --noEmit` all pass, leaving `verify:m047` as the single milestone-close inspection surface.",
+      "estimate": "90m",
+      "files": [
+        "scripts/verify-m047.test.ts",
+        "scripts/verify-m047.ts",
+        "package.json"
+      ],
+      "verify": "`bun test ./scripts/verify-m047.test.ts && bun run verify:m047 -- --json && bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json && bun run tsc --noEmit`",
+      "inputs": [
+        "scripts/verify-m047.ts",
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m046.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m047.test.ts",
+        "scripts/verify-m047.ts",
+        "package.json"
+      ],
+      "observability_impact": "- Signals added/changed: regression tests pin top-level check ids, scenario anchors, human/JSON output alignment, and package wiring as durable proof-surface diagnostics.\n- How a future agent inspects this: run `bun test ./scripts/verify-m047.test.ts` first, then `bun run verify:m047 -- --json` for the full scenario payload.\n- Failure state exposed: scenario drift, invalid CLI behavior, missing nested evidence, or mismatched script wiring breaks a named test before the milestone-close command can go false-green.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -14162,6 +14245,30 @@
       "decision": "How S02 cross-surface proof should validate stored-profile downstream behavior",
       "choice": "Compose verify:m047:s02 from the embedded verify:m047:s01 runtime report plus a local downstream scenario matrix for Slack/profile, continuity, retrieval hints, and opt-out identity suppression.",
       "rationale": "S01 remains the authoritative proof of stored-profile contract resolution, while S02 proves downstream surfaces consume those states truthfully without re-implementing review-resolution logic or deriving expectations from the same helpers under test.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 129,
+      "id": "D095",
+      "when_context": "M047/S03 planning",
+      "scope": "verification",
+      "decision": "What should `verify:m047` compose directly in the milestone-close proof harness",
+      "choice": "Compose `verify:m047` only from `evaluateM047S02()`, `evaluateM045S03()`, and `evaluateM046()`, preserve their nested evidence verbatim, and mark coarse-fallback Slack/profile continuity as not applicable instead of inventing a fake linked-profile surface.",
+      "rationale": "S02 already embeds the authoritative S01 runtime truth matrix, M045 already guards the contributor-experience contract, and M046 already owns the calibration verdict/change contract. Reaching deeper would duplicate lower-level logic and create another drift seam. Explicit not-applicable handling for coarse fallback keeps the milestone report honest where no linked stored-profile Slack surface exists.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 130,
+      "id": "D096",
+      "when_context": "M047/S03/T01",
+      "scope": "verification",
+      "decision": "M047 milestone verifier composition and coarse-fallback mapping",
+      "choice": "Compose verify:m047 only from evaluateM047S02(), evaluateM045S03(), and evaluateM046(), and map the coarse-fallback milestone scenario to S01 coarse-fallback-cache runtime plus M045 coarse-fallback retrieval while marking Slack/profile continuity not applicable.",
+      "rationale": "S02 already embeds S01, M045 already guards retrieval/Slack/identity contract drift, and M046 already owns calibration verdict/change-contract evidence. Reaching below those reports would create a second truth path. The coarse-fallback scenario has no truthful linked-profile Slack surface, so explicit not-applicable handling is more honest than fabricating continuity evidence.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -18468,6 +18575,50 @@
       "verdict": "✅ pass",
       "duration_ms": 8675,
       "created_at": "2026-04-11T02:22:13.953Z"
+    },
+    {
+      "id": 393,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun test ./scripts/verify-m047.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 190,
+      "created_at": "2026-04-11T03:07:32.185Z"
+    },
+    {
+      "id": 394,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 153,
+      "created_at": "2026-04-11T03:07:32.185Z"
+    },
+    {
+      "id": 395,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 226,
+      "created_at": "2026-04-11T03:07:32.185Z"
+    },
+    {
+      "id": 396,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10710,
+      "created_at": "2026-04-11T03:07:32.185Z"
     }
   ]
 }
