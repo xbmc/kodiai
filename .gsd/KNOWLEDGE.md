@@ -1014,3 +1014,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** For milestone-level Slack/profile evidence, validate both sides of the contract: require linked continuity when the scenario is supposed to preserve it, and explicitly fail when opt-out/generic scenarios surface linked continuity at all. Otherwise the composed verifier can go false-green on contradictory downstream evidence.
 
 **Established in:** M047/S03/T02 (`scripts/verify-m047.ts`, `scripts/verify-m047.test.ts`).
+
+---
+
+## When no truthful linked-profile surface exists, report `not_applicable` instead of fabricating generic Slack/profile evidence (M047 closeout)
+
+**Context:** M047 had to prove a `coarse-fallback` scenario across review/runtime, retrieval, Slack/profile, identity, and calibration evidence. The tempting mistake was to synthesize a passing Slack/profile continuity payload for that scenario, even though coarse fallback comes from cache/search and has no truthful persisted linked-profile Slack surface.
+
+**Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
+
+**Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).

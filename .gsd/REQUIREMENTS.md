@@ -57,28 +57,6 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M043
 - Validation: Live production verification on xbmc/kodiai PR #80 shows an explicit `@kodiai review` request causes either a real review/comment publication or a visible failure comment, with no silent-success path.
 
-### R046 — Kodiai has one explicit contributor-experience contract that defines how contributor status affects review behavior and related tier surfaces.
-- Class: functional
-- Status: active
-- Description: Kodiai has one explicit contributor-experience contract that defines how contributor status affects review behavior and related tier surfaces.
-- Why it matters: Without an explicit contract, the current dual-taxonomy system drifts across prompt shaping, Review Details, retrieval hints, and Slack/profile output.
-- Source: issue-79
-- Primary owning slice: M045/S01
-- Supporting slices: M045/S02, M045/S03, M047/S01, M047/S02, M047/S03
-- Validation: M045 defines and implements the contributor-experience product/architecture contract across all chosen tier-related surfaces, and M047 proves the shipped surfaces reflect that contract coherently.
-- Notes: Mapped during M045 planning. S01 owns the core GitHub review contract, with S02 extending the same contract across Slack/opt-out/retrieval semantics and S03 providing integrated verification. M047 now maps shipped-proof follow-through across S01 (truthful review-time resolution), S02 (Slack/retrieval/profile continuity rollout), and S03 (integrated runtime coherence verification).
-
-### R048 — The contributor-experience redesign and any approved contributor-tier recalibration ship coherently across all in-scope tier-related surfaces.
-- Class: functional
-- Status: active
-- Description: The contributor-experience redesign and any approved contributor-tier recalibration ship coherently across all in-scope tier-related surfaces.
-- Why it matters: A partial rollout would leave GitHub review behavior, retrieval hints, Slack profile output, and contributor-model plumbing disagreeing about the same contributor.
-- Source: issues-78-79
-- Primary owning slice: M047/S03
-- Supporting slices: M047/S01, M047/S02, M045, M046
-- Validation: M047 verifies end-to-end that the live review/output, retrieval, Slack/profile, and contributor-model paths all use the same shipped contributor-experience behavior.
-- Notes: Mapped during M047 planning: S01 establishes trustworthy persisted contributor-state semantics and the GitHub review-time resolver, S02 rolls the same truth boundary through Slack/retrieval/profile continuity surfaces, and S03 owns milestone-closeout runtime coherence proof via `verify:m047`.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -472,6 +450,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: `bun run verify:m044 -- --repo xbmc/xbmc --limit 12 --json` produced a deterministic 12-PR recent sample over xbmc/xbmc with verdict summary `clean-valid=11`, `findings-published=1`, `publish-failure=0`, `suspicious-approval=0`, `indeterminate=0`, using GitHub-visible output plus Azure internal publication evidence. `docs/runbooks/recent-review-audit.md` documents the rerun and drill-down flow.
 - Notes: Validated by M044/S03 final packaged audit surface and milestone validation.
 
+### R046 — Kodiai has one explicit contributor-experience contract that defines how contributor status affects review behavior and related tier surfaces.
+- Class: functional
+- Status: validated
+- Description: Kodiai has one explicit contributor-experience contract that defines how contributor status affects review behavior and related tier surfaces.
+- Why it matters: Without an explicit contract, the current dual-taxonomy system drifts across prompt shaping, Review Details, retrieval hints, and Slack/profile output.
+- Source: issue-79
+- Primary owning slice: M045/S01
+- Supporting slices: M045/S02, M045/S03, M047/S01, M047/S02, M047/S03
+- Validation: Revalidated during M047 closeout by fresh passing results from `bun run verify:m047 -- --json` and the prerequisite bundle (`bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`), proving the contributor-experience contract remains truthful across review prompt/Review Details, retrieval hints, Slack/profile output, identity suppression, and contributor-model evidence without raw-tier drift.
+- Notes: M047/S03 completed the final proof obligation for cross-surface coherence on top of the M045 contributor-experience contract.
+
 ### R047 — Kodiai can calibrate its contributor-tier model against a reusable xbmc/xbmc contributor fixture set and state whether the current scoring/tiering mechanism is sound, needs retuning, or needs replacement.
 - Class: operational
 - Status: validated
@@ -482,6 +471,17 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: M046/S01,M046/S03
 - Validation: 2026-04-10 milestone closeout: `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s02.test.ts ./src/contributor/calibration-change-contract.test.ts ./scripts/verify-m046.test.ts`, `bun run verify:m046 -- --json`, and `bun run tsc --noEmit` all passed. The integrated verifier preserved the nested S01/S02 proof surfaces, retained/excluded counts (3/6), a truthful `replace` verdict, and a complete `m047ChangeContract`.
 - Notes: Mapped during M046 planning: S01 establishes the trusted xbmc fixture truth set, S02 is the primary calibration evaluator against the M045 contributor contract, and S03 emits the explicit keep/retune/replace verdict plus M047 change contract.
+
+### R048 — The contributor-experience redesign and any approved contributor-tier recalibration ship coherently across all in-scope tier-related surfaces.
+- Class: functional
+- Status: validated
+- Description: The contributor-experience redesign and any approved contributor-tier recalibration ship coherently across all in-scope tier-related surfaces.
+- Why it matters: A partial rollout would leave GitHub review behavior, retrieval hints, Slack profile output, and contributor-model plumbing disagreeing about the same contributor.
+- Source: issues-78-79
+- Primary owning slice: M047/S03
+- Supporting slices: M047/S01, M047/S02, M045, M046
+- Validation: Validated by M047/S03 after fresh slice-close verification passed: `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and showed the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) resolving coherently across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence.
+- Notes: Slice S03 is the owning slice and provides the milestone-close coherence proof surface for the shipped contributor-experience rollout.
 
 ## Deferred
 
@@ -556,13 +556,13 @@ This file is the explicit capability and coverage contract for the project.
 | R043 | functional | active | M043 | none | Live production verification on xbmc/kodiai PR #80 shows an explicit `@kodiai review` request causes either a real review/comment publication or a visible failure comment, with no silent-success path. |
 | R044 | operational | validated | M043 | none | M043/S01 closure reran `bun test ./src/handlers/mention.test.ts ./src/handlers/review-idempotency.test.ts` (102 pass) and `bash -n deploy.sh` (exit 0). Verified deploy.sh preserves ACA job/app wiring via full-YAML updates and surfaces active revision + /healthz + /readiness evidence; mention publish-path regressions prove `reviewOutputKey`/idempotency/publish-resolution logs and actionable publish-failure fallback comments. |
 | R045 | operational | validated | M044/S03 | M044/S01, M044/S02 | `bun run verify:m044 -- --repo xbmc/xbmc --limit 12 --json` produced a deterministic 12-PR recent sample over xbmc/xbmc with verdict summary `clean-valid=11`, `findings-published=1`, `publish-failure=0`, `suspicious-approval=0`, `indeterminate=0`, using GitHub-visible output plus Azure internal publication evidence. `docs/runbooks/recent-review-audit.md` documents the rerun and drill-down flow. |
-| R046 | functional | active | M045/S01 | M045/S02, M045/S03, M047/S01, M047/S02, M047/S03 | M045 defines and implements the contributor-experience product/architecture contract across all chosen tier-related surfaces, and M047 proves the shipped surfaces reflect that contract coherently. |
+| R046 | functional | validated | M045/S01 | M045/S02, M045/S03, M047/S01, M047/S02, M047/S03 | Revalidated during M047 closeout by fresh passing results from `bun run verify:m047 -- --json` and the prerequisite bundle (`bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`), proving the contributor-experience contract remains truthful across review prompt/Review Details, retrieval hints, Slack/profile output, identity suppression, and contributor-model evidence without raw-tier drift. |
 | R047 | operational | validated | M046/S02 | M046/S01,M046/S03 | 2026-04-10 milestone closeout: `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s02.test.ts ./src/contributor/calibration-change-contract.test.ts ./scripts/verify-m046.test.ts`, `bun run verify:m046 -- --json`, and `bun run tsc --noEmit` all passed. The integrated verifier preserved the nested S01/S02 proof surfaces, retained/excluded counts (3/6), a truthful `replace` verdict, and a complete `m047ChangeContract`. |
-| R048 | functional | active | M047/S03 | M047/S01, M047/S02, M045, M046 | M047 verifies end-to-end that the live review/output, retrieval, Slack/profile, and contributor-model paths all use the same shipped contributor-experience behavior. |
+| R048 | functional | validated | M047/S03 | M047/S01, M047/S02, M045, M046 | Validated by M047/S03 after fresh slice-close verification passed: `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and showed the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) resolving coherently across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence. |
 
 ## Coverage Summary
 
-- Active requirements: 7
-- Mapped to slices: 7
-- Validated: 39 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R047)
+- Active requirements: 5
+- Mapped to slices: 5
+- Validated: 41 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048)
 - Unmapped active requirements: 0

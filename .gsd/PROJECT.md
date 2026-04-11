@@ -12,32 +12,27 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestones M043, M044, M045, and M046 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, and M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract for M047.
+Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, and M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces.
 
-M047 is now in progress with **S01 and S02 complete**. The runtime contributor-resolution boundary is truthful on both the GitHub review path and the downstream Slack/profile, retrieval, and identity surfaces:
+**M047 is complete and verified.** The contributor-experience rollout now has one truthful persisted-profile trust boundary and one canonical milestone-close proof surface:
 
-- `src/db/migrations/037-contributor-profile-trust.sql` and `src/contributor/profile-trust.ts` established the persisted versioned trust marker seam so linked-unscored, legacy, stale, malformed, calibrated, and opted-out rows can be distinguished truthfully.
-- `src/contributor/review-author-resolution.ts` remains the shared review-time resolver that applies stored-profile trust before falling back to author-cache, GitHub search, or generic/degraded behavior.
-- `src/contributor/profile-surface-resolution.ts` is now the canonical Slack/profile continuity seam for persisted profiles; only current trusted calibrated rows stay `profile-backed`, while linked-unscored, legacy, stale, malformed, and fail-open rows collapse to truthful generic continuity.
-- `src/slack/slash-command-handler.ts` now routes `/kodiai profile`, `link`, and `profile opt-in` through that stored-profile surface resolver before rendering copy or looking up expertise.
-- `src/handlers/identity-suggest.ts` now uses system-view `includeOptedOut: true` lookups so opted-out linked contributors suppress link DMs without re-enabling profile-backed personalization.
+- `src/db/migrations/037-contributor-profile-trust.sql` and `src/contributor/profile-trust.ts` established the persisted versioned trust-marker seam so linked-unscored, legacy, stale, malformed, calibrated, and opted-out rows can be distinguished truthfully.
+- `src/contributor/review-author-resolution.ts` is the shared review-time resolver that applies stored-profile trust before falling back to author-cache, GitHub search, or generic/degraded behavior.
+- `src/contributor/profile-surface-resolution.ts` is the canonical Slack/profile continuity seam for persisted profiles; only current trusted calibrated rows stay `profile-backed`, while linked-unscored, legacy, stale, malformed, and fail-open rows collapse to truthful generic continuity.
+- `src/slack/slash-command-handler.ts` routes `/kodiai profile`, `link`, and `profile opt-in` through that stored-profile surface resolver before rendering copy or looking up expertise.
+- `src/handlers/identity-suggest.ts` uses system-view `includeOptedOut: true` lookups so opted-out linked contributors suppress link DMs without re-enabling contributor-specific guidance.
 - `scripts/verify-m047-s01.ts` remains the operator-facing proof surface for runtime stored-profile resolution on the review path.
-- `scripts/verify-m047-s02.ts` is now the operator-facing downstream proof surface for Slack/profile output, continuity copy, retrieval hints, and opt-out identity suppression, composed from the embedded S01 runtime report plus a local stored-profile scenario matrix.
-- `scripts/verify-m045-s03.ts` stays green after the S02 rollout and now uses trust-aware Slack fixtures so the older cross-surface contract verifier does not certify pre-S02 raw-tier optimism.
+- `scripts/verify-m047-s02.ts` is the operator-facing downstream proof surface for Slack/profile output, continuity copy, retrieval hints, and opt-out identity suppression, composed from the embedded S01 runtime report plus a local stored-profile scenario matrix.
+- `scripts/verify-m047.ts` is the canonical milestone-close coherence verifier. It composes `verify:m047:s02`, `verify:m045:s03`, and `verify:m046`, preserves their nested JSON verbatim, reports four stable top-level checks plus five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`), treats the M046 `replace` recommendation as data rather than a harness failure, and fails loudly on malformed nested evidence, mapping drift, or leaked forbidden opt-out continuity.
 
-Fresh M047/S02 verification passed:
+Fresh milestone-close verification passed:
 
-- `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts`
-- `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02`
-- `bun run verify:m047:s01 -- --json`
-- `bun run verify:m045:s03 -- --json`
-- `bun run verify:m047:s02 -- --json`
+- `bun test ./scripts/verify-m047.test.ts`
+- `bun run verify:m047 -- --json`
+- `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`
 - `bun run tsc --noEmit`
 
-What remains before M047 closes:
-
-- **S03:** compose `verify:m047:s01`, `verify:m047:s02`, and the existing M045/M046 proof surfaces into the integrated `verify:m047` milestone coherence harness.
-- Add milestone-level proof/inspection so downstream false active linked guidance would be visible without relying only on focused verifier and test runs.
+Requirements `R046` and `R048` are validated, and future contributor-resolution changes should extend `verify:m047` rather than introducing parallel proof paths.
 
 ## Architecture / Key Patterns
 
@@ -54,7 +49,9 @@ What remains before M047 closes:
 - **Calibration fixture proof seam:** `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-snapshot.ts`, and `scripts/verify-m046-s01.ts` separate human-curated contributor truth from generated live evidence so calibration work can rerun against a stable xbmc corpus.
 - **Calibration evaluator seam:** `src/contributor/calibration-evaluator.ts` compares the modeled live incremental path against the intended full-signal path, preserves retained/excluded cohort truth, and reports fidelity/degradation limits instead of fabricating replay evidence.
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
-- **Composable proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046-s02.ts`, `scripts/verify-m046.ts`, `scripts/verify-m047-s01.ts`, and `scripts/verify-m047-s02.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
+- **Composable proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, `scripts/verify-m047-s01.ts`, `scripts/verify-m047-s02.ts`, and `scripts/verify-m047.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
+- **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current example is `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift`.
+- **Explicit `not_applicable` handling:** when a scenario has no truthful surface (for example coarse-fallback Slack/profile continuity), the verifier should emit `not_applicable` instead of inventing synthetic passing evidence.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
 ## Capability Contract
@@ -82,7 +79,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Contributor Fixture Set
   - [x] S02: Scoring and Tiering Evaluation
   - [x] S03: Calibration Verdict and Change Contract
-- [ ] M047: Contributor Experience Redesign and Calibration Rollout
+- [x] M047: Contributor Experience Redesign and Calibration Rollout
   - [x] S01: Review-Surface Rollout
   - [x] S02: Retrieval and Slack Surface Rollout
-  - [ ] S03: End-to-End Coherence Verification
+  - [x] S03: End-to-End Coherence Verification
