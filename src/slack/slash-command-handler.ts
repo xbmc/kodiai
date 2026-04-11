@@ -1,9 +1,15 @@
 import type { Logger } from "pino";
 import type {
-  ContributorProfileStore,
   ContributorExpertise,
+  ContributorProfileStore,
 } from "../contributor/types.ts";
-import { resolveContributorExperienceSlackProfileProjection } from "../contributor/experience-contract.ts";
+import {
+  createGenericContributorProfileSurfaceResolution,
+  renderLinkedProfileContinuityMessage,
+  renderProfileOptInContinuityMessage,
+  resolveContributorProfileSurface,
+  type ContributorProfileSurfaceResolution,
+} from "../contributor/profile-surface-resolution.ts";
 
 export type SlashCommandResult = {
   responseType: "ephemeral" | "in_channel";
@@ -16,25 +22,18 @@ const GITHUB_USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 function formatProfileCard(
   profile: {
     githubUsername: string;
-    overallTier: string;
-    optedOut: boolean;
   },
+  surface: ContributorProfileSurfaceResolution,
   expertise: ContributorExpertise[],
 ): string {
-  const projection = resolveContributorExperienceSlackProfileProjection({
-    source: "contributor-profile",
-    tier: profile.overallTier,
-    optedOut: profile.optedOut,
-  });
-
   const lines: string[] = [
     `*Contributor Profile*`,
     `GitHub: \`${profile.githubUsername}\``,
-    projection.statusLine,
-    projection.summaryLine,
+    surface.projection.statusLine,
+    surface.projection.summaryLine,
   ];
 
-  if (projection.showExpertise && expertise.length > 0) {
+  if (surface.projection.showExpertise && expertise.length > 0) {
     lines.push(``, `*Top Expertise:*`);
     const top = expertise.slice(0, 5);
     for (const entry of top) {
@@ -66,15 +65,19 @@ export async function handleKodiaiCommand(params: {
       };
     }
 
-    await profileStore.linkIdentity({
+    const profile = await profileStore.linkIdentity({
       slackUserId,
       githubUsername,
       displayName: slackUserName,
     });
+    const surface = resolveContributorProfileSurface(profile);
 
     return {
       responseType: "ephemeral",
-      text: `Linked your Slack account to GitHub user \`${githubUsername}\`. Your contributor profile is now active.`,
+      text: renderLinkedProfileContinuityMessage({
+        githubUsername,
+        surface,
+      }),
       asyncWork: async () => {
         logger.info(
           { githubUsername, slackUserId },
@@ -127,9 +130,15 @@ export async function handleKodiaiCommand(params: {
         };
       }
       await profileStore.setOptedOut(profile.githubUsername, false);
+      const surface = resolveContributorProfileSurface({
+        ...profile,
+        optedOut: false,
+      });
       return {
         responseType: "ephemeral",
-        text: "Contributor-specific guidance is now on for your linked profile. Use `/kodiai profile` to review your status, or `/kodiai profile opt-out` to return to generic guidance.",
+        text: renderProfileOptInContinuityMessage({
+          surface,
+        }),
       };
     }
 
@@ -142,10 +151,25 @@ export async function handleKodiaiCommand(params: {
       };
     }
 
-    const expertise = await profileStore.getExpertise(profile.id);
+    let surface = resolveContributorProfileSurface(profile);
+    let expertise: ContributorExpertise[] = [];
+
+    if (surface.shouldLookupExpertise) {
+      try {
+        expertise = await profileStore.getExpertise(profile.id);
+      } catch (err) {
+        logger.warn(
+          { err, githubUsername: profile.githubUsername, profileId: profile.id },
+          "Contributor expertise lookup failed for Slack profile card (fail-open)",
+        );
+        surface = createGenericContributorProfileSurfaceResolution(surface.trust);
+        expertise = [];
+      }
+    }
+
     return {
       responseType: "ephemeral",
-      text: formatProfileCard(profile, expertise),
+      text: formatProfileCard(profile, surface, expertise),
     };
   }
 

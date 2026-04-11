@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T01:02:38.747Z",
+  "exported_at": "2026-04-11T01:43:57.820Z",
   "milestones": [
     {
       "id": "M001",
@@ -6120,14 +6120,14 @@
       "milestone_id": "M047",
       "id": "S01",
       "title": "S01",
-      "status": "pending",
+      "status": "complete",
       "risk": "High — linked-but-unscored and legacy profile rows currently masquerade as trustworthy `profile-backed` newcomer guidance inside the live review entrypoint.",
       "depends": [],
       "demo": "A review-path scenario using real stored profile states shows linked-but-unscored and legacy profiles fail open instead of surfacing `profile-backed` newcomer guidance, while a calibrated retained contributor drives the shipped prompt and Review Details coherently on the GitHub review surface.",
       "created_at": "2026-04-11T00:03:51.454Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-11T01:09:04.939Z",
+      "full_summary_md": "---\nid: S01\nparent: M047\nmilestone: M047\nprovides:\n  - A reusable persisted-row trust seam in `src/contributor/profile-trust.ts` and `m047-calibrated-v1` marker semantics for downstream surfaces.\n  - A shared trust-aware author-resolution module that downstream Slack/retrieval/profile work can mirror instead of reimplementing.\n  - `verify:m047:s01`, the canonical nested proof surface for stored-profile runtime truth on the review path.\nrequires:\n  []\naffects:\n  - S02\n  - S03\nkey_files:\n  - src/db/migrations/037-contributor-profile-trust.sql\n  - src/db/migrations/037-contributor-profile-trust.down.sql\n  - src/contributor/profile-trust.ts\n  - src/contributor/profile-store.ts\n  - src/contributor/review-author-resolution.ts\n  - src/handlers/review.ts\n  - scripts/verify-m047-s01.ts\n  - package.json\n  - .gsd/KNOWLEDGE.md\n  - .gsd/PROJECT.md\nkey_decisions:\n  - Persist a versioned `trust_marker` (`m047-calibrated-v1`) and derive stored-profile trust from that marker plus freshness instead of inferring trust from raw `overall_tier`.\n  - Route review-time contributor classification through a shared `resolveReviewAuthorClassification` seam so the handler, prompt shaping, Review Details, and fallback paths all consume the same trust-aware resolution.\n  - Model the runtime verifier as one stable scenario-level check per stored-profile state while embedding trust, contract, source, fallback, degradation, prompt, and Review Details diagnostics for later milestone composition.\npatterns_established:\n  - Versioned persisted trust metadata is the trust boundary; raw tier labels alone are not trustworthy.\n  - Trust-aware review classification now lives in one shared resolver instead of duplicated inline handler logic.\n  - Runtime proof harnesses should emit stable scenario-level checks plus embedded diagnostics so later milestone verifiers can compose them mechanically.\nobservability_surfaces:\n  - `bun run verify:m047:s01` runtime stored-profile truth matrix with stable scenario check IDs and trust/contract/source/fallback/degradation diagnostics.\n  - Author-classification log entries from `src/handlers/review.ts`, which now expose stored-profile trust state, reason, marker/version, source, fallback path, and degradation path.\n  - `src/handlers/review.test.ts` integration coverage for fail-open behavior, prompt/Review Details coherence, and trust-aware logging assertions.\ndrill_down_paths:\n  - .gsd/milestones/M047/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M047/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M047/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-11T01:09:04.940Z\nblocker_discovered: false\n---\n\n# S01: Truthful contributor resolution on GitHub review\n\n**GitHub review-time contributor resolution now treats stored profiles as `profile-backed` only when a current trusted calibration marker proves the row is trustworthy; linked-unscored, legacy, stale, malformed, and opted-out rows fail open truthfully instead of masquerading as newcomer guidance.**\n\n## What Happened\n\nS01 closed the root-cause trust gap on the GitHub review surface. The slice added persisted contributor-profile trust metadata, introduced `src/contributor/profile-trust.ts` as the canonical classifier for calibrated versus linked-unscored/legacy/stale/malformed rows, and taught the profile store to stamp the current `m047-calibrated-v1` marker on fresh scoring updates. Review-time author classification now flows through `resolveReviewAuthorClassification`, which preserves opt-out precedence, allows only trustworthy calibrated rows to stay `profile-backed`, and forces untrusted stored rows to fail open into author-cache, GitHub search, or generic/degraded behavior. The review handler now keeps prompt shaping, Review Details, and author-classification logs coherent across linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback scenarios while keeping public output redacted from Slack IDs, profile IDs, raw expertise scores, and calibration-only internals. The slice also shipped `verify:m047:s01`, an operator-facing runtime proof harness with six stable scenario checks (`linked-unscored`, `legacy`, `stale`, `calibrated`, `opt-out`, and `coarse-fallback-cache`) so downstream S03 work can compose this seam into integrated milestone proof.\n\n## Verification\n\nFresh slice-close verification passed: `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`, `bun run verify:m045:s01 && bun run verify:m047:s01`, and `bun run tsc --noEmit`. The runtime verifier reported PASS for linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback-cache scenarios with the expected trust/contract/source/fallback matrix, and the review handler test suite confirmed fail-open behavior plus trust-aware author-classification logging.\n\n## Requirements Advanced\n\n- R046 — The live GitHub review path now honors the contributor-experience contract truthfully against persisted contributor state instead of trusting raw stored tiers.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nSlack/profile continuity and retrieval hint surfaces still need the same trust-aware rollout in S02. The milestone still lacks the integrated `verify:m047` composition layer planned for S03. Runtime regression detection is currently verifier-and-log driven rather than backed by a dedicated production alert.\n\n## Follow-ups\n\nRoll the same trust-aware resolver semantics through retrieval hints and Slack/profile continuity in S02. Compose `verify:m047:s01` with the M045 and M046 proof surfaces in S03, and add milestone-level observability for unexpected `profile-backed` resolution from untrusted stored rows.\n\n## Files Created/Modified\n\n- `src/db/migrations/037-contributor-profile-trust.sql` — Added persisted nullable trust metadata for contributor profiles.\n- `src/db/migrations/037-contributor-profile-trust.down.sql` — Added down migration for the contributor profile trust marker.\n- `src/contributor/profile-trust.ts` — Added the canonical persisted-row trust classifier for calibrated, linked-unscored, legacy, stale, and malformed states.\n- `src/contributor/profile-store.ts` — Taught the profile store to read/write trust markers, fail fast when the column is missing, and stamp fresh scoring updates.\n- `src/contributor/review-author-resolution.ts` — Centralized trust-aware review-time author resolution with fail-open fallback behavior.\n- `src/handlers/review.ts` — Updated the GitHub review handler to consume the shared resolver and emit trust-aware author-classification diagnostics while keeping Review Details redacted.\n- `scripts/verify-m047-s01.ts` — Added the operator-facing runtime truth harness for stored-profile review resolution.\n- `package.json` — Wired the new verifier into package scripts.\n- `.gsd/KNOWLEDGE.md` — Recorded reusable execution gotchas for this slice.\n- `.gsd/PROJECT.md` — Refreshed project state to show M047/S01 complete and M047 remaining work.\n",
+      "full_uat_md": "# S01: Truthful contributor resolution on GitHub review — UAT\n\n**Milestone:** M047\n**Written:** 2026-04-11T01:09:04.940Z\n\n# S01 UAT — Truthful contributor resolution on GitHub review\n\n## Preconditions\n\n- Repository is at the completed M047/S01 state.\n- Dependencies are installed and `bun` is available.\n- For DB-backed profile-store tests, `TEST_DATABASE_URL` points at the test database or the local default database is available.\n- No live GitHub or Slack credentials are required; this UAT is deterministic and fixture-backed.\n\n## Test Case 1 — Full slice regression bundle stays green\n\n1. Run:\n   - `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`\n2. Confirm the command exits 0.\n3. Confirm the output includes passing coverage for:\n   - `profile-trust.test.ts`\n   - `profile-store.test.ts`\n   - `review-author-resolution.test.ts`\n   - `review.test.ts`\n   - `verify-m047-s01.test.ts`\n\n**Expected outcome:**\n- All named files run.\n- No failures are reported.\n- The bundle proves persisted trust classification, review-time fail-open behavior, handler integration, and verifier wiring together.\n\n## Test Case 2 — The existing M045 review contract still holds\n\n1. Run:\n   - `bun run verify:m045:s01`\n2. Inspect the scenario list.\n3. Confirm every M045 scenario reports `PASS`.\n\n**Expected outcome:**\n- `profile-backed`, `coarse-fallback`, `generic-unknown`, `generic-opt-out`, and `generic-degraded` all pass.\n- This slice does not regress the public contributor-experience contract while changing runtime source resolution underneath it.\n\n## Test Case 3 — Runtime stored-profile truth matrix is correct\n\n1. Run:\n   - `bun run verify:m047:s01`\n2. Inspect the scenario summary.\n3. Confirm the following scenario-level outcomes:\n   - `linked-unscored` → `trust=linked-unscored`, `contract=coarse-fallback`, source/fallback show fail-open behavior\n   - `legacy` → `trust=legacy`, `contract=coarse-fallback`\n   - `stale` → `trust=stale`, `contract=generic-degraded`\n   - `calibrated` → `trust=calibrated`, `contract=profile-backed`, `source=contributor-profile`\n   - `opt-out` → `trust=calibrated`, `contract=generic-opt-out`\n   - `coarse-fallback-cache` → no stored profile, `contract=coarse-fallback`, `source=author-cache`\n4. Confirm every scenario check reports `PASS`.\n\n**Expected outcome:**\n- Untrusted stored rows never resolve to `profile-backed`.\n- A trustworthy calibrated row does resolve to `profile-backed`.\n- Opt-out still overrides otherwise trustworthy stored-profile data.\n- The verifier emits stable named checks instead of generic pass/fail text.\n\n## Test Case 4 — Review handler keeps prompt, Review Details, and logs coherent\n\n1. Run:\n   - `bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts`\n2. Inspect the passing test names.\n3. Confirm the suite includes passing cases for:\n   - linked-unscored stored profiles failing open to coarse fallback\n   - legacy stored profiles failing open\n   - stale stored profiles degrading truthfully\n   - opted-out contributors staying generic\n   - contradictory cached low-tier data not overriding a trustworthy calibrated stored profile\n   - handler logging stored-profile trust diagnostics when bypassing an untrusted stored row\n\n**Expected outcome:**\n- Prompt shaping and Review Details stay aligned with the resolved contract state.\n- Handler log assertions prove trust diagnostics exist for operators.\n- Review Details assertions remain redacted from private calibration internals.\n\n## Test Case 5 — Type safety stays intact after the slice wiring changes\n\n1. Run:\n   - `bun run tsc --noEmit`\n2. Confirm the command exits 0.\n\n**Expected outcome:**\n- The new migration/store types, shared resolver, handler wiring, and verifier code all compile cleanly.\n\n## Edge Cases To Explicitly Check\n\n- A newly linked placeholder row that still has the default newcomer tier must not be treated as a trustworthy `profile-backed` newcomer.\n- A legacy scored row without `trust_marker` must fail open even if `overall_tier` looks strong.\n- A stale current-marker row must not remain trustworthy when freshness is lost.\n- A low-confidence cache hit must not override a trustworthy calibrated stored profile.\n- An opted-out author must remain `generic-opt-out` even if the stored row is otherwise calibrated and current.\n- Review Details and verifier output must not expose Slack IDs, contributor profile IDs, or raw expertise scores.\n\n## UAT Exit Criteria\n\nS01 is accepted only if:\n\n- the slice regression bundle passes,\n- `verify:m045:s01` passes,\n- `verify:m047:s01` passes with the exact scenario truth matrix above,\n- `tsc` passes,\n- and no edge-case check reintroduces false `profile-backed` guidance from untrusted stored rows.\n\n",
       "goal": "Make GitHub review-time contributor resolution truthful by distinguishing trustworthy calibrated contributor-profile rows from linked-but-unscored, legacy, stale, or malformed persisted rows, then proving the live review entrypoint falls open to coarse/generic behavior unless a retained contributor profile is explicitly trustworthy.",
       "success_criteria": "Persist explicit contributor-profile trust metadata so review-time code can distinguish linked-unscored, legacy, stale, malformed, and M047-calibrated rows without inferring trust from `overall_tier` alone.\nOnly trustworthy calibrated contributor profiles may resolve to `profile-backed`; untrusted stored rows must fall through to author-cache/search/generic behavior instead of masquerading as newcomer truth.\nGitHub review prompt shaping, Review Details, and author-classification logs must stay coherent when the stored profile is linked-unscored, legacy, stale, opted-out, calibrated, or contradicted by low-confidence cache data.\n`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`\n`bun run verify:m045:s01 && bun run verify:m047:s01`\n`bun run tsc --noEmit`",
       "proof_level": "integration proof on deterministic GitHub review-path scenarios seeded from real stored contributor-profile row states",
@@ -6139,22 +6139,20 @@
     {
       "milestone_id": "M047",
       "id": "S02",
-      "title": "Contract-first Slack, retrieval, and profile continuity rollout",
+      "title": "S02",
       "status": "pending",
       "risk": "Medium — downstream raw-tier consumers remain on Slack/profile surfaces and route-level continuity can drift even if the review resolver is fixed.",
-      "depends": [
-        "S01"
-      ],
+      "depends": [],
       "demo": "The same contributor state produces consistent `/kodiai profile`, link/opt continuity messaging where applicable, and review retrieval hints with no raw-tier leakage or false 'active profile-backed' claims.",
       "created_at": "2026-04-11T00:03:51.454Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Roll the S01 truth boundary through Slack profile/link/opt surfaces, retrieval hint shaping, and contributor-profile update plumbing so all live tier-related consumers share one contributor-experience interpretation.",
-      "success_criteria": "- Slack profile output resolves contributor status from the trusted contract/resolution path rather than trusting raw `profile.overallTier` alone.\n- Link, opt-in, and opt-out continuity text stays truthful about whether contributor-specific guidance is active, pending calibration, generic, or degraded.\n- Retrieval query shaping continues to consume only contract-derived hints, with regression coverage proving parity with review-time contributor behavior.\n- Migration, compatibility, or backfill handling prevents mixed legacy/new semantics from surfacing across persisted contributor rows during rollout.",
-      "proof_level": "Route and handler tests plus source-state scenario coverage across Slack and retrieval seams using migrated profile rows and representative calibrated, unscored, degraded, and fallback states.",
-      "integration_closure": "This slice closes the live consumer rollout on the shared resolution seam so every in-scope tier-related surface reads the same contributor-state truth.",
-      "observability_impact": "Expose logs or helper diagnostics that reveal legacy, unscored, calibrated, and degraded resolution paths for Slack/profile consumers and any rollout/backfill transitions.",
+      "goal": "Roll the persisted contributor-profile truth boundary from S01 through Slack/profile continuity, link/opt messaging, identity-suggestion suppression, and retrieval proof so downstream surfaces no longer trust raw stored tiers or overclaim active linked guidance.",
+      "success_criteria": "- `/kodiai profile`, `link`, and `profile opt-in` resolve contributor guidance from stored-profile trust state rather than raw `overallTier`, and linked-unscored, legacy, stale, or malformed rows never claim active linked guidance.\n- Slack profile output only shows expertise for trustworthy calibrated profiles; opted-out or generic states stay redacted and truthful.\n- Identity-link suggestions treat opted-out linked rows as existing profiles and suppress new DMs instead of pretending the contributor is absent.\n- Retrieval-hint proof stays aligned with S01's contract-first review resolver, and trust-aware verifier fixtures stop certifying unmarked stored tiers as active linked profiles.\n- `verify:m047:s02` proves Slack/profile continuity, retrieval alignment, and opted-out identity behavior while `verify:m047:s01` and `verify:m045:s03` remain green.",
+      "proof_level": "integration proof on deterministic slash-command, identity-suggestion, retrieval, and verifier scenarios seeded from stored contributor-profile states; real runtime required: no; human/UAT required: no.",
+      "integration_closure": "- Upstream surfaces consumed: `src/contributor/profile-trust.ts`, `src/contributor/review-author-resolution.ts`, `src/contributor/experience-contract.ts`, `src/slack/slash-command-handler.ts`, `src/handlers/identity-suggest.ts`, `src/routes/slack-commands.ts`, `scripts/verify-m045-s03.ts`, and `scripts/verify-m047-s01.ts`.\n- New wiring introduced in this slice: a stored-profile surface resolver feeds Slack/profile continuity, opted-out identity suppression uses system-view profile lookups, and a new `verify:m047:s02` harness proves retrieval/Slack/profile alignment against the S01 trust seam.\n- What remains before the milestone is truly usable end-to-end: S03 must compose `verify:m047:s01` and `verify:m047:s02` into the final milestone-level `verify:m047` proof surface.",
+      "observability_impact": "- `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts`\n- `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02`\n- `bun run tsc --noEmit`",
       "sequence": 2,
       "replan_triggered_at": null
     },
@@ -12871,6 +12869,153 @@
       "observability_impact": "The verifier becomes the operator inspection surface for stored-profile trust failures by reporting trust state, contract state, source, and fallback/degradation reason for each scenario.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added a stored-profile Slack/profile resolver so link, profile, and opt-in only claim active linked guidance for trusted calibrated rows and never fetch expertise for generic states.",
+      "status": "complete",
+      "one_liner": "Added a stored-profile Slack/profile resolver so link, profile, and opt-in only claim active linked guidance for trusted calibrated rows and never fetch expertise for generic states.",
+      "narrative": "Added `src/contributor/profile-surface-resolution.ts` as the narrow Slack/profile seam for persisted contributor rows. It classifies full stored profiles through `classifyContributorProfileTrust(...)`, maps calibrated rows to `profile-backed`, keeps opted-out rows on `generic-opt-out`, and collapses linked-unscored, legacy, stale, malformed, and classifier-failure cases to `generic-unknown` for this surface. Rewired `src/slack/slash-command-handler.ts` so `/kodiai profile`, `link`, and `profile opt-in` resolve that surface before rendering copy or fetching expertise. The handler now skips `getExpertise(...)` unless the surface is `profile-backed`, and fails open to the generic profile card if expertise lookup throws. Added focused resolver coverage in `src/contributor/profile-surface-resolution.test.ts`, updated `src/slack/slash-command-handler.test.ts` so only trusted fixtures carry `CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER`, and added explicit coverage for newly linked, opted-out, legacy, stale, malformed, and expertise-failure scenarios. Exported the new resolver from `src/contributor/index.ts` and recorded the seam rule in `.gsd/KNOWLEDGE.md`.",
+      "verification_result": "Focused task verification passed with `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts`, `bun run verify:m047:s01`, and `bun run tsc --noEmit`. Slice-level follow-on verification is partially green as expected for T01: `bun run verify:m047:s02 -- --json` fails because the verifier script does not exist yet, and `bun run verify:m045:s03` plus the broader slice bundle still fail because the existing Slack verifier fixtures encode pre-S02 linked-profile/profile-opt-in copy that T03 is planned to update.",
+      "duration": "",
+      "completed_at": "2026-04-11T01:43:57.788Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "`verify:m047:s02` is not wired yet, so that command currently fails with `Script not found \"verify:m047:s02\"`. `scripts/verify-m045-s03.ts` and `scripts/verify-m045-s03.test.ts` still assert the pre-S02 Slack continuity copy, so they currently report `slack_surface_contract_drift` for `linked-profile` and `profile-opt-in` until T03 updates the proof bundle.",
+      "key_files": [
+        "src/contributor/profile-surface-resolution.ts",
+        "src/contributor/profile-surface-resolution.test.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/slack/slash-command-handler.test.ts",
+        "src/contributor/index.ts",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Use a dedicated stored-profile Slack/profile surface resolver instead of reading raw `overallTier` directly.",
+        "Only `profile-backed` stored-profile surfaces may claim active linked guidance or fetch expertise; all untrusted persisted states collapse to generic continuity on Slack/profile surfaces.",
+        "Fail open to the generic profile card if expertise lookup cannot safely support active linked guidance."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M047\nkey_files:\n  - src/contributor/profile-surface-resolution.ts\n  - src/contributor/profile-surface-resolution.test.ts\n  - src/slack/slash-command-handler.ts\n  - src/slack/slash-command-handler.test.ts\n  - src/contributor/index.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Use a dedicated stored-profile Slack/profile surface resolver instead of reading raw `overallTier` directly.\n  - Only `profile-backed` stored-profile surfaces may claim active linked guidance or fetch expertise; all untrusted persisted states collapse to generic continuity on Slack/profile surfaces.\n  - Fail open to the generic profile card if expertise lookup cannot safely support active linked guidance.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-11T01:43:57.787Z\nblocker_discovered: false\n---\n\n# T01: Added a stored-profile Slack/profile resolver so link, profile, and opt-in only claim active linked guidance for trusted calibrated rows and never fetch expertise for generic states.\n\n**Added a stored-profile Slack/profile resolver so link, profile, and opt-in only claim active linked guidance for trusted calibrated rows and never fetch expertise for generic states.**\n\n## What Happened\n\nAdded `src/contributor/profile-surface-resolution.ts` as the narrow Slack/profile seam for persisted contributor rows. It classifies full stored profiles through `classifyContributorProfileTrust(...)`, maps calibrated rows to `profile-backed`, keeps opted-out rows on `generic-opt-out`, and collapses linked-unscored, legacy, stale, malformed, and classifier-failure cases to `generic-unknown` for this surface. Rewired `src/slack/slash-command-handler.ts` so `/kodiai profile`, `link`, and `profile opt-in` resolve that surface before rendering copy or fetching expertise. The handler now skips `getExpertise(...)` unless the surface is `profile-backed`, and fails open to the generic profile card if expertise lookup throws. Added focused resolver coverage in `src/contributor/profile-surface-resolution.test.ts`, updated `src/slack/slash-command-handler.test.ts` so only trusted fixtures carry `CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER`, and added explicit coverage for newly linked, opted-out, legacy, stale, malformed, and expertise-failure scenarios. Exported the new resolver from `src/contributor/index.ts` and recorded the seam rule in `.gsd/KNOWLEDGE.md`.\n\n## Verification\n\nFocused task verification passed with `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts`, `bun run verify:m047:s01`, and `bun run tsc --noEmit`. Slice-level follow-on verification is partially green as expected for T01: `bun run verify:m047:s02 -- --json` fails because the verifier script does not exist yet, and `bun run verify:m045:s03` plus the broader slice bundle still fail because the existing Slack verifier fixtures encode pre-S02 linked-profile/profile-opt-in copy that T03 is planned to update.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts` | 0 | ✅ pass | 40ms |\n| 2 | `bun run verify:m047:s02 -- --json` | 1 | ❌ fail | 22ms |\n| 3 | `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts` | 1 | ❌ fail | 98ms |\n| 4 | `bun run verify:m047:s01` | 0 | ✅ pass | 69ms |\n| 5 | `bun run verify:m045:s03` | 1 | ❌ fail | 60ms |\n| 6 | `bun run tsc --noEmit` | 0 | ✅ pass | 8240ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`verify:m047:s02` is not wired yet, so that command currently fails with `Script not found \"verify:m047:s02\"`. `scripts/verify-m045-s03.ts` and `scripts/verify-m045-s03.test.ts` still assert the pre-S02 Slack continuity copy, so they currently report `slack_surface_contract_drift` for `linked-profile` and `profile-opt-in` until T03 updates the proof bundle.\n\n## Files Created/Modified\n\n- `src/contributor/profile-surface-resolution.ts`\n- `src/contributor/profile-surface-resolution.test.ts`\n- `src/slack/slash-command-handler.ts`\n- `src/slack/slash-command-handler.test.ts`\n- `src/contributor/index.ts`\n- `.gsd/KNOWLEDGE.md`\n",
+      "description": "**Slice:** S02 — Contract-first Slack, retrieval, and profile continuity rollout\n**Milestone:** M047\n\n## Description\n\nRoll the S01 stored-profile truth boundary into the Slack/profile surface without importing review-time author-cache or GitHub-search fallback behavior. Assume untrusted stored-profile states (`linked-unscored`, `legacy`, `stale`, and `malformed`) should collapse to generic Slack/profile continuity rather than `generic-degraded`, because this surface is describing the linked persisted profile itself, not transient search degradation.\n\n## Steps\n\n1. Add a focused `src/contributor/profile-surface-resolution.ts` helper and tests that classify full `ContributorProfile` rows through `classifyContributorProfileTrust(...)` and map opted-out, calibrated, linked-unscored, legacy, stale, and malformed states to contract-safe Slack/profile output.\n2. Rewire `src/slack/slash-command-handler.ts` so `/kodiai profile`, `link`, and `profile opt-in` resolve the stored-profile surface state before rendering copy or fetching expertise.\n3. Skip `getExpertise(...)` for any non-`profile-backed` surface so generic or opted-out responses cannot leak trusted-looking expertise data.\n4. Update handler fixtures so only trusted rows carry `CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER`, and add explicit assertions for newly linked, legacy, stale, malformed, and opted-out continuity copy.\n\n## Must-Haves\n\n- [ ] `/kodiai profile`, `link`, and `profile opt-in` only claim active linked guidance when the stored profile is currently trusted.\n- [ ] Linked-unscored, legacy, stale, malformed, and opted-out rows render generic-safe Slack/profile copy and never show expertise.\n- [ ] The new resolver stays narrow and reusable so later proof code can consume it without pulling in review-time fallback logic.",
+      "estimate": "2h",
+      "files": [
+        "src/contributor/profile-surface-resolution.ts",
+        "src/contributor/profile-surface-resolution.test.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/slack/slash-command-handler.test.ts",
+        "src/contributor/index.ts"
+      ],
+      "verify": "bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts",
+      "inputs": [
+        "src/contributor/profile-trust.ts",
+        "src/contributor/experience-contract.ts",
+        "src/contributor/types.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/slack/slash-command-handler.test.ts"
+      ],
+      "expected_output": [
+        "src/contributor/profile-surface-resolution.ts",
+        "src/contributor/profile-surface-resolution.test.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/slack/slash-command-handler.test.ts",
+        "src/contributor/index.ts"
+      ],
+      "observability_impact": "- Signals added/changed: stored-profile surface resolution becomes explicit in deterministic profile-card and continuity-message assertions rather than leaking through raw tier strings.\n- How a future agent inspects this: run `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts` or inspect the Slack/profile scenarios in `bun run verify:m047:s02 -- --json`.\n- Failure state exposed: false linked-active copy or unexpected expertise sections on untrusted rows.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Suppress opted-out identity suggestions and prove route continuity",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "**Slice:** S02 — Contract-first Slack, retrieval, and profile continuity rollout\n**Milestone:** M047\n\n## Description\n\nClose the remaining continuity bug where opted-out linked contributors can still receive identity-link suggestions because the suggestion path uses a user-view profile lookup. Keep the existing fail-open Slack API behavior, but switch this path onto the system-view lookup that can actually see opted-out rows and prove the new continuity copy across the signed slash-command HTTP surface.\n\n## Steps\n\n1. Change `suggestIdentityLink(...)` to use `profileStore.getByGithubUsername(githubUsername, { includeOptedOut: true })` so opted-out linked rows are treated as existing profiles.\n2. Add focused identity-suggestion tests for opted-out suppression, linked-profile suppression, no-match behavior, and Slack API failures, resetting in-memory state with `resetIdentitySuggestionStateForTests()` in setup and teardown.\n3. Extend `src/routes/slack-commands.test.ts` with signed-request scenarios that assert the updated continuity copy makes it through the real Hono route JSON response.\n4. Keep the route dependency surface narrow: do not add new route injections or link-time recalculation work just to make the copy truthful.\n\n## Must-Haves\n\n- [ ] Opted-out linked contributors are treated as existing profiles and no longer receive identity-link DMs.\n- [ ] Slack API failures stay non-blocking and logged, preserving the current fail-open behavior.\n- [ ] Route-level tests prove the slash-command HTTP surface returns the updated continuity copy without widening route dependencies.",
+      "estimate": "90m",
+      "files": [
+        "src/handlers/identity-suggest.ts",
+        "src/handlers/identity-suggest.test.ts",
+        "src/routes/slack-commands.test.ts"
+      ],
+      "verify": "bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts",
+      "inputs": [
+        "src/handlers/identity-suggest.ts",
+        "src/handlers/identity-suggest.test.ts",
+        "src/routes/slack-commands.ts",
+        "src/routes/slack-commands.test.ts",
+        ".gsd/KNOWLEDGE.md",
+        "src/contributor/types.ts"
+      ],
+      "expected_output": [
+        "src/handlers/identity-suggest.ts",
+        "src/handlers/identity-suggest.test.ts",
+        "src/routes/slack-commands.test.ts"
+      ],
+      "observability_impact": "- Signals added/changed: opted-out identity suppression is visible through route/handler tests and the existing non-blocking warn path in `src/handlers/identity-suggest.ts`.\n- How a future agent inspects this: run `bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts` or inspect the identity scenarios in `bun run verify:m047:s02 -- --json`.\n- Failure state exposed: a DM sent for an opted-out linked profile, or a signed slash-command route returning stale optimistic continuity copy.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M047",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Ship trust-aware Slack/retrieval proof for S02",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "**Slice:** S02 — Contract-first Slack, retrieval, and profile continuity rollout\n**Milestone:** M047\n\n## Description\n\nTurn the slice into a durable proof surface instead of a one-off set of handler tests. Keep `verify:m045:s03` honest by making its positive Slack/profile fixtures explicitly trusted, then add a new `verify:m047:s02` harness that composes S01’s stored-profile state matrix with Slack/profile continuity, retrieval author hints, and opted-out identity suppression.\n\n## Steps\n\n1. Make `scripts/verify-m045-s03.ts` truth-aware by carrying `trustMarker` through its in-memory contributor-profile fixtures, preserving `includeOptedOut` behavior, and updating its tests so active linked scenarios are genuinely trusted.\n2. Implement `scripts/verify-m047-s02.ts` and tests with stable scenarios for calibrated, linked-unscored, legacy, stale, malformed, and opted-out stored profiles across Slack/profile output, link/opt continuity copy, retrieval author hints, and identity-suggestion suppression.\n3. Keep expected phrases local to the verifier instead of deriving them from the same helper under test, and reuse `verify:m047:s01` outputs or seams where that reduces drift without importing review logic twice.\n4. Add `verify:m047:s02` to `package.json` and rerun `verify:m047:s01`, `verify:m045:s03`, the new verifier, and focused retrieval tests together as the slice-close proof bundle.\n\n## Must-Haves\n\n- [ ] `verify:m045:s03` no longer certifies active linked Slack/profile behavior from fixtures that lack the current trust marker.\n- [ ] `verify:m047:s02` reports stable scenario diagnostics for trusted and untrusted stored-profile states across Slack/profile, retrieval, and identity surfaces.\n- [ ] The full proof bundle keeps `verify:m047:s01` and retrieval tests green while adding the new slice-level verifier.",
+      "estimate": "90m",
+      "files": [
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m047-s02.test.ts",
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m045-s03.test.ts",
+        "package.json"
+      ],
+      "verify": "bun test ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts && bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02 && bun run tsc --noEmit",
+      "inputs": [
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m045-s03.test.ts",
+        "scripts/verify-m047-s01.ts",
+        "src/contributor/profile-surface-resolution.ts",
+        "src/slack/slash-command-handler.ts",
+        "src/handlers/identity-suggest.ts",
+        "src/knowledge/retrieval-query.ts",
+        "src/knowledge/multi-query-retrieval.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m047-s02.test.ts",
+        "scripts/verify-m045-s03.ts",
+        "scripts/verify-m045-s03.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "- Signals added/changed: `verify:m047:s02` becomes the operator inspection surface for Slack/profile continuity, retrieval-hint alignment, and opted-out identity suppression.\n- How a future agent inspects this: run `bun run verify:m047:s02 -- --json` and compare its scenario report with `bun run verify:m047:s01 -- --json` and `bun run verify:m045:s03 -- --json`.\n- Failure state exposed: named scenario/status-code drift for trusted vs untrusted Slack output, retrieval author hints, or identity-suggestion suppression.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -13938,6 +14083,42 @@
       "decision": "How persisted contributor-profile trust should be represented for M047 review-time resolution",
       "choice": "Add one nullable versioned `trust_marker` column (`m047-calibrated-v1`) on `contributor_profiles`, and classify trust purely from `overallTier`, `lastScoredAt`, and that marker via `src/contributor/profile-trust.ts`.",
       "rationale": "A single versioned marker is the minimum durable metadata that cleanly distinguishes linked-unscored rows from legacy scored rows while letting fresh scored rows prove they were written by the M047-calibrated path. Keeping trust classification in one pure helper avoids re-inferring certainty from `overall_tier='newcomer'`, makes malformed/unsupported rows fail open to untrusted states, and gives later review/runtime slices one reusable seam instead of duplicating trust logic.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 124,
+      "id": "D090",
+      "when_context": "M047/S01/T02",
+      "scope": "architecture",
+      "decision": "How GitHub review-time contributor resolution should consume stored-profile trust in M047/S01/T02",
+      "choice": "Route review-time author classification through a shared `resolveReviewAuthorClassification` module that applies the stored-profile trust helper before falling back, keep opt-out precedence, and emit stored-profile trust diagnostics only in handler logs while Review Details remains redacted and contract-level.",
+      "rationale": "The live review handler was the root-cause surface for false `profile-backed` newcomer guidance. Centralizing resolution behind one module removes duplicated inline logic, fixes the stale trusted-tier bug on expertise lookup failure, keeps fallback behavior coherent across cache/search/generic paths, and preserves operator observability without leaking calibration-only metadata into user-facing Review Details.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 125,
+      "id": "D091",
+      "when_context": "M047/S01/T03",
+      "scope": "verification",
+      "decision": "How the M047/S01 runtime verifier should prove truthful stored-profile resolution",
+      "choice": "Model the proof harness as one stable scenario-level check per stored-profile state and embed prompt, Review Details, trust, contract, source, fallback, and degradation diagnostics in each scenario report for operator inspection and later M047 composition.",
+      "rationale": "M045 already proved the public contract and M046 already proved calibration evidence, but neither surfaced the real runtime source-resolution seam. Scenario-level checks keep the verifier durable and machine-consumable while the embedded diagnostics make regressions debuggable and give later `verify:m047` composition a stable nested report instead of ad hoc prose.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 126,
+      "id": "D092",
+      "when_context": "M047/S02 planning",
+      "scope": "architecture",
+      "decision": "How S02 should resolve stored contributor-profile state for Slack/profile continuity surfaces",
+      "choice": "Add a stored-profile surface resolver for Slack/profile continuity that classifies full `ContributorProfile` rows through the S01 trust seam, treats only current trusted calibrated rows as `profile-backed`, preserves opt-out precedence, and collapses linked-unscored, legacy, stale, and malformed stored rows to generic Slack/profile continuity instead of importing review-time cache/search fallback semantics.",
+      "rationale": "Slack/profile continuity surfaces describe the linked persisted profile itself, not author-cache or GitHub-search fallback behavior. Reusing the stored-profile trust seam keeps downstream copy truthful, prevents raw-tier leakage, and avoids mislabeling stale or legacy rows as transient degraded runtime states while leaving retrieval alignment to the existing review-time resolver plus proof harnesses.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -18057,6 +18238,72 @@
       "verdict": "✅ pass",
       "duration_ms": 7727,
       "created_at": "2026-04-11T01:02:38.719Z"
+    },
+    {
+      "id": 376,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 40,
+      "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 377,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02 -- --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 22,
+      "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 378,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 98,
+      "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 379,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 69,
+      "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 380,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s03",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 60,
+      "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 381,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8240,
+      "created_at": "2026-04-11T01:43:57.788Z"
     }
   ]
 }

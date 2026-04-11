@@ -9,4 +9,5 @@ export * from "./xbmc-fixture-refresh.ts";
 export * from "./calibration-evaluator.ts";
 export * from "./calibration-change-contract.ts";
 export * from "./profile-trust.ts";
+export * from "./profile-surface-resolution.ts";
 export * from "./review-author-resolution.ts";

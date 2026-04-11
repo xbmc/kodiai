@@ -984,3 +984,23 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When a slice verification command names multiple test files, explicitly probe any expected new file paths (and related package scripts) before treating the bundle as full coverage. A passing multi-path `bun test` command only proves the matched files passed; it does not prove every requested path existed or ran.
 
 **Established in:** M047/S01/T01 (`bun test` bundle behavior plus explicit missing-path checks for `src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`, and `package.json` script wiring).
+
+---
+
+## Contributor profile store tests should prefer `TEST_DATABASE_URL` over the repo `DATABASE_URL` (M047/S01)
+
+**Context:** `src/contributor/profile-store.test.ts` originally inherited the repository `DATABASE_URL`, which points at a remote Azure database in some environments. During M047/S01/T01 that caused local verification to hang or fail for reasons unrelated to the slice.
+
+**Rule:** DB-backed contributor-store tests should read `TEST_DATABASE_URL` first and otherwise fall back to a local default, not the repo-wide `DATABASE_URL`. Treat the application `DATABASE_URL` as production/runtime config, not as a safe default for deterministic integration tests.
+
+**Established in:** M047/S01/T01 (`src/contributor/profile-store.test.ts`).
+
+---
+
+## Slack/profile continuity must resolve stored profiles through the trust seam, not raw tier state (M047/S02)
+
+**Context:** During M047/S02/T01, `/kodiai profile`, `link`, and `profile opt-in` were still reading raw `overallTier`/`optedOut` data directly. That let linked-unscored, legacy, stale, and malformed rows look like active linked guidance on Slack, and it wasted expertise lookups on rows that should have stayed generic.
+
+**Rule:** Any Slack/profile surface that renders persisted contributor state must first run the full stored row through `resolveContributorProfileSurface(...)` (which itself classifies via `classifyContributorProfileTrust(...)`). Only `projection.state === "profile-backed"` may claim active linked guidance or call `getExpertise(...)`. Linked-unscored, legacy, stale, malformed, and fail-open states collapse to `generic-unknown` on this surface; they do **not** reuse review-time `generic-degraded` wording because this is describing the persisted linked profile itself, not transient fallback-search degradation.
+
+**Established in:** M047/S02/T01 (`src/contributor/profile-surface-resolution.ts`, `src/slack/slash-command-handler.ts`).

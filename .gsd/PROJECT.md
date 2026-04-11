@@ -14,25 +14,24 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, and M046 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, and M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract for M047.
 
-The current contributor-calibration state is now explicit and verified:
+M047 is now in progress with **S01 complete**. The GitHub review surface no longer trusts raw persisted contributor tiers by default:
 
-- `fixtures/contributor-calibration/xbmc-manifest.json` and `fixtures/contributor-calibration/xbmc-snapshot.json` are the checked-in xbmc truth set with explicit retained/excluded identities, provenance, source availability, and deterministic timestamps.
-- `src/contributor/xbmc-fixture-snapshot.ts` is the shared offline loader/validator so verifiers and evaluators consume one authoritative snapshot contract.
-- `src/contributor/calibration-evaluator.ts` models the current live incremental path versus the intended full-signal path without inventing changed-file arrays, projects both through the M045 contributor-experience contract, and preserves instability/freshness diagnostics.
-- `src/contributor/calibration-change-contract.ts` turns the calibration recommendation plus current runtime seams into a deterministic keep/change/replace inventory with explicit impacted surfaces and contradiction validation.
-- `bun run verify:m046 -- --json` is the canonical integrated proof surface. It preserves nested S01 fixture evidence and nested S02 calibration evidence, reports stable top-level `M046-S03-*` checks, states the explicit verdict, and emits a concrete `m047ChangeContract`.
-- The current M046 verdict is **`replace`**. The contract says to keep the M045 contributor-experience vocabulary, change stored-tier consumer surfaces in review and Slack so they can read a future calibrated contract, and replace the live incremental `pr_authored`-only scoring path.
-- Requirement `R047` is validated with milestone-level proof, including the integrated verifier and the full M046 test suite.
+- `src/db/migrations/037-contributor-profile-trust.sql` adds a persisted nullable `trust_marker` so contributor profiles can distinguish linked-unscored, legacy, stale, malformed, and currently calibrated rows.
+- `src/contributor/profile-trust.ts` is the canonical persisted-row trust classifier; it derives trust from `overallTier`, `lastScoredAt`, and the versioned marker instead of inferring certainty from raw tier labels.
+- `src/contributor/review-author-resolution.ts` is the shared runtime resolver that applies the trust boundary before falling back to author-cache, GitHub search, or generic/degraded behavior.
+- `src/handlers/review.ts` now keeps prompt shaping, Review Details, and author-classification logs coherent across linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback scenarios.
+- `scripts/verify-m047-s01.ts` is the operator-facing proof surface for the runtime stored-profile resolution seam; it reports stable scenario-level checks and trust/contract/source/fallback diagnostics.
 
-Fresh milestone-closeout verification passed:
+Fresh M047/S01 verification passed:
 
-- `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s02.test.ts ./src/contributor/calibration-change-contract.test.ts ./scripts/verify-m046.test.ts`
-- `bun run verify:m046 -- --json`
+- `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts`
+- `bun run verify:m045:s01 && bun run verify:m047:s01`
 - `bun run tsc --noEmit`
 
-What remains is the rollout milestone that consumes the now-explicit M046 contract:
+What remains before M047 closes:
 
-- **M047:** implement the contributor-experience redesign/calibration changes described by `m047ChangeContract`, preserve freshness/degradation reporting, and prove end-to-end cross-surface coherence.
+- **S02:** roll the same trust-aware contributor resolution through retrieval hints, Slack/profile continuity output, and related downstream surfaces.
+- **S03:** compose the review/runtime proof with the existing M045/M046 verifiers into the integrated `verify:m047` milestone coherence harness.
 
 ## Architecture / Key Patterns
 
@@ -42,10 +41,12 @@ What remains is the rollout milestone that consumes the now-explicit M046 contra
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
+- **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
+- **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
 - **Calibration fixture proof seam:** `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-snapshot.ts`, and `scripts/verify-m046-s01.ts` separate human-curated contributor truth from generated live evidence so calibration work can rerun against a stable xbmc corpus.
 - **Calibration evaluator seam:** `src/contributor/calibration-evaluator.ts` compares the modeled live incremental path against the intended full-signal path, preserves retained/excluded cohort truth, and reports fidelity/degradation limits instead of fabricating replay evidence.
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
-- **Operator proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046-s02.ts`, and `scripts/verify-m046.ts` emit stable check IDs/status codes from one normalized report object so downstream slices and milestone validators can consume them mechanically.
+- **Operator proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046-s02.ts`, `scripts/verify-m046.ts`, and `scripts/verify-m047-s01.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
 ## Capability Contract
@@ -74,6 +75,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Scoring and Tiering Evaluation
   - [x] S03: Calibration Verdict and Change Contract
 - [ ] M047: Contributor Experience Redesign and Calibration Rollout
-  - [ ] S01: Review-Surface Rollout
+  - [x] S01: Review-Surface Rollout
   - [ ] S02: Retrieval and Slack Surface Rollout
   - [ ] S03: End-to-End Coherence Verification
