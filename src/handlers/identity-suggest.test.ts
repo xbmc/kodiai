@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Logger } from "pino";
 import * as identitySuggest from "./identity-suggest.ts";
-import type { ContributorProfileStore } from "../contributor/types.ts";
+import type {
+  ContributorProfile,
+  ContributorProfileStore,
+} from "../contributor/types.ts";
 
 const originalFetch = globalThis.fetch;
 
@@ -32,6 +35,25 @@ function createMockLogger(): MockLogger {
     child: () => createMockLogger(),
     level: "silent",
   } as unknown as MockLogger;
+}
+
+function makeProfile(
+  overrides: Partial<ContributorProfile> = {},
+): ContributorProfile {
+  return {
+    id: 1,
+    githubUsername: "octocat",
+    slackUserId: "U001",
+    displayName: "Octo Cat",
+    overallTier: "established",
+    overallScore: 0.8,
+    optedOut: false,
+    createdAt: new Date("2026-04-10T00:00:00.000Z"),
+    updatedAt: new Date("2026-04-10T00:00:00.000Z"),
+    lastScoredAt: new Date("2026-04-10T00:00:00.000Z"),
+    trustMarker: "m047-calibrated-v1",
+    ...overrides,
+  };
 }
 
 function createMockProfileStore(
@@ -86,42 +108,79 @@ function jsonResponse(data: unknown, init: ResponseInit = {}): Response {
 
 describe("suggestIdentityLink", () => {
   beforeEach(() => {
-    (identitySuggest as { resetIdentitySuggestionStateForTests?: () => void })
-      .resetIdentitySuggestionStateForTests?.();
+    identitySuggest.resetIdentitySuggestionStateForTests();
     globalThis.fetch = originalFetch;
   });
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
-    (identitySuggest as { resetIdentitySuggestionStateForTests?: () => void })
-      .resetIdentitySuggestionStateForTests?.();
+    identitySuggest.resetIdentitySuggestionStateForTests();
   });
 
-  test("existing linked profile suppresses Slack lookup and DM delivery", async () => {
+  test("existing linked profile suppresses Slack lookup and uses the system-view opted-out lookup", async () => {
     const fetchMock = mock(async () => jsonResponse({ ok: true, members: [] }));
     globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const getByGithubUsername = mock(
+      async (_username: string, options?: { includeOptedOut?: boolean }) =>
+        options?.includeOptedOut
+          ? makeProfile({
+              githubUsername: "linked-user",
+              slackUserId: "U-LINKED",
+              displayName: "Linked User",
+            })
+          : null,
+    );
 
     await identitySuggest.suggestIdentityLink({
       githubUsername: "linked-user",
       githubDisplayName: "Linked User",
       slackBotToken: "xoxb-test-token",
       profileStore: createMockProfileStore({
-        getByGithubUsername: async () => ({
-          id: 1,
-          githubUsername: "linked-user",
-          slackUserId: "U-LINKED",
-          displayName: "Linked User",
-          overallTier: "established",
-          overallScore: 0.8,
-          optedOut: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastScoredAt: new Date(),
-        }),
+        getByGithubUsername,
       }),
       logger: createMockLogger(),
     });
 
+    expect(getByGithubUsername).toHaveBeenCalledTimes(1);
+    expect(getByGithubUsername.mock.calls[0]).toEqual([
+      "linked-user",
+      { includeOptedOut: true },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("opted-out linked profiles are treated as existing and do not receive a DM", async () => {
+    const fetchMock = mock(async () => jsonResponse({ ok: true, members: [] }));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const getByGithubUsername = mock(
+      async (_username: string, options?: { includeOptedOut?: boolean }) =>
+        options?.includeOptedOut
+          ? makeProfile({
+              githubUsername: "opted-out-user",
+              slackUserId: "U-OPTED-OUT",
+              displayName: "Opted Out User",
+              optedOut: true,
+            })
+          : null,
+    );
+
+    await identitySuggest.suggestIdentityLink({
+      githubUsername: "opted-out-user",
+      githubDisplayName: "Opted Out User",
+      slackBotToken: "xoxb-test-token",
+      profileStore: createMockProfileStore({
+        getByGithubUsername,
+      }),
+      logger: createMockLogger(),
+    });
+
+    expect(getByGithubUsername).toHaveBeenCalledTimes(1);
+    expect(getByGithubUsername.mock.calls[0]).toEqual([
+      "opted-out-user",
+      { includeOptedOut: true },
+    ]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -221,7 +280,58 @@ describe("suggestIdentityLink", () => {
     expect(logger.info).toHaveBeenCalledTimes(1);
   });
 
-  test("Slack API failures stay non-blocking and log a warning", async () => {
+  test("duplicate suggestion attempts in the same process do not send a second DM", async () => {
+    const requests: string[] = [];
+
+    const fetchMock = mock(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input.toString();
+      requests.push(url);
+
+      if (url === "https://slack.com/api/users.list") {
+        return jsonResponse({
+          ok: true,
+          members: [
+            {
+              id: "U777",
+              profile: { display_name: "octocat", real_name: "Octo Cat" },
+            },
+          ],
+        });
+      }
+
+      if (url === "https://slack.com/api/conversations.open") {
+        return jsonResponse({ ok: true, channel: { id: "D777" } });
+      }
+
+      if (url === "https://slack.com/api/chat.postMessage") {
+        return jsonResponse({ ok: true });
+      }
+
+      return new Response("Not Found", { status: 404 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    const logger = createMockLogger();
+    const params = {
+      githubUsername: "octocat",
+      githubDisplayName: "Octo Cat",
+      slackBotToken: "xoxb-test-token",
+      profileStore: createMockProfileStore(),
+      logger,
+    };
+
+    await identitySuggest.suggestIdentityLink(params);
+    await identitySuggest.suggestIdentityLink(params);
+
+    expect(requests).toEqual([
+      "https://slack.com/api/users.list",
+      "https://slack.com/api/conversations.open",
+      "https://slack.com/api/chat.postMessage",
+    ]);
+    expect(logger.info).toHaveBeenCalledTimes(1);
+  });
+
+  test("malformed Slack DM responses stay non-blocking and log a warning", async () => {
     const logger = createMockLogger();
     const requests: string[] = [];
 
@@ -242,7 +352,7 @@ describe("suggestIdentityLink", () => {
       }
 
       if (url === "https://slack.com/api/conversations.open") {
-        return jsonResponse({ ok: false, error: "channel_not_found" });
+        return jsonResponse({ ok: true, channel: {} });
       }
 
       if (url === "https://slack.com/api/chat.postMessage") {
@@ -267,6 +377,29 @@ describe("suggestIdentityLink", () => {
       "https://slack.com/api/users.list",
       "https://slack.com/api/conversations.open",
     ]);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  test("missing opted-out lookup support stays fail-open and logs a warning", async () => {
+    const logger = createMockLogger();
+    const fetchMock = mock(async () => jsonResponse({ ok: true, members: [] }));
+    globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+
+    await expect(
+      identitySuggest.suggestIdentityLink({
+        githubUsername: "lookup-error-user",
+        githubDisplayName: "Lookup Error User",
+        slackBotToken: "xoxb-test-token",
+        profileStore: createMockProfileStore({
+          getByGithubUsername: async () => {
+            throw new Error("includeOptedOut lookup unavailable");
+          },
+        }),
+        logger,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

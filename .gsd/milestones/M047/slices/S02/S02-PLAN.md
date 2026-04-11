@@ -55,7 +55,7 @@
   - Verify: `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts`
   - Done when: Slack profile cards and link/opt-in responses only claim active linked guidance for trusted calibrated profiles, and generic states never show expertise or raw-tier copy.
 
-- [ ] **T02: Suppress opted-out identity suggestions and prove route continuity** `est:90m`
+- [x] **T02: Suppress opted-out identity suggestions and prove route continuity** `est:90m`
   - Why: Opted-out linked contributors are still treated as absent by the identity-suggestion path, and the signed slash-command HTTP surface needs an end-to-end continuity check for the updated truthful copy.
   - Files: `src/handlers/identity-suggest.ts`, `src/handlers/identity-suggest.test.ts`, `src/routes/slack-commands.test.ts`
   - Do: Switch identity suggestions onto `includeOptedOut: true` system-view lookups, suppress DMs when an opted-out linked row already exists, keep Slack API failures fail-open, and extend signed-route coverage so the updated continuity copy is proven over the real Hono JSON response.

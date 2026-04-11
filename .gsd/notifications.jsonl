@@ -236,3 +236,5 @@
 {"id":"18bd13b9-be23-4e7d-82fd-c11b1591f950","ts":"2026-04-11T01:00:56.185Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
 {"id":"1495905b-60ee-40f8-a54a-c07a657fb4df","ts":"2026-04-11T01:02:46.114Z","severity":"info","message":"Committed: feat: Added a runtime proof harness that exercises stored-profile revie…","source":"notify","read":false}
 {"id":"5033de53-9b90-4a0c-8cef-09b117a4da73","ts":"2026-04-11T01:02:54.302Z","severity":"info","message":"Verification gate: 4/4 checks passed","source":"notify","read":false}
+{"id":"9146e057-0259-41fe-a828-5ced6f53a8c1","ts":"2026-04-11T01:44:06.154Z","severity":"info","message":"Committed: feat: Added a stored-profile Slack/profile resolver so link, profile, a…","source":"notify","read":false}
+{"id":"3039e220-044e-4ac5-8e7a-da435f5db615","ts":"2026-04-11T01:44:06.193Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}

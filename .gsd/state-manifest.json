@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T01:43:57.820Z",
+  "exported_at": "2026-04-11T01:58:37.383Z",
   "milestones": [
     {
       "id": "M001",
@@ -12930,19 +12930,29 @@
       "milestone_id": "M047",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Suppress opted-out identity suggestions and prove route continuity",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Suppressed opted-out identity suggestion DMs and added signed slash continuity proof coverage.",
+      "status": "complete",
+      "one_liner": "Suppressed opted-out identity suggestion DMs and added signed slash continuity proof coverage.",
+      "narrative": "Fixed the root cause in `src/handlers/identity-suggest.ts` by switching the existing-profile check onto `getByGithubUsername(..., { includeOptedOut: true })`, which lets opted-out linked contributors suppress identity-link DMs without re-enabling profile-backed behavior. Expanded `src/handlers/identity-suggest.test.ts` to cover system-view linked suppression, opted-out suppression, duplicate same-process attempts, malformed Slack DM responses, and missing opted-out-lookup support while continuing to reset in-memory state around each case. Extended `src/routes/slack-commands.test.ts` so the signed Hono route now proves generic continuity for untrusted `link` and `profile opt-in` flows plus active continuity for trusted linked rows. Added the missing `scripts/verify-m047-s02.ts` proof harness, its regression test, and the `verify:m047:s02` package script so future agents can inspect signed-route continuity and identity-suggestion suppression through a stable JSON surface with named status codes.",
+      "verification_result": "Focused task verification passed with `bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts`, `bun run verify:m047:s02 -- --json`, and `bun run tsc --noEmit`. The broader slice bundle is partially green as expected for an intermediate task: `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts` and `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02` still fail only because the existing M045/S03 Slack proof expects pre-S02 continuity copy for `linked-profile` and `profile-opt-in`.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-11T01:58:37.355Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Added the missing `verify:m047:s02` proof harness, its test file, and `package.json` script wiring because the task and slice verification contract already required that command even though it was absent from the repo snapshot.",
+      "known_issues": "`bun run verify:m045:s03` and `scripts/verify-m045-s03.test.ts` still fail because the older M045/S03 Slack verifier expects the pre-S02 `linked-profile` and `profile-opt-in` copy. That pre-existing drift remains follow-on work for the slice; the new T02 identity suppression path, dedicated `verify:m047:s02` harness, and `bun run tsc --noEmit` all pass.",
+      "key_files": [
+        "src/handlers/identity-suggest.ts",
+        "src/handlers/identity-suggest.test.ts",
+        "src/routes/slack-commands.test.ts",
+        "scripts/verify-m047-s02.ts",
+        "scripts/verify-m047-s02.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Use `profileStore.getByGithubUsername(githubUsername, { includeOptedOut: true })` in the identity-suggestion path so opted-out linked rows suppress DMs without re-enabling profile-backed guidance.",
+        "Prove signed slash continuity and identity-suggestion suppression with a focused `verify:m047:s02` harness instead of widening route dependencies or recalculating continuity inside the route layer."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M047\nkey_files:\n  - src/handlers/identity-suggest.ts\n  - src/handlers/identity-suggest.test.ts\n  - src/routes/slack-commands.test.ts\n  - scripts/verify-m047-s02.ts\n  - scripts/verify-m047-s02.test.ts\n  - package.json\nkey_decisions:\n  - Use `profileStore.getByGithubUsername(githubUsername, { includeOptedOut: true })` in the identity-suggestion path so opted-out linked rows suppress DMs without re-enabling profile-backed guidance.\n  - Prove signed slash continuity and identity-suggestion suppression with a focused `verify:m047:s02` harness instead of widening route dependencies or recalculating continuity inside the route layer.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-11T01:58:37.355Z\nblocker_discovered: false\n---\n\n# T02: Suppressed opted-out identity suggestion DMs and added signed slash continuity proof coverage.\n\n**Suppressed opted-out identity suggestion DMs and added signed slash continuity proof coverage.**\n\n## What Happened\n\nFixed the root cause in `src/handlers/identity-suggest.ts` by switching the existing-profile check onto `getByGithubUsername(..., { includeOptedOut: true })`, which lets opted-out linked contributors suppress identity-link DMs without re-enabling profile-backed behavior. Expanded `src/handlers/identity-suggest.test.ts` to cover system-view linked suppression, opted-out suppression, duplicate same-process attempts, malformed Slack DM responses, and missing opted-out-lookup support while continuing to reset in-memory state around each case. Extended `src/routes/slack-commands.test.ts` so the signed Hono route now proves generic continuity for untrusted `link` and `profile opt-in` flows plus active continuity for trusted linked rows. Added the missing `scripts/verify-m047-s02.ts` proof harness, its regression test, and the `verify:m047:s02` package script so future agents can inspect signed-route continuity and identity-suggestion suppression through a stable JSON surface with named status codes.\n\n## Verification\n\nFocused task verification passed with `bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts`, `bun run verify:m047:s02 -- --json`, and `bun run tsc --noEmit`. The broader slice bundle is partially green as expected for an intermediate task: `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts` and `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02` still fail only because the existing M045/S03 Slack proof expects pre-S02 continuity copy for `linked-profile` and `profile-opt-in`.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts` | 0 | ✅ pass | 62ms |\n| 2 | `bun run verify:m047:s02 -- --json` | 0 | ✅ pass | 80ms |\n| 3 | `bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts` | 1 | ❌ fail | 152ms |\n| 4 | `bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02` | 1 | ❌ fail | 139ms |\n| 5 | `bun run tsc --noEmit` | 0 | ✅ pass | 7900ms |\n\n## Deviations\n\nAdded the missing `verify:m047:s02` proof harness, its test file, and `package.json` script wiring because the task and slice verification contract already required that command even though it was absent from the repo snapshot.\n\n## Known Issues\n\n`bun run verify:m045:s03` and `scripts/verify-m045-s03.test.ts` still fail because the older M045/S03 Slack verifier expects the pre-S02 `linked-profile` and `profile-opt-in` copy. That pre-existing drift remains follow-on work for the slice; the new T02 identity suppression path, dedicated `verify:m047:s02` harness, and `bun run tsc --noEmit` all pass.\n\n## Files Created/Modified\n\n- `src/handlers/identity-suggest.ts`\n- `src/handlers/identity-suggest.test.ts`\n- `src/routes/slack-commands.test.ts`\n- `scripts/verify-m047-s02.ts`\n- `scripts/verify-m047-s02.test.ts`\n- `package.json`\n",
       "description": "**Slice:** S02 — Contract-first Slack, retrieval, and profile continuity rollout\n**Milestone:** M047\n\n## Description\n\nClose the remaining continuity bug where opted-out linked contributors can still receive identity-link suggestions because the suggestion path uses a user-view profile lookup. Keep the existing fail-open Slack API behavior, but switch this path onto the system-view lookup that can actually see opted-out rows and prove the new continuity copy across the signed slash-command HTTP surface.\n\n## Steps\n\n1. Change `suggestIdentityLink(...)` to use `profileStore.getByGithubUsername(githubUsername, { includeOptedOut: true })` so opted-out linked rows are treated as existing profiles.\n2. Add focused identity-suggestion tests for opted-out suppression, linked-profile suppression, no-match behavior, and Slack API failures, resetting in-memory state with `resetIdentitySuggestionStateForTests()` in setup and teardown.\n3. Extend `src/routes/slack-commands.test.ts` with signed-request scenarios that assert the updated continuity copy makes it through the real Hono route JSON response.\n4. Keep the route dependency surface narrow: do not add new route injections or link-time recalculation work just to make the copy truthful.\n\n## Must-Haves\n\n- [ ] Opted-out linked contributors are treated as existing profiles and no longer receive identity-link DMs.\n- [ ] Slack API failures stay non-blocking and logged, preserving the current fail-open behavior.\n- [ ] Route-level tests prove the slash-command HTTP surface returns the updated continuity copy without widening route dependencies.",
       "estimate": "90m",
       "files": [
@@ -14119,6 +14129,18 @@
       "decision": "How S02 should resolve stored contributor-profile state for Slack/profile continuity surfaces",
       "choice": "Add a stored-profile surface resolver for Slack/profile continuity that classifies full `ContributorProfile` rows through the S01 trust seam, treats only current trusted calibrated rows as `profile-backed`, preserves opt-out precedence, and collapses linked-unscored, legacy, stale, and malformed stored rows to generic Slack/profile continuity instead of importing review-time cache/search fallback semantics.",
       "rationale": "Slack/profile continuity surfaces describe the linked persisted profile itself, not author-cache or GitHub-search fallback behavior. Reusing the stored-profile trust seam keeps downstream copy truthful, prevents raw-tier leakage, and avoids mislabeling stale or legacy rows as transient degraded runtime states while leaving retrieval alignment to the existing review-time resolver plus proof harnesses.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 127,
+      "id": "D093",
+      "when_context": "M047/S02/T02",
+      "scope": "observability",
+      "decision": "How to prove M047/S02 signed slash continuity and identity-suggestion suppression",
+      "choice": "Add a focused `verify:m047:s02` proof harness that exercises the real signed Hono slash-command route and the identity-suggestion handler with fixed fixtures, rather than widening route dependencies or recalculating link state in the route layer.",
+      "rationale": "This keeps the route dependency surface narrow, preserves the existing fail-open runtime behavior, and gives future agents a stable JSON inspection surface with named status codes that stays independent from the helpers under test.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -18304,6 +18326,61 @@
       "verdict": "✅ pass",
       "duration_ms": 8240,
       "created_at": "2026-04-11T01:43:57.788Z"
+    },
+    {
+      "id": 382,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun test ./src/handlers/identity-suggest.test.ts ./src/routes/slack-commands.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 62,
+      "created_at": "2026-04-11T01:58:37.355Z"
+    },
+    {
+      "id": 383,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s02 -- --json",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 80,
+      "created_at": "2026-04-11T01:58:37.355Z"
+    },
+    {
+      "id": 384,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-surface-resolution.test.ts ./src/slack/slash-command-handler.test.ts ./src/routes/slack-commands.test.ts ./src/handlers/identity-suggest.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 152,
+      "created_at": "2026-04-11T01:58:37.355Z"
+    },
+    {
+      "id": 385,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run verify:m047:s01 && bun run verify:m045:s03 && bun run verify:m047:s02",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 139,
+      "created_at": "2026-04-11T01:58:37.355Z"
+    },
+    {
+      "id": 386,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7900,
+      "created_at": "2026-04-11T01:58:37.355Z"
     }
   ]
 }

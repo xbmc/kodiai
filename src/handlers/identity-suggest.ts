@@ -174,7 +174,9 @@ export async function suggestIdentityLink(params: {
       return;
     }
 
-    const existing = await profileStore.getByGithubUsername(githubUsername);
+    const existing = await profileStore.getByGithubUsername(githubUsername, {
+      includeOptedOut: true,
+    });
     if (existing?.slackUserId) {
       return;
     }
