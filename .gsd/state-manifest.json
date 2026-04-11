@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T00:50:16.800Z",
+  "exported_at": "2026-04-11T01:02:38.747Z",
   "milestones": [
     {
       "id": "M001",
@@ -12828,19 +12828,25 @@
       "milestone_id": "M047",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Ship an operator proof harness for stored-profile review resolution",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a runtime proof harness that exercises stored-profile review resolution end to end.",
+      "status": "complete",
+      "one_liner": "Added a runtime proof harness that exercises stored-profile review resolution end to end.",
+      "narrative": "Added `scripts/verify-m047-s01.ts` and `scripts/verify-m047-s01.test.ts` to prove the real stored-profile review-resolution seam instead of only direct contract fixtures. The harness seeds linked-unscored, legacy, stale, calibrated, opt-out, and cache-only coarse-fallback scenarios through `resolveReviewAuthorClassification`, renders the shipped prompt and Review Details surfaces, and evaluates one stable scenario-level truthfulness check per state. The report exposes trust state/reason, calibration marker/version, contract state/source, fallback path, and degradation path while keeping Review Details redacted from profile IDs, Slack IDs, raw expertise, and calibration markers. Added `verify:m047:s01` to `package.json` and kept `verify:m045:s01` compatible.",
+      "verification_result": "`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` passed. `bun run verify:m045:s01 && bun run verify:m047:s01` passed, and the new verifier emitted the expected linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback-cache scenario diagnostics. `bun run tsc --noEmit` passed.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-11T01:02:38.719Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "scripts/verify-m047-s01.ts",
+        "scripts/verify-m047-s01.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "Model the runtime verifier as one stable scenario-level check per stored-profile state while embedding prompt and Review Details surfaces into each scenario report for operator inspection and later M047 composition."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M047\nkey_files:\n  - scripts/verify-m047-s01.ts\n  - scripts/verify-m047-s01.test.ts\n  - package.json\nkey_decisions:\n  - Model the runtime verifier as one stable scenario-level check per stored-profile state while embedding prompt and Review Details surfaces into each scenario report for operator inspection and later M047 composition.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-11T01:02:38.719Z\nblocker_discovered: false\n---\n\n# T03: Added a runtime proof harness that exercises stored-profile review resolution end to end.\n\n**Added a runtime proof harness that exercises stored-profile review resolution end to end.**\n\n## What Happened\n\nAdded `scripts/verify-m047-s01.ts` and `scripts/verify-m047-s01.test.ts` to prove the real stored-profile review-resolution seam instead of only direct contract fixtures. The harness seeds linked-unscored, legacy, stale, calibrated, opt-out, and cache-only coarse-fallback scenarios through `resolveReviewAuthorClassification`, renders the shipped prompt and Review Details surfaces, and evaluates one stable scenario-level truthfulness check per state. The report exposes trust state/reason, calibration marker/version, contract state/source, fallback path, and degradation path while keeping Review Details redacted from profile IDs, Slack IDs, raw expertise, and calibration markers. Added `verify:m047:s01` to `package.json` and kept `verify:m045:s01` compatible.\n\n## Verification\n\n`bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` passed. `bun run verify:m045:s01 && bun run verify:m047:s01` passed, and the new verifier emitted the expected linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback-cache scenario diagnostics. `bun run tsc --noEmit` passed.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` | 0 | ✅ pass | 3466ms |\n| 2 | `bun run verify:m045:s01 && bun run verify:m047:s01` | 0 | ✅ pass | 100ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 7727ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `scripts/verify-m047-s01.ts`\n- `scripts/verify-m047-s01.test.ts`\n- `package.json`\n",
       "description": "**Slice:** S01 — Truthful contributor resolution on GitHub review\n**Milestone:** M047\n\n## Description\n\nProve the runtime resolver rather than just the public contract fixtures. The slice needs one shipped verifier that seeds stored contributor-profile states through the real review-resolution seam and shows linked-but-unscored and legacy rows fail open while a calibrated retained contributor still drives coherent prompt and Review Details output.\n\n## Steps\n\n1. Write failing verifier tests for linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback scenarios, including stable human/JSON output and package-script wiring.\n2. Implement `scripts/verify-m047-s01.ts` by reusing the trust-aware review-resolution helper plus prompt/details builders to render each stored-profile scenario end to end.\n3. Add the `verify:m047:s01` package script and keep M045 proof compatibility by rerunning `verify:m045:s01` alongside the new runtime verifier.\n4. Make the report expose trust state, contract state, source, and fallback/degradation reason so S03 can compose it into the final `verify:m047` surface.\n\n## Must-Haves\n\n- [ ] `bun run verify:m047:s01` proves stored-profile resolution instead of direct contract fixtures.\n- [ ] The verifier reports linked-unscored, legacy, stale, calibrated, opt-out, and coarse-fallback outcomes with stable check IDs and scenario details.\n- [ ] Existing `verify:m045:s01` contract proof stays green alongside the new runtime resolver proof.",
       "estimate": "90m",
       "files": [
@@ -18018,6 +18024,39 @@
       "verdict": "✅ pass",
       "duration_ms": 10323,
       "created_at": "2026-04-11T00:50:16.679Z"
+    },
+    {
+      "id": 373,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3466,
+      "created_at": "2026-04-11T01:02:38.719Z"
+    },
+    {
+      "id": 374,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run verify:m045:s01 && bun run verify:m047:s01",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 100,
+      "created_at": "2026-04-11T01:02:38.719Z"
+    },
+    {
+      "id": 375,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M047",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7727,
+      "created_at": "2026-04-11T01:02:38.719Z"
     }
   ]
 }

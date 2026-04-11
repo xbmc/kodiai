@@ -63,7 +63,7 @@
   - Verify: `bun test ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts`
   - Done when: Linked-unscored, legacy, stale, malformed, and opted-out stored rows fail open truthfully, while a trustworthy calibrated retained row still drives coherent prompt and Review Details behavior.
 
-- [ ] **T03: Ship an operator proof harness for stored-profile review resolution** `est:90m`
+- [x] **T03: Ship an operator proof harness for stored-profile review resolution** `est:90m`
   - Why: M047 needs a durable proof surface for the real runtime resolver, not just the public contract fixture harness from M045.
   - Files: `scripts/verify-m047-s01.ts`, `scripts/verify-m047-s01.test.ts`, `package.json`, `src/contributor/review-author-resolution.ts`, `src/handlers/review.ts`
   - Do: Add a scenario-driven verifier that seeds stored contributor-profile states through the trust-aware review-resolution seam, renders prompt and Review Details outcomes, reports trust/contract/fallback diagnostics, and keeps `verify:m045:s01` green alongside the new runtime proof.

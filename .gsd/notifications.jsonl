@@ -225,3 +225,12 @@
 {"id":"f1f08a71-06cb-4138-b0f9-568e180ad3d3","ts":"2026-04-11T00:32:10.683Z","severity":"warning","message":"[safety] file-change: src/contributor/index.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
 {"id":"2fa7bdee-f62d-4a05-8d49-73b386502a9e","ts":"2026-04-11T00:32:10.683Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
 {"id":"4f08476a-ba4c-4d4e-8d10-959925f758f1","ts":"2026-04-11T00:32:10.893Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"a49b7952-a698-47b7-b620-31e3364ba15c","ts":"2026-04-11T00:50:25.522Z","severity":"info","message":"Committed: feat: Routed GitHub review author resolution through the trust-aware st…","source":"notify","read":false}
+{"id":"fb695202-ae10-4478-b7fd-892bddc35c92","ts":"2026-04-11T00:50:25.531Z","severity":"warning","message":"[safety] file-change: src/contributor/index.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"191f8c93-21fa-4723-8db1-4cea87c88e10","ts":"2026-04-11T00:50:25.531Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"096151ce-68ed-4820-9d06-a743379b1e1b","ts":"2026-04-11T00:50:29.114Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"b2eb5f33-1cf9-44c7-b5b1-aabbb44b9b0d","ts":"2026-04-11T00:50:29.128Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"e721d52c-28b2-4f34-83ac-48dec99f7352","ts":"2026-04-11T01:00:35.110Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"d1537232-128f-44ab-808f-6e16a80f1fc4","ts":"2026-04-11T01:00:35.111Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"0478a071-8b34-4c92-891d-24118af8f5eb","ts":"2026-04-11T01:00:56.185Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"18bd13b9-be23-4e7d-82fd-c11b1591f950","ts":"2026-04-11T01:00:56.185Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
