@@ -2,7 +2,7 @@
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional `.kodiai.yml` file.
 
-27 milestones shipped (v0.1 through v0.27). See [CHANGELOG.md](CHANGELOG.md) for release history.
+28 milestones shipped (v0.1 through v0.28). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
 
@@ -48,7 +48,7 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 ## Features
 
-**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, dependency bump deep-review, CI failure recognition, risk-weighted file prioritization for large PRs, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
+**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the full review lane, dependency bump deep-review, CI failure recognition, risk-weighted file prioritization for large PRs, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
 **@kodiai Mentions** — Conversational responses to `@kodiai` across issue comments, PR comments, and review threads with context-aware follow-ups.
 
@@ -92,7 +92,7 @@ Full documentation lives in the `docs/` directory:
 
 ## Deployment
 
-Kodiai deploys to Azure Container Apps via ACR remote build with zero-downtime rolling deploys.
+Kodiai deploys to Azure Container Apps via ACR remote build with zero-downtime rolling deploys, and the deploy script reports the active revision for post-deploy proof.
 
 See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md).
 
