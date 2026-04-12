@@ -1,6 +1,6 @@
 import { test, expect, afterEach, mock, beforeEach } from "bun:test";
 import { mkdtemp, rm, readFile, writeFile, mkdir, cp } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { buildSecurityClaudeMd, createExecutor } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
@@ -429,9 +429,17 @@ function createTestableExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
-        const repoCwd = join(workspaceDir, "repo");
-        await mkdir(repoCwd, { recursive: true });
-        await cp(context.workspace.dir, repoCwd, { recursive: true });
+        const sourceWorkspaceDir = resolve(context.workspace.dir);
+        const resolvedWorkspaceDir = resolve(workspaceDir);
+        const repoCwd =
+          sourceWorkspaceDir === resolvedWorkspaceDir
+            ? context.workspace.dir
+            : join(workspaceDir, "repo");
+
+        if (sourceWorkspaceDir !== resolvedWorkspaceDir) {
+          await mkdir(repoCwd, { recursive: true });
+          await cp(context.workspace.dir, repoCwd, { recursive: true });
+        }
 
         await writeFile(join(workspaceDir, "prompt.txt"), prompt);
         await writeFile(

@@ -252,12 +252,14 @@ describe("calibration change contract", () => {
     expect(reviewHandlerSource).toContain(
       'contract: projectContributorExperienceContract({',
     );
-    expect(reviewHandlerSource).toContain('contract.state === "coarse-fallback"');
+    expect(reviewHandlerSource).toContain(
+      'contributorExperienceState: authorClassification.contract.state,',
+    );
     expect(reviewHandlerSource).toContain('type: "pr_authored"');
     expect(slashHandlerSource).toContain(
-      "resolveContributorExperienceSlackProfileProjection",
+      "resolveContributorProfileSurface(",
     );
-    expect(slashHandlerSource).toContain("profile.overallTier");
+    expect(slashHandlerSource).toContain("surface.projection.statusLine");
   });
 
   test("fails fast on missing verdict, empty rationale, and unsupported verdicts", async () => {
