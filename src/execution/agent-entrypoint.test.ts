@@ -408,6 +408,33 @@ describe("happy path", () => {
     expect(capturedParams).toBeDefined();
     expect(capturedParams!.options!.cwd).toBe("/tmp/ws/repo");
   });
+
+  test("uses extracted local cwd when repoArchivePath is provided", async () => {
+    let capturedParams: { prompt: string; options?: Record<string, unknown> } | undefined;
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => JSON.stringify({
+        prompt: "Review this PR",
+        model: "claude-sonnet-4-5-20250929",
+        maxTurns: 20,
+        allowedTools: ["Read", "Grep"],
+        repoArchivePath: "/tmp/ws/repo.tar",
+        repoCwd: "/tmp/ws/repo-ignored",
+      }),
+      writeFileFn: async () => undefined,
+      appendFileFn: async () => undefined,
+      extractRepoArchiveFn: async () => "/tmp/extracted-repo",
+      queryFn: (params) => {
+        capturedParams = params as { prompt: string; options?: Record<string, unknown> };
+        return makeAsyncIterable([makeResultSuccess()]);
+      },
+    };
+
+    await main(deps);
+
+    expect(capturedParams).toBeDefined();
+    expect(capturedParams!.options!.cwd).toBe("/tmp/extracted-repo");
+  });
 });
 
 // ---------------------------------------------------------------------------

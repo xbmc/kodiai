@@ -13,8 +13,9 @@
 
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } from "@anthropic-ai/claude-agent-sdk";
-import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile } from "node:fs/promises";
+import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { buildSecurityClaudeMd } from "./executor.ts";
 import type { ExecutionResult } from "./types.ts";
 
@@ -29,6 +30,7 @@ interface AgentConfig {
   allowedTools: string[];
   taskType?: string;
   repoCwd?: string;
+  repoArchivePath?: string;
   mcpServerNames?: string[]; // server names actually registered in orchestrator
 }
 
@@ -55,7 +57,33 @@ export interface EntrypointDeps {
   writeFileFn: (path: string, content: string) => Promise<void>;
   appendFileFn: (path: string, content: string) => Promise<void>;
   readFileFn: (path: string, encoding: "utf-8") => Promise<string>;
+  extractRepoArchiveFn: (archivePath: string) => Promise<string>;
   exitFn: (code: number) => never;
+}
+
+async function extractRepoArchive(archivePath: string): Promise<string> {
+  const destDir = await mkdtemp(join(tmpdir(), "kodiai-agent-repo-"));
+  const proc = Bun.spawn([
+    "tar",
+    "-C",
+    destDir,
+    "-xf",
+    archivePath,
+  ], {
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+
+  const [exitCode, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stderr).text(),
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(`agent-entrypoint: failed to extract repo archive: ${stderr.trim()}`);
+  }
+
+  return destDir;
 }
 
 function defaultDeps(): EntrypointDeps {
@@ -64,6 +92,7 @@ function defaultDeps(): EntrypointDeps {
     writeFileFn: (path, content) => fsWriteFile(path, content),
     appendFileFn: (path, content) => fsAppendFile(path, content),
     readFileFn: readFile,
+    extractRepoArchiveFn: extractRepoArchive,
     exitFn: (code) => process.exit(code),
   };
 }
@@ -78,6 +107,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     writeFileFn,
     appendFileFn,
     readFileFn,
+    extractRepoArchiveFn,
     exitFn,
   }: EntrypointDeps = { ...defaultDeps(), ...deps };
 
@@ -145,7 +175,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
   try {
     await appendDiagnostic(`startup taskType=${agentConfig.taskType ?? "unknown"} model=${agentConfig.model} maxTurns=${agentConfig.maxTurns}`);
-    const sdkCwd = agentConfig.repoCwd ?? workspaceDir!;
+    const sdkCwd = agentConfig.repoArchivePath
+      ? await extractRepoArchiveFn(agentConfig.repoArchivePath)
+      : (agentConfig.repoCwd ?? workspaceDir!);
     const sdkQueryResult = queryFn({
       prompt: agentConfig.prompt,
       options: {
