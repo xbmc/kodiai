@@ -819,6 +819,18 @@ If the collector only looks for `review-output-key`, it will silently miss valid
 
 ## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
 
+---
+
+## `createTestableExecutor` Must Not Copy a Repo Into Its Own Child Directory (M048/S01)
+
+**Context:** The ACA executor test harness can be configured with the same temp directory for both `context.workspace.dir` and `createWorkspaceDirFn()`. Blindly copying the source repo into `join(workspaceDir, "repo")` in that case creates a recursive self-copy (`tmpDir -> tmpDir/repo`), which made Bun crash during `executor.test.ts` before any ACA assertions ran.
+
+**Rule:** In executor-style test harnesses, if the synthetic workspace dir is the same as the source repo dir, reuse the source repo as `repoCwd` instead of recursively copying it into a child folder. Only create `workspaceDir/repo` snapshots when the target workspace is distinct from the source tree.
+
+**Established in:** M048/S01/T01 (`src/execution/executor.test.ts`, `createTestableExecutor`).
+
+## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
+
 **Context:** When DB-backed review evidence is unavailable, recent automatic-review classifications can still be resolved from Azure `ContainerAppConsoleLogs_CL` rows. The review handler emits `evidenceType="review"` with `outcome="submitted-approval"` for clean approval paths and `outcome="published-output"` when findings output was published.
 
 **Rule:** For recent-review auditing, treat these Azure evidence-bundle outcomes as first-class internal publication signals:

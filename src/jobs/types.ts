@@ -27,12 +27,18 @@ export interface Workspace {
   token?: string;
 }
 
+export interface JobQueueWaitMetadata {
+  queuedAtMs: number;
+  startedAtMs: number;
+  waitMs: number;
+}
+
 /** Job queue with per-installation concurrency control */
 export interface JobQueue {
   /** Enqueue a job for an installation. Returns a Promise resolving to the job result. */
   enqueue<T>(
     installationId: number,
-    fn: () => Promise<T>,
+    fn: (metadata?: JobQueueWaitMetadata) => Promise<T>,
     context?: {
       deliveryId?: string;
       eventName?: string;

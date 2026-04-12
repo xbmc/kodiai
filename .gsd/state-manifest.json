@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T16:45:05.829Z",
+  "exported_at": "2026-04-12T23:44:26.774Z",
   "milestones": [
     {
       "id": "M001",
@@ -1655,22 +1655,67 @@
     },
     {
       "id": "M048",
-      "title": "",
-      "status": "queued",
+      "title": "PR Review Latency Reduction and Bounded Execution",
+      "status": "active",
       "depends_on": [],
       "created_at": "2026-04-11T14:13:11.165Z",
       "completed_at": null,
-      "vision": "",
-      "success_criteria": [],
-      "key_risks": [],
-      "proof_strategy": [],
-      "verification_contract": "",
-      "verification_integration": "",
-      "verification_operational": "",
-      "verification_uat": "",
-      "definition_of_done": [],
-      "requirement_coverage": "",
-      "boundary_map_markdown": ""
+      "vision": "Make the real xbmc/kodiai PR review path measurably faster without lying about coverage: expose durable phase timing on live reviews, remove avoidable single-worker overhead, and make bounded large-PR behavior plus synchronize-trigger continuity explicit and operator-verifiable.",
+      "success_criteria": [
+        "A live xbmc/kodiai PR review exposes durable phase timings for queue wait, workspace preparation, retrieval/context assembly, remote executor runtime, and publication.",
+        "The single-worker review path completes materially faster than the current timeout-prone baseline on live proof without regressing small-PR latency/cost or breaking explicit mention review publication.",
+        "Synchronize-trigger continuity is verified and high-risk or large reviews disclose bounded behavior truthfully on GitHub-visible surfaces.",
+        "M048 leaves behind a repeatable verifier and operator audit path that explains slow reviews and validates the real GitHub + ACA integration."
+      ],
+      "key_risks": [
+        {
+          "risk": "The dominant latency may remain inside the remote agent reasoning/tool loop even after orchestration wins.",
+          "whyItMatters": "If true, plumbing-only work may not retire timeout pressure and could require roadmap reassessment after measured evidence."
+        },
+        {
+          "risk": "Changing explicit strict review behavior can look like watered-down review depth if disclosure is weak or inconsistent.",
+          "whyItMatters": "M048 is about truthful speed, so any bounded execution must be clearly surfaced rather than hidden behind a normal-looking strict review."
+        },
+        {
+          "risk": "Live proof depends on GitHub, Azure Container Apps, Azure Files, and trigger configuration all behaving correctly.",
+          "whyItMatters": "Synthetic tests alone cannot close the milestone; broken synchronize triggers or environment drift would block repeatable proof."
+        }
+      ],
+      "proof_strategy": [
+        {
+          "riskOrUnknown": "We may optimize the wrong phase if we only look at total runtime.",
+          "retireIn": "S01",
+          "whatWillBeProven": "Live phase timing evidence will attribute queue, workspace, retrieval/context, executor, and publish latency on the real xbmc/kodiai path."
+        },
+        {
+          "riskOrUnknown": "Single-worker fixed overhead may still dominate end-to-end latency.",
+          "retireIn": "S02",
+          "whatWillBeProven": "Comparative live timing evidence will show whether workspace, handoff, bundle/materialization, or polling changes materially reduce wall-clock time without breaking publication."
+        },
+        {
+          "riskOrUnknown": "Large/manual-strict reviews may stay slow or misrepresent coverage.",
+          "retireIn": "S03",
+          "whatWillBeProven": "Live and targeted verification will prove synchronize-trigger continuity plus truthful bounded behavior on GitHub-visible and operator-visible surfaces."
+        },
+        {
+          "riskOrUnknown": "Parallel shard-and-merge may or may not be necessary.",
+          "retireIn": "Roadmap reassessment after S02",
+          "whatWillBeProven": "Whether the post-S02 latency distribution still justifies a future parallel-review milestone; fan-out is explicitly deferred from the planned M048 slices unless evidence says otherwise."
+        }
+      ],
+      "verification_contract": "Every slice must verify the real review path, not just unit seams. Targeted tests prove timing math, config parsing, executor behavior, and review-surface rendering, but milestone acceptance requires live xbmc/kodiai evidence correlated by delivery id and review output key.",
+      "verification_integration": "Exercise the real GitHub + ACA review path with at least one live xbmc/kodiai review per milestone-close proof loop, including explicit mention publication continuity and synchronize-trigger behavior once S03 lands.",
+      "verification_operational": "Use the shared Azure Log Analytics audit pattern to confirm phase timing, trigger behavior, and publication outcomes from logs and persisted evidence surfaces rather than ad hoc console inspection.",
+      "verification_uat": "An operator can trigger or observe a live xbmc/kodiai review, see where time was spent, understand whether the review was bounded, and confirm that GitHub-visible output matches the operator evidence.",
+      "definition_of_done": [
+        "Review Details and operator audit surfaces show durable phase timing and truthful bounded-behavior state for live reviews.",
+        "Live xbmc/kodiai proof is captured with linked GitHub-visible evidence and Azure audit evidence.",
+        "Explicit mention review execution/publication and idempotency regression checks pass.",
+        "Small-PR latency/cost and operator evidence surfaces are not regressed unnecessarily.",
+        "Parallel shard-and-merge remains deferred unless M048 evidence proves the single-worker path is insufficient."
+      ],
+      "requirement_coverage": "- **R049** — top-line contract for best-effort latency reduction and bounded execution; S01 establishes the live timing proof surface, S02 delivers the single-worker latency win, and S03 closes truthful bounded behavior plus trigger continuity on the real path.\n- **R034** — continuity guardrail for small-PR latency/cost; S02 is the primary owner, with S01/S03 using the timing surfaces to detect regressions instead of optimizing only the worst-case path.\n- **R043** — explicit mention review execution/publication must not regress; supported across S01-S03, with S02 carrying the heaviest execution-path change risk.\n- **R044** — operator evidence surfaces must stay intact; S01 is the primary owner and S02/S03 extend the same evidence model instead of inventing parallel observability paths.\n- **R050** — durable per-phase latency visibility on live reviews; S01 primary, S02/S03 supporting.\n- **R051** — synchronize-trigger continuity or loud verification failure; S03 primary.\n- **R052** — explicit disclosure when strict reviews are bounded; S03 primary.\n- **Deferred on purpose** — parallel shard-and-merge review is not required for M048 completion and remains a post-S02 reassessment item unless evidence proves the single-worker path insufficient.",
+      "boundary_map_markdown": "- **GitHub entrypoints → queue** (`src/handlers/review.ts`, `src/handlers/mention.ts`, `src/jobs/queue.ts`) — S01 instruments queue-to-start timing; S03 closes synchronize-trigger continuity and GitHub-visible disclosure.\n- **Workspace + diff/retrieval orchestration** (`src/jobs/workspace.ts`, `src/handlers/review.ts`, retrieval/context seams) — S01 measures attributable latency; S02 reduces fixed overhead without changing the one-review/one-publication contract.\n- **Executor → ACA job → remote agent workspace** (`src/execution/executor.ts`, `src/jobs/aca-launcher.ts`, `src/execution/agent-entrypoint.ts`) — S01 adds phase attribution; S02 optimizes staging, handoff, and poll/runtime boundaries while preserving single-job execution.\n- **GitHub publication + operator audit** (`src/lib/review-utils.ts`, telemetry store, `src/review-audit/log-analytics.ts`) — S01 renders phase evidence; S03 renders truthful bounded-behavior and trigger diagnostics on the same surfaces.\n- **Explicit non-goal for planned slices** — no new parallel shard-and-merge execution boundary is introduced in M048; that remains gated behind post-S02 evidence."
     },
     {
       "id": "M049",
@@ -6230,6 +6275,71 @@
       "proof_level": "final-assembly proof on the real milestone-close CLI entrypoint (`bun run verify:m047`) by composing deterministic nested proof surfaces; real runtime required: no; human/UAT required: no.",
       "integration_closure": "- Upstream surfaces consumed: `scripts/verify-m047-s02.ts`, `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, and the package-script contract in `package.json`.\n- New wiring introduced in this slice: `scripts/verify-m047.ts` becomes the single milestone-close entrypoint that maps five operator-facing scenarios onto nested S02/M045/M046 evidence without re-running deeper business logic.\n- What remains before the milestone is truly usable end-to-end: nothing inside M047 once the integrated verifier, prerequisite proof scripts, and TypeScript check all pass.",
       "observability_impact": "- `bun test ./scripts/verify-m047.test.ts`\n- `bun run verify:m047 -- --json`\n- `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`\n- `bun run tsc --noEmit`",
+      "sequence": 3,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M048",
+      "id": "S01",
+      "title": "S01",
+      "status": "pending",
+      "risk": "High — without durable phase attribution on the real review path, later optimization work can target the wrong bottleneck and fail M048 proof.",
+      "depends": [],
+      "demo": "Trigger a real xbmc/kodiai review and inspect Review Details plus the live verifier/audit output to see queue wait, workspace preparation, retrieval/context assembly, executor handoff/runtime, and publication timings tied to the review output key.",
+      "created_at": "2026-04-12T22:49:36.664Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Capture durable per-phase latency on the real xbmc/kodiai review path and expose it on Review Details plus an operator verifier, correlated by deliveryId and reviewOutputKey, without making review execution more brittle.",
+      "success_criteria": "## Must-Haves\n\n- Live review executions emit one truthful phase-timing payload keyed by `deliveryId` and `reviewOutputKey`, covering `queue wait`, `workspace preparation`, `retrieval/context assembly`, `executor handoff`, `remote runtime`, and `publication`, with explicit unavailable/degraded states instead of invented zeroes.\n- GitHub Review Details renders the same required phase set in a stable order so operators can see where a live review spent time without opening ad hoc raw logs.\n- The operator-facing audit surface can resolve a single live review by `reviewOutputKey`, report the captured phase timings plus total wall-clock time, and fail loudly on missing or mismatched correlation evidence.\n- Timing capture stays fail-open: successful, failed, and timeout reviews still publish their existing truthful outcome even if one timing source is missing.\n- `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`, `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json`, and `bun run tsc --noEmit` pass together.\n\n## Threat Surface\n\n- **Abuse**: False latency evidence could hide the real bottleneck if code hardcodes fast durations, silently drops a required phase, or correlates Azure rows to the wrong `reviewOutputKey` / `deliveryId` pair. The plan must validate correlation ids and treat missing phases as failures or explicit unavailability, not quiet success.\n- **Data exposure**: Phase timing logs and verifier output may include repo, PR number, delivery id, and `reviewOutputKey`, but they must not expose workspace paths, repo bundle locations, prompt text, Azure mount details, tokens, or other secrets.\n- **Input trust**: Queue metadata, executor-returned timing spans, `process.argv` values for the verifier, and Azure Log Analytics rows are all untrusted until normalized and correlation-checked.\n\n## Requirement Impact\n\n- **Requirements touched**: `R050` directly; `R043` / `R044` as continuity requirements because live review publication and explicit review execution must keep working while timing capture is added.\n- **Re-verify**: Focused queue/executor/review handler tests, Review Details publication tests, and the live `verify:m048:s01` audit command must agree on the same six operator phases and correlation ids.\n- **Decisions revisited**: `D100` (measurement-first M048 execution strategy) and `D101` (phase timing must surface on existing GitHub/Azure evidence surfaces).\n\n## Verification\n\n- `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`\n- `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json`\n- `bun run tsc --noEmit`",
+      "proof_level": "- This slice proves: operational latency evidence on the real GitHub -> queue -> workspace -> ACA -> Review Details path.\n- Real runtime required: yes.\n- Human/UAT required: yes — trigger a real `xbmc/kodiai` review and pass its `reviewOutputKey` to `verify:m048:s01`.",
+      "integration_closure": "- Upstream surfaces consumed: `src/jobs/queue.ts` wait metrics, `src/handlers/review.ts` orchestration phases, `src/execution/executor.ts` ACA staging/runtime boundaries, `src/lib/review-utils.ts`, and Azure Log Analytics via `src/review-audit/log-analytics.ts`.\n- New wiring introduced in this slice: the review handler merges queue + local + executor timings, Review Details renders the merged phase object, and `verify:m048:s01` resolves the same evidence by `reviewOutputKey`.\n- What remains before the milestone is truly usable end-to-end: later slices can optimize latency using this proof surface, but S01 itself is complete once the live review path and verifier expose the required phase evidence.",
+      "observability_impact": "- Runtime signals: a structured review-phase timing log emitted on review completion with required phase durations/status plus total wall-clock time.\n- Inspection surfaces: GitHub Review Details timing block, Azure Log Analytics filtered by `reviewOutputKey` / `deliveryId`, and `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json`.\n- Failure visibility: missing/degraded phases, unavailable surfaces, total-vs-phase drift, and correlation ids all stay visible to future agents.\n- Redaction constraints: do not log workspace paths, prompt content, repo bundle paths, or secrets.",
+      "sequence": 1,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M048",
+      "id": "S02",
+      "title": "Single-Worker Path Latency Reduction",
+      "status": "pending",
+      "risk": "High — fixed workspace, bundle, and ACA polling overhead may dominate every review, so the existing one-worker path must get faster before fan-out is considered.",
+      "depends": [
+        "S01"
+      ],
+      "demo": "Run the same live review path and see materially lower workspace, handoff, or polling overhead in the phase timing surfaces while GitHub publication and idempotency still behave normally.",
+      "created_at": "2026-04-12T22:49:36.664Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Reduce avoidable serial overhead on the existing one-job review path by tightening workspace staging, repo handoff, ACA polling, and related orchestration costs instead of changing review semantics first.",
+      "success_criteria": "- Phase timing evidence shows a material reduction in one or more fixed-latency phases on live xbmc/kodiai reviews versus the S01 baseline.\n- Explicit mention reviews and automatic review publications still execute exactly once with existing idempotency behavior.\n- Small and normal PR reviews do not regress latency or cost unnecessarily relative to prior behavior.\n- Executor and workspace optimizations remain truthful in operator diagnostics and do not hide reduced coverage.",
+      "proof_level": "Comparative live timing proof on xbmc/kodiai backed by targeted executor, workspace, and ACA tests.",
+      "integration_closure": "Closes the optimized single-worker path from workspace clone/fetch through ACA job completion and publish handoff.",
+      "observability_impact": "Preserves the S01 timing surface and adds enough separation to attribute gains to staging, polling, or remote-runtime changes.",
+      "sequence": 2,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M048",
+      "id": "S03",
+      "title": "Truthful Bounded Reviews and Synchronize Continuity",
+      "status": "pending",
+      "risk": "Medium-high — large/manual-strict reviews currently block the main timeout safeguard, and mis-shaped synchronize triggers slow live proof loops while hiding configuration drift.",
+      "depends": [
+        "S01",
+        "S02"
+      ],
+      "demo": "Push new commits to an xbmc/kodiai PR and see synchronize-triggered reviews fire when configured; on high-risk strict reviews, the GitHub-visible outcome and Review Details clearly disclose any bounded or reduced-scope behavior instead of implying exhaustive coverage.",
+      "created_at": "2026-04-12T22:49:36.664Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Make the slowest review class honest and operationally usable by fixing synchronize-trigger continuity, allowing bounded execution where warranted, and surfacing that bounded behavior clearly to users and operators.",
+      "success_criteria": "- Repo configs that intend synchronize-triggered reviews either activate them correctly or fail verification loudly.\n- High-risk or large explicit strict reviews follow the chosen bounded-execution policy and disclose any downgrade, scope reduction, or staged coverage on GitHub-visible surfaces.\n- Review publication, idempotency, partial-review recovery, and operator evidence remain intact.\n- Live xbmc/kodiai proof demonstrates faster iteration and truthful large-PR behavior on the real GitHub + ACA path.",
+      "proof_level": "Live end-to-end proof on xbmc/kodiai plus targeted config, handler, and review-surface tests.",
+      "integration_closure": "Closes product-contract continuity from repo config and trigger evaluation through review orchestration, publication, and operator evidence.",
+      "observability_impact": "Extends the phase timing surfaces with bounded-behavior and trigger diagnostics so operators can explain both why a review ran and what scope it actually covered.",
       "sequence": 3,
       "replan_triggered_at": null
     },
@@ -13224,6 +13334,162 @@
       "observability_impact": "- Signals added/changed: regression tests pin top-level check ids, scenario anchors, human/JSON output alignment, and package wiring as durable proof-surface diagnostics.\n- How a future agent inspects this: run `bun test ./scripts/verify-m047.test.ts` first, then `bun run verify:m047 -- --json` for the full scenario payload.\n- Failure state exposed: scenario drift, invalid CLI behavior, missing nested evidence, or mismatched script wiring breaks a named test before the milestone-close command can go false-green.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M048",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Capture queue, executor, and publication phase timings in the live review path",
+      "status": "complete",
+      "one_liner": "Capture queue, executor, and publication phase timings in the live review path",
+      "narrative": "Implemented the live timing contract at the real runtime seams instead of reconstructing timing from ad hoc log lines. `src/jobs/types.ts` and `src/jobs/queue.ts` now pass structured queue wait metadata (`queuedAtMs`, `startedAtMs`, `waitMs`) into queued jobs, and I added `src/jobs/queue.test.ts` to lock that propagation. `src/execution/types.ts` now defines normalized review/executor phase timing types, and `src/execution/executor.ts` returns truthful `executor handoff` and `remote runtime` subphases on success, timeout, failure, and malformed remote timing payloads; `src/execution/executor.test.ts` covers those paths. In `src/handlers/review.ts`, I added a fail-open phase tracker that timestamps `workspace preparation`, `retrieval/context assembly`, merges the executor phases, validates queue metadata instead of coercing bad values to `0ms`, tracks `publication`, and emits one structured `Review phase timing summary` log correlated by `deliveryId` and `reviewOutputKey`. `src/handlers/review.test.ts` now verifies the six required phases plus the invalid queue-wait path. I also fixed the ACA executor test harness to avoid recursively copying a temp repo into its own child directory, and recorded that gotcha in `.gsd/KNOWLEDGE.md`.",
+      "verification_result": "Task-level verification passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts` and `bun run tsc --noEmit`. Slice-level tests that exist today also passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`. The slice-wide verifier command `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` currently fails because the script/package entry does not exist yet; that surface is planned for T03, so this is an expected intermediate-task gap rather than a regression in T01.",
+      "duration": "",
+      "completed_at": "2026-04-12T23:44:26.725Z",
+      "blocker_discovered": false,
+      "deviations": "Added `src/jobs/queue.test.ts` because the planned queue test file did not exist in the repo. Also adjusted the executor test harness so it does not recursively copy a temp repo into its own child directory when the synthetic workspace dir and source repo dir are the same.",
+      "known_issues": "`bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` is not available yet because the verifier script/package entry has not been implemented; T03 owns that operator surface.",
+      "key_files": [
+        "src/jobs/types.ts",
+        "src/jobs/queue.ts",
+        "src/jobs/queue.test.ts",
+        "src/execution/types.ts",
+        "src/execution/executor.ts",
+        "src/execution/executor.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "D104 — capture phase timings as one normalized, correlated summary assembled from queue, handler, and executor seams.",
+        "Treat invalid queue wait metadata as `queue wait: unavailable` instead of coercing it to `0ms`.",
+        "Only emit the structured phase summary when correlated identifiers are present, and keep logging failures non-blocking."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M048\nkey_files:\n  - src/jobs/types.ts\n  - src/jobs/queue.ts\n  - src/jobs/queue.test.ts\n  - src/execution/types.ts\n  - src/execution/executor.ts\n  - src/execution/executor.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D104 — capture phase timings as one normalized, correlated summary assembled from queue, handler, and executor seams.\n  - Treat invalid queue wait metadata as `queue wait: unavailable` instead of coercing it to `0ms`.\n  - Only emit the structured phase summary when correlated identifiers are present, and keep logging failures non-blocking.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-12T23:44:26.724Z\nblocker_discovered: false\n---\n\n# T01: Capture queue, executor, and publication phase timings in the live review path\n\n**Capture queue, executor, and publication phase timings in the live review path**\n\n## What Happened\n\nImplemented the live timing contract at the real runtime seams instead of reconstructing timing from ad hoc log lines. `src/jobs/types.ts` and `src/jobs/queue.ts` now pass structured queue wait metadata (`queuedAtMs`, `startedAtMs`, `waitMs`) into queued jobs, and I added `src/jobs/queue.test.ts` to lock that propagation. `src/execution/types.ts` now defines normalized review/executor phase timing types, and `src/execution/executor.ts` returns truthful `executor handoff` and `remote runtime` subphases on success, timeout, failure, and malformed remote timing payloads; `src/execution/executor.test.ts` covers those paths. In `src/handlers/review.ts`, I added a fail-open phase tracker that timestamps `workspace preparation`, `retrieval/context assembly`, merges the executor phases, validates queue metadata instead of coercing bad values to `0ms`, tracks `publication`, and emits one structured `Review phase timing summary` log correlated by `deliveryId` and `reviewOutputKey`. `src/handlers/review.test.ts` now verifies the six required phases plus the invalid queue-wait path. I also fixed the ACA executor test harness to avoid recursively copying a temp repo into its own child directory, and recorded that gotcha in `.gsd/KNOWLEDGE.md`.\n\n## Verification\n\nTask-level verification passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts` and `bun run tsc --noEmit`. Slice-level tests that exist today also passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`. The slice-wide verifier command `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` currently fails because the script/package entry does not exist yet; that surface is planned for T03, so this is an expected intermediate-task gap rather than a regression in T01.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 4856ms |\n| 2 | `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts` | 0 | ✅ pass | 6080ms |\n| 3 | `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` | 1 | ❌ fail | 3ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 10289ms |\n\n## Deviations\n\nAdded `src/jobs/queue.test.ts` because the planned queue test file did not exist in the repo. Also adjusted the executor test harness so it does not recursively copy a temp repo into its own child directory when the synthetic workspace dir and source repo dir are the same.\n\n## Known Issues\n\n`bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` is not available yet because the verifier script/package entry has not been implemented; T03 owns that operator surface.\n\n## Files Created/Modified\n\n- `src/jobs/types.ts`\n- `src/jobs/queue.ts`\n- `src/jobs/queue.test.ts`\n- `src/execution/types.ts`\n- `src/execution/executor.ts`\n- `src/execution/executor.test.ts`\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n- `.gsd/KNOWLEDGE.md`\n",
+      "description": "Build the truthful timing contract at the real runtime seams before changing the visible surfaces. The review handler already has natural boundaries; this task should expose them as one normalized phase object so later tasks can render and verify the same evidence instead of re-measuring it differently.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `src/jobs/queue.ts` wait metadata | Fail open to `queue wait: unavailable` while still running the review job. | N/A — queue wait is measured before execution starts. | Reject negative or missing wait values in tests; do not coerce them to `0ms`. |\n| `src/execution/executor.ts` subphase capture | Preserve the existing execution result and mark `executor handoff` / `remote runtime` unavailable or degraded instead of crashing the review. | Return timeout results with the same phase contract plus explicit timeout state so operators can see where execution stopped. | Ignore malformed span payloads from the remote result and fall back to locally measured executor timings. |\n| Structured completion log in `src/handlers/review.ts` | Logging failure must not block review publication. | Keep the phase object available for Review Details even when log emission is skipped. | Do not emit a partially correlated payload without both `deliveryId` and `reviewOutputKey` when those identifiers should exist. |\n\n## Load Profile\n\n- **Shared resources**: per-installation queue slots, the single ACA worker path, and Azure log volume for review completion events.\n- **Per-operation cost**: constant-time `Date.now()` stamps plus one bounded structured completion log per review.\n- **10x breakpoint**: queue backlog and Azure log noise grow before CPU does, so emit exactly one normalized phase summary instead of many per-step logs.\n\n## Negative Tests\n\n- **Malformed inputs**: negative wait values, missing executor timing spans, malformed remote timing payloads, or missing correlation ids.\n- **Error paths**: workspace creation failure, ACA timeout/failure, and review completion with no publish event still preserve a truthful phase report.\n- **Boundary conditions**: clean reviews, findings-published reviews, and timeout reviews all produce the same named phases with explicit unavailable/degraded wording when needed.\n\n## Steps\n\n1. Extend the job/executor contracts so the review path can carry queue wait plus executor handoff/runtime timings without guessing from ad hoc log timestamps.\n2. Change `src/jobs/queue.ts` and `src/jobs/types.ts` so the enqueued review callback receives deterministic wait metadata instead of only logging it.\n3. Update `src/execution/types.ts`, `src/execution/executor.ts`, and `src/execution/executor.test.ts` to return normalized executor subphases that distinguish staging/handoff from remote runtime and keep timeout/failure paths truthful.\n4. In `src/handlers/review.ts`, timestamp the local review phases, merge them with queue/executor timings, and emit one structured completion log carrying `deliveryId`, `reviewOutputKey`, required phase names, statuses, and total wall-clock time.\n5. Add focused regression coverage for queue wait propagation and merged review-phase output before moving on to Review Details rendering.\n\n## Must-Haves\n\n- [ ] Queue wait is available to the review handler as structured data, not only as an unparsed log line.\n- [ ] Executor results expose `executor handoff` and `remote runtime` subphases for success, failure, and timeout paths.\n- [ ] `src/handlers/review.ts` emits one normalized phase-timing payload keyed by `deliveryId` and `reviewOutputKey` without leaking workspace paths or secrets.",
+      "estimate": "2h",
+      "files": [
+        "src/jobs/types.ts",
+        "src/jobs/queue.ts",
+        "src/jobs/queue.test.ts",
+        "src/execution/types.ts",
+        "src/execution/executor.ts",
+        "src/execution/executor.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts",
+      "inputs": [
+        "`src/jobs/types.ts`",
+        "`src/jobs/queue.ts`",
+        "`src/execution/types.ts`",
+        "`src/execution/executor.ts`",
+        "`src/execution/executor.test.ts`",
+        "`src/handlers/review.ts`",
+        "`src/handlers/review.test.ts`"
+      ],
+      "expected_output": [
+        "`src/jobs/types.ts`",
+        "`src/jobs/queue.ts`",
+        "`src/jobs/queue.test.ts`",
+        "`src/execution/types.ts`",
+        "`src/execution/executor.ts`",
+        "`src/execution/executor.test.ts`",
+        "`src/handlers/review.ts`",
+        "`src/handlers/review.test.ts`"
+      ],
+      "observability_impact": "- Signals added/changed: one structured review completion log carrying queue wait, workspace preparation, retrieval/context, executor handoff, remote runtime, publication, and total duration.\n- How a future agent inspects this: run the focused queue/executor/review tests and query Azure rows by `reviewOutputKey` once a live review has executed.\n- Failure state exposed: unavailable/degraded phase names plus correlation-id mismatches remain visible instead of collapsing to zero durations.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M048",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Render the captured timings on GitHub Review Details",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Expose the new phase object on the surface operators already inspect first. This task should keep the required six phases readable on both the clean-review and findings-published paths and make degraded or unavailable phases explicit instead of inventing a smooth success story.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `src/lib/review-utils.ts` formatter | Keep Review Details publication alive by omitting the timing section only when formatting fails completely; do not break the whole comment. | N/A — pure formatting logic. | Reject malformed phase arrays in tests and render explicit unavailable wording instead of throwing in production. |\n| Review Details publication path in `src/handlers/review.ts` | Fall back to the existing standalone/append publication behavior if timing-aware formatting regresses. | Timeout reviews still need Review Details timing disclosure when they publish a partial surface. | Do not silently reorder or rename required phases when one entry is missing. |\n\n## Load Profile\n\n- **Shared resources**: GitHub comment body size budget and existing Review Details publication/update flow.\n- **Per-operation cost**: one small bounded timing block appended to the existing Review Details comment.\n- **10x breakpoint**: comment readability degrades before runtime cost does, so keep ordering fixed and wording terse.\n\n## Negative Tests\n\n- **Malformed inputs**: missing required phase names, non-numeric durations, and malformed status values.\n- **Error paths**: append fallback path, standalone Review Details path, and timeout/partial publication path all keep the timing section honest.\n- **Boundary conditions**: clean reviews, findings-published reviews, and unavailable publication phases all render the same required headings and phase order.\n\n## Steps\n\n1. Extend `src/lib/review-utils.ts` with a stable phase-timing formatter for `queue wait`, `workspace preparation`, `retrieval/context assembly`, `executor handoff`, `remote runtime`, and `publication` plus total wall-clock time.\n2. Thread the merged phase object through `formatReviewDetailsSummary(...)` and the Review Details publication code in `src/handlers/review.ts`.\n3. Add focused formatter and handler tests that pin required phase order, unavailable/degraded wording, and both append-to-summary and standalone Review Details publication paths.\n4. Keep the final Review Details output compact enough to remain readable beside the existing profile/findings/structural-impact sections.\n\n## Must-Haves\n\n- [ ] Review Details includes the required six operator phases and total wall-clock time.\n- [ ] Clean and findings-published review paths both surface the same timing contract.\n- [ ] Missing or degraded timings render explicit unavailable/degraded wording instead of zeroes or silent omission.",
+      "estimate": "90m",
+      "files": [
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts",
+      "inputs": [
+        "`src/lib/review-utils.ts`",
+        "`src/lib/review-utils.test.ts`",
+        "`src/handlers/review.ts`",
+        "`src/handlers/review.test.ts`"
+      ],
+      "expected_output": [
+        "`src/lib/review-utils.ts`",
+        "`src/lib/review-utils.test.ts`",
+        "`src/handlers/review.ts`",
+        "`src/handlers/review.test.ts`"
+      ],
+      "observability_impact": "- Signals added/changed: Review Details gains a stable live timing block with required phase names and explicit degraded/unavailable wording.\n- How a future agent inspects this: inspect the Review Details comment on the PR or rerun the focused formatter/handler tests.\n- Failure state exposed: formatting drift, missing phases, and publication fallback behavior all become test-visible and operator-visible.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M048",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Ship the M048 S01 operator latency verifier",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Turn the structured log evidence into a repeatable operator check that can answer one question after a live review: where did the time go for this exact `reviewOutputKey`? The verifier should stay narrow, deterministic, and keyed to one real review run instead of sampling broad history.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Azure Log Analytics query helpers | Return a named unavailable state and keep the verifier report truthful about missing live evidence. | Respect explicit query time bounds and fail with a named Azure-unavailable status instead of hanging. | Reject rows whose `reviewOutputKey` / `deliveryId` do not match the requested review rather than merging unrelated evidence. |\n| `scripts/verify-m048-s01.ts` CLI args | Exit non-zero with a named invalid-arg status for missing `--review-output-key` or contradictory filters. | N/A — local CLI parsing only. | Treat malformed JSON/human report shape as test failures, not soft warnings. |\n| Review-phase log payloads | Surface missing required phases as failing checks or explicit unavailable evidence; do not invent a passing phase matrix from partial rows. | Keep the report readable when the underlying review timed out — timeout is data, not a verifier crash. | Reject unknown phase names or missing totals so the proof surface cannot go false-green. |\n\n## Load Profile\n\n- **Shared resources**: Azure Log Analytics query budget and one bounded verifier report per requested live review.\n- **Per-operation cost**: one log query by `reviewOutputKey` / `deliveryId`, one normalization pass, and one human/JSON render.\n- **10x breakpoint**: wide log scans and row duplication become the problem before local compute does, so the script should stay keyed to a single review and bounded timespan.\n\n## Negative Tests\n\n- **Malformed inputs**: missing `--review-output-key`, contradictory `--delivery-id`, malformed Azure rows, or unknown phase names.\n- **Error paths**: Azure unavailable, no matching logs, mismatched correlation ids, and live timeout reviews still report truthful evidence states.\n- **Boundary conditions**: one matching live review with all six phases, partial evidence with explicit unavailable phases, and duplicate rows that must collapse into one normalized report.\n\n## Steps\n\n1. Add `src/review-audit/phase-timing-evidence.ts` plus focused tests to normalize structured review-phase timing rows from Azure Log Analytics and enforce correlation by `reviewOutputKey` / `deliveryId`.\n2. Create `scripts/verify-m048-s01.ts` with `--review-output-key`, optional `--delivery-id`, and `--json` handling, plus a report shape that surfaces the required phase matrix, total wall-clock time, and unavailable states.\n3. Add `scripts/verify-m048-s01.test.ts` for happy-path normalization, missing/invalid arg handling, malformed/mismatched log rows, and timeout/unavailable evidence cases.\n4. Wire `verify:m048:s01` into `package.json` and keep the command scoped to a single live review so operators can paste one key after triggering `@kodiai review`.\n\n## Must-Haves\n\n- [ ] `verify:m048:s01` resolves one live review by `reviewOutputKey` and reports the same six required phases used on Review Details.\n- [ ] Azure/log unavailability and correlation drift surface as named verifier states instead of false-green passes.\n- [ ] The verifier has focused regression tests plus package-script wiring and supports machine-readable `--json` output for milestone proof.",
+      "estimate": "90m",
+      "files": [
+        "src/review-audit/log-analytics.ts",
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts",
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "package.json"
+      ],
+      "verify": "bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts && bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json",
+      "inputs": [
+        "`src/review-audit/log-analytics.ts`",
+        "`src/handlers/review-idempotency.ts`",
+        "`src/review-audit/recent-review-sample.ts`",
+        "`scripts/verify-m044-s01.ts`",
+        "`package.json`"
+      ],
+      "expected_output": [
+        "`src/review-audit/log-analytics.ts`",
+        "`src/review-audit/phase-timing-evidence.ts`",
+        "`src/review-audit/phase-timing-evidence.test.ts`",
+        "`scripts/verify-m048-s01.ts`",
+        "`scripts/verify-m048-s01.test.ts`",
+        "`package.json`"
+      ],
+      "observability_impact": "- Signals added/changed: `verify:m048:s01` becomes the operator-facing proof command for one live review's phase timings.\n- How a future agent inspects this: run `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` and compare it to the PR's Review Details block.\n- Failure state exposed: missing logs, mismatched correlation ids, unavailable Azure access, and missing phases become named report states instead of manual log archaeology.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -14401,6 +14667,78 @@
       "rationale": "A marker-only APPROVED review is hard to trust even when the run was repo-backed and inspection-positive. One shared review-body contract improves auditability and UX without adding comment noise or changing findings publication behavior.",
       "revisable": "Yes",
       "made_by": "human",
+      "superseded_by": null
+    },
+    {
+      "seq": 133,
+      "id": "D099",
+      "when_context": "Production fix and proof on xbmc/xbmc#28172 after revision ca-kodiai--0000100",
+      "scope": "review-publication",
+      "decision": "How review-output idempotency should behave when one execution publishes both a summary issue comment and inline PR comments",
+      "choice": "Use one shared run-scoped idempotency preflight across github_comment and github_inline_comment MCP servers, allowing same-execution multi-surface publication while still suppressing later executions that reuse the same reviewOutputKey",
+      "rationale": "Independent per-surface idempotency checks caused the inline publisher to treat the summary comment from the same execution as a replay, suppressing inline comments after the issue comment had already stamped the marker. A shared cached preflight preserves replay protection across executions without blocking legitimate same-run summary-plus-inline publication.",
+      "revisable": "Yes",
+      "made_by": "collaborative",
+      "superseded_by": null
+    },
+    {
+      "seq": 134,
+      "id": "D100",
+      "when_context": "M048 roadmap planning",
+      "scope": "architecture",
+      "decision": "M048 execution strategy",
+      "choice": "Plan M048 as a measurement-first, single-worker latency milestone and defer parallel shard-and-merge review until post-S02 evidence proves it is necessary.",
+      "rationale": "The current architecture is one ACA job and one publication path per review. Research already shows missing phase attribution, fixed workspace/ACA overhead, and manual strict behavior as cheaper, higher-confidence leverage points than fan-out. Deferring parallelism preserves idempotency and truthfulness while focusing the milestone on the most likely wins.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 135,
+      "id": "D101",
+      "when_context": "M048 roadmap planning",
+      "scope": "observability",
+      "decision": "M048 latency evidence surface",
+      "choice": "Expose per-phase review timing on the existing GitHub Review Details and operator audit surfaces, correlated by delivery id and review output key.",
+      "rationale": "M048 proof requires operators to explain where live review time went without ad hoc log archaeology. Reusing the existing Review Details and Azure audit patterns keeps evidence visible, durable, and consistent with prior milestones.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 136,
+      "id": "D102",
+      "when_context": "M048 roadmap planning",
+      "scope": "product",
+      "decision": "M048 bounded-execution continuity",
+      "choice": "Treat synchronize-trigger continuity and explicit disclosure of any bounded strict-review behavior as in-scope milestone work on the real GitHub-visible review surface.",
+      "rationale": "Broken synchronize triggers slow live iteration, and bounded execution changes the product contract. Both must be surfaced explicitly on the live path so faster reviews do not come at the cost of hidden drift or misleading coverage claims.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 137,
+      "id": "D103",
+      "when_context": "M048/S01 planning",
+      "scope": "observability",
+      "decision": "M048/S01 live latency evidence taxonomy",
+      "choice": "Measure and surface six live review phases — queue wait, workspace preparation, retrieval/context assembly, executor handoff, remote runtime, and post-runtime publication — via structured review logs plus GitHub Review Details, correlated by deliveryId and reviewOutputKey.",
+      "rationale": "These are the real seams already present in `src/jobs/queue.ts`, `src/handlers/review.ts`, and `src/execution/executor.ts`. Using the existing GitHub Review Details and Azure audit surfaces satisfies M048's measurement-first proof goal without inventing synthetic timing from unrelated log lines or adding a speculative new persistence surface before the evidence exists.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 138,
+      "id": "D104",
+      "when_context": "M048/S01/T01",
+      "scope": "observability",
+      "decision": "How live review phase timings are captured for M048/S01",
+      "choice": "Capture queue wait in the job queue, executor handoff/runtime in executor results, and merge them in the review handler into one correlated six-phase summary log keyed by deliveryId and reviewOutputKey.",
+      "rationale": "This keeps timing capture tied to the real runtime seams, avoids reconstructing latency from ad hoc log timestamps, preserves fail-open unavailable/degraded states on timeout or failure, and gives later Review Details/audit work one canonical phase contract to render.",
+      "revisable": "Yes",
+      "made_by": "agent",
       "superseded_by": null
     }
   ],
@@ -18793,6 +19131,50 @@
       "verdict": "✅ pass",
       "duration_ms": 10640,
       "created_at": "2026-04-11T03:13:11.449Z"
+    },
+    {
+      "id": 401,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4856,
+      "created_at": "2026-04-12T23:44:26.725Z"
+    },
+    {
+      "id": 402,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6080,
+      "created_at": "2026-04-12T23:44:26.725Z"
+    },
+    {
+      "id": 403,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 3,
+      "created_at": "2026-04-12T23:44:26.725Z"
+    },
+    {
+      "id": 404,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10289,
+      "created_at": "2026-04-12T23:44:26.725Z"
     }
   ]
 }

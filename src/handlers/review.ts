@@ -6,7 +6,12 @@ import type {
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
+import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
+import type {
+  ExecutorPhaseTiming,
+  ReviewPhaseName,
+  ReviewPhaseTiming,
+} from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
@@ -204,6 +209,82 @@ type AuthorTierSearchEnrichment = {
   skippedQueries: number;
   degradationPath: "none" | "search-api-rate-limit";
 };
+
+const REVIEW_PHASE_ORDER = [
+  "queue wait",
+  "workspace preparation",
+  "retrieval/context assembly",
+  "executor handoff",
+  "remote runtime",
+  "publication",
+] as const satisfies ReadonlyArray<ReviewPhaseName>;
+
+function createReviewPhaseTiming(params: {
+  name: ReviewPhaseName;
+  status: ReviewPhaseTiming["status"];
+  durationMs?: number;
+  detail?: string;
+}): ReviewPhaseTiming {
+  return {
+    name: params.name,
+    status: params.status,
+    ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
+    ...(params.detail ? { detail: params.detail } : {}),
+  };
+}
+
+function buildUnavailableReviewPhase(name: ReviewPhaseName, detail: string): ReviewPhaseTiming {
+  return createReviewPhaseTiming({
+    name,
+    status: "unavailable",
+    detail,
+  });
+}
+
+function isValidQueueWaitMetadata(metadata?: JobQueueWaitMetadata): metadata is JobQueueWaitMetadata {
+  return Boolean(
+    metadata &&
+    Number.isFinite(metadata.queuedAtMs) &&
+    Number.isFinite(metadata.startedAtMs) &&
+    Number.isFinite(metadata.waitMs) &&
+    metadata.queuedAtMs >= 0 &&
+    metadata.startedAtMs >= metadata.queuedAtMs &&
+    metadata.waitMs >= 0 &&
+    metadata.startedAtMs - metadata.queuedAtMs === metadata.waitMs,
+  );
+}
+
+function buildQueueWaitPhase(metadata?: JobQueueWaitMetadata): ReviewPhaseTiming {
+  if (!isValidQueueWaitMetadata(metadata)) {
+    return buildUnavailableReviewPhase("queue wait", "invalid queue wait metadata");
+  }
+
+  return createReviewPhaseTiming({
+    name: "queue wait",
+    status: "completed",
+    durationMs: metadata.waitMs,
+  });
+}
+
+function buildExecutorUnavailablePhases(detail: string): ExecutorPhaseTiming[] {
+  return [
+    createReviewPhaseTiming({
+      name: "executor handoff",
+      status: "unavailable",
+      detail,
+    }) as ExecutorPhaseTiming,
+    createReviewPhaseTiming({
+      name: "remote runtime",
+      status: "unavailable",
+      detail,
+    }) as ExecutorPhaseTiming,
+  ];
+}
+
+function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, ReviewPhaseTiming>): ReviewPhaseTiming[] {
+  return REVIEW_PHASE_ORDER.map((name) =>
+    phases.get(name) ?? buildUnavailableReviewPhase(name, "phase timing unavailable"));
+}
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
@@ -1174,7 +1255,21 @@ export function createReviewHandler(deps: {
       "Review enqueue started",
     );
 
-    await jobQueue.enqueue(event.installationId, async () => {
+    await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
+      const reviewPhaseTimings = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+      reviewPhaseTimings.set("queue wait", buildQueueWaitPhase(queueMetadata));
+      const reviewStartedAt = Date.now();
+      const totalPhaseStartAt = isValidQueueWaitMetadata(queueMetadata)
+        ? queueMetadata.queuedAtMs
+        : reviewStartedAt;
+      let workspacePhaseStartedAt: number | undefined;
+      let retrievalPhaseStartedAt: number | undefined;
+      let publicationPhaseStartedAt: number | undefined;
+      let executorPhaseTimings: ExecutorPhaseTiming[] = buildExecutorUnavailablePhases(
+        "executor phase timings unavailable",
+      );
+      let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
+
       // Durable run state idempotency check (REL-01)
       // Check before expensive workspace creation. Uses SHA pair as identity key.
       // Fail-open: if knowledgeStore is undefined or query throws, proceed with review.
@@ -1225,6 +1320,7 @@ export function createReviewHandler(deps: {
 
       let workspace: Workspace | undefined;
       try {
+        workspacePhaseStartedAt = Date.now();
         // Create workspace with depth 50 for diff context
         workspace = await workspaceManager.create(event.installationId, {
           owner: cloneOwner,
@@ -1256,6 +1352,14 @@ export function createReviewHandler(deps: {
             "Config section invalid, using defaults",
           );
         }
+        reviewPhaseTimings.set(
+          "workspace preparation",
+          createReviewPhaseTiming({
+            name: "workspace preparation",
+            status: "completed",
+            durationMs: Math.max(0, Date.now() - (workspacePhaseStartedAt ?? Date.now())),
+          }),
+        );
 
         // Best-effort: ensure a UI rereview team is requested so it appears under Reviewers.
         // NOTE: The resulting review_requested event sender will be the app, and our bot filter
@@ -1549,6 +1653,7 @@ export function createReviewHandler(deps: {
         }
 
         // Build changed files and diff context, handling shallow-history merge-base gaps.
+        retrievalPhaseStartedAt = Date.now();
         const diffContext = await collectDiffContext({
           workspaceDir: workspace.dir,
           baseRef: pr.base.ref,
@@ -2601,6 +2706,14 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
         });
+        reviewPhaseTimings.set(
+          "retrieval/context assembly",
+          createReviewPhaseTiming({
+            name: "retrieval/context assembly",
+            status: "completed",
+            durationMs: Math.max(0, Date.now() - (retrievalPhaseStartedAt ?? Date.now())),
+          }),
+        );
 
         // Execute review via Claude
         const result = await executor.execute({
@@ -2625,6 +2738,14 @@ export function createReviewHandler(deps: {
             ? timeoutEstimate.dynamicTimeoutSeconds
             : undefined,
         });
+        executorResult = result;
+        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
+          "executor phase timings unavailable",
+        );
+        for (const phase of executorPhaseTimings) {
+          reviewPhaseTimings.set(phase.name, phase);
+        }
+        publicationPhaseStartedAt = Date.now();
 
         logger.info(
           {
@@ -4199,6 +4320,34 @@ export function createReviewHandler(deps: {
           }
         }
       } catch (err) {
+        if (!reviewPhaseTimings.has("workspace preparation") && workspacePhaseStartedAt !== undefined) {
+          reviewPhaseTimings.set(
+            "workspace preparation",
+            createReviewPhaseTiming({
+              name: "workspace preparation",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - workspacePhaseStartedAt),
+              detail: "workspace preparation failed",
+            }),
+          );
+        }
+
+        if (!reviewPhaseTimings.has("retrieval/context assembly") && retrievalPhaseStartedAt !== undefined) {
+          reviewPhaseTimings.set(
+            "retrieval/context assembly",
+            createReviewPhaseTiming({
+              name: "retrieval/context assembly",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - retrievalPhaseStartedAt),
+              detail: "retrieval/context assembly failed",
+            }),
+          );
+        }
+
+        if (publicationPhaseStartedAt === undefined) {
+          publicationPhaseStartedAt = Date.now();
+        }
+
         logger.error(
           { err, prNumber: pr.number },
           "Review handler failed",
@@ -4215,10 +4364,79 @@ export function createReviewHandler(deps: {
             repo: apiRepo,
             issueNumber: pr.number,
           }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+              detail: "posted error comment after handler failure",
+            }),
+          );
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment to PR");
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+              detail: "failed to publish error comment after handler failure",
+            }),
+          );
         }
       } finally {
+        for (const phase of executorPhaseTimings) {
+          if (!reviewPhaseTimings.has(phase.name)) {
+            reviewPhaseTimings.set(phase.name, phase);
+          }
+        }
+
+        if (publicationPhaseStartedAt !== undefined && !reviewPhaseTimings.has("publication")) {
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "completed",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+            }),
+          );
+        }
+
+        const shouldLogPhaseSummary =
+          workspacePhaseStartedAt !== undefined ||
+          retrievalPhaseStartedAt !== undefined ||
+          publicationPhaseStartedAt !== undefined ||
+          executorResult !== undefined;
+
+        if (
+          shouldLogPhaseSummary &&
+          typeof event.id === "string" &&
+          event.id.length > 0 &&
+          reviewOutputKey.length > 0
+        ) {
+          const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
+          const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
+          try {
+            logger.info(
+              {
+                deliveryId: event.id,
+                reviewOutputKey,
+                installationId: event.installationId,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                conclusion: executorResult?.conclusion,
+                published: executorResult?.published,
+                totalDurationMs,
+                phases,
+              },
+              "Review phase timing summary",
+            );
+          } catch {
+            // logging failures must never block review publication
+          }
+        }
+
         if (workspace) {
           await workspace.cleanup();
         }

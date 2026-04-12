@@ -8035,3 +8035,191 @@ describe("createReviewHandler draft PR behavior", () => {
     expect(prompt).not.toContain("Draft Review Summary");
   });
 });
+
+describe("createReviewHandler phase timing logging", () => {
+  async function runPhaseTimingScenario(options: {
+    queueMetadata?: { queuedAtMs: number; startedAtMs: number; waitMs: number };
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata?: { queuedAtMs: number; startedAtMs: number; waitMs: number }) => Promise<T>) =>
+        fn(options.queueMetadata),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 550,
+          sessionId: "session-phase-timing",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Phase timing contract",
+          body: "",
+          commits: 0,
+          additions: 40,
+          deletions: 10,
+          user: { login: "octocat" },
+          author_association: "CONTRIBUTOR",
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature/phase-timing",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    return { entries, workspaceDir: workspaceFixture.dir };
+  }
+
+  test("emits one correlated review phase timing payload with the required six phases", async () => {
+    const { entries, workspaceDir } = await runPhaseTimingScenario({
+      queueMetadata: {
+        queuedAtMs: 1_000,
+        startedAtMs: 1_250,
+        waitMs: 250,
+      },
+    });
+
+    const matchingEntries = entries.filter((entry) => entry.message === "Review phase timing summary");
+    expect(matchingEntries).toHaveLength(1);
+
+    const summary = matchingEntries[0]?.data as {
+      deliveryId: string;
+      reviewOutputKey: string;
+      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
+      totalDurationMs: number;
+    };
+
+    expect(summary.deliveryId).toBe("delivery-123");
+    expect(summary.reviewOutputKey).toContain("delivery-delivery-123");
+    expect(summary.phases.map((phase) => phase.name)).toEqual([
+      "queue wait",
+      "workspace preparation",
+      "retrieval/context assembly",
+      "executor handoff",
+      "remote runtime",
+      "publication",
+    ]);
+    expect(summary.phases[0]).toEqual({
+      name: "queue wait",
+      status: "completed",
+      durationMs: 250,
+    });
+    expect(summary.phases[3]).toEqual({
+      name: "executor handoff",
+      status: "completed",
+      durationMs: 50,
+    });
+    expect(summary.phases[4]).toEqual({
+      name: "remote runtime",
+      status: "completed",
+      durationMs: 500,
+    });
+    expect(summary.phases[5]).toEqual(expect.objectContaining({
+      name: "publication",
+      status: "completed",
+      durationMs: expect.any(Number),
+    }));
+    expect(summary.totalDurationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(summary)).not.toContain(workspaceDir);
+  });
+
+  test("marks queue wait unavailable instead of coercing invalid wait metadata to zero", async () => {
+    const { entries } = await runPhaseTimingScenario({
+      queueMetadata: {
+        queuedAtMs: 1_000,
+        startedAtMs: 900,
+        waitMs: -100,
+      },
+    });
+
+    const summary = entries.find((entry) => entry.message === "Review phase timing summary")?.data as {
+      phases: Array<{ name: string; status: string; durationMs?: number; detail?: string }>;
+    };
+    const queueWaitPhase = summary.phases.find((phase) => phase.name === "queue wait");
+
+    expect(queueWaitPhase).toEqual({
+      name: "queue wait",
+      status: "unavailable",
+      detail: "invalid queue wait metadata",
+    });
+  });
+});

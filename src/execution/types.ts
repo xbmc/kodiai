@@ -8,6 +8,27 @@ export type ExecutionPublishEvent = {
   excerpt: string;
 };
 
+export type ReviewPhaseStatus = "completed" | "degraded" | "unavailable";
+
+export type ReviewPhaseName =
+  | "queue wait"
+  | "workspace preparation"
+  | "retrieval/context assembly"
+  | "executor handoff"
+  | "remote runtime"
+  | "publication";
+
+export type ReviewPhaseTiming = {
+  name: ReviewPhaseName;
+  status: ReviewPhaseStatus;
+  durationMs?: number;
+  detail?: string;
+};
+
+export type ExecutorPhaseTiming = ReviewPhaseTiming & {
+  name: "executor handoff" | "remote runtime";
+};
+
 /** Everything needed to invoke Claude against a workspace */
 export type ExecutionContext = {
   /** The ephemeral workspace with the cloned repo */
@@ -98,6 +119,8 @@ export type ExecutionResult = {
   usedRepoInspectionTools?: boolean;
   /** Structured GitHub publish metadata emitted by MCP tools during execution. */
   publishEvents?: ExecutionPublishEvent[];
+  /** Normalized executor-only timing phases captured around ACA handoff/runtime. */
+  executorPhaseTimings?: ExecutorPhaseTiming[];
   /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */
   usageLimit?: {
     utilization: number | undefined;
