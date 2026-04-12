@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { prepareAgentWorkspace } from "./executor.ts";
@@ -86,4 +86,28 @@ test("prepareAgentWorkspace materializes symlinks as regular files in the staged
   const stagedPath = join(workspaceDir, "repo", "system", "settings", "freebsd.xml");
   expect(await readFile(stagedPath, "utf-8")).toBe("<settings platform=\"linux\" />\n");
   expect((await lstat(stagedPath)).isSymbolicLink()).toBe(false);
+});
+
+test("prepareAgentWorkspace does not preserve read-only file modes in the staged repo snapshot", async () => {
+  const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
+  const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
+
+  const readonlyPath = join(sourceRepoDir, "privacy-policy.txt");
+  await writeFile(readonlyPath, "private but readable\n");
+  await chmod(readonlyPath, 0o444);
+
+  await prepareAgentWorkspace({
+    sourceRepoDir,
+    workspaceDir,
+    prompt: "Review this PR",
+    model: "claude-sonnet-4-5-20250929",
+    maxTurns: 25,
+    allowedTools: ["Read", "Grep", "Glob"],
+    taskType: "review.full",
+    mcpServerNames: ["github_comment"],
+  });
+
+  const stagedPath = join(workspaceDir, "repo", "privacy-policy.txt");
+  await writeFile(stagedPath, "updated\n");
+  expect(await readFile(stagedPath, "utf-8")).toBe("updated\n");
 });
