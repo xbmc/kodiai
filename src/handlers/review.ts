@@ -77,8 +77,6 @@ import {
   ensureSearchRateLimitDisclosureInSummary,
   extractSearchErrorStatus,
   extractSearchErrorText,
-  isSearchRateLimitError,
-  resolveRateLimitBackoffMs,
   toConfidenceBand,
   fingerprintFindingTitle,
   buildReviewDetailsMarker,
@@ -119,7 +117,6 @@ import {
   type ReviewAuthorClassification,
 } from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
-import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -207,7 +204,7 @@ type AuthorTierSearchEnrichment = {
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorCacheTier | null;
+  cachedTier?: AuthorTier | null;
   fallbackTier: AuthorTier;
 }): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
   const { contributorTier, cachedTier, fallbackTier } = params;
@@ -221,100 +218,6 @@ export function resolveAuthorTierFromSources(params: {
   }
 
   return { tier: fallbackTier, source: "fallback" };
-}
-
-function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
-  if (value === "first-time" || value === "regular" || value === "core") {
-    return value;
-  }
-  return null;
-}
-
-function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
-  if (!entry) {
-    return null;
-  }
-
-  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
-  if (!normalizedTier) {
-    return null;
-  }
-
-  return {
-    ...entry,
-    tier: normalizedTier,
-  };
-}
-
-function normalizeContributorProfileTier(value: string | null | undefined): AuthorTier | null {
-  if (value === "newcomer" || value === "developing" || value === "established" || value === "senior") {
-    return value;
-  }
-  return null;
-}
-
-function hasAssociationFallbackSignal(authorAssociation: string): boolean {
-  return [
-    "MEMBER",
-    "OWNER",
-    "FIRST_TIMER",
-    "FIRST_TIME_CONTRIBUTOR",
-    "COLLABORATOR",
-    "CONTRIBUTOR",
-  ].includes(authorAssociation);
-}
-
-async function executeSearchWithRateLimitRetry(params: {
-  operation: () => Promise<number>;
-  logger: Logger;
-  authorLogin: string;
-}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
-  const { operation, logger, authorLogin } = params;
-
-  try {
-    return {
-      value: await operation(),
-      retryAttempts: 0,
-      degraded: false,
-    };
-  } catch (err) {
-    if (!isSearchRateLimitError(err)) {
-      throw err;
-    }
-
-    const backoffMs = resolveRateLimitBackoffMs(err);
-    logger.warn(
-      { err, authorLogin, backoffMs, retryAttempts: 1 },
-      "Search API rate limit detected; retrying author-tier enrichment once",
-    );
-
-    if (backoffMs > 0) {
-      await Bun.sleep(backoffMs);
-    }
-
-    try {
-      return {
-        value: await operation(),
-        retryAttempts: 1,
-        degraded: false,
-      };
-    } catch (retryErr) {
-      if (!isSearchRateLimitError(retryErr)) {
-        throw retryErr;
-      }
-
-      logger.warn(
-        { err: retryErr, authorLogin, retryAttempts: 1 },
-        "Search API remained rate-limited after one retry; degrading enrichment",
-      );
-
-      return {
-        value: null,
-        retryAttempts: 1,
-        degraded: true,
-      };
-    }
-  }
 }
 
 async function fetchCommitMessages(
