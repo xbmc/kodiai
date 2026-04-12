@@ -62,6 +62,8 @@ The deploy script avoids that failure mode by updating existing apps with one fu
 Optional:
 
 - `SHUTDOWN_GRACE_MS` (defaults to `300000`)
+- `BOT_USER_PAT` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_LOGIN`)
+- `BOT_USER_LOGIN` (optional; enables fork/gist bot-user flows when paired with `BOT_USER_PAT`)
 
 Notes:
 
@@ -98,6 +100,7 @@ Azure secrets created by `deploy.sh`:
 - `slack-bot-token`
 - `slack-signing-secret`
 - `database-url`
+- `bot-user-pat` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
 
 Runtime env vars set by `deploy.sh` on the app template:
 
@@ -111,6 +114,8 @@ Runtime env vars set by `deploy.sh` on the app template:
 - `DATABASE_URL`
 - `SLACK_BOT_USER_ID`
 - `SLACK_KODIAI_CHANNEL_ID`
+- `BOT_USER_PAT` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
+- `BOT_USER_LOGIN` (only when both `BOT_USER_PAT` and `BOT_USER_LOGIN` are set)
 - `SHUTDOWN_GRACE_MS`
 - `PORT=3000`
 - `LOG_LEVEL=info`

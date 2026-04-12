@@ -72,6 +72,32 @@ fi
 
 # -- Optional environment variables with defaults --------------------------------
 SHUTDOWN_GRACE_MS=${SHUTDOWN_GRACE_MS:-300000}
+BOT_USER_SECRET_YAML=""
+BOT_USER_ENV_YAML=""
+BOT_USER_CREATE_SECRET_ARGS=()
+BOT_USER_CREATE_ENV_ARGS=()
+
+if [[ -n "${BOT_USER_PAT:-}" && -n "${BOT_USER_LOGIN:-}" ]]; then
+  BOT_USER_SECRET_YAML=$(cat <<EOF
+      - name: bot-user-pat
+        value: ${BOT_USER_PAT}
+EOF
+)
+  BOT_USER_ENV_YAML=$(cat <<EOF
+          - name: BOT_USER_PAT
+            secretRef: bot-user-pat
+          - name: BOT_USER_LOGIN
+            value: "${BOT_USER_LOGIN}"
+EOF
+)
+  BOT_USER_CREATE_SECRET_ARGS+=("bot-user-pat=${BOT_USER_PAT}")
+  BOT_USER_CREATE_ENV_ARGS+=(
+    "BOT_USER_PAT=secretref:bot-user-pat"
+    "BOT_USER_LOGIN=${BOT_USER_LOGIN}"
+  )
+elif [[ -n "${BOT_USER_PAT:-}" || -n "${BOT_USER_LOGIN:-}" ]]; then
+  echo "WARNING: BOT_USER_PAT and BOT_USER_LOGIN must both be set to enable fork/gist features; skipping bot-user env injection."
+fi
 
 echo "==> Installing / upgrading Azure CLI extensions..."
 if ! az extension show --name containerapp >/dev/null 2>&1; then
@@ -318,6 +344,7 @@ properties:
         value: ${SLACK_SIGNING_SECRET}
       - name: database-url
         value: ${DATABASE_URL}
+${BOT_USER_SECRET_YAML}
   template:
     revisionSuffix: ${REVISION_SUFFIX}
     terminationGracePeriodSeconds: 600
@@ -348,6 +375,7 @@ properties:
             value: "${SLACK_BOT_USER_ID}"
           - name: SLACK_KODIAI_CHANNEL_ID
             value: "${SLACK_KODIAI_CHANNEL_ID}"
+${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
             value: "${SHUTDOWN_GRACE_MS}"
           - name: PORT
@@ -415,6 +443,7 @@ else
       slack-bot-token="$SLACK_BOT_TOKEN" \
       slack-signing-secret="$SLACK_SIGNING_SECRET" \
       database-url="$DATABASE_URL" \
+      "${BOT_USER_CREATE_SECRET_ARGS[@]}" \
     --env-vars \
       GITHUB_APP_ID=secretref:github-app-id \
       GITHUB_PRIVATE_KEY=secretref:github-private-key \
@@ -429,6 +458,7 @@ else
       SHUTDOWN_GRACE_MS="$SHUTDOWN_GRACE_MS" \
       PORT=3000 \
       LOG_LEVEL=info \
+      "${BOT_USER_CREATE_ENV_ARGS[@]}" \
     --output none
 
   # Configure health probes on first create.
@@ -462,6 +492,7 @@ properties:
             value: "${SLACK_BOT_USER_ID}"
           - name: SLACK_KODIAI_CHANNEL_ID
             value: "${SLACK_KODIAI_CHANNEL_ID}"
+${BOT_USER_ENV_YAML}
           - name: SHUTDOWN_GRACE_MS
             value: "${SHUTDOWN_GRACE_MS}"
           - name: PORT
