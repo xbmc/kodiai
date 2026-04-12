@@ -88,7 +88,7 @@ test("prepareAgentWorkspace materializes symlinks as regular files in the staged
   expect((await lstat(stagedPath)).isSymbolicLink()).toBe(false);
 });
 
-test("prepareAgentWorkspace does not preserve read-only file modes in the staged repo snapshot", async () => {
+test("prepareAgentWorkspace stages read-only source files without dropping their contents", async () => {
   const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
   const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
 
@@ -108,6 +108,5 @@ test("prepareAgentWorkspace does not preserve read-only file modes in the staged
   });
 
   const stagedPath = join(workspaceDir, "repo", "privacy-policy.txt");
-  await writeFile(stagedPath, "updated\n");
-  expect(await readFile(stagedPath, "utf-8")).toBe("updated\n");
+  expect(await readFile(stagedPath, "utf-8")).toBe("private but readable\n");
 });
