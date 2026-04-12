@@ -1,3 +1,5 @@
+timeoutSeconds: 1800
+
 review:
   uiRereviewTeam: aireview
   requestUiRereviewTeamOnOpen: true

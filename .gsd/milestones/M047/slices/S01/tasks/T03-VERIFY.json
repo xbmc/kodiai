@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M047/S01/T03",
+  "timestamp": 1775869366123,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m047-s01.test.ts",
+      "exitCode": 0,
+      "durationMs": 36,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m045:s01",
+      "exitCode": 0,
+      "durationMs": 37,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m047:s01",
+      "exitCode": 0,
+      "durationMs": 40,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 8057,
+      "verdict": "pass"
+    }
+  ]
+}

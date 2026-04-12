@@ -1,0 +1,830 @@
+{
+  "fixtureSetVersion": 1,
+  "repository": "xbmc/xbmc",
+  "curatedAt": "2026-04-10T20:00:00.000Z",
+  "manifestPath": "fixtures/contributor-calibration/xbmc-manifest.json",
+  "snapshotPath": "fixtures/contributor-calibration/xbmc-snapshot.json",
+  "generatedAt": "2026-04-10T20:42:03.000Z",
+  "refreshCommand": "bun run verify:m046:s01 -- --refresh --json",
+  "status": "ready",
+  "retained": [
+    {
+      "kind": "retained",
+      "normalizedId": "fkoemep",
+      "displayName": "fkoemep",
+      "githubUsername": "fkoemep",
+      "cohort": "newcomer",
+      "selectionNotes": "Single-commit tail sample used as a clear newcomer anchor for the curated xbmc corpus.",
+      "observedCommitCounts": {
+        "allTime": 1,
+        "since2025": 1
+      },
+      "provenance": {
+        "github": {
+          "status": "available",
+          "note": "Collected 2 provenance records.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/b3efd839c750f43882ed4cafe751168adde035ba",
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Matched fkoemep in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-commit",
+          "status": "available",
+          "note": "Recent authored commit found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/b3efd839c750f43882ed4cafe751168adde035ba",
+          "workspacePath": null,
+          "observedAt": "2025-01-19T02:50:58Z",
+          "identity": "fkoemep",
+          "metadata": {
+            "sha": "b3efd839c750f43882ed4cafe751168adde035ba"
+          }
+        },
+        {
+          "source": "github-pull",
+          "status": "available",
+          "note": "Recent authored pull request found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/26314",
+          "workspacePath": null,
+          "observedAt": "2025-03-16T02:42:52Z",
+          "identity": "fkoemep",
+          "metadata": {
+            "number": 26314
+          }
+        },
+        {
+          "source": "github-review",
+          "status": "unavailable",
+          "note": "No review evidence found for fkoemep.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": "fkoemep",
+          "metadata": {}
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched fkoemep in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "fkoemep",
+          "metadata": {
+            "authorEmail": "32828909+fkoemep@users.noreply.github.com",
+            "commitCount": 1
+          }
+        }
+      ]
+    },
+    {
+      "kind": "retained",
+      "normalizedId": "fuzzard",
+      "displayName": "fuzzard",
+      "githubUsername": "fuzzard",
+      "cohort": "senior",
+      "selectionNotes": "High-volume long-run contributor used as a clear senior anchor for calibration.",
+      "observedCommitCounts": {
+        "allTime": 2705,
+        "since2025": 522
+      },
+      "provenance": {
+        "github": {
+          "status": "available",
+          "note": "Collected 3 provenance records.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/27a8e777057093865970f73a79d708a464a147af",
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Collected 4 provenance records.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-commit",
+          "status": "available",
+          "note": "Recent authored commit found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/27a8e777057093865970f73a79d708a464a147af",
+          "workspacePath": null,
+          "observedAt": "2026-04-06T19:38:51Z",
+          "identity": "fuzzard",
+          "metadata": {
+            "sha": "27a8e777057093865970f73a79d708a464a147af"
+          }
+        },
+        {
+          "source": "github-pull",
+          "status": "available",
+          "note": "Recent authored pull request found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/28014",
+          "workspacePath": null,
+          "observedAt": "2026-04-09T20:34:43Z",
+          "identity": "fuzzard",
+          "metadata": {
+            "number": 28014
+          }
+        },
+        {
+          "source": "github-review",
+          "status": "available",
+          "note": "Recent review found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/28160",
+          "workspacePath": null,
+          "observedAt": "2026-04-10T08:11:44Z",
+          "identity": "fuzzard",
+          "metadata": {
+            "number": 28160
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Fuzzard in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Fuzzard",
+          "metadata": {
+            "authorEmail": "bmurphy@bcmcs.net",
+            "commitCount": 1
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched fuzzard in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "fuzzard",
+          "metadata": {
+            "authorEmail": "bmurphy@bcmcs.net",
+            "commitCount": 34
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched fuzzard in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "fuzzard",
+          "metadata": {
+            "authorEmail": "fuzzard@kodi.tv",
+            "commitCount": 1445
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched fuzzard in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "fuzzard",
+          "metadata": {
+            "authorEmail": "fuzzard@users.noreply.github.com",
+            "commitCount": 1226
+          }
+        }
+      ]
+    },
+    {
+      "kind": "retained",
+      "normalizedId": "koprajs",
+      "displayName": "KOPRajs",
+      "githubUsername": "KOPRajs",
+      "cohort": "ambiguous-middle",
+      "selectionNotes": "Moderate recent activity with limited long-run volume, intentionally kept as an ambiguous middle-band sample.",
+      "observedCommitCounts": {
+        "allTime": 27,
+        "since2025": 15
+      },
+      "provenance": {
+        "github": {
+          "status": "available",
+          "note": "Collected 3 provenance records.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/c4447adee855bfb5a4d3ae82a8ad9a7cafaebb99",
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Matched KOPRajs in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-commit",
+          "status": "available",
+          "note": "Recent authored commit found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/c4447adee855bfb5a4d3ae82a8ad9a7cafaebb99",
+          "workspacePath": null,
+          "observedAt": "2026-02-14T07:00:24Z",
+          "identity": "KOPRajs",
+          "metadata": {
+            "sha": "c4447adee855bfb5a4d3ae82a8ad9a7cafaebb99"
+          }
+        },
+        {
+          "source": "github-pull",
+          "status": "available",
+          "note": "Recent authored pull request found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/27912",
+          "workspacePath": null,
+          "observedAt": "2026-03-15T02:01:54Z",
+          "identity": "KOPRajs",
+          "metadata": {
+            "number": 27912
+          }
+        },
+        {
+          "source": "github-review",
+          "status": "available",
+          "note": "Recent review found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/27912",
+          "workspacePath": null,
+          "observedAt": "2026-03-15T02:01:54Z",
+          "identity": "KOPRajs",
+          "metadata": {
+            "number": 27912
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched KOPRajs in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "KOPRajs",
+          "metadata": {
+            "authorEmail": "zdenek.koprivik@post.cz",
+            "commitCount": 27
+          }
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "kind": "excluded",
+      "normalizedId": "hosted-weblate",
+      "displayName": "Hosted Weblate",
+      "githubUsername": null,
+      "exclusionReason": "bot",
+      "exclusionNotes": "Automation account for translation synchronization commits.",
+      "relatedNormalizedIds": [],
+      "observedCommitCounts": {
+        "allTime": 89,
+        "since2025": 28
+      },
+      "provenance": {
+        "github": {
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Matched Hosted Weblate in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-identity",
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": null,
+          "metadata": {
+            "kind": "excluded",
+            "normalizedId": "hosted-weblate"
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Hosted Weblate in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Hosted Weblate",
+          "metadata": {
+            "authorEmail": "hosted@weblate.org",
+            "commitCount": 89
+          }
+        }
+      ]
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "jenkins4kodi",
+      "displayName": "jenkins4kodi",
+      "githubUsername": "jenkins4kodi",
+      "exclusionReason": "bot",
+      "exclusionNotes": "CI automation account that should never count as a human calibration sample.",
+      "relatedNormalizedIds": [],
+      "observedCommitCounts": {
+        "allTime": 733,
+        "since2025": 0
+      },
+      "provenance": {
+        "github": {
+          "status": "available",
+          "note": "Collected 2 provenance records.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/86645f1537f88cd415649be7464bae25feba06ff",
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Matched jenkins4kodi in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-commit",
+          "status": "available",
+          "note": "Recent authored commit found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/86645f1537f88cd415649be7464bae25feba06ff",
+          "workspacePath": null,
+          "observedAt": "2026-03-15T15:52:40Z",
+          "identity": "jenkins4kodi",
+          "metadata": {
+            "sha": "86645f1537f88cd415649be7464bae25feba06ff"
+          }
+        },
+        {
+          "source": "github-pull",
+          "status": "unavailable",
+          "note": "No authored pull request evidence found for jenkins4kodi.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": "jenkins4kodi",
+          "metadata": {}
+        },
+        {
+          "source": "github-review",
+          "status": "available",
+          "note": "Recent review found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/28165",
+          "workspacePath": null,
+          "observedAt": "2026-04-10T20:42:03Z",
+          "identity": "jenkins4kodi",
+          "metadata": {
+            "number": 28165
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched jenkins4kodi in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "jenkins4kodi",
+          "metadata": {
+            "authorEmail": "jenkins4kodi@users.noreply.github.com",
+            "commitCount": 733
+          }
+        }
+      ]
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "kai-sommerfeld",
+      "displayName": "Kai Sommerfeld",
+      "githubUsername": null,
+      "exclusionReason": "alias-collision",
+      "exclusionNotes": "Potential alias collision with the retained-by-handle identity ksooo; keep both out of the initial truth set until refresh resolves lineage.",
+      "relatedNormalizedIds": [
+        "ksooo"
+      ],
+      "observedCommitCounts": {
+        "allTime": 3632,
+        "since2025": 172
+      },
+      "provenance": {
+        "github": {
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Collected 2 provenance records.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-identity",
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": null,
+          "metadata": {
+            "kind": "excluded",
+            "normalizedId": "kai-sommerfeld"
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Kai Sommerfeld in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Kai Sommerfeld",
+          "metadata": {
+            "authorEmail": "3226626+ksooo@users.noreply.github.com",
+            "commitCount": 551
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Kai Sommerfeld in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Kai Sommerfeld",
+          "metadata": {
+            "authorEmail": "kai.sommerfeld@gmx.com",
+            "commitCount": 3081
+          }
+        }
+      ]
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "keith",
+      "displayName": "Keith",
+      "githubUsername": null,
+      "exclusionReason": "ambiguous-identity",
+      "exclusionNotes": "Short display-only identity overlaps with Keith Herrington and should remain excluded until refresh proves whether they are distinct people.",
+      "relatedNormalizedIds": [
+        "keith-herrington"
+      ],
+      "observedCommitCounts": {
+        "allTime": 57,
+        "since2025": 57
+      },
+      "provenance": {
+        "github": {
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Collected 5 provenance records.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-identity",
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": null,
+          "metadata": {
+            "kind": "excluded",
+            "normalizedId": "keith"
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith",
+          "metadata": {
+            "authorEmail": "keith@hadm.net",
+            "commitCount": 17
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith",
+          "metadata": {
+            "authorEmail": "keith@keiths-Air.hadm.net",
+            "commitCount": 8
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith",
+          "metadata": {
+            "authorEmail": "keith@MBP16-TuneIn.hadm.net",
+            "commitCount": 11
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith",
+          "metadata": {
+            "authorEmail": "keith@MBP16-TuneIn.local",
+            "commitCount": 1
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched keith in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "keith",
+          "metadata": {
+            "authorEmail": "keith@xbmc.org",
+            "commitCount": 1
+          }
+        }
+      ]
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "keith-herrington",
+      "displayName": "Keith Herrington",
+      "githubUsername": null,
+      "exclusionReason": "ambiguous-identity",
+      "exclusionNotes": "Potentially related to the short-display Keith identity; excluded until refresh resolves whether this is one contributor or two.",
+      "relatedNormalizedIds": [
+        "keith"
+      ],
+      "observedCommitCounts": {
+        "allTime": 20,
+        "since2025": 20
+      },
+      "provenance": {
+        "github": {
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Collected 2 provenance records.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-identity",
+          "status": "unavailable",
+          "note": "No GitHub username is curated for this excluded contributor.",
+          "evidenceUrl": null,
+          "workspacePath": null,
+          "observedAt": null,
+          "identity": null,
+          "metadata": {
+            "kind": "excluded",
+            "normalizedId": "keith-herrington"
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith Herrington in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith Herrington",
+          "metadata": {
+            "authorEmail": "keith@hadm.net",
+            "commitCount": 2
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched Keith Herrington in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "Keith Herrington",
+          "metadata": {
+            "authorEmail": "keith@kodi.tv",
+            "commitCount": 18
+          }
+        }
+      ]
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "ksooo",
+      "displayName": "ksooo",
+      "githubUsername": "ksooo",
+      "exclusionReason": "alias-collision",
+      "exclusionNotes": "Potential alias collision with Kai Sommerfeld; the initial truth set keeps the pair explicit rather than guessing a merge.",
+      "relatedNormalizedIds": [
+        "kai-sommerfeld"
+      ],
+      "observedCommitCounts": {
+        "allTime": 1505,
+        "since2025": 502
+      },
+      "provenance": {
+        "github": {
+          "status": "available",
+          "note": "Collected 3 provenance records.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/1755e63f429ffe5180c2b00d283ca3f0ee21a7fe",
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Collected 3 provenance records.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      },
+      "provenanceRecords": [
+        {
+          "source": "github-commit",
+          "status": "available",
+          "note": "Recent authored commit found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/commit/1755e63f429ffe5180c2b00d283ca3f0ee21a7fe",
+          "workspacePath": null,
+          "observedAt": "2026-03-25T04:58:22Z",
+          "identity": "ksooo",
+          "metadata": {
+            "sha": "1755e63f429ffe5180c2b00d283ca3f0ee21a7fe"
+          }
+        },
+        {
+          "source": "github-pull",
+          "status": "available",
+          "note": "Recent authored pull request found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/28082",
+          "workspacePath": null,
+          "observedAt": "2026-03-28T15:01:05Z",
+          "identity": "ksooo",
+          "metadata": {
+            "number": 28082
+          }
+        },
+        {
+          "source": "github-review",
+          "status": "available",
+          "note": "Recent review found.",
+          "evidenceUrl": "https://github.com/xbmc/xbmc/pull/25762",
+          "workspacePath": null,
+          "observedAt": "2026-04-07T14:54:08Z",
+          "identity": "ksooo",
+          "metadata": {
+            "number": 25762
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched ksooo in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "ksooo",
+          "metadata": {
+            "authorEmail": "3226626+ksooo@users.noreply.github.com",
+            "commitCount": 675
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched ksooo in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "ksooo",
+          "metadata": {
+            "authorEmail": "kai.sommerfeld@gmx.com",
+            "commitCount": 277
+          }
+        },
+        {
+          "source": "local-git-shortlog",
+          "status": "available",
+          "note": "Matched ksooo in local git shortlog.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc",
+          "observedAt": null,
+          "identity": "ksooo",
+          "metadata": {
+            "authorEmail": "ksooo@kodi.tv",
+            "commitCount": 2
+          }
+        }
+      ]
+    }
+  ],
+  "diagnostics": {
+    "statusCode": "snapshot-refreshed",
+    "retainedCount": 3,
+    "excludedCount": 6,
+    "cohortCoverage": {
+      "senior": 1,
+      "ambiguous-middle": 1,
+      "newcomer": 1
+    },
+    "exclusionsByReason": {
+      "bot": 2,
+      "alias-collision": 2,
+      "ambiguous-identity": 2
+    },
+    "sourceAvailability": {
+      "github": {
+        "pending": 0,
+        "available": 5,
+        "unavailable": 4
+      },
+      "localGit": {
+        "pending": 0,
+        "available": 9,
+        "unavailable": 0
+      }
+    },
+    "provenanceCompleteness": {
+      "retainedWithoutRecords": 0,
+      "excludedWithoutRecords": 0
+    },
+    "aliasCollisionDiagnostics": [
+      {
+        "normalizedId": "kai-sommerfeld",
+        "exclusionReason": "alias-collision",
+        "relatedNormalizedIds": [
+          "ksooo"
+        ]
+      },
+      {
+        "normalizedId": "keith",
+        "exclusionReason": "ambiguous-identity",
+        "relatedNormalizedIds": [
+          "keith-herrington"
+        ]
+      },
+      {
+        "normalizedId": "keith-herrington",
+        "exclusionReason": "ambiguous-identity",
+        "relatedNormalizedIds": [
+          "keith"
+        ]
+      },
+      {
+        "normalizedId": "ksooo",
+        "exclusionReason": "alias-collision",
+        "relatedNormalizedIds": [
+          "kai-sommerfeld"
+        ]
+      }
+    ],
+    "failures": []
+  }
+}

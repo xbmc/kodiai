@@ -46,7 +46,17 @@
     "verify:m038:s03": "bun scripts/verify-m038-s03.ts",
     "verify:m042:s01": "bun scripts/verify-m042-s01.ts",
     "verify:m042:s02": "bun scripts/verify-m042-s02.ts",
-    "verify:m042:s03": "bun scripts/verify-m042-s03.ts"
+    "verify:m042:s03": "bun scripts/verify-m042-s03.ts",
+    "verify:m044": "bun scripts/verify-m044-s01.ts",
+    "verify:m045:s01": "bun scripts/verify-m045-s01.ts",
+    "verify:m045:s03": "bun scripts/verify-m045-s03.ts",
+    "verify:m047:s01": "bun scripts/verify-m047-s01.ts",
+    "verify:m047:s02": "bun scripts/verify-m047-s02.ts",
+    "verify:m047": "bun scripts/verify-m047.ts",
+    "verify:m046": "bun scripts/verify-m046.ts",
+    "verify:m046:s01": "bun scripts/verify-m046-s01.ts",
+    "verify:m046:s02": "bun scripts/verify-m046-s02.ts",
+    "verify:m044:s01": "bun scripts/verify-m044-s01.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",

@@ -77,8 +77,6 @@ import {
   ensureSearchRateLimitDisclosureInSummary,
   extractSearchErrorStatus,
   extractSearchErrorText,
-  isSearchRateLimitError,
-  resolveRateLimitBackoffMs,
   toConfidenceBand,
   fingerprintFindingTitle,
   buildReviewDetailsMarker,
@@ -108,8 +106,17 @@ import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/workspace.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
+import {
+  projectContributorExperienceContract,
+  resolveContributorExperienceRetrievalHint,
+  type ContributorExperienceContract,
+  type ContributorExperienceSource,
+} from "../contributor/experience-contract.ts";
+import {
+  resolveReviewAuthorClassification,
+  type ReviewAuthorClassification,
+} from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
-import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -197,7 +204,7 @@ type AuthorTierSearchEnrichment = {
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorCacheTier | null;
+  cachedTier?: AuthorTier | null;
   fallbackTier: AuthorTier;
 }): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
   const { contributorTier, cachedTier, fallbackTier } = params;
@@ -211,82 +218,6 @@ export function resolveAuthorTierFromSources(params: {
   }
 
   return { tier: fallbackTier, source: "fallback" };
-}
-
-function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
-  if (value === "first-time" || value === "regular" || value === "core") {
-    return value;
-  }
-  return null;
-}
-
-function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
-  if (!entry) {
-    return null;
-  }
-
-  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
-  if (!normalizedTier) {
-    return null;
-  }
-
-  return {
-    ...entry,
-    tier: normalizedTier,
-  };
-}
-
-async function executeSearchWithRateLimitRetry(params: {
-  operation: () => Promise<number>;
-  logger: Logger;
-  authorLogin: string;
-}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
-  const { operation, logger, authorLogin } = params;
-
-  try {
-    return {
-      value: await operation(),
-      retryAttempts: 0,
-      degraded: false,
-    };
-  } catch (err) {
-    if (!isSearchRateLimitError(err)) {
-      throw err;
-    }
-
-    const backoffMs = resolveRateLimitBackoffMs(err);
-    logger.warn(
-      { err, authorLogin, backoffMs, retryAttempts: 1 },
-      "Search API rate limit detected; retrying author-tier enrichment once",
-    );
-
-    if (backoffMs > 0) {
-      await Bun.sleep(backoffMs);
-    }
-
-    try {
-      return {
-        value: await operation(),
-        retryAttempts: 1,
-        degraded: false,
-      };
-    } catch (retryErr) {
-      if (!isSearchRateLimitError(retryErr)) {
-        throw retryErr;
-      }
-
-      logger.warn(
-        { err: retryErr, authorLogin, retryAttempts: 1 },
-        "Search API remained rate-limited after one retry; degrading enrichment",
-      );
-
-      return {
-        value: null,
-        retryAttempts: 1,
-        degraded: true,
-      };
-    }
-  }
 }
 
 async function fetchCommitMessages(
@@ -445,211 +376,38 @@ async function resolveAuthorTier(params: {
   owner: string;
   repoSlug: string;
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
-  knowledgeStore: KnowledgeStore;
+  knowledgeStore?: KnowledgeStore;
   searchCache?: SearchCache<number>;
   contributorProfileStore?: ContributorProfileStore;
   logger: Logger;
-}): Promise<{
-  tier: AuthorTier;
-  prCount: number | null;
-  fromCache: boolean;
-  searchCacheHit: boolean;
-  searchEnrichment: AuthorTierSearchEnrichment;
-  expertise?: ContributorExpertise[];
-}> {
-  const { authorLogin, authorAssociation, repo, owner, repoSlug, octokit, knowledgeStore, searchCache, contributorProfileStore, logger } = params;
-  const searchEnrichment: AuthorTierSearchEnrichment = {
-    degraded: false,
-    retryAttempts: 0,
-    skippedQueries: 0,
-    degradationPath: "none",
-  };
-  let searchCacheHit = false;
+}): Promise<ReviewAuthorClassification> {
+  const {
+    authorLogin,
+    authorAssociation,
+    repo,
+    owner,
+    repoSlug,
+    octokit,
+    knowledgeStore,
+    searchCache,
+    contributorProfileStore,
+    logger,
+  } = params;
 
-  let contributorTier: AuthorTier | null = null;
-  let contributorExpertise: ContributorExpertise[] | undefined;
-
-  // Try contributor profile store first (4-tier system)
-  if (contributorProfileStore) {
-    try {
-      const profile = await contributorProfileStore.getByGithubUsername(authorLogin);
-      if (profile) {
-        contributorTier = profile.overallTier as AuthorTier;
-        contributorExpertise = await contributorProfileStore.getExpertise(profile.id);
-      }
-    } catch (err) {
-      logger.warn({ err, authorLogin }, "Contributor profile lookup failed (fail-open)");
-    }
-  }
-
-  try {
-    const rawCached = await knowledgeStore.getAuthorCache?.({ repo: repoSlug, authorLogin });
-    const cached = normalizeAuthorCacheEntry(rawCached);
-    if (rawCached && !cached) {
-      logger.warn(
-        { authorLogin, cachedTier: rawCached.tier },
-        "Ignoring unsupported author cache tier; only fallback taxonomy tiers may be reused from cache",
-      );
-    }
-    const resolution = resolveAuthorTierFromSources({
-      contributorTier,
-      // Contributor profile is the high-fidelity source of truth. Cached author tiers
-      // are lower-fidelity fallback taxonomy values and may only be reused as-is.
-      cachedTier: cached?.tier ?? null,
-      fallbackTier: "first-time",
-    });
-    if (resolution.source === "contributor-profile") {
-      return {
-        tier: resolution.tier,
-        prCount: null,
-        fromCache: false,
-        searchCacheHit: false,
-        searchEnrichment,
-        expertise: contributorExpertise,
-      };
-    }
-    if (resolution.source === "author-cache") {
-      return {
-        tier: resolution.tier,
-        prCount: cached?.prCount ?? null,
-        fromCache: true,
-        searchCacheHit,
-        searchEnrichment,
-      };
-    }
-  } catch (err) {
-    logger.warn({ err, authorLogin }, "Author cache read failed (fail-open)");
-    if (contributorTier) {
-      return {
-        tier: contributorTier,
-        prCount: null,
-        fromCache: false,
-        searchCacheHit: false,
-        searchEnrichment,
-        expertise: contributorExpertise,
-      };
-    }
-  }
-
-  const ambiguousAssociations = new Set(["NONE", "MANNEQUIN", "COLLABORATOR", "CONTRIBUTOR"]);
-  const normalizedAssociation = (authorAssociation || "NONE").toUpperCase();
-  let prCount: number | null = null;
-
-  if (ambiguousAssociations.has(normalizedAssociation)) {
-    const query = `repo:${owner}/${repo} type:pr author:${authorLogin} is:merged`;
-
-    const loadPrCount = async (): Promise<number> => {
-      const { data } = await octokit.rest.search.issuesAndPullRequests({
-        q: query,
-        per_page: 1,
-      });
-      return data.total_count;
-    };
-
-    try {
-      if (searchCache) {
-        const cacheKey = buildSearchCacheKey({
-          repo: repoSlug,
-          searchType: "issuesAndPullRequests",
-          query,
-          extra: { per_page: 1 },
-        });
-
-        const searchOutcome = await executeSearchWithRateLimitRetry({
-          operation: async () => {
-            let loaderExecuted = false;
-            const value = await searchCache.getOrLoad(
-              cacheKey,
-              async () => {
-                loaderExecuted = true;
-                return loadPrCount();
-              },
-              AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS,
-            );
-            searchCacheHit = !loaderExecuted;
-            return value;
-          },
-          logger,
-          authorLogin,
-        });
-
-        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-        searchEnrichment.degraded = searchOutcome.degraded;
-        prCount = searchOutcome.value;
-
-        if (searchOutcome.degraded) {
-          searchCacheHit = false;
-        }
-      } else {
-        const searchOutcome = await executeSearchWithRateLimitRetry({
-          operation: () => loadPrCount(),
-          logger,
-          authorLogin,
-        });
-
-        searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-        searchEnrichment.degraded = searchOutcome.degraded;
-        prCount = searchOutcome.value;
-      }
-
-      if (searchEnrichment.degraded) {
-        searchEnrichment.skippedQueries = 1;
-        searchEnrichment.degradationPath = "search-api-rate-limit";
-      }
-    } catch (err) {
-      if (searchCache) {
-        logger.warn({ err, authorLogin }, "Author PR-count cache failed (fail-open, falling back to direct lookup)");
-
-        try {
-          const searchOutcome = await executeSearchWithRateLimitRetry({
-            operation: () => loadPrCount(),
-            logger,
-            authorLogin,
-          });
-
-          searchEnrichment.retryAttempts += searchOutcome.retryAttempts;
-          searchEnrichment.degraded = searchOutcome.degraded;
-          prCount = searchOutcome.value;
-
-          if (searchEnrichment.degraded) {
-            searchEnrichment.skippedQueries = 1;
-            searchEnrichment.degradationPath = "search-api-rate-limit";
-          }
-        } catch (fallbackErr) {
-          logger.warn({ err: fallbackErr, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
-        }
-      } else {
-        logger.warn({ err, authorLogin }, "Author PR count lookup failed (fail-open, proceeding without enrichment)");
-      }
-    }
-  }
-
-  const tier = classifyAuthor({
-    authorAssociation: normalizedAssociation,
-    prCount,
-  }).tier;
-
-  // Fallback classification is intentionally lower fidelity than contributor profiles.
-  // Never persist 4-tier contributor-profile labels in author_cache; cache only the
-  // direct fallback taxonomy so degraded runs cannot later overclaim established/senior knowledge.
-  const cacheTier: AuthorCacheTier = tier === "core" ? "core" : tier === "regular" ? "regular" : "first-time";
-
-  try {
-    await knowledgeStore.upsertAuthorCache?.({
-      repo: repoSlug,
-      authorLogin,
-      tier: cacheTier,
-      authorAssociation: normalizedAssociation,
-      prCount,
-    });
-  } catch (err) {
-    logger.warn({ err, authorLogin }, "Author cache write failed (non-fatal)");
-  }
-
-  return { tier, prCount, fromCache: false, searchCacheHit, searchEnrichment };
+  return resolveReviewAuthorClassification({
+    authorLogin,
+    authorAssociation,
+    repo,
+    owner,
+    repoSlug,
+    searchIssuesAndPullRequests: (searchParams) =>
+      octokit.rest.search.issuesAndPullRequests(searchParams),
+    knowledgeStore,
+    searchCache,
+    contributorProfileStore,
+    logger,
+  });
 }
-
-
 
 async function extractFindingsFromReviewComments(params: {
   octokit: Awaited<ReturnType<GitHubApp["getInstallationOctokit"]>>;
@@ -1556,14 +1314,7 @@ export function createReviewHandler(deps: {
           return;
         }
 
-        let authorClassification: {
-          tier: AuthorTier;
-          prCount: number | null;
-          fromCache: boolean;
-          searchCacheHit: boolean;
-          searchEnrichment: AuthorTierSearchEnrichment;
-          expertise?: ContributorExpertise[];
-        } = {
+        let authorClassification: ReviewAuthorClassification = {
           tier: "regular",
           prCount: null,
           fromCache: false,
@@ -1574,46 +1325,69 @@ export function createReviewHandler(deps: {
             skippedQueries: 0,
             degradationPath: "none",
           },
+          contract: projectContributorExperienceContract({
+            source: "none",
+            tier: null,
+          }),
+          storedProfileTrust: null,
+          fallbackPath: "no-stored-profile->generic-unknown",
         };
 
-        if (knowledgeStore) {
-          try {
-            authorClassification = await resolveAuthorTier({
-              authorLogin: pr.user.login,
-              authorAssociation: (pr as { author_association?: string }).author_association ?? "NONE",
-              repo: apiRepo,
-              owner: apiOwner,
-              repoSlug: `${apiOwner}/${apiRepo}`,
-              octokit: idempotencyOctokit,
-              knowledgeStore,
-              searchCache: authorPrCountSearchCache,
-              contributorProfileStore,
-              logger,
-            });
-            logger.info(
-              {
-                ...baseLog,
-                authorTier: authorClassification.tier,
-                authorPrCount: authorClassification.prCount,
-                fromCache: authorClassification.fromCache,
-                searchCacheHit: authorClassification.searchCacheHit,
-                searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
-                searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
-                searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
-                searchEnrichmentPath: authorClassification.searchEnrichment.degradationPath,
-              },
-              "Author experience classification resolved",
-            );
-          } catch (err) {
-            logger.warn(
-              { ...baseLog, err },
-              "Author classification failed (fail-open, using regular tier)",
-            );
-          }
+        try {
+          authorClassification = await resolveAuthorTier({
+            authorLogin: pr.user.login,
+            authorAssociation: (pr as { author_association?: string }).author_association ?? "NONE",
+            repo: apiRepo,
+            owner: apiOwner,
+            repoSlug: `${apiOwner}/${apiRepo}`,
+            octokit: idempotencyOctokit,
+            knowledgeStore,
+            searchCache: authorPrCountSearchCache,
+            contributorProfileStore,
+            logger,
+          });
+          logger.info(
+            {
+              ...baseLog,
+              authorTier: authorClassification.tier,
+              authorPrCount: authorClassification.prCount,
+              fromCache: authorClassification.fromCache,
+              searchCacheHit: authorClassification.searchCacheHit,
+              storedProfileTrustState:
+                authorClassification.storedProfileTrust?.state ?? null,
+              storedProfileTrustReason:
+                authorClassification.storedProfileTrust?.reason ?? null,
+              storedProfileCalibrationMarker:
+                authorClassification.storedProfileTrust?.calibrationMarker ?? null,
+              storedProfileCalibrationVersion:
+                authorClassification.storedProfileTrust?.calibrationVersion ?? null,
+              storedProfileFallbackPath: authorClassification.fallbackPath,
+              contributorExperienceState: authorClassification.contract.state,
+              contributorExperienceSource: authorClassification.contract.source,
+              contributorExperienceReviewBehavior: authorClassification.contract.reviewBehavior,
+              contributorExperienceDegraded: authorClassification.contract.degraded,
+              contributorExperienceDegradationPath: authorClassification.contract.degradationPath,
+              searchEnrichmentDegraded: authorClassification.searchEnrichment.degraded,
+              searchEnrichmentRetryAttempts: authorClassification.searchEnrichment.retryAttempts,
+              searchEnrichmentSkippedQueries: authorClassification.searchEnrichment.skippedQueries,
+              searchEnrichmentPath: authorClassification.searchEnrichment.degradationPath,
+            },
+            "Author experience classification resolved",
+          );
+        } catch (err) {
+          logger.warn(
+            { ...baseLog, err },
+            "Author classification failed (fail-open, using generic unknown contract)",
+          );
         }
 
         // Fire-and-forget: suggest identity linking via DM for unlinked contributors
-        if (!authorClassification.expertise && slackBotToken && contributorProfileStore) {
+        if (
+          authorClassification.contract.state !== "generic-opt-out" &&
+          !authorClassification.expertise &&
+          slackBotToken &&
+          contributorProfileStore
+        ) {
           suggestIdentityLink({
             githubUsername: pr.user.login,
             githubDisplayName: pr.user.name ?? null,
@@ -2312,6 +2086,9 @@ export function createReviewHandler(deps: {
         let contextWindowForPrompt: string | undefined;
         if (retriever) {
           try {
+            const authorHint = resolveContributorExperienceRetrievalHint(
+              authorClassification.contract,
+            );
             const variants = buildRetrievalVariants({
               title: pr.title,
               body: pr.body ?? undefined,
@@ -2319,7 +2096,7 @@ export function createReviewHandler(deps: {
               prLanguages: Object.keys(diffAnalysis.filesByLanguage ?? {}),
               riskSignals: diffAnalysis.riskSignals ?? [],
               filePaths: reviewFiles,
-              authorTier: authorClassification.tier,
+              authorHint: authorHint ?? undefined,
             });
 
             const result = await retriever.retrieve({
@@ -2704,12 +2481,14 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
-          authorTier: authorClassification.tier,
-          authorExpertise: authorClassification.expertise?.map(e => ({
-            dimension: e.dimension,
-            topic: e.topic,
-            score: e.score,
-          })),
+          contributorExperienceContract: authorClassification.contract,
+          authorExpertise: authorClassification.contract.state === "profile-backed"
+            ? authorClassification.expertise?.map(e => ({
+              dimension: e.dimension,
+              topic: e.topic,
+              score: e.score,
+            }))
+            : undefined,
           depBumpContext,
           searchRateLimitDegradation: authorClassification.searchEnrichment,
           isDraft,
@@ -3310,7 +3089,7 @@ export function createReviewHandler(deps: {
               feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
               keywordParsing: parsedIntent,
               profileSelection,
-              authorTier: authorClassification.tier,
+              contributorExperience: authorClassification.contract.reviewDetails,
               prioritization: prioritizationStats,
               usageLimit: result.usageLimit,
               tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
@@ -3994,7 +3773,14 @@ export function createReviewHandler(deps: {
                           }
                         : null,
                       largePRContext: null,
-                      authorTier: authorClassification.tier,
+                      contributorExperienceContract: authorClassification.contract,
+                      authorExpertise: authorClassification.contract.state === "profile-backed"
+                        ? authorClassification.expertise?.map((e) => ({
+                            dimension: e.dimension,
+                            topic: e.topic,
+                            score: e.score,
+                          }))
+                        : undefined,
                       depBumpContext,
                       searchRateLimitDegradation: authorClassification.searchEnrichment,
                       isDraft,

@@ -13,14 +13,14 @@ describe("buildRetrievalQuery", () => {
     expect(result).toBe("Fix null pointer in user service");
   });
 
-  test("full signals — query includes all signal types", () => {
+  test("full signals — query includes all signal types with a normalized author hint", () => {
     const signals: RetrievalQuerySignals = {
       prTitle: "Add JWT refresh rotation",
       prBody: "Implements token refresh with rotation to prevent replay attacks",
       conventionalType: "feat",
       detectedLanguages: ["TypeScript", "Python"],
       riskSignals: ["Modifies authentication/authorization code"],
-      authorTier: "first-time",
+      authorHint: "  NEW contributor  ",
       topFilePaths: ["src/auth/jwt.ts", "src/auth/refresh.ts"],
     };
     const result = buildRetrievalQuery(signals);
@@ -30,7 +30,8 @@ describe("buildRetrievalQuery", () => {
     expect(result).toContain("[feat]");
     expect(result).toContain("Languages: TypeScript, Python");
     expect(result).toContain("Risk: Modifies authentication/authorization code");
-    expect(result).toContain("Author: first-time");
+    expect(result).toContain("Author: new contributor");
+    expect(result).not.toContain("first-time");
     expect(result).toContain("src/auth/jwt.ts");
     expect(result).toContain("src/auth/refresh.ts");
   });
@@ -46,10 +47,8 @@ describe("buildRetrievalQuery", () => {
     };
     const result = buildRetrievalQuery(signals);
 
-    // Body portion should be at most 200 chars
-    // Remove the title line to isolate body
     const lines = result.split("\n");
-    const bodyLine = lines[1]; // second line is body excerpt
+    const bodyLine = lines[1];
     expect(bodyLine!.length).toBeLessThanOrEqual(200);
     expect(result).not.toContain("A".repeat(201));
   });
@@ -117,13 +116,12 @@ describe("buildRetrievalQuery", () => {
       conventionalType: "feat",
       detectedLanguages: ["TypeScript", "Python", "Go", "Rust", "Java"],
       riskSignals: ["Modifies authentication/authorization code", "Touches credential/secret-related files", "Modifies dependency manifest"],
-      authorTier: "established",
+      authorHint: "  Established Contributor ",
       topFilePaths: Array.from({ length: 15 }, (_, i) => `src/very/long/path/to/deeply/nested/module-${i}/implementation.ts`),
     };
     const result = buildRetrievalQuery(signals);
 
     expect(result.length).toBeLessThanOrEqual(800);
-    // Title should always be preserved (highest priority)
     expect(result).toContain("A very important PR");
   });
 
@@ -164,5 +162,17 @@ describe("buildRetrievalQuery", () => {
     const result = buildRetrievalQuery(signals);
 
     expect(result).toBe("PR with empty body");
+  });
+
+  test("empty author hints are omitted after normalization", () => {
+    const signals: RetrievalQuerySignals = {
+      prTitle: "Hintless PR",
+      detectedLanguages: [],
+      riskSignals: [],
+      authorHint: "   \n\t  ",
+      topFilePaths: [],
+    };
+
+    expect(buildRetrievalQuery(signals)).toBe("Hintless PR");
   });
 });

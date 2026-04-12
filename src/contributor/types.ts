@@ -13,6 +13,7 @@ export type ContributorProfile = {
   createdAt: Date;
   updatedAt: Date;
   lastScoredAt: Date | null;
+  trustMarker?: string | null;
 };
 
 export type ContributorExpertise = {
@@ -28,7 +29,10 @@ export type ContributorExpertise = {
 };
 
 export interface ContributorProfileStore {
-  getByGithubUsername(username: string): Promise<ContributorProfile | null>;
+  getByGithubUsername(
+    username: string,
+    options?: { includeOptedOut?: boolean },
+  ): Promise<ContributorProfile | null>;
   getBySlackUserId(slackUserId: string): Promise<ContributorProfile | null>;
   linkIdentity(params: {
     slackUserId: string;

@@ -28,6 +28,7 @@ interface AgentConfig {
   maxTurns: number;
   allowedTools: string[];
   taskType?: string;
+  repoCwd?: string;
   mcpServerNames?: string[]; // server names actually registered in orchestrator
 }
 
@@ -144,10 +145,11 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
   try {
     await appendDiagnostic(`startup taskType=${agentConfig.taskType ?? "unknown"} model=${agentConfig.model} maxTurns=${agentConfig.maxTurns}`);
+    const sdkCwd = agentConfig.repoCwd ?? workspaceDir!;
     const sdkQueryResult = queryFn({
       prompt: agentConfig.prompt,
       options: {
-        cwd: workspaceDir!,
+        cwd: sdkCwd,
         model: agentConfig.model,
         maxTurns: agentConfig.maxTurns,
         allowedTools: agentConfig.allowedTools,

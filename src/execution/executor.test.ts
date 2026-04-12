@@ -1,6 +1,6 @@
 import { test, expect, afterEach, mock, beforeEach } from "bun:test";
-import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdtemp, rm, readFile, writeFile, mkdir, cp } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { buildSecurityClaudeMd, createExecutor } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
@@ -429,11 +429,22 @@ function createTestableExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
+        const sourceWorkspaceDir = resolve(context.workspace.dir);
+        const resolvedWorkspaceDir = resolve(workspaceDir);
+        const repoCwd =
+          sourceWorkspaceDir === resolvedWorkspaceDir
+            ? context.workspace.dir
+            : join(workspaceDir, "repo");
+
+        if (sourceWorkspaceDir !== resolvedWorkspaceDir) {
+          await mkdir(repoCwd, { recursive: true });
+          await cp(context.workspace.dir, repoCwd, { recursive: true });
+        }
 
         await writeFile(join(workspaceDir, "prompt.txt"), prompt);
         await writeFile(
           join(workspaceDir, "agent-config.json"),
-          JSON.stringify({ model, maxTurns, allowedTools, taskType }),
+          JSON.stringify({ model, maxTurns, allowedTools, taskType, repoCwd }),
         );
 
         const { buildAcaJobSpec } = await import("../jobs/aca-launcher.ts");
@@ -975,8 +986,13 @@ test("ACA dispatch: CLAUDE.md written to workspace dir before launch", async () 
   expect(claudeMd).toContain("Security Policy");
 });
 
-test("ACA dispatch: explicit review mention keeps full review toolset and config maxTurns", async () => {
+test("ACA dispatch: explicit review mention writes a repo snapshot and points agent cwd at it", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
+  await mkdir(join(sourceRepoDir, "src"), { recursive: true });
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
+  await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
   const config = makeConfig();
   const logger = makeLogger();
   const registry = createMcpJobRegistry();
@@ -993,7 +1009,7 @@ test("ACA dispatch: explicit review mention keeps full review toolset and config
   });
 
   await executor.execute(
-    makeContext(tmpDir!, {
+    makeContext(sourceRepoDir, {
       eventType: "issue_comment.created",
       prNumber: 80,
       taskType: "review.full",
@@ -1005,6 +1021,7 @@ test("ACA dispatch: explicit review mention keeps full review toolset and config
     maxTurns: number;
     allowedTools: string[];
     taskType: string;
+    repoCwd?: string;
   };
 
   expect(agentConfig.taskType).toBe("review.full");
@@ -1012,6 +1029,9 @@ test("ACA dispatch: explicit review mention keeps full review toolset and config
   expect(agentConfig.allowedTools).toContain("Glob");
   expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
+  expect(agentConfig.repoCwd).toBe(join(tmpDir!, "repo"));
+  expect(await readFile(join(tmpDir!, "repo", "src", "feature.ts"), "utf-8")).toContain("feature = true");
+  expect(await readFile(join(tmpDir!, "repo", ".kodiai.yml"), "utf-8")).toContain("review:");
 });
 
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {

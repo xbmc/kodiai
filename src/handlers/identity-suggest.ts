@@ -26,6 +26,12 @@ const MEMBER_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 /** Track which GitHub usernames we've already suggested to avoid repeats. */
 const suggestedUsernames = new Set<string>();
 
+export function resetIdentitySuggestionStateForTests(): void {
+  cachedMembers = null;
+  cachedMembersAt = 0;
+  suggestedUsernames.clear();
+}
+
 async function fetchSlackMembers(
   botToken: string,
   logger: Logger,
@@ -52,7 +58,7 @@ async function fetchSlackMembers(
     ok?: boolean;
     error?: string;
     members?: Array<{
-      id: string;
+      id?: string;
       deleted?: boolean;
       is_bot?: boolean;
       profile?: { display_name?: string; real_name?: string };
@@ -64,11 +70,14 @@ async function fetchSlackMembers(
   }
 
   const members: SlackMember[] = (data.members ?? [])
-    .filter((m) => !m.deleted && !m.is_bot)
-    .map((m) => ({
-      userId: m.id,
-      displayName: m.profile?.display_name ?? "",
-      realName: m.profile?.real_name ?? "",
+    .filter((member) => !member.deleted && !member.is_bot)
+    .filter((member): member is NonNullable<typeof member> & { id: string } =>
+      typeof member.id === "string" && member.id.length > 0,
+    )
+    .map((member) => ({
+      userId: member.id,
+      displayName: member.profile?.display_name ?? "",
+      realName: member.profile?.real_name ?? "",
     }));
 
   cachedMembers = members;
@@ -83,7 +92,6 @@ async function sendSuggestionDM(
   githubUsername: string,
   logger: Logger,
 ): Promise<void> {
-  // Open a DM channel
   const openRes = await fetch("https://slack.com/api/conversations.open", {
     method: "POST",
     headers: {
@@ -94,10 +102,14 @@ async function sendSuggestionDM(
     signal: AbortSignal.timeout(10_000),
   });
 
+  if (!openRes.ok) {
+    throw new Error(`Slack conversations.open HTTP ${openRes.status}`);
+  }
+
   const openData = (await openRes.json()) as {
     ok?: boolean;
     error?: string;
-    channel?: { id: string };
+    channel?: { id?: string };
   };
 
   if (!openData.ok || !openData.channel?.id) {
@@ -108,9 +120,9 @@ async function sendSuggestionDM(
 
   const channelId = openData.channel.id;
   const message =
-    `I noticed GitHub user \`${githubUsername}\` submitted a PR. ` +
-    `Their profile looks similar to yours. You can link your accounts with ` +
-    `\`/kodiai link ${githubUsername}\` to get personalized code reviews.`;
+    `I noticed GitHub user \`${githubUsername}\` submitted a PR, and their profile may match your Slack account. ` +
+    `If that's you, link your accounts with \`/kodiai link ${githubUsername}\` so Kodiai can use your linked contributor profile when available. ` +
+    "If you'd rather keep reviews generic, you can opt out any time with `/kodiai profile opt-out`.";
 
   const msgRes = await fetch("https://slack.com/api/chat.postMessage", {
     method: "POST",
@@ -121,6 +133,10 @@ async function sendSuggestionDM(
     body: JSON.stringify({ channel: channelId, text: message }),
     signal: AbortSignal.timeout(10_000),
   });
+
+  if (!msgRes.ok) {
+    throw new Error(`Slack chat.postMessage HTTP ${msgRes.status}`);
+  }
 
   const msgData = (await msgRes.json()) as {
     ok?: boolean;
@@ -133,10 +149,7 @@ async function sendSuggestionDM(
     );
   }
 
-  logger.info(
-    { githubUsername, slackUserId },
-    "Identity suggestion DM sent",
-  );
+  logger.info({ githubUsername, slackUserId }, "Identity suggestion DM sent");
 }
 
 /**
@@ -156,29 +169,35 @@ export async function suggestIdentityLink(params: {
   const { githubUsername, githubDisplayName, slackBotToken, profileStore, logger } =
     params;
 
-  // Skip if we've already suggested for this username
-  if (suggestedUsernames.has(githubUsername)) return;
+  try {
+    if (suggestedUsernames.has(githubUsername)) {
+      return;
+    }
 
-  // Check if they already have a linked profile
-  const existing = await profileStore.getByGithubUsername(githubUsername);
-  if (existing?.slackUserId) return;
+    const existing = await profileStore.getByGithubUsername(githubUsername, {
+      includeOptedOut: true,
+    });
+    if (existing?.slackUserId) {
+      return;
+    }
 
-  const members = await fetchSlackMembers(slackBotToken, logger);
-  const matches = findPotentialMatches({
-    githubUsername,
-    githubDisplayName,
-    slackMembers: members,
-  });
+    const members = await fetchSlackMembers(slackBotToken, logger);
+    const matches = findPotentialMatches({
+      githubUsername,
+      githubDisplayName,
+      slackMembers: members,
+    });
 
-  // Only send DMs for high-confidence matches
-  const highMatches = matches.filter((m) => m.confidence === "high");
-  if (highMatches.length === 0) {
+    const highMatches = matches.filter((match) => match.confidence === "high");
+    if (highMatches.length === 0) {
+      suggestedUsernames.add(githubUsername);
+      return;
+    }
+
+    const match = highMatches[0]!;
+    await sendSuggestionDM(slackBotToken, match.slackUserId, githubUsername, logger);
     suggestedUsernames.add(githubUsername);
-    return;
+  } catch (err) {
+    logger.warn({ githubUsername, err }, "Identity suggestion check failed (non-blocking)");
   }
-
-  // Send DM to the first high-confidence match
-  const match = highMatches[0]!;
-  await sendSuggestionDM(slackBotToken, match.slackUserId, githubUsername, logger);
-  suggestedUsernames.add(githubUsername);
 }

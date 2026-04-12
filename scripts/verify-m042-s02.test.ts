@@ -19,6 +19,7 @@ function makeFixture(overrides?: Partial<FixtureResult>): FixtureResult {
     promptAuthorSection: [
       "## Author Experience Context",
       "",
+      "Contributor-experience contract: profile-backed.",
       "The PR author (CrystalP) is an established contributor.",
       "",
       "- Keep explanations brief — one sentence on WHY, then the suggestion",
@@ -27,7 +28,7 @@ function makeFixture(overrides?: Partial<FixtureResult>): FixtureResult {
       "<details>",
       "<summary>Review Details</summary>",
       "",
-      "- Author tier: established (established contributor guidance)",
+      "- Contributor experience: profile-backed (using linked contributor profile guidance)",
       "</details>",
     ].join("\n"),
     ...overrides,
@@ -35,18 +36,21 @@ function makeFixture(overrides?: Partial<FixtureResult>): FixtureResult {
 }
 
 describe("runEstablishedSurfaceFixture", () => {
-  test("uses contributor-profile precedence and renders established surfaces for CrystalP", () => {
+  test("uses contributor-profile precedence and renders established contract surfaces for CrystalP", () => {
     const fixture = runEstablishedSurfaceFixture();
 
     expect(fixture.resolvedSource).toBe("contributor-profile");
     expect(fixture.resolvedTier).toBe("established");
     expect(fixture.promptAuthorSection).toContain("CrystalP");
+    expect(fixture.promptAuthorSection).toContain("Contributor-experience contract: profile-backed.");
     expect(fixture.promptAuthorSection).toContain("established contributor");
     expect(fixture.promptAuthorSection).not.toContain("first-time or new contributor");
     expect(fixture.promptAuthorSection).not.toContain("developing contributor");
-    expect(fixture.reviewDetailsBody).toContain("- Author tier: established (established contributor guidance)");
-    expect(fixture.reviewDetailsBody).not.toContain("newcomer guidance");
-    expect(fixture.reviewDetailsBody).not.toContain("developing guidance");
+    expect(fixture.reviewDetailsBody).toContain(
+      "- Contributor experience: profile-backed (using linked contributor profile guidance)",
+    );
+    expect(fixture.reviewDetailsBody).not.toContain("- Author tier:");
+    expect(fixture.reviewDetailsBody).not.toContain("generic-unknown");
   });
 });
 
@@ -87,6 +91,7 @@ describe("M042-S02-PROMPT-ESTABLISHED-TRUTHFUL", () => {
         promptAuthorSection: [
           "## Author Experience Context",
           "",
+          "Contributor-experience contract: profile-backed.",
           "The PR author (CrystalP) appears to be a first-time or new contributor to this repository.",
           "",
           "- Explain WHY each finding matters, not just WHAT is wrong",
@@ -110,14 +115,14 @@ describe("M042-S02-DETAILS-ESTABLISHED-TRUTHFUL", () => {
     expect(result.status_code).toBe("review_details_established_guidance_truthful");
   });
 
-  test("fails when review details fall back to developing guidance", async () => {
+  test("fails when review details fall back to coarse fallback wording", async () => {
     const result = await runDetailsEstablishedTruthfulCheck(() =>
       makeFixture({
         reviewDetailsBody: [
           "<details>",
           "<summary>Review Details</summary>",
           "",
-          "- Author tier: regular (developing guidance)",
+          "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
           "</details>",
         ].join("\n"),
       }),
@@ -139,17 +144,22 @@ describe("M042-S02-CRYSTALP-SURFACES-STAY-ESTABLISHED", () => {
     expect(result.status_code).toBe("crystalp_review_surfaces_remain_established");
   });
 
-  test("fails when either surface regresses to newcomer or developing guidance", async () => {
+  test("fails when either surface regresses to coarse fallback or generic guidance", async () => {
     const result = await runCrystalPSurfacesStayEstablishedCheck(() =>
       makeFixture({
-        promptAuthorSection: "## Author Experience Context\n\nThe PR author (CrystalP) is a developing contributor.",
-        reviewDetailsBody: "- Author tier: regular (developing guidance)",
+        promptAuthorSection: [
+          "## Author Experience Context",
+          "",
+          "Contributor-experience contract: coarse-fallback.",
+          "The PR author (CrystalP) is being reviewed with only coarse fallback signals for this repository.",
+        ].join("\n"),
+        reviewDetailsBody: "- Contributor experience: coarse-fallback (using coarse fallback signals only)",
       }),
     );
 
     expect(result.passed).toBe(false);
     expect(result.status_code).toBe("crystalp_established_surface_regression_detected");
-    expect(result.detail).toContain("regressed to developing guidance");
+    expect(result.detail).toContain("regressed to coarse fallback guidance");
   });
 });
 

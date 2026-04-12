@@ -1,8 +1,15 @@
 import type { Logger } from "pino";
 import type {
-  ContributorProfileStore,
   ContributorExpertise,
+  ContributorProfileStore,
 } from "../contributor/types.ts";
+import {
+  createGenericContributorProfileSurfaceResolution,
+  renderLinkedProfileContinuityMessage,
+  renderProfileOptInContinuityMessage,
+  resolveContributorProfileSurface,
+  type ContributorProfileSurfaceResolution,
+} from "../contributor/profile-surface-resolution.ts";
 
 export type SlashCommandResult = {
   responseType: "ephemeral" | "in_channel";
@@ -12,24 +19,21 @@ export type SlashCommandResult = {
 
 const GITHUB_USERNAME_RE = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$/;
 
-function formatProfileCard(profile: {
-  githubUsername: string;
-  overallTier: string;
-  overallScore: number;
-  optedOut: boolean;
-}, expertise: ContributorExpertise[]): string {
+function formatProfileCard(
+  profile: {
+    githubUsername: string;
+  },
+  surface: ContributorProfileSurfaceResolution,
+  expertise: ContributorExpertise[],
+): string {
   const lines: string[] = [
     `*Contributor Profile*`,
     `GitHub: \`${profile.githubUsername}\``,
-    `Tier: ${profile.overallTier}`,
-    `Score: ${profile.overallScore.toFixed(2)}`,
+    surface.projection.statusLine,
+    surface.projection.summaryLine,
   ];
 
-  if (profile.optedOut) {
-    lines.push(`Status: Opted out (generic reviews)`);
-  }
-
-  if (expertise.length > 0) {
+  if (surface.projection.showExpertise && expertise.length > 0) {
     lines.push(``, `*Top Expertise:*`);
     const top = expertise.slice(0, 5);
     for (const entry of top) {
@@ -61,15 +65,19 @@ export async function handleKodiaiCommand(params: {
       };
     }
 
-    await profileStore.linkIdentity({
+    const profile = await profileStore.linkIdentity({
       slackUserId,
       githubUsername,
       displayName: slackUserName,
     });
+    const surface = resolveContributorProfileSurface(profile);
 
     return {
       responseType: "ephemeral",
-      text: `Linked your Slack account to GitHub user \`${githubUsername}\`. Your contributor profile is now active.`,
+      text: renderLinkedProfileContinuityMessage({
+        githubUsername,
+        surface,
+      }),
       asyncWork: async () => {
         logger.info(
           { githubUsername, slackUserId },
@@ -109,7 +117,7 @@ export async function handleKodiaiCommand(params: {
       await profileStore.setOptedOut(profile.githubUsername, true);
       return {
         responseType: "ephemeral",
-        text: "Opted out of contributor profiling. You will receive generic (non-adapted) reviews.",
+        text: "Contributor-specific guidance is now off. Kodiai will keep your reviews generic until you run `/kodiai profile opt-in`. Check `/kodiai profile` any time to review your current status.",
       };
     }
 
@@ -122,9 +130,15 @@ export async function handleKodiaiCommand(params: {
         };
       }
       await profileStore.setOptedOut(profile.githubUsername, false);
+      const surface = resolveContributorProfileSurface({
+        ...profile,
+        optedOut: false,
+      });
       return {
         responseType: "ephemeral",
-        text: "Opted back in to contributor profiling.",
+        text: renderProfileOptInContinuityMessage({
+          surface,
+        }),
       };
     }
 
@@ -137,15 +151,30 @@ export async function handleKodiaiCommand(params: {
       };
     }
 
-    const expertise = await profileStore.getExpertise(profile.id);
+    let surface = resolveContributorProfileSurface(profile);
+    let expertise: ContributorExpertise[] = [];
+
+    if (surface.shouldLookupExpertise) {
+      try {
+        expertise = await profileStore.getExpertise(profile.id);
+      } catch (err) {
+        logger.warn(
+          { err, githubUsername: profile.githubUsername, profileId: profile.id },
+          "Contributor expertise lookup failed for Slack profile card (fail-open)",
+        );
+        surface = createGenericContributorProfileSurfaceResolution(surface.trust);
+        expertise = [];
+      }
+    }
+
     return {
       responseType: "ephemeral",
-      text: formatProfileCard(profile, expertise),
+      text: formatProfileCard(profile, surface, expertise),
     };
   }
 
   return {
     responseType: "ephemeral",
-    text: "Unknown command. Available: `link <github-username>`, `unlink`, `profile`, `profile opt-out`",
+    text: "Unknown command. Available: `link <github-username>`, `unlink`, `profile`, `profile opt-in`, `profile opt-out`",
   };
 }

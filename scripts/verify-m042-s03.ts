@@ -1,7 +1,10 @@
-import { buildReviewPrompt, SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE } from "../src/execution/review-prompt.ts";
-import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE } from "../src/execution/review-prompt.ts";
 import { resolveAuthorTierFromSources } from "../src/handlers/review.ts";
-import type { ResolvedReviewProfile } from "../src/lib/auto-profile.ts";
+import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
+import {
+  buildGitHubReviewContractFixture,
+  getGitHubReviewContractScenario,
+} from "./verify-m045-s01.ts";
 import type { AuthorTier } from "../src/lib/author-classifier.ts";
 
 export const M042_S03_CHECK_IDS = [
@@ -35,116 +38,36 @@ type SurfaceFixtureResult = {
   summaryWithDisclosure?: string;
 };
 
-const CACHE_HIT_REQUIRED_PROMPT_PHRASES = [
-  "core/senior contributor",
-  "Be concise and assume familiarity with the codebase",
-] as const;
+const COARSE_FALLBACK_SCENARIO = getGitHubReviewContractScenario("coarse-fallback");
+const PROFILE_BACKED_SCENARIO = getGitHubReviewContractScenario("profile-backed");
+const GENERIC_DEGRADED_SCENARIO = getGitHubReviewContractScenario("generic-degraded");
 
-const CACHE_HIT_BANNED_PROMPT_PHRASES = [
-  "first-time or new contributor",
-  "developing contributor",
-  "established contributor",
-  "Explain WHY each finding matters",
-] as const;
+const CACHE_HIT_REQUIRED_PROMPT_PHRASES =
+  COARSE_FALLBACK_SCENARIO.expectations.requiredPromptPhrases;
+const CACHE_HIT_BANNED_PROMPT_PHRASES =
+  COARSE_FALLBACK_SCENARIO.expectations.bannedPromptPhrases;
+const CACHE_HIT_REQUIRED_DETAILS_PHRASES =
+  COARSE_FALLBACK_SCENARIO.expectations.requiredReviewDetailsPhrases;
+const CACHE_HIT_BANNED_DETAILS_PHRASES =
+  COARSE_FALLBACK_SCENARIO.expectations.bannedReviewDetailsPhrases;
 
-const CACHE_HIT_REQUIRED_DETAILS_PHRASES = [
-  "- Author tier: core (senior contributor guidance)",
-] as const;
+const PROFILE_OVERRIDE_REQUIRED_PROMPT_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.requiredPromptPhrases;
+const PROFILE_OVERRIDE_BANNED_PROMPT_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.bannedPromptPhrases;
+const PROFILE_OVERRIDE_REQUIRED_DETAILS_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.requiredReviewDetailsPhrases;
+const PROFILE_OVERRIDE_BANNED_DETAILS_PHRASES =
+  PROFILE_BACKED_SCENARIO.expectations.bannedReviewDetailsPhrases;
 
-const CACHE_HIT_BANNED_DETAILS_PHRASES = [
-  "newcomer guidance",
-  "developing guidance",
-  "established contributor guidance",
-] as const;
-
-const PROFILE_OVERRIDE_REQUIRED_PROMPT_PHRASES = [
-  "established contributor",
-  "Keep explanations brief",
-] as const;
-
-const PROFILE_OVERRIDE_BANNED_PROMPT_PHRASES = [
-  "first-time or new contributor",
-  "developing contributor",
-  "core/senior contributor",
-] as const;
-
-const PROFILE_OVERRIDE_REQUIRED_DETAILS_PHRASES = [
-  "- Author tier: established (established contributor guidance)",
-] as const;
-
-const PROFILE_OVERRIDE_BANNED_DETAILS_PHRASES = [
-  "newcomer guidance",
-  "developing guidance",
-  "senior contributor guidance",
-] as const;
-
-const DEGRADED_FALLBACK_REQUIRED_PROMPT_PHRASES = [
-  "developing contributor",
-  "balanced, collaborative tone",
-] as const;
-
-const DEGRADED_FALLBACK_BANNED_PROMPT_PHRASES = [
-  "first-time or new contributor",
-  "established contributor",
-  "core/senior contributor",
-] as const;
-
-const DEGRADED_FALLBACK_REQUIRED_DETAILS_PHRASES = [
-  "- Author tier: regular (developing guidance)",
-] as const;
-
-const DEGRADED_FALLBACK_BANNED_DETAILS_PHRASES = [
-  "newcomer guidance",
-  "established contributor guidance",
-  "senior contributor guidance",
-] as const;
-
-function basePromptContext(overrides?: { prAuthor?: string; authorTier?: AuthorTier }) {
-  return {
-    owner: "xbmc",
-    repo: "xbmc",
-    prNumber: 4243,
-    prTitle: "Harden cache and fallback author-tier truthfulness",
-    prBody: "Ensure cache hits and degraded fallbacks keep contributor labeling truthful.",
-    prAuthor: overrides?.prAuthor ?? "CrystalP",
-    baseBranch: "master",
-    headBranch: "crystalp/cache-fallback-hardening",
-    changedFiles: ["xbmc/utils/StringUtils.cpp"],
-    mode: "standard" as const,
-    severityMinLevel: "medium" as const,
-    maxComments: 7,
-    focusAreas: [],
-    ignoredAreas: ["style"],
-    suppressions: [],
-    minConfidence: 0,
-    authorTier: overrides?.authorTier,
-  };
-}
-
-function buildAuthorSectionPrompt(authorTier: AuthorTier, prAuthor = "CrystalP"): string {
-  const prompt = buildReviewPrompt(basePromptContext({ prAuthor, authorTier }));
-  const authorSectionMatch = prompt.match(/## Author Experience Context[\s\S]*?(?=\n## |$)/);
-  return authorSectionMatch?.[0] ?? "";
-}
-
-function buildReviewDetails(authorTier: AuthorTier): string {
-  const profileSelection: ResolvedReviewProfile = {
-    selectedProfile: "balanced",
-    source: "auto",
-    linesChanged: 60,
-    autoBand: null,
-  };
-
-  return formatReviewDetailsSummary({
-    reviewOutputKey: "m042-s03-proof",
-    filesReviewed: 1,
-    linesAdded: 8,
-    linesRemoved: 2,
-    findingCounts: { critical: 0, major: 1, medium: 0, minor: 0 },
-    profileSelection,
-    authorTier,
-  });
-}
+const DEGRADED_FALLBACK_REQUIRED_PROMPT_PHRASES =
+  GENERIC_DEGRADED_SCENARIO.expectations.requiredPromptPhrases;
+const DEGRADED_FALLBACK_BANNED_PROMPT_PHRASES =
+  GENERIC_DEGRADED_SCENARIO.expectations.bannedPromptPhrases;
+const DEGRADED_FALLBACK_REQUIRED_DETAILS_PHRASES =
+  GENERIC_DEGRADED_SCENARIO.expectations.requiredReviewDetailsPhrases;
+const DEGRADED_FALLBACK_BANNED_DETAILS_PHRASES =
+  GENERIC_DEGRADED_SCENARIO.expectations.bannedReviewDetailsPhrases;
 
 function buildSummaryWithDisclosure(): string {
   return [
@@ -167,13 +90,22 @@ export function runCacheHitSurfaceFixture(): SurfaceFixtureResult {
     cachedTier: "core",
     fallbackTier: "first-time",
   });
+  const contract = projectContributorExperienceContract({
+    source: "author-cache",
+    tier: resolved.tier,
+  });
+  const fixture = buildGitHubReviewContractFixture({
+    scenarioId: "coarse-fallback",
+    prAuthor: "CrystalP",
+    contract,
+  });
 
   return {
     scenario: "cache-hit",
     resolvedTier: resolved.tier,
     resolvedSource: resolved.source,
-    promptAuthorSection: buildAuthorSectionPrompt(resolved.tier, "CrystalP"),
-    reviewDetailsBody: buildReviewDetails(resolved.tier),
+    promptAuthorSection: fixture.promptSurfaceText,
+    reviewDetailsBody: fixture.reviewDetailsBody,
   };
 }
 
@@ -183,13 +115,22 @@ export function runProfileOverridesContradictoryCacheFixture(): SurfaceFixtureRe
     cachedTier: "first-time",
     fallbackTier: "regular",
   });
+  const contract = projectContributorExperienceContract({
+    source: "contributor-profile",
+    tier: resolved.tier,
+  });
+  const fixture = buildGitHubReviewContractFixture({
+    scenarioId: "profile-backed",
+    prAuthor: "CrystalP",
+    contract,
+  });
 
   return {
     scenario: "profile-over-cache",
     resolvedTier: resolved.tier,
     resolvedSource: resolved.source,
-    promptAuthorSection: buildAuthorSectionPrompt(resolved.tier, "CrystalP"),
-    reviewDetailsBody: buildReviewDetails(resolved.tier),
+    promptAuthorSection: fixture.promptSurfaceText,
+    reviewDetailsBody: fixture.reviewDetailsBody,
   };
 }
 
@@ -199,13 +140,30 @@ export function runDegradedFallbackFixture(): SurfaceFixtureResult {
     cachedTier: null,
     fallbackTier: "regular",
   });
+  const contract = projectContributorExperienceContract({
+    source: "github-search",
+    tier: resolved.tier,
+    degraded: true,
+    degradationPath: "search-api-rate-limit",
+  });
+  const fixture = buildGitHubReviewContractFixture({
+    scenarioId: "generic-degraded",
+    prAuthor: "CrystalP",
+    contract,
+    searchRateLimitDegradation: {
+      degraded: true,
+      retryAttempts: 1,
+      skippedQueries: 1,
+      degradationPath: "search-api-rate-limit",
+    },
+  });
 
   return {
     scenario: "degraded-fallback",
     resolvedTier: resolved.tier,
     resolvedSource: resolved.source,
-    promptAuthorSection: buildAuthorSectionPrompt(resolved.tier, "CrystalP"),
-    reviewDetailsBody: buildReviewDetails(resolved.tier),
+    promptAuthorSection: fixture.promptSurfaceText,
+    reviewDetailsBody: fixture.reviewDetailsBody,
     summaryWithDisclosure: buildSummaryWithDisclosure(),
   };
 }

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M047/S02/T03",
+  "timestamp": 1775874142179,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./scripts/verify-m045-s03.test.ts ./scripts/verify-m047-s02.test.ts ./src/knowledge/retrieval-query.test.ts ./src/knowledge/multi-query-retrieval.test.ts",
+      "exitCode": 0,
+      "durationMs": 74,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m047:s01",
+      "exitCode": 0,
+      "durationMs": 40,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m045:s03",
+      "exitCode": 0,
+      "durationMs": 56,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run verify:m047:s02",
+      "exitCode": 0,
+      "durationMs": 52,
+      "verdict": "pass"
+    },
+    {
+      "command": "bun run tsc --noEmit",
+      "exitCode": 0,
+      "durationMs": 9036,
+      "verdict": "pass"
+    }
+  ]
+}

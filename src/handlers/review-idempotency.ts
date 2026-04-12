@@ -45,7 +45,24 @@ export type ReviewOutputPublicationStatus = {
   scanStats: ReviewOutputScanStats;
 };
 
+export type ParsedReviewOutputKey = {
+  reviewOutputKey: string;
+  baseReviewOutputKey: string;
+  retryAttempt: number | null;
+  installationId: number;
+  owner: string;
+  repo: string;
+  repoFullName: string;
+  prNumber: number;
+  action: string;
+  deliveryId: string;
+  effectiveDeliveryId: string;
+  headSha: string;
+};
+
 const KEY_PREFIX = "kodiai-review-output";
+const KEY_VERSION = "v1";
+const REVIEW_OUTPUT_MARKER_REGEX = /<!--\s*kodiai:(?:review-output-key|review-details):([^>]+?)\s*-->/i;
 
 const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_SCAN_ITEMS = 2000;
@@ -135,7 +152,7 @@ export function buildReviewOutputKey(input: ReviewOutputKeyInput): string {
 
   return [
     KEY_PREFIX,
-    "v1",
+    KEY_VERSION,
     `inst-${input.installationId}`,
     `${owner}/${repo}`,
     `pr-${input.prNumber}`,
@@ -143,6 +160,105 @@ export function buildReviewOutputKey(input: ReviewOutputKeyInput): string {
     `delivery-${deliveryId}`,
     `head-${headSha}`,
   ].join(":");
+}
+
+export function extractReviewOutputKey(body: string | null | undefined): string | null {
+  if (typeof body !== "string") {
+    return null;
+  }
+
+  const match = body.match(REVIEW_OUTPUT_MARKER_REGEX);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  return normalizeSegment(match[1]);
+}
+
+export function parseReviewOutputKey(reviewOutputKey: string): ParsedReviewOutputKey | null {
+  const normalizedKey = normalizeSegment(reviewOutputKey);
+  if (!normalizedKey) {
+    return null;
+  }
+
+  const retryMatch = normalizedKey.match(/^(.*)-retry-(\d+)$/);
+  const baseReviewOutputKey = retryMatch?.[1] ?? normalizedKey;
+  const retryAttempt = retryMatch?.[2] ? Number.parseInt(retryMatch[2], 10) : null;
+
+  if (retryAttempt !== null && (!Number.isInteger(retryAttempt) || retryAttempt < 1)) {
+    return null;
+  }
+
+  const segments = baseReviewOutputKey.split(":");
+  if (segments.length !== 8) {
+    return null;
+  }
+
+  const [
+    prefix,
+    version,
+    installationSegment,
+    repoSegment,
+    prSegment,
+    actionSegment,
+    deliverySegment,
+    headSegment,
+  ] = segments;
+
+  if (
+    !prefix
+    || !version
+    || !installationSegment
+    || !repoSegment
+    || !prSegment
+    || !actionSegment
+    || !deliverySegment
+    || !headSegment
+  ) {
+    return null;
+  }
+
+  if (prefix !== KEY_PREFIX || version !== KEY_VERSION) {
+    return null;
+  }
+
+  if (!installationSegment.startsWith("inst-") || !prSegment.startsWith("pr-") || !actionSegment.startsWith("action-") || !deliverySegment.startsWith("delivery-") || !headSegment.startsWith("head-")) {
+    return null;
+  }
+
+  const installationId = Number.parseInt(installationSegment.slice("inst-".length), 10);
+  const prNumber = Number.parseInt(prSegment.slice("pr-".length), 10);
+  const [owner, repo] = repoSegment.split("/");
+  const action = actionSegment.slice("action-".length);
+  const deliveryId = deliverySegment.slice("delivery-".length);
+  const headSha = headSegment.slice("head-".length);
+
+  if (!Number.isInteger(installationId) || installationId < 1) {
+    return null;
+  }
+
+  if (!Number.isInteger(prNumber) || prNumber < 1) {
+    return null;
+  }
+
+  if (!owner || !repo || !action || !deliveryId || !headSha) {
+    return null;
+  }
+
+  return {
+    reviewOutputKey: normalizedKey,
+    baseReviewOutputKey,
+    retryAttempt,
+    installationId,
+    owner,
+    repo,
+    repoFullName: `${owner}/${repo}`,
+    prNumber,
+    action,
+    deliveryId,
+    effectiveDeliveryId: retryAttempt === null ? deliveryId : `${deliveryId}-retry-${retryAttempt}`,
+    headSha,
+  };
 }
 
 export function buildReviewOutputMarker(reviewOutputKey: string): string {

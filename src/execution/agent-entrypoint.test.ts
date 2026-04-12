@@ -383,6 +383,31 @@ describe("happy path", () => {
     expect(opts.settingSources).toEqual(["project"]);
     expect(opts.cwd).toBe("/tmp/ws");
   });
+
+  test("uses repoCwd from agent-config.json when provided", async () => {
+    let capturedParams: { prompt: string; options?: Record<string, unknown> } | undefined;
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => JSON.stringify({
+        prompt: "Review this PR",
+        model: "claude-sonnet-4-5-20250929",
+        maxTurns: 20,
+        allowedTools: ["Read", "Grep"],
+        repoCwd: "/tmp/ws/repo",
+      }),
+      writeFileFn: async () => undefined,
+      appendFileFn: async () => undefined,
+      queryFn: (params) => {
+        capturedParams = params as { prompt: string; options?: Record<string, unknown> };
+        return makeAsyncIterable([makeResultSuccess()]);
+      },
+    };
+
+    await main(deps);
+
+    expect(capturedParams).toBeDefined();
+    expect(capturedParams!.options!.cwd).toBe("/tmp/ws/repo");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -223,6 +223,10 @@ ACA_JOB_IMAGE_DIGEST=$(az acr build \
 
 # -- ACA Job (agent runner) ---------------------------------------------------
 ACA_JOB_NAME="caj-kodiai-agent"
+# Keep the ACA job timeout above the maximum repo-config execution timeout
+# (1800s) so the agent can hit its own deadline and publish timeout/error
+# handling instead of being hard-killed by the platform first.
+ACA_JOB_REPLICA_TIMEOUT=1860
 echo "==> Provisioning ACA Job: $ACA_JOB_NAME..."
 
 ACA_JOB_IMAGE="${ACR_NAME}.azurecr.io/kodiai-agent@${ACA_JOB_IMAGE_DIGEST}"
@@ -232,7 +236,7 @@ properties:
   environmentId: /subscriptions/$(az account show --query id -o tsv)/resourceGroups/${RESOURCE_GROUP}/providers/Microsoft.App/managedEnvironments/${ENVIRONMENT}
   configuration:
     triggerType: Manual
-    replicaTimeout: 600
+    replicaTimeout: ${ACA_JOB_REPLICA_TIMEOUT}
     replicaRetryLimit: 0
     registries:
       - server: "${ACR_NAME}.azurecr.io"
@@ -263,7 +267,7 @@ else
     --resource-group "$RESOURCE_GROUP" \
     --environment "$ENVIRONMENT" \
     --trigger-type Manual \
-    --replica-timeout 600 \
+    --replica-timeout "$ACA_JOB_REPLICA_TIMEOUT" \
     --replica-retry-limit 0 \
     --image "$ACA_JOB_IMAGE" \
     --user-assigned "$IDENTITY_RESOURCE_ID" \

@@ -1,5 +1,6 @@
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
+import { CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER } from "./profile-trust.ts";
 import type {
   ContributorExpertise,
   ContributorProfile,
@@ -8,7 +9,17 @@ import type {
   ExpertiseDimension,
 } from "./types.ts";
 
+function requireTrustMarkerColumn(row: Record<string, unknown>): void {
+  if (!Object.hasOwn(row, "trust_marker")) {
+    throw new Error(
+      "Missing contributor_profiles.trust_marker column; run migration 037-contributor-profile-trust.sql",
+    );
+  }
+}
+
 function mapRow(row: Record<string, unknown>): ContributorProfile {
+  requireTrustMarkerColumn(row);
+
   return {
     id: Number(row.id),
     githubUsername: row.github_username as string,
@@ -22,6 +33,7 @@ function mapRow(row: Record<string, unknown>): ContributorProfile {
     lastScoredAt: row.last_scored_at
       ? new Date(row.last_scored_at as string)
       : null,
+    trustMarker: (row.trust_marker as string) ?? null,
   };
 }
 
@@ -48,8 +60,14 @@ export function createContributorProfileStore(opts: {
   const store: ContributorProfileStore = {
     async getByGithubUsername(
       username: string,
+      options: { includeOptedOut?: boolean } = {},
     ): Promise<ContributorProfile | null> {
-      const rows = await sql`
+      const rows = options.includeOptedOut
+        ? await sql`
+        SELECT * FROM contributor_profiles
+        WHERE github_username = ${username}
+      `
+        : await sql`
         SELECT * FROM contributor_profiles
         WHERE github_username = ${username} AND opted_out = false
       `;
@@ -146,7 +164,9 @@ export function createContributorProfileStore(opts: {
       await sql`
         UPDATE contributor_profiles
         SET overall_tier = ${tier}, overall_score = ${overallScore},
-            last_scored_at = now(), updated_at = now()
+            last_scored_at = now(),
+            trust_marker = ${CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER},
+            updated_at = now()
         WHERE id = ${profileId}
       `;
     },

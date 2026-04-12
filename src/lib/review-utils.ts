@@ -13,6 +13,7 @@ import {
 } from "../lib/pr-intent-parser.ts";
 import type { ResolvedReviewProfile } from "../lib/auto-profile.ts";
 import type { MergeConfidence } from "../lib/merge-confidence.ts";
+import type { ContributorExperienceReviewDetailsProjection } from "../contributor/experience-contract.ts";
 import { SEARCH_RATE_LIMIT_DISCLOSURE_SENTENCE } from "../execution/review-prompt.ts";
 import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
@@ -208,7 +209,7 @@ export function formatReviewDetailsSummary(params: {
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
-  authorTier?: string;
+  contributorExperience: ContributorExperienceReviewDetailsProjection;
   prioritization?: {
     findingsScored: number;
     topScore: number | null;
@@ -236,7 +237,7 @@ export function formatReviewDetailsSummary(params: {
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
-    authorTier,
+    contributorExperience,
     prioritization,
     usageLimit,
     tokenUsage,
@@ -249,16 +250,6 @@ export function formatReviewDetailsSummary(params: {
       ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
 
-  const authorToneLabel = authorTier === "first-time" || authorTier === "newcomer"
-    ? "newcomer guidance"
-    : authorTier === "regular" || authorTier === "developing" || authorTier === undefined
-      ? "developing guidance"
-      : authorTier === "established"
-        ? "established contributor guidance"
-        : authorTier === "core" || authorTier === "senior"
-          ? "senior contributor guidance"
-          : "adapted tone";
-
   const sections = [
     "<details>",
     "<summary>Review Details</summary>",
@@ -266,7 +257,7 @@ export function formatReviewDetailsSummary(params: {
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     profileLine,
-    `- Author tier: ${authorTier ?? "regular"} (${authorToneLabel})`,
+    `- Contributor experience: ${contributorExperience.text}`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];

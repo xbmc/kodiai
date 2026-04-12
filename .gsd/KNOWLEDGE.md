@@ -784,3 +784,243 @@ beforeAll(async () => {
 ```
 
 **Established in:** M043/S05 clean-DB rerun after PR #80 CI surfaced `review_checkpoints` schema drift (`src/knowledge/store.test.ts`).
+
+---
+
+## `reviewOutputKey` Retry Suffix Maps to Retry Delivery ID (M044/S01)
+
+**Context:** Automatic review retries in `src/handlers/review.ts` do not rebuild the key from scratch. They derive the retry key by appending `-retry-1` to the base `reviewOutputKey`, and they derive the retry delivery ID by appending the same suffix to the base webhook delivery ID (`${event.id}-retry-1`).
+
+**Rule:** When correlating retry-published review output, parse the base key first, then treat the retry suffix as a separate dimension:
+- `baseReviewOutputKey` = original marker-backed key without `-retry-N`
+- `retryAttempt` = `N`
+- `deliveryId` = base delivery from the key payload
+- `effectiveDeliveryId` = `${deliveryId}-retry-${retryAttempt}` when `retryAttempt` is present
+
+Do **not** treat the full retry-suffixed key as if it encoded a different base delivery payload. The suffix is transport-level retry identity layered on top of the same repo/PR/action/head key.
+
+**Established in:** M044/S01/T01 (`src/handlers/review-idempotency.ts`, `src/handlers/review-idempotency.test.ts`, `src/handlers/review.ts`).
+
+---
+
+## Recent Review Audits Must Recognize `kodiai:review-details` Markers (M044/S01)
+
+**Context:** Automatic clean reviews can legitimately publish only a standalone Review Details issue comment. That comment carries `<!-- kodiai:review-details:${reviewOutputKey} -->`, not the `kodiai:review-output-key:` marker used for summary comments and idempotency scans.
+
+**Rule:** Any retrospective review-audit collector that samples GitHub-visible Kodiai output must extract review identity from **both** marker shapes:
+- `<!-- kodiai:review-output-key:${reviewOutputKey} -->`
+- `<!-- kodiai:review-details:${reviewOutputKey} -->`
+
+If the collector only looks for `review-output-key`, it will silently miss valid clean-review outcomes on the automatic lane and bias the audit toward finding-bearing cases.
+
+**Established in:** M044/S01/T03 (`src/handlers/review-idempotency.ts`, `src/review-audit/recent-review-sample.ts`, `src/handlers/review.ts`).
+
+---
+
+## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
+
+**Context:** When DB-backed review evidence is unavailable, recent automatic-review classifications can still be resolved from Azure `ContainerAppConsoleLogs_CL` rows. The review handler emits `evidenceType="review"` with `outcome="submitted-approval"` for clean approval paths and `outcome="published-output"` when findings output was published.
+
+**Rule:** For recent-review auditing, treat these Azure evidence-bundle outcomes as first-class internal publication signals:
+- `submitted-approval` -> `clean-valid`
+- `published-output` -> `findings-published`
+
+These log outcomes should take precedence over DB fallbacks when they are present for the same `reviewOutputKey` / effective delivery identity. If Azure rows are absent or contradictory, fail open to `indeterminate` rather than guessing.
+
+**Related explicit-lane rule:** `Mention execution completed` with `publishResolution` drives explicit mention-review classification (`approval-bridge`, `idempotency-skip`, `duplicate-suppressed`, `publish-failure-*`).
+
+**Established in:** M044/S02/T02 (`src/review-audit/log-analytics.ts`, `src/review-audit/evidence-correlation.ts`, `scripts/verify-m044-s01.ts`).
+
+---
+
+## Contributor profile lookups hide opted-out rows unless callers opt in (M045/S01)
+
+**Context:** `ContributorProfileStore.getByGithubUsername()` filters out opted-out profiles by default. That is correct for user-facing lookups, but review-time/system code that needs to distinguish `generic-opt-out` from `generic-unknown` will silently miss opted-out contributors unless it explicitly requests the system-view path.
+
+**Rule:** For review-time or other internal contract resolution, call:
+```ts
+profileStore.getByGithubUsername(login, { includeOptedOut: true })
+```
+Then treat `profile.optedOut === true` as a generic contract outcome, not as permission to resume profile-backed personalization. Leave the default lookup behavior unchanged for user-facing call sites.
+
+**Established in:** M045/S01/T01 (`src/contributor/types.ts`, `src/contributor/profile-store.ts`, `src/handlers/review.ts`).
+
+---
+
+## Runtime review prompts must pass `contributorExperienceContract`; `authorTier` is legacy-only (M045/S01)
+
+**Context:** `buildReviewPrompt()` still accepts `authorTier` because older verifier/script callers outside the runtime review path were not migrated in T02. But the truthful GitHub review runtime now derives author-experience wording from `contributorExperienceContract.promptPolicy`, not from raw tiers.
+
+**Rule:** In runtime review code (`src/handlers/review.ts` and any future rebuild/retry paths), always pass the full `contributorExperienceContract` object and never rely on `authorTier` for prompt shaping. The `authorTier` parameter is a compatibility path for non-runtime callers only; using it in live review flow reintroduces prompt/details drift, especially for coarse fallback and generic states.
+
+**Established in:** M045/S01/T02 (`src/contributor/experience-contract.ts`, `src/execution/review-prompt.ts`, `src/handlers/review.ts`).
+
+---
+
+## RET-07 test fixtures must not use `author:` as the only intent-variant discriminator after generic hint suppression (M045/S02)
+
+**Context:** Before S02/T01, review retrieval always leaked a raw tier into the intent query, so RET-07 tests could infer the intent variant by checking for `author:`. Once generic contract states correctly emit no retrieval hint, the intent and code-shape queries can become textually identical for minimal PR fixtures, which makes that heuristic wrong and hides real regressions.
+
+**Rule:** In retrieval orchestration tests, identify intent/file-path/code-shape variants without depending on leaked contributor text. Use deterministic call order or explicit fixture signals instead of assuming the intent query always contains `author:`.
+
+**Established in:** M045/S02/T01 (`src/handlers/review.test.ts`).
+
+---
+
+## Reset in-memory cache state explicitly in tests for Slack identity suggestions (M045/S02)
+
+**Context:** `src/handlers/identity-suggest.ts` caches the Slack member list for one hour and remembers GitHub usernames it has already suggested. Without an explicit reset seam, unit tests bleed state across cases: later tests may skip `users.list`, suppress DMs, or silently stop exercising failure paths depending on execution order.
+
+**Rule:** Stateful modules with in-memory caches should expose a narrow test reset helper when deterministic per-test isolation matters. For `identity-suggest.ts`, call `resetIdentitySuggestionStateForTests()` in test setup/teardown before asserting Slack fetch order or fail-open behavior.
+
+**Established in:** M045/S02/T02 (`src/handlers/identity-suggest.ts`, `src/handlers/identity-suggest.test.ts`).
+
+---
+
+## Cross-surface verifier expectations must stay independent from the helpers they validate (M045/S03)
+
+**Context:** `scripts/verify-m045-s03.ts` composes the existing S01 GitHub proof report and also validates retrieval, Slack, and identity-link wording. If the verifier derives its expected phrases by calling the same projection/helper logic under test, drift can go false-green because both the implementation and the verifier change together.
+
+**Rule:** When building an operator-facing drift verifier around existing surfaces, preserve upstream verifier reports intact as nested evidence and keep the new surface expectations local to the verifier. For S03 this means: embed the full S01 report with its original check IDs/status codes, but author retrieval/Slack/identity required and banned phrases directly in the S03 fixture matrix instead of regenerating them from the same helper path being checked.
+
+**Established in:** M045/S03 (`scripts/verify-m045-s03.ts`, `scripts/verify-m045-s03.test.ts`).
+
+---
+
+## Nullable contract projections are the cleanest suppression seam for generic contributor states (M045/S02)
+
+**Context:** Retrieval builders originally assumed contributor context would always become text. Once M045 introduced truthful generic states, placeholder strings would have reintroduced hidden semantics and made downstream query/tests drift-prone. S02 solved this by projecting an optional `authorHint` from the contributor-experience contract: profile-backed and coarse-fallback states emit a normalized hint, while generic states emit `null` and the query builders omit the clause entirely.
+
+**Rule:** When a product contract says a signal is absent by design, project that absence as `null`/`undefined` through the downstream seam and let the consumer omit the feature entirely. Do not substitute placeholder generic text just to keep an old API shape alive — that recreates drift and makes tests depend on accidental wording.
+
+**Established in:** M045/S02/T01 (`src/contributor/experience-contract.ts`, `src/knowledge/multi-query-retrieval.ts`, `src/knowledge/retrieval-query.ts`).
+
+---
+
+## Checked-in xbmc snapshots must derive `generatedAt` from evidence, not wall clock (M046/S01)
+
+**Context:** `src/contributor/xbmc-fixture-refresh.ts` writes a checked-in proof artifact. If `generatedAt` comes from `new Date().toISOString()`, two refreshes with identical evidence produce different snapshot bytes, which breaks the deterministic refresh contract and creates meaningless drift in `fixtures/contributor-calibration/xbmc-snapshot.json`.
+
+**Rule:** When `refreshXbmcFixtureSnapshot()` is called without an explicit `generatedAt`, derive it deterministically from the latest non-null `provenanceRecords[].observedAt` timestamp across retained and excluded contributors, with `manifest.curatedAt` as the fallback when no observed timestamps exist. Do not reintroduce wall-clock defaulting for checked-in fixture artifacts.
+
+**Established in:** M046/S01/T03 (`src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`).
+
+---
+
+## Live xbmc fixture refresh must bound GitHub evidence collection and degrade explicitly on timeout (M046/S01)
+
+**Context:** `refreshXbmcFixtureSnapshot()` can run with GitHub App credentials auto-loaded by Bun from `.env`. Without an explicit request timeout, a slow GitHub API call can stall `bun run verify:m046:s01 -- --refresh --json` indefinitely, turning an operator proof command into a hanging workflow.
+
+**Rule:** When fixture refresh performs live GitHub enrichment, pass explicit `requestTimeoutMs` through the GitHub App seam and convert timeout failures into named degraded refresh failures (for example `github-timeout`) instead of hanging or aborting the whole snapshot build. Preserve any local-git evidence that was already collected.
+
+**Established in:** M046/S01/T02 (`src/auth/github-app.ts`, `src/contributor/xbmc-fixture-refresh.ts`).
+
+---
+
+## Local git shortlog ingestion should ignore malformed rows unless the whole shortlog is unusable (M046/S01)
+
+**Context:** `git shortlog -sne --all` output can include malformed lines that do not match the expected `count name <email>` shape. Treating one bad row as a fatal error would degrade an otherwise valid fixture snapshot and silently discard useful contributor evidence.
+
+**Rule:** Parse local shortlog rows one-by-one. Ignore malformed rows, keep any rows that parse successfully, and mark local-git evidence unavailable only when the command fails or when no rows in the entire shortlog are parseable.
+
+**Established in:** M046/S01/T02 (`src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-refresh.test.ts`).
+
+---
+
+## Checked-in xbmc snapshots need both shape validation and fixture-manifest semantic validation (M046/S02)
+
+**Context:** A full snapshot can satisfy the JSON/Zod shape while still violating fixture semantics that S02 depends on, such as duplicate `normalizedId` values across retained and excluded rows. Those semantic failures only appear when the snapshot is projected back through the shared fixture-manifest validator.
+
+**Rule:** Do not treat successful full-schema parsing as sufficient proof that an xbmc snapshot is valid. Always run the projected retained/excluded rows back through `assertValidFixtureManifest(...)` as part of snapshot validation, and fail the snapshot on those semantic errors instead of only failing downstream report logic.
+
+**Established in:** M046/S02/T01 (`src/contributor/xbmc-fixture-snapshot.ts`, `scripts/verify-m046-s01.ts`).
+
+---
+
+## Zero-score contributor ties can move percentile rank without changing the newcomer contract (M046/S02)
+
+**Context:** `calculateTierAssignments(...)` is percentile-based, so tied scores usually create order sensitivity in small cohorts. But `tierFromPercentile(...)` has a special-case override: any `overallScore === 0` is always `newcomer` regardless of percentile. In calibration work this means a three-way zero-score tie can permute ranks 1..3 while every contributor still projects to the same `profile-backed` newcomer contract.
+
+**Rule:** When reporting calibration instability for snapshot-only contributor models, distinguish **rank instability** from **contract instability**. A zero-score tie should still be flagged as score/rank compression, but downstream verifiers should not claim tier drift if every tied row remains `newcomer` under the zero-score override.
+
+**Established in:** M046/S02/T02 (`src/contributor/calibration-evaluator.ts`, `src/contributor/tier-calculator.ts`).
+
+---
+
+## Prerequisite-gated proof harnesses should keep loadable artifact diagnostics visible even when they skip the main verdict (M046/S02)
+
+**Context:** `verify:m046:s02` depends on `verify:m046:s01`. If the harness hard-fails immediately on the prerequisite, operators lose the most useful debugging evidence: whether the checked-in snapshot still parses, loads, and preserves retained/excluded counts. That makes it harder to distinguish "fixture contract broken" from "fixture file itself is unreadable."
+
+**Rule:** For proof harnesses with prerequisite verifiers, run the prerequisite first but still inspect any local artifact that can be loaded safely. Surface those artifact diagnostics in the report, emit a named prerequisite failure status code, and skip the downstream evaluator or final verdict until the prerequisite passes.
+
+**Established in:** M046/S02/T03 (`scripts/verify-m046-s02.ts`, `scripts/verify-m046-s02.test.ts`).
+
+---
+
+## `bun test` can ignore one missing file filter if other file paths still match (M046/S03)
+
+**Context:** During S03/T01, `bun test ./scripts/verify-m046.test.ts` failed immediately because the file does not exist yet, but the broader slice command `bun test ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s01.test.ts ./scripts/verify-m046-s02.test.ts ./scripts/verify-m046.test.ts` still exited 0 and ran the four existing files. Bun treated the missing `./scripts/verify-m046.test.ts` argument as an unmatched filter while happily executing the remaining matches.
+
+**Rule:** When a slice verification command mixes existing test paths with a not-yet-created file, do not treat a zero exit code as proof that every requested file ran. Probe any suspected missing path with its own `bun test ./path/to/file.test.ts` command before declaring the full suite complete.
+
+**Established in:** M046/S03/T01 (`bun test` verification behavior while `scripts/verify-m046.test.ts` was still absent).
+
+---
+
+## Integrated proof harnesses should preserve nested evidence and report negative domain verdicts as data, not failures (M046/S03)
+
+**Context:** `verify:m046` composes the S01 fixture verifier and S02 calibration verifier into one milestone-closeout surface. The truthful domain outcome is currently `replace`, but that recommendation is not the same thing as a broken verifier. If the harness exits non-zero just because the recommendation is negative, automation cannot distinguish "the system should change" from "the proof surface is malformed."
+
+**Rule:** When building milestone-closeout proof harnesses, preserve the nested prerequisite reports intact, add dedicated top-level checks for composition health, and treat `keep`/`retune`/`replace` as machine-readable verdict data. Reserve non-zero exits for malformed nested evidence, count drift, missing recommendations, or contradictory change-contract state — not for a truthful negative recommendation.
+
+**Established in:** M046/S03/T02 (`scripts/verify-m046.ts`, `src/contributor/calibration-change-contract.ts`).
+
+---
+
+## `bun test` path lists are not proof that every requested file exists or ran (M047/S01)
+
+**Context:** While executing M047/S01/T01, the slice-level bundle `bun test ./src/contributor/profile-trust.test.ts ./src/contributor/profile-store.test.ts ./src/contributor/review-author-resolution.test.ts ./src/handlers/review.test.ts ./scripts/verify-m047-s01.test.ts` exited 0 even though `src/contributor/review-author-resolution.test.ts` and `scripts/verify-m047-s01.test.ts` did not exist yet. Bun simply ran the matching files and ignored the missing filters.
+
+**Rule:** When a slice verification command names multiple test files, explicitly probe any expected new file paths (and related package scripts) before treating the bundle as full coverage. A passing multi-path `bun test` command only proves the matched files passed; it does not prove every requested path existed or ran.
+
+**Established in:** M047/S01/T01 (`bun test` bundle behavior plus explicit missing-path checks for `src/contributor/review-author-resolution.test.ts`, `scripts/verify-m047-s01.test.ts`, and `package.json` script wiring).
+
+---
+
+## Contributor profile store tests should prefer `TEST_DATABASE_URL` over the repo `DATABASE_URL` (M047/S01)
+
+**Context:** `src/contributor/profile-store.test.ts` originally inherited the repository `DATABASE_URL`, which points at a remote Azure database in some environments. During M047/S01/T01 that caused local verification to hang or fail for reasons unrelated to the slice.
+
+**Rule:** DB-backed contributor-store tests should read `TEST_DATABASE_URL` first and otherwise fall back to a local default, not the repo-wide `DATABASE_URL`. Treat the application `DATABASE_URL` as production/runtime config, not as a safe default for deterministic integration tests.
+
+**Established in:** M047/S01/T01 (`src/contributor/profile-store.test.ts`).
+
+---
+
+## Slack/profile continuity must resolve stored profiles through the trust seam, not raw tier state (M047/S02)
+
+**Context:** During M047/S02/T01, `/kodiai profile`, `link`, and `profile opt-in` were still reading raw `overallTier`/`optedOut` data directly. That let linked-unscored, legacy, stale, and malformed rows look like active linked guidance on Slack, and it wasted expertise lookups on rows that should have stayed generic.
+
+**Rule:** Any Slack/profile surface that renders persisted contributor state must first run the full stored row through `resolveContributorProfileSurface(...)` (which itself classifies via `classifyContributorProfileTrust(...)`). Only `projection.state === "profile-backed"` may claim active linked guidance or call `getExpertise(...)`. Linked-unscored, legacy, stale, malformed, and fail-open states collapse to `generic-unknown` on this surface; they do **not** reuse review-time `generic-degraded` wording because this is describing the persisted linked profile itself, not transient fallback-search degradation.
+
+**Established in:** M047/S02/T01 (`src/contributor/profile-surface-resolution.ts`, `src/slack/slash-command-handler.ts`).
+
+---
+
+## Opt-out milestone checks must reject leaked linked continuity evidence (M047/S03)
+
+**Context:** During M047/S03/T02, `verify:m047` still passed if the nested opt-out scenario unexpectedly regained a `linkContinuity` payload. The milestone harness only required continuity when it should exist; it never failed when continuity reappeared on a surface that should stay opt-out/generic.
+
+**Rule:** For milestone-level Slack/profile evidence, validate both sides of the contract: require linked continuity when the scenario is supposed to preserve it, and explicitly fail when opt-out/generic scenarios surface linked continuity at all. Otherwise the composed verifier can go false-green on contradictory downstream evidence.
+
+**Established in:** M047/S03/T02 (`scripts/verify-m047.ts`, `scripts/verify-m047.test.ts`).
+
+---
+
+## When no truthful linked-profile surface exists, report `not_applicable` instead of fabricating generic Slack/profile evidence (M047 closeout)
+
+**Context:** M047 had to prove a `coarse-fallback` scenario across review/runtime, retrieval, Slack/profile, identity, and calibration evidence. The tempting mistake was to synthesize a passing Slack/profile continuity payload for that scenario, even though coarse fallback comes from cache/search and has no truthful persisted linked-profile Slack surface.
+
+**Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
+
+**Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).

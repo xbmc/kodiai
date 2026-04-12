@@ -5,17 +5,24 @@ import type { AppConfig } from "../config.ts";
 
 export interface GitHubApp {
   /** Create an Octokit client authenticated as a specific installation. */
-  getInstallationOctokit(installationId: number): Promise<Octokit>;
+  getInstallationOctokit(
+    installationId: number,
+    options?: { requestTimeoutMs?: number },
+  ): Promise<Octokit>;
   /** Return the cached app slug (set during initialize). */
   getAppSlug(): string;
   /** Fetch app identity from GitHub API, cache slug. Must be called before other methods. */
-  initialize(): Promise<void>;
+  initialize(options?: { requestTimeoutMs?: number }): Promise<void>;
   /** Check GitHub API connectivity. Caches result for 30 seconds. */
   checkConnectivity(): Promise<boolean>;
   /** Get a raw installation access token for git URL auth. */
   getInstallationToken(installationId: number): Promise<string>;
   /** Resolve installation and default branch for an arbitrary owner/repo. */
-  getRepoInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string } | null>;
+  getRepoInstallationContext(
+    owner: string,
+    repo: string,
+    options?: { requestTimeoutMs?: number },
+  ): Promise<{ installationId: number; defaultBranch: string } | null>;
 }
 
 function hasStatusCode(error: unknown, statusCode: number): boolean {
@@ -40,7 +47,10 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
   });
 
   return {
-    async getInstallationOctokit(installationId: number): Promise<Octokit> {
+    async getInstallationOctokit(
+      installationId: number,
+      options?: { requestTimeoutMs?: number },
+    ): Promise<Octokit> {
       logger.debug({ installationId }, "Creating installation Octokit client");
 
       // Create a fresh Octokit per call; auth-app handles token caching internally
@@ -51,6 +61,9 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
           privateKey: config.githubPrivateKey,
           installationId,
         },
+        request: options?.requestTimeoutMs
+          ? { timeout: options.requestTimeoutMs }
+          : undefined,
       });
 
       return octokit;
@@ -60,9 +73,13 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       return appSlug;
     },
 
-    async initialize(): Promise<void> {
+    async initialize(options?: { requestTimeoutMs?: number }): Promise<void> {
       // Authenticate as the app (JWT) and fetch identity
-      const response = await appOctokit.rest.apps.getAuthenticated();
+      const response = await appOctokit.rest.apps.getAuthenticated(
+        options?.requestTimeoutMs
+          ? { request: { timeout: options.requestTimeoutMs } }
+          : {},
+      );
       const data = response.data;
       if (!data) {
         throw new Error("GitHub App getAuthenticated returned no data");
@@ -111,16 +128,32 @@ export function createGitHubApp(config: AppConfig, logger: Logger): GitHubApp {
       return result.token;
     },
 
-    async getRepoInstallationContext(owner: string, repo: string): Promise<{ installationId: number; defaultBranch: string } | null> {
+    async getRepoInstallationContext(
+      owner: string,
+      repo: string,
+      options?: { requestTimeoutMs?: number },
+    ): Promise<{ installationId: number; defaultBranch: string } | null> {
       try {
         const installationResponse = await appOctokit.request("GET /repos/{owner}/{repo}/installation", {
           owner,
           repo,
+          ...(options?.requestTimeoutMs
+            ? { request: { timeout: options.requestTimeoutMs } }
+            : {}),
         });
 
         const installationId = installationResponse.data.id;
-        const installationOctokit = await this.getInstallationOctokit(installationId);
-        const repositoryResponse = await installationOctokit.rest.repos.get({ owner, repo });
+        const installationOctokit = await this.getInstallationOctokit(
+          installationId,
+          options,
+        );
+        const repositoryResponse = await installationOctokit.rest.repos.get({
+          owner,
+          repo,
+          ...(options?.requestTimeoutMs
+            ? { request: { timeout: options.requestTimeoutMs } }
+            : {}),
+        });
 
         const defaultBranch = repositoryResponse.data.default_branch;
         logger.debug({ owner, repo, installationId, defaultBranch }, "Resolved repository installation context");

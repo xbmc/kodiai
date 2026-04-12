@@ -1,0 +1,258 @@
+{
+  "fixtureSetVersion": 1,
+  "repository": "xbmc/xbmc",
+  "curatedAt": "2026-04-10T20:00:00.000Z",
+  "snapshotPath": "fixtures/contributor-calibration/xbmc-snapshot.json",
+  "retained": [
+    {
+      "kind": "retained",
+      "normalizedId": "fkoemep",
+      "displayName": "fkoemep",
+      "githubUsername": "fkoemep",
+      "cohort": "newcomer",
+      "selectionNotes": "Single-commit tail sample used as a clear newcomer anchor for the curated xbmc corpus.",
+      "observedCommitCounts": {
+        "allTime": 1,
+        "since2025": 1
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "retained",
+      "normalizedId": "fuzzard",
+      "displayName": "fuzzard",
+      "githubUsername": "fuzzard",
+      "cohort": "senior",
+      "selectionNotes": "High-volume long-run contributor used as a clear senior anchor for calibration.",
+      "observedCommitCounts": {
+        "allTime": 2705,
+        "since2025": 522
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "retained",
+      "normalizedId": "koprajs",
+      "displayName": "KOPRajs",
+      "githubUsername": "KOPRajs",
+      "cohort": "ambiguous-middle",
+      "selectionNotes": "Moderate recent activity with limited long-run volume, intentionally kept as an ambiguous middle-band sample.",
+      "observedCommitCounts": {
+        "allTime": 27,
+        "since2025": 15
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "kind": "excluded",
+      "normalizedId": "hosted-weblate",
+      "displayName": "Hosted Weblate",
+      "githubUsername": null,
+      "exclusionReason": "bot",
+      "exclusionNotes": "Automation account for translation synchronization commits.",
+      "relatedNormalizedIds": [],
+      "observedCommitCounts": {
+        "allTime": 89,
+        "since2025": 28
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "jenkins4kodi",
+      "displayName": "jenkins4kodi",
+      "githubUsername": "jenkins4kodi",
+      "exclusionReason": "bot",
+      "exclusionNotes": "CI automation account that should never count as a human calibration sample.",
+      "relatedNormalizedIds": [],
+      "observedCommitCounts": {
+        "allTime": 733,
+        "since2025": 0
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "kai-sommerfeld",
+      "displayName": "Kai Sommerfeld",
+      "githubUsername": null,
+      "exclusionReason": "alias-collision",
+      "exclusionNotes": "Potential alias collision with the retained-by-handle identity ksooo; keep both out of the initial truth set until refresh resolves lineage.",
+      "relatedNormalizedIds": [
+        "ksooo"
+      ],
+      "observedCommitCounts": {
+        "allTime": 3632,
+        "since2025": 172
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "keith",
+      "displayName": "Keith",
+      "githubUsername": null,
+      "exclusionReason": "ambiguous-identity",
+      "exclusionNotes": "Short display-only identity overlaps with Keith Herrington and should remain excluded until refresh proves whether they are distinct people.",
+      "relatedNormalizedIds": [
+        "keith-herrington"
+      ],
+      "observedCommitCounts": {
+        "allTime": 57,
+        "since2025": 57
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "keith-herrington",
+      "displayName": "Keith Herrington",
+      "githubUsername": null,
+      "exclusionReason": "ambiguous-identity",
+      "exclusionNotes": "Potentially related to the short-display Keith identity; excluded until refresh resolves whether this is one contributor or two.",
+      "relatedNormalizedIds": [
+        "keith"
+      ],
+      "observedCommitCounts": {
+        "allTime": 20,
+        "since2025": 20
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    },
+    {
+      "kind": "excluded",
+      "normalizedId": "ksooo",
+      "displayName": "ksooo",
+      "githubUsername": "ksooo",
+      "exclusionReason": "alias-collision",
+      "exclusionNotes": "Potential alias collision with Kai Sommerfeld; the initial truth set keeps the pair explicit rather than guessing a merge.",
+      "relatedNormalizedIds": [
+        "kai-sommerfeld"
+      ],
+      "observedCommitCounts": {
+        "allTime": 1505,
+        "since2025": 502
+      },
+      "provenance": {
+        "github": {
+          "status": "pending",
+          "note": "GitHub enrichment is intentionally deferred to the refresh step.",
+          "evidenceUrl": null,
+          "workspacePath": null
+        },
+        "localGit": {
+          "status": "available",
+          "note": "Observed in tmp/xbmc shortlog during fixture curation.",
+          "evidenceUrl": null,
+          "workspacePath": "tmp/xbmc"
+        }
+      }
+    }
+  ]
+}

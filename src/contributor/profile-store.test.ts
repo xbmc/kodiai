@@ -7,12 +7,18 @@ import {
   beforeEach,
 } from "bun:test";
 import postgres from "postgres";
+import { runMigrations } from "../db/migrate.ts";
+import {
+  classifyContributorProfileTrust,
+  CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+  CONTRIBUTOR_PROFILE_TRUST_STALE_AFTER_DAYS,
+} from "./profile-trust.ts";
 import { createContributorProfileStore } from "./profile-store.ts";
 import type { ContributorProfileStore } from "./types.ts";
 import type { Sql } from "../db/client.ts";
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ??
+  process.env.TEST_DATABASE_URL ??
   "postgresql://kodiai:kodiai@localhost:5432/kodiai";
 
 const mockLogger = {
@@ -39,6 +45,7 @@ beforeAll(async () => {
     idle_timeout: 20,
     connect_timeout: 10,
   });
+  await runMigrations(sql);
   store = createContributorProfileStore({ sql, logger: mockLogger });
 });
 
@@ -49,6 +56,18 @@ afterAll(async () => {
 describe("ContributorProfileStore", () => {
   beforeEach(async () => {
     await truncateAll();
+  });
+
+  test("migrations expose the contributor trust marker column", async () => {
+    const rows = await sql`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'contributor_profiles'
+        AND column_name = 'trust_marker'
+    `;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.column_name).toBe("trust_marker");
   });
 
   test("linkIdentity creates profile and retrieves by github username", async () => {
@@ -62,10 +81,22 @@ describe("ContributorProfileStore", () => {
     expect(profile.displayName).toBe("Octo Cat");
     expect(profile.overallTier).toBe("newcomer");
     expect(profile.optedOut).toBe(false);
+    expect(profile.trustMarker).toBeNull();
+    expect(classifyContributorProfileTrust(profile)).toMatchObject({
+      state: "linked-unscored",
+      trusted: false,
+      reason: "never-scored",
+    });
 
     const fetched = await store.getByGithubUsername("octocat");
     expect(fetched).not.toBeNull();
     expect(fetched!.id).toBe(profile.id);
+    expect(fetched!.trustMarker).toBeNull();
+    expect(classifyContributorProfileTrust(fetched!)).toMatchObject({
+      state: "linked-unscored",
+      trusted: false,
+      reason: "never-scored",
+    });
   });
 
   test("getBySlackUserId retrieves linked profile", async () => {
@@ -124,6 +155,24 @@ describe("ContributorProfileStore", () => {
     const bySlack = await store.getBySlackUserId("U006");
     expect(bySlack).not.toBeNull();
     expect(bySlack!.optedOut).toBe(true);
+  });
+
+  test("review-time system lookup can inspect opted-out github profiles without re-enabling them", async () => {
+    await store.linkIdentity({
+      slackUserId: "U006B",
+      githubUsername: "dev4b",
+      displayName: "Dev Four B",
+    });
+    await store.setOptedOut("dev4b", true);
+
+    const defaultLookup = await store.getByGithubUsername("dev4b");
+    expect(defaultLookup).toBeNull();
+
+    const systemLookup = await store.getByGithubUsername("dev4b", {
+      includeOptedOut: true,
+    });
+    expect(systemLookup).not.toBeNull();
+    expect(systemLookup!.optedOut).toBe(true);
   });
 
   test("upsertExpertise creates and updates entries", async () => {
@@ -190,20 +239,113 @@ describe("ContributorProfileStore", () => {
     expect(scores[0]!.overallScore).toBe(0);
   });
 
-  test("updateTier changes tier and overall score", async () => {
+  test("updateTier changes tier, overall score, and stamps the current trust marker", async () => {
     const profile = await store.linkIdentity({
       slackUserId: "U010",
       githubUsername: "dev8",
       displayName: "Dev Eight",
     });
 
-    await store.updateTier(profile.id, "senior", 0.95);
+    await store.updateTier(profile.id, "newcomer", 0);
 
     const updated = await store.getByGithubUsername("dev8");
     expect(updated).not.toBeNull();
-    expect(updated!.overallTier).toBe("senior");
-    expect(updated!.overallScore).toBeCloseTo(0.95, 2);
+    expect(updated!.overallTier).toBe("newcomer");
+    expect(updated!.overallScore).toBeCloseTo(0, 5);
     expect(updated!.lastScoredAt).not.toBeNull();
+    expect(updated!.trustMarker).toBe(CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER);
+    expect(classifyContributorProfileTrust(updated!)).toMatchObject({
+      state: "calibrated",
+      trusted: true,
+      reason: "current-trust-marker",
+    });
+
+    const persisted = await sql`
+      SELECT trust_marker
+      FROM contributor_profiles
+      WHERE id = ${profile.id}
+    `;
+    expect(persisted[0]?.trust_marker).toBe(
+      CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+    );
+  });
+
+  test("stored rows distinguish legacy and stale states from a trustworthy calibrated row", async () => {
+    const staleMs =
+      (CONTRIBUTOR_PROFILE_TRUST_STALE_AFTER_DAYS + 1) *
+      24 *
+      60 *
+      60 *
+      1000;
+    const referenceTime = new Date("2026-04-10T12:00:00.000Z");
+    const legacyScoredAt = new Date("2026-03-31T00:00:00.000Z");
+    const freshScoredAt = new Date("2026-04-09T00:00:00.000Z");
+    const staleScoredAt = new Date(referenceTime.getTime() - staleMs);
+
+    await sql`
+      INSERT INTO contributor_profiles (
+        github_username,
+        display_name,
+        overall_tier,
+        overall_score,
+        last_scored_at,
+        trust_marker
+      ) VALUES
+        (
+          'legacy-user',
+          'Legacy User',
+          'established',
+          0.7,
+          ${legacyScoredAt},
+          NULL
+        ),
+        (
+          'fresh-user',
+          'Fresh User',
+          'newcomer',
+          0,
+          ${freshScoredAt},
+          ${CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER}
+        ),
+        (
+          'stale-user',
+          'Stale User',
+          'newcomer',
+          0,
+          ${staleScoredAt},
+          ${CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER}
+        )
+    `;
+
+    const legacy = await store.getByGithubUsername("legacy-user");
+    const fresh = await store.getByGithubUsername("fresh-user");
+    const stale = await store.getByGithubUsername("stale-user");
+
+    expect(legacy).not.toBeNull();
+    expect(fresh).not.toBeNull();
+    expect(stale).not.toBeNull();
+
+    expect(
+      classifyContributorProfileTrust(legacy!, { referenceTime }),
+    ).toMatchObject({
+      state: "legacy",
+      trusted: false,
+      reason: "missing-trust-marker",
+    });
+    expect(
+      classifyContributorProfileTrust(fresh!, { referenceTime }),
+    ).toMatchObject({
+      state: "calibrated",
+      trusted: true,
+      reason: "current-trust-marker",
+    });
+    expect(
+      classifyContributorProfileTrust(stale!, { referenceTime }),
+    ).toMatchObject({
+      state: "stale",
+      trusted: false,
+      reason: "trust-marker-stale",
+    });
   });
 
   test("getExpertise returns entries sorted by score descending", async () => {
