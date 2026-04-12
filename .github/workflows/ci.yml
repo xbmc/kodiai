@@ -31,7 +31,9 @@ jobs:
         with:
           bun-version: latest
       - run: bun install
-      # DB-backed tests share a single Postgres service; higher Bun runner concurrency
-      # causes cross-file schema interference and flaky/segfaulting CI runs.
-      - run: bun test --max-concurrency=2
+      # Bun has been unstable on GitHub runners with one monolithic test process.
+      # Keep DB-backed tests on a low concurrency cap and split the suite into
+      # two shorter invocations to avoid cross-file schema interference and runner crashes.
+      - run: bun test --max-concurrency=2 scripts src/contributor src/enforcement src/execution src/feedback src/handlers src/jobs src/lib src/review-audit src/review-graph src/routes src/slack src/structural-impact src/telemetry src/triage
+      - run: bun test --max-concurrency=2 src/knowledge
       - run: bunx tsc --noEmit
