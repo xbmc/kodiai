@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-11T04:07:07.400Z",
+  "exported_at": "2026-04-11T16:45:05.829Z",
   "milestones": [
     {
       "id": "M001",
@@ -1652,6 +1652,63 @@
       ],
       "requirement_coverage": "- R046 (active): supported by S01, S02, and S03. S01 re-establishes truthful review-time resolution on the M045 contract, S02 extends the same contract across Slack/retrieval/profile continuity surfaces, and S03 proves the shipped surfaces reflect that contract coherently.\n- R048 (active): primary closeout requirement for this milestone. S01 fixes producer truth and persisted trust semantics, S02 rolls that truth through every remaining live consumer surface, and S03 provides the end-to-end runtime coherence proof required for validation.\n- No additional active requirements are directly expanded by M047; previously validated M042/M045/M046 contributor requirements remain continuity constraints exercised by slice verification rather than reopened scope.",
       "boundary_map_markdown": "| Boundary | Stable interface | What changes in M047 | Closed by |\n| --- | --- | --- | --- |\n| Persisted contributor state | `contributor_profiles` + profile-store API | Add trust/version semantics that distinguish linked-unscored, legacy, calibrated, and degraded rows | S01 |\n| Review-time resolution | `resolveAuthorTier()` -> `ContributorExperienceContract` | Stop trusting raw stored tiers as truth; make the review entrypoint consume trustworthy calibrated state or fail open | S01 |\n| Shared contract seam | `src/contributor/experience-contract.ts` projections | Keep M045 vocabulary stable while feeding it better source-resolution inputs | S01, S02 |\n| Downstream consumers | Slack profile/link/opt flows and retrieval hints | Remove raw-tier consumption and align every consumer with the shared contract/resolution seam | S02 |\n| Operator proof surface | milestone verifier commands | Add `verify:m047` that composes M045/M046 proof with real runtime source-resolution scenarios | S03 |"
+    },
+    {
+      "id": "M048",
+      "title": "",
+      "status": "queued",
+      "depends_on": [],
+      "created_at": "2026-04-11T14:13:11.165Z",
+      "completed_at": null,
+      "vision": "",
+      "success_criteria": [],
+      "key_risks": [],
+      "proof_strategy": [],
+      "verification_contract": "",
+      "verification_integration": "",
+      "verification_operational": "",
+      "verification_uat": "",
+      "definition_of_done": [],
+      "requirement_coverage": "",
+      "boundary_map_markdown": ""
+    },
+    {
+      "id": "M049",
+      "title": "Evidence-Backed Clean PR Approvals",
+      "status": "queued",
+      "depends_on": [],
+      "created_at": "2026-04-11T16:41:47.627Z",
+      "completed_at": null,
+      "vision": "Replace marker-only clean approval reviews with one short evidence-backed GitHub review body across all approval lanes, while preserving issue publication behavior for findings and keeping clean approvals free of separate PR comments.",
+      "success_criteria": [
+        "Clean approvals publish a short evidence-backed GitHub review body across explicit mention, automatic review, and approve-via-comment paths.",
+        "Issue-reporting behavior is unchanged: only findings create summary and inline comments.",
+        "Clean approvals remain non-noisy by avoiding separate issue comments.",
+        "A live xbmc/kodiai proof confirms the new review body on a repo-backed clean approval."
+      ],
+      "key_risks": [
+        {
+          "risk": "Approved-review sanitizers and publish paths currently assume marker-only approvals or reject extra APPROVE text.",
+          "whyItMatters": "If one lane still enforces the old two-line contract, approval bodies will diverge or publish will fail in production."
+        },
+        {
+          "risk": "Explicit mention and automatic review lanes may drift again if they format approvals independently.",
+          "whyItMatters": "The product problem is inconsistency and weak auditability; lane-specific fixes would recreate that drift."
+        }
+      ],
+      "proof_strategy": [],
+      "verification_contract": "Regression tests prove every clean-approval publisher accepts and emits the shared approved-review body contract. Live proof on xbmc/kodiai must show one clean approval review with factual evidence lines, marker continuity, and no extra issue comment.",
+      "verification_integration": "Verify the explicit mention bridge, automatic review lane, and comment-server approval path all converge on the same final GitHub review body shape without findings-path regressions.",
+      "verification_operational": "Verify existing audit/log correlation still works with the richer approval body and that operators can inspect a clean approval directly in GitHub.",
+      "verification_uat": "From a user perspective, a clean Kodiai approval should no longer look silent or marker-only; the review itself should briefly state that the run was repo-backed and inspection-positive without adding PR comment noise.",
+      "definition_of_done": [
+        "All clean approval publishers share one short evidence-backed review body contract.",
+        "Findings publication behavior is unchanged: summary + inline comments only when issues exist.",
+        "Clean approvals do not create separate issue comments.",
+        "A live xbmc/kodiai proof shows a clean approval review body with factual evidence lines and the review-output marker."
+      ],
+      "requirement_coverage": "Advances the clean-approval auditability work chosen in decision D098 and preserves the existing explicit-review publication and audit guarantees from R043 and R045 while improving the GitHub-visible proof surface for clean approvals.",
+      "boundary_map_markdown": "- `src/handlers/review-idempotency.ts` — canonical approved-review body contract and marker helpers\n- `src/handlers/mention.ts` — explicit `@kodiai review` approval bridge publisher\n- `src/handlers/review.ts` — automatic clean-approval publisher\n- `src/execution/mcp/comment-server.ts` — approve-via-comment sanitizer/publisher path\n- `src/review-audit/*` and related runbooks — audit correlation and operator proof surfaces"
     }
   ],
   "slices": [
@@ -6174,6 +6231,48 @@
       "integration_closure": "- Upstream surfaces consumed: `scripts/verify-m047-s02.ts`, `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, and the package-script contract in `package.json`.\n- New wiring introduced in this slice: `scripts/verify-m047.ts` becomes the single milestone-close entrypoint that maps five operator-facing scenarios onto nested S02/M045/M046 evidence without re-running deeper business logic.\n- What remains before the milestone is truly usable end-to-end: nothing inside M047 once the integrated verifier, prerequisite proof scripts, and TypeScript check all pass.",
       "observability_impact": "- `bun test ./scripts/verify-m047.test.ts`\n- `bun run verify:m047 -- --json`\n- `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`\n- `bun run tsc --noEmit`",
       "sequence": 3,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M049",
+      "id": "S01",
+      "title": "Shared clean-approval review body contract",
+      "status": "pending",
+      "risk": "medium",
+      "depends": [],
+      "demo": "A clean approval on explicit `@kodiai review` and automatic review both show a short GitHub review body with `Decision: APPROVE`, `Issues: none`, factual evidence lines, and the existing review-output marker.",
+      "created_at": "2026-04-11T16:45:05.796Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Define and apply one shared approved-review body contract across every Kodiai clean-approval publisher path.",
+      "success_criteria": "- Shared builder emits decision/no-issues plus short factual evidence lines and marker.\n- Explicit mention bridge uses the shared builder.\n- Automatic clean-review lane uses the shared builder.\n- Approve-via-comment sanitization accepts the shared approved-review shape without allowing arbitrary prose.",
+      "proof_level": "Deterministic publish-path tests plus one live proof on xbmc/kodiai.",
+      "integration_closure": "`mention.ts`, `review.ts`, and the approve-via-comment publish path all use the same approved-review body shape and marker contract.",
+      "observability_impact": "The GitHub review body itself becomes a stronger audit surface for clean approvals while existing `reviewOutputKey` and `publishResolution` logs continue to correlate the run.",
+      "sequence": 1,
+      "replan_triggered_at": null
+    },
+    {
+      "milestone_id": "M049",
+      "id": "S02",
+      "title": "Live proof and auditability verification",
+      "status": "pending",
+      "risk": "low",
+      "depends": [
+        "S01"
+      ],
+      "demo": "Operators inspecting a clean approval on GitHub can see why it was approved without a separate issue comment, and audit tooling can correlate the same published body to the delivery cleanly.",
+      "created_at": "2026-04-11T16:45:05.796Z",
+      "completed_at": null,
+      "full_summary_md": "",
+      "full_uat_md": "",
+      "goal": "Prove the new clean-approval surface is audit-friendly and does not add noisy PR comments.",
+      "success_criteria": "- Clean approvals still publish exactly one visible GitHub review outcome.\n- No separate clean-approval issue comment is posted.\n- Audit and operator guidance reflect the new visible approval-body contract.\n- Live proof on xbmc/kodiai confirms the published body is factual, brief, and repo-backed.",
+      "proof_level": "Regression verification plus one live end-to-end publish proof.",
+      "integration_closure": "Approval-body content, review-output markers, and audit correlation agree on the same final published review artifact.",
+      "observability_impact": "Recent-review audits and live operator drills can rely on a visible approval body instead of inferring validity from silence.",
+      "sequence": 2,
       "replan_triggered_at": null
     }
   ],
@@ -14290,6 +14389,18 @@
       "rationale": "The integrated verifier must fail both when required evidence disappears and when forbidden Slack/profile continuity evidence reappears for the opt-out scenario; otherwise the milestone can go false-green while contributor-specific guidance silently leaks back onto an opt-out path.",
       "revisable": "Yes",
       "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 132,
+      "id": "D098",
+      "when_context": "Queued milestone M049 design selection",
+      "scope": "review-output",
+      "decision": "How clean Kodiai PR approvals should be published across approval lanes",
+      "choice": "Use one shared short evidence-backed GitHub review body for clean approvals across explicit mention, automatic review, and approve-via-comment paths; do not add a separate clean-approval issue comment.",
+      "rationale": "A marker-only APPROVED review is hard to trust even when the run was repo-backed and inspection-positive. One shared review-body contract improves auditability and UX without adding comment noise or changing findings publication behavior.",
+      "revisable": "Yes",
+      "made_by": "human",
       "superseded_by": null
     }
   ],

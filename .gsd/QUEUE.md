@@ -55,3 +55,16 @@
 - Added: 2026-04-08
 - Summary: Ship the contributor-experience redesign and approved recalibration across review, retrieval, Slack, and contributor-model plumbing, then prove cross-surface coherence end to end.
 - Context: `.gsd/milestones/M047/M047-CONTEXT.md`
+
+### M048 — PR Review Latency Reduction and Bounded Execution
+- Status: queued
+- Added: 2026-04-10
+- Summary: Reduce end-to-end PR review latency on the live xbmc/kodiai path by measuring phase timing, trimming serial overhead, tuning large-PR behavior honestly, and exploring parallel review fan-out only if cheaper wins are insufficient.
+- Context: `.gsd/milestones/M048/M048-CONTEXT.md`
+
+### M049 — Evidence-Backed Clean PR Approvals
+- Status: queued
+- Added: 2026-04-11
+- Summary: Replace marker-only clean approval reviews with one short evidence-backed GitHub review body across explicit mention, automatic review, and approve-via-comment paths, while preserving findings publication behavior and avoiding separate clean-approval issue comments.
+- Roadmap: `.gsd/milestones/M049/M049-ROADMAP.md`
+- Context: pending depth-gated save

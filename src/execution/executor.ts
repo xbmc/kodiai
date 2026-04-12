@@ -1,5 +1,6 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { $ } from "bun";
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { ExecutionContext, ExecutionResult, ExecutionPublishEvent } from "./types.ts";
@@ -18,7 +19,10 @@ import {
   readJobResult,
   readJobDiagnostics,
 } from "../jobs/aca-launcher.ts";
-import { createAzureFilesWorkspaceDir } from "../jobs/workspace.ts";
+import {
+  buildAuthFetchUrl,
+  createAzureFilesWorkspaceDir,
+} from "../jobs/workspace.ts";
 
 export function buildSecurityClaudeMd(): string {
   return `# Security Policy
@@ -50,10 +54,36 @@ export async function prepareAgentWorkspace(params: {
   allowedTools: string[];
   taskType: string;
   mcpServerNames: string[];
-}): Promise<{ repoCwd: string }> {
-  const repoCwd = join(params.workspaceDir, "repo");
-  await mkdir(repoCwd, { recursive: true });
-  await cp(params.sourceRepoDir, repoCwd, { recursive: true });
+  token?: string;
+}): Promise<{ repoCwd?: string; repoBundlePath?: string }> {
+  let repoCwd: string | undefined;
+  let repoBundlePath: string | undefined;
+  let repoOriginUrl: string | undefined;
+
+  const sourceGitDir = join(params.sourceRepoDir, ".git");
+  const sourceIsGitRepo = await stat(sourceGitDir).then(() => true).catch(() => false);
+
+  if (sourceIsGitRepo) {
+    repoBundlePath = join(params.workspaceDir, "repo.bundle");
+    const sourceIsShallow = await $`git -C ${params.sourceRepoDir} rev-parse --is-shallow-repository`.quiet()
+      .text()
+      .then((value) => value.trim() === "true")
+      .catch(() => false);
+    if (sourceIsShallow) {
+      const fetchRemote = await buildAuthFetchUrl(params.sourceRepoDir, params.token);
+      await $`git -C ${params.sourceRepoDir} fetch --unshallow ${fetchRemote}`.quiet();
+    }
+    await $`git -C ${params.sourceRepoDir} bundle create ${repoBundlePath} --all`.quiet();
+    repoOriginUrl = await $`git -C ${params.sourceRepoDir} remote get-url origin`.quiet()
+      .text()
+      .then((value) => value.trim())
+      .catch(() => undefined);
+  } else {
+    repoCwd = join(params.workspaceDir, "repo");
+    await mkdir(repoCwd, { recursive: true });
+    await cp(params.sourceRepoDir, repoCwd, { recursive: true });
+  }
+
   await writeFile(join(params.workspaceDir, "prompt.txt"), params.prompt);
   await writeFile(
     join(params.workspaceDir, "agent-config.json"),
@@ -63,11 +93,13 @@ export async function prepareAgentWorkspace(params: {
       maxTurns: params.maxTurns,
       allowedTools: params.allowedTools,
       taskType: params.taskType,
-      repoCwd,
+      ...(repoCwd ? { repoCwd } : {}),
+      ...(repoBundlePath ? { repoBundlePath } : {}),
+      ...(repoOriginUrl ? { repoOriginUrl } : {}),
       mcpServerNames: params.mcpServerNames,
     }),
   );
-  return { repoCwd };
+  return { repoCwd, repoBundlePath };
 }
 
 export function createExecutor(deps: {
@@ -148,9 +180,9 @@ export function createExecutor(deps: {
         const isWriteMode = context.writeMode === true;
 
         const enableInlineTools =
-          isMentionEvent || isWriteMode
+          isWriteMode
             ? false
-            : (context.enableInlineTools ?? true);
+            : (context.enableInlineTools ?? !isMentionEvent);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
         // Enable issue triage tools for issue mentions when triage is configured
@@ -261,6 +293,7 @@ export function createExecutor(deps: {
           allowedTools,
           taskType,
           mcpServerNames,
+          token: context.workspace.token,
         });
 
         // Build and launch the ACA job

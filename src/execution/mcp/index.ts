@@ -10,6 +10,7 @@ import { createIssueLabelServer } from "./issue-label-server.ts";
 import { createIssueCommentServer } from "./issue-comment-server.ts";
 import type { KnowledgeStore } from "../../knowledge/types.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
+import { createReviewOutputPublicationGate } from "./review-output-publication-gate.ts";
 
 export { createCommentServer } from "./comment-server.ts";
 export { createInlineReviewServer } from "./inline-review-server.ts";
@@ -46,6 +47,15 @@ export function buildMcpServers(deps: {
   triageConfig?: TriageConfig;
 }): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
+  const reviewOutputPublicationGate =
+    deps.reviewOutputKey && deps.prNumber !== undefined
+      ? createReviewOutputPublicationGate({
+          owner: deps.owner,
+          repo: deps.repo,
+          prNumber: deps.prNumber,
+          reviewOutputKey: deps.reviewOutputKey,
+        })
+      : undefined;
 
   const enableCommentTools = deps.enableCommentTools ?? true;
   if (enableCommentTools) {
@@ -58,6 +68,8 @@ export function buildMcpServers(deps: {
       deps.onPublish,
       deps.prNumber,
       deps.onPublishEvent,
+      deps.logger,
+      reviewOutputPublicationGate,
     );
   }
 
@@ -84,6 +96,7 @@ export function buildMcpServers(deps: {
       deps.deliveryId,
       deps.logger,
       deps.onPublish,
+      reviewOutputPublicationGate,
     );
     servers.github_ci = createCIStatusServer(
       deps.getOctokit,
@@ -134,8 +147,41 @@ export function buildMcpServers(deps: {
   return servers;
 }
 
+export const MCP_TOOL_NAMES_BY_SERVER: Record<string, string[]> = {
+  github_comment: [
+    "create_comment",
+    "update_comment",
+  ],
+  reviewCommentThread: [
+    "reply_to_pr_review_comment",
+  ],
+  github_inline_comment: [
+    "create_inline_comment",
+  ],
+  github_ci: [
+    "get_ci_status",
+    "get_workflow_run_details",
+  ],
+  review_checkpoint: [
+    "save_review_checkpoint",
+  ],
+  github_issue_label: [
+    "add_labels",
+  ],
+  github_issue_comment: [
+    "create_comment",
+    "update_comment",
+  ],
+};
+
 export function buildAllowedMcpTools(serverNames: string[]): string[] {
-  return serverNames.map((name) => `mcp__${name}__*`);
+  return serverNames.flatMap((serverName) => {
+    const toolNames = MCP_TOOL_NAMES_BY_SERVER[serverName];
+    if (!toolNames) {
+      return [`mcp__${serverName}__*`];
+    }
+    return toolNames.map((toolName) => `mcp__${serverName}__${toolName}`);
+  });
 }
 
 /**
@@ -158,6 +204,15 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
   const enableInlineTools = deps.enableInlineTools ?? true;
   const enableCheckpointTool = deps.enableCheckpointTool ?? false;
   const enableIssueTools = deps.enableIssueTools ?? false;
+  const reviewOutputPublicationGate =
+    deps.reviewOutputKey && deps.prNumber !== undefined
+      ? createReviewOutputPublicationGate({
+          owner: deps.owner,
+          repo: deps.repo,
+          prNumber: deps.prNumber,
+          reviewOutputKey: deps.reviewOutputKey,
+        })
+      : undefined;
 
   const factories: Record<string, () => McpSdkServerConfigWithInstance> = {};
 
@@ -172,6 +227,8 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.onPublish,
         deps.prNumber,
         deps.onPublishEvent,
+        deps.logger,
+        reviewOutputPublicationGate,
       ) as McpSdkServerConfigWithInstance;
   }
 
@@ -198,6 +255,7 @@ export function buildMcpServerFactories(deps: Parameters<typeof buildMcpServers>
         deps.deliveryId,
         deps.logger,
         deps.onPublish,
+        reviewOutputPublicationGate,
       ) as McpSdkServerConfigWithInstance;
 
     factories.github_ci = () =>

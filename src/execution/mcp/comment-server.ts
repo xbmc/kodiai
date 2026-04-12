@@ -5,6 +5,10 @@ import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
+import {
+  createReviewOutputPublicationGate,
+  type ReviewOutputPublicationGate,
+} from "./review-output-publication-gate.ts";
 
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
@@ -16,12 +20,26 @@ export function createCommentServer(
   prNumber?: number,
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
   logger?: Logger,
+  publicationGate?: ReviewOutputPublicationGate,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
+  const reviewOutputPublicationGate = publicationGate
+    ?? (
+      reviewOutputKey && prNumber !== undefined
+        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        : undefined
+    );
 
   // One-shot publish guard: only one create_comment call succeeds per server instance.
   // Prevents the agent from double-posting when it retries a tool call within a turn.
   let createCommentPublished = false;
+
+  async function resolveOutputPublicationStatus(octokit: Octokit) {
+    if (!reviewOutputPublicationGate) {
+      return null;
+    }
+    return reviewOutputPublicationGate.resolve(octokit);
+  }
 
   function sanitizeKodiaiDecisionResponse(body: string): string {
     // Only enforce structure for the mention decision wrapper.
@@ -550,6 +568,31 @@ export function createCommentServer(
           }
           try {
             const octokit = await getOctokit();
+            const publicationStatus = await resolveOutputPublicationStatus(octokit);
+            if (publicationStatus && !publicationStatus.shouldPublish) {
+              logger?.info(
+                {
+                  reviewOutputKey,
+                  idempotencyOutcome: "already-published-skip",
+                  existingLocation: publicationStatus.existingLocation,
+                },
+                "Skipping comment publication because output key already exists",
+              );
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify({
+                      success: true,
+                      skipped: true,
+                      reason: "already-published",
+                      review_output_key: reviewOutputKey,
+                      marker_prefix: "kodiai:review-output-key",
+                    }),
+                  },
+                ],
+              };
+            }
             const sanitized = sanitizeOutgoingMentions(
               maybeStampMarker(
                 sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),

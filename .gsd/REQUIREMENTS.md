@@ -57,6 +57,17 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M043
 - Validation: Live production verification on xbmc/kodiai PR #80 shows an explicit `@kodiai review` request causes either a real review/comment publication or a visible failure comment, with no silent-success path.
 
+### R049 — Kodiai should reduce PR review latency on the live xbmc/kodiai path with operator-visible phase timing and truthful bounded behavior for large reviews.
+- Class: non-functional
+- Status: active
+- Description: Kodiai should reduce PR review latency on the live xbmc/kodiai path with operator-visible phase timing and truthful bounded behavior for large reviews.
+- Why it matters: Slow or timeout-prone reviews delay feedback, erode trust, and make explicit `@kodiai review` requests unreliable on the exact path users depend on for large or strict reviews.
+- Source: user
+- Primary owning slice: M048
+- Supporting slices: none
+- Validation: Live xbmc/kodiai review proof shows per-phase timing and a materially improved end-to-end review path versus the current timeout-prone baseline, while any reduced-scope or staged large-PR behavior remains explicit and truthful instead of silently stalling or fabricating completeness.
+- Notes: Queue discussion for M048 explicitly chose a best-effort latency target rather than a hard never-over-10-minutes guarantee. The milestone may include internal pipeline optimization, large-PR behavior changes, and parallel review-worker exploration, but must preserve review truthfulness.
+
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -480,7 +491,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: issues-78-79
 - Primary owning slice: M047/S03
 - Supporting slices: M047/S01, M047/S02, M045, M046
-- Validation: Validated by M047/S03 after fresh slice-close verification passed: `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and showed the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) resolving coherently across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence.
+- Validation: Validated during M047 closeout by fresh passing results from `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence.
 - Notes: Slice S03 is the owning slice and provides the milestone-close coherence proof surface for the shipped contributor-experience rollout.
 
 ## Deferred
@@ -558,11 +569,12 @@ This file is the explicit capability and coverage contract for the project.
 | R045 | operational | validated | M044/S03 | M044/S01, M044/S02 | `bun run verify:m044 -- --repo xbmc/xbmc --limit 12 --json` produced a deterministic 12-PR recent sample over xbmc/xbmc with verdict summary `clean-valid=11`, `findings-published=1`, `publish-failure=0`, `suspicious-approval=0`, `indeterminate=0`, using GitHub-visible output plus Azure internal publication evidence. `docs/runbooks/recent-review-audit.md` documents the rerun and drill-down flow. |
 | R046 | functional | validated | M045/S01 | M045/S02, M045/S03, M047/S01, M047/S02, M047/S03 | Revalidated during M047 closeout by fresh passing results from `bun run verify:m047 -- --json` and the prerequisite bundle (`bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`), proving the contributor-experience contract remains truthful across review prompt/Review Details, retrieval hints, Slack/profile output, identity suppression, and contributor-model evidence without raw-tier drift. |
 | R047 | operational | validated | M046/S02 | M046/S01,M046/S03 | 2026-04-10 milestone closeout: `bun test ./src/contributor/fixture-set.test.ts ./src/contributor/xbmc-fixture-refresh.test.ts ./scripts/verify-m046-s01.test.ts ./src/contributor/xbmc-fixture-snapshot.test.ts ./src/contributor/calibration-evaluator.test.ts ./scripts/verify-m046-s02.test.ts ./src/contributor/calibration-change-contract.test.ts ./scripts/verify-m046.test.ts`, `bun run verify:m046 -- --json`, and `bun run tsc --noEmit` all passed. The integrated verifier preserved the nested S01/S02 proof surfaces, retained/excluded counts (3/6), a truthful `replace` verdict, and a complete `m047ChangeContract`. |
-| R048 | functional | validated | M047/S03 | M047/S01, M047/S02, M045, M046 | Validated by M047/S03 after fresh slice-close verification passed: `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and showed the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) resolving coherently across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence. |
+| R048 | functional | validated | M047/S03 | M047/S01, M047/S02, M045, M046 | Validated during M047 closeout by fresh passing results from `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence. |
+| R049 | functional | active | M048 | none | Live xbmc/kodiai review proof shows per-phase timing and a materially improved end-to-end review path versus the current timeout-prone baseline, while any reduced-scope or staged large-PR behavior remains explicit and truthful instead of silently stalling or fabricating completeness. |
 
 ## Coverage Summary
 
-- Active requirements: 5
-- Mapped to slices: 5
+- Active requirements: 6
+- Mapped to slices: 6
 - Validated: 41 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048)
 - Unmapped active requirements: 0

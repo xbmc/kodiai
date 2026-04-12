@@ -2578,6 +2578,10 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
+          publishToolNames: [
+            "mcp__github_comment__create_comment",
+            "mcp__github_inline_comment__create_inline_comment",
+          ],
           contributorExperienceContract: authorClassification.contract,
           authorExpertise: authorClassification.contract.state === "profile-backed"
             ? authorClassification.expertise?.map(e => ({
@@ -3870,6 +3874,10 @@ export function createReviewHandler(deps: {
                           }
                         : null,
                       largePRContext: null,
+                      publishToolNames: [
+                        "mcp__github_comment__create_comment",
+                        "mcp__github_inline_comment__create_inline_comment",
+                      ],
                       contributorExperienceContract: authorClassification.contract,
                       authorExpertise: authorClassification.contract.state === "profile-backed"
                         ? authorClassification.expertise?.map((e) => ({

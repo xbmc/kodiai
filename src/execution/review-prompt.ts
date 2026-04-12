@@ -186,6 +186,29 @@ function buildModeInstructions(mode: "standard" | "enhanced"): string {
   ].join("\n");
 }
 
+function buildToolAvailabilityContract(toolNames: string[]): string {
+  if (toolNames.length === 0) {
+    return "";
+  }
+
+  const uniqueToolNames = [...new Set(toolNames.map((tool) => tool.trim()).filter(Boolean))];
+  if (uniqueToolNames.length === 0) {
+    return "";
+  }
+
+  return [
+    "## Tool Availability Contract",
+    "",
+    "The following GitHub publish tools are available in this run:",
+    ...uniqueToolNames.map((tool) => `- \`${tool}\``),
+    "",
+    "If you find issues, you MUST attempt the available publish tools before ending the run.",
+    "Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error.",
+    "If a publish tool call fails, name the tool and quote the exact error in your final result.",
+    "Ending the run with unpublished findings before attempting the available publish tools is incorrect.",
+  ].join("\n");
+}
+
 // ---------------------------------------------------------------------------
 // Helper: Noise suppression rules (always included)
 // ---------------------------------------------------------------------------
@@ -1658,6 +1681,7 @@ export function buildReviewPrompt(context: {
   graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
+  publishToolNames?: string[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1855,6 +1879,11 @@ export function buildReviewPrompt(context: {
     "",
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
   );
+
+  const toolAvailabilityContract = buildToolAvailabilityContract(context.publishToolNames ?? []);
+  if (toolAvailabilityContract) {
+    lines.push("", toolAvailabilityContract);
+  }
 
   if (context.checkpointEnabled === true) {
     lines.push(

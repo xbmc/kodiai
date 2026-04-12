@@ -38,8 +38,10 @@ import {
 import { buildMentionContext } from "../execution/mention-context.ts";
 import { buildIssueCodeContext } from "../execution/issue-code-context.ts";
 import { buildMentionPrompt } from "../execution/mention-prompt.ts";
+import { buildReviewPrompt, matchPathInstructions } from "../execution/review-prompt.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
-import { classifyFileLanguage } from "../execution/diff-analysis.ts";
+import { analyzeDiff, classifyFileLanguage, parseNumstatPerFile } from "../execution/diff-analysis.ts";
+import { computeFileRiskScores, triageFilesByRisk } from "../lib/file-risk-scorer.ts";
 import {
   type ErrorCategory,
   classifyError,
@@ -586,6 +588,174 @@ export function createMentionHandler(deps: {
     );
   }
 
+  function extractExplicitReviewResultFindingLines(resultText: string | undefined): string[] {
+    if (!resultText) {
+      return [];
+    }
+
+    const findings: string[] = [];
+    const numberedFindings: Array<{
+      index: number;
+      path: string;
+      lineNo: string;
+      title: string;
+    }> = [];
+    const numberedSeverityByIndex = new Map<number, string>();
+    let currentFilePath: string | null = null;
+    let currentSeveritySection: string | null = null;
+    const headingPattern = /^#{1,6}\s*\d+\.\s*\*\*\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+-\s+(.+?)\*\*\s*$/i;
+    const inlinePattern = /^\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+(.+?)\s+\((\d+(?:-\d+)?)\):\s+(.+)$/i;
+    const numberedPattern = /^(\d+)\.\s+\*\*(.+?):(\d+(?:-\d+)?)\*\*\s+-\s+(.+)$/;
+    const severitySummaryPattern = /^-\s+\*\*\d+\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues?\*\*:\s+(.+)$/i;
+    const severitySectionPattern = /^#{1,6}\s+(CRITICAL|MAJOR|MEDIUM|MINOR)\s+issues\b[:\s]*$/i;
+    const sectionedBoldFindingPattern = /^\*\*(\d+)\.\s+(?:\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\s+)?(.+?)\*\*\s+\((.+?):(\d+(?:-\d+)?)\)$/i;
+    const fileHeaderPattern = /^###\s+(.+)$/;
+    const fileScopedLinePattern = /^(\d+)\.\s+\*\*Line\s+(\d+(?:-\d+)?)\s+\[(CRITICAL|MAJOR|MEDIUM|MINOR)\]\*\*:\s+(.+)$/i;
+
+    for (const rawLine of resultText.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) {
+        continue;
+      }
+
+      const severitySectionMatch = line.match(severitySectionPattern);
+      if (severitySectionMatch) {
+        currentSeveritySection = severitySectionMatch[1]?.toLowerCase() ?? null;
+        currentFilePath = null;
+        continue;
+      }
+
+      const headingMatch = line.match(headingPattern);
+      if (headingMatch) {
+        const severity = headingMatch[1];
+        const location = headingMatch[2];
+        const title = headingMatch[3];
+        if (!severity || !location || !title) {
+          continue;
+        }
+        const locationMatch = location.trim().match(/^(.*?):(\d+(?:-\d+)?)$/);
+        const path = locationMatch?.[1]?.trim() || location.trim();
+        const lineNo = locationMatch?.[2]?.trim() || "0";
+        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path} (${lineNo}): ${title.trim()}`);
+        continue;
+      }
+
+      const inlineMatch = line.match(inlinePattern);
+      if (inlineMatch) {
+        const severity = inlineMatch[1];
+        const path = inlineMatch[2];
+        const lineNo = inlineMatch[3];
+        const title = inlineMatch[4];
+        if (!severity || !path || !lineNo || !title) {
+          continue;
+        }
+        findings.push(`- (${findings.length + 1}) [${severity.toLowerCase()}] ${path.trim()} (${lineNo.trim()}): ${title.trim()}`);
+        continue;
+      }
+
+      const sectionedBoldFindingMatch = line.match(sectionedBoldFindingPattern);
+      if (sectionedBoldFindingMatch) {
+        const severity = (sectionedBoldFindingMatch[2] ?? currentSeveritySection)?.toLowerCase();
+        const title = sectionedBoldFindingMatch[3]?.trim();
+        const path = sectionedBoldFindingMatch[4]?.trim();
+        const lineNo = sectionedBoldFindingMatch[5]?.trim();
+        if (!severity || !title || !path || !lineNo) {
+          continue;
+        }
+        findings.push(`- (${findings.length + 1}) [${severity}] ${path} (${lineNo}): ${title}`);
+        continue;
+      }
+
+      const fileHeaderMatch = line.match(fileHeaderPattern);
+      if (fileHeaderMatch) {
+        const candidatePath = fileHeaderMatch[1]?.trim() ?? "";
+        currentFilePath = candidatePath.includes("/") && candidatePath.includes(".")
+          ? candidatePath
+          : null;
+        continue;
+      }
+
+      const fileScopedLineMatch = line.match(fileScopedLinePattern);
+      if (fileScopedLineMatch && currentFilePath) {
+        const lineNo = fileScopedLineMatch[2]?.trim();
+        const severity = fileScopedLineMatch[3]?.toLowerCase();
+        const title = fileScopedLineMatch[4]?.trim();
+        if (!lineNo || !severity || !title) {
+          continue;
+        }
+        findings.push(`- (${findings.length + 1}) [${severity}] ${currentFilePath} (${lineNo}): ${title}`);
+        continue;
+      }
+
+      const numberedMatch = line.match(numberedPattern);
+      if (numberedMatch) {
+        const findingIndex = Number.parseInt(numberedMatch[1] ?? "", 10);
+        const path = numberedMatch[2]?.trim();
+        const lineNo = numberedMatch[3]?.trim();
+        const title = numberedMatch[4]?.trim();
+        if (!Number.isInteger(findingIndex) || findingIndex < 1 || !path || !lineNo || !title) {
+          continue;
+        }
+        numberedFindings.push({ index: findingIndex, path, lineNo, title });
+        continue;
+      }
+
+      const severitySummaryMatch = line.match(severitySummaryPattern);
+      if (severitySummaryMatch) {
+        const severity = severitySummaryMatch[1]?.toLowerCase();
+        const summary = severitySummaryMatch[2];
+        if (!severity || !summary) {
+          continue;
+        }
+        for (const match of summary.matchAll(/#(\d+)/g)) {
+          const findingIndex = Number.parseInt(match[1] ?? "", 10);
+          if (Number.isInteger(findingIndex) && findingIndex > 0) {
+            numberedSeverityByIndex.set(findingIndex, severity);
+          }
+        }
+      }
+    }
+
+    if (findings.length > 0) {
+      return findings;
+    }
+
+    if (numberedFindings.length === 0) {
+      return [];
+    }
+
+    return numberedFindings
+      .sort((a, b) => a.index - b.index)
+      .map((finding, arrayIndex) => {
+        const severity = numberedSeverityByIndex.get(finding.index) ?? "major";
+        return `- (${arrayIndex + 1}) [${severity}] ${finding.path} (${finding.lineNo}): ${finding.title}`;
+      });
+  }
+
+  function hasExplicitReviewBlockingSignals(resultText: string | undefined): boolean {
+    if (!resultText) {
+      return false;
+    }
+
+    const text = resultText.toLowerCase();
+    if (
+      text.includes("no blocking issues found")
+      || text.includes("ready to merge")
+      || text.includes("decision: approve")
+    ) {
+      return false;
+    }
+
+    return (
+      /found(?:\s+\*\*\d+)?\s+(?:several|multiple|\d+)?\s*(?:blocking|critical\/major|critical and major|major and critical|critical|major)\s+issues/.test(text)
+      || /cannot be merged/.test(text)
+      || /should not be merged/.test(text)
+      || /address before merging/.test(text)
+      || /critical issues found/.test(text)
+      || /\bblocking issues\b/.test(text)
+    );
+  }
+
   function buildIssueWriteSuccessReply(params: {
     prUrl: string;
     issueLinkbackUrl: string;
@@ -682,6 +852,60 @@ export function createMentionHandler(deps: {
       .split("\n")
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
+  }
+
+  async function collectPrReviewPromptDiff(input: {
+    workspaceDir: string;
+    owner: string;
+    repo: string;
+    prNumber: number;
+    baseRef: string;
+    surface: MentionEvent["surface"];
+  }): Promise<{
+    changedFiles: string[];
+    numstatLines: string[];
+    diffRange: string;
+  }> {
+    let diffRange = `origin/${input.baseRef}...HEAD`;
+    let nameOnlyResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --name-only`
+      .quiet()
+      .nothrow();
+    let numstatResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --numstat`
+      .quiet()
+      .nothrow();
+
+    if (nameOnlyResult.exitCode !== 0 || numstatResult.exitCode !== 0) {
+      diffRange = `origin/${input.baseRef}..HEAD`;
+      nameOnlyResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --name-only`
+        .quiet()
+        .nothrow();
+      numstatResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --numstat`
+        .quiet()
+        .nothrow();
+    }
+
+    if (nameOnlyResult.exitCode === 0 && numstatResult.exitCode === 0) {
+      return {
+        changedFiles: splitGitLines(nameOnlyResult.text()),
+        numstatLines: splitGitLines(numstatResult.text()),
+        diffRange,
+      };
+    }
+
+    logger.warn(
+      {
+        surface: input.surface,
+        owner: input.owner,
+        repo: input.repo,
+        prNumber: input.prNumber,
+        baseRef: input.baseRef,
+        diffRange,
+        nameOnlyExitCode: nameOnlyResult.exitCode,
+        numstatExitCode: numstatResult.exitCode,
+      },
+      "Failed to collect diff context for explicit review prompt (fail-open)",
+    );
+    return { changedFiles: [], numstatLines: [], diffRange };
   }
 
   function stripIssueIntentWrappers(userQuestion: string): string {
@@ -1783,25 +2007,122 @@ export function createMentionHandler(deps: {
           }
         }
 
-        // Build mention prompt
-        const mentionPrompt = buildMentionPrompt({
-          mention,
-          mentionContext,
-          retrievalContext,
-          userQuestion: writeIntent.request,
-          findingContext,
-          customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
-            .filter((s) => (s ?? "").trim().length > 0)
-            .join("\n\n"),
-          outputLanguage: config.review.outputLanguage,
-          // Unified cross-corpus context (KI-11/KI-12)
-          unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
-          contextWindow: contextWindowForPrompt,
-          // Triage context for issue mentions (TRIA-03)
-          triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
-          // Pre-fetched PR diff (prevents turn exhaustion on review-intent mentions)
-          prDiffContext,
-        });
+        let prompt: string;
+        let explicitReviewPromptFileCount: number | undefined;
+        if (explicitReviewRequest && mention.prNumber !== undefined) {
+          const { data: explicitReviewPr } = await octokit.rest.pulls.get({
+            owner: mention.owner,
+            repo: mention.repo,
+            pull_number: mention.prNumber,
+          });
+
+          const promptDiffContext = mention.baseRef
+            ? await collectPrReviewPromptDiff({
+                workspaceDir: workspace.dir,
+                owner: mention.owner,
+                repo: mention.repo,
+                prNumber: mention.prNumber,
+                baseRef: mention.baseRef,
+                surface: mention.surface,
+              })
+            : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
+          const promptChangedFiles = promptDiffContext.changedFiles;
+          explicitReviewPromptFileCount = promptChangedFiles.length;
+
+          const diffAnalysis = analyzeDiff({
+            changedFiles: promptChangedFiles,
+            numstatLines: promptDiffContext.numstatLines,
+            fileCategories: config.review.fileCategories as Record<string, string[]> | undefined,
+          });
+          const matchedPathInstructions = matchPathInstructions(
+            config.review.pathInstructions,
+            promptChangedFiles,
+          );
+          const perFileStats = parseNumstatPerFile(promptDiffContext.numstatLines);
+          const riskScores = computeFileRiskScores({
+            files: promptChangedFiles,
+            perFileStats,
+            filesByCategory: diffAnalysis.filesByCategory,
+            weights: config.largePR.riskWeights,
+          });
+          const tieredFiles = triageFilesByRisk({
+            riskScores,
+            fileThreshold: config.largePR.fileThreshold,
+            fullReviewCount: config.largePR.fullReviewCount,
+            abbreviatedCount: config.largePR.abbreviatedCount,
+            totalFileCount: promptChangedFiles.length,
+          });
+          const promptFiles = tieredFiles.isLargePR
+            ? [
+                ...tieredFiles.full.map((file) => file.filePath),
+                ...tieredFiles.abbreviated.map((file) => file.filePath),
+              ]
+            : promptChangedFiles;
+
+          const prLabels = (explicitReviewPr.labels ?? [])
+            .map((label) => typeof label === "string" ? label : label.name)
+            .filter((label): label is string => typeof label === "string" && label.length > 0);
+
+          prompt = buildReviewPrompt({
+            owner: mention.owner,
+            repo: mention.repo,
+            prNumber: mention.prNumber,
+            prTitle: explicitReviewPr.title,
+            prBody: explicitReviewPr.body ?? "",
+            prAuthor: explicitReviewPr.user?.login ?? "unknown",
+            baseBranch: explicitReviewPr.base.ref,
+            headBranch: explicitReviewPr.head.ref,
+            changedFiles: promptFiles,
+            customInstructions: config.review.prompt,
+            mode: config.review.mode,
+            severityMinLevel: config.review.severity.minLevel,
+            focusAreas: config.review.focusAreas,
+            ignoredAreas: config.review.ignoredAreas,
+            maxComments: config.review.maxComments,
+            suppressions: config.review.suppressions,
+            minConfidence: config.review.minConfidence,
+            diffAnalysis,
+            matchedPathInstructions,
+            retrievalContext,
+            reviewPrecedents: reviewPrecedentsForPrompt.length > 0 ? reviewPrecedentsForPrompt : undefined,
+            wikiKnowledge: wikiKnowledgeForPrompt.length > 0 ? wikiKnowledgeForPrompt : undefined,
+            unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+            contextWindow: contextWindowForPrompt,
+            filesByLanguage: diffAnalysis.filesByLanguage,
+            outputLanguage: config.review.outputLanguage,
+            prLabels,
+            isDraft: explicitReviewPr.draft,
+            largePRContext: tieredFiles.isLargePR ? {
+              fullReviewFiles: tieredFiles.full.map((file) => file.filePath),
+              abbreviatedFiles: tieredFiles.abbreviated.map((file) => file.filePath),
+              mentionOnlyCount: tieredFiles.mentionOnly.length,
+              totalFiles: tieredFiles.totalFiles,
+            } : null,
+            publishToolNames: [
+              "mcp__github_comment__create_comment",
+              "mcp__github_inline_comment__create_inline_comment",
+            ],
+          });
+        } else {
+          prompt = buildMentionPrompt({
+            mention,
+            mentionContext,
+            retrievalContext,
+            userQuestion: writeIntent.request,
+            findingContext,
+            customInstructions: [config.mention.prompt, planOnlyInstructions, writeInstructions]
+              .filter((s) => (s ?? "").trim().length > 0)
+              .join("\n\n"),
+            outputLanguage: config.review.outputLanguage,
+            // Unified cross-corpus context (KI-11/KI-12)
+            unifiedResults: unifiedResultsForPrompt.length > 0 ? unifiedResultsForPrompt : undefined,
+            contextWindow: contextWindowForPrompt,
+            // Triage context for issue mentions (TRIA-03)
+            triageContext: triageContext.trim().length > 0 ? triageContext : undefined,
+            // Pre-fetched PR diff (prevents turn exhaustion on review-intent mentions)
+            prDiffContext,
+          });
+        }
 
         // Cap max turns for read-only conversational PR mentions.
         // Explicit `@kodiai review` requests should use the full review budget so
@@ -1841,9 +2162,12 @@ export function createMentionHandler(deps: {
           taskType: explicitReviewRequest ? "review.full" : "mention.response",
           eventType: `${event.name}.${action ?? ""}`.replace(/\.$/, ""),
           triggerBody: explicitReviewRequest ? userQuestion : mention.commentBody,
-          prompt: mentionPrompt,
+          prompt,
           reviewOutputKey,
           maxTurnsOverride: mentionMaxTurns,
+          knowledgeStore: deps.knowledgeStore,
+          totalFiles: explicitReviewPromptFileCount,
+          enableInlineTools: explicitReviewRequest ? true : undefined,
         });
 
         // Explicit PR review mentions bypass the pull_request review handler's
@@ -1853,13 +2177,24 @@ export function createMentionHandler(deps: {
         let publishResolution: MentionPublishResolution = mentionOutputPublished ? "executor" : "none";
         let publishFailureCategory: ErrorCategory | null = null;
         let publishFallbackDelivery: MentionErrorDelivery | null = null;
+        const explicitReviewResultFindingLines = extractExplicitReviewResultFindingLines(result.resultText);
+        const explicitReviewHasUnpublishedFindings =
+          explicitReviewRequest &&
+          mention.prNumber !== undefined &&
+          !result.published &&
+          (
+            explicitReviewResultFindingLines.length > 0
+            || hasExplicitReviewBlockingSignals(result.resultText)
+          );
         const explicitReviewPublishEligible =
           explicitReviewRequest &&
           mention.prNumber !== undefined &&
           result.conclusion === "success" &&
           !result.published &&
+          result.usedRepoInspectionTools === true &&
           reviewOutputKey &&
-          config.review.autoApprove;
+          config.review.autoApprove &&
+          !explicitReviewHasUnpublishedFindings;
 
         if (explicitReviewRequest && mention.prNumber !== undefined && !explicitReviewPublishEligible) {
           const skipReason =
@@ -1867,11 +2202,15 @@ export function createMentionHandler(deps: {
               ? "execution-not-success"
               : result.published
                 ? "output-already-published"
-                : !reviewOutputKey
-                  ? "missing-review-output-key"
-                  : !config.review.autoApprove
-                    ? "auto-approve-disabled"
-                    : "not-eligible";
+                : explicitReviewHasUnpublishedFindings
+                  ? "result-text-findings"
+                  : result.usedRepoInspectionTools !== true
+                    ? "missing-inspection-evidence"
+                    : !reviewOutputKey
+                      ? "missing-review-output-key"
+                      : !config.review.autoApprove
+                        ? "auto-approve-disabled"
+                        : "not-eligible";
 
           logger.info(
             {
@@ -1885,6 +2224,8 @@ export function createMentionHandler(deps: {
               reviewOutputKey: reviewOutputKey ?? null,
               resultConclusion: result.conclusion,
               resultPublished: result.published,
+              usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
+              toolUseNames: result.toolUseNames ?? [],
               autoApprove: config.review.autoApprove,
             },
             "Skipping explicit mention review publish path",
@@ -2080,6 +2421,8 @@ export function createMentionHandler(deps: {
             numTurns: result.numTurns,
             durationMs: result.durationMs,
             sessionId: result.sessionId,
+            usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
+            toolUseNames: result.toolUseNames ?? [],
             ...(explicitReviewRequest ? { explicitReviewRequest: true } : {}),
             ...(reviewOutputKey ? { reviewOutputKey } : {}),
           },
@@ -2887,11 +3230,17 @@ export function createMentionHandler(deps: {
           publishResolution !== "publish-failure-comment-failed"
         ) {
           const fallbackLines = explicitReviewRequest
-            ? [
-                "Decision: NOT APPROVED",
-                "Issues:",
-                "- (1) [major] review execution (0): The review run completed without publishing any review findings or approval state, so this request did not produce a usable code review.",
-              ]
+            ? explicitReviewResultFindingLines.length > 0
+              ? [
+                  "Decision: NOT APPROVED",
+                  "Issues:",
+                  ...explicitReviewResultFindingLines,
+                ]
+              : [
+                  "Decision: NOT APPROVED",
+                  "Issues:",
+                  "- (1) [major] review execution (0): The review run completed without publishing any review findings or approval state, so this request did not produce a usable code review.",
+                ]
             : [
                 "I can answer this, but I need one detail first.",
                 "",

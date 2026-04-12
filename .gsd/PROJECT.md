@@ -83,3 +83,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Review-Surface Rollout
   - [x] S02: Retrieval and Slack Surface Rollout
   - [x] S03: End-to-End Coherence Verification
+- [ ] M048: PR Review Latency Reduction and Bounded Execution

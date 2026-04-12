@@ -461,6 +461,28 @@ test("buildReviewPrompt includes path instructions section when provided", () =>
   expect(prompt).toContain("Check auth and validation");
 });
 
+test("buildReviewPrompt includes tool availability contract when publish tools are provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: [
+        "mcp__github_comment__create_comment",
+        "mcp__github_inline_comment__create_inline_comment",
+      ],
+    }),
+  );
+
+  expect(prompt).toContain("## Tool Availability Contract");
+  expect(prompt).toContain("mcp__github_comment__create_comment");
+  expect(prompt).toContain("mcp__github_inline_comment__create_inline_comment");
+  expect(prompt).toContain("Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error");
+  expect(prompt).toContain("Ending the run with unpublished findings before attempting the available publish tools is incorrect");
+});
+
+test("buildReviewPrompt omits tool availability contract when publish tools are absent", () => {
+  const prompt = buildReviewPrompt(baseContext());
+  expect(prompt).not.toContain("## Tool Availability Contract");
+});
+
 test("buildReviewPrompt includes suppression section when suppressions provided", () => {
   const prompt = buildReviewPrompt(
     baseContext({

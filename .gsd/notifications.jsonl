@@ -255,3 +255,13 @@
 {"id":"62f39cc9-7e25-4747-ba6f-f59383fe4a9a","ts":"2026-04-11T03:26:46.284Z","severity":"info","message":"Auto-mode paused (Escape). Type to interact, or /gsd auto to resume.","source":"notify","read":false}
 {"id":"faf99db9-2732-4fbd-a6ea-3dd9e0ced0b4","ts":"2026-04-11T04:02:53.897Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
 {"id":"1cf10355-427c-4736-8069-cc1c23f73c3e","ts":"2026-04-11T04:02:56.770Z","severity":"info","message":"Resume: applied 3 fix(es) to state.","source":"notify","read":false}
+{"id":"624494e8-d2fa-4371-a79f-e143559c3dd2","ts":"2026-04-11T04:09:38.888Z","severity":"info","message":"Committed: chore: auto-commit after complete-milestone","source":"notify","read":false}
+{"id":"f4614a4c-641c-4644-82e7-ab79bacf0c00","ts":"2026-04-11T04:09:39.350Z","severity":"info","message":"Auto-mode stopped — All milestones complete. Session: $507.56 · 1074.73M tokens · 1356 units","source":"notify","read":false}
+{"id":"cedd2443-416c-4f6a-9e85-2de374158e9c","ts":"2026-04-11T04:09:39.351Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":false}
+{"id":"fc4f6914-e64c-41ab-8ae1-4c27b47c9020","ts":"2026-04-11T05:04:16.467Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":false}
+{"id":"0a7f5e84-d756-4111-948d-60f8b425d9b3","ts":"2026-04-11T07:18:37.159Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":false}
+{"id":"a4fbd39f-3aa1-4d34-89ce-a43dd0c67f84","ts":"2026-04-11T07:34:01.049Z","severity":"warning","message":"[state] DB unavailable — using filesystem state derivation (degraded mode)","source":"workflow-logger","read":false}
+{"id":"900f2cf5-f2b8-4ce4-b21b-f7be22037e21","ts":"2026-04-11T14:30:09.284Z","severity":"warning","message":"Unknown: /gsd upgrade. Run /gsd help for available commands.","source":"notify","read":false}
+{"id":"d9f9ad1a-e8a0-4890-bb51-2ed9851e631a","ts":"2026-04-12T15:13:31.328Z","severity":"info","message":"Auto-mode started. Will loop through 2 milestones.","source":"notify","read":false}
+{"id":"009f55f5-60f8-400f-a9de-6bf44d66c3ea","ts":"2026-04-12T15:13:31.329Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.4)","source":"notify","read":false}
+{"id":"cfc6b45a-863f-42a5-b061-dffe1e8d2f0a","ts":"2026-04-12T15:13:31.331Z","severity":"warning","message":"Pre-flight: 41 milestones queued.\n  ⚠ M049: has CONTEXT-DRAFT.md (will pause for discussion)","source":"notify","read":false}

@@ -122,7 +122,7 @@ The app runtime still has built-in defaults for the ACA job launch contract in `
 - `ACA_JOB_IMAGE=kodiairegistry.azurecr.io/kodiai-agent:latest`
 - `ACA_JOB_NAME=caj-kodiai-agent`
 - `ACA_RESOURCE_GROUP=rg-kodiai`
-- `MCP_INTERNAL_BASE_URL=http://ca-kodiai:3000/internal/mcp`
+- `MCP_INTERNAL_BASE_URL=http://ca-kodiai`
 
 Those defaults are the current truth. `deploy.sh` does **not** inject them into the container app template anymore.
 

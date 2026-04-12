@@ -372,7 +372,10 @@ function createTestableExecutor(deps: {
           context.eventType === "pull_request_review_comment.created" ||
           context.eventType === "pull_request_review.submitted";
         const isWriteMode = context.writeMode === true;
-        const enableInlineTools = isMentionEvent || isWriteMode ? false : (context.enableInlineTools ?? true);
+        const enableInlineTools =
+          isWriteMode
+            ? false
+            : (context.enableInlineTools ?? !isMentionEvent);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
         const { buildMcpServers, buildAllowedMcpTools } = await import("./mcp/index.ts");
@@ -1005,6 +1008,7 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
       eventType: "issue_comment.created",
       prNumber: 80,
       taskType: "review.full",
+      enableInlineTools: true,
     }),
   );
 
@@ -1021,6 +1025,8 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
   expect(agentConfig.allowedTools).toContain("Glob");
   expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
+  expect(agentConfig.allowedTools).toContain("mcp__github_inline_comment__create_inline_comment");
+  expect(agentConfig.allowedTools).toContain("mcp__github_ci__get_ci_status");
   expect(agentConfig.repoCwd).toBe(join(tmpDir!, "repo"));
   expect(await readFile(join(tmpDir!, "repo", "src", "feature.ts"), "utf-8")).toContain("feature = true");
   expect(await readFile(join(tmpDir!, "repo", ".kodiai.yml"), "utf-8")).toContain("review:");
