@@ -250,7 +250,7 @@ describe("calibration change contract", () => {
       'text: "profile-backed (using linked contributor profile guidance)"',
     );
     expect(reviewHandlerSource).toContain(
-      'const contract = projectContributorExperienceContract({',
+      'contract: projectContributorExperienceContract({',
     );
     expect(reviewHandlerSource).toContain('contract.state === "coarse-fallback"');
     expect(reviewHandlerSource).toContain('type: "pr_authored"');
