@@ -31,5 +31,7 @@ jobs:
         with:
           bun-version: latest
       - run: bun install
-      - run: bun test
+      # DB-backed tests share a single Postgres service; higher Bun runner concurrency
+      # causes cross-file schema interference and flaky/segfaulting CI runs.
+      - run: bun test --max-concurrency=2
       - run: bunx tsc --noEmit
