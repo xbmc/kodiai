@@ -53,7 +53,9 @@ export async function prepareAgentWorkspace(params: {
 }): Promise<{ repoCwd: string }> {
   const repoCwd = join(params.workspaceDir, "repo");
   await mkdir(repoCwd, { recursive: true });
-  await cp(params.sourceRepoDir, repoCwd, { recursive: true });
+  // Azure Files mounts reject symlink creation, so materialize symlink targets
+  // into regular files when staging the repo snapshot for the agent container.
+  await cp(params.sourceRepoDir, repoCwd, { recursive: true, dereference: true });
   await writeFile(join(params.workspaceDir, "prompt.txt"), params.prompt);
   await writeFile(
     join(params.workspaceDir, "agent-config.json"),

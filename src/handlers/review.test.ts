@@ -6781,6 +6781,129 @@ describe("createReviewHandler timeout resilience", () => {
 
     await workspaceFixture.cleanup();
   });
+
+  test("transient agent exit 143 retries once before posting an error", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    const createdCommentBodies: string[] = [];
+    let executeCount = 0;
+    let approveCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async () => {
+            approveCount++;
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            createdCommentBodies.push(params.body);
+            return { data: { id: 100 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          if (executeCount === 1) {
+            return {
+              conclusion: "error",
+              published: false,
+              errorMessage: "Failed with exit code 143",
+              costUsd: 0,
+              numTurns: 1,
+              durationMs: 1,
+              sessionId: "session-exit-143-first",
+              model: "test-model",
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheCreationTokens: 0,
+              stopReason: undefined,
+            };
+          }
+
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-exit-143-retry",
+            model: "test-model",
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.opened");
+    expect(handler).toBeDefined();
+
+    await handler!({
+      ...buildReviewRequestedEvent({ action: "opened" }),
+      name: "pull_request",
+      payload: {
+        ...buildReviewRequestedEvent({}).payload,
+        action: "opened",
+      },
+    });
+
+    expect(executeCount).toBe(2);
+    expect(createdCommentBodies.some((body) => body.includes("Failed with exit code 143"))).toBe(false);
+    expect(createdCommentBodies.some((body) => body.includes("Kodiai encountered an error"))).toBe(false);
+    expect(approveCount).toBe(1);
+
+    await workspaceFixture.cleanup();
+  });
 });
 
 describe("createReviewHandler author-tier search cache integration", () => {

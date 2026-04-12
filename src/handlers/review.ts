@@ -9,6 +9,7 @@ import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { ExecutionResult } from "../execution/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
@@ -218,6 +219,14 @@ export function resolveAuthorTierFromSources(params: {
   }
 
   return { tier: fallbackTier, source: "fallback" };
+}
+
+function shouldRetryTransientAgentExit(result: Pick<ExecutionResult, "conclusion" | "errorMessage" | "isTimeout" | "published">): boolean {
+  if (result.conclusion !== "error") return false;
+  if (result.isTimeout) return false;
+  if (result.published) return false;
+
+  return /Failed with exit code 143\b/i.test(result.errorMessage ?? "");
 }
 
 async function fetchCommitMessages(
@@ -2501,8 +2510,7 @@ export function createReviewHandler(deps: {
           structuralImpact: structuralImpactForReview,
         });
 
-        // Execute review via Claude
-        const result = await executor.execute({
+        const executionInput = {
           workspace,
           installationId: event.installationId,
           owner: apiOwner,
@@ -2511,7 +2519,7 @@ export function createReviewHandler(deps: {
           commentId: undefined,
           botHandles: [githubApp.getAppSlug(), "claude"],
           eventType: `pull_request.${payload.action}`,
-          taskType: "review.full",
+          taskType: "review.full" as const,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
           reviewOutputKey,
@@ -2523,7 +2531,26 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
             ? timeoutEstimate.dynamicTimeoutSeconds
             : undefined,
-        });
+        };
+
+        let result = await executor.execute(executionInput);
+
+        if (shouldRetryTransientAgentExit(result)) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "transient-agent-exit",
+              gateResult: "retrying",
+              errorMessage: result.errorMessage,
+            },
+            "Transient agent exit detected, retrying review once",
+          );
+
+          result = await executor.execute({
+            ...executionInput,
+            deliveryId: `${event.id}-transient-retry-1`,
+          });
+        }
 
         logger.info(
           {

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { prepareAgentWorkspace } from "./executor.ts";
@@ -62,4 +62,28 @@ test("prepareAgentWorkspace copies the repo and writes agent-config with repoCwd
   expect(agentConfig.taskType).toBe("review.full");
   expect(agentConfig.repoCwd).toBe(repoCwd);
   expect(agentConfig.mcpServerNames).toEqual(["github_comment"]);
+});
+
+test("prepareAgentWorkspace materializes symlinks as regular files in the staged repo snapshot", async () => {
+  const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
+  const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
+
+  await mkdir(join(sourceRepoDir, "system", "settings"), { recursive: true });
+  await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings platform=\"linux\" />\n");
+  await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+
+  await prepareAgentWorkspace({
+    sourceRepoDir,
+    workspaceDir,
+    prompt: "Review this PR",
+    model: "claude-sonnet-4-5-20250929",
+    maxTurns: 25,
+    allowedTools: ["Read", "Grep", "Glob"],
+    taskType: "review.full",
+    mcpServerNames: ["github_comment"],
+  });
+
+  const stagedPath = join(workspaceDir, "repo", "system", "settings", "freebsd.xml");
+  expect(await readFile(stagedPath, "utf-8")).toBe("<settings platform=\"linux\" />\n");
+  expect((await lstat(stagedPath)).isSymbolicLink()).toBe(false);
 });
