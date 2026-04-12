@@ -270,4 +270,36 @@ describe("calibration evaluator", () => {
       max: 2,
     });
   });
+
+  test("treats future provenance timestamps as unknown freshness and reports the data issue", async () => {
+    const snapshotModule = await loadSnapshotModule();
+    const calibrationModule = await loadCalibrationModule();
+
+    expect(snapshotModule).not.toBeNull();
+    expect(calibrationModule).not.toBeNull();
+    if (!snapshotModule?.assertValidXbmcFixtureSnapshot || !calibrationModule?.evaluateCalibrationSnapshot) {
+      return;
+    }
+
+    const snapshot = clone(
+      snapshotModule.assertValidXbmcFixtureSnapshot(
+        await readJsonFixture("fixtures/contributor-calibration/xbmc-snapshot.json"),
+      ),
+    );
+
+    const futureRecordRow = snapshot.retained.find(
+      (row: { normalizedId: string }) => row.normalizedId === "fuzzard",
+    );
+    expect(futureRecordRow).toBeDefined();
+    futureRecordRow!.provenanceRecords[0].observedAt = "2026-04-12T20:42:03.000Z";
+
+    const report = calibrationModule.evaluateCalibrationSnapshot(snapshot, {
+      referenceTime: "2026-04-10T20:42:03.000Z",
+    });
+
+    const fuzzard = findRow(report, "fuzzard");
+    expect(fuzzard.freshness.daysSinceLatestEvidence).toBeLessThan(0);
+    expect(fuzzard.freshness.freshnessBand).toBe("unknown");
+    expect(fuzzard.freshness.findings.join(" ").toLowerCase()).toContain("future");
+  });
 });

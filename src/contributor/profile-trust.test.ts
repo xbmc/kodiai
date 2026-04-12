@@ -103,6 +103,26 @@ describe("classifyContributorProfileTrust", () => {
     });
   });
 
+  test("classifies future lastScoredAt values as malformed instead of trusting the row", () => {
+    const trust = classifyContributorProfileTrust(
+      makeProfile({
+        overallTier: "newcomer",
+        overallScore: 0,
+        lastScoredAt: new Date("2026-04-11T00:00:00.000Z"),
+        trustMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+      }),
+      { referenceTime: REFERENCE_TIME },
+    );
+
+    expect(trust).toMatchObject({
+      state: "malformed",
+      trusted: false,
+      reason: "invalid-last-scored-at",
+      calibrationMarker: CURRENT_CONTRIBUTOR_PROFILE_TRUST_MARKER,
+      calibrationVersion: "v1",
+    });
+  });
+
   test("classifies malformed tiers as malformed instead of trusting the row", () => {
     const trust = classifyContributorProfileTrust(
       makeProfile({
