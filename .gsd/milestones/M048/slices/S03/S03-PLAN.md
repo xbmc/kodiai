@@ -91,7 +91,7 @@ Strict reviews are already bounded on large PRs, and timeout pressure can furthe
   - Verify: - `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts`
 - `bun run tsc --noEmit`
 
-- [ ] **T03: Ship verify:m048:s03 preflight and live synchronize proof without inventing a new evidence path** `est:90m`
+- [x] **T03: Ship verify:m048:s03 preflight and live synchronize proof without inventing a new evidence path** `est:90m`
   **Slice:** S03 — Truthful Bounded Reviews and Synchronize Continuity
 **Milestone:** M048
 
