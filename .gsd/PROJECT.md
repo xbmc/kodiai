@@ -10,9 +10,20 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 ## Current State
 
-The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
+The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, and latency/phase-timing review evidence.
 
-Milestones M043, M044, M045, M046, M047, and M048 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M048 shipped the latency/bounded-execution review truth surfaces plus the first single-worker latency reduction pass.
+Milestones M043, M044, M045, M046, M047, and M048 are complete. M049 is in progress: S01 is complete and verified, and S02 remains to prove the new clean-approval body on live GitHub/audit surfaces.
+
+**M049 is in progress and S01 is complete and verified.** The clean-approval path now has one shared visible review-body contract instead of marker-only approvals:
+
+- `src/handlers/review-idempotency.ts` now makes `buildApprovedReviewBody(...)` the canonical clean-approval formatter. It emits visible plain markdown with `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, optional approval-confidence evidence, and the existing `review-output-key` marker.
+- `src/handlers/mention.ts` and `src/handlers/review.ts` now publish explicit `@kodiai review` approvals and automatic clean approvals through that same builder, using already-available handler facts such as changed-file coverage, repo-inspection-tool usage, and dep-bump merge confidence.
+- `src/execution/mcp/comment-server.ts` now treats approve-via-comment as a narrow validation boundary: only the shared visible APPROVE grammar is promotable to a GitHub `APPROVE` review, wrapped or prose-heavy near-misses are rejected, and the server still stamps the marker itself.
+- `src/execution/mention-prompt.ts` now teaches the same visible APPROVE grammar while preserving the wrapped `Decision: NOT APPROVED` contract for non-clean outcomes.
+- Fresh slice-close verification passed:
+  - `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`
+  - `bun run tsc --noEmit`
+- S02 is still required to capture live GitHub evidence that the published clean approval body is visible, trustworthy, and audit-correlatable outside the local test harness.
 
 **M047 is complete and verified.** The contributor-experience rollout now has one truthful persisted-profile trust boundary and one canonical milestone-close proof surface:
 
@@ -63,6 +74,8 @@ Requirement `R052` is validated and was reconfirmed during milestone closeout. R
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
+- **Shared clean-approval body seam:** `buildApprovedReviewBody(...)` in `src/handlers/review-idempotency.ts` is now the canonical visible clean-approval formatter across explicit mention, automatic review, and approve-via-comment approval lanes.
+- **Approval grammar boundary:** `src/execution/mcp/comment-server.ts` validates a narrow visible APPROVE grammar (`Decision: APPROVE`, `Issues: none`, `Evidence:`, 1–3 bullets) and keeps review-output marker stamping server-side.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
 - **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
 - **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
@@ -114,3 +127,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Live Phase Timing and Operator Evidence Surfaces
   - [x] S02: Single-Worker Path Latency Reduction
   - [x] S03: Truthful Bounded Reviews and Synchronize Continuity
+- [ ] M049: Evidence-Backed Clean PR Approvals
+  - [x] S01: Shared clean-approval review body contract
+  - [ ] S02: Live proof and auditability verification

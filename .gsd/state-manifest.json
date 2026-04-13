@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T14:50:43.627Z",
+  "exported_at": "2026-04-13T15:29:53.795Z",
   "milestones": [
     {
       "id": "M001",
@@ -6342,14 +6342,14 @@
       "milestone_id": "M049",
       "id": "S01",
       "title": "S01",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [],
       "demo": "A clean approval on explicit `@kodiai review` and automatic review both show a short GitHub review body with `Decision: APPROVE`, `Issues: none`, factual evidence lines, and the existing review-output marker.",
       "created_at": "2026-04-11T16:45:05.796Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-13T14:56:18.390Z",
+      "full_summary_md": "---\nid: S01\nparent: M049\nmilestone: M049\nprovides:\n  - One canonical visible clean-approval body contract shared by explicit mention, automatic review, and approve-via-comment approval lanes.\n  - A strict approve-via-comment grammar boundary that promotes only valid visible APPROVE bodies while keeping marker stamping server-side.\n  - Preserved idempotency, marker extraction, and publish-log correlation around clean approvals despite the visible body change.\nrequires:\n  []\naffects:\n  - S02\nkey_files:\n  - src/handlers/review-idempotency.ts\n  - src/handlers/review-idempotency.test.ts\n  - src/handlers/mention.ts\n  - src/handlers/mention.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - src/execution/mcp/comment-server.ts\n  - src/execution/mcp/comment-server.test.ts\n  - src/execution/mention-prompt.ts\n  - src/execution/mention-prompt.test.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D098 — use one shared short evidence-backed GitHub review body for clean approvals instead of a marker-only approval or separate clean comment.\n  - D116 — define that shared clean-approval body as visible plain markdown with `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, and the existing marker.\n  - D117 — require approve-via-comment to accept and promote only that visible APPROVE grammar while leaving the wrapped `Decision: NOT APPROVED` path unchanged.\npatterns_established:\n  - Use `buildApprovedReviewBody(...)` as the sole formatter for clean approvals and feed it only facts handlers already compute, not fresh API calls or prompt excerpts.\n  - Reserve at most one evidence slot for approval confidence so visible clean approvals stay short, structured, and bounded at 1–3 bullets.\n  - Treat approve-via-comment as a narrow validation boundary: the server stamps the marker, the prompt teaches the exact grammar, and the sanitizer rejects wrapped or prose-heavy near-misses.\nobservability_surfaces:\n  - `review-output-idempotency` log gating and `extractReviewOutputKey(...)` marker extraction continue to correlate clean approval publication under the same `reviewOutputKey`.\n  - Explicit mention publish tests assert approval submission logs and publish-attempt outcomes under the shared key.\n  - Automatic review tests continue to cover `auto-approve` publication behavior and dep-bump approval confidence inside the shared body.\n  - Comment-server tests prove server-stamped marker continuity on valid APPROVE promotion and explicit rejection on malformed approval bodies.\ndrill_down_paths:\n  - .gsd/milestones/M049/slices/S01/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M049/slices/S01/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M049/slices/S01/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-13T14:56:18.391Z\nblocker_discovered: false\n---\n\n# S01: Shared clean-approval review body contract\n\n**Unified clean GitHub approvals across explicit mention, automatic review, and approve-via-comment onto one visible evidence-backed APPROVE body while preserving marker, idempotency, and publish-log continuity.**\n\n## What Happened\n\n## Delivered\n\nThis slice replaced marker-only clean approvals with one shared visible review-body contract and threaded that contract through every clean-approval publish path covered by the milestone demo.\n\n- `src/handlers/review-idempotency.ts` now makes `buildApprovedReviewBody(...)` the canonical formatter for clean approvals. The body is visible plain markdown, not a `<details>` wrapper, and always emits `Decision: APPROVE`, `Issues: none`, an `Evidence:` header, 1–3 short factual bullets, and the existing `<!-- kodiai:review-output-key:... -->` marker.\n- The evidence builder normalizes/trims inputs, falls back to one default factual bullet when no evidence is supplied, and reserves one slot for optional approval-confidence text so dep-bump merge confidence stays structured instead of trailing as free-form prose.\n- `src/handlers/mention.ts` now publishes explicit `@kodiai review` clean approvals through the shared formatter using facts the handler already computes: review-prompt file coverage and repo-inspection-tool usage. The explicit-review publish bridge still runs through the same idempotency gate and keeps the same `reviewOutputKey` correlation contract.\n- `src/handlers/review.ts` now publishes automatic clean approvals through the same formatter, carrying forward changed-file coverage evidence and rendering dep-bump merge confidence as a shared evidence bullet instead of marker-only approval text.\n- `src/execution/mcp/comment-server.ts` now treats approve-via-comment as the strict boundary for this contract: valid APPROVE responses must use the visible shared grammar, must contain exactly the `Decision: APPROVE` / `Issues: none` / `Evidence:` structure with 1–3 bullets, and must not include wrapper HTML or extra prose. The server continues to stamp the review-output marker itself.\n- `src/execution/mention-prompt.ts` now teaches the same narrow visible APPROVE grammar while preserving the wrapped `Decision: NOT APPROVED` contract for non-clean outcomes.\n\n## What the slice actually proved\n\nFresh slice-close verification proved the contract end to end in code:\n\n- helper tests pin the exact clean-approval grammar, fallback evidence, evidence normalization, three-bullet cap, approval-confidence handling, and marker extraction continuity;\n- explicit mention approval bridging publishes the shared body and keeps `review-output-idempotency`-backed duplicate suppression intact;\n- automatic clean-review approval publishing uses the same visible body, including the dep-bump approval-confidence path;\n- approve-via-comment promotes only valid shared APPROVE bodies to GitHub `APPROVE` reviews and rejects wrapped or malformed near-misses;\n- prompt guidance, sanitizer rules, and server-side marker stamping now agree on one narrow approval grammar.\n\nThis slice intentionally stopped at integration-level proof. S02 still needs live GitHub/operator proof that the shipped body appears as expected on real approval surfaces and remains easy to audit outside unit tests.\n\n## Operational Readiness (Q8)\n\n- **Health signal:** handler/MCP tests confirm valid clean approvals carry the same `reviewOutputKey`, `extractReviewOutputKey(...)` still resolves the published marker, and the existing publish-path logs continue to emit `review-output-idempotency`, explicit approval submission, and automatic approval publication under the same correlation key.\n- **Failure signal:** a regression shows up as missing marker/body assertions, malformed `Evidence:` block rejection, wrapped APPROVE-body rejection, lost dep-bump confidence evidence, or publish-log assertions failing on the explicit/automatic approval paths.\n- **Recovery procedure:** rerun the full S01 slice test command plus `bun run tsc --noEmit`, inspect which of the three seams drifted (`buildApprovedReviewBody(...)`, handler evidence wiring, or comment-server/prompt grammar enforcement), then restore the shared contract before redeploying.\n- **Monitoring gaps:** this slice did not produce fresh live GitHub proof. S02 still needs to inspect a real clean approval on GitHub and verify the same body is operator-visible and audit-correlatable outside the test harness.\n\n## Requirements\n\n- **Advanced:** R043 — reverified that the explicit `@kodiai review` clean-approval lane still produces exactly one visible GitHub review outcome while moving that outcome from marker-only approval text to the shared evidence-backed body.\n- **New requirements surfaced:** None.\n- **Requirements invalidated or re-scoped:** None.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThis slice proves the shared clean-approval contract in tests and typecheck only. It does not yet include fresh live GitHub proof of the visible body on real approval reviews; that remains the purpose of S02.\n\n## Follow-ups\n\nUse S02 to capture live clean-approval examples from both explicit mention and automatic review lanes, confirm the visible body on GitHub, and verify operator/audit tooling can correlate the same published body cleanly.\n\n## Verification\n\n- `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts` — passed fresh at slice close (322 pass, 0 fail).\n- `bun run tsc --noEmit` — passed fresh at slice close (exit 0).\n- Observability/diagnostic surfaces were reverified through assertions on `review-output-idempotency`, explicit approval publish logs, automatic approval publication, server-stamped marker continuity, and `extractReviewOutputKey(...)` extraction across published approval bodies.\n\n## Requirements Advanced\n\n- R043 — Reverified the explicit `@kodiai review` clean-approval lane still publishes exactly one visible GitHub review outcome while switching that outcome to the shared evidence-backed APPROVE body and preserving idempotency.\n\n## Requirements Validated\n\nNone.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nLive GitHub proof is intentionally deferred to S02; this slice only proves the contract locally via focused integration tests and typecheck.\n\n## Follow-ups\n\nS02 should capture real GitHub clean-approval examples from explicit mention and automatic review lanes, then verify audit/operator surfaces against the published body.\n\n## Files Created/Modified\n\n- `src/handlers/review-idempotency.ts` — Made `buildApprovedReviewBody(...)` the canonical visible clean-approval formatter, including bounded evidence normalization, approval-confidence handling, and unchanged marker generation/extraction.\n- `src/handlers/mention.ts` — Threaded explicit mention approval evidence into the shared builder and preserved publish/idempotency correlation for clean approval bridging.\n- `src/handlers/review.ts` — Switched automatic clean approvals and dep-bump approval confidence onto the shared visible APPROVE body.\n- `src/execution/mcp/comment-server.ts` — Tightened approve-via-comment sanitization and promotion so only the shared visible APPROVE grammar can become a GitHub `APPROVE` review.\n- `src/execution/mention-prompt.ts` — Updated PR-approval instructions to teach the visible APPROVE grammar while preserving the wrapped NOT APPROVED contract.\n- `.gsd/KNOWLEDGE.md` — Recorded the marker-bearing comment-server test gotcha so future work stubs the idempotency scan endpoints before approval publish assertions.\n",
+      "full_uat_md": "# S01: Shared clean-approval review body contract — UAT\n\n**Milestone:** M049\n**Written:** 2026-04-13T14:56:18.391Z\n\n# S01: Shared clean-approval review body contract — UAT\n\n**Milestone:** M049\n\n## Preconditions\n\n- Work from the repo root with the S01 changes present.\n- Bun dependencies are installed.\n- No live GitHub access is required for this slice; all acceptance checks are local and target the shipped approval-body contract.\n\n## Test Case 1 — Canonical clean-approval formatter emits the visible APPROVE grammar\n\n1. Run `bun test ./src/handlers/review-idempotency.test.ts`.\n   - **Expected:** The suite passes.\n2. Inspect the named assertions covering `buildApprovedReviewBody(...)` in the output.\n   - **Expected:** Tests confirm the body is visible markdown and contains `Decision: APPROVE`, `Issues: none`, an `Evidence:` block, 1–3 bullet lines, and the existing `review-output-key` marker.\n3. Review the fallback/normalization assertions in the same suite.\n   - **Expected:** Empty evidence inputs produce one default factual bullet, approval confidence is normalized into one evidence bullet, and the body is not wrapped in `<details>`.\n\n## Test Case 2 — Explicit `@kodiai review` clean approvals publish the shared body once\n\n1. Run `bun test ./src/handlers/mention.test.ts`.\n   - **Expected:** The suite passes.\n2. Locate the test `explicit PR review mention submits approval review when execution succeeds with inspection evidence`.\n   - **Expected:** The created approval review body contains `Decision: APPROVE`, `Issues: none`, factual evidence lines, and a marker that `extractReviewOutputKey(...)` can read back.\n3. Locate the test `explicit PR review mention logs idempotency skip when review output already exists`.\n   - **Expected:** Duplicate publication is suppressed under the same `reviewOutputKey`; the handler keeps the same `review-output-idempotency` gate instead of posting a second visible outcome.\n4. Locate the explicit publish-failure tests.\n   - **Expected:** Failed approval publication still records the `reviewOutputKey` and distinct publish-attempt outcome values, preserving failure visibility instead of silently succeeding.\n\n## Test Case 3 — Automatic clean review approvals use the same visible body and keep dep-bump evidence\n\n1. Run `bun test ./src/handlers/review.test.ts`.\n   - **Expected:** The suite passes.\n2. Locate the test `replaying a clean PR review_requested does not create duplicate approvals`.\n   - **Expected:** Automatic clean approvals publish one shared visible APPROVE review body and do not create duplicate approvals on replay.\n3. Locate the test `auto-approve includes dep-bump merge confidence inside the shared approval body`.\n   - **Expected:** Dep-bump merge confidence appears as structured evidence inside the same visible body instead of trailing outside it or disappearing.\n4. Locate the test `does not auto-approve when review execution published output`.\n   - **Expected:** The handler still avoids posting a clean approval when findings/output were already published.\n\n## Test Case 4 — Approve-via-comment promotes only the shared APPROVE grammar\n\n1. Run `bun test ./src/execution/mcp/comment-server.test.ts`.\n   - **Expected:** The suite passes.\n2. Locate the test `shared clean approval on PR submits APPROVE review with server-stamped marker`.\n   - **Expected:** A valid visible APPROVE body is promoted to a GitHub `APPROVE` review and the server stamps the review-output marker itself.\n3. Locate the malformed approval rejection tests for missing `Evidence:`, zero bullets, more than three bullets, wrapped approval, and extra prose.\n   - **Expected:** Each malformed near-miss is rejected instead of being promoted to an approval review.\n4. Locate the `NOT APPROVED still posts as regular comment even with prNumber` test.\n   - **Expected:** The stricter APPROVE grammar does not widen the non-approval path; only clean approvals are promoted.\n\n## Test Case 5 — Prompt guidance teaches the same narrow APPROVE grammar\n\n1. Run `bun test ./src/execution/mention-prompt.test.ts`.\n   - **Expected:** The suite passes.\n2. Locate the test `includes conciseness guidance and shared visible APPROVE grammar instructions`.\n   - **Expected:** The prompt teaches `Decision: APPROVE`, `Issues: none`, and an `Evidence:` block with 1–3 factual bullets.\n3. Locate the test `keeps non-approval mention responses on the existing details wrapper contract`.\n   - **Expected:** Only APPROVE responses moved to the visible grammar; ordinary mention replies and `Decision: NOT APPROVED` responses keep their existing wrapped contract.\n\n## Edge Case 1 — Marker continuity survives the new visible body\n\n1. Run the full slice command: `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`.\n   - **Expected:** The command exits 0.\n2. Review the helper and handler assertions that use `extractReviewOutputKey(...)`.\n   - **Expected:** The same marker is still present and recoverable from the new visible APPROVE body across helper, mention, review, and comment-server coverage.\n\n## Edge Case 2 — Type safety remains clean after the cross-lane contract change\n\n1. Run `bun run tsc --noEmit`.\n   - **Expected:** The command exits 0 with no diagnostics.\n\n## Edge Case 3 — Wrapped legacy approvals are no longer accepted\n\n1. In `bun test ./src/execution/mcp/comment-server.test.ts`, inspect the test `rejects malformed shared approval body: legacy wrapped approval body`.\n   - **Expected:** The legacy `<details>`-wrapped approval format is rejected for APPROVE promotion, proving the grammar boundary is now explicit and narrow.\n",
       "goal": "Ship one narrow clean-approval GitHub review-body contract across explicit mention, automatic review, and approve-via-comment paths so clean approvals visibly show decision, no-issues state, short factual evidence, and the existing review-output marker.",
       "success_criteria": "- `buildApprovedReviewBody(...)` becomes the canonical clean-approval formatter and emits `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, and the existing `review-output-key` marker.\n- `src/handlers/mention.ts` and `src/handlers/review.ts` both publish clean approvals through the shared formatter without regressing idempotency, explicit-review publish gating, or dep-bump approval-confidence evidence.\n- `src/execution/mcp/comment-server.ts` and `src/execution/mention-prompt.ts` accept and instruct the same narrow approved-review grammar so approve-via-comment still promotes valid clean approvals to GitHub `APPROVE` reviews while rejecting arbitrary prose.",
       "proof_level": "integration proof over the shared formatter plus both GitHub approval publishers and the approve-via-comment promotion path, all exercised by deterministic regression tests rather than live GitHub runtime.",
@@ -6361,22 +6361,20 @@
     {
       "milestone_id": "M049",
       "id": "S02",
-      "title": "Live proof and auditability verification",
+      "title": "S02",
       "status": "pending",
       "risk": "low",
-      "depends": [
-        "S01"
-      ],
+      "depends": [],
       "demo": "Operators inspecting a clean approval on GitHub can see why it was approved without a separate issue comment, and audit tooling can correlate the same published body to the delivery cleanly.",
       "created_at": "2026-04-11T16:45:05.796Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Prove the new clean-approval surface is audit-friendly and does not add noisy PR comments.",
-      "success_criteria": "- Clean approvals still publish exactly one visible GitHub review outcome.\n- No separate clean-approval issue comment is posted.\n- Audit and operator guidance reflect the new visible approval-body contract.\n- Live proof on xbmc/kodiai confirms the published body is factual, brief, and repo-backed.",
-      "proof_level": "Regression verification plus one live end-to-end publish proof.",
-      "integration_closure": "Approval-body content, review-output markers, and audit correlation agree on the same final published review artifact.",
-      "observability_impact": "Recent-review audits and live operator drills can rely on a visible approval body instead of inferring validity from silence.",
+      "goal": "Add a live verifier for explicit clean `@kodiai review` approvals that proves one GitHub-visible `APPROVED` review carries the shared evidence-backed body and still correlates cleanly to Azure audit signals via the same `reviewOutputKey`.",
+      "success_criteria": "- Introduce a dedicated `reviewOutputKey` artifact collector + body contract validator that counts matches across reviews, issue comments, and review comments instead of sampling only the latest PR artifact.\n- Add `verify:m049:s02` to reject non-explicit keys, prove the sole visible artifact is one `APPROVED` review with the shared `Decision: APPROVE` / `Issues: none` / `Evidence:` body, and emit the review URL plus stable status codes.\n- Reuse Azure explicit-lane evidence to confirm the same `reviewOutputKey` resolves to a clean explicit publish path (`approval-bridge`, `idempotency-skip`, or `duplicate-suppressed`) and degrade truthfully when GitHub or Azure access is unavailable.",
+      "proof_level": "operational.\n- Real runtime required: yes.\n- Human/UAT required: no.",
+      "integration_closure": "- Upstream surfaces consumed: `src/handlers/review-idempotency.ts`, `src/review-audit/evidence-correlation.ts`, `src/review-audit/log-analytics.ts`, and the GitHub App live-access pattern in `scripts/verify-m044-s01.ts`.\n- New wiring introduced in this slice: a read-only live verifier joins exact GitHub artifact counting/body validation to explicit Azure publish-resolution evidence for one `mention-review` `reviewOutputKey`.\n- What remains before the milestone is truly usable end-to-end: run `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key <key> --json` against a fresh explicit clean approval and record the resulting proof in the slice summary.",
+      "observability_impact": "- `bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts`\n- `bun run tsc --noEmit`\n- `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key <key> --json`",
       "sequence": 2,
       "replan_triggered_at": null
     }
@@ -13988,6 +13986,95 @@
       "observability_impact": "- Use approve-via-comment tests to distinguish sanitizer rejection, marker stamping, and promotion-to-`APPROVE` review behavior.\n- Failures should remain visible as explicit validation errors or missing approval-promotion assertions rather than allowing arbitrary prose to publish.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M049",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Added PR-scoped review-output artifact collection plus visible APPROVE proof helpers for exact clean-review verification.",
+      "status": "complete",
+      "one_liner": "Added PR-scoped review-output artifact collection plus visible APPROVE proof helpers for exact clean-review verification.",
+      "narrative": "I wrote the new helper contract test-first in `src/review-audit/review-output-artifacts.test.ts`, covering exact marker collection across review comments, issue comments, and reviews; wrong repo/PR/action mismatches; duplicate visible outputs; wrong surface/state failures; body drift; and invalid matching metadata. The initial red run failed because `src/review-audit/review-output-artifacts.ts` did not exist yet.\n\nI then implemented `src/review-audit/review-output-artifacts.ts` as a dedicated exact-match helper rather than overloading `recent-review-sample.ts`. The collector reuses `extractReviewOutputKey(...)` and `parseReviewOutputKey(...)`, scopes GitHub reads to the PR encoded in the requested key, preserves every matching artifact with `source`, `sourceUrl`, `updatedAt`, full `body`, `reviewState`, `action`, and `lane`, and returns exact per-surface counts. GitHub list failures are wrapped in a named `ReviewOutputArtifactCollectionError` so later verifier code can map GitHub-access failures cleanly instead of silently returning partial counts.\n\nI also added a pure `validateVisibleApproveReviewBody(...)` helper that enforces the shipped visible APPROVE grammar (`Decision: APPROVE`, `Issues: none`, `Evidence:`, 1-3 bullet lines, exact marker, no `<details>` wrapper) and a pure `evaluateExactReviewOutputProof(...)` helper that returns deterministic proof statuses for missing artifacts, duplicates, invalid metadata, wrong surface, wrong review state, and body drift. That gives T02 a reusable proof surface with stable observability fields instead of collapsing all failures into a generic no-match result.",
+      "verification_result": "Verified the focused helper behavior with `bun test ./src/review-audit/review-output-artifacts.test.ts` (11 passing tests covering exact counts, metadata preservation, wrong-key filtering, duplicate outputs, wrong surface/state, body drift, and invalid metadata). Verified project typing with `bun run tsc --noEmit`.\n\nI also ran the slice-level test command `bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts`; Bun passed the currently existing helper suites, but `scripts/verify-m049-s02.test.ts` does not exist yet, so live verifier coverage is still pending T02. Finally, `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json` failed with `Script not found \"verify:m049:s02\"`, which is the expected remaining gap for this intermediate task.",
+      "duration": "",
+      "completed_at": "2026-04-13T15:29:53.766Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "`verify:m049:s02` and `scripts/verify-m049-s02.test.ts` do not exist yet, so the live slice verifier remains red until T02 adds the command/test entrypoint.",
+      "key_files": [
+        "src/review-audit/review-output-artifacts.ts",
+        "src/review-audit/review-output-artifacts.test.ts"
+      ],
+      "key_decisions": [
+        "Kept exact-match review-output proof logic separate from `recent-review-sample.ts` and exposed pure collection/body-validation/proof helpers so T02 can distinguish duplicate, wrong-surface/state, metadata, and body-drift failures without latest-only sampling heuristics."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S02\nmilestone: M049\nkey_files:\n  - src/review-audit/review-output-artifacts.ts\n  - src/review-audit/review-output-artifacts.test.ts\nkey_decisions:\n  - Kept exact-match review-output proof logic separate from `recent-review-sample.ts` and exposed pure collection/body-validation/proof helpers so T02 can distinguish duplicate, wrong-surface/state, metadata, and body-drift failures without latest-only sampling heuristics.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T15:29:53.765Z\nblocker_discovered: false\n---\n\n# T01: Added PR-scoped review-output artifact collection plus visible APPROVE proof helpers for exact clean-review verification.\n\n**Added PR-scoped review-output artifact collection plus visible APPROVE proof helpers for exact clean-review verification.**\n\n## What Happened\n\nI wrote the new helper contract test-first in `src/review-audit/review-output-artifacts.test.ts`, covering exact marker collection across review comments, issue comments, and reviews; wrong repo/PR/action mismatches; duplicate visible outputs; wrong surface/state failures; body drift; and invalid matching metadata. The initial red run failed because `src/review-audit/review-output-artifacts.ts` did not exist yet.\n\nI then implemented `src/review-audit/review-output-artifacts.ts` as a dedicated exact-match helper rather than overloading `recent-review-sample.ts`. The collector reuses `extractReviewOutputKey(...)` and `parseReviewOutputKey(...)`, scopes GitHub reads to the PR encoded in the requested key, preserves every matching artifact with `source`, `sourceUrl`, `updatedAt`, full `body`, `reviewState`, `action`, and `lane`, and returns exact per-surface counts. GitHub list failures are wrapped in a named `ReviewOutputArtifactCollectionError` so later verifier code can map GitHub-access failures cleanly instead of silently returning partial counts.\n\nI also added a pure `validateVisibleApproveReviewBody(...)` helper that enforces the shipped visible APPROVE grammar (`Decision: APPROVE`, `Issues: none`, `Evidence:`, 1-3 bullet lines, exact marker, no `<details>` wrapper) and a pure `evaluateExactReviewOutputProof(...)` helper that returns deterministic proof statuses for missing artifacts, duplicates, invalid metadata, wrong surface, wrong review state, and body drift. That gives T02 a reusable proof surface with stable observability fields instead of collapsing all failures into a generic no-match result.\n\n## Verification\n\nVerified the focused helper behavior with `bun test ./src/review-audit/review-output-artifacts.test.ts` (11 passing tests covering exact counts, metadata preservation, wrong-key filtering, duplicate outputs, wrong surface/state, body drift, and invalid metadata). Verified project typing with `bun run tsc --noEmit`.\n\nI also ran the slice-level test command `bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts`; Bun passed the currently existing helper suites, but `scripts/verify-m049-s02.test.ts` does not exist yet, so live verifier coverage is still pending T02. Finally, `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json` failed with `Script not found \"verify:m049:s02\"`, which is the expected remaining gap for this intermediate task.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/review-audit/review-output-artifacts.test.ts` | 0 | ✅ pass | 20ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 8189ms |\n| 3 | `bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts` | 0 | ✅ pass | 23ms |\n| 4 | `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json` | 1 | ❌ fail | 4ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`verify:m049:s02` and `scripts/verify-m049-s02.test.ts` do not exist yet, so the live slice verifier remains red until T02 adds the command/test entrypoint.\n\n## Files Created/Modified\n\n- `src/review-audit/review-output-artifacts.ts`\n- `src/review-audit/review-output-artifacts.test.ts`\n",
+      "description": "**Slice:** S02 — Live proof and auditability verification\n**Milestone:** M049\n\n## Description\n\nAdd a dedicated exact-match GitHub artifact collector and visible-body validator for one explicit clean-approval `reviewOutputKey`. Keep this separate from `recent-review-sample.ts`, which intentionally keeps only the newest marker-backed artifact per PR and cannot prove \"exactly one visible outcome.\" The helper should preserve all matching issue comments, review comments, and reviews for one PR, plus the full body, URL, timestamps, and review state needed for operator-facing proof.\n\n## Steps\n\n1. Add focused tests in `src/review-audit/review-output-artifacts.test.ts` for exact marker collection across issue comments, review comments, and reviews; wrong-repo/wrong-PR/wrong-lane mismatches; duplicate multi-surface matches; and visible-body drift cases.\n2. Implement `src/review-audit/review-output-artifacts.ts` so it parses the requested `reviewOutputKey`, queries only the encoded PR, preserves every matching artifact, and returns exact per-surface counts instead of latest-only sampling.\n3. Reuse `extractReviewOutputKey(...)` / `parseReviewOutputKey(...)` from `src/handlers/review-idempotency.ts` for identity checks so GitHub artifact proof and Azure audit correlation stay on the same key/delivery contract.\n4. Expose a pure body validator that accepts only the S01 shared APPROVE grammar: `Decision: APPROVE`, `Issues: none`, `Evidence:`, 1–3 bullets, the same marker, and no `<details>` wrapper or legacy collapsed-review text.\n5. Re-run the focused helper tests and confirm the helper fails deterministically when more than one visible artifact exists or when the sole artifact is not an `APPROVED` review.\n\n## Must-Haves\n\n- [ ] The helper returns exact counts for reviews, issue comments, and review comments matching one `reviewOutputKey` on the encoded PR.\n- [ ] Matching artifacts preserve `source`, `sourceUrl`, `updatedAt`, full `body`, and `reviewState` so the live verifier can prove the sole visible artifact is an `APPROVED` review.\n- [ ] The body validator accepts the shipped visible APPROVE grammar and rejects wrapper drift, missing headings, missing marker, and 0-or-4+ evidence-bullet shapes.",
+      "estimate": "90m",
+      "files": [
+        "src/review-audit/review-output-artifacts.ts",
+        "src/review-audit/review-output-artifacts.test.ts"
+      ],
+      "verify": "`bun test ./src/review-audit/review-output-artifacts.test.ts`",
+      "inputs": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts",
+        "src/review-audit/recent-review-sample.ts",
+        "src/review-audit/recent-review-sample.test.ts"
+      ],
+      "expected_output": [
+        "src/review-audit/review-output-artifacts.ts",
+        "src/review-audit/review-output-artifacts.test.ts"
+      ],
+      "observability_impact": "- Signals added/changed: helper output preserves per-surface counts, artifact URLs, timestamps, and review state so later live proof can pinpoint where publication happened.\n- How a future agent inspects this: run `bun test ./src/review-audit/review-output-artifacts.test.ts` and inspect explicit failures for duplicate matches, wrong surface, wrong review state, or body drift.\n- Failure state exposed: ambiguous latest-only sampling is replaced by exact duplicate/mismatch/body-contract failures keyed to the requested `reviewOutputKey`.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M049",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Build the live M049/S02 verifier command",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "**Slice:** S02 — Live proof and auditability verification\n**Milestone:** M049\n\n## Description\n\nBuild the live `verify:m049:s02` command that consumes the new GitHub artifact helper, reuses the existing GitHub App / Azure Log Analytics access patterns, and emits truthful machine/human proof for one explicit clean `@kodiai review` artifact. Keep this verifier read-only: it must inspect live GitHub/Azure state, never publish or mutate GitHub surfaces.\n\n## Steps\n\n1. Add `scripts/verify-m049-s02.test.ts` first to pin CLI parsing, named status codes, wrong-lane rejection, missing GitHub access, no-match / duplicate / wrong-surface / wrong-review-state / body-contract drift / audit-correlation failure branches, and the success report shape.\n2. Implement `scripts/verify-m049-s02.ts` using the GitHub App env-loading + repo parsing pattern from `scripts/verify-m044-s01.ts`, but require `--review-output-key` and reject any parsed action other than `mention-review`.\n3. Join the GitHub artifact result to Azure log evidence with `queryReviewAuditLogs(...)` and `buildExplicitLaneEvidenceFromLogs(...)`, treating `approval-bridge`, `idempotency-skip`, and `duplicate-suppressed` as clean audit resolutions while keeping missing Azure access or correlation drift as named failures instead of silent passes.\n4. Render both human and JSON output with the operator-facing review URL, artifact counts by surface, review state, body-contract verdicts, publish resolution, and `issues[]`, then wire `package.json` to `verify:m049:s02`.\n5. Re-run the focused verifier tests plus `bun run tsc --noEmit`, keeping the command read-only and ready for a fresh live proof run with a real explicit clean `reviewOutputKey`.\n\n## Must-Haves\n\n- [ ] `verify:m049:s02` requires `--review-output-key`, accepts `--repo` and `--json`, and rejects non-explicit keys before any live lookup.\n- [ ] Success only occurs when GitHub proves exactly one visible artifact, that artifact is an `APPROVED` review with the shared visible body, and Azure logs correlate the same key to a clean explicit publish resolution.\n- [ ] Failures degrade truthfully with stable named status codes for GitHub access gaps, missing/multiple artifacts, wrong surface/state, body drift, and audit unavailability/correlation mismatch.",
+      "estimate": "2h",
+      "files": [
+        "scripts/verify-m049-s02.ts",
+        "scripts/verify-m049-s02.test.ts",
+        "package.json"
+      ],
+      "verify": "`bun test ./scripts/verify-m049-s02.test.ts ./src/review-audit/evidence-correlation.test.ts` and `bun run tsc --noEmit`",
+      "inputs": [
+        "src/review-audit/review-output-artifacts.ts",
+        "src/review-audit/review-output-artifacts.test.ts",
+        "scripts/verify-m044-s01.ts",
+        "scripts/verify-m044-s01.test.ts",
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "src/review-audit/evidence-correlation.ts",
+        "src/review-audit/evidence-correlation.test.ts",
+        "src/review-audit/log-analytics.ts",
+        "package.json"
+      ],
+      "expected_output": [
+        "scripts/verify-m049-s02.ts",
+        "scripts/verify-m049-s02.test.ts",
+        "package.json"
+      ],
+      "observability_impact": "- Signals added/changed: the verifier reports GitHub access state, per-surface artifact counts, review URL/state, body-contract checks, Azure source availability, and explicit `publishResolution` under one report.\n- How a future agent inspects this: run `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key <key> --json` and inspect the returned `status_code`, `issues`, `artifactCounts`, `artifact.sourceUrl`, and audit correlation fields.\n- Failure state exposed: missing GitHub credentials, missing Azure workspaces, duplicate visible outputs, wrong artifact surface/state, body drift, and audit mismatch each resolve to named failure states instead of a generic false-green result.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -15391,6 +15478,18 @@
       "decision": "Approve-via-comment clean approval grammar boundary",
       "choice": "Require the visible shared APPROVE body without a `<details>` wrapper in comment-server while preserving the existing wrapped NOT APPROVED decision format.",
       "rationale": "T01/T02 established a single visible clean-approval contract for GitHub reviews. Approve-via-comment must publish and promote only that same grammar so clean approvals stay consistent across lanes, while leaving the non-approval decision path unchanged avoids widening this slice into unrelated response formatting.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 152,
+      "id": "D118",
+      "when_context": "M049/S02 planning",
+      "scope": "review-audit",
+      "decision": "How M049/S02 should prove live clean-approval visibility and auditability",
+      "choice": "Add a dedicated explicit-lane live verifier that combines exact `reviewOutputKey` artifact collection/body validation with existing Azure publish-resolution correlation, and leave publisher handlers unchanged unless live proof shows drift.",
+      "rationale": "S01 already changed the publish contract and proved it locally. S02’s missing seam is operational proof: exact per-surface GitHub counts, visible-body validation, and reviewOutputKey-to-delivery correlation against Azure logs. A verifier-only implementation reuses existing identities and audit plumbing without widening handler scope.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -20302,6 +20401,50 @@
       "verdict": "✅ pass",
       "duration_ms": 8499,
       "created_at": "2026-04-13T14:50:43.597Z"
+    },
+    {
+      "id": 448,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun test ./src/review-audit/review-output-artifacts.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 20,
+      "created_at": "2026-04-13T15:29:53.766Z"
+    },
+    {
+      "id": 449,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8189,
+      "created_at": "2026-04-13T15:29:53.766Z"
+    },
+    {
+      "id": 450,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 23,
+      "created_at": "2026-04-13T15:29:53.766Z"
+    },
+    {
+      "id": 451,
+      "task_id": "T01",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 4,
+      "created_at": "2026-04-13T15:29:53.766Z"
     }
   ]
 }
