@@ -10,20 +10,22 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 ## Current State
 
-The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, and latency/phase-timing review evidence.
+The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, multi-model routing, latency/phase-timing review evidence, and the evidence-backed clean-approval proof surface.
 
-Milestones M043, M044, M045, M046, M047, and M048 are complete. M049 is in progress: S01 is complete and verified, and S02 remains to prove the new clean-approval body on live GitHub/audit surfaces.
+Milestones M043, M044, M045, M046, M047, M048, and M049 are complete. **M049 is now complete as a code-and-operator-surface milestone.** The clean-approval path now has both one shared visible review-body contract and one dedicated exact-proof verifier, while fresh live-access validation remains an explicit follow-up instead of a false green.
 
-**M049 is in progress and S01 is complete and verified.** The clean-approval path now has one shared visible review-body contract instead of marker-only approvals:
+**M049 is complete and verified as a code-and-operator-surface milestone.** The clean-approval path now has one shared visible review-body contract and one dedicated operator proof surface:
 
-- `src/handlers/review-idempotency.ts` now makes `buildApprovedReviewBody(...)` the canonical clean-approval formatter. It emits visible plain markdown with `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, optional approval-confidence evidence, and the existing `review-output-key` marker.
-- `src/handlers/mention.ts` and `src/handlers/review.ts` now publish explicit `@kodiai review` approvals and automatic clean approvals through that same builder, using already-available handler facts such as changed-file coverage, repo-inspection-tool usage, and dep-bump merge confidence.
-- `src/execution/mcp/comment-server.ts` now treats approve-via-comment as a narrow validation boundary: only the shared visible APPROVE grammar is promotable to a GitHub `APPROVE` review, wrapped or prose-heavy near-misses are rejected, and the server still stamps the marker itself.
-- `src/execution/mention-prompt.ts` now teaches the same visible APPROVE grammar while preserving the wrapped `Decision: NOT APPROVED` contract for non-clean outcomes.
-- Fresh slice-close verification passed:
-  - `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`
+- `src/handlers/review-idempotency.ts` makes `buildApprovedReviewBody(...)` the canonical clean-approval formatter. It emits visible plain markdown with `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, optional approval-confidence evidence, and the existing `review-output-key` marker.
+- `src/handlers/mention.ts` and `src/handlers/review.ts` publish explicit `@kodiai review` approvals and automatic clean approvals through that same builder, using already-available handler facts such as changed-file coverage, repo-inspection-tool usage, and dep-bump merge confidence.
+- `src/execution/mcp/comment-server.ts` treats approve-via-comment as a narrow validation boundary: only the shared visible APPROVE grammar is promotable to a GitHub `APPROVE` review, wrapped or prose-heavy near-misses are rejected, and the server still stamps the marker itself.
+- `src/execution/mention-prompt.ts` teaches the same visible APPROVE grammar while preserving the wrapped `Decision: NOT APPROVED` contract for non-clean outcomes.
+- `src/review-audit/review-output-artifacts.ts` provides the exact-proof seam for one requested `reviewOutputKey`: it preserves every matching review comment, issue comment, and review for that key and validates that the sole visible artifact is one `APPROVED` review with the shared visible body.
+- `scripts/verify-m049-s02.ts` adds `bun run verify:m049:s02`, the read-only operator verifier that rejects malformed or non-explicit keys before live lookup, exposes stable named GitHub/Azure failure statuses, and joins exact GitHub artifact proof to Azure explicit-lane publish-resolution evidence.
+- Fresh milestone-close verification passed:
+  - `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts`
   - `bun run tsc --noEmit`
-- S02 is still required to capture live GitHub evidence that the published clean approval body is visible, trustworthy, and audit-correlatable outside the local test harness.
+- Requirement `R043` was advanced but not revalidated in this closeout. A fresh accessible explicit clean-approval key plus working GitHub/Azure access are still needed to capture a real `m049_s02_ok` report and record new live validation evidence.
 
 **M047 is complete and verified.** The contributor-experience rollout now has one truthful persisted-profile trust boundary and one canonical milestone-close proof surface:
 
@@ -74,8 +76,10 @@ Requirement `R052` is validated and was reconfirmed during milestone closeout. R
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
-- **Shared clean-approval body seam:** `buildApprovedReviewBody(...)` in `src/handlers/review-idempotency.ts` is now the canonical visible clean-approval formatter across explicit mention, automatic review, and approve-via-comment approval lanes.
+- **Shared clean-approval body seam:** `buildApprovedReviewBody(...)` in `src/handlers/review-idempotency.ts` is the canonical visible clean-approval formatter across explicit mention, automatic review, and approve-via-comment approval lanes.
 - **Approval grammar boundary:** `src/execution/mcp/comment-server.ts` validates a narrow visible APPROVE grammar (`Decision: APPROVE`, `Issues: none`, `Evidence:`, 1–3 bullets) and keeps review-output marker stamping server-side.
+- **Exact review-output proof seam:** `src/review-audit/review-output-artifacts.ts` preserves every matching artifact for one requested `reviewOutputKey` so duplicate, wrong-surface, wrong-state, and body-drift failures cannot be collapsed into latest-only sampling.
+- **Explicit clean-approval verifier seam:** `scripts/verify-m049-s02.ts` joins exact GitHub artifact proof to Azure explicit-lane evidence and exposes one stable operator-facing status surface for success, access failures, duplicate outputs, body drift, and audit mismatches.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
 - **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
 - **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
@@ -127,6 +131,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Live Phase Timing and Operator Evidence Surfaces
   - [x] S02: Single-Worker Path Latency Reduction
   - [x] S03: Truthful Bounded Reviews and Synchronize Continuity
-- [ ] M049: Evidence-Backed Clean PR Approvals
+- [x] M049: Evidence-Backed Clean PR Approvals
   - [x] S01: Shared clean-approval review body contract
-  - [ ] S02: Live proof and auditability verification
+  - [x] S02: Live proof and auditability verification

@@ -1107,3 +1107,23 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** Any unit test that exercises the marker-bearing publish path on `createCommentServer` must either (1) stub all three scan endpoints to return empty arrays, or (2) inject a publication gate stub. Do not assume `createReview()` is the first mocked method touched when `reviewOutputKey` is present.
 
 **Established in:** M049/S01/T03 (`src/execution/mcp/comment-server.test.ts`).
+
+---
+
+## Exact `reviewOutputKey` proof must not reuse latest-only audit sampling helpers (M049/S02)
+
+**Context:** `src/review-audit/recent-review-sample.ts` intentionally keeps only the newest marker-backed artifact per PR because M044 recent-review auditing needs one representative visible outcome. M049/S02 needed a different truth surface: prove that one specific explicit `reviewOutputKey` resolves to exactly one visible GitHub artifact, on the right surface, with the right review state and visible body contract. Reusing the latest-only sampler would hide duplicates across reviews, issue comments, and review comments and could false-green wrong-surface cases.
+
+**Rule:** When the proof question is "what happened for this exact `reviewOutputKey`?", use a dedicated PR-scoped collector that preserves **every** matching review comment, issue comment, and review for that key, then validate counts, surface, state, and body separately. Do **not** adapt samplers that collapse artifacts to the latest visible outcome per PR.
+
+**Established in:** M049/S02/T01 (`src/review-audit/review-output-artifacts.ts`, `src/review-audit/review-output-artifacts.test.ts`).
+
+---
+
+## Review-output verifiers must preflight `reviewOutputKey` lane and repo identity before any live lookup (M049 closeout)
+
+**Context:** `verify:m049:s02` accepts operator-supplied `reviewOutputKey` values and then joins GitHub-visible approval proof to Azure publish-resolution evidence. If the verifier were to hit GitHub or Azure first, malformed keys, repo mismatches, or non-explicit actions could waste remote calls, inspect the wrong PR, or blur the line between input validation and runtime evidence failure.
+
+**Rule:** Any verifier that accepts a `reviewOutputKey` from an operator must do a mandatory local preflight before remote access: parse the key, require the expected lane/action, require repo consistency with CLI args, and reject malformed or mismatched inputs with a named status. Treat that preflight as a separate proof stage, not as a best-effort convenience check.
+
+**Established in:** M049 closeout (`scripts/verify-m049-s02.ts`, `scripts/verify-m049-s02.test.ts`, `.gsd/milestones/M049/M049-SUMMARY.md`).
