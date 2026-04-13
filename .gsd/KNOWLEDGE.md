@@ -4,16 +4,6 @@ Recurring gotchas and non-obvious patterns found during execution.
 
 ---
 
-## Bun test mixed explicit paths can hide a missing file
-
-**Context:** During M048/S02/T01, the slice verification command included `./scripts/verify-m048-s02.test.ts` before that test file existed. `bun test` still exited 0 because other listed files matched and ran. A command with only a missing path (`bun test ./definitely-missing-file.test.ts`) exits 1 with `Test filter ... had no matches`, but a mixed command can silently succeed.
-
-**Rule:** When a verification command lists multiple explicit Bun test paths, do not assume every listed file ran just because the overall command passed. Confirm the expected file exists first (`read`/`rg --files`) or verify the runner output includes that file.
-
-**Established in:** M048/S02/T01.
-
----
-
 ## DB Migrations — `IF NOT EXISTS` on idempotent `ALTER TABLE`
 
 **Context:** `runMigrations()` tracks applied files in `_migrations` by filename. If a column is added manually (e.g., by a prior partial run or direct SQL), the migration file won't be in `_migrations`, so it will attempt to apply again and fail with `column already exists`.
@@ -829,18 +819,6 @@ If the collector only looks for `review-output-key`, it will silently miss valid
 
 ## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
 
----
-
-## `createTestableExecutor` Must Not Copy a Repo Into Its Own Child Directory (M048/S01)
-
-**Context:** The ACA executor test harness can be configured with the same temp directory for both `context.workspace.dir` and `createWorkspaceDirFn()`. Blindly copying the source repo into `join(workspaceDir, "repo")` in that case creates a recursive self-copy (`tmpDir -> tmpDir/repo`), which made Bun crash during `executor.test.ts` before any ACA assertions ran.
-
-**Rule:** In executor-style test harnesses, if the synthetic workspace dir is the same as the source repo dir, reuse the source repo as `repoCwd` instead of recursively copying it into a child folder. Only create `workspaceDir/repo` snapshots when the target workspace is distinct from the source tree.
-
-**Established in:** M048/S01/T01 (`src/execution/executor.test.ts`, `createTestableExecutor`).
-
-## Azure `Evidence bundle` Outcome Is a Valid Automatic-Lane Audit Signal (M044/S02)
-
 **Context:** When DB-backed review evidence is unavailable, recent automatic-review classifications can still be resolved from Azure `ContainerAppConsoleLogs_CL` rows. The review handler emits `evidenceType="review"` with `outcome="submitted-approval"` for clean approval paths and `outcome="published-output"` when findings output was published.
 
 **Rule:** For recent-review auditing, treat these Azure evidence-bundle outcomes as first-class internal publication signals:
@@ -1046,84 +1024,3 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
 
 **Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).
-
----
-
-## Env-backed verifier args must not consume the next flag when the value is empty (M048 closeout)
-
-**Context:** `bun run verify:m048:s01 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json` and `bun run verify:m048:s02 -- --baseline-review-output-key "$BASELINE_REVIEW_OUTPUT_KEY" --candidate-review-output-key "$REVIEW_OUTPUT_KEY" --json` are slice-level verification commands. When those env vars are unset in automation, the parser can see `--review-output-key --json` or adjacent compare flags with empty values and accidentally treat the next `--flag` as the missing key unless it explicitly refuses to consume another flag as a value. That produces misleading invalid-arg/correlation failures instead of the truthful "no live review key was provided" outcome.
-
-**Rule:** For env-backed verifier scripts, option parsers must only consume the next argv token when it is a real value, not another `--flag`. If the live proof flag is present but empty because the env var expanded to nothing, return a named skipped status and do not run the live query. Preserve the fail-loud behavior only for cases where a real live key was supplied and the evidence is missing, drifted, malformed, or contradictory.
-
-**Established in:** M048 closeout (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`, `scripts/verify-m048-s02.ts`, `scripts/verify-m048-s02.test.ts`).
-
----
-
-## Bun shell requires quoting git `for-each-ref --format=%(...)` arguments (M048/S02)
-
-**Context:** While finishing the M048/S02 review-bundle transport path, `prepareAgentWorkspace(...)` was using Bun's `$` shell with `git for-each-ref --format=%(refname:strip=3) ...`. Bun parsed the bare `(` as shell syntax and threw `Unexpected token: '('
-` before git ran, which made the optimized review-bundle staging path fail even though the git command itself was valid in a normal shell.
-
-**Rule:** In Bun `$` template shells, always quote git `for-each-ref` format expressions such as `'%(refname:strip=3)'`. Do not pass `%(... )` unquoted inside a Bun shell template.
-
-**Established in:** M048/S02/T02 (`src/execution/executor.ts`, `detectReviewBundleCandidate`).
-
----
-
-## M048 latency verifiers are intentionally bounded to the last 14 days (M048/S02)
-
-**Context:** `verify:m048:s01` and the new `verify:m048:s02` reuse the same fixed `P14D` Log Analytics window. During T03, older real `reviewOutputKey` values still had review-output evidence in Azure, but the compare command returned `m048_s01_no_matching_phase_timing` because the requested runs fell outside that bounded timespan. Narrowing to fresh keys inside the last 14 days removed the stale-key variable and showed the real deployed-state result.
-
-**Rule:** When using the M048 phase-timing verifiers, choose review keys from the last 14 days unless the script contract is explicitly changed. If an older key appears to have normal review-output logs but the verifier reports no matching phase timing, check the key age before assuming correlation drift.
-
-**Established in:** M048/S02/T03 (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s02.ts`).
-
----
-
-## Raw YAML must be inspected before Zod parsing when legacy unknown-key compatibility warnings matter (M048/S03)
-
-**Context:** S03 needed to warn loudly when repos still used the legacy top-level `review.onSynchronize` key. `loadRepoConfig(...)` parses `.kodiai.yml` through Zod object schemas that strip unknown keys on the happy path, so by the time the normalized config was available the legacy key had already disappeared and the effective trigger quietly stayed at the default `false` with no warning.
-
-**Rule:** If compatibility behavior depends on detecting unsupported or legacy keys that are not part of the current schema, inspect the raw parsed YAML before running it through the Zod object parser. Do not try to infer legacy-key intent from the normalized config after parse time — stripped unknown keys are gone.
-
-**Established in:** M048/S03/T01 (`src/execution/config.ts`, `src/execution/config.test.ts`).
-
----
-
-## Split verifier design into mandatory local preflight plus optional live proof when runtime evidence is expensive or unavailable (M048 closeout)
-
-**Context:** `verify:m048:s03` needed to prove two different truths: the checked-in synchronize trigger/disclosure contract must be correct on every run, and the live review path should be provable when a real synchronize `reviewOutputKey` is available. Forcing live evidence every time would make local and CI verification flaky or impossible; dropping live proof entirely would hide runtime drift.
-
-**Rule:** When a verifier has both static/config truth and runtime truth to prove, make the static/config checks mandatory and deterministic, then add an explicit optional live stage that accepts only real runtime identifiers and reuses the lower-level evidence contract instead of inventing a new schema. This keeps routine verification cheap and reliable while preserving a truthful path to production evidence.
-
-**Established in:** M048 closeout (`scripts/verify-m048-s03.ts`, `.gsd/milestones/M048/M048-SUMMARY.md`).
-
----
-
-## `createCommentServer` marker-bearing tests must stub the idempotency scan endpoints first (M049/S01)
-
-**Context:** In `src/execution/mcp/comment-server.ts`, setting both `reviewOutputKey` and `prNumber` activates `resolveOutputPublicationStatus(...)` before any publish attempt. Tests that only mock `pulls.createReview()` / `issues.createComment()` can fail with an unexpected error on valid approval bodies because the publication gate calls `pulls.listReviewComments()`, `issues.listComments()`, and `pulls.listReviews()` first.
-
-**Rule:** Any unit test that exercises the marker-bearing publish path on `createCommentServer` must either (1) stub all three scan endpoints to return empty arrays, or (2) inject a publication gate stub. Do not assume `createReview()` is the first mocked method touched when `reviewOutputKey` is present.
-
-**Established in:** M049/S01/T03 (`src/execution/mcp/comment-server.test.ts`).
-
----
-
-## Exact `reviewOutputKey` proof must not reuse latest-only audit sampling helpers (M049/S02)
-
-**Context:** `src/review-audit/recent-review-sample.ts` intentionally keeps only the newest marker-backed artifact per PR because M044 recent-review auditing needs one representative visible outcome. M049/S02 needed a different truth surface: prove that one specific explicit `reviewOutputKey` resolves to exactly one visible GitHub artifact, on the right surface, with the right review state and visible body contract. Reusing the latest-only sampler would hide duplicates across reviews, issue comments, and review comments and could false-green wrong-surface cases.
-
-**Rule:** When the proof question is "what happened for this exact `reviewOutputKey`?", use a dedicated PR-scoped collector that preserves **every** matching review comment, issue comment, and review for that key, then validate counts, surface, state, and body separately. Do **not** adapt samplers that collapse artifacts to the latest visible outcome per PR.
-
-**Established in:** M049/S02/T01 (`src/review-audit/review-output-artifacts.ts`, `src/review-audit/review-output-artifacts.test.ts`).
-
----
-
-## Review-output verifiers must preflight `reviewOutputKey` lane and repo identity before any live lookup (M049 closeout)
-
-**Context:** `verify:m049:s02` accepts operator-supplied `reviewOutputKey` values and then joins GitHub-visible approval proof to Azure publish-resolution evidence. If the verifier were to hit GitHub or Azure first, malformed keys, repo mismatches, or non-explicit actions could waste remote calls, inspect the wrong PR, or blur the line between input validation and runtime evidence failure.
-
-**Rule:** Any verifier that accepts a `reviewOutputKey` from an operator must do a mandatory local preflight before remote access: parse the key, require the expected lane/action, require repo consistency with CLI args, and reject malformed or mismatched inputs with a named status. Treat that preflight as a separate proof stage, not as a best-effort convenience check.
-
-**Established in:** M049 closeout (`scripts/verify-m049-s02.ts`, `scripts/verify-m049-s02.test.ts`, `.gsd/milestones/M049/M049-SUMMARY.md`).

@@ -2,7 +2,7 @@
   "version": 1,
   "projectName": "kodiai",
   "projectPath": "/home/keith/src/kodiai",
-  "gsdVersion": "2.71.0",
+  "gsdVersion": "2.67.0",
   "entries": [
     {
       "filename": "M030-2026-03-28T16-28-40.html",
@@ -51,22 +51,6 @@
       "doneMilestones": 38,
       "totalMilestones": 39,
       "phase": "pre-planning"
-    },
-    {
-      "filename": "M048-2026-04-13T13-56-01.html",
-      "generatedAt": "2026-04-13T13:56:01.200Z",
-      "milestoneId": "M048",
-      "milestoneTitle": "PR Review Latency Reduction and Bounded Execution",
-      "label": "M048: PR Review Latency Reduction and Bounded Execution",
-      "kind": "milestone",
-      "totalCost": 553.4104358,
-      "totalTokens": 1179946638,
-      "totalDuration": 179395502,
-      "doneSlices": 191,
-      "totalSlices": 193,
-      "doneMilestones": 40,
-      "totalMilestones": 41,
-      "phase": "planning"
     }
   ]
 }
