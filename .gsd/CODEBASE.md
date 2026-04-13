@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-12T23:23:44Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-12T23:23:44Z","fingerprint":"573fe3702d9b18619a0c59190b03665eb45e865a","fileCount":500,"truncated":true} -->
+Generated: 2026-04-12T23:44:37Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-12T23:44:37Z","fingerprint":"fa08f14b7cc1418833923e0f8897cc0ffb49f2c1","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -64,6 +64,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - *(110 files: 107 .ts, 3 .sh)*
 
 ### src/
+- `src/config.test.ts`
 - `src/config.ts`
 - `src/index.ts`
 
@@ -116,6 +117,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/execution/mcp/issue-label-server.ts`
 - `src/execution/mcp/review-comment-thread-server.test.ts`
 - `src/execution/mcp/review-comment-thread-server.ts`
+- `src/execution/mcp/review-output-publication-gate.ts`
 
 ### src/feedback/
 - `src/feedback/aggregator.test.ts`
@@ -135,13 +137,11 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/aca-launcher.ts`
 - `src/jobs/fork-manager.ts`
 - `src/jobs/gist-publisher.ts`
+- `src/jobs/queue.test.ts`
 - `src/jobs/queue.ts`
 - `src/jobs/types.ts`
 - `src/jobs/workspace.test.ts`
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(156 files: 156 .ts)*
-
-### src/lib/
-- `src/lib/addon-check-formatter.test.ts`
+- *(154 files: 154 .ts)*

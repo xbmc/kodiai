@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-12T23:44:26.774Z",
+  "exported_at": "2026-04-13T00:00:00.492Z",
   "milestones": [
     {
       "id": "M001",
@@ -13406,19 +13406,27 @@
       "milestone_id": "M048",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Render the captured timings on GitHub Review Details",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Rendered stable phase timings on GitHub Review Details across standalone, append, and timeout publication paths.",
+      "status": "complete",
+      "one_liner": "Rendered stable phase timings on GitHub Review Details across standalone, append, and timeout publication paths.",
+      "narrative": "Extended `src/lib/review-utils.ts` so Review Details can render a normalized phase-timing block with total wall-clock time and the six required operator phases in a fixed order. The formatter now normalizes malformed phase entries to explicit `unavailable` wording, preserves degraded wording with detail text, and omits the entire timing section only if timing formatting itself regresses unexpectedly. In `src/handlers/review.ts`, I threaded a live phase snapshot into `formatReviewDetailsSummary(...)` from the real review-phase map and added a publication-phase snapshot that stays truthful while the Review Details comment is still being written. The handler now exposes the same timing contract on the standalone Review Details path, the append-to-summary path, the append-fallback path when the summary comment cannot be found, and the timeout/partial-review path so operators still get timing disclosure when a review times out. I added focused regression coverage in `src/lib/review-utils.test.ts` for ordering plus malformed/degraded inputs and in `src/handlers/review.test.ts` for standalone, append, append-fallback, and timeout Review Details timing publication.",
+      "verification_result": "Task-level verification passed with `bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` and `bun run tsc --noEmit`. Slice-level test coverage that exists today also passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`. The milestone-level live verifier command `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fails because the script has not been added yet; this remains the expected intermediate-task gap for T03 rather than a regression in T02.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T00:00:00.453Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "`bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fails because the verifier script/package entry is not implemented yet; that remaining slice-level proof surface belongs to T03.",
+      "key_files": [
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        ".gsd/DECISIONS.md"
+      ],
+      "key_decisions": [
+        "D105 — Review Details renders publication timing as a degraded snapshot until the exact finalized publication duration is available from the structured log and verifier surfaces."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M048\nkey_files:\n  - src/lib/review-utils.ts\n  - src/lib/review-utils.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - .gsd/DECISIONS.md\nkey_decisions:\n  - D105 — Review Details renders publication timing as a degraded snapshot until the exact finalized publication duration is available from the structured log and verifier surfaces.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T00:00:00.452Z\nblocker_discovered: false\n---\n\n# T02: Rendered stable phase timings on GitHub Review Details across standalone, append, and timeout publication paths.\n\n**Rendered stable phase timings on GitHub Review Details across standalone, append, and timeout publication paths.**\n\n## What Happened\n\nExtended `src/lib/review-utils.ts` so Review Details can render a normalized phase-timing block with total wall-clock time and the six required operator phases in a fixed order. The formatter now normalizes malformed phase entries to explicit `unavailable` wording, preserves degraded wording with detail text, and omits the entire timing section only if timing formatting itself regresses unexpectedly. In `src/handlers/review.ts`, I threaded a live phase snapshot into `formatReviewDetailsSummary(...)` from the real review-phase map and added a publication-phase snapshot that stays truthful while the Review Details comment is still being written. The handler now exposes the same timing contract on the standalone Review Details path, the append-to-summary path, the append-fallback path when the summary comment cannot be found, and the timeout/partial-review path so operators still get timing disclosure when a review times out. I added focused regression coverage in `src/lib/review-utils.test.ts` for ordering plus malformed/degraded inputs and in `src/handlers/review.test.ts` for standalone, append, append-fallback, and timeout Review Details timing publication.\n\n## Verification\n\nTask-level verification passed with `bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` and `bun run tsc --noEmit`. Slice-level test coverage that exists today also passed with `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`. The milestone-level live verifier command `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fails because the script has not been added yet; this remains the expected intermediate-task gap for T03 rather than a regression in T02.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 6874ms |\n| 2 | `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts` | 0 | ✅ pass | 7023ms |\n| 3 | `bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` | 1 | ❌ fail | 11ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 12551ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fails because the verifier script/package entry is not implemented yet; that remaining slice-level proof surface belongs to T03.\n\n## Files Created/Modified\n\n- `src/lib/review-utils.ts`\n- `src/lib/review-utils.test.ts`\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n- `.gsd/DECISIONS.md`\n",
       "description": "Expose the new phase object on the surface operators already inspect first. This task should keep the required six phases readable on both the clean-review and findings-published paths and make degraded or unavailable phases explicit instead of inventing a smooth success story.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| `src/lib/review-utils.ts` formatter | Keep Review Details publication alive by omitting the timing section only when formatting fails completely; do not break the whole comment. | N/A — pure formatting logic. | Reject malformed phase arrays in tests and render explicit unavailable wording instead of throwing in production. |\n| Review Details publication path in `src/handlers/review.ts` | Fall back to the existing standalone/append publication behavior if timing-aware formatting regresses. | Timeout reviews still need Review Details timing disclosure when they publish a partial surface. | Do not silently reorder or rename required phases when one entry is missing. |\n\n## Load Profile\n\n- **Shared resources**: GitHub comment body size budget and existing Review Details publication/update flow.\n- **Per-operation cost**: one small bounded timing block appended to the existing Review Details comment.\n- **10x breakpoint**: comment readability degrades before runtime cost does, so keep ordering fixed and wording terse.\n\n## Negative Tests\n\n- **Malformed inputs**: missing required phase names, non-numeric durations, and malformed status values.\n- **Error paths**: append fallback path, standalone Review Details path, and timeout/partial publication path all keep the timing section honest.\n- **Boundary conditions**: clean reviews, findings-published reviews, and unavailable publication phases all render the same required headings and phase order.\n\n## Steps\n\n1. Extend `src/lib/review-utils.ts` with a stable phase-timing formatter for `queue wait`, `workspace preparation`, `retrieval/context assembly`, `executor handoff`, `remote runtime`, and `publication` plus total wall-clock time.\n2. Thread the merged phase object through `formatReviewDetailsSummary(...)` and the Review Details publication code in `src/handlers/review.ts`.\n3. Add focused formatter and handler tests that pin required phase order, unavailable/degraded wording, and both append-to-summary and standalone Review Details publication paths.\n4. Keep the final Review Details output compact enough to remain readable beside the existing profile/findings/structural-impact sections.\n\n## Must-Haves\n\n- [ ] Review Details includes the required six operator phases and total wall-clock time.\n- [ ] Clean and findings-published review paths both surface the same timing contract.\n- [ ] Missing or degraded timings render explicit unavailable/degraded wording instead of zeroes or silent omission.",
       "estimate": "90m",
       "files": [
@@ -14737,6 +14745,18 @@
       "decision": "How live review phase timings are captured for M048/S01",
       "choice": "Capture queue wait in the job queue, executor handoff/runtime in executor results, and merge them in the review handler into one correlated six-phase summary log keyed by deliveryId and reviewOutputKey.",
       "rationale": "This keeps timing capture tied to the real runtime seams, avoids reconstructing latency from ad hoc log timestamps, preserves fail-open unavailable/degraded states on timeout or failure, and gives later Review Details/audit work one canonical phase contract to render.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 139,
+      "id": "D105",
+      "when_context": "M048/S01/T02",
+      "scope": "observability",
+      "decision": "How GitHub Review Details should represent the publication phase when the comment itself is the publication being timed.",
+      "choice": "Render Review Details publication timing as a degraded snapshot captured before the comment write completes, while keeping exact final publication timing in the structured phase log/verifier surfaces.",
+      "rationale": "A single Review Details write cannot know its own final end-to-end publication duration without an additional follow-up update. Marking the publication line as degraded with elapsed time and explicit wording keeps the GitHub surface truthful and fail-open, while the structured completion log and later verifier provide the exact finalized publication timing.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -19175,6 +19195,50 @@
       "verdict": "✅ pass",
       "duration_ms": 10289,
       "created_at": "2026-04-12T23:44:26.725Z"
+    },
+    {
+      "id": 405,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6874,
+      "created_at": "2026-04-13T00:00:00.453Z"
+    },
+    {
+      "id": 406,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7023,
+      "created_at": "2026-04-13T00:00:00.453Z"
+    },
+    {
+      "id": 407,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s01 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 11,
+      "created_at": "2026-04-13T00:00:00.453Z"
+    },
+    {
+      "id": 408,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 12551,
+      "created_at": "2026-04-13T00:00:00.453Z"
     }
   ]
 }

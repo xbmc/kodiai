@@ -57,7 +57,7 @@
   - Verify: `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts`
   - Done when: a live review path can produce the required six named phases as one normalized payload even on success, failure, and timeout paths.
 
-- [ ] **T02: Render the captured timings on GitHub Review Details** `est:90m`
+- [x] **T02: Render the captured timings on GitHub Review Details** `est:90m`
   - Why: Operators already inspect Review Details first, so the new timing contract must become GitHub-visible on both clean and findings-published review paths.
   - Files: `src/lib/review-utils.ts`, `src/lib/review-utils.test.ts`, `src/handlers/review.ts`, `src/handlers/review.test.ts`
   - Do: Add a stable Review Details formatter for the six required phases plus total wall-clock time, thread the merged phase object through Review Details publication, and keep degraded/unavailable wording explicit instead of inventing smooth success.

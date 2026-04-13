@@ -286,6 +286,38 @@ function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, ReviewPhase
     phases.get(name) ?? buildUnavailableReviewPhase(name, "phase timing unavailable"));
 }
 
+function buildReviewDetailsPhaseTimingSummary(params: {
+  phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
+  publicationPhaseStartedAt?: number;
+  totalPhaseStartAt: number;
+}) {
+  const phaseSnapshot = new Map(params.phases);
+
+  if (!phaseSnapshot.has("publication")) {
+    if (params.publicationPhaseStartedAt !== undefined) {
+      phaseSnapshot.set(
+        "publication",
+        createReviewPhaseTiming({
+          name: "publication",
+          status: "degraded",
+          durationMs: Math.max(0, Date.now() - params.publicationPhaseStartedAt),
+          detail: "captured before publication completed",
+        }),
+      );
+    } else {
+      phaseSnapshot.set(
+        "publication",
+        buildUnavailableReviewPhase("publication", "phase timing unavailable"),
+      );
+    }
+  }
+
+  return {
+    totalDurationMs: Math.max(0, Date.now() - params.totalPhaseStartAt),
+    phases: buildOrderedReviewPhaseSummary(phaseSnapshot),
+  };
+}
+
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
   cachedTier?: AuthorCacheTier | null;
@@ -3280,6 +3312,40 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
+        const buildReviewDetailsBody = (): string => {
+          const reviewDetailsBody = formatReviewDetailsSummary({
+            reviewOutputKey,
+            filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
+            linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
+            linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
+            findingCounts,
+            largePRTriage: tieredFiles.isLargePR ? {
+              fullCount: tieredFiles.full.length,
+              abbreviatedCount: tieredFiles.abbreviated.length,
+              mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
+              totalFiles: tieredFiles.totalFiles,
+            } : undefined,
+            feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
+            keywordParsing: parsedIntent,
+            profileSelection,
+            contributorExperience: authorClassification.contract.reviewDetails,
+            prioritization: prioritizationStats,
+            usageLimit: result.usageLimit,
+            tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+            structuralImpact: structuralImpactForReview,
+            phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
+              phases: reviewPhaseTimings,
+              publicationPhaseStartedAt,
+              totalPhaseStartAt,
+            }),
+          });
+
+          const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
+          return suppressedSection
+            ? `${reviewDetailsBody}\n\n${suppressedSection}`
+            : reviewDetailsBody;
+        };
+
         if (shouldProcessReviewOutput) {
           logger.info(
             {
@@ -3296,33 +3362,7 @@ export function createReviewHandler(deps: {
           );
 
           try {
-            const reviewDetailsBody = formatReviewDetailsSummary({
-              reviewOutputKey,
-              filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-              linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
-              linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
-              findingCounts,
-              largePRTriage: tieredFiles.isLargePR ? {
-                fullCount: tieredFiles.full.length,
-                abbreviatedCount: tieredFiles.abbreviated.length,
-                mentionOnlyFiles: tieredFiles.mentionOnly.map(f => ({ filePath: f.filePath, score: f.score })),
-                totalFiles: tieredFiles.totalFiles,
-              } : undefined,
-              feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
-              keywordParsing: parsedIntent,
-              profileSelection,
-              contributorExperience: authorClassification.contract.reviewDetails,
-              prioritization: prioritizationStats,
-              usageLimit: result.usageLimit,
-              tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
-              structuralImpact: structuralImpactForReview,
-            });
-
-            // Append suppressed-findings section if any findings were filtered (FILT-02)
-            const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
-            const fullDetailsBody = suppressedSection
-              ? `${reviewDetailsBody}\n\n${suppressedSection}`
-              : reviewDetailsBody;
+            const fullDetailsBody = buildReviewDetailsBody();
 
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
@@ -3804,6 +3844,29 @@ export function createReviewHandler(deps: {
               },
               "Published partial review on timeout",
             );
+
+            try {
+              await upsertReviewDetailsComment({
+                octokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                body: buildReviewDetailsBody(),
+                botHandles: [githubApp.getAppSlug(), "claude"],
+              });
+            } catch (reviewDetailsErr) {
+              logger.warn(
+                {
+                  ...baseLog,
+                  gate: "review-details-output",
+                  gateResult: "timeout-failed",
+                  reviewOutputKey,
+                  err: reviewDetailsErr,
+                },
+                "Failed to publish Review Details for timeout partial output",
+              );
+            }
 
             // Structured resilience telemetry (best-effort)
             if (config.telemetry.enabled) {

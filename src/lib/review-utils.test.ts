@@ -120,4 +120,63 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Claude Code usage:");
     expect(result).not.toContain("Tokens:");
   });
+
+  it("renders total wall-clock time and the six required phases in stable order", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      phaseTimingSummary: {
+        totalDurationMs: 2500,
+        phases: [
+          { name: "publication", status: "completed", durationMs: 400 },
+          { name: "remote runtime", status: "completed", durationMs: 1200 },
+          { name: "executor handoff", status: "completed", durationMs: 50 },
+          { name: "retrieval/context assembly", status: "completed", durationMs: 300 },
+          { name: "workspace preparation", status: "completed", durationMs: 200 },
+          { name: "queue wait", status: "completed", durationMs: 350 },
+        ],
+      },
+    });
+
+    expect(result).toContain("- Total wall-clock: 2.5s");
+    expect(result).toContain("- Phase timings:");
+
+    const orderedLines = [
+      "queue wait: 350ms",
+      "workspace preparation: 200ms",
+      "retrieval/context assembly: 300ms",
+      "executor handoff: 50ms",
+      "remote runtime: 1.2s",
+      "publication: 400ms",
+    ];
+
+    let lastIndex = -1;
+    for (const line of orderedLines) {
+      const nextIndex = result.indexOf(line);
+      expect(nextIndex).toBeGreaterThan(lastIndex);
+      lastIndex = nextIndex;
+    }
+  });
+
+  it("renders degraded and unavailable wording for malformed or missing phase timings instead of throwing", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      phaseTimingSummary: {
+        totalDurationMs: 3100,
+        phases: [
+          { name: "publication", status: "degraded", durationMs: 120, detail: "captured before publication completed" },
+          { name: "remote runtime", status: "completed", durationMs: 800 },
+          { name: "executor handoff", status: "completed", durationMs: 50 },
+          { name: "workspace preparation", status: "bogus", durationMs: 200 } as never,
+          { name: "queue wait", status: "completed", durationMs: Number.NaN } as never,
+        ],
+      },
+    });
+
+    expect(result).toContain("queue wait: unavailable (invalid phase timing data)");
+    expect(result).toContain("workspace preparation: unavailable (invalid phase timing data)");
+    expect(result).toContain("retrieval/context assembly: unavailable (phase timing unavailable)");
+    expect(result).toContain("executor handoff: 50ms");
+    expect(result).toContain("remote runtime: 800ms");
+    expect(result).toContain("publication: 120ms (degraded: captured before publication completed)");
+  });
 });

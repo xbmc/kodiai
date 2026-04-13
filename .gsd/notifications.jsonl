@@ -275,3 +275,9 @@
 {"id":"1f9514ed-d67d-4181-a11d-d9a088483463","ts":"2026-04-12T23:10:40.106Z","severity":"info","message":"Secrets collected: 0 applied, 2 skipped, 2 already set.","source":"notify","read":false}
 {"id":"7b4c9f75-5c4b-40b4-b074-f63840a4b3e1","ts":"2026-04-12T23:12:20.759Z","severity":"warning","message":"Artifact missing for plan-slice M048/S01 — retrying (attempt 1)","source":"notify","read":false}
 {"id":"1352706c-da6b-4f57-b253-66575789e5ce","ts":"2026-04-12T23:12:21.558Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 34m of uncommitted changes","source":"notify","read":false}
+{"id":"0d3ced1a-3dab-4f76-a46c-6802d15bf354","ts":"2026-04-12T23:44:33.355Z","severity":"info","message":"Committed: feat: Capture queue, executor, and publication phase timings in the liv…","source":"notify","read":false}
+{"id":"33ddb552-9e9f-4dc2-814a-56b9b3044f59","ts":"2026-04-12T23:44:33.366Z","severity":"warning","message":"[safety] file-change: src/config.test.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"10ce47ea-aa23-4ed4-9381-ae079b5e45f1","ts":"2026-04-12T23:44:33.366Z","severity":"warning","message":"[safety] file-change: src/execution/mcp/review-output-publication-gate.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
+{"id":"73cbe331-1267-4380-9803-9f3a5459050b","ts":"2026-04-12T23:44:33.366Z","severity":"warning","message":"Safety: 2 unexpected file change(s) outside task plan","source":"notify","read":false}
+{"id":"a17fb6bf-1143-489d-8f32-4adc561c2394","ts":"2026-04-12T23:44:37.125Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"02bc0f09-016b-4fe0-8205-c28a66d730ba","ts":"2026-04-12T23:44:37.141Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
