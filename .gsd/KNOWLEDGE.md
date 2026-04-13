@@ -1087,3 +1087,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** If compatibility behavior depends on detecting unsupported or legacy keys that are not part of the current schema, inspect the raw parsed YAML before running it through the Zod object parser. Do not try to infer legacy-key intent from the normalized config after parse time — stripped unknown keys are gone.
 
 **Established in:** M048/S03/T01 (`src/execution/config.ts`, `src/execution/config.test.ts`).
+
+---
+
+## Split verifier design into mandatory local preflight plus optional live proof when runtime evidence is expensive or unavailable (M048 closeout)
+
+**Context:** `verify:m048:s03` needed to prove two different truths: the checked-in synchronize trigger/disclosure contract must be correct on every run, and the live review path should be provable when a real synchronize `reviewOutputKey` is available. Forcing live evidence every time would make local and CI verification flaky or impossible; dropping live proof entirely would hide runtime drift.
+
+**Rule:** When a verifier has both static/config truth and runtime truth to prove, make the static/config checks mandatory and deterministic, then add an explicit optional live stage that accepts only real runtime identifiers and reuses the lower-level evidence contract instead of inventing a new schema. This keeps routine verification cheap and reliable while preserving a truthful path to production evidence.
+
+**Established in:** M048 closeout (`scripts/verify-m048-s03.ts`, `.gsd/milestones/M048/M048-SUMMARY.md`).
