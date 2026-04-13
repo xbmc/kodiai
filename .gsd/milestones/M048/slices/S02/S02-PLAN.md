@@ -56,7 +56,7 @@
   - Do: Centralize a faster default poll cadence, add focused polling tests for retries/timeouts/malformed responses, and align the smoke script with the same default without changing executor/public phase semantics.
   - Verify: `bun test ./src/jobs/aca-launcher.test.ts ./src/execution/executor.test.ts && bun run tsc --noEmit`
   - Done when: Launcher tests prove success, failure, timeout, and retry paths settle at the new cadence without hiding API errors or changing the six-phase contract.
-- [ ] **T02: Reduce git repo staging and materialization overhead on the review handoff path** `est:2h`
+- [x] **T02: Reduce git repo staging and materialization overhead on the review handoff path** `est:2h`
   - Why: `executor handoff` currently pays for git bundle creation plus remote materialization work before the single worker can start reviewing, and that fixed cost is the main remaining plumbing seam after S01.
   - Files: `src/execution/executor.ts`, `src/execution/prepare-agent-workspace.test.ts`, `src/execution/agent-entrypoint.ts`, `src/execution/agent-entrypoint.test.ts`, `src/execution/executor.test.ts`, `src/handlers/review.test.ts`
   - Do: Optimize the git-backed workspace transport path in `prepareAgentWorkspace(...)` and `agent-entrypoint.ts` so review executions move only the repo state they need, while preserving symlinks, origin-based diff/log/show commands, shallow-repo correctness, and the existing publication/idempotency behavior.

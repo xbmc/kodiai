@@ -168,7 +168,7 @@ async function detectReviewBundleCandidate(repoDir: string): Promise<
     return undefined;
   }
 
-  const remoteRefs = await $`git -C ${repoDir} for-each-ref --format=%(refname:strip=3) refs/remotes/origin`.quiet()
+  const remoteRefs = await $`git -C ${repoDir} for-each-ref --format='%(refname:strip=3)' refs/remotes/origin`.quiet()
     .text()
     .then((value) => value.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean))
     .catch(() => [] as string[]);

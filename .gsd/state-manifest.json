@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T01:00:11.218Z",
+  "exported_at": "2026-04-13T01:21:18.970Z",
   "milestones": [
     {
       "id": "M001",
@@ -13561,19 +13561,27 @@
       "milestone_id": "M048",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Reduce git repo staging and materialization overhead on the review handoff path",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Restored the fast review-bundle handoff by fixing Bun git-ref staging and teaching the worker entrypoint to consume repoTransport metadata truthfully.",
+      "status": "complete",
+      "one_liner": "Restored the fast review-bundle handoff by fixing Bun git-ref staging and teaching the worker entrypoint to consume repoTransport metadata truthfully.",
+      "narrative": "I kept the new transport coverage red first by reproducing the failing `prepareAgentWorkspace(...)` and `agent-entrypoint.ts` paths before changing production code. The first failure was in `src/execution/executor.ts`: Bun's `$` shell was parsing the bare `%(refname:strip=3)` expression in `git for-each-ref` as shell syntax, so the optimized review-bundle staging path crashed before git ran. I fixed that by quoting the format expression so review-bundle candidate detection works under Bun and the cheaper bundle path is actually reachable again.\n\nI then finished the remote handoff seam in `src/execution/agent-entrypoint.ts` by switching the worker to the canonical `repoTransport` contract that the executor already writes. The entrypoint now resolves transport metadata through `resolveRepoTransport(...)`, materializes `review-bundle` transports by cloning the head branch from the bundle, preserves origin-based git behavior when an origin URL is present, and fails early into `result.json` when repoTransport metadata is malformed instead of invoking the SDK against a broken cwd. I also added transport diagnostics that record which transport path ran (`review-bundle` vs `bundle-all`, plus head/base refs for review bundles) without logging workspace-internal paths.\n\nI did not need to change `src/execution/executor.test.ts` or `src/handlers/review.test.ts`; local reality already had the continuity/idempotency coverage the plan called for. I reran those suites to prove the `executor handoff`/`remote runtime` timing surfaces and review publication behavior stayed unchanged. I also aligned the stale test-only repoTransport type in `src/execution/prepare-agent-workspace.test.ts` and appended the Bun `for-each-ref --format` quoting gotcha to `.gsd/KNOWLEDGE.md` so future agents do not repeat the same failure.",
+      "verification_result": "Verified the task contract with the focused T02 suite (`bun test ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts`) and the repo typecheck (`bun run tsc --noEmit`); both passed. I also ran the broader S02 slice test bundle from the slice plan, and it passed for every existing file, including the unchanged ACA launcher coverage and the wired `verify-m048-s01` tests. To avoid a false green, I separately verified that `scripts/verify-m048-s02.ts` / `scripts/verify-m048-s02.test.ts` are still absent and that `bun run verify:m048:s02 -- --baseline-review-output-key \"$BASELINE_REVIEW_OUTPUT_KEY\" --candidate-review-output-key \"$REVIEW_OUTPUT_KEY\" --json` currently fails with `Script not found \"verify:m048:s02\"`; that live compare verifier remains pending downstream work rather than being silently treated as complete.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T01:21:18.939Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Did not edit `src/execution/executor.test.ts` or `src/handlers/review.test.ts`; those files already contained the executor-phase and publication/idempotency continuity assertions the plan asked for, so I reused and reran that coverage instead of duplicating it.",
+      "known_issues": "`scripts/verify-m048-s02.ts`, `scripts/verify-m048-s02.test.ts`, and the `verify:m048:s02` package script are still not present. Because Bun ignores missing path filters inside multi-file `bun test` bundles, the broader slice test command can exit 0 without proving that missing comparator path; the live compare verification remains pending T03.",
+      "key_files": [
+        "src/execution/executor.ts",
+        "src/execution/agent-entrypoint.ts",
+        "src/execution/prepare-agent-workspace.test.ts",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Use `resolveRepoTransport(...)` as the worker's canonical handoff contract so `repoTransport` metadata, malformed-config failures, and legacy bundle fallback all stay consistent in one place.",
+        "Record review transport diagnostics by kind/head/base rather than logging workspace-internal paths, preserving observability without expanding leaked filesystem detail."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M048\nkey_files:\n  - src/execution/executor.ts\n  - src/execution/agent-entrypoint.ts\n  - src/execution/prepare-agent-workspace.test.ts\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Use `resolveRepoTransport(...)` as the worker's canonical handoff contract so `repoTransport` metadata, malformed-config failures, and legacy bundle fallback all stay consistent in one place.\n  - Record review transport diagnostics by kind/head/base rather than logging workspace-internal paths, preserving observability without expanding leaked filesystem detail.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T01:21:18.939Z\nblocker_discovered: false\n---\n\n# T02: Restored the fast review-bundle handoff by fixing Bun git-ref staging and teaching the worker entrypoint to consume repoTransport metadata truthfully.\n\n**Restored the fast review-bundle handoff by fixing Bun git-ref staging and teaching the worker entrypoint to consume repoTransport metadata truthfully.**\n\n## What Happened\n\nI kept the new transport coverage red first by reproducing the failing `prepareAgentWorkspace(...)` and `agent-entrypoint.ts` paths before changing production code. The first failure was in `src/execution/executor.ts`: Bun's `$` shell was parsing the bare `%(refname:strip=3)` expression in `git for-each-ref` as shell syntax, so the optimized review-bundle staging path crashed before git ran. I fixed that by quoting the format expression so review-bundle candidate detection works under Bun and the cheaper bundle path is actually reachable again.\n\nI then finished the remote handoff seam in `src/execution/agent-entrypoint.ts` by switching the worker to the canonical `repoTransport` contract that the executor already writes. The entrypoint now resolves transport metadata through `resolveRepoTransport(...)`, materializes `review-bundle` transports by cloning the head branch from the bundle, preserves origin-based git behavior when an origin URL is present, and fails early into `result.json` when repoTransport metadata is malformed instead of invoking the SDK against a broken cwd. I also added transport diagnostics that record which transport path ran (`review-bundle` vs `bundle-all`, plus head/base refs for review bundles) without logging workspace-internal paths.\n\nI did not need to change `src/execution/executor.test.ts` or `src/handlers/review.test.ts`; local reality already had the continuity/idempotency coverage the plan called for. I reran those suites to prove the `executor handoff`/`remote runtime` timing surfaces and review publication behavior stayed unchanged. I also aligned the stale test-only repoTransport type in `src/execution/prepare-agent-workspace.test.ts` and appended the Bun `for-each-ref --format` quoting gotcha to `.gsd/KNOWLEDGE.md` so future agents do not repeat the same failure.\n\n## Verification\n\nVerified the task contract with the focused T02 suite (`bun test ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts`) and the repo typecheck (`bun run tsc --noEmit`); both passed. I also ran the broader S02 slice test bundle from the slice plan, and it passed for every existing file, including the unchanged ACA launcher coverage and the wired `verify-m048-s01` tests. To avoid a false green, I separately verified that `scripts/verify-m048-s02.ts` / `scripts/verify-m048-s02.test.ts` are still absent and that `bun run verify:m048:s02 -- --baseline-review-output-key \"$BASELINE_REVIEW_OUTPUT_KEY\" --candidate-review-output-key \"$REVIEW_OUTPUT_KEY\" --json` currently fails with `Script not found \"verify:m048:s02\"`; that live compare verifier remains pending downstream work rather than being silently treated as complete.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 6487ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 11180ms |\n| 3 | `bun test ./src/jobs/aca-launcher.test.ts ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts` | 0 | ✅ pass | 6483ms |\n| 4 | `BASELINE_REVIEW_OUTPUT_KEY='' REVIEW_OUTPUT_KEY='' bun run verify:m048:s02 -- --baseline-review-output-key \"$BASELINE_REVIEW_OUTPUT_KEY\" --candidate-review-output-key \"$REVIEW_OUTPUT_KEY\" --json` | 1 | ❌ fail | 7ms |\n\n## Deviations\n\nDid not edit `src/execution/executor.test.ts` or `src/handlers/review.test.ts`; those files already contained the executor-phase and publication/idempotency continuity assertions the plan asked for, so I reused and reran that coverage instead of duplicating it.\n\n## Known Issues\n\n`scripts/verify-m048-s02.ts`, `scripts/verify-m048-s02.test.ts`, and the `verify:m048:s02` package script are still not present. Because Bun ignores missing path filters inside multi-file `bun test` bundles, the broader slice test command can exit 0 without proving that missing comparator path; the live compare verification remains pending T03.\n\n## Files Created/Modified\n\n- `src/execution/executor.ts`\n- `src/execution/agent-entrypoint.ts`\n- `src/execution/prepare-agent-workspace.test.ts`\n- `.gsd/KNOWLEDGE.md`\n",
       "description": "Why: `executor handoff` currently pays for git bundle creation plus remote materialization work before the single worker can start reviewing, and that fixed cost is the main remaining plumbing seam after S01. Do: optimize the git-backed workspace transport path in `prepareAgentWorkspace(...)` and `agent-entrypoint.ts` so review executions move only the repo state they need, while preserving symlinks, origin-based diff/log/show commands, shallow-repo correctness, and the existing publication/idempotency behavior. Done when: focused executor/entrypoint tests prove the faster transport still supports real review git operations and the handler-facing timing contract remains unchanged.",
       "estimate": "2h",
       "files": [
@@ -19501,6 +19509,50 @@
       "verdict": "❌ fail",
       "duration_ms": 9700,
       "created_at": "2026-04-13T01:00:11.186Z"
+    },
+    {
+      "id": 416,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun test ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6487,
+      "created_at": "2026-04-13T01:21:18.939Z"
+    },
+    {
+      "id": 417,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 11180,
+      "created_at": "2026-04-13T01:21:18.939Z"
+    },
+    {
+      "id": 418,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6483,
+      "created_at": "2026-04-13T01:21:18.940Z"
+    },
+    {
+      "id": 419,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "BASELINE_REVIEW_OUTPUT_KEY='' REVIEW_OUTPUT_KEY='' bun run verify:m048:s02 -- --baseline-review-output-key \"$BASELINE_REVIEW_OUTPUT_KEY\" --candidate-review-output-key \"$REVIEW_OUTPUT_KEY\" --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 7,
+      "created_at": "2026-04-13T01:21:18.940Z"
     }
   ]
 }

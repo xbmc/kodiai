@@ -18,6 +18,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
 import { buildSecurityClaudeMd } from "./executor.ts";
+import { resolveRepoTransport } from "./repo-transport.ts";
+import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -31,6 +33,7 @@ interface AgentConfig {
   allowedTools: string[];
   taskType?: string;
   repoCwd?: string;
+  repoTransport?: RepoTransport;
   repoBundlePath?: string;
   repoOriginUrl?: string;
   mcpServerNames?: string[]; // server names actually registered in orchestrator
@@ -125,15 +128,21 @@ function isRepoInspectionToolUse(part: AssistantContentPart): boolean {
   return /^git(?:\s+-C\s+\S+)?\s+(diff|log|show)\b/.test(command);
 }
 
-async function materializeRepoBundle(params: {
-  bundlePath: string;
-  repoOriginUrl?: string;
-}): Promise<string> {
+async function materializeRepoTransport(transport: RepoTransport): Promise<string> {
   const cloneRoot = await mkdtemp(join(tmpdir(), "kodiai-agent-repo-"));
   const repoDir = join(cloneRoot, "repo");
-  await $`git clone ${params.bundlePath} ${repoDir}`.quiet();
-  if (params.repoOriginUrl) {
-    await $`git -C ${repoDir} remote set-url origin ${params.repoOriginUrl}`.quiet();
+
+  if (transport.kind === "review-bundle") {
+    await $`git clone -b ${transport.headRef} ${transport.bundlePath} ${repoDir}`.quiet();
+    if (transport.originUrl) {
+      await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
+    }
+    return repoDir;
+  }
+
+  await $`git clone ${transport.bundlePath} ${repoDir}`.quiet();
+  if (transport.originUrl) {
+    await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
   }
   return repoDir;
 }
@@ -223,15 +232,28 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
   try {
     await appendDiagnostic(`startup taskType=${agentConfig.taskType ?? "unknown"} model=${agentConfig.model} maxTurns=${agentConfig.maxTurns}`);
-    const sdkCwd = agentConfig.repoBundlePath
-      ? await materializeRepoBundle({
-          bundlePath: agentConfig.repoBundlePath,
-          repoOriginUrl: agentConfig.repoOriginUrl,
-        })
-      : (agentConfig.repoCwd ?? workspaceDir!);
-    if (agentConfig.repoBundlePath) {
-      await appendDiagnostic(`materialized repo bundle cwd=${sdkCwd}`);
+
+    const repoTransport = resolveRepoTransport(agentConfig);
+    if (repoTransport) {
+      await appendDiagnostic(
+        repoTransport.kind === "review-bundle"
+          ? `repo transport kind=${repoTransport.kind} headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`
+          : `repo transport kind=${repoTransport.kind} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`,
+      );
     }
+
+    const sdkCwd = repoTransport
+      ? await materializeRepoTransport(repoTransport)
+      : (agentConfig.repoCwd ?? workspaceDir!);
+
+    if (repoTransport) {
+      await appendDiagnostic(
+        repoTransport.kind === "review-bundle"
+          ? `materialized review bundle headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef}`
+          : "materialized repo bundle kind=bundle-all",
+      );
+    }
+
     const sdkQueryResult = queryFn({
       prompt: agentConfig.prompt,
       options: {

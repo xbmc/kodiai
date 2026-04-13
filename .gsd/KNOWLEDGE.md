@@ -1056,3 +1056,14 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** For env-backed verifier scripts, option parsers must only consume the next argv token when it is a real value, not another `--flag`. If the live proof flag is present but empty because the env var expanded to nothing, return a named skipped status and do not run the live query. Preserve the fail-loud behavior only for cases where a real live key was supplied and the evidence is missing, drifted, or malformed.
 
 **Established in:** M048/S01 closeout (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`).
+
+---
+
+## Bun shell requires quoting git `for-each-ref --format=%(...)` arguments (M048/S02)
+
+**Context:** While finishing the M048/S02 review-bundle transport path, `prepareAgentWorkspace(...)` was using Bun's `$` shell with `git for-each-ref --format=%(refname:strip=3) ...`. Bun parsed the bare `(` as shell syntax and threw `Unexpected token: '('
+` before git ran, which made the optimized review-bundle staging path fail even though the git command itself was valid in a normal shell.
+
+**Rule:** In Bun `$` template shells, always quote git `for-each-ref` format expressions such as `'%(refname:strip=3)'`. Do not pass `%(... )` unquoted inside a Bun shell template.
+
+**Established in:** M048/S02/T02 (`src/execution/executor.ts`, `detectReviewBundleCandidate`).

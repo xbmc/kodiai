@@ -184,6 +184,7 @@ test("prepareAgentWorkspace unshallows PR workspaces before writing a review bun
       bundlePath?: string;
       headRef?: string;
       baseRef?: string;
+      originUrl?: string;
     };
   };
 
