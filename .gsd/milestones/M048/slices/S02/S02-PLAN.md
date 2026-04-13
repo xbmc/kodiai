@@ -62,7 +62,7 @@
   - Do: Optimize the git-backed workspace transport path in `prepareAgentWorkspace(...)` and `agent-entrypoint.ts` so review executions move only the repo state they need, while preserving symlinks, origin-based diff/log/show commands, shallow-repo correctness, and the existing publication/idempotency behavior.
   - Verify: `bun test ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts && bun run tsc --noEmit`
   - Done when: Focused executor/entrypoint tests prove the faster transport still supports real review git operations and the handler-facing timing contract remains unchanged.
-- [ ] **T03: Add an operator compare command for before/after S02 latency proof** `est:90m`
+- [x] **T03: Add an operator compare command for before/after S02 latency proof** `est:90m`
   - Why: S02 should close on repeatable evidence, not ad hoc manual eyeballing of two separate live review runs.
   - Files: `scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`, `scripts/verify-m048-s02.ts`, `scripts/verify-m048-s02.test.ts`, `package.json`
   - Do: Build a small compare command that reuses `verify:m048:s01` evidence gathering to evaluate a baseline review key and a candidate review key, report per-phase deltas for the targeted latency phases, and keep publication continuity visible in the report.

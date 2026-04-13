@@ -305,3 +305,6 @@
 {"id":"0bae05af-8746-4299-bc5c-111299de901f","ts":"2026-04-13T01:15:21.720Z","severity":"warning","message":"[safety] file-change: src/execution/repo-transport.ts — Modified but not in task plan's expected output","source":"workflow-logger","read":false}
 {"id":"e925f245-c0eb-4f81-a607-a5382c3b51a5","ts":"2026-04-13T01:15:21.721Z","severity":"warning","message":"Safety: 1 unexpected file change(s) outside task plan","source":"notify","read":false}
 {"id":"8a3400dd-a110-429e-9a8b-a864d05aff1e","ts":"2026-04-13T01:15:21.721Z","severity":"warning","message":"Artifact missing for execute-task M048/S02/T02 — retrying (attempt 1)","source":"notify","read":false}
+{"id":"23211fa7-d611-4741-8b6a-c50adf66bc5e","ts":"2026-04-13T01:21:27.514Z","severity":"info","message":"Committed: feat: Restored the fast review-bundle handoff by fixing Bun git-ref sta…","source":"notify","read":false}
+{"id":"612ad556-27ce-4886-b9fe-0f3c087af9ac","ts":"2026-04-13T01:21:40.073Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"71f87c72-930c-4d06-a57e-2e94551a6e95","ts":"2026-04-13T01:21:40.076Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}

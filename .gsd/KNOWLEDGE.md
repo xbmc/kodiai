@@ -1067,3 +1067,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** In Bun `$` template shells, always quote git `for-each-ref` format expressions such as `'%(refname:strip=3)'`. Do not pass `%(... )` unquoted inside a Bun shell template.
 
 **Established in:** M048/S02/T02 (`src/execution/executor.ts`, `detectReviewBundleCandidate`).
+
+---
+
+## M048 latency verifiers are intentionally bounded to the last 14 days (M048/S02)
+
+**Context:** `verify:m048:s01` and the new `verify:m048:s02` reuse the same fixed `P14D` Log Analytics window. During T03, older real `reviewOutputKey` values still had review-output evidence in Azure, but the compare command returned `m048_s01_no_matching_phase_timing` because the requested runs fell outside that bounded timespan. Narrowing to fresh keys inside the last 14 days removed the stale-key variable and showed the real deployed-state result.
+
+**Rule:** When using the M048 phase-timing verifiers, choose review keys from the last 14 days unless the script contract is explicitly changed. If an older key appears to have normal review-output logs but the verifier reports no matching phase timing, check the key age before assuming correlation drift.
+
+**Established in:** M048/S02/T03 (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s02.ts`).

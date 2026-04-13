@@ -57,7 +57,8 @@
     "verify:m046:s01": "bun scripts/verify-m046-s01.ts",
     "verify:m046:s02": "bun scripts/verify-m046-s02.ts",
     "verify:m044:s01": "bun scripts/verify-m044-s01.ts",
-    "verify:m048:s01": "bun scripts/verify-m048-s01.ts"
+    "verify:m048:s01": "bun scripts/verify-m048-s01.ts",
+    "verify:m048:s02": "bun scripts/verify-m048-s02.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",

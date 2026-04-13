@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T01:21:18.970Z",
+  "exported_at": "2026-04-13T01:37:26.596Z",
   "milestones": [
     {
       "id": "M001",
@@ -13617,19 +13617,28 @@
       "milestone_id": "M048",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Add an operator compare command for before/after S02 latency proof",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added the M048 S02 review-latency compare verifier with targeted phase deltas, publication continuity reporting, and deterministic CLI coverage.",
+      "status": "complete",
+      "one_liner": "Added the M048 S02 review-latency compare verifier with targeted phase deltas, publication continuity reporting, and deterministic CLI coverage.",
+      "narrative": "I wrote `scripts/verify-m048-s02.test.ts` first, confirmed it failed because the compare script and package wiring did not exist, and then implemented the smallest shipped surface that satisfied that contract. `scripts/verify-m048-s01.ts` now exports the shared formatting/workspace helpers the compare path reuses, and the new `scripts/verify-m048-s02.ts` parses baseline/candidate review keys with side-specific delivery-id validation, evaluates both reviews through the existing S01 evidence pipeline, and emits one operator-facing report with targeted latency deltas plus publication continuity state. The compare report keeps the full embedded S01 reports for both sides so Azure availability, invalid-payload states, and no-match outcomes stay visible instead of being flattened into a second contract. I wired `verify:m048:s02` into `package.json`, added deterministic coverage for improved, no-improvement, inconclusive, publication-regressed, and invalid-arg paths, recorded D109 for the report shape, and appended a knowledge entry about the verifier’s bounded 14-day evidence window.\n\nFor verification, the focused verifier test suite passed, the broader S02 slice regression bundle passed, and `bun run tsc --noEmit` passed. The env-backed live compare invocation failed initially because the expected review-key env vars were unset in automation, so I recovered fresh real review keys from Azure review-output evidence and reran the compare command against those real keys. That run exercised the shipped command shape and produced the truthful degraded-path result: both sides returned `m048_s01_no_matching_phase_timing`, the top-level compare report returned `m048_s02_inconclusive`, and the missing phase evidence stayed explicit instead of being misreported as a successful before/after latency proof.",
+      "verification_result": "Verified the new compare command in three layers. First, `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts` passed and proved the compare-report happy path, no-improvement path, inconclusive/error handling, publication-regression reporting, and invalid CLI arg behavior while keeping the original S01 verifier contract green. Second, the broader S02 regression bundle (`aca-launcher`, workspace transport, agent entrypoint, executor, review handler, and both verifier suites) passed, confirming the new compare script did not regress the queue/executor/review latency surfaces touched earlier in the slice. Third, `bun run tsc --noEmit` passed cleanly. For the live proof surface, I ran `verify:m048:s02` against fresh real review keys recovered from Azure review-output logs inside the verifier’s 14-day window; the command executed and returned the expected truthful degraded result (`m048_s02_inconclusive`) because production still lacks matching `Review phase timing summary` rows for those keys.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T01:37:26.564Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "The planned env-backed live invocation could not run as written because `BASELINE_REVIEW_OUTPUT_KEY` and `REVIEW_OUTPUT_KEY` were unset in this automation environment. To keep the proof path truthful, I recovered fresh real review keys from Azure `reviewOutputKey` logs inside the verifier’s fixed 14-day window and used those for the live compare run instead.",
+      "known_issues": "Current Azure workspaces still expose fresh `reviewOutputKey` publication evidence but no matching `Review phase timing summary` rows for recent 14-day review keys, so the live compare command now runs truthfully but remains `m048_s02_inconclusive` until post-deploy reviews emit the new structured phase-timing log in production.",
+      "key_files": [
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s02.ts",
+        "scripts/verify-m048-s02.test.ts",
+        "package.json",
+        ".gsd/KNOWLEDGE.md",
+        ".gsd/DECISIONS.md"
+      ],
+      "key_decisions": [
+        "D109 — embed the full S01 verifier reports inside `verify:m048:s02`, compare only the targeted latency phases (`workspace preparation`, `executor handoff`, `remote runtime`), and evaluate publication continuity separately so faster runtime does not hide publication regressions."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M048\nkey_files:\n  - scripts/verify-m048-s01.ts\n  - scripts/verify-m048-s02.ts\n  - scripts/verify-m048-s02.test.ts\n  - package.json\n  - .gsd/KNOWLEDGE.md\n  - .gsd/DECISIONS.md\nkey_decisions:\n  - D109 — embed the full S01 verifier reports inside `verify:m048:s02`, compare only the targeted latency phases (`workspace preparation`, `executor handoff`, `remote runtime`), and evaluate publication continuity separately so faster runtime does not hide publication regressions.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T01:37:26.563Z\nblocker_discovered: false\n---\n\n# T03: Added the M048 S02 review-latency compare verifier with targeted phase deltas, publication continuity reporting, and deterministic CLI coverage.\n\n**Added the M048 S02 review-latency compare verifier with targeted phase deltas, publication continuity reporting, and deterministic CLI coverage.**\n\n## What Happened\n\nI wrote `scripts/verify-m048-s02.test.ts` first, confirmed it failed because the compare script and package wiring did not exist, and then implemented the smallest shipped surface that satisfied that contract. `scripts/verify-m048-s01.ts` now exports the shared formatting/workspace helpers the compare path reuses, and the new `scripts/verify-m048-s02.ts` parses baseline/candidate review keys with side-specific delivery-id validation, evaluates both reviews through the existing S01 evidence pipeline, and emits one operator-facing report with targeted latency deltas plus publication continuity state. The compare report keeps the full embedded S01 reports for both sides so Azure availability, invalid-payload states, and no-match outcomes stay visible instead of being flattened into a second contract. I wired `verify:m048:s02` into `package.json`, added deterministic coverage for improved, no-improvement, inconclusive, publication-regressed, and invalid-arg paths, recorded D109 for the report shape, and appended a knowledge entry about the verifier’s bounded 14-day evidence window.\n\nFor verification, the focused verifier test suite passed, the broader S02 slice regression bundle passed, and `bun run tsc --noEmit` passed. The env-backed live compare invocation failed initially because the expected review-key env vars were unset in automation, so I recovered fresh real review keys from Azure review-output evidence and reran the compare command against those real keys. That run exercised the shipped command shape and produced the truthful degraded-path result: both sides returned `m048_s01_no_matching_phase_timing`, the top-level compare report returned `m048_s02_inconclusive`, and the missing phase evidence stayed explicit instead of being misreported as a successful before/after latency proof.\n\n## Verification\n\nVerified the new compare command in three layers. First, `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts` passed and proved the compare-report happy path, no-improvement path, inconclusive/error handling, publication-regression reporting, and invalid CLI arg behavior while keeping the original S01 verifier contract green. Second, the broader S02 regression bundle (`aca-launcher`, workspace transport, agent entrypoint, executor, review handler, and both verifier suites) passed, confirming the new compare script did not regress the queue/executor/review latency surfaces touched earlier in the slice. Third, `bun run tsc --noEmit` passed cleanly. For the live proof surface, I ran `verify:m048:s02` against fresh real review keys recovered from Azure review-output logs inside the verifier’s 14-day window; the command executed and returned the expected truthful degraded result (`m048_s02_inconclusive`) because production still lacks matching `Review phase timing summary` rows for those keys.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts` | 0 | ✅ pass | 39ms |\n| 2 | `bun test ./src/jobs/aca-launcher.test.ts ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts` | 0 | ✅ pass | 17000ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 8477ms |\n| 4 | `bun run verify:m048:s02 -- --baseline-review-output-key 'kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28103:action-opened:delivery-a8e96f30-2c81-11f1-8669-73fd6f5bfd79:head-bd35dbaa518ab3c20b9483f171575d2966949a29' --candidate-review-output-key 'kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28105:action-opened:delivery-f920ed00-2d0f-11f1-8f64-ae41dd9c851e:head-1e70ebe7e09c67926ecd931195dbe4a1263c9dfa' --json` | 1 | ❌ fail | 6470ms |\n\n## Deviations\n\nThe planned env-backed live invocation could not run as written because `BASELINE_REVIEW_OUTPUT_KEY` and `REVIEW_OUTPUT_KEY` were unset in this automation environment. To keep the proof path truthful, I recovered fresh real review keys from Azure `reviewOutputKey` logs inside the verifier’s fixed 14-day window and used those for the live compare run instead.\n\n## Known Issues\n\nCurrent Azure workspaces still expose fresh `reviewOutputKey` publication evidence but no matching `Review phase timing summary` rows for recent 14-day review keys, so the live compare command now runs truthfully but remains `m048_s02_inconclusive` until post-deploy reviews emit the new structured phase-timing log in production.\n\n## Files Created/Modified\n\n- `scripts/verify-m048-s01.ts`\n- `scripts/verify-m048-s02.ts`\n- `scripts/verify-m048-s02.test.ts`\n- `package.json`\n- `.gsd/KNOWLEDGE.md`\n- `.gsd/DECISIONS.md`\n",
       "description": "Why: S02 should close on repeatable evidence, not ad hoc manual eyeballing of two separate live review runs. Do: build a small compare command that reuses `verify:m048:s01` evidence gathering to evaluate a baseline review key and a candidate review key, report per-phase deltas for the targeted latency phases, and keep publication continuity visible in the report. Done when: the new command has focused regression tests, is wired in `package.json`, and can compare a stored baseline review with a fresh post-deploy review using the shared six-phase evidence contract.",
       "estimate": "90m",
       "files": [
@@ -14950,6 +14959,18 @@
       "decision": "ACA job polling cadence and drift diagnostics for the single-worker review path",
       "choice": "Use a shared exported default ACA poll interval of 5000ms in production and smoke checks, and log malformed or unknown execution-status payload drift at debug level while preserving the existing timeout and terminal-status contract.",
       "rationale": "A 5s shared cadence removes avoidable polling tail latency without moving the remote-runtime boundary, and debug-level drift logs keep malformed Azure responses visible without creating noisy warning spam under retry or rate-limit pressure.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 143,
+      "id": "D109",
+      "when_context": "M048/S02/T03",
+      "scope": "observability",
+      "decision": "How the M048/S02 operator compare command represents before/after latency proof",
+      "choice": "Embed the full S01 verifier report for baseline and candidate inside `verify:m048:s02`, compute latency proof over `workspace preparation`, `executor handoff`, and `remote runtime`, and evaluate publication continuity as a separate compare state.",
+      "rationale": "Reusing the full S01 report keeps Azure/source availability, status codes, and invalid-payload states in one shared evidence contract instead of inventing a second store. Restricting deltas to the phases S02 actually targets avoids queue/noise skew, while a separate publication continuity state keeps faster runtime results from hiding GitHub publication regressions.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -19553,6 +19574,50 @@
       "verdict": "❌ fail",
       "duration_ms": 7,
       "created_at": "2026-04-13T01:21:18.940Z"
+    },
+    {
+      "id": 420,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 39,
+      "created_at": "2026-04-13T01:37:26.564Z"
+    },
+    {
+      "id": 421,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/aca-launcher.test.ts ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 17000,
+      "created_at": "2026-04-13T01:37:26.565Z"
+    },
+    {
+      "id": 422,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8477,
+      "created_at": "2026-04-13T01:37:26.565Z"
+    },
+    {
+      "id": 423,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s02 -- --baseline-review-output-key 'kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28103:action-opened:delivery-a8e96f30-2c81-11f1-8669-73fd6f5bfd79:head-bd35dbaa518ab3c20b9483f171575d2966949a29' --candidate-review-output-key 'kodiai-review-output:v1:inst-109141824:xbmc/xbmc:pr-28105:action-opened:delivery-f920ed00-2d0f-11f1-8f64-ae41dd9c851e:head-1e70ebe7e09c67926ecd931195dbe4a1263c9dfa' --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 6470,
+      "created_at": "2026-04-13T01:37:26.565Z"
     }
   ]
 }

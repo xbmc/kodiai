@@ -16,7 +16,7 @@ const DEFAULT_TIMESPAN = "P14D";
 const DEFAULT_QUERY_LIMIT = 20;
 const DEFAULT_RESOURCE_GROUP = "rg-kodiai";
 
-type M048S01StatusCode =
+export type M048S01StatusCode =
   | "m048_s01_ok"
   | "m048_s01_skipped_missing_review_output_key"
   | "m048_s01_invalid_arg"
@@ -56,7 +56,7 @@ function normalizeIdentifier(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function formatDuration(durationMs: number): string {
+export function formatDuration(durationMs: number): string {
   if (durationMs < 1000) {
     return `${Math.round(durationMs)}ms`;
   }
@@ -227,7 +227,7 @@ function getAzureLogResourceGroup(): string {
   return process.env.ACA_RESOURCE_GROUP ?? DEFAULT_RESOURCE_GROUP;
 }
 
-async function discoverAuditWorkspaceIds(): Promise<string[]> {
+export async function discoverAuditWorkspaceIds(): Promise<string[]> {
   const explicitWorkspaceIds = process.env.AZURE_LOG_WORKSPACE_IDS
     ?.split(",")
     .map((value) => value.trim())
