@@ -4,6 +4,16 @@ Recurring gotchas and non-obvious patterns found during execution.
 
 ---
 
+## Bun test mixed explicit paths can hide a missing file
+
+**Context:** During M048/S02/T01, the slice verification command included `./scripts/verify-m048-s02.test.ts` before that test file existed. `bun test` still exited 0 because other listed files matched and ran. A command with only a missing path (`bun test ./definitely-missing-file.test.ts`) exits 1 with `Test filter ... had no matches`, but a mixed command can silently succeed.
+
+**Rule:** When a verification command lists multiple explicit Bun test paths, do not assume every listed file ran just because the overall command passed. Confirm the expected file exists first (`read`/`rg --files`) or verify the runner output includes that file.
+
+**Established in:** M048/S02/T01.
+
+---
+
 ## DB Migrations — `IF NOT EXISTS` on idempotent `ALTER TABLE`
 
 **Context:** `runMigrations()` tracks applied files in `_migrations` by filename. If a column is added manually (e.g., by a prior partial run or direct SQL), the migration file won't be in `_migrations`, so it will attempt to apply again and fail with `column already exists`.
@@ -1036,3 +1046,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
 
 **Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).
+
+---
+
+## Env-backed verifier args must not consume the next flag when the value is empty (M048/S01 closeout)
+
+**Context:** `bun run verify:m048:s01 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json` is the slice-level verification command. When `REVIEW_OUTPUT_KEY` is unset in automation, the parser can see `--review-output-key --json` and accidentally treat `--json` as the review key unless it explicitly refuses to consume another flag as a value. That produces a misleading invalid-correlation failure instead of the truthful "no live review key was provided" outcome.
+
+**Rule:** For env-backed verifier scripts, option parsers must only consume the next argv token when it is a real value, not another `--flag`. If the live proof flag is present but empty because the env var expanded to nothing, return a named skipped status and do not run the live query. Preserve the fail-loud behavior only for cases where a real live key was supplied and the evidence is missing, drifted, or malformed.
+
+**Established in:** M048/S01 closeout (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`).

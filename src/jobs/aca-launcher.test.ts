@@ -2,11 +2,13 @@ import { describe, test, expect, mock, afterEach } from "bun:test";
 import { join } from "node:path";
 import { rm, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import type { Logger } from "pino";
 import {
   APPLICATION_SECRET_NAMES,
   buildAcaJobSpec,
   readJobResult,
   cancelAcaJob,
+  pollUntilComplete,
 } from "./aca-launcher.ts";
 
 // ---------------------------------------------------------------------------
@@ -157,6 +159,171 @@ describe("buildAcaJobSpec", () => {
     // trigger the guard — the current implementation prevents this via the allowed
     // name set, so we confirm no standard call throws.
     expect(() => buildAcaJobSpec(BASE_OPTS)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readJobResult
+// ---------------------------------------------------------------------------
+
+describe("pollUntilComplete", () => {
+  function makeLogger() {
+    return {
+      debug: mock(() => undefined),
+      info: mock(() => undefined),
+      warn: mock(() => undefined),
+      error: mock(() => undefined),
+    } satisfies Pick<Logger, "debug" | "info" | "warn" | "error">;
+  }
+
+  function jsonResponse(body: unknown, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  function textResponse(body: string, status = 200) {
+    return new Response(body, {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  async function runPollScenario(opts: {
+    statusResponses: Array<Response | Error>;
+    nowValues: number[];
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }) {
+    const originalFetch = globalThis.fetch;
+    const originalSleep = Bun.sleep;
+    const originalNow = Date.now;
+    const originalIdentityEndpoint = process.env["IDENTITY_ENDPOINT"];
+    const originalIdentityHeader = process.env["IDENTITY_HEADER"];
+
+    const logger = makeLogger();
+    const sleepCalls: number[] = [];
+    let nowIndex = 0;
+    let statusFetchCount = 0;
+
+    process.env["IDENTITY_ENDPOINT"] = "https://identity.example/token";
+    process.env["IDENTITY_HEADER"] = "identity-header";
+
+    Date.now = () => {
+      const safeIndex = Math.min(nowIndex, opts.nowValues.length - 1);
+      const value = opts.nowValues[safeIndex] ?? 0;
+      nowIndex += 1;
+      return value;
+    };
+
+    Bun.sleep = (async (ms: number) => {
+      sleepCalls.push(ms);
+    }) as typeof Bun.sleep;
+
+    globalThis.fetch = (async (input) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url.startsWith("https://identity.example/token")) {
+        return jsonResponse({ access_token: "test-access-token" });
+      }
+
+      const next = opts.statusResponses[statusFetchCount] ?? opts.statusResponses.at(-1);
+      statusFetchCount += 1;
+      if (next instanceof Error) {
+        throw next;
+      }
+      return next ?? jsonResponse({ properties: { status: "Running" } });
+    }) as typeof fetch;
+
+    try {
+      const result = await pollUntilComplete({
+        resourceGroup: "rg-kodiai",
+        jobName: "caj-kodiai-agent",
+        executionName: "exec-123",
+        timeoutMs: opts.timeoutMs ?? 20_000,
+        ...(opts.pollIntervalMs !== undefined ? { pollIntervalMs: opts.pollIntervalMs } : {}),
+        logger: logger as unknown as Logger,
+      });
+
+      return { result, logger, sleepCalls, statusFetchCount };
+    } finally {
+      globalThis.fetch = originalFetch;
+      Bun.sleep = originalSleep;
+      Date.now = originalNow;
+      if (originalIdentityEndpoint === undefined) {
+        delete process.env["IDENTITY_ENDPOINT"];
+      } else {
+        process.env["IDENTITY_ENDPOINT"] = originalIdentityEndpoint;
+      }
+      if (originalIdentityHeader === undefined) {
+        delete process.env["IDENTITY_HEADER"];
+      } else {
+        process.env["IDENTITY_HEADER"] = originalIdentityHeader;
+      }
+    }
+  }
+
+  test("succeeds on the first poll without sleeping", async () => {
+    const { result, sleepCalls, statusFetchCount } = await runPollScenario({
+      statusResponses: [jsonResponse({ properties: { status: "Succeeded" } })],
+      nowValues: [0, 0, 40],
+    });
+
+    expect(result).toEqual({ status: "succeeded", durationMs: 40 });
+    expect(sleepCalls).toEqual([]);
+    expect(statusFetchCount).toBe(1);
+  });
+
+  test("retries HTTP and fetch failures on the faster default cadence before surfacing failed status", async () => {
+    const { result, logger, sleepCalls, statusFetchCount } = await runPollScenario({
+      statusResponses: [
+        textResponse("gateway unavailable", 503),
+        new Error("socket hang up"),
+        jsonResponse({ status: "Failed" }),
+      ],
+      nowValues: [0, 0, 100, 5_100, 5_200, 10_100, 10_200],
+    });
+
+    expect(result).toEqual({ status: "failed", durationMs: 10_200 });
+    expect(sleepCalls).toEqual([5_000, 5_000]);
+    expect(statusFetchCount).toBe(3);
+
+    const debugMessages = (logger.debug as ReturnType<typeof mock>).mock.calls.map((call) => call[1]);
+    expect(debugMessages).toContain("ACA Job poll: REST API error, will retry");
+    expect(debugMessages).toContain("ACA Job poll: fetch failed, will retry");
+  });
+
+  test("logs malformed payload drift for invalid JSON, missing status, and unknown statuses before succeeding", async () => {
+    const { result, logger, sleepCalls, statusFetchCount } = await runPollScenario({
+      statusResponses: [
+        textResponse("{not-json"),
+        jsonResponse({ properties: {} }),
+        jsonResponse({ status: "Queued" }),
+        jsonResponse({ properties: { status: "Succeeded" } }),
+      ],
+      nowValues: [0, 0, 10, 5_010, 5_020, 10_020, 10_030, 15_030, 15_040],
+      timeoutMs: 30_000,
+    });
+
+    expect(result).toEqual({ status: "succeeded", durationMs: 15_040 });
+    expect(sleepCalls).toEqual([5_000, 5_000, 5_000]);
+    expect(statusFetchCount).toBe(4);
+
+    const debugMessages = (logger.debug as ReturnType<typeof mock>).mock.calls.map((call) => call[1]);
+    expect(debugMessages).toContain("ACA Job poll: malformed execution payload, will retry");
+    expect(debugMessages).toContain("ACA Job poll: unknown execution status, will retry");
+  });
+
+  test("times out truthfully when the deadline expires just before the next scheduled poll", async () => {
+    const { result, sleepCalls, statusFetchCount } = await runPollScenario({
+      statusResponses: [jsonResponse({ status: "Running" })],
+      nowValues: [0, 0, 1, 3_000, 3_001],
+      timeoutMs: 3_000,
+    });
+
+    expect(result).toEqual({ status: "timed-out", durationMs: 3_001 });
+    expect(sleepCalls).toEqual([2_999]);
+    expect(statusFetchCount).toBe(1);
   });
 });
 

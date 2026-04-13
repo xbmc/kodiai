@@ -1,7 +1,7 @@
 # Codebase Map
 
-Generated: 2026-04-13T00:00:12Z | Files: 500 | Described: 0/500
-<!-- gsd:codebase-meta {"generatedAt":"2026-04-13T00:00:12Z","fingerprint":"fa08f14b7cc1418833923e0f8897cc0ffb49f2c1","fileCount":500,"truncated":true} -->
+Generated: 2026-04-13T00:49:55Z | Files: 500 | Described: 0/500
+<!-- gsd:codebase-meta {"generatedAt":"2026-04-13T00:49:55Z","fingerprint":"616f6a739304055ceccf2e6729d488f3c8fa6e8d","fileCount":500,"truncated":true} -->
 Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### (root)/
@@ -61,7 +61,7 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `fixtures/contributor-calibration/xbmc-snapshot.json`
 
 ### scripts/
-- *(110 files: 107 .ts, 3 .sh)*
+- *(112 files: 109 .ts, 3 .sh)*
 
 ### src/
 - `src/config.test.ts`
@@ -144,4 +144,4 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `src/jobs/workspace.ts`
 
 ### src/knowledge/
-- *(154 files: 154 .ts)*
+- *(152 files: 152 .ts)*

@@ -18,6 +18,7 @@ const DEFAULT_RESOURCE_GROUP = "rg-kodiai";
 
 type M048S01StatusCode =
   | "m048_s01_ok"
+  | "m048_s01_skipped_missing_review_output_key"
   | "m048_s01_invalid_arg"
   | "m048_s01_azure_unavailable"
   | "m048_s01_no_matching_phase_timing"
@@ -87,6 +88,21 @@ function formatPhaseLine(phase: ReviewPhaseTiming): string {
   return `- ${phase.name}: ${durationText}`;
 }
 
+function readOptionValue(args: string[], index: number): { value: string | null; consumed: boolean } {
+  const candidate = args[index + 1];
+  if (typeof candidate !== "string" || candidate.startsWith("--")) {
+    return {
+      value: null,
+      consumed: false,
+    };
+  }
+
+  return {
+    value: candidate,
+    consumed: true,
+  };
+}
+
 export function parseVerifyM048S01Args(args: string[]): {
   help?: boolean;
   json?: boolean;
@@ -99,14 +115,20 @@ export function parseVerifyM048S01Args(args: string[]): {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--review-output-key") {
-      reviewOutputKey = args[index + 1] ?? null;
-      index += 1;
+      const { value, consumed } = readOptionValue(args, index);
+      reviewOutputKey = value;
+      if (consumed) {
+        index += 1;
+      }
       continue;
     }
 
     if (arg === "--delivery-id") {
-      deliveryId = args[index + 1] ?? null;
-      index += 1;
+      const { value, consumed } = readOptionValue(args, index);
+      deliveryId = value;
+      if (consumed) {
+        index += 1;
+      }
       continue;
     }
   }
@@ -364,6 +386,21 @@ export async function main(
 
   if (options.help) {
     stdout.write(`${usage()}\n`);
+    return 0;
+  }
+
+  const reviewOutputKeyMissingValue = args.includes("--review-output-key")
+    && normalizeIdentifier(options.reviewOutputKey) === null;
+  if (reviewOutputKeyMissingValue) {
+    const report = createBaseReport({
+      reviewOutputKey: null,
+      deliveryId: normalizeIdentifier(options.deliveryId),
+      statusCode: "m048_s01_skipped_missing_review_output_key",
+      success: true,
+      issues: ["No review output key provided; skipped live Azure phase-timing verification."],
+    });
+
+    stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderM048S01Report(report));
     return 0;
   }
 

@@ -73,6 +73,18 @@ describe("verify-m048-s01", () => {
     expect(result.json).toBe(true);
   });
 
+  test("parseVerifyM048S01Args does not consume the next flag when --review-output-key is empty", async () => {
+    const { parseVerifyM048S01Args } = await loadModule();
+
+    const result = parseVerifyM048S01Args([
+      "--review-output-key",
+      "--json",
+    ]);
+
+    expect(result.reviewOutputKey).toBeNull();
+    expect(result.json).toBe(true);
+  });
+
   test("evaluateM048S01 returns a successful report with the required six-phase matrix", async () => {
     const { evaluateM048S01 } = await loadModule();
 
@@ -110,6 +122,27 @@ describe("verify-m048-s01", () => {
     expect(report.success).toBe(false);
     expect(report.status_code).toBe("m048_s01_azure_unavailable");
     expect(report.sourceAvailability.azureLogs).toBe("unavailable");
+  });
+
+  test("main exits zero with a named skipped status when --review-output-key is passed without a value", async () => {
+    const { main } = await loadModule();
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+
+    const exitCode = await main(["--review-output-key", "--json"], {
+      stdout: { write: (chunk: string) => void stdoutChunks.push(chunk) },
+      stderr: { write: (chunk: string) => void stderrChunks.push(chunk) },
+      evaluate: async () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const report = JSON.parse(stdoutChunks.join(""));
+    expect(exitCode).toBe(0);
+    expect(stderrChunks.join(" ")).toBe("");
+    expect(report.status_code).toBe("m048_s01_skipped_missing_review_output_key");
+    expect(report.success).toBe(true);
+    expect(report.issues).toContain("No review output key provided; skipped live Azure phase-timing verification.");
   });
 
   test("main exits non-zero with a named invalid-arg status when --review-output-key is missing", async () => {

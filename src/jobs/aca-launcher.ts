@@ -257,6 +257,8 @@ export async function launchAcaJob(opts: {
 // Polling
 // ---------------------------------------------------------------------------
 
+export const DEFAULT_ACA_JOB_POLL_INTERVAL_MS = 5_000;
+
 type PollStatus = "succeeded" | "failed" | "timed-out";
 
 interface AcaExecutionShowResult {
@@ -266,16 +268,32 @@ interface AcaExecutionShowResult {
   status?: string;
 }
 
-function parseExecutionStatus(raw: string): string | undefined {
+type ParsedExecutionStatus =
+  | { kind: "empty" }
+  | { kind: "invalid-json" }
+  | { kind: "missing-status" }
+  | { kind: "status"; rawStatus: string; normalizedStatus: string };
+
+function parseExecutionStatus(raw: string): ParsedExecutionStatus {
+  if (raw.trim().length === 0) {
+    return { kind: "empty" };
+  }
+
   try {
     const parsed = JSON.parse(raw) as AcaExecutionShowResult;
-    return (
-      parsed.properties?.status ??
-      parsed.status ??
-      undefined
-    );
+    const status = parsed.properties?.status ?? parsed.status;
+    if (typeof status !== "string" || status.trim().length === 0) {
+      return { kind: "missing-status" };
+    }
+
+    const rawStatus = status.trim();
+    return {
+      kind: "status",
+      rawStatus,
+      normalizedStatus: rawStatus.toLowerCase(),
+    };
   } catch {
-    return undefined;
+    return { kind: "invalid-json" };
   }
 }
 
@@ -299,7 +317,7 @@ export async function pollUntilComplete(opts: {
     jobName,
     executionName,
     timeoutMs,
-    pollIntervalMs = 10_000,
+    pollIntervalMs = DEFAULT_ACA_JOB_POLL_INTERVAL_MS,
     logger,
   } = opts;
 
@@ -313,7 +331,10 @@ export async function pollUntilComplete(opts: {
     const elapsed = Date.now() - startMs;
     if (elapsed >= timeoutMs) {
       const durationMs = Date.now() - startMs;
-      logger?.info({ executionName, jobName, durationMs, status: "timed-out" }, "ACA Job poll timed out");
+      logger?.info(
+        { executionName, jobName, durationMs, status: "timed-out", pollIntervalMs },
+        "ACA Job poll timed out",
+      );
       return { status: "timed-out", durationMs };
     }
 
@@ -326,31 +347,80 @@ export async function pollUntilComplete(opts: {
       rawBody = await resp.text();
       if (!resp.ok) {
         logger?.debug(
-          { attempt, executionName, httpStatus: resp.status, body: rawBody.slice(0, 200) },
+          {
+            attempt,
+            executionName,
+            httpStatus: resp.status,
+            pollIntervalMs,
+            body: rawBody.slice(0, 200),
+          },
           "ACA Job poll: REST API error, will retry",
         );
         rawBody = "";
       }
     } catch (err) {
       logger?.debug(
-        { attempt, executionName, err },
+        { attempt, executionName, pollIntervalMs, err },
         "ACA Job poll: fetch failed, will retry",
       );
     }
 
-    const status = parseExecutionStatus(rawBody);
-    logger?.debug({ attempt, executionName, status }, "ACA Job poll attempt");
+    const parsedStatus = parseExecutionStatus(rawBody);
+    if (parsedStatus.kind === "invalid-json" || parsedStatus.kind === "missing-status") {
+      logger?.debug(
+        {
+          attempt,
+          executionName,
+          driftKind: parsedStatus.kind,
+          pollIntervalMs,
+          body: rawBody.slice(0, 200),
+        },
+        "ACA Job poll: malformed execution payload, will retry",
+      );
+    }
 
-    if (status) {
-      const normalized = status.toLowerCase();
-      if (normalized === "succeeded") {
+    if (
+      parsedStatus.kind === "status" &&
+      parsedStatus.normalizedStatus !== "succeeded" &&
+      parsedStatus.normalizedStatus !== "failed" &&
+      parsedStatus.normalizedStatus !== "running"
+    ) {
+      logger?.debug(
+        {
+          attempt,
+          executionName,
+          pollIntervalMs,
+          status: parsedStatus.rawStatus,
+        },
+        "ACA Job poll: unknown execution status, will retry",
+      );
+    }
+
+    logger?.debug(
+      {
+        attempt,
+        executionName,
+        pollIntervalMs,
+        status: parsedStatus.kind === "status" ? parsedStatus.rawStatus : undefined,
+      },
+      "ACA Job poll attempt",
+    );
+
+    if (parsedStatus.kind === "status") {
+      if (parsedStatus.normalizedStatus === "succeeded") {
         const durationMs = Date.now() - startMs;
-        logger?.info({ executionName, jobName, durationMs, status: "succeeded" }, "ACA Job completed");
+        logger?.info(
+          { executionName, jobName, durationMs, status: "succeeded", pollIntervalMs },
+          "ACA Job completed",
+        );
         return { status: "succeeded", durationMs };
       }
-      if (normalized === "failed") {
+      if (parsedStatus.normalizedStatus === "failed") {
         const durationMs = Date.now() - startMs;
-        logger?.info({ executionName, jobName, durationMs, status: "failed" }, "ACA Job failed");
+        logger?.info(
+          { executionName, jobName, durationMs, status: "failed", pollIntervalMs },
+          "ACA Job failed",
+        );
         return { status: "failed", durationMs };
       }
     }

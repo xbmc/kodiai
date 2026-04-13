@@ -21,6 +21,7 @@ import {
   launchAcaJob,
   pollUntilComplete,
   readJobResult,
+  DEFAULT_ACA_JOB_POLL_INTERVAL_MS,
 } from "../src/jobs/aca-launcher.ts";
 
 // ---------------------------------------------------------------------------
@@ -116,7 +117,7 @@ const { status, durationMs } = await pollUntilComplete({
   jobName: acaJobName!,
   executionName,
   timeoutMs: 120_000,
-  pollIntervalMs: 5_000,
+  pollIntervalMs: DEFAULT_ACA_JOB_POLL_INTERVAL_MS,
 });
 
 const totalMs = Date.now() - dispatchStart;

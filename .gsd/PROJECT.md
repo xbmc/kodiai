@@ -34,6 +34,8 @@ Fresh milestone-close verification passed:
 
 Requirements `R046` and `R048` are validated, and future contributor-resolution changes should extend `verify:m047` rather than introducing parallel proof paths.
 
+**M048 is active.** S01 is now complete in the repo and projected slice state: queue, handler, and executor seams emit one correlated six-phase `Review phase timing summary`; Review Details renders the same ordered phase matrix; and `scripts/verify-m048-s01.ts` can normalize Azure evidence by `reviewOutputKey` and `deliveryId`. In unattended automation without an injected `REVIEW_OUTPUT_KEY`, the verifier now returns `m048_s01_skipped_missing_review_output_key` instead of misparsing `--json` as the key. Live production validation of R050 still requires a deployed revision plus a fresh real review that emits the new phase-summary rows.
+
 ## Architecture / Key Patterns
 
 - **Entrypoint:** Hono HTTP server (`src/index.ts`) receiving GitHub webhooks and Slack events.
@@ -50,6 +52,7 @@ Requirements `R046` and `R048` are validated, and future contributor-resolution 
 - **Calibration evaluator seam:** `src/contributor/calibration-evaluator.ts` compares the modeled live incremental path against the intended full-signal path, preserves retained/excluded cohort truth, and reports fidelity/degradation limits instead of fabricating replay evidence.
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
 - **Composable proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, `scripts/verify-m047-s01.ts`, `scripts/verify-m047-s02.ts`, and `scripts/verify-m047.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
+- **Latency evidence seam:** `src/execution/types.ts`, `src/handlers/review.ts`, `src/lib/review-utils.ts`, `src/review-audit/phase-timing-evidence.ts`, and `scripts/verify-m048-s01.ts` share one six-phase timing contract across runtime logs, GitHub Review Details, and Azure-backed operator verification.
 - **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current example is `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift`.
 - **Explicit `not_applicable` handling:** when a scenario has no truthful surface (for example coarse-fallback Slack/profile continuity), the verifier should emit `not_applicable` instead of inventing synthetic passing evidence.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
@@ -84,3 +87,6 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S02: Retrieval and Slack Surface Rollout
   - [x] S03: End-to-End Coherence Verification
 - [ ] M048: PR Review Latency Reduction and Bounded Execution
+  - [x] S01: Live Phase Timing and Operator Evidence Surfaces
+  - [ ] S02: Single-Worker Path Latency Reduction
+  - [ ] S03: Truthful Bounded Reviews and Synchronize Continuity
