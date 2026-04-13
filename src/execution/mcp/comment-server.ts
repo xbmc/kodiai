@@ -41,15 +41,7 @@ export function createCommentServer(
     return reviewOutputPublicationGate.resolve(octokit);
   }
 
-  function sanitizeKodiaiDecisionResponse(body: string): string {
-    // Only enforce structure for the mention decision wrapper.
-    if (!body.includes("<summary>kodiai response</summary>")) {
-      return body;
-    }
-    if (!body.includes("Decision:")) {
-      return body;
-    }
-
+  function getKodiaiDecisionContent(body: string): string[] {
     const lines = body.split("\n");
     const start = lines.findIndex((l) => l.trim() === "<details>");
     const end = lines.findIndex((l) => l.trim() === "</details>");
@@ -57,11 +49,39 @@ export function createCommentServer(
       ? lines.slice(start + 1, end)
       : lines;
 
-    const content = details
+    return details
       .map((l) => l.trimEnd())
       .filter((l) => l.trim().length > 0)
       .filter((l) => !l.trim().startsWith("<summary>"));
+  }
 
+  function isSharedApprovedReviewBody(body: string): boolean {
+    const content = getKodiaiDecisionContent(body)
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("<!-- kodiai:review-output-key:"));
+
+    if (content[0] !== "Decision: APPROVE") {
+      return false;
+    }
+    if (content[1] !== "Issues: none") {
+      return false;
+    }
+    if (content[2] !== "Evidence:") {
+      return false;
+    }
+
+    const evidenceLines = content.slice(3);
+    return evidenceLines.length >= 1
+      && evidenceLines.length <= 3
+      && evidenceLines.every((line) => line.startsWith("- "));
+  }
+
+  function sanitizeKodiaiDecisionResponse(body: string): string {
+    if (!body.includes("Decision:")) {
+      return body;
+    }
+
+    const content = getKodiaiDecisionContent(body);
     const decisionLine = content.find((l) => l.trim().startsWith("Decision:"));
     if (!decisionLine) {
       throw new Error("Invalid kodiai response: missing Decision line");
@@ -73,19 +93,38 @@ export function createCommentServer(
     }
 
     if (decision === "APPROVE") {
-      const issuesNone = content.find((l) => l.trim() === "Issues: none");
-      if (!issuesNone) {
+      if (body.includes("<summary>kodiai response</summary>") || body.includes("<details>") || body.includes("</details>")) {
+        throw new Error(
+          "Invalid kodiai response: APPROVE must use visible body format without <details> wrapper",
+        );
+      }
+      if (content[0]?.trim() !== "Decision: APPROVE") {
+        throw new Error(
+          "Invalid kodiai response: APPROVE must start with 'Decision: APPROVE'",
+        );
+      }
+      if (content[1]?.trim() !== "Issues: none") {
         throw new Error("Invalid kodiai response: APPROVE must include 'Issues: none'");
       }
-      // Enforce no other non-empty content besides Decision and Issues: none.
-      const allowed = new Set([decisionLine.trim(), "Issues: none"]);
-      for (const l of content) {
-        if (!allowed.has(l.trim())) {
+      if (content[2]?.trim() !== "Evidence:") {
+        throw new Error("Invalid kodiai response: APPROVE must include 'Evidence:'");
+      }
+
+      const evidenceLines: string[] = [];
+      for (const line of content.slice(3)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("- ")) {
           throw new Error(
-            "Invalid kodiai response: APPROVE must contain only Decision and Issues: none",
+            "Invalid kodiai response: APPROVE must contain only Decision: APPROVE, Issues: none, Evidence:, and 1-3 bullet lines",
           );
         }
+        evidenceLines.push(trimmed);
       }
+
+      if (evidenceLines.length < 1 || evidenceLines.length > 3) {
+        throw new Error("Invalid kodiai response: APPROVE must include 1-3 evidence bullets");
+      }
+
       return body;
     }
 
@@ -607,10 +646,7 @@ export function createCommentServer(
             }
 
             const isApproveNoIssues =
-              prNumber !== undefined &&
-              sanitized.includes("<summary>kodiai response</summary>") &&
-              sanitized.includes("Decision: APPROVE") &&
-              sanitized.includes("Issues: none");
+              prNumber !== undefined && isSharedApprovedReviewBody(sanitized);
 
             if (isApproveNoIssues) {
               await octokit.rest.pulls.createReview({

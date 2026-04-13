@@ -1097,3 +1097,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When a verifier has both static/config truth and runtime truth to prove, make the static/config checks mandatory and deterministic, then add an explicit optional live stage that accepts only real runtime identifiers and reuses the lower-level evidence contract instead of inventing a new schema. This keeps routine verification cheap and reliable while preserving a truthful path to production evidence.
 
 **Established in:** M048 closeout (`scripts/verify-m048-s03.ts`, `.gsd/milestones/M048/M048-SUMMARY.md`).
+
+---
+
+## `createCommentServer` marker-bearing tests must stub the idempotency scan endpoints first (M049/S01)
+
+**Context:** In `src/execution/mcp/comment-server.ts`, setting both `reviewOutputKey` and `prNumber` activates `resolveOutputPublicationStatus(...)` before any publish attempt. Tests that only mock `pulls.createReview()` / `issues.createComment()` can fail with an unexpected error on valid approval bodies because the publication gate calls `pulls.listReviewComments()`, `issues.listComments()`, and `pulls.listReviews()` first.
+
+**Rule:** Any unit test that exercises the marker-bearing publish path on `createCommentServer` must either (1) stub all three scan endpoints to return empty arrays, or (2) inject a publication gate stub. Do not assume `createReview()` is the first mocked method touched when `reviewOutputKey` is present.
+
+**Established in:** M049/S01/T03 (`src/execution/mcp/comment-server.test.ts`).

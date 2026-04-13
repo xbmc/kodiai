@@ -61,7 +61,7 @@
   - Verify: `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts`
   - Done when: Handler tests prove both lanes publish the shared approval body with marker + evidence lines and still skip duplicate publication when output already exists.
 
-- [ ] **T03: Align approve-via-comment validation and prompt guidance to the shared grammar** `est:90m`
+- [x] **T03: Align approve-via-comment validation and prompt guidance to the shared grammar** `est:90m`
   - Why: Approve-via-comment is the strictest boundary and will silently diverge unless the sanitizer, approval promotion check, and prompt guidance all move to the same grammar in the same slice.
   - Files: `src/execution/mcp/comment-server.ts`, `src/execution/mcp/comment-server.test.ts`, `src/execution/mention-prompt.ts`, `src/execution/mention-prompt.test.ts`
   - Do: Narrow `comment-server.ts` to accept only the shared APPROVE grammar with `Evidence:` bullets, keep marker stamping server-side, and update `mention-prompt.ts` so PR approval decisions use the visible approved-review body instead of the old always-`<details>` wrapper.
