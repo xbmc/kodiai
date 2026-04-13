@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T03:50:58.641Z",
+  "exported_at": "2026-04-13T04:15:54.039Z",
   "milestones": [
     {
       "id": "M001",
@@ -13723,19 +13723,32 @@
       "milestone_id": "M048",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Thread one bounded-review contract through prompt, Review Details, and summary publication",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added a shared bounded-review disclosure contract across prompt generation, Review Details, and summary publication.",
+      "status": "complete",
+      "one_liner": "Added a shared bounded-review disclosure contract across prompt generation, Review Details, and summary publication.",
+      "narrative": "I started from the failing bounded-review contract tests and implemented a new shared helper in `src/lib/review-boundedness.ts` that normalizes requested versus effective profile state, large-PR triage coverage, timeout reduction metadata, reason codes, and the single disclosure sentence used on GitHub-visible surfaces. I then wired that contract into the three product paths the task called out: `src/execution/review-prompt.ts` now adds a bounded-review disclosure section only for standard-mode reviews that truly need one exact `## What Changed` sentence; `src/lib/review-utils.ts` now renders requested/effective profile lines plus bounded review and timeout status in Review Details while preserving the quiet single-profile line for small unbounded reviews; and `src/handlers/review.ts` now resolves the contract once from live handler state, logs bounded-review observability data, passes the contract into the prompt and Review Details builders, and backfills the exact sentence into the published summary exactly once when the model omits it. I also extended the handler suite with live publication-path tests covering explicit-profile skip, timeout auto-reduction, and the small-review silent path, and updated `docs/configuration.md` so the checked-in config reference matches the shipped truthfulness behavior for large PRs and timeout auto-reduction.",
+      "verification_result": "Task-level verification passed with the focused command `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts`, which now includes helper-level contract checks plus end-to-end handler publication coverage for explicit-profile skip, timeout auto-reduction, and small-review silence. A fresh `bun run tsc --noEmit` also passed after the final code, test, and documentation changes. Slice-level intermediate verification partially passed: `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts` passed, while both `bun run verify:m048:s03 -- --json` and `bun run verify:m048:s03 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fail because the verifier script is not present yet and is scheduled for T03.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T04:15:53.722Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Added end-to-end handler publication tests for manual strict skip, auto-reduced strict reviews, and small published reviews so the summary backfill path is covered in addition to the planned helper/prompt/Review Details contract tests.",
+      "known_issues": "`verify:m048:s03` is still not implemented, so both slice-level verifier commands fail with `Script not found \"verify:m048:s03\"`. That is expected remaining slice work for T03, not a blocker discovered by T02.",
+      "key_files": [
+        "src/lib/review-boundedness.ts",
+        "src/lib/review-boundedness.test.ts",
+        "src/lib/review-utils.ts",
+        "src/lib/review-utils.test.ts",
+        "src/execution/review-prompt.ts",
+        "src/execution/review-prompt.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "docs/configuration.md"
+      ],
+      "key_decisions": [
+        "Recorded D114: resolve one shared review-boundedness contract in the handler and reuse it for prompt instructions, Review Details rendering, and summary backfill.",
+        "Kept summary backfill fail-open: if the published summary body is malformed or missing `## What Changed`, the disclosure helper leaves the summary untouched instead of fabricating output."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M048\nkey_files:\n  - src/lib/review-boundedness.ts\n  - src/lib/review-boundedness.test.ts\n  - src/lib/review-utils.ts\n  - src/lib/review-utils.test.ts\n  - src/execution/review-prompt.ts\n  - src/execution/review-prompt.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - docs/configuration.md\nkey_decisions:\n  - Recorded D114: resolve one shared review-boundedness contract in the handler and reuse it for prompt instructions, Review Details rendering, and summary backfill.\n  - Kept summary backfill fail-open: if the published summary body is malformed or missing `## What Changed`, the disclosure helper leaves the summary untouched instead of fabricating output.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T04:15:53.721Z\nblocker_discovered: false\n---\n\n# T02: Added a shared bounded-review disclosure contract across prompt generation, Review Details, and summary publication.\n\n**Added a shared bounded-review disclosure contract across prompt generation, Review Details, and summary publication.**\n\n## What Happened\n\nI started from the failing bounded-review contract tests and implemented a new shared helper in `src/lib/review-boundedness.ts` that normalizes requested versus effective profile state, large-PR triage coverage, timeout reduction metadata, reason codes, and the single disclosure sentence used on GitHub-visible surfaces. I then wired that contract into the three product paths the task called out: `src/execution/review-prompt.ts` now adds a bounded-review disclosure section only for standard-mode reviews that truly need one exact `## What Changed` sentence; `src/lib/review-utils.ts` now renders requested/effective profile lines plus bounded review and timeout status in Review Details while preserving the quiet single-profile line for small unbounded reviews; and `src/handlers/review.ts` now resolves the contract once from live handler state, logs bounded-review observability data, passes the contract into the prompt and Review Details builders, and backfills the exact sentence into the published summary exactly once when the model omits it. I also extended the handler suite with live publication-path tests covering explicit-profile skip, timeout auto-reduction, and the small-review silent path, and updated `docs/configuration.md` so the checked-in config reference matches the shipped truthfulness behavior for large PRs and timeout auto-reduction.\n\n## Verification\n\nTask-level verification passed with the focused command `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts`, which now includes helper-level contract checks plus end-to-end handler publication coverage for explicit-profile skip, timeout auto-reduction, and small-review silence. A fresh `bun run tsc --noEmit` also passed after the final code, test, and documentation changes. Slice-level intermediate verification partially passed: `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts` passed, while both `bun run verify:m048:s03 -- --json` and `bun run verify:m048:s03 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` still fail because the verifier script is not present yet and is scheduled for T03.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 5221ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 8323ms |\n| 3 | `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts` | 0 | ✅ pass | 4436ms |\n| 4 | `bun run verify:m048:s03 -- --json` | 1 | ❌ fail | 15ms |\n| 5 | `bun run verify:m048:s03 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json` | 1 | ❌ fail | 13ms |\n\n## Deviations\n\nAdded end-to-end handler publication tests for manual strict skip, auto-reduced strict reviews, and small published reviews so the summary backfill path is covered in addition to the planned helper/prompt/Review Details contract tests.\n\n## Known Issues\n\n`verify:m048:s03` is still not implemented, so both slice-level verifier commands fail with `Script not found \"verify:m048:s03\"`. That is expected remaining slice work for T03, not a blocker discovered by T02.\n\n## Files Created/Modified\n\n- `src/lib/review-boundedness.ts`\n- `src/lib/review-boundedness.test.ts`\n- `src/lib/review-utils.ts`\n- `src/lib/review-utils.test.ts`\n- `src/execution/review-prompt.ts`\n- `src/execution/review-prompt.test.ts`\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n- `docs/configuration.md`\n",
       "description": "**Slice:** S03 — Truthful Bounded Reviews and Synchronize Continuity\n**Milestone:** M048\n\n## Description\n\nStrict reviews are already bounded on large PRs, and timeout pressure can further reduce scope, but today's GitHub-visible surfaces do not explain that truth clearly. This task should define one small bounded-review contract, reuse it across the handler, prompt, and Review Details paths, and preserve the small-PR fast path so S03 improves truthfulness without adding normal-case noise or latency.\n\n## Steps\n\n1. Add failing contract tests in `src/lib/review-boundedness.test.ts`, `src/lib/review-utils.test.ts`, `src/execution/review-prompt.test.ts`, and `src/handlers/review.test.ts` for large-PR strict reviews, timeout-driven reductions, explicit-profile skip paths, and small PRs that should remain silent.\n2. Extract a focused bounded-review helper in `src/lib/review-boundedness.ts` that captures requested versus effective profile, large-PR triage coverage, timeout reduction or skip reason, and the exact disclosure sentence required on GitHub-visible surfaces.\n3. Thread that contract through `src/handlers/review.ts`, `src/execution/review-prompt.ts`, and `src/lib/review-utils.ts` so Review Details shows requested/effective behavior, the prompt asks for one exact `## What Changed` disclosure when needed, and summary publication backfills the sentence exactly once if the model omits it.\n4. Update `docs/configuration.md` to clarify that large-PR triage already bounds file coverage and that any `timeout.autoReduceScope` or explicit strict bounded behavior is disclosed instead of implying exhaustive review.\n5. Re-run focused tests and `tsc`, verifying that bounded cases become explicit while the small-PR path stays clean and fast.\n\n## Must-Haves\n\n- [ ] One bounded-review contract powers prompt, Review Details, summary injection, and later verifier checks.\n- [ ] Large or timeout-bounded explicit strict reviews disclose requested versus actual scope clearly, exactly once, on GitHub-visible output.\n- [ ] Small PRs and unbounded reviews do not gain extra disclosure noise or hidden new normal-path work.",
       "estimate": "2h",
       "files": [
@@ -15176,6 +15189,18 @@
       "decision": "How S03 verifies synchronize-trigger continuity without adding a parallel evidence path",
       "choice": "Make `verify:m048:s03` a two-stage proof command: local preflight must fail loudly when synchronize intent and effective config diverge, and optional live mode must accept only synchronize `reviewOutputKey`s while reusing the existing S01/S02 evidence surfaces.",
       "rationale": "Synchronize continuity is partly a config-contract problem and partly a live runtime proof problem. Splitting the verifier into local preflight plus optional keyed live proof catches drift immediately, keeps the normal path cheap, and preserves the existing `reviewOutputKey` plus phase-timing evidence model from S01/S02.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 148,
+      "id": "D114",
+      "when_context": "M048/S03/T02",
+      "scope": "review-truthfulness",
+      "decision": "How bounded review disclosure is derived and published",
+      "choice": "Resolve one shared review-boundedness contract in the review handler and reuse it for prompt instructions, Review Details formatting, and summary backfill.",
+      "rationale": "A single contract keeps requested-versus-effective scope wording consistent across GitHub-visible surfaces, prevents duplicate or missing disclosure text, preserves the small-PR quiet path, and gives the later S03 verifier one canonical truth source.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -19878,6 +19903,61 @@
       "verdict": "❌ fail",
       "duration_ms": 2,
       "created_at": "2026-04-13T03:50:58.596Z"
+    },
+    {
+      "id": 429,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M048",
+      "command": "bun test ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5221,
+      "created_at": "2026-04-13T04:15:53.722Z"
+    },
+    {
+      "id": 430,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8323,
+      "created_at": "2026-04-13T04:15:53.726Z"
+    },
+    {
+      "id": 431,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M048",
+      "command": "bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4436,
+      "created_at": "2026-04-13T04:15:53.726Z"
+    },
+    {
+      "id": 432,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s03 -- --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 15,
+      "created_at": "2026-04-13T04:15:53.726Z"
+    },
+    {
+      "id": 433,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s03 -- --review-output-key \"$REVIEW_OUTPUT_KEY\" --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 13,
+      "created_at": "2026-04-13T04:15:53.726Z"
     }
   ]
 }

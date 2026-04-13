@@ -19,6 +19,7 @@ import type { ReviewPhaseName, ReviewPhaseStatus, ReviewPhaseTiming } from "../e
 import { buildStructuralImpactSection } from "./structural-impact-formatter.ts";
 import { summarizeStructuralImpactDegradation } from "../structural-impact/degradation.ts";
 import type { StructuralImpactPayload } from "../structural-impact/types.ts";
+import type { ReviewBoundednessContract } from "./review-boundedness.ts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -355,6 +356,7 @@ export function formatReviewDetailsSummary(params: {
     mentionOnlyFiles: Array<{ filePath: string; score: number }>;
     totalFiles: number;
   };
+  reviewBoundedness?: ReviewBoundednessContract | null;
   feedbackSuppressionCount?: number;
   keywordParsing?: ParsedPRIntent;
   profileSelection: ResolvedReviewProfile;
@@ -384,6 +386,7 @@ export function formatReviewDetailsSummary(params: {
     linesRemoved,
     findingCounts,
     largePRTriage,
+    reviewBoundedness,
     feedbackSuppressionCount,
     keywordParsing,
     profileSelection,
@@ -395,11 +398,24 @@ export function formatReviewDetailsSummary(params: {
     phaseTimingSummary,
   } = params;
 
+  const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
+    if (profile.source === "auto") {
+      return `- ${label}: ${profile.selectedProfile} (auto, lines changed: ${profile.linesChanged})`;
+    }
+
+    if (profile.source === "manual") {
+      return `- ${label}: ${profile.selectedProfile} (manual config)`;
+    }
+
+    return `- ${label}: ${profile.selectedProfile} (keyword override)`;
+  };
+
   const profileLine = profileSelection.source === "auto"
     ? `- Profile: ${profileSelection.selectedProfile} (auto, lines changed: ${profileSelection.linesChanged})`
     : profileSelection.source === "manual"
       ? `- Profile: ${profileSelection.selectedProfile} (manual config)`
       : `- Profile: ${profileSelection.selectedProfile} (keyword override)`;
+  const hasBoundedProfileDetails = Boolean(reviewBoundedness && reviewBoundedness.reasonCodes.length > 0);
 
   const sections = [
     "<details>",
@@ -407,7 +423,24 @@ export function formatReviewDetailsSummary(params: {
     "",
     `- Files reviewed: ${filesReviewed}`,
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
-    profileLine,
+    ...(hasBoundedProfileDetails && reviewBoundedness
+      ? [
+          formatProfileLine("Requested profile", reviewBoundedness.requestedProfile),
+          `- Effective profile: ${reviewBoundedness.effectiveProfile.selectedProfile}`,
+          ...(reviewBoundedness.largePR
+            ? [
+                `- Bounded review: covered ${reviewBoundedness.largePR.reviewedCount}/${reviewBoundedness.largePR.totalFiles} changed files via large-PR triage (${reviewBoundedness.largePR.fullCount} full, ${reviewBoundedness.largePR.abbreviatedCount} abbreviated; ${reviewBoundedness.largePR.notReviewedCount} not reviewed)`,
+              ]
+            : []),
+          ...(reviewBoundedness.timeout?.reductionApplied
+            ? ["- Timeout auto-reduction: applied"]
+            : reviewBoundedness.timeout?.reductionSkippedReason === "explicit-profile"
+              ? ["- Timeout auto-reduction: skipped (explicit profile)"]
+              : reviewBoundedness.timeout?.reductionSkippedReason === "config-disabled"
+                ? ["- Timeout auto-reduction: skipped (config disabled)"]
+                : []),
+        ]
+      : [profileLine]),
     `- Contributor experience: ${contributorExperience.text}`,
     `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,

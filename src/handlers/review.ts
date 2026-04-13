@@ -61,6 +61,11 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
+import {
+  ensureReviewBoundednessDisclosureInSummary,
+  resolveReviewBoundedness,
+  type ReviewBoundednessContract,
+} from "../lib/review-boundedness.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
@@ -510,6 +515,7 @@ async function appendReviewDetailsToSummary(params: {
   reviewDetailsBlock: string;
   botHandles: string[];
   requireDegradationDisclosure: boolean;
+  reviewBoundedness?: ReviewBoundednessContract | null;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
@@ -533,6 +539,10 @@ async function appendReviewDetailsToSummary(params: {
   }
 
   let summaryBody = summaryComment.body!;
+  summaryBody = ensureReviewBoundednessDisclosureInSummary(
+    summaryBody,
+    params.reviewBoundedness,
+  );
   if (params.requireDegradationDisclosure) {
     summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
   }
@@ -2504,7 +2514,9 @@ export function createReviewHandler(deps: {
           timeoutEstimate.riskLevel === "high";
 
         // TMO-02: Scope reduction for high-risk auto-profile PRs
-        const originalProfileSelection = { ...profileSelection };
+        const requestedProfileSelection = { ...profileSelection };
+        let timeoutReductionApplied = false;
+        let timeoutReductionSkippedReason: "explicit-profile" | "config-disabled" | null = null;
         if (
           timeoutEstimate.shouldReduceScope &&
           profileSelection.source === "auto" &&
@@ -2529,11 +2541,12 @@ export function createReviewHandler(deps: {
             tieredFiles.abbreviated.push(...excess);
           }
 
+          timeoutReductionApplied = true;
           logger.info(
             {
               ...baseLog,
               gate: "timeout-scope-reduction",
-              originalProfile: originalProfileSelection.selectedProfile,
+              originalProfile: requestedProfileSelection.selectedProfile,
               reducedProfile: "minimal",
               originalFileCount: tieredFiles.full.length + (tieredFiles.abbreviated.length - (timeoutEstimate.reducedFileCount !== null ? tieredFiles.abbreviated.length : 0)),
               reducedFileCount: timeoutEstimate.reducedFileCount,
@@ -2541,16 +2554,63 @@ export function createReviewHandler(deps: {
             "Auto-reduced review scope for high timeout risk",
           );
         } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
+          timeoutReductionSkippedReason = "explicit-profile";
           logger.warn(
             {
               ...baseLog,
               gate: "timeout-scope-reduction",
               gateResult: "skipped",
-              skipReason: "explicit-profile",
+              skipReason: timeoutReductionSkippedReason,
               profile: profileSelection.selectedProfile,
               source: profileSelection.source,
             },
             "Skipping scope reduction: user explicitly configured profile",
+          );
+        } else if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
+          timeoutReductionSkippedReason = "config-disabled";
+          logger.info(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              gateResult: "skipped",
+              skipReason: timeoutReductionSkippedReason,
+              profile: profileSelection.selectedProfile,
+              source: profileSelection.source,
+            },
+            "Skipping scope reduction because timeout auto-reduction is disabled",
+          );
+        }
+
+        const reviewBoundedness = resolveReviewBoundedness({
+          requestedProfile: requestedProfileSelection,
+          effectiveProfile: profileSelection,
+          largePRTriage: tieredFiles.isLargePR
+            ? {
+                fullCount: tieredFiles.full.length,
+                abbreviatedCount: tieredFiles.abbreviated.length,
+                totalFiles: tieredFiles.totalFiles,
+              }
+            : null,
+          timeout: {
+            riskLevel: timeoutEstimate.riskLevel,
+            dynamicTimeoutSeconds: timeoutEstimate.dynamicTimeoutSeconds,
+            shouldReduceScope: timeoutEstimate.shouldReduceScope,
+            reductionApplied: timeoutReductionApplied,
+            reductionSkippedReason: timeoutReductionSkippedReason,
+          },
+        });
+
+        if (reviewBoundedness) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-boundedness",
+              disclosureRequired: reviewBoundedness.disclosureRequired,
+              reasonCodes: reviewBoundedness.reasonCodes,
+              requestedProfile: reviewBoundedness.requestedProfile.selectedProfile,
+              effectiveProfile: reviewBoundedness.effectiveProfile.selectedProfile,
+            },
+            "Resolved bounded-review contract",
           );
         }
 
@@ -2737,6 +2797,7 @@ export function createReviewHandler(deps: {
           // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
+          reviewBoundedness,
         });
         reviewPhaseTimings.set(
           "retrieval/context assembly",
@@ -3325,6 +3386,7 @@ export function createReviewHandler(deps: {
               mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
               totalFiles: tieredFiles.totalFiles,
             } : undefined,
+            reviewBoundedness,
             feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
             keywordParsing: parsedIntent,
             profileSelection,
@@ -3376,6 +3438,7 @@ export function createReviewHandler(deps: {
                   reviewDetailsBlock: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
                   requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                  reviewBoundedness,
                 });
               } catch (appendErr) {
                 // Fallback: post standalone if append fails (e.g., summary comment not found yet)

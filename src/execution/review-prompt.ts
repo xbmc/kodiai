@@ -22,6 +22,7 @@ import {
   projectLegacyContributorExperienceContract,
   type ContributorExperienceContract,
 } from "../contributor/experience-contract.ts";
+import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -1681,6 +1682,7 @@ export function buildReviewPrompt(context: {
   graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
+  reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
 }): string {
   const lines: string[] = [];
@@ -2049,6 +2051,22 @@ export function buildReviewPrompt(context: {
   }
 
   lines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
+
+  if (
+    mode !== "enhanced" &&
+    context.reviewBoundedness?.disclosureRequired &&
+    context.reviewBoundedness.disclosureSentence
+  ) {
+    lines.push(
+      "",
+      "## Bounded Review Disclosure",
+      "",
+      "Because this review was bounded, include this exact sentence once in `## What Changed`:",
+      `\"${context.reviewBoundedness.disclosureSentence}\"`,
+      "Do not paraphrase it.",
+      "Do not repeat it elsewhere in the summary.",
+    );
+  }
 
   // --- Summary comment ---
   if (mode === "enhanced") {

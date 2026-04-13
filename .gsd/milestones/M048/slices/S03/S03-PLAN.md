@@ -66,7 +66,7 @@ The repo currently intends synchronize reruns, but `.kodiai.yml` uses legacy `re
   - Verify: - `bun test ./src/execution/config.test.ts ./src/handlers/review.test.ts`
 - `bun run tsc --noEmit`
 
-- [ ] **T02: Thread one bounded-review contract through prompt, Review Details, and summary publication** `est:2h`
+- [x] **T02: Thread one bounded-review contract through prompt, Review Details, and summary publication** `est:2h`
   **Slice:** S03 — Truthful Bounded Reviews and Synchronize Continuity
 **Milestone:** M048
 

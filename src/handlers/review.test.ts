@@ -8681,3 +8681,277 @@ describe("createReviewHandler Review Details phase timing publication", () => {
   });
 });
 
+describe("createReviewHandler bounded review disclosure", () => {
+  const LARGE_PR_SUMMARY_BODY = [
+    "<details>",
+    "<summary>Kodiai Review Summary</summary>",
+    "",
+    "## What Changed",
+    "- Reviewed core logic changes.",
+    "",
+    "</details>",
+  ].join("\n");
+
+  async function seedHighRiskLargePrWorkspace(dir: string): Promise<void> {
+    const boundedDir = join(dir, "src", "bounded");
+    await $`mkdir -p ${boundedDir}`.quiet();
+
+    for (let index = 1; index <= 10; index += 1) {
+      const content = Array.from(
+        { length: 500 },
+        (_value, lineIndex) => `int bounded_${index}_${lineIndex} = ${lineIndex};`,
+      ).join("\n");
+      await Bun.write(join(boundedDir, `bounded-${index}.c`), `${content}\n`);
+    }
+
+    await $`git -C ${dir} add src/bounded`.quiet();
+    await $`git -C ${dir} commit -m "bounded fixture"`.quiet();
+  }
+
+  async function runPublishedBoundedReviewScenario(params: {
+    configYaml: string;
+    additions: number;
+    deletions: number;
+    seedLargePr: boolean;
+    title: string;
+  }): Promise<string | undefined> {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    let executeStarted = false;
+    let updatedSummaryBody: string | undefined;
+
+    if (params.seedLargePr) {
+      await seedHighRiskLargePrWorkspace(workspaceFixture.dir);
+    }
+
+    await Bun.write(join(workspaceFixture.dir, ".kodiai.yml"), params.configYaml);
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+    const summaryBody = `${LARGE_PR_SUMMARY_BODY}\n\n${marker}`;
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({
+            data: executeStarted
+              ? [{ id: 9002, body: summaryBody }]
+              : [],
+          }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async (updateParams: { body: string }) => {
+            updatedSummaryBody = updateParams.body;
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeStarted = true;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-bounded-summary-disclosure",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      knowledgeStore: createKnowledgeStoreStub() as never,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: params.title,
+          body: "",
+          user: { login: "octocat" },
+          base: { ref: "main" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          commits: 0,
+          additions: params.additions,
+          deletions: params.deletions,
+          author_association: "NONE",
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    return updatedSummaryBody;
+  }
+
+  test("injects one large-PR disclosure and records explicit-profile timeout skips in Review Details", async () => {
+    const updatedSummaryBody = await runPublishedBoundedReviewScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "  profile: strict",
+        "largePR:",
+        "  fileThreshold: 10",
+        "  fullReviewCount: 5",
+        "  abbreviatedCount: 2",
+        "timeout:",
+        "  autoReduceScope: true",
+        "",
+      ].join("\n"),
+      additions: 100,
+      deletions: 0,
+      seedLargePr: true,
+      title: "Explicit strict bounded review scenario",
+    });
+
+    expect(updatedSummaryBody).toBeDefined();
+    expect(updatedSummaryBody).toContain(
+      "- Requested strict review; effective review remained strict and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
+    );
+    expect(
+      (updatedSummaryBody?.match(/Requested strict review; effective review remained strict and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
+    ).toBe(1);
+    expect(updatedSummaryBody).toContain("- Requested profile: strict (manual config)");
+    expect(updatedSummaryBody).toContain("- Effective profile: strict");
+    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+  });
+
+  test("injects one timeout auto-reduction disclosure when a high-risk auto strict review is reduced", async () => {
+    const updatedSummaryBody = await runPublishedBoundedReviewScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "largePR:",
+        "  fileThreshold: 10",
+        "  fullReviewCount: 5",
+        "  abbreviatedCount: 2",
+        "timeout:",
+        "  autoReduceScope: true",
+        "",
+      ].join("\n"),
+      additions: 100,
+      deletions: 0,
+      seedLargePr: true,
+      title: "Auto strict bounded review scenario",
+    });
+
+    expect(updatedSummaryBody).toBeDefined();
+    expect(updatedSummaryBody).toContain(
+      "- Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7/11 changed files via large-PR triage (5 full, 2 abbreviated; 4 not reviewed).",
+    );
+    expect(
+      (updatedSummaryBody?.match(/Requested strict review; timeout risk auto-reduced the effective review to minimal and covered 7\/11 changed files via large-PR triage \(5 full, 2 abbreviated; 4 not reviewed\)\./g) ?? []).length,
+    ).toBe(1);
+    expect(updatedSummaryBody).toContain("- Requested profile: strict (auto, lines changed: 100)");
+    expect(updatedSummaryBody).toContain("- Effective profile: minimal");
+    expect(updatedSummaryBody).toContain("- Timeout auto-reduction: applied");
+  });
+
+  test("keeps published small-review summaries quiet when no bounded disclosure is required", async () => {
+    const updatedSummaryBody = await runPublishedBoundedReviewScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "",
+      ].join("\n"),
+      additions: 1,
+      deletions: 0,
+      seedLargePr: false,
+      title: "Small published review scenario",
+    });
+
+    expect(updatedSummaryBody).toBeDefined();
+    expect(updatedSummaryBody).not.toContain("Requested strict review;");
+    expect(updatedSummaryBody).not.toContain("- Requested profile:");
+    expect(updatedSummaryBody).not.toContain("- Effective profile:");
+    expect(updatedSummaryBody).toContain("- Profile: strict (auto, lines changed: 1)");
+  });
+});
+
