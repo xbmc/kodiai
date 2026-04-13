@@ -2469,4 +2469,124 @@ describe("buildReviewPrompt graph context integration", () => {
     const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
     expect(prompt).toContain("1/1 changed files resolved in graph");
   });
+
+  test("threads one exact bounded-review disclosure instruction into the standard summary prompt", () => {
+    const disclosureSentence = "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).";
+    const prompt = buildReviewPrompt(
+      baseContext({
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          reasonCodes: [
+            "large-pr-triage",
+            "timeout-auto-reduction-skipped-explicit-profile",
+          ],
+          disclosureRequired: true,
+          disclosureSentence,
+          largePR: {
+            fullCount: 30,
+            abbreviatedCount: 20,
+            reviewedCount: 50,
+            totalFiles: 60,
+            notReviewedCount: 10,
+          },
+          timeout: {
+            riskLevel: "high",
+            dynamicTimeoutSeconds: 900,
+            shouldReduceScope: true,
+            reductionApplied: false,
+            reductionSkippedReason: "explicit-profile",
+          },
+        },
+      }),
+    );
+
+    expect(prompt).toContain("## Bounded Review Disclosure");
+    expect(prompt).toContain("include this exact sentence once in `## What Changed`");
+    expect(prompt).toContain(`\"${disclosureSentence}\"`);
+    expect(prompt).toContain("Do not paraphrase it.");
+    expect(prompt).toContain("Do not repeat it elsewhere in the summary.");
+  });
+
+  test("keeps small unbounded standard prompts silent and omits bounded-review instructions in enhanced mode", () => {
+    const unboundedPrompt = buildReviewPrompt(
+      baseContext({
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "auto",
+            autoBand: "small",
+            linesChanged: 80,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "auto",
+            autoBand: "small",
+            linesChanged: 80,
+          },
+          reasonCodes: [],
+          disclosureRequired: false,
+          disclosureSentence: null,
+          largePR: null,
+          timeout: {
+            riskLevel: "low",
+            dynamicTimeoutSeconds: 600,
+            shouldReduceScope: false,
+            reductionApplied: false,
+            reductionSkippedReason: null,
+          },
+        },
+      }),
+    );
+    expect(unboundedPrompt).not.toContain("## Bounded Review Disclosure");
+
+    const enhancedPrompt = buildReviewPrompt(
+      baseContext({
+        mode: "enhanced",
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          reasonCodes: ["large-pr-triage"],
+          disclosureRequired: true,
+          disclosureSentence:
+            "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).",
+          largePR: {
+            fullCount: 30,
+            abbreviatedCount: 20,
+            reviewedCount: 50,
+            totalFiles: 60,
+            notReviewedCount: 10,
+          },
+          timeout: {
+            riskLevel: "high",
+            dynamicTimeoutSeconds: 900,
+            shouldReduceScope: true,
+            reductionApplied: false,
+            reductionSkippedReason: "explicit-profile",
+          },
+        },
+      }),
+    );
+    expect(enhancedPrompt).not.toContain("## Bounded Review Disclosure");
+  });
 });

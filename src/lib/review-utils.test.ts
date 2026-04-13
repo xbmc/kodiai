@@ -179,4 +179,89 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("remote runtime: 800ms");
     expect(result).toContain("publication: 120ms (degraded: captured before publication completed)");
   });
+
+  it("renders requested versus effective bounded-review lines without duplicating the old profile line", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewBoundedness: {
+        requestedProfile: {
+          selectedProfile: "strict",
+          source: "keyword",
+          autoBand: null,
+          linesChanged: 100,
+        },
+        effectiveProfile: {
+          selectedProfile: "strict",
+          source: "keyword",
+          autoBand: null,
+          linesChanged: 100,
+        },
+        reasonCodes: [
+          "large-pr-triage",
+          "timeout-auto-reduction-skipped-explicit-profile",
+        ],
+        disclosureRequired: true,
+        disclosureSentence:
+          "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).",
+        largePR: {
+          fullCount: 30,
+          abbreviatedCount: 20,
+          reviewedCount: 50,
+          totalFiles: 60,
+          notReviewedCount: 10,
+        },
+        timeout: {
+          riskLevel: "high",
+          dynamicTimeoutSeconds: 900,
+          shouldReduceScope: true,
+          reductionApplied: false,
+          reductionSkippedReason: "explicit-profile",
+        },
+      } as never,
+    });
+
+    expect(result).toContain("- Requested profile: strict (keyword override)");
+    expect(result).toContain("- Effective profile: strict");
+    expect(result).toContain(
+      "- Bounded review: covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed)",
+    );
+    expect(result).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+    expect(result).not.toContain("- Profile: balanced (auto, lines changed: 60)");
+  });
+
+  it("keeps small unbounded reviews quiet by retaining the existing single profile line", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewBoundedness: {
+        requestedProfile: {
+          selectedProfile: "strict",
+          source: "auto",
+          autoBand: "small",
+          linesChanged: 60,
+        },
+        effectiveProfile: {
+          selectedProfile: "strict",
+          source: "auto",
+          autoBand: "small",
+          linesChanged: 60,
+        },
+        reasonCodes: [],
+        disclosureRequired: false,
+        disclosureSentence: null,
+        largePR: null,
+        timeout: {
+          riskLevel: "low",
+          dynamicTimeoutSeconds: 600,
+          shouldReduceScope: false,
+          reductionApplied: false,
+          reductionSkippedReason: null,
+        },
+      } as never,
+    });
+
+    expect(result).toContain("- Profile: balanced (auto, lines changed: 60)");
+    expect(result).not.toContain("- Requested profile:");
+    expect(result).not.toContain("- Effective profile:");
+    expect(result).not.toContain("- Bounded review:");
+  });
 });
