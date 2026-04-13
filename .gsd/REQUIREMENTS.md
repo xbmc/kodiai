@@ -87,14 +87,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
-### R052 — If an explicit strict PR review is bounded, downgraded, or scope-reduced for latency reasons, the GitHub-visible review surface and operator evidence must disclose that bounded behavior clearly.
-- Class: functional
-- Status: active
-- Description: If an explicit strict PR review is bounded, downgraded, or scope-reduced for latency reasons, the GitHub-visible review surface and operator evidence must disclose that bounded behavior clearly.
-- Why it matters: Bounded execution changes product semantics and must be visible to users and operators instead of appearing as an exhaustive strict review.
-- Source: M048
-- Notes: Promoted from M048 contract candidate so bounded execution stays truthful rather than implicit.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -521,6 +513,17 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Validated during M047 closeout by fresh passing results from `bun test ./scripts/verify-m047.test.ts`, `bun run verify:m047 -- --json`, `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`, and `bun run tsc --noEmit`. The integrated `verify:m047` report preserved nested S02/M045/M046 evidence and the five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`) across review/runtime, Review Details, retrieval hints, Slack/profile output, identity behavior, and contributor-model evidence.
 - Notes: Slice S03 is the owning slice and provides the milestone-close coherence proof surface for the shipped contributor-experience rollout.
 
+### R052 — If an explicit strict PR review is bounded, downgraded, or scope-reduced for latency reasons, the GitHub-visible review surface and operator evidence must disclose that bounded behavior clearly.
+- Class: functional
+- Status: validated
+- Description: If an explicit strict PR review is bounded, downgraded, or scope-reduced for latency reasons, the GitHub-visible review surface and operator evidence must disclose that bounded behavior clearly.
+- Why it matters: Bounded execution changes product semantics and must be visible to users and operators instead of appearing as an exhaustive strict review.
+- Source: M048
+- Primary owning slice: M048/S03
+- Supporting slices: M048/S01
+- Validation: Validated by fresh slice-close verification on M048/S03: `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts`, `bun run tsc --noEmit`, and `bun run verify:m048:s03 -- --json`. The handler/publication tests prove large-PR strict and timeout-reduced reviews disclose requested versus effective scope exactly once on GitHub-visible summary + Review Details surfaces while small unbounded reviews stay silent; the verifier fixture contract confirms the same disclosure sentences and summary backfill behavior.
+- Notes: Owned by M048 S03 with S01 providing the operator evidence surface that bounded-behavior disclosure plugs into.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -600,11 +603,11 @@ This file is the explicit capability and coverage contract for the project.
 | R049 | functional | active | M048 | none | Live xbmc/kodiai review proof shows per-phase timing and a materially improved end-to-end review path versus the current timeout-prone baseline, while any reduced-scope or staged large-PR behavior remains explicit and truthful instead of silently stalling or fabricating completeness. |
 | R050 | operational | active | M048/S01 | M048/S02,M048/S03 | unmapped |
 | R051 | functional | active | M048/S03 | None | unmapped |
-| R052 | functional | active | none | none | unmapped |
+| R052 | functional | validated | M048/S03 | M048/S01 | Validated by fresh slice-close verification on M048/S03: `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts`, `bun run tsc --noEmit`, and `bun run verify:m048:s03 -- --json`. The handler/publication tests prove large-PR strict and timeout-reduced reviews disclose requested versus effective scope exactly once on GitHub-visible summary + Review Details surfaces while small unbounded reviews stay silent; the verifier fixture contract confirms the same disclosure sentences and summary backfill behavior. |
 
 ## Coverage Summary
 
-- Active requirements: 9
-- Mapped to slices: 9
-- Validated: 41 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048)
+- Active requirements: 8
+- Mapped to slices: 8
+- Validated: 42 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052)
 - Unmapped active requirements: 0

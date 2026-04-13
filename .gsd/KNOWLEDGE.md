@@ -1077,3 +1077,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** When using the M048 phase-timing verifiers, choose review keys from the last 14 days unless the script contract is explicitly changed. If an older key appears to have normal review-output logs but the verifier reports no matching phase timing, check the key age before assuming correlation drift.
 
 **Established in:** M048/S02/T03 (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s02.ts`).
+
+---
+
+## Raw YAML must be inspected before Zod parsing when legacy unknown-key compatibility warnings matter (M048/S03)
+
+**Context:** S03 needed to warn loudly when repos still used the legacy top-level `review.onSynchronize` key. `loadRepoConfig(...)` parses `.kodiai.yml` through Zod object schemas that strip unknown keys on the happy path, so by the time the normalized config was available the legacy key had already disappeared and the effective trigger quietly stayed at the default `false` with no warning.
+
+**Rule:** If compatibility behavior depends on detecting unsupported or legacy keys that are not part of the current schema, inspect the raw parsed YAML before running it through the Zod object parser. Do not try to infer legacy-key intent from the normalized config after parse time — stripped unknown keys are gone.
+
+**Established in:** M048/S03/T01 (`src/execution/config.ts`, `src/execution/config.test.ts`).

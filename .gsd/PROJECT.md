@@ -34,16 +34,26 @@ Fresh milestone-close verification passed:
 
 Requirements `R046` and `R048` are validated, and future contributor-resolution changes should extend `verify:m047` rather than introducing parallel proof paths.
 
-**M048 is active with S01 and S02 complete.** The live review path now has one truthful six-phase evidence contract plus the first shipped single-worker latency-reduction pass:
+**M048 is now code-complete across S01–S03, but final live milestone proof is still pending.** The review path now has one truthful latency-evidence contract, the first shipped single-worker latency-reduction pass, and truthful bounded-review/synchronize continuity surfaces:
 
 - `src/jobs/queue.ts`, `src/handlers/review.ts`, `src/execution/executor.ts`, and `src/review-audit/phase-timing-evidence.ts` emit and normalize one correlated six-phase `Review phase timing summary` keyed by `deliveryId` and `reviewOutputKey`.
 - GitHub Review Details renders the same ordered phase matrix operators query in Azure via `scripts/verify-m048-s01.ts`.
 - `src/jobs/aca-launcher.ts` now uses a shared 5s ACA poll cadence and debug-only malformed/unknown status drift diagnostics without moving the `remote runtime` timing boundary.
-- `src/execution/executor.ts` and `src/execution/agent-entrypoint.ts` now use a canonical `repoTransport` handoff seam that restores the cheaper review-bundle transport/materialization path while preserving origin-based git behavior, shallow-repo correctness, and malformed-config fail-fast behavior.
-- `scripts/verify-m048-s02.ts` is the operator compare surface for before/after latency proof. It embeds full S01 verifier reports for baseline and candidate, compares only `workspace preparation`, `executor handoff`, and `remote runtime`, and evaluates publication continuity separately so faster runtime results cannot hide GitHub publication regressions.
-- Env-backed M048 verifiers now skip truthfully when required review-key flags are present but empty because automation expanded unset vars to nothing; they no longer misparse the next `--flag` as a live review key.
+- `src/execution/executor.ts` and `src/execution/agent-entrypoint.ts` use a canonical `repoTransport` handoff seam that restores the cheaper review-bundle transport/materialization path while preserving origin-based git behavior, shallow-repo correctness, and malformed-config fail-fast behavior.
+- `.kodiai.yml` now uses the supported nested `review.triggers.onSynchronize: true` shape, and `src/execution/config.ts` warns loudly when legacy `review.onSynchronize` intent is present instead of silently stripping it.
+- `src/lib/review-boundedness.ts` is the shared bounded-review truth seam: it resolves requested versus effective profile, large-PR triage coverage, timeout scope reduction, and the exact disclosure sentence reused by prompt generation, Review Details, GitHub summary backfill, and `scripts/verify-m048-s03.ts`.
+- `scripts/verify-m048-s02.ts` remains the operator compare surface for before/after latency proof. It embeds full S01 verifier reports for baseline and candidate, compares only `workspace preparation`, `executor handoff`, and `remote runtime`, and evaluates publication continuity separately so faster runtime results cannot hide GitHub publication regressions.
+- `scripts/verify-m048-s03.ts` is the operator truthfulness/synchronize verifier. Local mode proves checked-in synchronize intent plus bounded-disclosure fixtures; optional live mode accepts only `action=synchronize` review keys and embeds the reused `verify:m048:s01` phase-timing report instead of inventing a parallel evidence schema.
+- Env-backed M048 verifiers now skip truthfully when required review-key flags are present but empty because automation expanded unset vars to nothing; they do not misparse the next `--flag` as a live review key.
 
-The remaining M048 work is S03: truthful bounded-review behavior and synchronize-trigger continuity. `R050` is still active because the final live before/after latency proof requires one fresh deployed baseline/candidate review pair inside the verifier's 14-day evidence window.
+Fresh slice-close verification for S03 passed:
+
+- `bun test ./src/execution/config.test.ts ./src/lib/review-boundedness.test.ts ./src/lib/review-utils.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./scripts/verify-m048-s03.test.ts`
+- `bun run tsc --noEmit`
+- `bun run verify:m048:s03 -- --json`
+- `bun run verify:m048:s03 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json` (truthful local-only skip when the env var is empty)
+
+Requirement `R052` is now validated. Final M048 close still needs fresh deployed live evidence: a baseline/candidate pair for the S02 latency compare and a real synchronize-triggered review key for S03 live proof.
 
 ## Architecture / Key Patterns
 
@@ -62,6 +72,8 @@ The remaining M048 work is S03: truthful bounded-review behavior and synchronize
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
 - **Latency evidence seam:** `src/execution/types.ts`, `src/handlers/review.ts`, `src/lib/review-utils.ts`, `src/review-audit/phase-timing-evidence.ts`, and `scripts/verify-m048-s01.ts` share one six-phase timing contract across runtime logs, GitHub Review Details, and Azure-backed operator verification.
 - **Single-worker repo transport seam:** `resolveRepoTransport(...)` is the canonical handoff contract between executor and worker entrypoint; it keeps optimized review-bundle transport, legacy fallback, and malformed-config failure behavior aligned in one place.
+- **Review-boundedness seam:** `src/lib/review-boundedness.ts` computes one canonical requested/effective-scope contract that product surfaces and verifier fixtures reuse verbatim, keeping bounded-review disclosure truthful and quiet on the normal path.
+- **Synchronize continuity seam:** `src/execution/config.ts`, `.kodiai.yml`, and `scripts/verify-m048-s03.ts` treat synchronize support as a checked-in config + verifier contract: supported nested trigger shape enables runtime behavior, legacy top-level intent warns loudly, and optional live proof must be keyed by a real synchronize `reviewOutputKey`.
 - **Latency compare seam:** `scripts/verify-m048-s02.ts` composes two full S01 reports, computes deltas only over the phases S02 actually targets, and keeps publication continuity as an explicit separate state.
 - **Env-backed verifier skip pattern:** verifier CLI parsers must refuse to consume another `--flag` as a missing value and should emit named skipped statuses when automation passes empty live-proof inputs.
 - **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current example is `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift`.
@@ -100,4 +112,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 - [ ] M048: PR Review Latency Reduction and Bounded Execution
   - [x] S01: Live Phase Timing and Operator Evidence Surfaces
   - [x] S02: Single-Worker Path Latency Reduction
-  - [ ] S03: Truthful Bounded Reviews and Synchronize Continuity
+  - [x] S03: Truthful Bounded Reviews and Synchronize Continuity
