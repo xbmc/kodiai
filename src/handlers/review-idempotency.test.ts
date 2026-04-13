@@ -46,6 +46,13 @@ function createOctokitStub(options: {
   };
 }
 
+function extractEvidenceBullets(body: string): string[] {
+  return body
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "));
+}
+
 describe("review idempotency helpers", () => {
   test("buildReviewOutputKey returns same key for identical inputs", () => {
     const input = {
@@ -169,7 +176,49 @@ describe("review idempotency helpers", () => {
     expect(result).toBe(reviewOutputKey);
   });
 
-  test("buildApprovedReviewBody returns a review-structured approval body with marker", () => {
+  test("buildApprovedReviewBody emits visible markdown with bounded evidence bullets and marker continuity", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "mention-review",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+    const marker = buildReviewOutputMarker(reviewOutputKey);
+
+    const result = buildApprovedReviewBody({
+      reviewOutputKey,
+      evidence: [
+        "  Reviewed 12 changed files across 3 directories.  ",
+        "Dependency bumps are limited to patch releases.",
+        "   ",
+        "This overflow evidence must not be emitted.",
+      ],
+      approvalConfidence: "  :green_circle: **Merge Confidence: High** — Safe to merge.  ",
+    });
+
+    expect(result).toContain("Decision: APPROVE");
+    expect(result).toContain("Issues: none");
+    expect(result).toContain("Evidence:");
+    expect(result).toContain(marker);
+    expect(result).not.toContain("<details>");
+    expect(result).not.toContain("<summary>kodiai response</summary>");
+    expect(result).not.toContain("This overflow evidence must not be emitted.");
+    expect(result).toContain("- Reviewed 12 changed files across 3 directories.");
+    expect(result).toContain("- Dependency bumps are limited to patch releases.");
+    expect(result).toContain("- :green_circle: **Merge Confidence: High** — Safe to merge.");
+    expect(extractEvidenceBullets(result)).toEqual([
+      "- Reviewed 12 changed files across 3 directories.",
+      "- Dependency bumps are limited to patch releases.",
+      "- :green_circle: **Merge Confidence: High** — Safe to merge.",
+    ]);
+    expect(extractReviewOutputKey(result)).toBe(reviewOutputKey);
+    expect(result.trimEnd().endsWith(marker)).toBe(true);
+  });
+
+  test("buildApprovedReviewBody falls back to one default evidence bullet when inputs are empty", () => {
     const reviewOutputKey = buildReviewOutputKey({
       installationId: 42,
       owner: "acme",
@@ -182,14 +231,44 @@ describe("review idempotency helpers", () => {
 
     const result = buildApprovedReviewBody({
       reviewOutputKey,
-      approvalConfidence: ":green_circle: **Merge Confidence: High** — Safe to merge.",
+      evidence: ["   ", "\n\t  "],
+      approvalConfidence: "   ",
     });
 
-    expect(result).toContain("<summary>kodiai response</summary>");
-    expect(result).toContain("Decision: APPROVE");
-    expect(result).toContain("Issues: none");
-    expect(result).toContain("Merge Confidence: High");
+    expect(result).toContain("Evidence:");
+    expect(extractEvidenceBullets(result)).toEqual([
+      "- No actionable issues were identified in the reviewed changes.",
+    ]);
+    expect(result).not.toContain("<details>");
+  });
+
+  test("buildApprovedReviewBody preserves exactly three normalized evidence bullets without approval confidence", () => {
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "mention-review",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234",
+    });
+
+    const result = buildApprovedReviewBody({
+      reviewOutputKey,
+      evidence: [
+        "  Reviewed only source files.  ",
+        "No runtime config changes detected.",
+        "Tests relevant to touched files are already green.",
+      ],
+    });
+
+    expect(extractEvidenceBullets(result)).toEqual([
+      "- Reviewed only source files.",
+      "- No runtime config changes detected.",
+      "- Tests relevant to touched files are already green.",
+    ]);
     expect(result).toContain(buildReviewOutputMarker(reviewOutputKey));
+    expect(result).not.toContain("<details>");
   });
 
   test("ensureReviewOutputNotPublished returns skip decision when marker exists in review comments", async () => {

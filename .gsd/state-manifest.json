@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T13:53:42.635Z",
+  "exported_at": "2026-04-13T14:28:13.365Z",
   "milestones": [
     {
       "id": "M001",
@@ -6341,7 +6341,7 @@
     {
       "milestone_id": "M049",
       "id": "S01",
-      "title": "Shared clean-approval review body contract",
+      "title": "S01",
       "status": "pending",
       "risk": "medium",
       "depends": [],
@@ -6350,11 +6350,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Define and apply one shared approved-review body contract across every Kodiai clean-approval publisher path.",
-      "success_criteria": "- Shared builder emits decision/no-issues plus short factual evidence lines and marker.\n- Explicit mention bridge uses the shared builder.\n- Automatic clean-review lane uses the shared builder.\n- Approve-via-comment sanitization accepts the shared approved-review shape without allowing arbitrary prose.",
-      "proof_level": "Deterministic publish-path tests plus one live proof on xbmc/kodiai.",
-      "integration_closure": "`mention.ts`, `review.ts`, and the approve-via-comment publish path all use the same approved-review body shape and marker contract.",
-      "observability_impact": "The GitHub review body itself becomes a stronger audit surface for clean approvals while existing `reviewOutputKey` and `publishResolution` logs continue to correlate the run.",
+      "goal": "Ship one narrow clean-approval GitHub review-body contract across explicit mention, automatic review, and approve-via-comment paths so clean approvals visibly show decision, no-issues state, short factual evidence, and the existing review-output marker.",
+      "success_criteria": "- `buildApprovedReviewBody(...)` becomes the canonical clean-approval formatter and emits `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, and the existing `review-output-key` marker.\n- `src/handlers/mention.ts` and `src/handlers/review.ts` both publish clean approvals through the shared formatter without regressing idempotency, explicit-review publish gating, or dep-bump approval-confidence evidence.\n- `src/execution/mcp/comment-server.ts` and `src/execution/mention-prompt.ts` accept and instruct the same narrow approved-review grammar so approve-via-comment still promotes valid clean approvals to GitHub `APPROVE` reviews while rejecting arbitrary prose.",
+      "proof_level": "integration proof over the shared formatter plus both GitHub approval publishers and the approve-via-comment promotion path, all exercised by deterministic regression tests rather than live GitHub runtime.",
+      "integration_closure": "- Upstream surfaces consumed: `src/handlers/review-idempotency.ts`, `src/handlers/mention.ts`, `src/handlers/review.ts`, `src/execution/mcp/comment-server.ts`, and `src/execution/mention-prompt.ts`.\n- New wiring introduced in this slice: both clean approval publishers and the approve-via-comment validator/prompt converge on one visible approved-review grammar with the existing marker contract.\n- What remains before the milestone is truly usable end-to-end: S02 must prove the shipped body on live/audit surfaces and confirm operator trust/auditability behavior outside unit tests.",
+      "observability_impact": "- `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`\n- `bun run tsc --noEmit`",
       "sequence": 1,
       "replan_triggered_at": null
     },
@@ -13841,6 +13841,136 @@
       "observability_impact": "- Signals added or changed: named S03 verifier status codes for synchronize-config drift, bounded-disclosure contract failures, and live-key mismatches.\n- How a future agent inspects this: run `bun run verify:m048:s03 -- --json` for local preflight and `bun run verify:m048:s03 -- --review-output-key <key> --json` after deploy.\n- Failure state exposed: mis-shaped synchronize config, non-synchronize live keys, missing bounded-disclosure proof, and reused S01/S02 evidence availability all stay explicit.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M049",
+      "slice_id": "S01",
+      "id": "T01",
+      "title": "Defined the shared visible clean-approval body contract with bounded evidence bullets and the existing review-output marker.",
+      "status": "complete",
+      "one_liner": "Defined the shared visible clean-approval body contract with bounded evidence bullets and the existing review-output marker.",
+      "narrative": "I followed a red-green TDD loop in `src/handlers/review-idempotency.test.ts` by replacing the old wrapper-only approval assertion with contract tests for visible markdown, `Decision: APPROVE`, `Issues: none`, an `Evidence:` block, bounded 1–3 bullets, approval-confidence normalization, fallback evidence when inputs are empty, and unchanged marker extraction. After confirming the tests failed against the previous `<details>`-wrapped body, I updated `src/handlers/review-idempotency.ts` to keep marker generation centralized while adding small evidence-normalization helpers. `buildApprovedReviewBody(...)` now emits plain markdown instead of using `wrapInDetails(...)`, trims and filters evidence inputs, caps total bullets at three, preserves approval confidence as a structured bullet by reserving one slot for it, and falls back to a single default factual evidence line when no usable evidence is provided. I then reran the focused helper suite to green and ran the slice-level verification commands. The full slice suite now has one expected downstream failure in `src/handlers/mention.test.ts` because T02 still needs to adopt the new visible approval body contract; everything else in that suite passed, and `tsc --noEmit` stayed clean.",
+      "verification_result": "Verified the helper contract with `bun test ./src/handlers/review-idempotency.test.ts`, which passed all 15 tests and confirmed the approval body is visible markdown with bounded evidence bullets, fallback evidence handling, preserved marker extraction, and no `<details>` wrapper. Ran the slice-level test command `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`; it produced one expected failure in `src/handlers/mention.test.ts` still asserting the old `<summary>kodiai response</summary>` wrapper, while the remaining 311 tests passed. Ran `bun run tsc --noEmit`, which exited successfully with no type errors.",
+      "duration": "",
+      "completed_at": "2026-04-13T14:28:13.329Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "`bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts` still has one expected downstream failure in `src/handlers/mention.test.ts` because T02 has not yet updated explicit approval publishing to the shared visible body contract.",
+      "key_files": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts"
+      ],
+      "key_decisions": [
+        "Kept `review-output-key` marker creation and extraction unchanged while moving clean approvals to a visible plain-markdown body with an explicit `Evidence:` section.",
+        "Reserved one evidence slot for optional approval-confidence text so merge-confidence stays structured as a bullet instead of trailing free-form prose."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S01\nmilestone: M049\nkey_files:\n  - src/handlers/review-idempotency.ts\n  - src/handlers/review-idempotency.test.ts\nkey_decisions:\n  - Kept `review-output-key` marker creation and extraction unchanged while moving clean approvals to a visible plain-markdown body with an explicit `Evidence:` section.\n  - Reserved one evidence slot for optional approval-confidence text so merge-confidence stays structured as a bullet instead of trailing free-form prose.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T14:28:13.329Z\nblocker_discovered: false\n---\n\n# T01: Defined the shared visible clean-approval body contract with bounded evidence bullets and the existing review-output marker.\n\n**Defined the shared visible clean-approval body contract with bounded evidence bullets and the existing review-output marker.**\n\n## What Happened\n\nI followed a red-green TDD loop in `src/handlers/review-idempotency.test.ts` by replacing the old wrapper-only approval assertion with contract tests for visible markdown, `Decision: APPROVE`, `Issues: none`, an `Evidence:` block, bounded 1–3 bullets, approval-confidence normalization, fallback evidence when inputs are empty, and unchanged marker extraction. After confirming the tests failed against the previous `<details>`-wrapped body, I updated `src/handlers/review-idempotency.ts` to keep marker generation centralized while adding small evidence-normalization helpers. `buildApprovedReviewBody(...)` now emits plain markdown instead of using `wrapInDetails(...)`, trims and filters evidence inputs, caps total bullets at three, preserves approval confidence as a structured bullet by reserving one slot for it, and falls back to a single default factual evidence line when no usable evidence is provided. I then reran the focused helper suite to green and ran the slice-level verification commands. The full slice suite now has one expected downstream failure in `src/handlers/mention.test.ts` because T02 still needs to adopt the new visible approval body contract; everything else in that suite passed, and `tsc --noEmit` stayed clean.\n\n## Verification\n\nVerified the helper contract with `bun test ./src/handlers/review-idempotency.test.ts`, which passed all 15 tests and confirmed the approval body is visible markdown with bounded evidence bullets, fallback evidence handling, preserved marker extraction, and no `<details>` wrapper. Ran the slice-level test command `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`; it produced one expected failure in `src/handlers/mention.test.ts` still asserting the old `<summary>kodiai response</summary>` wrapper, while the remaining 311 tests passed. Ran `bun run tsc --noEmit`, which exited successfully with no type errors.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/review-idempotency.test.ts` | 0 | ✅ pass | 25ms |\n| 2 | `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts` | 1 | ❌ fail | 8813ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 8003ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts` still has one expected downstream failure in `src/handlers/mention.test.ts` because T02 has not yet updated explicit approval publishing to the shared visible body contract.\n\n## Files Created/Modified\n\n- `src/handlers/review-idempotency.ts`\n- `src/handlers/review-idempotency.test.ts`\n",
+      "description": "- Why: The existing helper already owns the marker/idempotency seam, so this is the narrowest place to replace wrapper-only approval bodies with the shared D098 contract.\n  - Do: Update `buildApprovedReviewBody(...)` to emit visible plain markdown with `Decision: APPROVE`, `Issues: none`, an `Evidence:` header, 1–3 normalized factual bullets, and the existing review-output marker; keep optional approval-confidence support as structured evidence.\n  - Done when: Focused helper tests pin the new grammar, marker continuity, optional confidence handling, and the assumption that clean approvals are no longer wrapped in `<details>`.",
+      "estimate": "75m",
+      "files": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts"
+      ],
+      "verify": "bun test ./src/handlers/review-idempotency.test.ts",
+      "inputs": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts",
+        "src/lib/formatting.ts"
+      ],
+      "expected_output": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/review-idempotency.test.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M049",
+      "slice_id": "S01",
+      "id": "T02",
+      "title": "Adopt the shared approval body in explicit and automatic review publishers",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "- Why: The milestone demo is only true when both explicit `@kodiai review` approvals and automatic clean-review approvals publish the same visible evidence-backed body.\n  - Do: Thread deterministic lane facts into the shared builder from `mention.ts` and `review.ts`, preserve the existing publish/idempotency gates, and keep dep-bump approval confidence visible as evidence instead of regressing to marker-only approvals.\n  - Done when: Handler tests prove both lanes publish the shared approval body with marker + evidence lines and still skip duplicate publication when output already exists.",
+      "estimate": "2h",
+      "files": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts",
+      "inputs": [
+        "src/handlers/review-idempotency.ts",
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "src/lib/review-utils.ts"
+      ],
+      "expected_output": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "observability_impact": "- Inspect explicit-review publish and auto-approve regression tests plus the existing `review-output-idempotency`, `explicit-review-publish`, and `auto-approve` log assertions when body-shape changes fail.\n- Regressions should surface as missing marker/body assertions or duplicate-publish skips, not as a silent fallback to marker-only approvals.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M049",
+      "slice_id": "S01",
+      "id": "T03",
+      "title": "Align approve-via-comment validation and prompt guidance to the shared grammar",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "- Why: Approve-via-comment is the strictest boundary and will silently diverge unless the sanitizer, approval promotion check, and prompt guidance all move to the same grammar in the same slice.\n  - Do: Narrow `comment-server.ts` to accept only the shared APPROVE grammar with `Evidence:` bullets, keep marker stamping server-side, and update `mention-prompt.ts` so PR approval decisions use the visible approved-review body instead of the old always-`<details>` wrapper.\n  - Done when: Tests prove valid shared approval bodies still promote to GitHub `APPROVE` reviews, while extra headings/paragraphs or malformed evidence blocks are rejected.",
+      "estimate": "90m",
+      "files": [
+        "src/execution/mcp/comment-server.ts",
+        "src/execution/mcp/comment-server.test.ts",
+        "src/execution/mention-prompt.ts",
+        "src/execution/mention-prompt.test.ts"
+      ],
+      "verify": "bun test ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts",
+      "inputs": [
+        "src/handlers/review-idempotency.ts",
+        "src/execution/mcp/comment-server.ts",
+        "src/execution/mcp/comment-server.test.ts",
+        "src/execution/mention-prompt.ts",
+        "src/execution/mention-prompt.test.ts"
+      ],
+      "expected_output": [
+        "src/execution/mcp/comment-server.ts",
+        "src/execution/mcp/comment-server.test.ts",
+        "src/execution/mention-prompt.ts",
+        "src/execution/mention-prompt.test.ts"
+      ],
+      "observability_impact": "- Use approve-via-comment tests to distinguish sanitizer rejection, marker stamping, and promotion-to-`APPROVE` review behavior.\n- Failures should remain visible as explicit validation errors or missing approval-promotion assertions rather than allowing arbitrary prose to publish.",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -15220,6 +15350,18 @@
       "decision": "How legacy review.onSynchronize should behave on the live review path",
       "choice": "Keep legacy review.onSynchronize disabled and emit an explicit compatibility warning instead of auto-mapping it to review.triggers.onSynchronize.",
       "rationale": "Auto-enabling the legacy key would hide configuration drift and create a false-green synchronize contract. Preserving the effective disabled behavior while warning loudly keeps runtime behavior truthful, lets verification fail clearly, and forces checked-in repo config to match the parser's supported nested trigger shape.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 150,
+      "id": "D116",
+      "when_context": "M049/S01 planning",
+      "scope": "review-output",
+      "decision": "How M049/S01 defines the shared clean-approval body grammar across publisher lanes",
+      "choice": "Interpret D098 as a visible plain-markdown clean-approval review contract: `Decision: APPROVE`, `Issues: none`, an `Evidence:` block with 1–3 factual bullets, and the existing `review-output-key` marker; keep approve-via-comment validation narrow to that grammar instead of allowing arbitrary prose.",
+      "rationale": "The roadmap/demo says GitHub should visibly show decision, no-issues status, and factual evidence lines. Keeping the old `<details>` wrapper would under-deliver on that promise, while a narrow markdown grammar preserves trust, keeps marker-based audit correlation intact, and gives comment-server a concrete shape it can validate without reopening arbitrary-prose approvals.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -20032,6 +20174,39 @@
       "verdict": "✅ pass",
       "duration_ms": 64,
       "created_at": "2026-04-13T04:26:44.640Z"
+    },
+    {
+      "id": 439,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun test ./src/handlers/review-idempotency.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 25,
+      "created_at": "2026-04-13T14:28:13.329Z"
+    },
+    {
+      "id": 440,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 8813,
+      "created_at": "2026-04-13T14:28:13.330Z"
+    },
+    {
+      "id": 441,
+      "task_id": "T01",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8003,
+      "created_at": "2026-04-13T14:28:13.330Z"
     }
   ]
 }
