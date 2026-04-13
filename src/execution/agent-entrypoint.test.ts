@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile, lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { $ } from "bun";
@@ -571,6 +571,116 @@ describe("happy path", () => {
     expect(await $`git -C ${cwd} branch --show-current`.quiet().text()).toContain("pr-mention");
     expect(await $`git -C ${cwd} remote get-url origin`.quiet().text()).toContain("https://github.com/xbmc/xbmc.git");
     expect((await $`git -C ${cwd} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
+  });
+
+  test("materializes review-bundle transport without repoOriginUrl and records the transport path", async () => {
+    const workspaceDir = await makeTempDir("agent-entrypoint-review-workspace-");
+    const sourceRepoDir = await makeTempDir("agent-entrypoint-review-source-");
+    const bundlePath = join(workspaceDir, "repo.bundle");
+    const diagnostics: string[] = [];
+
+    await mkdir(join(sourceRepoDir, "system", "settings"), { recursive: true });
+    await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings />\n");
+    await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
+    await $`git -C ${sourceRepoDir} init`.quiet();
+    await $`git -C ${sourceRepoDir} config user.email t@example.com`.quiet();
+    await $`git -C ${sourceRepoDir} config user.name T`.quiet();
+    await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+    await $`git -C ${sourceRepoDir} add .`.quiet();
+    await $`git -C ${sourceRepoDir} commit -m init`.quiet();
+    await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+    await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+    await writeFile(join(sourceRepoDir, "feature.ts"), "export const enabled = true;\n");
+    await $`git -C ${sourceRepoDir} add .`.quiet();
+    await $`git -C ${sourceRepoDir} commit -m feature`.quiet();
+    await $`git -C ${sourceRepoDir} bundle create ${bundlePath} refs/heads/main refs/heads/pr-mention`.quiet();
+
+    const agentConfig = {
+      prompt: "Review this PR",
+      model: "claude-sonnet-4-5-20250929",
+      maxTurns: 20,
+      allowedTools: ["Read", "Grep"],
+      repoTransport: {
+        kind: "review-bundle",
+        bundlePath,
+        headRef: "pr-mention",
+        baseRef: "main",
+      },
+    };
+    await writeFile(join(workspaceDir, "agent-config.json"), JSON.stringify(agentConfig));
+
+    setEnv({
+      WORKSPACE_DIR: workspaceDir,
+      MCP_BASE_URL: "https://api.example.com",
+      MCP_BEARER_TOKEN: "bearer-tok",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    });
+
+    let capturedParams: { prompt: string; options?: Record<string, unknown> } | undefined;
+    const deps: Partial<EntrypointDeps> = {
+      appendFileFn: async (_path, content) => {
+        diagnostics.push(content);
+      },
+      queryFn: (params) => {
+        capturedParams = params as { prompt: string; options?: Record<string, unknown> };
+        return makeAsyncIterable([makeResultSuccess()]);
+      },
+    };
+
+    await main(deps);
+
+    expect(capturedParams).toBeDefined();
+    const cwd = capturedParams!.options!.cwd as string;
+    expect(cwd).not.toBe(workspaceDir);
+    expect(cwd).not.toBe(bundlePath);
+    expect((await $`git -C ${cwd} branch --show-current`.quiet().text()).trim()).toBe("pr-mention");
+    expect((await $`git -C ${cwd} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
+    expect((await lstat(join(cwd, "system", "settings", "freebsd.xml"))).isSymbolicLink()).toBe(true);
+    expect(diagnostics.join("")).toContain("repo transport kind=review-bundle");
+    expect(diagnostics.join("")).toContain("materialized review bundle");
+  });
+
+  test("writes an error result when repoTransport metadata is malformed", async () => {
+    const written: Record<string, string> = {};
+    let queryCalled = false;
+
+    setEnv({
+      WORKSPACE_DIR: "/tmp/ws",
+      MCP_BASE_URL: "https://api.example.com",
+      MCP_BEARER_TOKEN: "bearer-tok",
+      ANTHROPIC_API_KEY: "sk-ant-test",
+    });
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => JSON.stringify({
+        prompt: "Review this PR",
+        model: "claude-sonnet-4-5-20250929",
+        maxTurns: 20,
+        allowedTools: ["Read", "Grep"],
+        repoTransport: {
+          kind: "review-bundle",
+          bundlePath: "/tmp/ws/repo.bundle",
+          headRef: "pr-mention",
+        },
+      }),
+      writeFileFn: async (path, content) => {
+        written[path] = content;
+      },
+      appendFileFn: async () => undefined,
+      queryFn: () => {
+        queryCalled = true;
+        return makeAsyncIterable([makeResultSuccess()]);
+      },
+    };
+
+    await main(deps);
+
+    expect(queryCalled).toBe(false);
+    const result = JSON.parse(written["/tmp/ws/result.json"]!) as Record<string, unknown>;
+    expect(result.conclusion).toBe("error");
+    expect(String(result.errorMessage)).toContain("repoTransport");
+    expect(String(result.errorMessage)).toContain("baseRef");
   });
 });
 

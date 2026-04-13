@@ -1,8 +1,9 @@
+import { $ } from "bun";
 import { test, expect, afterEach, mock, beforeEach } from "bun:test";
-import { mkdtemp, rm, readFile, writeFile, mkdir, cp } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSecurityClaudeMd, createExecutor } from "./executor.ts";
+import { buildSecurityClaudeMd, createExecutor, prepareAgentWorkspace } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Logger } from "pino";
@@ -503,19 +504,26 @@ function createTestableExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
-        const repoCwd = workspaceDir === context.workspace.dir
-          ? context.workspace.dir
-          : join(workspaceDir, "repo");
-        if (workspaceDir !== context.workspace.dir) {
-          await mkdir(repoCwd, { recursive: true });
-          await cp(context.workspace.dir, repoCwd, { recursive: true });
+        if (workspaceDir === context.workspace.dir) {
+          // Test-harness shortcut only: production always stages into a distinct Azure Files dir.
+          await writeFile(join(workspaceDir, "prompt.txt"), prompt);
+          await writeFile(
+            join(workspaceDir, "agent-config.json"),
+            JSON.stringify({ model, maxTurns, allowedTools, taskType, repoCwd: context.workspace.dir }),
+          );
+        } else {
+          await prepareAgentWorkspace({
+            sourceRepoDir: context.workspace.dir,
+            workspaceDir,
+            prompt,
+            model,
+            maxTurns,
+            allowedTools,
+            taskType,
+            mcpServerNames: Object.keys(mcpServers),
+            token: context.workspace.token,
+          });
         }
-
-        await writeFile(join(workspaceDir, "prompt.txt"), prompt);
-        await writeFile(
-          join(workspaceDir, "agent-config.json"),
-          JSON.stringify({ model, maxTurns, allowedTools, taskType, repoCwd }),
-        );
 
         const { buildAcaJobSpec } = await import("../jobs/aca-launcher.ts");
         const spec = buildAcaJobSpec({
@@ -1094,12 +1102,24 @@ test("ACA dispatch: CLAUDE.md written to workspace dir before launch", async () 
   expect(claudeMd).toContain("Security Policy");
 });
 
-test("ACA dispatch: explicit review mention writes a repo snapshot and points agent cwd at it", async () => {
+test("ACA dispatch: explicit review mention stages a review bundle transport without changing review tools", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
   const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
   await mkdir(join(sourceRepoDir, "src"), { recursive: true });
   await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
   await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
+  await $`git -C ${sourceRepoDir} init`.quiet();
+  await $`git -C ${sourceRepoDir} config user.email test@example.com`.quiet();
+  await $`git -C ${sourceRepoDir} config user.name "Test User"`.quiet();
+  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m base`.quiet();
+  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'updated';\n");
+  await $`git -C ${sourceRepoDir} commit -am feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
 
   const config = makeConfig();
   const logger = makeLogger();
@@ -1131,6 +1151,13 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
     allowedTools: string[];
     taskType: string;
     repoCwd?: string;
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+      originUrl?: string;
+    };
   };
 
   expect(agentConfig.taskType).toBe("review.full");
@@ -1140,9 +1167,14 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
   expect(agentConfig.allowedTools).toContain("mcp__github_inline_comment__create_inline_comment");
   expect(agentConfig.allowedTools).toContain("mcp__github_ci__get_ci_status");
-  expect(agentConfig.repoCwd).toBe(join(tmpDir!, "repo"));
-  expect(await readFile(join(tmpDir!, "repo", "src", "feature.ts"), "utf-8")).toContain("feature = true");
-  expect(await readFile(join(tmpDir!, "repo", ".kodiai.yml"), "utf-8")).toContain("review:");
+  expect(agentConfig.repoCwd).toBeUndefined();
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(tmpDir!, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "main",
+    originUrl: "https://github.com/xbmc/xbmc.git",
+  });
 });
 
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {

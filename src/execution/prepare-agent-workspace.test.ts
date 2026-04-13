@@ -66,7 +66,7 @@ test("prepareAgentWorkspace copies the repo and writes agent-config with repoCwd
   expect(agentConfig.mcpServerNames).toEqual(["github_comment"]);
 });
 
-test("prepareAgentWorkspace writes a git bundle for repos with tracked symlinks", async () => {
+test("prepareAgentWorkspace writes a review bundle transport for repos with tracked symlinks", async () => {
   const sourceRepoDir = await makeTempDir("kodiai-source-symlink-repo-");
   const workspaceDir = await makeTempDir("kodiai-agent-symlink-workspace-");
 
@@ -83,6 +83,10 @@ test("prepareAgentWorkspace writes a git bundle for repos with tracked symlinks"
   await $`git -C ${sourceRepoDir} commit -m init`.quiet();
   await $`git -C ${sourceRepoDir} branch -M main`.quiet();
   await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "feature.ts"), "export const enabled = true;\n");
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
 
   const result = await prepareAgentWorkspace({
     sourceRepoDir,
@@ -103,22 +107,32 @@ test("prepareAgentWorkspace writes a git bundle for repos with tracked symlinks"
   const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
   const agentConfig = JSON.parse(rawAgentConfig) as {
     repoCwd?: string;
-    repoBundlePath?: string;
-    repoOriginUrl?: string;
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+      originUrl?: string;
+    };
   };
 
   expect(agentConfig.repoCwd).toBeUndefined();
-  expect(agentConfig.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
-  expect(agentConfig.repoOriginUrl).toBe("https://github.com/xbmc/xbmc.git");
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(workspaceDir, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "main",
+    originUrl: "https://github.com/xbmc/xbmc.git",
+  });
 
   const cloneCheckDir = await makeTempDir("kodiai-bundle-clone-check-");
-  await $`git clone ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+  await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
   expect((await lstat(join(cloneCheckDir, "system", "settings", "freebsd.xml"))).isSymbolicLink()).toBe(true);
   expect((await $`git -C ${cloneCheckDir} status --porcelain`.quiet()).text()).toBe("");
-  expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text().trim().length).toBeGreaterThanOrEqual(0);
+  expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
 });
 
-test("prepareAgentWorkspace unshallows PR workspaces before writing repo bundle", async () => {
+test("prepareAgentWorkspace unshallows PR workspaces before writing a review bundle transport", async () => {
   const tempRoot = await makeTempDir("kodiai-shallow-bundle-");
   const bareRepoDir = join(tempRoot, "origin.git");
   const seedRepoDir = join(tempRoot, "seed");
@@ -162,6 +176,25 @@ test("prepareAgentWorkspace unshallows PR workspaces before writing repo bundle"
 
   expect(result.repoCwd).toBeUndefined();
   expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
-  await $`git clone ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+
+  const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+    };
+  };
+
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(workspaceDir, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "master",
+    originUrl: "file://" + bareRepoDir,
+  });
+
+  await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
   expect((await $`git -C ${cloneCheckDir} diff origin/master...HEAD --stat`.quiet().text())).toContain("feature.txt");
 });

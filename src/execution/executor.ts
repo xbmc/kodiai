@@ -10,6 +10,7 @@ import type {
   ExecutorPhaseTiming,
   ReviewPhaseStatus,
 } from "./types.ts";
+import type { RepoTransport } from "./repo-transport.ts";
 import { loadRepoConfig } from "./config.ts";
 import { buildAllowedMcpTools, buildMcpServerFactories } from "./mcp/index.ts";
 import { buildPrompt } from "./prompt.ts";
@@ -147,6 +148,97 @@ function normalizeExecutorPhaseTimingsFromResult(params: {
   return fallback.map((phase) => normalizedByName.get(phase.name) ?? phase);
 }
 
+async function readGitRefSha(repoDir: string, ref: string): Promise<string | undefined> {
+  return await $`git -C ${repoDir} rev-parse --verify ${ref}`.quiet()
+    .text()
+    .then((value) => value.trim())
+    .catch(() => undefined);
+}
+
+async function detectReviewBundleCandidate(repoDir: string): Promise<
+  | { headRef: string; baseRef: string }
+  | undefined
+> {
+  const headRef = await $`git -C ${repoDir} branch --show-current`.quiet()
+    .text()
+    .then((value) => value.trim())
+    .catch(() => "");
+
+  if (!headRef) {
+    return undefined;
+  }
+
+  const remoteRefs = await $`git -C ${repoDir} for-each-ref --format=%(refname:strip=3) refs/remotes/origin`.quiet()
+    .text()
+    .then((value) => value.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean))
+    .catch(() => [] as string[]);
+
+  const baseCandidates = remoteRefs.filter((ref) => ref !== "HEAD" && ref !== headRef);
+  if (baseCandidates.length !== 1) {
+    return undefined;
+  }
+
+  return {
+    headRef,
+    baseRef: baseCandidates[0]!,
+  };
+}
+
+async function buildGitRepoTransport(params: {
+  sourceRepoDir: string;
+  workspaceDir: string;
+}): Promise<{ repoBundlePath: string; repoTransport: RepoTransport }> {
+  const repoBundlePath = join(params.workspaceDir, "repo.bundle");
+  const repoOriginUrl = await $`git -C ${params.sourceRepoDir} remote get-url origin`.quiet()
+    .text()
+    .then((value) => value.trim())
+    .catch(() => undefined);
+
+  const reviewBundleCandidate = await detectReviewBundleCandidate(params.sourceRepoDir);
+  if (reviewBundleCandidate) {
+    const localBaseRef = `refs/heads/${reviewBundleCandidate.baseRef}`;
+    const remoteBaseRef = `refs/remotes/origin/${reviewBundleCandidate.baseRef}`;
+    const remoteBaseSha = await readGitRefSha(params.sourceRepoDir, remoteBaseRef);
+
+    if (remoteBaseSha) {
+      const previousLocalBaseSha = await readGitRefSha(params.sourceRepoDir, localBaseRef);
+      if (previousLocalBaseSha !== remoteBaseSha) {
+        await $`git -C ${params.sourceRepoDir} update-ref ${localBaseRef} ${remoteBaseSha}`.quiet();
+      }
+
+      try {
+        await $`git -C ${params.sourceRepoDir} bundle create ${repoBundlePath} refs/heads/${reviewBundleCandidate.headRef} refs/heads/${reviewBundleCandidate.baseRef}`.quiet();
+        return {
+          repoBundlePath,
+          repoTransport: {
+            kind: "review-bundle",
+            bundlePath: repoBundlePath,
+            headRef: reviewBundleCandidate.headRef,
+            baseRef: reviewBundleCandidate.baseRef,
+            ...(repoOriginUrl ? { originUrl: repoOriginUrl } : {}),
+          },
+        };
+      } finally {
+        if (previousLocalBaseSha === undefined) {
+          await $`git -C ${params.sourceRepoDir} update-ref -d ${localBaseRef}`.quiet().nothrow();
+        } else if (previousLocalBaseSha !== remoteBaseSha) {
+          await $`git -C ${params.sourceRepoDir} update-ref ${localBaseRef} ${previousLocalBaseSha}`.quiet().nothrow();
+        }
+      }
+    }
+  }
+
+  await $`git -C ${params.sourceRepoDir} bundle create ${repoBundlePath} --all`.quiet();
+  return {
+    repoBundlePath,
+    repoTransport: {
+      kind: "bundle-all",
+      bundlePath: repoBundlePath,
+      ...(repoOriginUrl ? { originUrl: repoOriginUrl } : {}),
+    },
+  };
+}
+
 export async function prepareAgentWorkspace(params: {
   sourceRepoDir: string;
   workspaceDir: string;
@@ -157,16 +249,15 @@ export async function prepareAgentWorkspace(params: {
   taskType: string;
   mcpServerNames: string[];
   token?: string;
-}): Promise<{ repoCwd?: string; repoBundlePath?: string }> {
+}): Promise<{ repoCwd?: string; repoBundlePath?: string; repoTransport?: RepoTransport }> {
   let repoCwd: string | undefined;
   let repoBundlePath: string | undefined;
-  let repoOriginUrl: string | undefined;
+  let repoTransport: RepoTransport | undefined;
 
   const sourceGitDir = join(params.sourceRepoDir, ".git");
   const sourceIsGitRepo = await stat(sourceGitDir).then(() => true).catch(() => false);
 
   if (sourceIsGitRepo) {
-    repoBundlePath = join(params.workspaceDir, "repo.bundle");
     const sourceIsShallow = await $`git -C ${params.sourceRepoDir} rev-parse --is-shallow-repository`.quiet()
       .text()
       .then((value) => value.trim() === "true")
@@ -175,11 +266,12 @@ export async function prepareAgentWorkspace(params: {
       const fetchRemote = await buildAuthFetchUrl(params.sourceRepoDir, params.token);
       await $`git -C ${params.sourceRepoDir} fetch --unshallow ${fetchRemote}`.quiet();
     }
-    await $`git -C ${params.sourceRepoDir} bundle create ${repoBundlePath} --all`.quiet();
-    repoOriginUrl = await $`git -C ${params.sourceRepoDir} remote get-url origin`.quiet()
-      .text()
-      .then((value) => value.trim())
-      .catch(() => undefined);
+    const preparedRepo = await buildGitRepoTransport({
+      sourceRepoDir: params.sourceRepoDir,
+      workspaceDir: params.workspaceDir,
+    });
+    repoBundlePath = preparedRepo.repoBundlePath;
+    repoTransport = preparedRepo.repoTransport;
   } else {
     repoCwd = join(params.workspaceDir, "repo");
     await mkdir(repoCwd, { recursive: true });
@@ -196,12 +288,11 @@ export async function prepareAgentWorkspace(params: {
       allowedTools: params.allowedTools,
       taskType: params.taskType,
       ...(repoCwd ? { repoCwd } : {}),
-      ...(repoBundlePath ? { repoBundlePath } : {}),
-      ...(repoOriginUrl ? { repoOriginUrl } : {}),
+      ...(repoTransport ? { repoTransport } : {}),
       mcpServerNames: params.mcpServerNames,
     }),
   );
-  return { repoCwd, repoBundlePath };
+  return { repoCwd, repoBundlePath, repoTransport };
 }
 
 export function createExecutor(deps: {
