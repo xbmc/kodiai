@@ -54,7 +54,7 @@
   - Verify: `bun test ./src/handlers/review-idempotency.test.ts`
   - Done when: Focused helper tests pin the new grammar, marker continuity, optional confidence handling, and the assumption that clean approvals are no longer wrapped in `<details>`.
 
-- [ ] **T02: Adopt the shared approval body in explicit and automatic review publishers** `est:2h`
+- [x] **T02: Adopt the shared approval body in explicit and automatic review publishers** `est:2h`
   - Why: The milestone demo is only true when both explicit `@kodiai review` approvals and automatic clean-review approvals publish the same visible evidence-backed body.
   - Files: `src/handlers/mention.ts`, `src/handlers/mention.test.ts`, `src/handlers/review.ts`, `src/handlers/review.test.ts`
   - Do: Thread deterministic lane facts into the shared builder from `mention.ts` and `review.ts`, preserve the existing publish/idempotency gates, and keep dep-bump approval confidence visible as evidence instead of regressing to marker-only approvals.

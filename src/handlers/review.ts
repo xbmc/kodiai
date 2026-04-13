@@ -71,6 +71,7 @@ import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
+  buildApprovedReviewBody,
   buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
@@ -4405,16 +4406,24 @@ export function createReviewHandler(deps: {
             }
 
             {
-              // No issues found -- submit silent approval
+              const approvalEvidence = [
+                `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
+              ];
+              const approvalConfidence = depBumpContext?.mergeConfidence
+                ? renderApprovalConfidence(depBumpContext.mergeConfidence)
+                : null;
+
               await octokit.rest.pulls.createReview({
                 owner: apiOwner,
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
                 body: sanitizeOutgoingMentions(
-                  depBumpContext?.mergeConfidence
-                    ? `${idempotencyCheck.marker}\n\n${renderApprovalConfidence(depBumpContext.mergeConfidence)}`
-                    : idempotencyCheck.marker,
+                  buildApprovedReviewBody({
+                    reviewOutputKey,
+                    evidence: approvalEvidence,
+                    approvalConfidence,
+                  }),
                   [appSlug, "claude"],
                 ),
               });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createMentionHandler } from "./mention.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -7622,15 +7622,23 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
-    expect(createdReviews[0]?.body).toContain("<summary>kodiai response</summary>");
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
     expect(createdReviews[0]?.body).toContain("Issues: none");
-    expect(createdReviews[0]?.body).toContain("kodiai:review-output-key:");
+    expect(createdReviews[0]?.body).toContain("Evidence:");
+    expect(createdReviews[0]?.body).toContain("- Review prompt covered 1 changed file.");
+    expect(createdReviews[0]?.body).toContain("- Repo inspection tools were used to verify the changed code.");
+    expect(createdReviews[0]?.body).not.toContain("<summary>kodiai response</summary>");
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBeDefined();
 
     const idempotencyLog = infoCalls.find((entry) =>
       entry.message === "Explicit mention review idempotency check passed",
     );
-    expect(idempotencyLog?.bindings.reviewOutputKey).toBeDefined();
+    const idempotencyReviewOutputKey =
+      typeof idempotencyLog?.bindings.reviewOutputKey === "string"
+        ? idempotencyLog.bindings.reviewOutputKey
+        : null;
+    expect(idempotencyReviewOutputKey).toBeDefined();
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(idempotencyReviewOutputKey);
     expect(idempotencyLog?.bindings.idempotencyDecision).toBe("publish");
     expect(idempotencyLog?.bindings.gate).toBe("review-output-idempotency");
     expect(idempotencyLog?.bindings.gateResult).toBe("accepted");

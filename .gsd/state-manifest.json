@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T14:28:13.365Z",
+  "exported_at": "2026-04-13T14:39:43.611Z",
   "milestones": [
     {
       "id": "M001",
@@ -13889,19 +13889,27 @@
       "milestone_id": "M049",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Adopt the shared approval body in explicit and automatic review publishers",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Adopted the shared clean-approval body for explicit mention and automatic review approvals.",
+      "status": "complete",
+      "one_liner": "Adopted the shared clean-approval body for explicit mention and automatic review approvals.",
+      "narrative": "I followed a red-green loop by first tightening `src/handlers/mention.test.ts` and `src/handlers/review.test.ts` to require the shared visible approval contract on both GitHub-visible approval lanes: `Decision: APPROVE`, `Issues: none`, an `Evidence:` block, lane-specific factual bullets, and marker continuity via `extractReviewOutputKey(...)`. After confirming those assertions failed against the old publisher behavior, I updated `src/handlers/mention.ts` so the explicit `@kodiai review` approval bridge now passes deterministic evidence into `buildApprovedReviewBody(...)` from facts the handler already had: the explicit review prompt file count and the repo-inspection-tools gate. I then updated `src/handlers/review.ts` so the automatic clean-review approval path also uses the shared body instead of a marker-only approval, carrying forward review-prompt file coverage as evidence and moving dep-bump merge confidence into the shared evidence-backed contract rather than appending it after the marker. I added automatic-review regressions for both the standard clean-approval lane and the dep-bump lane, while preserving the existing `review-output-idempotency`, `explicit-review-publish`, and `auto-approve` skip/publish behavior so duplicate publication is still suppressed under the same `reviewOutputKey`.",
+      "verification_result": "Ran `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts`, which passed and confirmed explicit mention approvals, automatic clean approvals, dep-bump approvals, and duplicate-suppression assertions now use the shared visible body. Ran the slice verification command `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`, which passed and preserved the helper/idempotency contract plus adjacent MCP/comment-server and mention-prompt coverage. Ran `bun run tsc --noEmit`, which exited successfully with no diagnostics. The existing observability surfaces remain inspectable through the handler test assertions around `review-output-idempotency`, `explicit-review-publish`, `auto-approve`, and published-marker extraction via `extractReviewOutputKey(...)`.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T14:39:43.565Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "key_decisions": [
+        "Derived approval evidence only from facts the handlers already compute (prompt file counts, repo-inspection usage, prompt coverage, and dep-bump merge confidence) so the new visible body adds no new API calls or timeout surfaces.",
+        "Kept the existing `review-output-key` marker and idempotency scan unchanged and only changed the visible approval body contract at the publish call sites."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M049\nkey_files:\n  - src/handlers/mention.ts\n  - src/handlers/mention.test.ts\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\nkey_decisions:\n  - Derived approval evidence only from facts the handlers already compute (prompt file counts, repo-inspection usage, prompt coverage, and dep-bump merge confidence) so the new visible body adds no new API calls or timeout surfaces.\n  - Kept the existing `review-output-key` marker and idempotency scan unchanged and only changed the visible approval body contract at the publish call sites.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-13T14:39:43.565Z\nblocker_discovered: false\n---\n\n# T02: Adopted the shared clean-approval body for explicit mention and automatic review approvals.\n\n**Adopted the shared clean-approval body for explicit mention and automatic review approvals.**\n\n## What Happened\n\nI followed a red-green loop by first tightening `src/handlers/mention.test.ts` and `src/handlers/review.test.ts` to require the shared visible approval contract on both GitHub-visible approval lanes: `Decision: APPROVE`, `Issues: none`, an `Evidence:` block, lane-specific factual bullets, and marker continuity via `extractReviewOutputKey(...)`. After confirming those assertions failed against the old publisher behavior, I updated `src/handlers/mention.ts` so the explicit `@kodiai review` approval bridge now passes deterministic evidence into `buildApprovedReviewBody(...)` from facts the handler already had: the explicit review prompt file count and the repo-inspection-tools gate. I then updated `src/handlers/review.ts` so the automatic clean-review approval path also uses the shared body instead of a marker-only approval, carrying forward review-prompt file coverage as evidence and moving dep-bump merge confidence into the shared evidence-backed contract rather than appending it after the marker. I added automatic-review regressions for both the standard clean-approval lane and the dep-bump lane, while preserving the existing `review-output-idempotency`, `explicit-review-publish`, and `auto-approve` skip/publish behavior so duplicate publication is still suppressed under the same `reviewOutputKey`.\n\n## Verification\n\nRan `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts`, which passed and confirmed explicit mention approvals, automatic clean approvals, dep-bump approvals, and duplicate-suppression assertions now use the shared visible body. Ran the slice verification command `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts`, which passed and preserved the helper/idempotency contract plus adjacent MCP/comment-server and mention-prompt coverage. Ran `bun run tsc --noEmit`, which exited successfully with no diagnostics. The existing observability surfaces remain inspectable through the handler test assertions around `review-output-idempotency`, `explicit-review-publish`, `auto-approve`, and published-marker extraction via `extractReviewOutputKey(...)`.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 11300ms |\n| 2 | `bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts` | 0 | ✅ pass | 11307ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 10899ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/mention.ts`\n- `src/handlers/mention.test.ts`\n- `src/handlers/review.ts`\n- `src/handlers/review.test.ts`\n",
       "description": "- Why: The milestone demo is only true when both explicit `@kodiai review` approvals and automatic clean-review approvals publish the same visible evidence-backed body.\n  - Do: Thread deterministic lane facts into the shared builder from `mention.ts` and `review.ts`, preserve the existing publish/idempotency gates, and keep dep-bump approval confidence visible as evidence instead of regressing to marker-only approvals.\n  - Done when: Handler tests prove both lanes publish the shared approval body with marker + evidence lines and still skip duplicate publication when output already exists.",
       "estimate": "2h",
       "files": [
@@ -20207,6 +20215,39 @@
       "verdict": "✅ pass",
       "duration_ms": 8003,
       "created_at": "2026-04-13T14:28:13.330Z"
+    },
+    {
+      "id": 442,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 11300,
+      "created_at": "2026-04-13T14:39:43.565Z"
+    },
+    {
+      "id": 443,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun test ./src/handlers/review-idempotency.test.ts ./src/handlers/mention.test.ts ./src/handlers/review.test.ts ./src/execution/mcp/comment-server.test.ts ./src/execution/mention-prompt.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 11307,
+      "created_at": "2026-04-13T14:39:43.566Z"
+    },
+    {
+      "id": 444,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M049",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 10899,
+      "created_at": "2026-04-13T14:39:43.566Z"
     }
   ]
 }

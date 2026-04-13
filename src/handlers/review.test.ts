@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
   ContributorProfile,
@@ -1457,18 +1457,173 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(executeCount).toBe(1);
     expect(approveCount).toBe(1);
 
-    const marker = buildReviewOutputMarker(
-      // deterministically built inside handler from these fixture fields
-      // (we assert by inclusion instead of exact key string here)
-      "kodiai-review-output:v1:inst-42:acme/repo:pr-101:action-review_requested:delivery-delivery-123:head-abcdef1234567890",
-    );
+    const expectedReviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
 
-    expect(createdReviews[0]?.body ?? "").toContain("<!-- kodiai:review-output-key:");
-    expect(createdReviews[0]?.body ?? "").toContain("kodiai-review-output:v1");
-    // Ensure marker format stays stable (no visible text)
-    expect(createdReviews[0]?.body ?? "").toContain("-->");
-    // Silence unused var lint (marker is illustrative; body checks are the assertion)
-    expect(marker).toContain("kodiai:review-output-key");
+    const marker = buildReviewOutputMarker(expectedReviewOutputKey);
+
+    expect(createdReviews[0]?.body ?? "").toContain("Decision: APPROVE");
+    expect(createdReviews[0]?.body ?? "").toContain("Issues: none");
+    expect(createdReviews[0]?.body ?? "").toContain("Evidence:");
+    expect(createdReviews[0]?.body ?? "").toContain("- Review prompt covered 1 changed file.");
+    expect(createdReviews[0]?.body ?? "").not.toContain("Merge Confidence:");
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(expectedReviewOutputKey);
+    // Ensure marker format stays stable inside the visible approval body.
+    expect(createdReviews[0]?.body ?? "").toContain(marker);
+  });
+
+  test("auto-approve includes dep-bump merge confidence inside the shared approval body", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+
+    await Bun.write(
+      join(workspaceFixture.dir, "package.json"),
+      JSON.stringify({
+        name: "review-fixture",
+        private: true,
+        dependencies: { lodash: "4.17.21" },
+      }, null, 2),
+    );
+    await $`git -C ${workspaceFixture.dir} add package.json`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "add dependency bump fixture"`.quiet();
+
+    let approveCount = 0;
+    const createdReviews: Array<{ body?: string }> = [];
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = mock(async () => new Response("Not Found", { status: 404 })) as unknown as typeof globalThis.fetch;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async ({ body }: { body?: string }) => {
+            approveCount++;
+            createdReviews.push({ body });
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        securityAdvisories: {
+          listGlobalAdvisories: async () => ({ data: [] }),
+        },
+        repos: {
+          listReleases: async () => ({ data: [] }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-dep-bump-approve",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger() as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildReviewRequestedEvent({
+          requested_reviewer: { login: "kodiai[bot]" },
+          pull_request: {
+            number: 101,
+            draft: false,
+            title: "Bump lodash from 4.17.20 to 4.17.21",
+            body: "",
+            commits: 0,
+            additions: 20,
+            deletions: 0,
+            user: { login: "dependabot[bot]" },
+            base: { ref: "main", sha: "mainsha" },
+            head: {
+              sha: "abcdef1234567890",
+              ref: "dependabot/npm_and_yarn/lodash-4.17.21",
+              repo: {
+                full_name: "acme/repo",
+                name: "repo",
+                owner: { login: "acme" },
+              },
+            },
+            labels: [{ name: "dependencies" }],
+          },
+        }),
+      );
+    } finally {
+      globalThis.fetch = previousFetch;
+      await workspaceFixture.cleanup();
+    }
+
+    expect(approveCount).toBe(1);
+    expect(createdReviews[0]?.body ?? "").toContain("Decision: APPROVE");
+    expect(createdReviews[0]?.body ?? "").toContain("Issues: none");
+    expect(createdReviews[0]?.body ?? "").toContain("Evidence:");
+    expect(createdReviews[0]?.body ?? "").toContain("- Review prompt covered 2 changed files.");
+    expect(createdReviews[0]?.body ?? "").toContain("Merge Confidence: High");
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(
+      buildReviewOutputKey({
+        installationId: 42,
+        owner: "acme",
+        repo: "repo",
+        prNumber: 101,
+        action: "review_requested",
+        deliveryId: "delivery-123",
+        headSha: "abcdef1234567890",
+      }),
+    );
   });
 
   test("does not auto-approve when review execution published output", async () => {

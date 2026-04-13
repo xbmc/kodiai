@@ -62,7 +62,6 @@ import {
   buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
-import { renderApprovalConfidence } from "../lib/review-utils.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -2287,13 +2286,22 @@ export function createMentionHandler(deps: {
                 },
                 "Attempting explicit mention review approval publish",
               );
+              const approvalEvidence = [
+                typeof explicitReviewPromptFileCount === "number"
+                  ? `Review prompt covered ${explicitReviewPromptFileCount} changed file${explicitReviewPromptFileCount === 1 ? "" : "s"}.`
+                  : null,
+                result.usedRepoInspectionTools === true
+                  ? "Repo inspection tools were used to verify the changed code."
+                  : null,
+              ].filter((line): line is string => Boolean(line));
+
               await publishOctokit.rest.pulls.createReview({
                 owner: mention.owner,
                 repo: mention.repo,
                 pull_number: mention.prNumber,
                 event: "APPROVE",
                 body: sanitizeOutgoingMentions(
-                  buildApprovedReviewBody({ reviewOutputKey }),
+                  buildApprovedReviewBody({ reviewOutputKey, evidence: approvalEvidence }),
                   [appSlug, "claude", "kodai"],
                 ),
               });
