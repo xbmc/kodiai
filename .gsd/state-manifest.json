@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T00:00:00.492Z",
+  "exported_at": "2026-04-13T00:15:23.014Z",
   "milestones": [
     {
       "id": "M001",
@@ -13456,19 +13456,29 @@
       "milestone_id": "M048",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Ship the M048 S01 operator latency verifier",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Shipped the M048 S01 operator latency verifier with strict Azure phase-timing normalization and JSON/human report output.",
+      "status": "complete",
+      "one_liner": "Shipped the M048 S01 operator latency verifier with strict Azure phase-timing normalization and JSON/human report output.",
+      "narrative": "Added `src/review-audit/phase-timing-evidence.ts` to normalize Azure `Review phase timing summary` rows into the same six required phases used on Review Details, dedupe duplicate rows, enforce strict `reviewOutputKey`/`deliveryId` correlation, preserve timeout and unavailable phase states, and fail with named invalid/correlation statuses instead of going false-green on malformed payloads. Added `scripts/verify-m048-s01.ts` as the operator-facing verifier with `--review-output-key`, optional `--delivery-id`, and `--json` support; it derives the effective delivery id from the review key when possible, keeps the query bounded to one live review by filtering Azure on `reviewOutputKey`, `deliveryId`, and the exact phase-summary message, and renders both human and machine-readable reports with total wall-clock time, phase matrix data, and truthful unavailable states. Added focused regression suites for the normalizer and CLI, updated `src/review-audit/log-analytics.ts` and its tests with a narrow message filter, wired `verify:m048:s01` into `package.json`, and recorded the verifier correlation strategy as decision D106.",
+      "verification_result": "Verified the implementation with the exact slice test command `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`, which passed with 144 tests green. Verified type safety with `bun run tsc --noEmit`, which passed cleanly. Exercised the live operator command against a real Azure-discovered review output key; the verifier returned the expected named failure state `m048_s01_no_matching_phase_timing`, showing that the CLI is querying the right live correlation tuple and surfacing missing live phase logs truthfully rather than passing falsely.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T00:15:22.972Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "The live Azure verification command currently returns `m048_s01_no_matching_phase_timing` for a recent real `reviewOutputKey` because Azure contains recent `reviewOutputKey`/publication logs but no deployed `Review phase timing summary` rows yet. Local code, tests, and TypeScript all pass; live proof will require a post-deploy review run that emits the new structured phase log.",
+      "key_files": [
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts",
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "src/review-audit/log-analytics.ts",
+        "src/review-audit/log-analytics.test.ts",
+        "package.json"
+      ],
+      "key_decisions": [
+        "D106 — Query Azure Log Analytics by reviewOutputKey, effective deliveryId, and the exact phase-summary message, then emit named no-match/correlation-mismatch/invalid-payload states instead of merging drifted or partial rows."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M048\nkey_files:\n  - src/review-audit/phase-timing-evidence.ts\n  - src/review-audit/phase-timing-evidence.test.ts\n  - scripts/verify-m048-s01.ts\n  - scripts/verify-m048-s01.test.ts\n  - src/review-audit/log-analytics.ts\n  - src/review-audit/log-analytics.test.ts\n  - package.json\nkey_decisions:\n  - D106 — Query Azure Log Analytics by reviewOutputKey, effective deliveryId, and the exact phase-summary message, then emit named no-match/correlation-mismatch/invalid-payload states instead of merging drifted or partial rows.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T00:15:22.971Z\nblocker_discovered: false\n---\n\n# T03: Shipped the M048 S01 operator latency verifier with strict Azure phase-timing normalization and JSON/human report output.\n\n**Shipped the M048 S01 operator latency verifier with strict Azure phase-timing normalization and JSON/human report output.**\n\n## What Happened\n\nAdded `src/review-audit/phase-timing-evidence.ts` to normalize Azure `Review phase timing summary` rows into the same six required phases used on Review Details, dedupe duplicate rows, enforce strict `reviewOutputKey`/`deliveryId` correlation, preserve timeout and unavailable phase states, and fail with named invalid/correlation statuses instead of going false-green on malformed payloads. Added `scripts/verify-m048-s01.ts` as the operator-facing verifier with `--review-output-key`, optional `--delivery-id`, and `--json` support; it derives the effective delivery id from the review key when possible, keeps the query bounded to one live review by filtering Azure on `reviewOutputKey`, `deliveryId`, and the exact phase-summary message, and renders both human and machine-readable reports with total wall-clock time, phase matrix data, and truthful unavailable states. Added focused regression suites for the normalizer and CLI, updated `src/review-audit/log-analytics.ts` and its tests with a narrow message filter, wired `verify:m048:s01` into `package.json`, and recorded the verifier correlation strategy as decision D106.\n\n## Verification\n\nVerified the implementation with the exact slice test command `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts`, which passed with 144 tests green. Verified type safety with `bun run tsc --noEmit`, which passed cleanly. Exercised the live operator command against a real Azure-discovered review output key; the verifier returned the expected named failure state `m048_s01_no_matching_phase_timing`, showing that the CLI is querying the right live correlation tuple and surfacing missing live phase logs truthfully rather than passing falsely.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts` | 0 | ✅ pass | 4498ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 9319ms |\n| 3 | `bun run verify:m048:s01 -- --review-output-key <live reviewOutputKey> --json` | 1 | ❌ fail | 1933ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe live Azure verification command currently returns `m048_s01_no_matching_phase_timing` for a recent real `reviewOutputKey` because Azure contains recent `reviewOutputKey`/publication logs but no deployed `Review phase timing summary` rows yet. Local code, tests, and TypeScript all pass; live proof will require a post-deploy review run that emits the new structured phase log.\n\n## Files Created/Modified\n\n- `src/review-audit/phase-timing-evidence.ts`\n- `src/review-audit/phase-timing-evidence.test.ts`\n- `scripts/verify-m048-s01.ts`\n- `scripts/verify-m048-s01.test.ts`\n- `src/review-audit/log-analytics.ts`\n- `src/review-audit/log-analytics.test.ts`\n- `package.json`\n",
       "description": "Turn the structured log evidence into a repeatable operator check that can answer one question after a live review: where did the time go for this exact `reviewOutputKey`? The verifier should stay narrow, deterministic, and keyed to one real review run instead of sampling broad history.\n\n## Failure Modes\n\n| Dependency | On error | On timeout | On malformed response |\n|------------|----------|-----------|----------------------|\n| Azure Log Analytics query helpers | Return a named unavailable state and keep the verifier report truthful about missing live evidence. | Respect explicit query time bounds and fail with a named Azure-unavailable status instead of hanging. | Reject rows whose `reviewOutputKey` / `deliveryId` do not match the requested review rather than merging unrelated evidence. |\n| `scripts/verify-m048-s01.ts` CLI args | Exit non-zero with a named invalid-arg status for missing `--review-output-key` or contradictory filters. | N/A — local CLI parsing only. | Treat malformed JSON/human report shape as test failures, not soft warnings. |\n| Review-phase log payloads | Surface missing required phases as failing checks or explicit unavailable evidence; do not invent a passing phase matrix from partial rows. | Keep the report readable when the underlying review timed out — timeout is data, not a verifier crash. | Reject unknown phase names or missing totals so the proof surface cannot go false-green. |\n\n## Load Profile\n\n- **Shared resources**: Azure Log Analytics query budget and one bounded verifier report per requested live review.\n- **Per-operation cost**: one log query by `reviewOutputKey` / `deliveryId`, one normalization pass, and one human/JSON render.\n- **10x breakpoint**: wide log scans and row duplication become the problem before local compute does, so the script should stay keyed to a single review and bounded timespan.\n\n## Negative Tests\n\n- **Malformed inputs**: missing `--review-output-key`, contradictory `--delivery-id`, malformed Azure rows, or unknown phase names.\n- **Error paths**: Azure unavailable, no matching logs, mismatched correlation ids, and live timeout reviews still report truthful evidence states.\n- **Boundary conditions**: one matching live review with all six phases, partial evidence with explicit unavailable phases, and duplicate rows that must collapse into one normalized report.\n\n## Steps\n\n1. Add `src/review-audit/phase-timing-evidence.ts` plus focused tests to normalize structured review-phase timing rows from Azure Log Analytics and enforce correlation by `reviewOutputKey` / `deliveryId`.\n2. Create `scripts/verify-m048-s01.ts` with `--review-output-key`, optional `--delivery-id`, and `--json` handling, plus a report shape that surfaces the required phase matrix, total wall-clock time, and unavailable states.\n3. Add `scripts/verify-m048-s01.test.ts` for happy-path normalization, missing/invalid arg handling, malformed/mismatched log rows, and timeout/unavailable evidence cases.\n4. Wire `verify:m048:s01` into `package.json` and keep the command scoped to a single live review so operators can paste one key after triggering `@kodiai review`.\n\n## Must-Haves\n\n- [ ] `verify:m048:s01` resolves one live review by `reviewOutputKey` and reports the same six required phases used on Review Details.\n- [ ] Azure/log unavailability and correlation drift surface as named verifier states instead of false-green passes.\n- [ ] The verifier has focused regression tests plus package-script wiring and supports machine-readable `--json` output for milestone proof.",
       "estimate": "90m",
       "files": [
@@ -14757,6 +14767,18 @@
       "decision": "How GitHub Review Details should represent the publication phase when the comment itself is the publication being timed.",
       "choice": "Render Review Details publication timing as a degraded snapshot captured before the comment write completes, while keeping exact final publication timing in the structured phase log/verifier surfaces.",
       "rationale": "A single Review Details write cannot know its own final end-to-end publication duration without an additional follow-up update. Marking the publication line as degraded with elapsed time and explicit wording keeps the GitHub surface truthful and fail-open, while the structured completion log and later verifier provide the exact finalized publication timing.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 140,
+      "id": "D106",
+      "when_context": "M048 S01 T03",
+      "scope": "observability",
+      "decision": "How the M048 S01 operator phase-timing verifier correlates live evidence",
+      "choice": "Query Azure Log Analytics by reviewOutputKey, effective deliveryId, and the exact phase-summary message, then report named no-match/correlation-mismatch/invalid-payload states instead of merging partial or drifted rows.",
+      "rationale": "The operator proof surface must answer where one exact review spent time without sampling broad history or going false-green on unrelated, missing, or malformed rows. Tight correlation plus named degraded states keeps the verifier deterministic and truthful even when live evidence is absent or incomplete.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -19239,6 +19261,39 @@
       "verdict": "✅ pass",
       "duration_ms": 12551,
       "created_at": "2026-04-13T00:00:00.453Z"
+    },
+    {
+      "id": 409,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun test ./src/jobs/queue.test.ts ./src/execution/executor.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4498,
+      "created_at": "2026-04-13T00:15:22.972Z"
+    },
+    {
+      "id": 410,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9319,
+      "created_at": "2026-04-13T00:15:22.972Z"
+    },
+    {
+      "id": 411,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M048",
+      "command": "bun run verify:m048:s01 -- --review-output-key <live reviewOutputKey> --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 1933,
+      "created_at": "2026-04-13T00:15:22.972Z"
     }
   ]
 }

@@ -7,16 +7,18 @@ import {
 } from "./log-analytics.ts";
 
 describe("review audit log analytics adapter", () => {
-  test("buildReviewAuditLogQuery creates a bounded query with delivery and review-output filters", () => {
+  test("buildReviewAuditLogQuery creates a bounded query with delivery, review-output, and message filters", () => {
     const query = buildReviewAuditLogQuery({
       reviewOutputKey: "rok-123",
       deliveryId: "delivery-123",
+      messageContains: "Review phase timing summary",
       limit: 50,
     });
 
     expect(query).toContain("ContainerAppConsoleLogs_CL");
     expect(query).toContain('Log_s has "rok-123"');
     expect(query).toContain('Log_s has "delivery-123"');
+    expect(query).toContain('Log_s has "Review phase timing summary"');
     expect(query).toContain("take 50");
   });
 

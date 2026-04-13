@@ -64,7 +64,7 @@
   - Verify: `bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`
   - Done when: Review Details shows queue wait, workspace preparation, retrieval/context assembly, executor handoff, remote runtime, and publication in a stable order on both standalone and append-to-summary paths.
 
-- [ ] **T03: Ship the M048 S01 operator latency verifier** `est:90m`
+- [x] **T03: Ship the M048 S01 operator latency verifier** `est:90m`
   - Why: S01 is not complete until an operator can answer “where did the time go for this review output key?” from a repeatable proof command instead of raw log archaeology.
   - Files: `src/review-audit/log-analytics.ts`, `src/review-audit/phase-timing-evidence.ts`, `src/review-audit/phase-timing-evidence.test.ts`, `scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`, `package.json`
   - Do: Normalize structured phase-timing rows from Azure Log Analytics, build `verify:m048:s01` around `--review-output-key` with optional `--delivery-id`, and keep the report scoped to one live review with named unavailable/error states on correlation drift.
