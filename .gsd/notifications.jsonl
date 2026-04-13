@@ -344,3 +344,4 @@
 {"id":"1453dde8-688e-4942-bf76-9f9e8fa17841","ts":"2026-04-13T14:39:56.918Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
 {"id":"7ed3c814-0c84-422e-acd9-ca79a82f45ea","ts":"2026-04-13T14:50:54.829Z","severity":"info","message":"Committed: feat: Aligned approve-via-comment and prompt guidance to the visible cl…","source":"notify","read":false}
 {"id":"c299ff92-8f29-4712-978d-81aaf0b4f6fb","ts":"2026-04-13T14:50:55.015Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"331a9a9f-fce0-4536-850e-5a270e1d4cec","ts":"2026-04-13T15:29:59.274Z","severity":"info","message":"Committed: feat: Added PR-scoped review-output artifact collection plus visible AP…","source":"notify","read":false}

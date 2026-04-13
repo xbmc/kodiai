@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-13T15:29:53.795Z",
+  "exported_at": "2026-04-13T15:40:54.390Z",
   "milestones": [
     {
       "id": "M001",
@@ -14034,19 +14034,26 @@
       "milestone_id": "M049",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Build the live M049/S02 verifier command",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Added the read-only `verify:m049:s02` explicit clean-approval verifier and its contract tests.",
+      "status": "complete",
+      "one_liner": "Added the read-only `verify:m049:s02` explicit clean-approval verifier and its contract tests.",
+      "narrative": "I added `scripts/verify-m049-s02.test.ts` first and verified the red state while the verifier module and package script were still missing. The new tests pin CLI parsing, invalid-argument rejection for missing/non-explicit/repo-mismatched keys, the named GitHub proof failure branches, Azure unavailable versus audit mismatch behavior, the accepted clean publish resolutions, the human report surface, and the `package.json` script wiring.\n\nI then implemented `scripts/verify-m049-s02.ts` as a read-only explicit clean-approval verifier using the existing GitHub App bootstrap pattern from the earlier live verifiers plus the new exact-match artifact helpers from T01. The command now requires `--review-output-key`, defaults `--repo` to `xbmc/kodiai`, rejects malformed or non-`mention-review` keys before any live lookup, scopes GitHub reads to the repo/PR encoded in the key, evaluates exact visible-artifact proof, and exposes stable named statuses for missing GitHub access, GitHub unavailability, no match, duplicates, wrong surface, wrong review state, body drift, Azure unavailability, audit unavailability, and audit mismatch.\n\nFor the success path, the verifier joins GitHub proof to Azure Log Analytics evidence with `queryReviewAuditLogs(...)` plus `buildExplicitLaneEvidenceFromLogs(...)`, and only returns success when the publish resolution is one of `approval-bridge`, `idempotency-skip`, or `duplicate-suppressed`. Both JSON and human output now carry the required observability fields: `status_code`, per-surface `artifactCounts`, the operator-facing review URL and review state, body-contract booleans, Azure source availability, matched-row counts, `publishResolution`, and `issues[]`. I also wired `package.json` with `verify:m049:s02` and recorded D119 for the public status-surface mapping decision.",
+      "verification_result": "Ran the focused verifier suite with the explicit Azure evidence tests and all checks passed. Ran the slice-level artifact/evidence/verifier test command and all three suites passed. Ran `bun run tsc --noEmit` and the workspace typecheck passed cleanly. Finally exercised the live command with a syntactically valid explicit `reviewOutputKey`; the verifier failed closed with `m049_s02_github_unavailable` after GitHub returned 403 during review-comment collection, which confirms the live degradation path but leaves the final operational proof pending working repo access and a real clean approval key.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-13T15:40:54.362Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "The live sample verifier run is still blocked by current GitHub access for `xbmc/kodiai`: GitHub returned 403 while listing PR review comments, so the command failed closed with `m049_s02_github_unavailable` before artifact proof or Azure correlation could complete. A fresh real explicit clean `reviewOutputKey` plus working GitHub App access is still required for the final operational slice proof.",
+      "key_files": [
+        "scripts/verify-m049-s02.ts",
+        "scripts/verify-m049-s02.test.ts",
+        "package.json",
+        ".gsd/DECISIONS.md"
+      ],
+      "key_decisions": [
+        "D119 — Map low-level invalid artifact metadata into the stable operator-facing wrong_review_state/body_drift statuses while preserving raw issues plus artifact/bodyContract report fields."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M049\nkey_files:\n  - scripts/verify-m049-s02.ts\n  - scripts/verify-m049-s02.test.ts\n  - package.json\n  - .gsd/DECISIONS.md\nkey_decisions:\n  - D119 — Map low-level invalid artifact metadata into the stable operator-facing wrong_review_state/body_drift statuses while preserving raw issues plus artifact/bodyContract report fields.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-13T15:40:54.362Z\nblocker_discovered: false\n---\n\n# T02: Added the read-only `verify:m049:s02` explicit clean-approval verifier and its contract tests.\n\n**Added the read-only `verify:m049:s02` explicit clean-approval verifier and its contract tests.**\n\n## What Happened\n\nI added `scripts/verify-m049-s02.test.ts` first and verified the red state while the verifier module and package script were still missing. The new tests pin CLI parsing, invalid-argument rejection for missing/non-explicit/repo-mismatched keys, the named GitHub proof failure branches, Azure unavailable versus audit mismatch behavior, the accepted clean publish resolutions, the human report surface, and the `package.json` script wiring.\n\nI then implemented `scripts/verify-m049-s02.ts` as a read-only explicit clean-approval verifier using the existing GitHub App bootstrap pattern from the earlier live verifiers plus the new exact-match artifact helpers from T01. The command now requires `--review-output-key`, defaults `--repo` to `xbmc/kodiai`, rejects malformed or non-`mention-review` keys before any live lookup, scopes GitHub reads to the repo/PR encoded in the key, evaluates exact visible-artifact proof, and exposes stable named statuses for missing GitHub access, GitHub unavailability, no match, duplicates, wrong surface, wrong review state, body drift, Azure unavailability, audit unavailability, and audit mismatch.\n\nFor the success path, the verifier joins GitHub proof to Azure Log Analytics evidence with `queryReviewAuditLogs(...)` plus `buildExplicitLaneEvidenceFromLogs(...)`, and only returns success when the publish resolution is one of `approval-bridge`, `idempotency-skip`, or `duplicate-suppressed`. Both JSON and human output now carry the required observability fields: `status_code`, per-surface `artifactCounts`, the operator-facing review URL and review state, body-contract booleans, Azure source availability, matched-row counts, `publishResolution`, and `issues[]`. I also wired `package.json` with `verify:m049:s02` and recorded D119 for the public status-surface mapping decision.\n\n## Verification\n\nRan the focused verifier suite with the explicit Azure evidence tests and all checks passed. Ran the slice-level artifact/evidence/verifier test command and all three suites passed. Ran `bun run tsc --noEmit` and the workspace typecheck passed cleanly. Finally exercised the live command with a syntactically valid explicit `reviewOutputKey`; the verifier failed closed with `m049_s02_github_unavailable` after GitHub returned 403 during review-comment collection, which confirms the live degradation path but leaves the final operational proof pending working repo access and a real clean approval key.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m049-s02.test.ts ./src/review-audit/evidence-correlation.test.ts` | 0 | ✅ pass | 76ms |\n| 2 | `bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts` | 0 | ✅ pass | 68ms |\n| 3 | `bun run tsc --noEmit` | 0 | ✅ pass | 7979ms |\n| 4 | `bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json` | 1 | ❌ fail | 1316ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nThe live sample verifier run is still blocked by current GitHub access for `xbmc/kodiai`: GitHub returned 403 while listing PR review comments, so the command failed closed with `m049_s02_github_unavailable` before artifact proof or Azure correlation could complete. A fresh real explicit clean `reviewOutputKey` plus working GitHub App access is still required for the final operational slice proof.\n\n## Files Created/Modified\n\n- `scripts/verify-m049-s02.ts`\n- `scripts/verify-m049-s02.test.ts`\n- `package.json`\n- `.gsd/DECISIONS.md`\n",
       "description": "**Slice:** S02 — Live proof and auditability verification\n**Milestone:** M049\n\n## Description\n\nBuild the live `verify:m049:s02` command that consumes the new GitHub artifact helper, reuses the existing GitHub App / Azure Log Analytics access patterns, and emits truthful machine/human proof for one explicit clean `@kodiai review` artifact. Keep this verifier read-only: it must inspect live GitHub/Azure state, never publish or mutate GitHub surfaces.\n\n## Steps\n\n1. Add `scripts/verify-m049-s02.test.ts` first to pin CLI parsing, named status codes, wrong-lane rejection, missing GitHub access, no-match / duplicate / wrong-surface / wrong-review-state / body-contract drift / audit-correlation failure branches, and the success report shape.\n2. Implement `scripts/verify-m049-s02.ts` using the GitHub App env-loading + repo parsing pattern from `scripts/verify-m044-s01.ts`, but require `--review-output-key` and reject any parsed action other than `mention-review`.\n3. Join the GitHub artifact result to Azure log evidence with `queryReviewAuditLogs(...)` and `buildExplicitLaneEvidenceFromLogs(...)`, treating `approval-bridge`, `idempotency-skip`, and `duplicate-suppressed` as clean audit resolutions while keeping missing Azure access or correlation drift as named failures instead of silent passes.\n4. Render both human and JSON output with the operator-facing review URL, artifact counts by surface, review state, body-contract verdicts, publish resolution, and `issues[]`, then wire `package.json` to `verify:m049:s02`.\n5. Re-run the focused verifier tests plus `bun run tsc --noEmit`, keeping the command read-only and ready for a fresh live proof run with a real explicit clean `reviewOutputKey`.\n\n## Must-Haves\n\n- [ ] `verify:m049:s02` requires `--review-output-key`, accepts `--repo` and `--json`, and rejects non-explicit keys before any live lookup.\n- [ ] Success only occurs when GitHub proves exactly one visible artifact, that artifact is an `APPROVED` review with the shared visible body, and Azure logs correlate the same key to a clean explicit publish resolution.\n- [ ] Failures degrade truthfully with stable named status codes for GitHub access gaps, missing/multiple artifacts, wrong surface/state, body drift, and audit unavailability/correlation mismatch.",
       "estimate": "2h",
       "files": [
@@ -15490,6 +15497,18 @@
       "decision": "How M049/S02 should prove live clean-approval visibility and auditability",
       "choice": "Add a dedicated explicit-lane live verifier that combines exact `reviewOutputKey` artifact collection/body validation with existing Azure publish-resolution correlation, and leave publisher handlers unchanged unless live proof shows drift.",
       "rationale": "S01 already changed the publish contract and proved it locally. S02’s missing seam is operational proof: exact per-surface GitHub counts, visible-body validation, and reviewOutputKey-to-delivery correlation against Azure logs. A verifier-only implementation reuses existing identities and audit plumbing without widening handler scope.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 153,
+      "id": "D119",
+      "when_context": "M049/S02/T02",
+      "scope": "observability",
+      "decision": "How the M049/S02 explicit-approval verifier exposes low-level GitHub artifact proof failures",
+      "choice": "Map low-level invalid artifact metadata into the stable operator-facing statuses wrong_review_state or body_drift while preserving the raw issues plus artifact/bodyContract fields in the report.",
+      "rationale": "The slice contract requires stable named failure states for wrong surface/state and body drift. Preserving the underlying proof issues and artifact/bodyContract details keeps debugging fidelity without expanding the public status-code surface.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -20445,6 +20464,50 @@
       "verdict": "❌ fail",
       "duration_ms": 4,
       "created_at": "2026-04-13T15:29:53.766Z"
+    },
+    {
+      "id": 452,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun test ./scripts/verify-m049-s02.test.ts ./src/review-audit/evidence-correlation.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 76,
+      "created_at": "2026-04-13T15:40:54.362Z"
+    },
+    {
+      "id": 453,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun test ./src/review-audit/review-output-artifacts.test.ts ./src/review-audit/evidence-correlation.test.ts ./scripts/verify-m049-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 68,
+      "created_at": "2026-04-13T15:40:54.362Z"
+    },
+    {
+      "id": 454,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 7979,
+      "created_at": "2026-04-13T15:40:54.362Z"
+    },
+    {
+      "id": 455,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M049",
+      "command": "bun run verify:m049:s02 -- --repo xbmc/kodiai --review-output-key kodiai-review-output:v1:inst-42:xbmc/kodiai:pr-101:action-mention-review:delivery-delivery-101:head-head-101 --json",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 1316,
+      "created_at": "2026-04-13T15:40:54.362Z"
     }
   ]
 }

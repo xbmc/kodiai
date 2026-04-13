@@ -55,7 +55,7 @@
   - Verify: `bun test ./src/review-audit/review-output-artifacts.test.ts`
   - Done when: Focused helper tests prove exact per-surface counts, preserved artifact metadata, shared-body validation, and deterministic failures for duplicate, wrong-surface, or wrong-state matches.
 
-- [ ] **T02: Build the live M049/S02 verifier command** `est:2h`
+- [x] **T02: Build the live M049/S02 verifier command** `est:2h`
   - Why: The milestone demo is only operationally true when a read-only command can prove a real explicit clean approval still publishes one visible GitHub review body and correlates that same body to Azure audit evidence.
   - Files: `scripts/verify-m049-s02.ts`, `scripts/verify-m049-s02.test.ts`, `package.json`
   - Do: Implement `verify:m049:s02` around the new GitHub helper, reuse the existing GitHub App and Azure log query patterns, reject non-explicit keys, emit review URL/body-contract/audit fields, and map all access or correlation failures to stable named statuses.
