@@ -251,6 +251,33 @@ describe("verify-m048-s02", () => {
     }));
   });
 
+  test("main exits zero with a named skipped status when compare keys are passed without values", async () => {
+    const { main } = await loadModule();
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+
+    const exitCode = await main([
+      "--baseline-review-output-key",
+      "--candidate-review-output-key",
+      "--json",
+    ], {
+      stdout: { write: (chunk: string) => void stdoutChunks.push(chunk) },
+      stderr: { write: (chunk: string) => void stderrChunks.push(chunk) },
+      evaluate: async () => {
+        throw new Error("should not be called");
+      },
+    });
+
+    const report = JSON.parse(stdoutChunks.join(""));
+    expect(exitCode).toBe(0);
+    expect(stderrChunks.join(" ")).toBe("");
+    expect(report.status_code).toBe("m048_s02_skipped_missing_review_output_keys");
+    expect(report.success).toBe(true);
+    expect(report.issues).toContain(
+      "No baseline/candidate review output keys provided; skipped live latency compare verification.",
+    );
+  });
+
   test("main rejects empty review keys and contradictory delivery overrides instead of running a broad query", async () => {
     const { main } = await loadModule();
     const stdoutChunks: string[] = [];

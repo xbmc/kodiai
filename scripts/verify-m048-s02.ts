@@ -15,6 +15,7 @@ const TARGET_LATENCY_PHASES = [
 
 export type M048S02StatusCode =
   | "m048_s02_ok"
+  | "m048_s02_skipped_missing_review_output_keys"
   | "m048_s02_invalid_arg"
   | "m048_s02_inconclusive"
   | "m048_s02_no_improvement"
@@ -700,6 +701,34 @@ export async function main(
 
   if (options.help) {
     stdout.write(`${usage()}\n`);
+    return 0;
+  }
+
+  const baselineReviewOutputKeyMissingValue = args.includes("--baseline-review-output-key")
+    && normalizeIdentifier(options.baselineReviewOutputKey) === null;
+  const candidateReviewOutputKeyMissingValue = args.includes("--candidate-review-output-key")
+    && normalizeIdentifier(options.candidateReviewOutputKey) === null;
+
+  if (baselineReviewOutputKeyMissingValue && candidateReviewOutputKeyMissingValue) {
+    const report = createBaseReport({
+      statusCode: "m048_s02_skipped_missing_review_output_keys",
+      success: true,
+      baseline: createPlaceholderS01Report({
+        reviewOutputKey: null,
+        deliveryId: normalizeIdentifier(options.baselineDeliveryId),
+        statusCode: "m048_s01_skipped_missing_review_output_key",
+        success: true,
+      }),
+      candidate: createPlaceholderS01Report({
+        reviewOutputKey: null,
+        deliveryId: normalizeIdentifier(options.candidateDeliveryId),
+        statusCode: "m048_s01_skipped_missing_review_output_key",
+        success: true,
+      }),
+      issues: ["No baseline/candidate review output keys provided; skipped live latency compare verification."],
+    });
+
+    stdout.write(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderM048S02Report(report));
     return 0;
   }
 

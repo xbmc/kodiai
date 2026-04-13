@@ -5,7 +5,8 @@ review:
   requestUiRereviewTeamOnOpen: true
   profile: strict
   minConfidence: 70
-  onSynchronize: true
+  triggers:
+    onSynchronize: true
   suppressions:
     - pattern: "glob:*"
       paths:

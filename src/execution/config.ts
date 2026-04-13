@@ -564,6 +564,53 @@ export interface LoadConfigResult {
   warnings: ConfigWarning[];
 }
 
+function isConfigRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function describeConfigValue(value: unknown): string {
+  if (typeof value === "string") {
+    return JSON.stringify(value);
+  }
+
+  if (
+    typeof value === "number"
+    || typeof value === "boolean"
+    || value === null
+    || value === undefined
+  ) {
+    return String(value);
+  }
+
+  return "present";
+}
+
+function collectConfigCompatibilityWarnings(
+  parsed: unknown,
+  config: RepoConfig,
+): ConfigWarning[] {
+  if (!isConfigRecord(parsed)) {
+    return [];
+  }
+
+  const review = parsed.review;
+  if (!isConfigRecord(review)) {
+    return [];
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(review, "onSynchronize")) {
+    return [];
+  }
+
+  const legacyValue = describeConfigValue(review.onSynchronize);
+  return [{
+    section: "review",
+    issues: [
+      `Legacy review.onSynchronize=${legacyValue} is ignored; effective review.triggers.onSynchronize=${config.review.triggers.onSynchronize}. Move this setting to review.triggers.onSynchronize.`,
+    ],
+  }];
+}
+
 export async function loadRepoConfig(
   workspaceDir: string,
 ): Promise<LoadConfigResult> {
@@ -588,7 +635,10 @@ export async function loadRepoConfig(
   // Pass 1 (fast path): try full schema parse
   const fullResult = repoConfigSchema.safeParse(parsed);
   if (fullResult.success) {
-    return { config: fullResult.data, warnings: [] };
+    return {
+      config: fullResult.data,
+      warnings: collectConfigCompatibilityWarnings(parsed, fullResult.data),
+    };
   }
 
   // Pass 2 (section fallback): parse each section independently
@@ -907,5 +957,8 @@ export async function loadRepoConfig(
     guardrails,
   };
 
-  return { config, warnings };
+  return {
+    config,
+    warnings: [...warnings, ...collectConfigCompatibilityWarnings(parsed, config)],
+  };
 }

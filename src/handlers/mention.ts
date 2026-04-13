@@ -1314,7 +1314,7 @@ export function createMentionHandler(deps: {
         for (const w of warnings) {
           logger.warn(
             { section: w.section, issues: w.issues },
-            "Config section invalid, using defaults",
+            "Config warning detected",
           );
         }
 

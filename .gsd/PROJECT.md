@@ -34,7 +34,16 @@ Fresh milestone-close verification passed:
 
 Requirements `R046` and `R048` are validated, and future contributor-resolution changes should extend `verify:m047` rather than introducing parallel proof paths.
 
-**M048 is active.** S01 is now complete in the repo and projected slice state: queue, handler, and executor seams emit one correlated six-phase `Review phase timing summary`; Review Details renders the same ordered phase matrix; and `scripts/verify-m048-s01.ts` can normalize Azure evidence by `reviewOutputKey` and `deliveryId`. In unattended automation without an injected `REVIEW_OUTPUT_KEY`, the verifier now returns `m048_s01_skipped_missing_review_output_key` instead of misparsing `--json` as the key. Live production validation of R050 still requires a deployed revision plus a fresh real review that emits the new phase-summary rows.
+**M048 is active with S01 and S02 complete.** The live review path now has one truthful six-phase evidence contract plus the first shipped single-worker latency-reduction pass:
+
+- `src/jobs/queue.ts`, `src/handlers/review.ts`, `src/execution/executor.ts`, and `src/review-audit/phase-timing-evidence.ts` emit and normalize one correlated six-phase `Review phase timing summary` keyed by `deliveryId` and `reviewOutputKey`.
+- GitHub Review Details renders the same ordered phase matrix operators query in Azure via `scripts/verify-m048-s01.ts`.
+- `src/jobs/aca-launcher.ts` now uses a shared 5s ACA poll cadence and debug-only malformed/unknown status drift diagnostics without moving the `remote runtime` timing boundary.
+- `src/execution/executor.ts` and `src/execution/agent-entrypoint.ts` now use a canonical `repoTransport` handoff seam that restores the cheaper review-bundle transport/materialization path while preserving origin-based git behavior, shallow-repo correctness, and malformed-config fail-fast behavior.
+- `scripts/verify-m048-s02.ts` is the operator compare surface for before/after latency proof. It embeds full S01 verifier reports for baseline and candidate, compares only `workspace preparation`, `executor handoff`, and `remote runtime`, and evaluates publication continuity separately so faster runtime results cannot hide GitHub publication regressions.
+- Env-backed M048 verifiers now skip truthfully when required review-key flags are present but empty because automation expanded unset vars to nothing; they no longer misparse the next `--flag` as a live review key.
+
+The remaining M048 work is S03: truthful bounded-review behavior and synchronize-trigger continuity. `R050` is still active because the final live before/after latency proof requires one fresh deployed baseline/candidate review pair inside the verifier's 14-day evidence window.
 
 ## Architecture / Key Patterns
 
@@ -51,8 +60,10 @@ Requirements `R046` and `R048` are validated, and future contributor-resolution 
 - **Calibration fixture proof seam:** `src/contributor/fixture-set.ts`, `src/contributor/xbmc-fixture-refresh.ts`, `src/contributor/xbmc-fixture-snapshot.ts`, and `scripts/verify-m046-s01.ts` separate human-curated contributor truth from generated live evidence so calibration work can rerun against a stable xbmc corpus.
 - **Calibration evaluator seam:** `src/contributor/calibration-evaluator.ts` compares the modeled live incremental path against the intended full-signal path, preserves retained/excluded cohort truth, and reports fidelity/degradation limits instead of fabricating replay evidence.
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
-- **Composable proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, `scripts/verify-m047-s01.ts`, `scripts/verify-m047-s02.ts`, and `scripts/verify-m047.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
 - **Latency evidence seam:** `src/execution/types.ts`, `src/handlers/review.ts`, `src/lib/review-utils.ts`, `src/review-audit/phase-timing-evidence.ts`, and `scripts/verify-m048-s01.ts` share one six-phase timing contract across runtime logs, GitHub Review Details, and Azure-backed operator verification.
+- **Single-worker repo transport seam:** `resolveRepoTransport(...)` is the canonical handoff contract between executor and worker entrypoint; it keeps optimized review-bundle transport, legacy fallback, and malformed-config failure behavior aligned in one place.
+- **Latency compare seam:** `scripts/verify-m048-s02.ts` composes two full S01 reports, computes deltas only over the phases S02 actually targets, and keeps publication continuity as an explicit separate state.
+- **Env-backed verifier skip pattern:** verifier CLI parsers must refuse to consume another `--flag` as a missing value and should emit named skipped statuses when automation passes empty live-proof inputs.
 - **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current example is `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift`.
 - **Explicit `not_applicable` handling:** when a scenario has no truthful surface (for example coarse-fallback Slack/profile continuity), the verifier should emit `not_applicable` instead of inventing synthetic passing evidence.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
@@ -88,5 +99,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: End-to-End Coherence Verification
 - [ ] M048: PR Review Latency Reduction and Bounded Execution
   - [x] S01: Live Phase Timing and Operator Evidence Surfaces
-  - [ ] S02: Single-Worker Path Latency Reduction
+  - [x] S02: Single-Worker Path Latency Reduction
   - [ ] S03: Truthful Bounded Reviews and Synchronize Continuity

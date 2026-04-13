@@ -1049,13 +1049,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 
 ---
 
-## Env-backed verifier args must not consume the next flag when the value is empty (M048/S01 closeout)
+## Env-backed verifier args must not consume the next flag when the value is empty (M048 closeout)
 
-**Context:** `bun run verify:m048:s01 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json` is the slice-level verification command. When `REVIEW_OUTPUT_KEY` is unset in automation, the parser can see `--review-output-key --json` and accidentally treat `--json` as the review key unless it explicitly refuses to consume another flag as a value. That produces a misleading invalid-correlation failure instead of the truthful "no live review key was provided" outcome.
+**Context:** `bun run verify:m048:s01 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json` and `bun run verify:m048:s02 -- --baseline-review-output-key "$BASELINE_REVIEW_OUTPUT_KEY" --candidate-review-output-key "$REVIEW_OUTPUT_KEY" --json` are slice-level verification commands. When those env vars are unset in automation, the parser can see `--review-output-key --json` or adjacent compare flags with empty values and accidentally treat the next `--flag` as the missing key unless it explicitly refuses to consume another flag as a value. That produces misleading invalid-arg/correlation failures instead of the truthful "no live review key was provided" outcome.
 
-**Rule:** For env-backed verifier scripts, option parsers must only consume the next argv token when it is a real value, not another `--flag`. If the live proof flag is present but empty because the env var expanded to nothing, return a named skipped status and do not run the live query. Preserve the fail-loud behavior only for cases where a real live key was supplied and the evidence is missing, drifted, or malformed.
+**Rule:** For env-backed verifier scripts, option parsers must only consume the next argv token when it is a real value, not another `--flag`. If the live proof flag is present but empty because the env var expanded to nothing, return a named skipped status and do not run the live query. Preserve the fail-loud behavior only for cases where a real live key was supplied and the evidence is missing, drifted, malformed, or contradictory.
 
-**Established in:** M048/S01 closeout (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`).
+**Established in:** M048 closeout (`scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`, `scripts/verify-m048-s02.ts`, `scripts/verify-m048-s02.test.ts`).
 
 ---
 

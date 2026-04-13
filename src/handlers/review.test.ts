@@ -7900,6 +7900,196 @@ describe("createReviewHandler author-tier search cache integration", () => {
   });
 });
 
+describe("createReviewHandler synchronize gating", () => {
+  async function runSynchronizeScenario(options: {
+    configYaml: string;
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    await Bun.write(`${workspaceFixture.dir}/.kodiai.yml`, options.configYaml);
+
+    let executeCount = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-synchronize-test",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.synchronize");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        action: "synchronize",
+        pull_request: {
+          number: 101,
+          draft: false,
+          title: "Synchronize trigger test",
+          body: "",
+          commits: 0,
+          additions: 50,
+          deletions: 10,
+          user: { login: "octocat" },
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "abcdef1234567890",
+            ref: "feature/synchronize",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+    return { executeCount, entries };
+  }
+
+  test("synchronize executes when the effective nested trigger is enabled", async () => {
+    const { executeCount } = await runSynchronizeScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "    onSynchronize: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+      ].join("\n") + "\n",
+    });
+
+    expect(executeCount).toBe(1);
+  });
+
+  test("synchronize skips when the effective nested trigger is disabled", async () => {
+    const { executeCount, entries } = await runSynchronizeScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "    onSynchronize: false",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+      ].join("\n") + "\n",
+    });
+
+    expect(executeCount).toBe(0);
+    expect(
+      entries.some((entry) =>
+        entry.data?.gate === "review-trigger"
+        && entry.data?.skipReason === "trigger-disabled",
+      ),
+    ).toBe(true);
+  });
+
+  test("synchronize skips legacy review.onSynchronize intent because the effective trigger stays disabled", async () => {
+    const { executeCount, entries } = await runSynchronizeScenario({
+      configYaml: [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  onSynchronize: true",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+      ].join("\n") + "\n",
+    });
+
+    expect(executeCount).toBe(0);
+    expect(
+      entries.some((entry) =>
+        entry.data?.gate === "review-trigger"
+        && entry.data?.skipReason === "trigger-disabled",
+      ),
+    ).toBe(true);
+    expect(
+      entries.some((entry) =>
+        entry.message === "Config warning detected"
+        && Array.isArray(entry.data?.issues)
+        && (entry.data?.issues as string[]).some((issue) => issue.includes("review.onSynchronize")),
+      ),
+    ).toBe(true);
+  });
+});
+
 describe("createReviewHandler draft PR behavior", () => {
   async function runDraftScenario(options: {
     draft: boolean;

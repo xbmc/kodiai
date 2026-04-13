@@ -15,6 +15,11 @@ timeoutSeconds: 600
 review:
   enabled: true
   autoApprove: true
+  triggers:
+    onOpened: true
+    onReadyForReview: true
+    onReviewRequested: true
+    onSynchronize: true
   maxComments: 7
   severity:
     minLevel: medium
@@ -174,6 +179,14 @@ Controls which GitHub webhook events trigger a review.
 | `onReadyForReview` | `boolean` | `true` | Review when PR moves from draft to ready |
 | `onReviewRequested` | `boolean` | `true` | Review when review is explicitly requested |
 | `onSynchronize` | `boolean` | `false` | Review on new pushes to the PR branch |
+
+```yaml
+review:
+  triggers:
+    onSynchronize: true
+```
+
+Use the nested `review.triggers.onSynchronize` shape. Legacy `review.onSynchronize` is ignored at runtime and produces a config warning so intent drift fails loudly.
 
 ### `review.autoApprove`
 
