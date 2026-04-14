@@ -286,23 +286,30 @@ export function buildMentionPrompt(params: {
     "- Important: include a blank line after `<summary>` and before `</details>` for proper markdown rendering",
   );
 
-  lines.push("- If (and only if) the user is asking for a PR review / approval decision, use this exact structure:");
+  lines.push("- If (and only if) the user is asking for a PR review / approval decision:");
   lines.push(
-    "  ```",
-    "  <details>",
-    '  <summary>kodiai response</summary>',
-    "  ",
-    "  Decision: APPROVE | NOT APPROVED",
-    "  Issues:",
-    "  - (1) [critical|major|minor] path/to/file.ts (123, 456): <issue summary>",
-    "  ",
-    "  </details>",
-    "  ```",
-  );
-  lines.push(
-    "  Notes:",
-    "  - If APPROVE: keep it to 1-2 lines and set `Issues: none`.",
-    "  - If NOT APPROVED: include only Decision + Issues (no extra explanation paragraphs).",
+    "  - Do NOT wrap APPROVE responses in `<details>`.",
+    "  - Use this exact visible body:",
+    "    ```",
+    "    Decision: APPROVE",
+    "    Issues: none",
+    "",
+    "    Evidence:",
+    "    - <factual evidence>",
+    "    ```",
+    "  - Provide 1-3 bullets with short factual evidence derived from already-available counts/confidence summaries.",
+    "  - Do NOT add extra headings, paragraphs, HTML comments, or markers; the server adds the review-output marker.",
+    "  - If NOT APPROVED, keep using the wrapped decision format below and include only Decision + Issues (no extra explanation paragraphs):",
+    "    ```",
+    "    <details>",
+    '    <summary>kodiai response</summary>',
+    "    ",
+    "    Decision: NOT APPROVED",
+    "    Issues:",
+    "    - (1) [critical|major|minor] path/to/file.ts (123, 456): <issue summary>",
+    "    ",
+    "    </details>",
+    "    ```",
   );
 
   lines.push("- If the user is asking for a plan (e.g. they used `plan:`), respond with:");

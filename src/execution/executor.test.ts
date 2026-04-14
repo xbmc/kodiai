@@ -1,8 +1,9 @@
+import { $ } from "bun";
 import { test, expect, afterEach, mock, beforeEach } from "bun:test";
-import { mkdtemp, rm, readFile, writeFile, mkdir, cp } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildSecurityClaudeMd, createExecutor } from "./executor.ts";
+import { buildSecurityClaudeMd, createExecutor, prepareAgentWorkspace } from "./executor.ts";
 import type { ExecutionContext, ExecutionResult } from "./types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { Logger } from "pino";
@@ -351,6 +352,77 @@ function createTestableExecutor(deps: {
       let timeoutSeconds = 600;
       let published = false;
       const publishEvents: import("./types.ts").ExecutionPublishEvent[] = [];
+      const executorHandoffStartedAt = Date.now();
+      let executorHandoffDurationMs: number | undefined;
+      let remoteRuntimeDurationMs: number | undefined;
+
+      const buildExecutorPhaseTimings = (params: {
+        handoffStatus: "completed" | "degraded" | "unavailable";
+        handoffDurationMs?: number;
+        handoffDetail?: string;
+        remoteRuntimeStatus: "completed" | "degraded" | "unavailable";
+        remoteRuntimeDurationMs?: number;
+        remoteRuntimeDetail?: string;
+      }) => [
+        {
+          name: "executor handoff" as const,
+          status: params.handoffStatus,
+          ...(params.handoffDurationMs !== undefined ? { durationMs: params.handoffDurationMs } : {}),
+          ...(params.handoffDetail ? { detail: params.handoffDetail } : {}),
+        },
+        {
+          name: "remote runtime" as const,
+          status: params.remoteRuntimeStatus,
+          ...(params.remoteRuntimeDurationMs !== undefined ? { durationMs: params.remoteRuntimeDurationMs } : {}),
+          ...(params.remoteRuntimeDetail ? { detail: params.remoteRuntimeDetail } : {}),
+        },
+      ];
+
+      const normalizeExecutorPhaseTimings = (
+        candidate: unknown,
+        fallback: NonNullable<ExecutionResult["executorPhaseTimings"]>,
+      ) => {
+        if (candidate === undefined) {
+          return fallback;
+        }
+        if (!Array.isArray(candidate)) {
+          return fallback;
+        }
+
+        const validStatuses = new Set(["completed", "degraded", "unavailable"]);
+        const normalizedByName = new Map<string, NonNullable<ExecutionResult["executorPhaseTimings"]>[number]>();
+
+        for (const entry of candidate) {
+          if (!entry || typeof entry !== "object") {
+            return fallback;
+          }
+
+          const name = (entry as { name?: unknown }).name;
+          const status = (entry as { status?: unknown }).status;
+          const durationMs = (entry as { durationMs?: unknown }).durationMs;
+          const detail = (entry as { detail?: unknown }).detail;
+
+          if (
+            (name !== "executor handoff" && name !== "remote runtime") ||
+            typeof status !== "string" ||
+            !validStatuses.has(status) ||
+            (durationMs !== undefined &&
+              (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 0)) ||
+            (detail !== undefined && typeof detail !== "string")
+          ) {
+            return fallback;
+          }
+
+          normalizedByName.set(name, {
+            name,
+            status: status as "completed" | "degraded" | "unavailable",
+            ...(durationMs !== undefined ? { durationMs } : {}),
+            ...(detail ? { detail } : {}),
+          });
+        }
+
+        return fallback.map((phase) => normalizedByName.get(phase.name) ?? phase);
+      };
 
       try {
         const { loadRepoConfig } = await import("./config.ts");
@@ -372,7 +444,10 @@ function createTestableExecutor(deps: {
           context.eventType === "pull_request_review_comment.created" ||
           context.eventType === "pull_request_review.submitted";
         const isWriteMode = context.writeMode === true;
-        const enableInlineTools = isMentionEvent || isWriteMode ? false : (context.enableInlineTools ?? true);
+        const enableInlineTools =
+          isWriteMode
+            ? false
+            : (context.enableInlineTools ?? !isMentionEvent);
         const enableCommentTools = context.enableCommentTools ?? !isWriteMode;
 
         const { buildMcpServers, buildAllowedMcpTools } = await import("./mcp/index.ts");
@@ -429,23 +504,26 @@ function createTestableExecutor(deps: {
           mountBase: "/mnt/kodiai-workspaces",
           jobId: context.deliveryId ?? crypto.randomUUID(),
         });
-        const sourceWorkspaceDir = resolve(context.workspace.dir);
-        const resolvedWorkspaceDir = resolve(workspaceDir);
-        const repoCwd =
-          sourceWorkspaceDir === resolvedWorkspaceDir
-            ? context.workspace.dir
-            : join(workspaceDir, "repo");
-
-        if (sourceWorkspaceDir !== resolvedWorkspaceDir) {
-          await mkdir(repoCwd, { recursive: true });
-          await cp(context.workspace.dir, repoCwd, { recursive: true });
+        if (workspaceDir === context.workspace.dir) {
+          // Test-harness shortcut only: production always stages into a distinct Azure Files dir.
+          await writeFile(join(workspaceDir, "prompt.txt"), prompt);
+          await writeFile(
+            join(workspaceDir, "agent-config.json"),
+            JSON.stringify({ model, maxTurns, allowedTools, taskType, repoCwd: context.workspace.dir }),
+          );
+        } else {
+          await prepareAgentWorkspace({
+            sourceRepoDir: context.workspace.dir,
+            workspaceDir,
+            prompt,
+            model,
+            maxTurns,
+            allowedTools,
+            taskType,
+            mcpServerNames: Object.keys(mcpServers),
+            token: context.workspace.token,
+          });
         }
-
-        await writeFile(join(workspaceDir, "prompt.txt"), prompt);
-        await writeFile(
-          join(workspaceDir, "agent-config.json"),
-          JSON.stringify({ model, maxTurns, allowedTools, taskType, repoCwd }),
-        );
 
         const { buildAcaJobSpec } = await import("../jobs/aca-launcher.ts");
         const spec = buildAcaJobSpec({
@@ -464,6 +542,7 @@ function createTestableExecutor(deps: {
           spec,
           logger,
         });
+        executorHandoffDurationMs = Date.now() - executorHandoffStartedAt;
 
         const { status, durationMs } = await pollFn({
           resourceGroup: config.acaResourceGroup,
@@ -472,6 +551,7 @@ function createTestableExecutor(deps: {
           timeoutMs,
           logger,
         });
+        remoteRuntimeDurationMs = durationMs;
 
         if (status === "timed-out") {
           try {
@@ -499,6 +579,13 @@ function createTestableExecutor(deps: {
             cacheCreationTokens: undefined,
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
+            executorPhaseTimings: buildExecutorPhaseTimings({
+              handoffStatus: "completed",
+              handoffDurationMs: executorHandoffDurationMs,
+              remoteRuntimeStatus: "degraded",
+              remoteRuntimeDurationMs,
+              remoteRuntimeDetail: "remote runtime timed out",
+            }),
           };
         }
 
@@ -519,11 +606,27 @@ function createTestableExecutor(deps: {
             cacheCreationTokens: undefined,
             stopReason: undefined,
             publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
+            executorPhaseTimings: buildExecutorPhaseTimings({
+              handoffStatus: "completed",
+              handoffDurationMs: executorHandoffDurationMs,
+              remoteRuntimeStatus: "degraded",
+              remoteRuntimeDurationMs,
+              remoteRuntimeDetail: "remote runtime failed",
+            }),
           };
         }
 
         const rawResult = await readResultFn(workspaceDir);
-        const jobResult = rawResult as ExecutionResult;
+        const jobResult = rawResult as ExecutionResult & { executorPhaseTimings?: unknown };
+        const executorPhaseTimings = normalizeExecutorPhaseTimings(
+          jobResult.executorPhaseTimings,
+          buildExecutorPhaseTimings({
+            handoffStatus: "completed",
+            handoffDurationMs: executorHandoffDurationMs,
+            remoteRuntimeStatus: "completed",
+            remoteRuntimeDurationMs,
+          }),
+        );
         mcpJobRegistry.unregister(mcpBearerToken);
 
         return {
@@ -534,6 +637,7 @@ function createTestableExecutor(deps: {
             publishEvents.length > 0
               ? [...(jobResult.publishEvents ?? []), ...publishEvents]
               : jobResult.publishEvents,
+          executorPhaseTimings,
         };
       } catch (err) {
         const durationMs = Date.now() - startTime;
@@ -554,6 +658,18 @@ function createTestableExecutor(deps: {
           cacheCreationTokens: undefined,
           stopReason: undefined,
           publishEvents: publishEvents.length > 0 ? publishEvents : undefined,
+          executorPhaseTimings: buildExecutorPhaseTimings({
+            handoffStatus: executorHandoffDurationMs === undefined ? "degraded" : "completed",
+            handoffDurationMs: executorHandoffDurationMs ?? Math.max(0, Date.now() - executorHandoffStartedAt),
+            handoffDetail: executorHandoffDurationMs === undefined
+              ? "executor handoff failed before remote runtime started"
+              : undefined,
+            remoteRuntimeStatus: remoteRuntimeDurationMs === undefined ? "unavailable" : "degraded",
+            remoteRuntimeDurationMs,
+            remoteRuntimeDetail: remoteRuntimeDurationMs === undefined
+              ? "remote runtime never started"
+              : "remote runtime finished but result processing failed",
+          }),
         };
       }
     },
@@ -986,12 +1102,24 @@ test("ACA dispatch: CLAUDE.md written to workspace dir before launch", async () 
   expect(claudeMd).toContain("Security Policy");
 });
 
-test("ACA dispatch: explicit review mention writes a repo snapshot and points agent cwd at it", async () => {
+test("ACA dispatch: explicit review mention stages a review bundle transport without changing review tools", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
   const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
   await mkdir(join(sourceRepoDir, "src"), { recursive: true });
   await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
   await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
+  await $`git -C ${sourceRepoDir} init`.quiet();
+  await $`git -C ${sourceRepoDir} config user.email test@example.com`.quiet();
+  await $`git -C ${sourceRepoDir} config user.name "Test User"`.quiet();
+  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m base`.quiet();
+  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'updated';\n");
+  await $`git -C ${sourceRepoDir} commit -am feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
 
   const config = makeConfig();
   const logger = makeLogger();
@@ -1013,6 +1141,7 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
       eventType: "issue_comment.created",
       prNumber: 80,
       taskType: "review.full",
+      enableInlineTools: true,
     }),
   );
 
@@ -1022,6 +1151,13 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
     allowedTools: string[];
     taskType: string;
     repoCwd?: string;
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+      originUrl?: string;
+    };
   };
 
   expect(agentConfig.taskType).toBe("review.full");
@@ -1029,9 +1165,16 @@ test("ACA dispatch: explicit review mention writes a repo snapshot and points ag
   expect(agentConfig.allowedTools).toContain("Glob");
   expect(agentConfig.allowedTools).toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).toContain("Bash(git show:*)");
-  expect(agentConfig.repoCwd).toBe(join(tmpDir!, "repo"));
-  expect(await readFile(join(tmpDir!, "repo", "src", "feature.ts"), "utf-8")).toContain("feature = true");
-  expect(await readFile(join(tmpDir!, "repo", ".kodiai.yml"), "utf-8")).toContain("review:");
+  expect(agentConfig.allowedTools).toContain("mcp__github_inline_comment__create_inline_comment");
+  expect(agentConfig.allowedTools).toContain("mcp__github_ci__get_ci_status");
+  expect(agentConfig.repoCwd).toBeUndefined();
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(tmpDir!, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "main",
+    originUrl: "https://github.com/xbmc/xbmc.git",
+  });
 });
 
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {
@@ -1089,4 +1232,116 @@ test("createExecutor signature: accepts config and mcpJobRegistry", () => {
   });
 
   expect(typeof executor.execute).toBe("function");
+});
+
+test("ACA dispatch: success exposes completed executor handoff and remote runtime phases", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-phase-success" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 8000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!));
+  const phases = result.executorPhaseTimings ?? [];
+
+  expect(phases.map((phase) => phase.name)).toEqual([
+    "executor handoff",
+    "remote runtime",
+  ]);
+  expect(phases[0]).toEqual(expect.objectContaining({
+    name: "executor handoff",
+    status: "completed",
+    durationMs: expect.any(Number),
+  }));
+  expect(phases[1]).toEqual({
+    name: "remote runtime",
+    status: "completed",
+    durationMs: 8000,
+  });
+});
+
+test("ACA dispatch: timeout preserves executor phases with degraded remote runtime", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-phase-timeout" }),
+    pollFn: async () => ({ status: "timed-out", durationMs: 600000 }),
+    cancelFn: async () => {},
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!));
+  const phases = result.executorPhaseTimings ?? [];
+
+  expect(result.isTimeout).toBe(true);
+  expect(phases.map((phase) => phase.name)).toEqual([
+    "executor handoff",
+    "remote runtime",
+  ]);
+  expect(phases[0]).toEqual(expect.objectContaining({
+    name: "executor handoff",
+    status: "completed",
+    durationMs: expect.any(Number),
+  }));
+  expect(phases[1]).toEqual(expect.objectContaining({
+    name: "remote runtime",
+    status: "degraded",
+    durationMs: 600000,
+    detail: expect.stringContaining("timed out"),
+  }));
+});
+
+test("ACA dispatch: malformed remote timing payload falls back to locally measured executor phases", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-phase-malformed" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 4321 }),
+    readResultFn: async () => ({
+      ...makeJobResult(),
+      executorPhaseTimings: [
+        { name: "remote runtime", status: "completed", durationMs: -5 },
+      ],
+    }),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  const result = await executor.execute(makeContext(tmpDir!));
+
+  expect(result.executorPhaseTimings).toEqual([
+    expect.objectContaining({
+      name: "executor handoff",
+      status: "completed",
+      durationMs: expect.any(Number),
+    }),
+    {
+      name: "remote runtime",
+      status: "completed",
+      durationMs: 4321,
+    },
+  ]);
 });

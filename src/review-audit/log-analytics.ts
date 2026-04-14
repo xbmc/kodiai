@@ -40,6 +40,7 @@ async function defaultRunAzJson(args: string[]): Promise<unknown> {
 export function buildReviewAuditLogQuery(params: {
   reviewOutputKey?: string;
   deliveryId?: string;
+  messageContains?: string;
   limit?: number;
 }): string {
   const lines = [
@@ -52,6 +53,10 @@ export function buildReviewAuditLogQuery(params: {
 
   if (params.deliveryId) {
     lines.push(`| where Log_s has "${escapeKqlString(params.deliveryId)}"`);
+  }
+
+  if (params.messageContains) {
+    lines.push(`| where Log_s has "${escapeKqlString(params.messageContains)}"`);
   }
 
   lines.push(
@@ -125,6 +130,7 @@ export async function queryReviewAuditLogs(params: {
   workspaceIds: string[];
   reviewOutputKey?: string;
   deliveryId?: string;
+  messageContains?: string;
   timespan?: string;
   limit?: number;
   runAzJson?: RunAzJson;

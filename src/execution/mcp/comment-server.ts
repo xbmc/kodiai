@@ -5,6 +5,10 @@ import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
+import {
+  createReviewOutputPublicationGate,
+  type ReviewOutputPublicationGate,
+} from "./review-output-publication-gate.ts";
 
 export function createCommentServer(
   getOctokit: () => Promise<Octokit>,
@@ -16,22 +20,28 @@ export function createCommentServer(
   prNumber?: number,
   onPublishEvent?: (event: ExecutionPublishEvent) => void,
   logger?: Logger,
+  publicationGate?: ReviewOutputPublicationGate,
 ) {
   const marker = reviewOutputKey ? buildReviewOutputMarker(reviewOutputKey) : null;
+  const reviewOutputPublicationGate = publicationGate
+    ?? (
+      reviewOutputKey && prNumber !== undefined
+        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        : undefined
+    );
 
   // One-shot publish guard: only one create_comment call succeeds per server instance.
   // Prevents the agent from double-posting when it retries a tool call within a turn.
   let createCommentPublished = false;
 
-  function sanitizeKodiaiDecisionResponse(body: string): string {
-    // Only enforce structure for the mention decision wrapper.
-    if (!body.includes("<summary>kodiai response</summary>")) {
-      return body;
+  async function resolveOutputPublicationStatus(octokit: Octokit) {
+    if (!reviewOutputPublicationGate) {
+      return null;
     }
-    if (!body.includes("Decision:")) {
-      return body;
-    }
+    return reviewOutputPublicationGate.resolve(octokit);
+  }
 
+  function getKodiaiDecisionContent(body: string): string[] {
     const lines = body.split("\n");
     const start = lines.findIndex((l) => l.trim() === "<details>");
     const end = lines.findIndex((l) => l.trim() === "</details>");
@@ -39,11 +49,39 @@ export function createCommentServer(
       ? lines.slice(start + 1, end)
       : lines;
 
-    const content = details
+    return details
       .map((l) => l.trimEnd())
       .filter((l) => l.trim().length > 0)
       .filter((l) => !l.trim().startsWith("<summary>"));
+  }
 
+  function isSharedApprovedReviewBody(body: string): boolean {
+    const content = getKodiaiDecisionContent(body)
+      .map((line) => line.trim())
+      .filter((line) => !line.startsWith("<!-- kodiai:review-output-key:"));
+
+    if (content[0] !== "Decision: APPROVE") {
+      return false;
+    }
+    if (content[1] !== "Issues: none") {
+      return false;
+    }
+    if (content[2] !== "Evidence:") {
+      return false;
+    }
+
+    const evidenceLines = content.slice(3);
+    return evidenceLines.length >= 1
+      && evidenceLines.length <= 3
+      && evidenceLines.every((line) => line.startsWith("- "));
+  }
+
+  function sanitizeKodiaiDecisionResponse(body: string): string {
+    if (!body.includes("Decision:")) {
+      return body;
+    }
+
+    const content = getKodiaiDecisionContent(body);
     const decisionLine = content.find((l) => l.trim().startsWith("Decision:"));
     if (!decisionLine) {
       throw new Error("Invalid kodiai response: missing Decision line");
@@ -55,19 +93,38 @@ export function createCommentServer(
     }
 
     if (decision === "APPROVE") {
-      const issuesNone = content.find((l) => l.trim() === "Issues: none");
-      if (!issuesNone) {
+      if (body.includes("<summary>kodiai response</summary>") || body.includes("<details>") || body.includes("</details>")) {
+        throw new Error(
+          "Invalid kodiai response: APPROVE must use visible body format without <details> wrapper",
+        );
+      }
+      if (content[0]?.trim() !== "Decision: APPROVE") {
+        throw new Error(
+          "Invalid kodiai response: APPROVE must start with 'Decision: APPROVE'",
+        );
+      }
+      if (content[1]?.trim() !== "Issues: none") {
         throw new Error("Invalid kodiai response: APPROVE must include 'Issues: none'");
       }
-      // Enforce no other non-empty content besides Decision and Issues: none.
-      const allowed = new Set([decisionLine.trim(), "Issues: none"]);
-      for (const l of content) {
-        if (!allowed.has(l.trim())) {
+      if (content[2]?.trim() !== "Evidence:") {
+        throw new Error("Invalid kodiai response: APPROVE must include 'Evidence:'");
+      }
+
+      const evidenceLines: string[] = [];
+      for (const line of content.slice(3)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("- ")) {
           throw new Error(
-            "Invalid kodiai response: APPROVE must contain only Decision and Issues: none",
+            "Invalid kodiai response: APPROVE must contain only Decision: APPROVE, Issues: none, Evidence:, and 1-3 bullet lines",
           );
         }
+        evidenceLines.push(trimmed);
       }
+
+      if (evidenceLines.length < 1 || evidenceLines.length > 3) {
+        throw new Error("Invalid kodiai response: APPROVE must include 1-3 evidence bullets");
+      }
+
       return body;
     }
 
@@ -550,6 +607,31 @@ export function createCommentServer(
           }
           try {
             const octokit = await getOctokit();
+            const publicationStatus = await resolveOutputPublicationStatus(octokit);
+            if (publicationStatus && !publicationStatus.shouldPublish) {
+              logger?.info(
+                {
+                  reviewOutputKey,
+                  idempotencyOutcome: "already-published-skip",
+                  existingLocation: publicationStatus.existingLocation,
+                },
+                "Skipping comment publication because output key already exists",
+              );
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify({
+                      success: true,
+                      skipped: true,
+                      reason: "already-published",
+                      review_output_key: reviewOutputKey,
+                      marker_prefix: "kodiai:review-output-key",
+                    }),
+                  },
+                ],
+              };
+            }
             const sanitized = sanitizeOutgoingMentions(
               maybeStampMarker(
                 sanitizeKodiaiReReviewSummary(sanitizeKodiaiReviewSummary(sanitizeKodiaiDecisionResponse(body))),
@@ -564,10 +646,7 @@ export function createCommentServer(
             }
 
             const isApproveNoIssues =
-              prNumber !== undefined &&
-              sanitized.includes("<summary>kodiai response</summary>") &&
-              sanitized.includes("Decision: APPROVE") &&
-              sanitized.includes("Issues: none");
+              prNumber !== undefined && isSharedApprovedReviewBody(sanitized);
 
             if (isApproveNoIssues) {
               await octokit.rest.pulls.createReview({

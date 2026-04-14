@@ -1,7 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile, mkdir, symlink, lstat, chmod } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, lstat, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { $ } from "bun";
 import { prepareAgentWorkspace } from "./executor.ts";
 
 const tempDirs: string[] = [];
@@ -12,31 +13,6 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
-async function extractRepoArchive(archivePath: string): Promise<string> {
-  const destDir = await makeTempDir("kodiai-extracted-repo-");
-  const proc = Bun.spawn([
-    "tar",
-    "-C",
-    destDir,
-    "-xf",
-    archivePath,
-  ], {
-    stdout: "ignore",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stderr).text(),
-  ]);
-
-  if (exitCode !== 0) {
-    throw new Error(`failed to extract repo archive: ${stderr.trim()}`);
-  }
-
-  return destDir;
-}
-
 afterEach(async () => {
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -45,7 +21,7 @@ afterEach(async () => {
   }
 });
 
-test("prepareAgentWorkspace writes repo.tar and agent-config with repoArchivePath", async () => {
+test("prepareAgentWorkspace copies the repo and writes agent-config with repoCwd", async () => {
   const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
   const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
 
@@ -53,7 +29,7 @@ test("prepareAgentWorkspace writes repo.tar and agent-config with repoArchivePat
   await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
   await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
 
-  const { repoArchivePath } = await prepareAgentWorkspace({
+  const { repoCwd } = await prepareAgentWorkspace({
     sourceRepoDir,
     workspaceDir,
     prompt: "Review this PR",
@@ -64,12 +40,11 @@ test("prepareAgentWorkspace writes repo.tar and agent-config with repoArchivePat
     mcpServerNames: ["github_comment"],
   });
 
-  expect(repoArchivePath).toBe(join(workspaceDir, "repo.tar"));
+  expect(repoCwd).toBe(join(workspaceDir, "repo"));
+  const repoDir = repoCwd!;
+  expect(await readFile(join(repoDir, "src", "feature.ts"), "utf-8")).toContain("feature = true");
+  expect(await readFile(join(repoDir, ".kodiai.yml"), "utf-8")).toContain("review:");
   expect(await readFile(join(workspaceDir, "prompt.txt"), "utf-8")).toBe("Review this PR");
-
-  const extractedRepoDir = await extractRepoArchive(repoArchivePath);
-  expect(await readFile(join(extractedRepoDir, "src", "feature.ts"), "utf-8")).toContain("feature = true");
-  expect(await readFile(join(extractedRepoDir, ".kodiai.yml"), "utf-8")).toContain("review:");
 
   const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
   const agentConfig = JSON.parse(rawAgentConfig) as {
@@ -78,7 +53,7 @@ test("prepareAgentWorkspace writes repo.tar and agent-config with repoArchivePat
     maxTurns: number;
     allowedTools: string[];
     taskType: string;
-    repoArchivePath?: string;
+    repoCwd?: string;
     mcpServerNames?: string[];
   };
 
@@ -87,19 +62,33 @@ test("prepareAgentWorkspace writes repo.tar and agent-config with repoArchivePat
   expect(agentConfig.maxTurns).toBe(25);
   expect(agentConfig.allowedTools).toEqual(["Read", "Grep", "Glob"]);
   expect(agentConfig.taskType).toBe("review.full");
-  expect(agentConfig.repoArchivePath).toBe(repoArchivePath);
+  expect(agentConfig.repoCwd).toBe(repoCwd);
   expect(agentConfig.mcpServerNames).toEqual(["github_comment"]);
 });
 
-test("prepareAgentWorkspace materializes symlinks as regular files in repo.tar", async () => {
-  const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
-  const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
+test("prepareAgentWorkspace writes a review bundle transport for repos with tracked symlinks", async () => {
+  const sourceRepoDir = await makeTempDir("kodiai-source-symlink-repo-");
+  const workspaceDir = await makeTempDir("kodiai-agent-symlink-workspace-");
 
   await mkdir(join(sourceRepoDir, "system", "settings"), { recursive: true });
-  await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings platform=\"linux\" />\n");
-  await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+  await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+  await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings />\n");
 
-  const { repoArchivePath } = await prepareAgentWorkspace({
+  await $`git -C ${sourceRepoDir} init`.quiet();
+  await $`git -C ${sourceRepoDir} config user.email t@example.com`.quiet();
+  await $`git -C ${sourceRepoDir} config user.name T`.quiet();
+  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+  await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m init`.quiet();
+  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "feature.ts"), "export const enabled = true;\n");
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
+
+  const result = await prepareAgentWorkspace({
     sourceRepoDir,
     workspaceDir,
     prompt: "Review this PR",
@@ -108,24 +97,74 @@ test("prepareAgentWorkspace materializes symlinks as regular files in repo.tar",
     allowedTools: ["Read", "Grep", "Glob"],
     taskType: "review.full",
     mcpServerNames: ["github_comment"],
+  }) as unknown as { repoCwd?: string; repoBundlePath?: string };
+
+  expect(result.repoCwd).toBeUndefined();
+  expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+  expect((await lstat(join(workspaceDir, "repo.bundle"))).isFile()).toBe(true);
+  await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
+
+  const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    repoCwd?: string;
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+      originUrl?: string;
+    };
+  };
+
+  expect(agentConfig.repoCwd).toBeUndefined();
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(workspaceDir, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "main",
+    originUrl: "https://github.com/xbmc/xbmc.git",
   });
 
-  const extractedRepoDir = await extractRepoArchive(repoArchivePath);
-  const stagedPath = join(extractedRepoDir, "system", "settings", "freebsd.xml");
-  expect(await readFile(stagedPath, "utf-8")).toBe("<settings platform=\"linux\" />\n");
-  expect((await lstat(stagedPath)).isSymbolicLink()).toBe(false);
+  const cloneCheckDir = await makeTempDir("kodiai-bundle-clone-check-");
+  await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+  expect((await lstat(join(cloneCheckDir, "system", "settings", "freebsd.xml"))).isSymbolicLink()).toBe(true);
+  expect((await $`git -C ${cloneCheckDir} status --porcelain`.quiet()).text()).toBe("");
+  expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
 });
 
-test("prepareAgentWorkspace stages read-only source files into repo.tar without dropping their contents", async () => {
-  const sourceRepoDir = await makeTempDir("kodiai-source-repo-");
-  const workspaceDir = await makeTempDir("kodiai-agent-workspace-");
+test("prepareAgentWorkspace unshallows PR workspaces before writing a review bundle transport", async () => {
+  const tempRoot = await makeTempDir("kodiai-shallow-bundle-");
+  const bareRepoDir = join(tempRoot, "origin.git");
+  const seedRepoDir = join(tempRoot, "seed");
+  const shallowRepoDir = join(tempRoot, "shallow");
+  const workspaceDir = await makeTempDir("kodiai-agent-shallow-workspace-");
+  const cloneCheckDir = await makeTempDir("kodiai-bundle-clone-check-");
 
-  const readonlyPath = join(sourceRepoDir, "privacy-policy.txt");
-  await writeFile(readonlyPath, "private but readable\n");
-  await chmod(readonlyPath, 0o444);
+  await $`git init --bare ${bareRepoDir}`.quiet();
+  await $`git clone file://${bareRepoDir} ${seedRepoDir}`.quiet();
+  await $`git -C ${seedRepoDir} config user.email t@example.com`.quiet();
+  await $`git -C ${seedRepoDir} config user.name T`.quiet();
+  await writeFile(join(seedRepoDir, "feature.txt"), "one\n");
+  await $`git -C ${seedRepoDir} add feature.txt`.quiet();
+  await $`git -C ${seedRepoDir} commit -m one`.quiet();
+  await $`git -C ${seedRepoDir} branch -M master`.quiet();
+  await $`git -C ${seedRepoDir} push origin master`.quiet();
+  await writeFile(join(seedRepoDir, "feature.txt"), "one\ntwo\n");
+  await $`git -C ${seedRepoDir} commit -am two`.quiet();
+  await $`git -C ${seedRepoDir} push origin master`.quiet();
+  await $`git -C ${seedRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(seedRepoDir, "feature.txt"), "one\ntwo\npr\n");
+  await $`git -C ${seedRepoDir} commit -am pr`.quiet();
+  await $`git -C ${seedRepoDir} push origin pr-mention`.quiet();
 
-  const { repoArchivePath } = await prepareAgentWorkspace({
-    sourceRepoDir,
+  await $`git clone --depth=1 --single-branch --branch master file://${bareRepoDir} ${shallowRepoDir}`.quiet();
+  await $`git -C ${shallowRepoDir} fetch file://${bareRepoDir} pr-mention:pr-mention`.quiet();
+  await $`git -C ${shallowRepoDir} checkout pr-mention`.quiet();
+  await $`git -C ${shallowRepoDir} fetch origin master:refs/remotes/origin/master --depth=1`.quiet();
+  expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+
+  const result = await prepareAgentWorkspace({
+    sourceRepoDir: shallowRepoDir,
     workspaceDir,
     prompt: "Review this PR",
     model: "claude-sonnet-4-5-20250929",
@@ -133,9 +172,30 @@ test("prepareAgentWorkspace stages read-only source files into repo.tar without 
     allowedTools: ["Read", "Grep", "Glob"],
     taskType: "review.full",
     mcpServerNames: ["github_comment"],
+  }) as unknown as { repoCwd?: string; repoBundlePath?: string };
+
+  expect(result.repoCwd).toBeUndefined();
+  expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+
+  const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    repoTransport?: {
+      kind?: string;
+      bundlePath?: string;
+      headRef?: string;
+      baseRef?: string;
+      originUrl?: string;
+    };
+  };
+
+  expect(agentConfig.repoTransport).toEqual({
+    kind: "review-bundle",
+    bundlePath: join(workspaceDir, "repo.bundle"),
+    headRef: "pr-mention",
+    baseRef: "master",
+    originUrl: "file://" + bareRepoDir,
   });
 
-  const extractedRepoDir = await extractRepoArchive(repoArchivePath);
-  const stagedPath = join(extractedRepoDir, "privacy-policy.txt");
-  expect(await readFile(stagedPath, "utf-8")).toBe("private but readable\n");
+  await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+  expect((await $`git -C ${cloneCheckDir} diff origin/master...HEAD --stat`.quiet().text())).toContain("feature.txt");
 });

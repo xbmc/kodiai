@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
 import { createMentionHandler } from "./mention.ts";
-import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
+import { buildReviewOutputKey, buildReviewOutputMarker, extractReviewOutputKey } from "./review-idempotency.ts";
 import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
@@ -6658,7 +6658,863 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("explicit PR review mention submits approval review when execution succeeds without publishing", async () => {
+  test("explicit PR review mention does not submit approval review without inspection evidence", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-mention-no-inspection",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).toContain("did not produce a usable code review");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("missing-inspection-evidence");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.published).toBe(false);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("none");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention does not approval-bridge when result text contains unpublished findings", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 6,
+          durationMs: 1,
+          sessionId: "session-mention-findings-unpublished",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Bash", "ToolSearch"],
+          usedRepoInspectionTools: true,
+          resultText: [
+            "## Critical Issues Found",
+            "",
+            "### 1. **[CRITICAL] xbmc/addons/AddonInstaller.cpp:190 - Out-of-bounds array access**",
+            "This causes undefined behavior when the loop reaches the collection size.",
+            "",
+            "### 2. **[MAJOR] xbmc/addons/AddonManager.cpp:116 - Inverted null pointer check**",
+            "This rejects valid callbacks and breaks registration.",
+          ].join("\n"),
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).toContain("- (1) [critical] xbmc/addons/AddonInstaller.cpp (190): Out-of-bounds array access");
+    expect(issueReplies[0]).toContain("- (2) [major] xbmc/addons/AddonManager.cpp (116): Inverted null pointer check");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("result-text-findings");
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.published).toBe(false);
+    expect(completionLog?.bindings.executorPublished).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("none");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention does not approval-bridge when result text uses numbered findings from production artifact", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 6,
+          durationMs: 1,
+          sessionId: "session-mention-production-shape",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Bash", "ToolSearch"],
+          usedRepoInspectionTools: true,
+          resultText: [
+            "Let me analyze the changes I found in the diff. I've identified several critical issues in this PR:",
+            "",
+            "## Review Analysis",
+            "",
+            "I've reviewed the changes in PR #28172 and found **5 blocking issues** that need to be addressed:",
+            "",
+            "### Critical Issues Found:",
+            "",
+            "1. **xbmc/addons/AddonInstaller.cpp:190** - Array out-of-bounds access",
+            "2. **xbmc/addons/AddonManager.cpp:116** - Inverted null pointer check",
+            "3. **xbmc/addons/AddonManager.cpp:151** - Undefined variable reference",
+            "4. **xbmc/addons/AddonInstaller.cpp:246** - Inverted job completion logic",
+            "5. **xbmc/addons/AddonInstaller.cpp:264** - Incorrect progress calculation",
+            "",
+            "### Summary:",
+            "- **3 CRITICAL issues**: array out-of-bounds (#1), null pointer dereference (#2), compilation error (#3)",
+            "- **2 MAJOR issues**: incorrect business logic (#4), wrong calculation (#5)",
+            "",
+            "**Verdict**: 🔴 This PR introduces multiple bugs and cannot be merged in its current state. All 5 issues must be fixed before merging.",
+          ].join("\n"),
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).toContain("- (1) [critical] xbmc/addons/AddonInstaller.cpp (190): Array out-of-bounds access");
+    expect(issueReplies[0]).toContain("- (2) [critical] xbmc/addons/AddonManager.cpp (116): Inverted null pointer check");
+    expect(issueReplies[0]).toContain("- (3) [critical] xbmc/addons/AddonManager.cpp (151): Undefined variable reference");
+    expect(issueReplies[0]).toContain("- (4) [major] xbmc/addons/AddonInstaller.cpp (246): Inverted job completion logic");
+    expect(issueReplies[0]).toContain("- (5) [major] xbmc/addons/AddonInstaller.cpp (264): Incorrect progress calculation");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("result-text-findings");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention does not approval-bridge when result text reports tool failure after blocking findings", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 12,
+          durationMs: 1,
+          sessionId: "session-mention-tool-failure",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Bash", "Read", "ToolSearch", "mcp__github_comment__create_comment"],
+          usedRepoInspectionTools: true,
+          resultText: [
+            "I've completed my review of PR #28172 and found **5 critical/major issues** in the code changes. However, I encountered a problem publishing the results:",
+            "",
+            "## Issues Found",
+            "",
+            "I identified the following critical issues in this PR:",
+            "",
+            "### xbmc/addons/AddonInstaller.cpp",
+            "",
+            "1. **Line 190 [CRITICAL]**: Array out-of-bounds access",
+            "2. **Line 246 [CRITICAL]**: Inverted idle state logic",
+            "3. **Line 264 [CRITICAL]**: Division by zero and incorrect formula",
+            "",
+            "### xbmc/addons/AddonManager.cpp",
+            "",
+            "4. **Line 116 [CRITICAL]**: Inverted null check",
+            "5. **Line 151 [MAJOR]**: Undefined variable reference",
+            "",
+            "## Tool Availability Issue",
+            "",
+            "**The GitHub comment tools failed**: I attempted to use `mcp__github_comment__create_comment` as specified in the instructions, but received the error:",
+            "",
+            "```",
+            "Error: No such tool available: mcp__github_comment__create_comment",
+            "```",
+          ].join("\n"),
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).toContain("- (1) [critical] xbmc/addons/AddonInstaller.cpp (190): Array out-of-bounds access");
+    expect(issueReplies[0]).toContain("- (2) [critical] xbmc/addons/AddonInstaller.cpp (246): Inverted idle state logic");
+    expect(issueReplies[0]).toContain("- (3) [critical] xbmc/addons/AddonInstaller.cpp (264): Division by zero and incorrect formula");
+    expect(issueReplies[0]).toContain("- (4) [critical] xbmc/addons/AddonManager.cpp (116): Inverted null check");
+    expect(issueReplies[0]).toContain("- (5) [major] xbmc/addons/AddonManager.cpp (151): Undefined variable reference");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("result-text-findings");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention does not approval-bridge when result text says the PR should not be merged", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 3,
+          durationMs: 1,
+          sessionId: "session-mention-should-not-merge",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Bash", "ToolSearch"],
+          usedRepoInspectionTools: true,
+          resultText: [
+            "I've analyzed the diff and found several critical issues in this PR.",
+            "",
+            "## Critical Issues",
+            "",
+            "**1. [CRITICAL] Out-of-bounds array access (AddonInstaller.cpp:190)**",
+            "**2. [CRITICAL] Division by zero risk (AddonInstaller.cpp:264)**",
+            "**3. [CRITICAL] Undefined variable reference (AddonManager.cpp:151)**",
+            "",
+            "## Major Issues",
+            "",
+            "**4. [MAJOR] Inverted idle state logic (AddonInstaller.cpp:246)**",
+            "**5. [MAJOR] Inverted null pointer check (AddonManager.cpp:116)**",
+            "",
+            "**Verdict: These changes should not be merged as they introduce multiple crash-prone bugs and logic errors.**",
+          ].join("\n"),
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("result-text-findings");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention does not approval-bridge when result text reports critical and major issues with sectioned bold findings", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const createdReviews: Array<{ event: string; body: string }> = [];
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async ({ event, body }: { event: string; body: string }) => {
+            createdReviews.push({ event, body });
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 3,
+          durationMs: 1,
+          sessionId: "session-mention-critical-major-sections",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Bash", "ToolSearch"],
+          usedRepoInspectionTools: true,
+          resultText: [
+            "I've completed my review of PR #28172. I found 5 critical and major issues in the code changes. However, I notice that the GitHub comment tools (`mcp__github_comment__create_comment` and `mcp__github_inline_comment__create_inline_comment`) are not available in my current tool set, despite being listed as available in the instructions.",
+            "",
+            "Here are the issues I identified:",
+            "",
+            "## Critical Issues",
+            "",
+            "**1. Out-of-bounds array access** (AddonInstaller.cpp:190)",
+            "This causes undefined behavior and potential crash.",
+            "",
+            "**2. Division by zero and incorrect progress calculation** (AddonInstaller.cpp:264)",
+            "This can crash when progress is zero and computes the wrong percentage.",
+            "",
+            "**3. Undefined variable reference** (AddonManager.cpp:151)",
+            "This causes a compilation failure.",
+            "",
+            "## Major Issues",
+            "",
+            "**4. Inverted idle state logic** (AddonInstaller.cpp:246)",
+            "This flips the intended idle behavior.",
+            "",
+            "**5. Inverted null check prevents callback registration** (AddonManager.cpp:116)",
+            "This rejects valid callbacks and breaks registration.",
+          ].join("\n"),
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createdReviews).toHaveLength(0);
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Decision: NOT APPROVED");
+    expect(issueReplies[0]).toContain("- (1) [critical] AddonInstaller.cpp (190): Out-of-bounds array access");
+    expect(issueReplies[0]).toContain("- (2) [critical] AddonInstaller.cpp (264): Division by zero and incorrect progress calculation");
+    expect(issueReplies[0]).toContain("- (3) [critical] AddonManager.cpp (151): Undefined variable reference");
+    expect(issueReplies[0]).toContain("- (4) [major] AddonInstaller.cpp (246): Inverted idle state logic");
+    expect(issueReplies[0]).toContain("- (5) [major] AddonManager.cpp (116): Inverted null check prevents callback registration");
+
+    const publishSkipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish path",
+    );
+    expect(publishSkipLog?.bindings.skipReason).toBe("result-text-findings");
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("explicit PR review mention submits approval review when execution succeeds with inspection evidence", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
 
@@ -6737,7 +7593,7 @@ describe("createMentionHandler review command", () => {
           conclusion: "success",
           published: false,
           costUsd: 0,
-          numTurns: 1,
+          numTurns: 3,
           durationMs: 1,
           sessionId: "session-mention-approve",
           model: "claude-sonnet-4-5-20250929",
@@ -6746,6 +7602,8 @@ describe("createMentionHandler review command", () => {
           cacheReadTokens: 0,
           cacheCreationTokens: 0,
           stopReason: "end_turn",
+          toolUseNames: ["Glob", "Read"],
+          usedRepoInspectionTools: true,
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -6764,15 +7622,23 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
-    expect(createdReviews[0]?.body).toContain("<summary>kodiai response</summary>");
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
     expect(createdReviews[0]?.body).toContain("Issues: none");
-    expect(createdReviews[0]?.body).toContain("kodiai:review-output-key:");
+    expect(createdReviews[0]?.body).toContain("Evidence:");
+    expect(createdReviews[0]?.body).toContain("- Review prompt covered 1 changed file.");
+    expect(createdReviews[0]?.body).toContain("- Repo inspection tools were used to verify the changed code.");
+    expect(createdReviews[0]?.body).not.toContain("<summary>kodiai response</summary>");
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBeDefined();
 
     const idempotencyLog = infoCalls.find((entry) =>
       entry.message === "Explicit mention review idempotency check passed",
     );
-    expect(idempotencyLog?.bindings.reviewOutputKey).toBeDefined();
+    const idempotencyReviewOutputKey =
+      typeof idempotencyLog?.bindings.reviewOutputKey === "string"
+        ? idempotencyLog.bindings.reviewOutputKey
+        : null;
+    expect(idempotencyReviewOutputKey).toBeDefined();
+    expect(extractReviewOutputKey(createdReviews[0]?.body)).toBe(idempotencyReviewOutputKey);
     expect(idempotencyLog?.bindings.idempotencyDecision).toBe("publish");
     expect(idempotencyLog?.bindings.gate).toBe("review-output-idempotency");
     expect(idempotencyLog?.bindings.gateResult).toBe("accepted");
@@ -6891,6 +7757,8 @@ describe("createMentionHandler review command", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-mention-idempotency-skip",
+          toolUseNames: ["Read"],
+          usedRepoInspectionTools: true,
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -7029,6 +7897,8 @@ describe("createMentionHandler review command", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-mention-publish-recheck",
+          toolUseNames: ["Read"],
+          usedRepoInspectionTools: true,
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -7164,6 +8034,8 @@ describe("createMentionHandler review command", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-mention-publish-failure",
+          toolUseNames: ["Read"],
+          usedRepoInspectionTools: true,
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -7303,6 +8175,8 @@ describe("createMentionHandler review command", () => {
           numTurns: 1,
           durationMs: 1,
           sessionId: "session-mention-fallback-comment-failure",
+          toolUseNames: ["Read"],
+          usedRepoInspectionTools: true,
         }),
       } as never,
       telemetryStore: noopTelemetryStore,
@@ -7465,7 +8339,9 @@ describe("createMentionHandler review command", () => {
     let capturedTaskType: string | undefined;
     let capturedReviewOutputKey: string | undefined;
     let capturedTriggerBody: string | undefined;
+    let capturedPrompt: string | undefined;
     let capturedMaxTurnsOverride: number | undefined;
+    let capturedEnableInlineTools: boolean | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -7523,11 +8399,13 @@ describe("createMentionHandler review command", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async (ctx: { taskType?: string; reviewOutputKey?: string; triggerBody?: string; maxTurnsOverride?: number }) => {
+        execute: async (ctx: { taskType?: string; reviewOutputKey?: string; triggerBody?: string; prompt?: string; maxTurnsOverride?: number; enableInlineTools?: boolean }) => {
           capturedTaskType = ctx.taskType;
           capturedReviewOutputKey = ctx.reviewOutputKey;
           capturedTriggerBody = ctx.triggerBody;
+          capturedPrompt = ctx.prompt;
           capturedMaxTurnsOverride = ctx.maxTurnsOverride;
+          capturedEnableInlineTools = ctx.enableInlineTools;
           return {
             conclusion: "success",
             published: true,
@@ -7556,7 +8434,147 @@ describe("createMentionHandler review command", () => {
     expect(capturedReviewOutputKey).toBeDefined();
     expect(capturedReviewOutputKey).toContain("kodiai-review-output:v1:");
     expect(capturedTriggerBody).toBe("review");
+    expect(capturedPrompt).toContain("You are reviewing pull request #102 in acme/repo.");
+    expect(capturedPrompt).toContain("If NO issues found: do nothing -- no summary, no comments. The calling code handles silent approval.");
+    expect(capturedPrompt).not.toContain("You MUST post a reply when you are mentioned.");
     expect(capturedMaxTurnsOverride).toBeUndefined();
+    expect(capturedEnableInlineTools).toBe(true);
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("@kodiai review carries large-PR triage context into the review prompt", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      [
+        "mention:",
+        "  enabled: true",
+        "largePR:",
+        "  fileThreshold: 10",
+        "  fullReviewCount: 5",
+        "  abbreviatedCount: 2",
+      ].join("\n") + "\n",
+    );
+
+    const prNumber = 103;
+    await $`git -C ${workspaceFixture.dir} checkout feature`.quiet();
+    await $`mkdir -p ${join(workspaceFixture.dir, "src")}`.quiet();
+    for (const fileName of [
+      "alpha.ts",
+      "beta.ts",
+      "gamma.ts",
+      "delta.ts",
+      "epsilon.ts",
+      "zeta.ts",
+      "eta.ts",
+      "theta.ts",
+      "iota.ts",
+      "kappa.ts",
+      "lambda.ts",
+    ]) {
+      await Bun.write(
+        join(workspaceFixture.dir, "src", fileName),
+        `export const ${fileName.replace(/\.ts$/, "")} = true;\n`,
+      );
+    }
+    await $`git -C ${workspaceFixture.dir} add src`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "add explicit review prompt files"`.quiet();
+    await $`git -C ${workspaceFixture.dir} push -f origin feature`.quiet();
+
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    let capturedPrompt: string | undefined;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+              labels: [],
+              draft: false,
+            },
+          }),
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          capturedPrompt = ctx.prompt;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(capturedPrompt).toContain("## Large PR Triage");
+    expect(capturedPrompt).toContain("### Full Review");
+    expect(capturedPrompt).toContain("### Abbreviated Review");
 
     await workspaceFixture.cleanup();
   });

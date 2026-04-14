@@ -22,6 +22,7 @@ import {
   projectLegacyContributorExperienceContract,
   type ContributorExperienceContract,
 } from "../contributor/experience-contract.ts";
+import type { ReviewBoundednessContract } from "../lib/review-boundedness.ts";
 
 const DEFAULT_MAX_TITLE_CHARS = 200;
 const DEFAULT_MAX_PR_BODY_CHARS = 2000;
@@ -183,6 +184,29 @@ function buildModeInstructions(mode: "standard" | "enhanced"): string {
     "",
     "Each inline comment MUST begin with a severity prefix in square brackets: `[CRITICAL]`, `[MAJOR]`, `[MEDIUM]`, or `[MINOR]`.",
     "After the prefix, include finding details and suggestion blocks as normal.",
+  ].join("\n");
+}
+
+function buildToolAvailabilityContract(toolNames: string[]): string {
+  if (toolNames.length === 0) {
+    return "";
+  }
+
+  const uniqueToolNames = [...new Set(toolNames.map((tool) => tool.trim()).filter(Boolean))];
+  if (uniqueToolNames.length === 0) {
+    return "";
+  }
+
+  return [
+    "## Tool Availability Contract",
+    "",
+    "The following GitHub publish tools are available in this run:",
+    ...uniqueToolNames.map((tool) => `- \`${tool}\``),
+    "",
+    "If you find issues, you MUST attempt the available publish tools before ending the run.",
+    "Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error.",
+    "If a publish tool call fails, name the tool and quote the exact error in your final result.",
+    "Ending the run with unpublished findings before attempting the available publish tools is incorrect.",
   ].join("\n");
 }
 
@@ -1658,6 +1682,8 @@ export function buildReviewPrompt(context: {
   graphBlastRadius?: ReviewGraphBlastRadiusResult | null;
   graphContextOptions?: GraphContextOptions;
   structuralImpact?: StructuralImpactPayload | null;
+  reviewBoundedness?: ReviewBoundednessContract | null;
+  publishToolNames?: string[];
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1856,6 +1882,11 @@ export function buildReviewPrompt(context: {
     "The suggestion block replaces the entire line range (from startLine to line). Make sure the replacement is syntactically complete.",
   );
 
+  const toolAvailabilityContract = buildToolAvailabilityContract(context.publishToolNames ?? []);
+  if (toolAvailabilityContract) {
+    lines.push("", toolAvailabilityContract);
+  }
+
   if (context.checkpointEnabled === true) {
     lines.push(
       "",
@@ -2020,6 +2051,22 @@ export function buildReviewPrompt(context: {
   }
 
   lines.push("", buildConfidenceInstructions(context.minConfidence ?? 0));
+
+  if (
+    mode !== "enhanced" &&
+    context.reviewBoundedness?.disclosureRequired &&
+    context.reviewBoundedness.disclosureSentence
+  ) {
+    lines.push(
+      "",
+      "## Bounded Review Disclosure",
+      "",
+      "Because this review was bounded, include this exact sentence once in `## What Changed`:",
+      `\"${context.reviewBoundedness.disclosureSentence}\"`,
+      "Do not paraphrase it.",
+      "Do not repeat it elsewhere in the summary.",
+    );
+  }
 
   // --- Summary comment ---
   if (mode === "enhanced") {

@@ -461,6 +461,28 @@ test("buildReviewPrompt includes path instructions section when provided", () =>
   expect(prompt).toContain("Check auth and validation");
 });
 
+test("buildReviewPrompt includes tool availability contract when publish tools are provided", () => {
+  const prompt = buildReviewPrompt(
+    baseContext({
+      publishToolNames: [
+        "mcp__github_comment__create_comment",
+        "mcp__github_inline_comment__create_inline_comment",
+      ],
+    }),
+  );
+
+  expect(prompt).toContain("## Tool Availability Contract");
+  expect(prompt).toContain("mcp__github_comment__create_comment");
+  expect(prompt).toContain("mcp__github_inline_comment__create_inline_comment");
+  expect(prompt).toContain("Do NOT claim the GitHub comment tools are unavailable unless a tool call actually returns an error");
+  expect(prompt).toContain("Ending the run with unpublished findings before attempting the available publish tools is incorrect");
+});
+
+test("buildReviewPrompt omits tool availability contract when publish tools are absent", () => {
+  const prompt = buildReviewPrompt(baseContext());
+  expect(prompt).not.toContain("## Tool Availability Contract");
+});
+
 test("buildReviewPrompt includes suppression section when suppressions provided", () => {
   const prompt = buildReviewPrompt(
     baseContext({
@@ -2446,5 +2468,125 @@ describe("buildReviewPrompt graph context integration", () => {
   test("graph context section mentions impacted file count and changed file resolution", () => {
     const prompt = buildReviewPrompt(baseContext({ graphBlastRadius: makeBlastRadius() }));
     expect(prompt).toContain("1/1 changed files resolved in graph");
+  });
+
+  test("threads one exact bounded-review disclosure instruction into the standard summary prompt", () => {
+    const disclosureSentence = "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).";
+    const prompt = buildReviewPrompt(
+      baseContext({
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          reasonCodes: [
+            "large-pr-triage",
+            "timeout-auto-reduction-skipped-explicit-profile",
+          ],
+          disclosureRequired: true,
+          disclosureSentence,
+          largePR: {
+            fullCount: 30,
+            abbreviatedCount: 20,
+            reviewedCount: 50,
+            totalFiles: 60,
+            notReviewedCount: 10,
+          },
+          timeout: {
+            riskLevel: "high",
+            dynamicTimeoutSeconds: 900,
+            shouldReduceScope: true,
+            reductionApplied: false,
+            reductionSkippedReason: "explicit-profile",
+          },
+        },
+      }),
+    );
+
+    expect(prompt).toContain("## Bounded Review Disclosure");
+    expect(prompt).toContain("include this exact sentence once in `## What Changed`");
+    expect(prompt).toContain(`\"${disclosureSentence}\"`);
+    expect(prompt).toContain("Do not paraphrase it.");
+    expect(prompt).toContain("Do not repeat it elsewhere in the summary.");
+  });
+
+  test("keeps small unbounded standard prompts silent and omits bounded-review instructions in enhanced mode", () => {
+    const unboundedPrompt = buildReviewPrompt(
+      baseContext({
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "auto",
+            autoBand: "small",
+            linesChanged: 80,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "auto",
+            autoBand: "small",
+            linesChanged: 80,
+          },
+          reasonCodes: [],
+          disclosureRequired: false,
+          disclosureSentence: null,
+          largePR: null,
+          timeout: {
+            riskLevel: "low",
+            dynamicTimeoutSeconds: 600,
+            shouldReduceScope: false,
+            reductionApplied: false,
+            reductionSkippedReason: null,
+          },
+        },
+      }),
+    );
+    expect(unboundedPrompt).not.toContain("## Bounded Review Disclosure");
+
+    const enhancedPrompt = buildReviewPrompt(
+      baseContext({
+        mode: "enhanced",
+        reviewBoundedness: {
+          requestedProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          effectiveProfile: {
+            selectedProfile: "strict",
+            source: "keyword",
+            autoBand: null,
+            linesChanged: 100,
+          },
+          reasonCodes: ["large-pr-triage"],
+          disclosureRequired: true,
+          disclosureSentence:
+            "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).",
+          largePR: {
+            fullCount: 30,
+            abbreviatedCount: 20,
+            reviewedCount: 50,
+            totalFiles: 60,
+            notReviewedCount: 10,
+          },
+          timeout: {
+            riskLevel: "high",
+            dynamicTimeoutSeconds: 900,
+            shouldReduceScope: true,
+            reductionApplied: false,
+            reductionSkippedReason: "explicit-profile",
+          },
+        },
+      }),
+    );
+    expect(enhancedPrompt).not.toContain("## Bounded Review Disclosure");
   });
 });

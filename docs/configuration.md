@@ -15,6 +15,11 @@ timeoutSeconds: 600
 review:
   enabled: true
   autoApprove: true
+  triggers:
+    onOpened: true
+    onReadyForReview: true
+    onReviewRequested: true
+    onSynchronize: true
   maxComments: 7
   severity:
     minLevel: medium
@@ -174,6 +179,14 @@ Controls which GitHub webhook events trigger a review.
 | `onReadyForReview` | `boolean` | `true` | Review when PR moves from draft to ready |
 | `onReviewRequested` | `boolean` | `true` | Review when review is explicitly requested |
 | `onSynchronize` | `boolean` | `false` | Review on new pushes to the PR branch |
+
+```yaml
+review:
+  triggers:
+    onSynchronize: true
+```
+
+Use the nested `review.triggers.onSynchronize` shape. Legacy `review.onSynchronize` is ignored at runtime and produces a config warning so intent drift fails loudly.
 
 ### `review.autoApprove`
 
@@ -696,6 +709,8 @@ Number of highest-risk files to review at full depth.
 
 Number of files to review at abbreviated depth (critical/major findings only). These are the next-highest-risk files after the full review set.
 
+**Truthfulness note:** large-PR triage already bounds effective review scope. When a GitHub-visible review summary is published for a bounded review, Kodiai discloses the requested profile versus the effective large-PR coverage instead of implying exhaustive file-by-file review.
+
 ### `largePR.riskWeights`
 
 Weights for file risk scoring in large PR triage. Values are normalized at runtime so they need not sum to exactly 1.0.
@@ -761,6 +776,8 @@ Enable dynamic timeout scaling based on PR size and complexity.
 | **Default** | `true` |
 
 Enable automatic scope reduction when approaching timeout. Kodiai will reduce review depth to ensure a result is returned within the time limit.
+
+When this triggers, the GitHub-visible summary and Review Details disclose the requested profile versus the effective profile and bounded coverage. If reduction is skipped because the review profile was set explicitly, Review Details records that skip instead of implying the review was exhaustive.
 
 ---
 

@@ -1144,6 +1144,71 @@ test("onSynchronize defaults to false and existing configs without it still pars
   }
 });
 
+test("warns when legacy review.onSynchronize intent does not match the effective trigger", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(join(dir, ".kodiai.yml"), "review:\n  onSynchronize: true\n");
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.triggers.onSynchronize).toBe(false);
+    expect(
+      warnings.some((warning) =>
+        warning.issues.some((issue) =>
+          issue.includes("review.onSynchronize")
+            && issue.includes("review.triggers.onSynchronize")
+            && issue.toLowerCase().includes("effective"),
+        ),
+      ),
+    ).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("parses nested review.triggers.onSynchronize when explicitly enabled", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onSynchronize: true\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.triggers.onSynchronize).toBe(true);
+    expect(warnings).toEqual([]);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("non-boolean review.triggers.onSynchronize falls back to disabled with a warning", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  triggers:\n    onSynchronize: 'sometimes'\n",
+    );
+    const { config, warnings } = await loadRepoConfig(dir);
+
+    expect(config.review.triggers.onSynchronize).toBe(false);
+    expect(
+      warnings.some((warning) =>
+        warning.section === "review"
+        && warning.issues.some((issue) => issue.includes("triggers.onSynchronize")),
+      ),
+    ).toBe(true);
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("checked-in repo config enables synchronize with the nested trigger shape", async () => {
+  const { config, warnings } = await loadRepoConfig(process.cwd());
+
+  expect(config.review.triggers.onSynchronize).toBe(true);
+  expect(warnings).toEqual([]);
+});
+
 test("retrieval section defaults are applied when omitted", async () => {
   const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
   try {

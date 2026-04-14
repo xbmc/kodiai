@@ -6,7 +6,12 @@ import type {
 } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
+import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
+import type {
+  ExecutorPhaseTiming,
+  ReviewPhaseName,
+  ReviewPhaseTiming,
+} from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { ExecutionResult } from "../execution/types.ts";
@@ -57,11 +62,17 @@ import type { SuggestionClusterStore } from "../knowledge/suggestion-cluster-sto
 import { applyClusterScoringWithDegradation } from "../knowledge/suggestion-cluster-degradation.ts";
 import { classifyError, formatErrorComment, postOrUpdateErrorComment } from "../lib/errors.ts";
 import { estimateTimeoutRisk, computeLanguageComplexity } from "../lib/timeout-estimator.ts";
+import {
+  ensureReviewBoundednessDisclosureInSummary,
+  resolveReviewBoundedness,
+  type ReviewBoundednessContract,
+} from "../lib/review-boundedness.ts";
 import { formatPartialReviewComment } from "../lib/partial-review-formatter.ts";
 import { computeRetryScope } from "../lib/retry-scope-reducer.ts";
 import { type RetrieveResult, type createRetriever } from "../knowledge/retrieval.ts";
 import { buildRetrievalVariants } from "../knowledge/multi-query-retrieval.ts";
 import {
+  buildApprovedReviewBody,
   buildReviewOutputMarker,
   buildReviewOutputKey,
   ensureReviewOutputNotPublished,
@@ -203,6 +214,114 @@ type AuthorTierSearchEnrichment = {
   degradationPath: "none" | "search-api-rate-limit";
 };
 
+const REVIEW_PHASE_ORDER = [
+  "queue wait",
+  "workspace preparation",
+  "retrieval/context assembly",
+  "executor handoff",
+  "remote runtime",
+  "publication",
+] as const satisfies ReadonlyArray<ReviewPhaseName>;
+
+function createReviewPhaseTiming(params: {
+  name: ReviewPhaseName;
+  status: ReviewPhaseTiming["status"];
+  durationMs?: number;
+  detail?: string;
+}): ReviewPhaseTiming {
+  return {
+    name: params.name,
+    status: params.status,
+    ...(params.durationMs !== undefined ? { durationMs: params.durationMs } : {}),
+    ...(params.detail ? { detail: params.detail } : {}),
+  };
+}
+
+function buildUnavailableReviewPhase(name: ReviewPhaseName, detail: string): ReviewPhaseTiming {
+  return createReviewPhaseTiming({
+    name,
+    status: "unavailable",
+    detail,
+  });
+}
+
+function isValidQueueWaitMetadata(metadata?: JobQueueWaitMetadata): metadata is JobQueueWaitMetadata {
+  return Boolean(
+    metadata &&
+    Number.isFinite(metadata.queuedAtMs) &&
+    Number.isFinite(metadata.startedAtMs) &&
+    Number.isFinite(metadata.waitMs) &&
+    metadata.queuedAtMs >= 0 &&
+    metadata.startedAtMs >= metadata.queuedAtMs &&
+    metadata.waitMs >= 0 &&
+    metadata.startedAtMs - metadata.queuedAtMs === metadata.waitMs,
+  );
+}
+
+function buildQueueWaitPhase(metadata?: JobQueueWaitMetadata): ReviewPhaseTiming {
+  if (!isValidQueueWaitMetadata(metadata)) {
+    return buildUnavailableReviewPhase("queue wait", "invalid queue wait metadata");
+  }
+
+  return createReviewPhaseTiming({
+    name: "queue wait",
+    status: "completed",
+    durationMs: metadata.waitMs,
+  });
+}
+
+function buildExecutorUnavailablePhases(detail: string): ExecutorPhaseTiming[] {
+  return [
+    createReviewPhaseTiming({
+      name: "executor handoff",
+      status: "unavailable",
+      detail,
+    }) as ExecutorPhaseTiming,
+    createReviewPhaseTiming({
+      name: "remote runtime",
+      status: "unavailable",
+      detail,
+    }) as ExecutorPhaseTiming,
+  ];
+}
+
+function buildOrderedReviewPhaseSummary(phases: Map<ReviewPhaseName, ReviewPhaseTiming>): ReviewPhaseTiming[] {
+  return REVIEW_PHASE_ORDER.map((name) =>
+    phases.get(name) ?? buildUnavailableReviewPhase(name, "phase timing unavailable"));
+}
+
+function buildReviewDetailsPhaseTimingSummary(params: {
+  phases: Map<ReviewPhaseName, ReviewPhaseTiming>;
+  publicationPhaseStartedAt?: number;
+  totalPhaseStartAt: number;
+}) {
+  const phaseSnapshot = new Map(params.phases);
+
+  if (!phaseSnapshot.has("publication")) {
+    if (params.publicationPhaseStartedAt !== undefined) {
+      phaseSnapshot.set(
+        "publication",
+        createReviewPhaseTiming({
+          name: "publication",
+          status: "degraded",
+          durationMs: Math.max(0, Date.now() - params.publicationPhaseStartedAt),
+          detail: "captured before publication completed",
+        }),
+      );
+    } else {
+      phaseSnapshot.set(
+        "publication",
+        buildUnavailableReviewPhase("publication", "phase timing unavailable"),
+      );
+    }
+  }
+
+  return {
+    totalDurationMs: Math.max(0, Date.now() - params.totalPhaseStartAt),
+    phases: buildOrderedReviewPhaseSummary(phaseSnapshot),
+  };
+}
+
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
   cachedTier?: AuthorTier | null;
@@ -309,6 +428,7 @@ async function appendReviewDetailsToSummary(params: {
   reviewDetailsBlock: string;
   botHandles: string[];
   requireDegradationDisclosure: boolean;
+  reviewBoundedness?: ReviewBoundednessContract | null;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
@@ -332,6 +452,10 @@ async function appendReviewDetailsToSummary(params: {
   }
 
   let summaryBody = summaryComment.body!;
+  summaryBody = ensureReviewBoundednessDisclosureInSummary(
+    summaryBody,
+    params.reviewBoundedness,
+  );
   if (params.requireDegradationDisclosure) {
     summaryBody = ensureSearchRateLimitDisclosureInSummary(summaryBody);
   }
@@ -1367,7 +1491,21 @@ export function createReviewHandler(deps: {
       "Review enqueue started",
     );
 
-    await jobQueue.enqueue(event.installationId, async () => {
+    await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
+      const reviewPhaseTimings = new Map<ReviewPhaseName, ReviewPhaseTiming>();
+      reviewPhaseTimings.set("queue wait", buildQueueWaitPhase(queueMetadata));
+      const reviewStartedAt = Date.now();
+      const totalPhaseStartAt = isValidQueueWaitMetadata(queueMetadata)
+        ? queueMetadata.queuedAtMs
+        : reviewStartedAt;
+      let workspacePhaseStartedAt: number | undefined;
+      let retrievalPhaseStartedAt: number | undefined;
+      let publicationPhaseStartedAt: number | undefined;
+      let executorPhaseTimings: ExecutorPhaseTiming[] = buildExecutorUnavailablePhases(
+        "executor phase timings unavailable",
+      );
+      let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
+
       // Durable run state idempotency check (REL-01)
       // Check before expensive workspace creation. Uses SHA pair as identity key.
       // Fail-open: if knowledgeStore is undefined or query throws, proceed with review.
@@ -1418,6 +1556,7 @@ export function createReviewHandler(deps: {
 
       let workspace: Workspace | undefined;
       try {
+        workspacePhaseStartedAt = Date.now();
         // Create workspace with depth 50 for diff context
         workspace = await workspaceManager.create(event.installationId, {
           owner: cloneOwner,
@@ -1446,9 +1585,17 @@ export function createReviewHandler(deps: {
         for (const w of warnings) {
           logger.warn(
             { section: w.section, issues: w.issues },
-            "Config section invalid, using defaults",
+            "Config warning detected",
           );
         }
+        reviewPhaseTimings.set(
+          "workspace preparation",
+          createReviewPhaseTiming({
+            name: "workspace preparation",
+            status: "completed",
+            durationMs: Math.max(0, Date.now() - (workspacePhaseStartedAt ?? Date.now())),
+          }),
+        );
 
         // Best-effort: ensure a UI rereview team is requested so it appears under Reviewers.
         // NOTE: The resulting review_requested event sender will be the app, and our bot filter
@@ -1742,6 +1889,7 @@ export function createReviewHandler(deps: {
         }
 
         // Build changed files and diff context, handling shallow-history merge-base gaps.
+        retrievalPhaseStartedAt = Date.now();
         const diffContext = await diffContextCollector({
           workspaceDir: workspace.dir,
           baseRef: pr.base.ref,
@@ -2569,7 +2717,9 @@ export function createReviewHandler(deps: {
           timeoutEstimate.riskLevel === "high";
 
         // TMO-02: Scope reduction for high-risk auto-profile PRs
-        const originalProfileSelection = { ...profileSelection };
+        const requestedProfileSelection = { ...profileSelection };
+        let timeoutReductionApplied = false;
+        let timeoutReductionSkippedReason: "explicit-profile" | "config-disabled" | null = null;
         if (
           timeoutEstimate.shouldReduceScope &&
           profileSelection.source === "auto" &&
@@ -2594,11 +2744,12 @@ export function createReviewHandler(deps: {
             tieredFiles.abbreviated.push(...excess);
           }
 
+          timeoutReductionApplied = true;
           logger.info(
             {
               ...baseLog,
               gate: "timeout-scope-reduction",
-              originalProfile: originalProfileSelection.selectedProfile,
+              originalProfile: requestedProfileSelection.selectedProfile,
               reducedProfile: "minimal",
               originalFileCount: tieredFiles.full.length + (tieredFiles.abbreviated.length - (timeoutEstimate.reducedFileCount !== null ? tieredFiles.abbreviated.length : 0)),
               reducedFileCount: timeoutEstimate.reducedFileCount,
@@ -2606,16 +2757,63 @@ export function createReviewHandler(deps: {
             "Auto-reduced review scope for high timeout risk",
           );
         } else if (timeoutEstimate.shouldReduceScope && profileSelection.source !== "auto") {
+          timeoutReductionSkippedReason = "explicit-profile";
           logger.warn(
             {
               ...baseLog,
               gate: "timeout-scope-reduction",
               gateResult: "skipped",
-              skipReason: "explicit-profile",
+              skipReason: timeoutReductionSkippedReason,
               profile: profileSelection.selectedProfile,
               source: profileSelection.source,
             },
             "Skipping scope reduction: user explicitly configured profile",
+          );
+        } else if (timeoutEstimate.shouldReduceScope && config.timeout.autoReduceScope === false) {
+          timeoutReductionSkippedReason = "config-disabled";
+          logger.info(
+            {
+              ...baseLog,
+              gate: "timeout-scope-reduction",
+              gateResult: "skipped",
+              skipReason: timeoutReductionSkippedReason,
+              profile: profileSelection.selectedProfile,
+              source: profileSelection.source,
+            },
+            "Skipping scope reduction because timeout auto-reduction is disabled",
+          );
+        }
+
+        const reviewBoundedness = resolveReviewBoundedness({
+          requestedProfile: requestedProfileSelection,
+          effectiveProfile: profileSelection,
+          largePRTriage: tieredFiles.isLargePR
+            ? {
+                fullCount: tieredFiles.full.length,
+                abbreviatedCount: tieredFiles.abbreviated.length,
+                totalFiles: tieredFiles.totalFiles,
+              }
+            : null,
+          timeout: {
+            riskLevel: timeoutEstimate.riskLevel,
+            dynamicTimeoutSeconds: timeoutEstimate.dynamicTimeoutSeconds,
+            shouldReduceScope: timeoutEstimate.shouldReduceScope,
+            reductionApplied: timeoutReductionApplied,
+            reductionSkippedReason: timeoutReductionSkippedReason,
+          },
+        });
+
+        if (reviewBoundedness) {
+          logger.info(
+            {
+              ...baseLog,
+              gate: "review-boundedness",
+              disclosureRequired: reviewBoundedness.disclosureRequired,
+              reasonCodes: reviewBoundedness.reasonCodes,
+              requestedProfile: reviewBoundedness.requestedProfile.selectedProfile,
+              effectiveProfile: reviewBoundedness.effectiveProfile.selectedProfile,
+            },
+            "Resolved bounded-review contract",
           );
         }
 
@@ -2780,6 +2978,10 @@ export function createReviewHandler(deps: {
             mentionOnlyCount: tieredFiles.mentionOnly.length,
             totalFiles: tieredFiles.totalFiles,
           } : null,
+          publishToolNames: [
+            "mcp__github_comment__create_comment",
+            "mcp__github_inline_comment__create_inline_comment",
+          ],
           contributorExperienceContract: authorClassification.contract,
           authorExpertise: authorClassification.contract.state === "profile-backed"
             ? authorClassification.expertise?.map(e => ({
@@ -2798,7 +3000,16 @@ export function createReviewHandler(deps: {
           // Graph-derived review context (M040/S03): inject bounded blast-radius section when available
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
+          reviewBoundedness,
         });
+        reviewPhaseTimings.set(
+          "retrieval/context assembly",
+          createReviewPhaseTiming({
+            name: "retrieval/context assembly",
+            status: "completed",
+            durationMs: Math.max(0, Date.now() - (retrievalPhaseStartedAt ?? Date.now())),
+          }),
+        );
 
         const executionInput = {
           workspace,
@@ -2841,6 +3052,15 @@ export function createReviewHandler(deps: {
             deliveryId: `${event.id}-transient-retry-1`,
           });
         }
+
+        executorResult = result;
+        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
+          "executor phase timings unavailable",
+        );
+        for (const phase of executorPhaseTimings) {
+          reviewPhaseTimings.set(phase.name, phase);
+        }
+        publicationPhaseStartedAt = Date.now();
 
         logger.info(
           {
@@ -3375,6 +3595,41 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
+        const buildReviewDetailsBody = (): string => {
+          const reviewDetailsBody = formatReviewDetailsSummary({
+            reviewOutputKey,
+            filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
+            linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
+            linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
+            findingCounts,
+            largePRTriage: tieredFiles.isLargePR ? {
+              fullCount: tieredFiles.full.length,
+              abbreviatedCount: tieredFiles.abbreviated.length,
+              mentionOnlyFiles: tieredFiles.mentionOnly.map((f) => ({ filePath: f.filePath, score: f.score })),
+              totalFiles: tieredFiles.totalFiles,
+            } : undefined,
+            reviewBoundedness,
+            feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
+            keywordParsing: parsedIntent,
+            profileSelection,
+            contributorExperience: authorClassification.contract.reviewDetails,
+            prioritization: prioritizationStats,
+            usageLimit: result.usageLimit,
+            tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
+            structuralImpact: structuralImpactForReview,
+            phaseTimingSummary: buildReviewDetailsPhaseTimingSummary({
+              phases: reviewPhaseTimings,
+              publicationPhaseStartedAt,
+              totalPhaseStartAt,
+            }),
+          });
+
+          const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
+          return suppressedSection
+            ? `${reviewDetailsBody}\n\n${suppressedSection}`
+            : reviewDetailsBody;
+        };
+
         if (shouldProcessReviewOutput) {
           logger.info(
             {
@@ -3391,33 +3646,7 @@ export function createReviewHandler(deps: {
           );
 
           try {
-            const reviewDetailsBody = formatReviewDetailsSummary({
-              reviewOutputKey,
-              filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
-              linesAdded: diffAnalysis?.metrics.totalLinesAdded ?? 0,
-              linesRemoved: diffAnalysis?.metrics.totalLinesRemoved ?? 0,
-              findingCounts,
-              largePRTriage: tieredFiles.isLargePR ? {
-                fullCount: tieredFiles.full.length,
-                abbreviatedCount: tieredFiles.abbreviated.length,
-                mentionOnlyFiles: tieredFiles.mentionOnly.map(f => ({ filePath: f.filePath, score: f.score })),
-                totalFiles: tieredFiles.totalFiles,
-              } : undefined,
-              feedbackSuppressionCount: feedbackSuppression.suppressedPatternCount,
-              keywordParsing: parsedIntent,
-              profileSelection,
-              contributorExperience: authorClassification.contract.reviewDetails,
-              prioritization: prioritizationStats,
-              usageLimit: result.usageLimit,
-              tokenUsage: { inputTokens: result.inputTokens, outputTokens: result.outputTokens, costUsd: result.costUsd },
-              structuralImpact: structuralImpactForReview,
-            });
-
-            // Append suppressed-findings section if any findings were filtered (FILT-02)
-            const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
-            const fullDetailsBody = suppressedSection
-              ? `${reviewDetailsBody}\n\n${suppressedSection}`
-              : reviewDetailsBody;
+            const fullDetailsBody = buildReviewDetailsBody();
 
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
@@ -3431,6 +3660,7 @@ export function createReviewHandler(deps: {
                   reviewDetailsBlock: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
                   requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                  reviewBoundedness,
                 });
               } catch (appendErr) {
                 // Fallback: post standalone if append fails (e.g., summary comment not found yet)
@@ -3900,6 +4130,29 @@ export function createReviewHandler(deps: {
               "Published partial review on timeout",
             );
 
+            try {
+              await upsertReviewDetailsComment({
+                octokit,
+                owner: apiOwner,
+                repo: apiRepo,
+                prNumber: pr.number,
+                reviewOutputKey,
+                body: buildReviewDetailsBody(),
+                botHandles: [githubApp.getAppSlug(), "claude"],
+              });
+            } catch (reviewDetailsErr) {
+              logger.warn(
+                {
+                  ...baseLog,
+                  gate: "review-details-output",
+                  gateResult: "timeout-failed",
+                  reviewOutputKey,
+                  err: reviewDetailsErr,
+                },
+                "Failed to publish Review Details for timeout partial output",
+              );
+            }
+
             // Structured resilience telemetry (best-effort)
             if (config.telemetry.enabled) {
               try {
@@ -4090,6 +4343,10 @@ export function createReviewHandler(deps: {
                           }
                         : null,
                       largePRContext: null,
+                      publishToolNames: [
+                        "mcp__github_comment__create_comment",
+                        "mcp__github_inline_comment__create_inline_comment",
+                      ],
                       contributorExperienceContract: authorClassification.contract,
                       authorExpertise: authorClassification.contract.state === "profile-backed"
                         ? authorClassification.expertise?.map((e) => ({
@@ -4370,16 +4627,24 @@ export function createReviewHandler(deps: {
             }
 
             {
-              // No issues found -- submit silent approval
+              const approvalEvidence = [
+                `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
+              ];
+              const approvalConfidence = depBumpContext?.mergeConfidence
+                ? renderApprovalConfidence(depBumpContext.mergeConfidence)
+                : null;
+
               await octokit.rest.pulls.createReview({
                 owner: apiOwner,
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
                 body: sanitizeOutgoingMentions(
-                  depBumpContext?.mergeConfidence
-                    ? `${idempotencyCheck.marker}\n\n${renderApprovalConfidence(depBumpContext.mergeConfidence)}`
-                    : idempotencyCheck.marker,
+                  buildApprovedReviewBody({
+                    reviewOutputKey,
+                    evidence: approvalEvidence,
+                    approvalConfidence,
+                  }),
                   [appSlug, "claude"],
                 ),
               });
@@ -4411,6 +4676,34 @@ export function createReviewHandler(deps: {
           }
         }
       } catch (err) {
+        if (!reviewPhaseTimings.has("workspace preparation") && workspacePhaseStartedAt !== undefined) {
+          reviewPhaseTimings.set(
+            "workspace preparation",
+            createReviewPhaseTiming({
+              name: "workspace preparation",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - workspacePhaseStartedAt),
+              detail: "workspace preparation failed",
+            }),
+          );
+        }
+
+        if (!reviewPhaseTimings.has("retrieval/context assembly") && retrievalPhaseStartedAt !== undefined) {
+          reviewPhaseTimings.set(
+            "retrieval/context assembly",
+            createReviewPhaseTiming({
+              name: "retrieval/context assembly",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - retrievalPhaseStartedAt),
+              detail: "retrieval/context assembly failed",
+            }),
+          );
+        }
+
+        if (publicationPhaseStartedAt === undefined) {
+          publicationPhaseStartedAt = Date.now();
+        }
+
         logger.error(
           { err, prNumber: pr.number },
           "Review handler failed",
@@ -4427,10 +4720,79 @@ export function createReviewHandler(deps: {
             repo: apiRepo,
             issueNumber: pr.number,
           }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+              detail: "posted error comment after handler failure",
+            }),
+          );
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment to PR");
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "degraded",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+              detail: "failed to publish error comment after handler failure",
+            }),
+          );
         }
       } finally {
+        for (const phase of executorPhaseTimings) {
+          if (!reviewPhaseTimings.has(phase.name)) {
+            reviewPhaseTimings.set(phase.name, phase);
+          }
+        }
+
+        if (publicationPhaseStartedAt !== undefined && !reviewPhaseTimings.has("publication")) {
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "completed",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+            }),
+          );
+        }
+
+        const shouldLogPhaseSummary =
+          workspacePhaseStartedAt !== undefined ||
+          retrievalPhaseStartedAt !== undefined ||
+          publicationPhaseStartedAt !== undefined ||
+          executorResult !== undefined;
+
+        if (
+          shouldLogPhaseSummary &&
+          typeof event.id === "string" &&
+          event.id.length > 0 &&
+          reviewOutputKey.length > 0
+        ) {
+          const phases = buildOrderedReviewPhaseSummary(reviewPhaseTimings);
+          const totalDurationMs = Math.max(0, Date.now() - totalPhaseStartAt);
+          try {
+            logger.info(
+              {
+                deliveryId: event.id,
+                reviewOutputKey,
+                installationId: event.installationId,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                conclusion: executorResult?.conclusion,
+                published: executorResult?.published,
+                totalDurationMs,
+                phases,
+              },
+              "Review phase timing summary",
+            );
+          } catch {
+            // logging failures must never block review publication
+          }
+        }
+
         if (workspace) {
           await workspace.cleanup();
         }

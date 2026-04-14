@@ -8,10 +8,31 @@ export type ExecutionPublishEvent = {
   excerpt: string;
 };
 
+export type ReviewPhaseStatus = "completed" | "degraded" | "unavailable";
+
+export type ReviewPhaseName =
+  | "queue wait"
+  | "workspace preparation"
+  | "retrieval/context assembly"
+  | "executor handoff"
+  | "remote runtime"
+  | "publication";
+
+export type ReviewPhaseTiming = {
+  name: ReviewPhaseName;
+  status: ReviewPhaseStatus;
+  durationMs?: number;
+  detail?: string;
+};
+
+export type ExecutorPhaseTiming = ReviewPhaseTiming & {
+  name: "executor handoff" | "remote runtime";
+};
+
 /** Everything needed to invoke Claude against a workspace */
 export type ExecutionContext = {
   /** The ephemeral workspace with the cloned repo */
-  workspace: { dir: string; cleanup: () => Promise<void> };
+  workspace: { dir: string; cleanup: () => Promise<void>; token?: string };
   installationId: number;
   owner: string;
   repo: string;
@@ -92,8 +113,14 @@ export type ExecutionResult = {
   stopReason: string | undefined;
   /** Final assistant text for successful runs (when provided by SDK). */
   resultText?: string;
+  /** Ordered unique tool names observed in assistant tool_use blocks during the run. */
+  toolUseNames?: string[];
+  /** True when the run used repository-inspection tools (Read/Grep/Glob or git diff/log/show). */
+  usedRepoInspectionTools?: boolean;
   /** Structured GitHub publish metadata emitted by MCP tools during execution. */
   publishEvents?: ExecutionPublishEvent[];
+  /** Normalized executor-only timing phases captured around ACA handoff/runtime. */
+  executorPhaseTimings?: ExecutorPhaseTiming[];
   /** Claude Code usage limit data from the last SDKRateLimitEvent seen during the run. */
   usageLimit?: {
     utilization: number | undefined;

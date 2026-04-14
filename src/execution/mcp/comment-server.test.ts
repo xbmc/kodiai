@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { extractReviewOutputKey } from "../../handlers/review-idempotency.ts";
 import { createCommentServer } from "./comment-server.ts";
 
 function getToolHandlers(server: ReturnType<typeof createCommentServer>) {
@@ -19,6 +20,16 @@ function getToolHandlers(server: ReturnType<typeof createCommentServer>) {
     throw new Error("comment tools are not registered");
   }
   return { create: create.handler, update: update.handler };
+}
+
+function buildSharedApprovalBody(evidence: string[]): string {
+  return [
+    "Decision: APPROVE",
+    "Issues: none",
+    "",
+    "Evidence:",
+    ...evidence.map((line) => `- ${line}`),
+  ].join("\n");
 }
 
 describe("createCommentServer", () => {
@@ -119,7 +130,7 @@ describe("createCommentServer", () => {
     expect(result.content[0]?.text).toContain("missing required section");
   });
 
-  test("APPROVE with no issues on PR submits approval review instead of comment", async () => {
+  test("shared clean approval on PR submits APPROVE review with server-stamped marker", async () => {
     let createReviewParams: Record<string, unknown> | undefined;
     let createCommentCalled = false;
     let publishCalled = false;
@@ -132,36 +143,34 @@ describe("createCommentServer", () => {
             return { data: { id: 1 } };
           },
           updateComment: async () => ({ data: {} }),
+          listComments: async () => ({ data: [] }),
         },
         pulls: {
           createReview: async (params: Record<string, unknown>) => {
             createReviewParams = params;
             return { data: { id: 100 } };
           },
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
         },
       },
     };
+
+    const reviewOutputKey = "m049-s01-t03-approval";
+    const body = buildSharedApprovalBody([
+      "Reviewed 3 changed files with no actionable issues.",
+    ]);
 
     const server = createCommentServer(
       async () => octokit as never,
       "acme",
       "repo",
       [],
-      undefined,
+      reviewOutputKey,
       () => { publishCalled = true; },
       42,
     );
     const { create } = getToolHandlers(server);
-
-    const body = [
-      "<details>",
-      "<summary>kodiai response</summary>",
-      "",
-      "Decision: APPROVE",
-      "Issues: none",
-      "",
-      "</details>",
-    ].join("\n");
 
     const result = await create({ issueNumber: 10, body });
     expect(result.isError).toBeUndefined();
@@ -173,12 +182,15 @@ describe("createCommentServer", () => {
     expect(createReviewParams).toBeDefined();
     expect(createReviewParams!.event).toBe("APPROVE");
     expect(createReviewParams!.pull_number).toBe(42);
+    expect(createReviewParams!.body).toContain("Decision: APPROVE");
+    expect(createReviewParams!.body).toContain("Issues: none");
+    expect(createReviewParams!.body).toContain("Evidence:");
+    expect(extractReviewOutputKey(String(createReviewParams!.body))).toBe(reviewOutputKey);
 
     expect(createCommentCalled).toBe(false);
     expect(publishCalled).toBe(true);
   });
-
-  test("APPROVE with no issues but no prNumber posts as regular comment", async () => {
+  test("shared clean approval without prNumber posts as regular comment", async () => {
     let createCommentCalled = false;
     let createReviewCalled = false;
 
@@ -211,19 +223,165 @@ describe("createCommentServer", () => {
     );
     const { create } = getToolHandlers(server);
 
-    const body = [
-      "<details>",
-      "<summary>kodiai response</summary>",
-      "",
-      "Decision: APPROVE",
-      "Issues: none",
-      "",
-      "</details>",
-    ].join("\n");
+    const body = buildSharedApprovalBody([
+      "Reviewed 2 changed files with no actionable issues.",
+      "Prompt coverage and repository inspection were both completed.",
+    ]);
 
     const result = await create({ issueNumber: 10, body });
     expect(result.isError).toBeUndefined();
     expect(createCommentCalled).toBe(true);
+    expect(createReviewCalled).toBe(false);
+  });
+
+  test("shared clean approval with three evidence bullets still promotes to APPROVE", async () => {
+    let createReviewBody: string | undefined;
+    let createCommentCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async (params: { body: string }) => {
+            createReviewBody = params.body;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      undefined,
+      undefined,
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({
+      issueNumber: 10,
+      body: buildSharedApprovalBody([
+        "Reviewed 7 changed files with no actionable issues.",
+        "Repository inspection covered all modified paths.",
+        "Approval confidence: high for this isolated refactor.",
+      ]),
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(createCommentCalled).toBe(false);
+    expect(createReviewBody).toContain("Approval confidence: high for this isolated refactor.");
+  });
+
+  test.each([
+    {
+      name: "missing Evidence header",
+      body: ["Decision: APPROVE", "Issues: none", "", "- Reviewed 3 changed files."].join("\n"),
+      expectedMessage: "Evidence:",
+    },
+    {
+      name: "zero evidence bullets",
+      body: ["Decision: APPROVE", "Issues: none", "", "Evidence:"].join("\n"),
+      expectedMessage: "1-3 evidence bullets",
+    },
+    {
+      name: "more than three evidence bullets",
+      body: buildSharedApprovalBody([
+        "Evidence line one.",
+        "Evidence line two.",
+        "Evidence line three.",
+        "Evidence line four.",
+      ]),
+      expectedMessage: "1-3 evidence bullets",
+    },
+    {
+      name: "legacy wrapped approval body",
+      body: [
+        "<details>",
+        "<summary>kodiai response</summary>",
+        "",
+        "Decision: APPROVE",
+        "Issues: none",
+        "",
+        "</details>",
+      ].join("\n"),
+      expectedMessage: "visible body format",
+    },
+    {
+      name: "extra paragraph after Issues: none",
+      body: [
+        "Decision: APPROVE",
+        "Issues: none",
+        "",
+        "Evidence:",
+        "- Reviewed 3 changed files.",
+        "",
+        "Everything looks good to me.",
+      ].join("\n"),
+      expectedMessage: "only Decision: APPROVE, Issues: none, Evidence:",
+    },
+    {
+      name: "extra heading before evidence",
+      body: [
+        "Decision: APPROVE",
+        "Issues: none",
+        "",
+        "## Notes",
+        "Evidence:",
+        "- Reviewed 3 changed files.",
+      ].join("\n"),
+      expectedMessage: "Evidence:",
+    },
+    {
+      name: "invalid decision value",
+      body: buildSharedApprovalBody(["Reviewed 3 changed files."]).replace("Decision: APPROVE", "Decision: APPROVED"),
+      expectedMessage: "Decision must be APPROVE or NOT APPROVED",
+    },
+  ])("rejects malformed shared approval body: $name", async ({ body, expectedMessage }) => {
+    let createCommentCalled = false;
+    let createReviewCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async () => {
+            createReviewCalled = true;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      undefined,
+      undefined,
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({ issueNumber: 10, body });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(expectedMessage);
+    expect(createCommentCalled).toBe(false);
     expect(createReviewCalled).toBe(false);
   });
 
@@ -1215,20 +1373,15 @@ describe("mention sanitization", () => {
     );
     const { create } = getToolHandlers(server);
 
-    const body = [
-      "<details>",
-      "<summary>kodiai response</summary>",
-      "",
-      "Decision: APPROVE",
-      "Issues: none",
-      "",
-      "</details>",
-    ].join("\n");
+    const body = buildSharedApprovalBody([
+      "Reviewed @kodiai-touched files with no actionable issues.",
+    ]);
 
     const result = await create({ issueNumber: 10, body });
     expect(result.isError).toBeUndefined();
     expect(reviewBody).toBeDefined();
     expect(reviewBody!).not.toContain("@kodiai");
+    expect(reviewBody!).toContain("kodiai-touched files");
   });
 
   test("create_comment also strips @claude from body", async () => {

@@ -1,6 +1,6 @@
 import PQueue from "p-queue";
 import type { Logger } from "pino";
-import type { JobQueue } from "./types.ts";
+import type { JobQueue, JobQueueWaitMetadata } from "./types.ts";
 
 /**
  * Create a job queue with per-installation concurrency control.
@@ -27,7 +27,7 @@ export function createJobQueue(logger: Logger): JobQueue {
   return {
     async enqueue<T>(
       installationId: number,
-      fn: () => Promise<T>,
+      fn: (metadata?: JobQueueWaitMetadata) => Promise<T>,
       context?: {
         deliveryId?: string;
         eventName?: string;
@@ -58,6 +58,11 @@ export function createJobQueue(logger: Logger): JobQueue {
       try {
         const result = await (queue.add(async () => {
           const startedAt = Date.now();
+          const waitMetadata: JobQueueWaitMetadata = {
+            queuedAtMs: queuedAt,
+            startedAtMs: startedAt,
+            waitMs: startedAt - queuedAt,
+          };
           logger.info(
             {
               jobId,
@@ -67,7 +72,7 @@ export function createJobQueue(logger: Logger): JobQueue {
               action: context?.action,
               jobType: context?.jobType,
               prNumber: context?.prNumber,
-              waitMs: startedAt - queuedAt,
+              waitMs: waitMetadata.waitMs,
               queueSize: queue.size,
               pendingCount: queue.pending,
             },
@@ -75,7 +80,7 @@ export function createJobQueue(logger: Logger): JobQueue {
           );
 
           try {
-            const value = await fn();
+            const value = await fn(waitMetadata);
             logger.info(
               {
                 jobId,

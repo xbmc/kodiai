@@ -16,7 +16,10 @@ import type { SDKResultMessage, McpHttpServerConfig, Query, SDKRateLimitEvent } 
 import { readFile, writeFile as fsWriteFile, appendFile as fsAppendFile, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { $ } from "bun";
 import { buildSecurityClaudeMd } from "./executor.ts";
+import { resolveRepoTransport } from "./repo-transport.ts";
+import type { RepoTransport } from "./repo-transport.ts";
 import type { ExecutionResult } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +33,9 @@ interface AgentConfig {
   allowedTools: string[];
   taskType?: string;
   repoCwd?: string;
-  repoArchivePath?: string;
+  repoTransport?: RepoTransport;
+  repoBundlePath?: string;
+  repoOriginUrl?: string;
   mcpServerNames?: string[]; // server names actually registered in orchestrator
 }
 
@@ -57,33 +62,7 @@ export interface EntrypointDeps {
   writeFileFn: (path: string, content: string) => Promise<void>;
   appendFileFn: (path: string, content: string) => Promise<void>;
   readFileFn: (path: string, encoding: "utf-8") => Promise<string>;
-  extractRepoArchiveFn: (archivePath: string) => Promise<string>;
   exitFn: (code: number) => never;
-}
-
-async function extractRepoArchive(archivePath: string): Promise<string> {
-  const destDir = await mkdtemp(join(tmpdir(), "kodiai-agent-repo-"));
-  const proc = Bun.spawn([
-    "tar",
-    "-C",
-    destDir,
-    "-xf",
-    archivePath,
-  ], {
-    stdout: "ignore",
-    stderr: "pipe",
-  });
-
-  const [exitCode, stderr] = await Promise.all([
-    proc.exited,
-    new Response(proc.stderr).text(),
-  ]);
-
-  if (exitCode !== 0) {
-    throw new Error(`agent-entrypoint: failed to extract repo archive: ${stderr.trim()}`);
-  }
-
-  return destDir;
 }
 
 function defaultDeps(): EntrypointDeps {
@@ -92,9 +71,88 @@ function defaultDeps(): EntrypointDeps {
     writeFileFn: (path, content) => fsWriteFile(path, content),
     appendFileFn: (path, content) => fsAppendFile(path, content),
     readFileFn: readFile,
-    extractRepoArchiveFn: extractRepoArchive,
     exitFn: (code) => process.exit(code),
   };
+}
+
+type AssistantContentPart = {
+  type?: string;
+  name?: string;
+  input?: unknown;
+};
+
+type SystemInitMessage = {
+  type: "system";
+  subtype?: string;
+  tools?: string[];
+  mcp_servers?: Array<{
+    name?: string;
+    status?: string;
+  }>;
+};
+
+function extractToolUseName(part: AssistantContentPart): string | undefined {
+  return part.type === "tool_use" && typeof part.name === "string" && part.name.length > 0
+    ? part.name
+    : undefined;
+}
+
+function extractToolCommand(input: unknown): string | undefined {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (typeof input === "object" && input !== null) {
+    const candidate = (input as { command?: unknown }).command;
+    return typeof candidate === "string" ? candidate : undefined;
+  }
+  return undefined;
+}
+
+function isRepoInspectionToolUse(part: AssistantContentPart): boolean {
+  const toolName = extractToolUseName(part);
+  if (!toolName) {
+    return false;
+  }
+  if (toolName === "Read" || toolName === "Grep" || toolName === "Glob") {
+    return true;
+  }
+  if (toolName !== "Bash") {
+    return false;
+  }
+
+  const command = extractToolCommand(part.input)?.trim();
+  if (!command) {
+    return false;
+  }
+
+  return /^git(?:\s+-C\s+\S+)?\s+(diff|log|show)\b/.test(command);
+}
+
+async function materializeRepoTransport(transport: RepoTransport): Promise<string> {
+  const cloneRoot = await mkdtemp(join(tmpdir(), "kodiai-agent-repo-"));
+  const repoDir = join(cloneRoot, "repo");
+
+  if (transport.kind === "review-bundle") {
+    await $`git clone -b ${transport.headRef} ${transport.bundlePath} ${repoDir}`.quiet();
+    if (transport.originUrl) {
+      await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
+    }
+    return repoDir;
+  }
+
+  await $`git clone ${transport.bundlePath} ${repoDir}`.quiet();
+  if (transport.originUrl) {
+    await $`git -C ${repoDir} remote set-url origin ${transport.originUrl}`.quiet();
+  }
+  return repoDir;
+}
+
+function buildMcpServerUrl(baseUrl: string, serverName: string): string {
+  const trimmedBaseUrl = baseUrl.replace(/\/+$/, "");
+  if (trimmedBaseUrl.endsWith("/internal/mcp")) {
+    return `${trimmedBaseUrl}/${serverName}`;
+  }
+  return `${trimmedBaseUrl}/internal/mcp/${serverName}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +165,6 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     writeFileFn,
     appendFileFn,
     readFileFn,
-    extractRepoArchiveFn,
     exitFn,
   }: EntrypointDeps = { ...defaultDeps(), ...deps };
 
@@ -158,7 +215,7 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
   for (const serverName of serverNamesToUse) {
     mcpServers[serverName] = {
       type: "http",
-      url: `${mcpBaseUrl!}/internal/mcp/${serverName}`,
+      url: buildMcpServerUrl(mcpBaseUrl!, serverName),
       headers: {
         Authorization: `Bearer ${mcpBearerToken!}`,
       },
@@ -175,9 +232,28 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
   try {
     await appendDiagnostic(`startup taskType=${agentConfig.taskType ?? "unknown"} model=${agentConfig.model} maxTurns=${agentConfig.maxTurns}`);
-    const sdkCwd = agentConfig.repoArchivePath
-      ? await extractRepoArchiveFn(agentConfig.repoArchivePath)
+
+    const repoTransport = resolveRepoTransport(agentConfig);
+    if (repoTransport) {
+      await appendDiagnostic(
+        repoTransport.kind === "review-bundle"
+          ? `repo transport kind=${repoTransport.kind} headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`
+          : `repo transport kind=${repoTransport.kind} originConfigured=${repoTransport.originUrl ? "yes" : "no"}`,
+      );
+    }
+
+    const sdkCwd = repoTransport
+      ? await materializeRepoTransport(repoTransport)
       : (agentConfig.repoCwd ?? workspaceDir!);
+
+    if (repoTransport) {
+      await appendDiagnostic(
+        repoTransport.kind === "review-bundle"
+          ? `materialized review bundle headRef=${repoTransport.headRef} baseRef=${repoTransport.baseRef}`
+          : "materialized repo bundle kind=bundle-all",
+      );
+    }
+
     const sdkQueryResult = queryFn({
       prompt: agentConfig.prompt,
       options: {
@@ -198,9 +274,39 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
 
     let resultMessage: SDKResultMessage | undefined;
     let lastRateLimitEvent: SDKRateLimitEvent | undefined;
+    const toolUseNames: string[] = [];
+    let usedRepoInspectionTools = false;
 
     for await (const message of sdkQueryResult) {
-      if (message.type === "result") {
+      if (message.type === "system" && (message as SystemInitMessage).subtype === "init") {
+        const initMessage = message as SystemInitMessage;
+        const initTools = Array.isArray(initMessage.tools) ? initMessage.tools : [];
+        const initMcpServers = Array.isArray(initMessage.mcp_servers)
+          ? initMessage.mcp_servers
+            .map((server) => {
+              const name = typeof server?.name === "string" ? server.name : "unknown";
+              const status = typeof server?.status === "string" ? server.status : "unknown";
+              return `${name}:${status}`;
+            })
+          : [];
+        await appendDiagnostic(
+          `sdk init tools=${initTools.join(",") || "none"} mcpServers=${initMcpServers.join(",") || "none"}`,
+        );
+      } else if (message.type === "assistant") {
+        const parts = ((message as { message?: { content?: AssistantContentPart[] } }).message?.content ?? []) as AssistantContentPart[];
+        for (const part of parts) {
+          const toolName = extractToolUseName(part);
+          if (!toolName) {
+            continue;
+          }
+          if (!toolUseNames.includes(toolName)) {
+            toolUseNames.push(toolName);
+          }
+          if (isRepoInspectionToolUse(part)) {
+            usedRepoInspectionTools = true;
+          }
+        }
+      } else if (message.type === "result") {
         resultMessage = message as SDKResultMessage;
       } else if (message.type === "rate_limit_event") {
         lastRateLimitEvent = message as SDKRateLimitEvent;
@@ -229,6 +335,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
     }
 
     await appendDiagnostic(`sdk completed subtype=${resultMessage.subtype} turns=${resultMessage.num_turns ?? "unknown"} session=${resultMessage.session_id ?? "unknown"}`);
+    if (toolUseNames.length > 0) {
+      await appendDiagnostic(`sdk tool-use names=${toolUseNames.join(",")} repoInspection=${usedRepoInspectionTools}`);
+    }
 
     // 7. Write result.json
     const modelEntries = Object.entries(resultMessage.modelUsage ?? {});
@@ -256,6 +365,12 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       stopReason: resultMessage.stop_reason ?? undefined,
       resultText:
         resultMessage.subtype === "success" ? resultMessage.result : undefined,
+      ...(toolUseNames.length > 0
+        ? {
+            toolUseNames,
+            usedRepoInspectionTools,
+          }
+        : {}),
       ...(lastRateLimitEvent !== undefined ? {
         usageLimit: {
           utilization: lastRateLimitEvent.rate_limit_info.utilization,

@@ -1,5 +1,4 @@
 import type { Octokit } from "@octokit/rest";
-import { wrapInDetails } from "../lib/formatting.ts";
 
 export type ReviewOutputKeyInput = {
   installationId: number;
@@ -63,6 +62,8 @@ export type ParsedReviewOutputKey = {
 const KEY_PREFIX = "kodiai-review-output";
 const KEY_VERSION = "v1";
 const REVIEW_OUTPUT_MARKER_REGEX = /<!--\s*kodiai:(?:review-output-key|review-details):([^>]+?)\s*-->/i;
+const MAX_APPROVAL_EVIDENCE_LINES = 3;
+const DEFAULT_APPROVAL_EVIDENCE = "No actionable issues were identified in the reviewed changes.";
 
 const DEFAULT_PER_PAGE = 100;
 const DEFAULT_MAX_SCAN_ITEMS = 2000;
@@ -97,6 +98,33 @@ async function scanForMarkerInPagedBodies<T extends { body?: string | null }>(pa
 
 function normalizeSegment(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeApprovalEvidenceLine(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
+}
+
+function buildApprovedReviewEvidence(params: {
+  evidence?: string[];
+  approvalConfidence?: string | null;
+}): string[] {
+  const normalizedEvidence = (params.evidence ?? [])
+    .map((line) => normalizeApprovalEvidenceLine(line))
+    .filter((line): line is string => Boolean(line));
+  const approvalConfidence = normalizeApprovalEvidenceLine(params.approvalConfidence);
+  const evidenceLimit = approvalConfidence ? MAX_APPROVAL_EVIDENCE_LINES - 1 : MAX_APPROVAL_EVIDENCE_LINES;
+  const evidence = normalizedEvidence.slice(0, evidenceLimit);
+
+  if (approvalConfidence) {
+    evidence.push(approvalConfidence);
+  }
+
+  if (evidence.length > 0) {
+    return evidence;
+  }
+
+  return [DEFAULT_APPROVAL_EVIDENCE];
 }
 
 function summarizeScan(scan: { scanned: number; hitCap: boolean }): ReviewOutputScanSummary {
@@ -267,21 +295,21 @@ export function buildReviewOutputMarker(reviewOutputKey: string): string {
 
 export function buildApprovedReviewBody(params: {
   reviewOutputKey: string;
+  evidence?: string[];
   approvalConfidence?: string | null;
 }): string {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
-  const lines = [
+  const evidence = buildApprovedReviewEvidence(params);
+
+  return [
     "Decision: APPROVE",
     "Issues: none",
-  ];
-
-  const approvalConfidence = params.approvalConfidence?.trim();
-  if (approvalConfidence) {
-    lines.push("", approvalConfidence);
-  }
-
-  lines.push("", marker);
-  return wrapInDetails(lines.join("\n"), "kodiai response");
+    "",
+    "Evidence:",
+    ...evidence.map((line) => `- ${line}`),
+    "",
+    marker,
+  ].join("\n");
 }
 
 export async function ensureReviewOutputNotPublished(deps: {

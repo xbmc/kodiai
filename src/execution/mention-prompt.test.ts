@@ -53,7 +53,7 @@ function expectInOrder(haystack: string, markers: string[]): void {
 }
 
 describe("buildMentionPrompt", () => {
-  test("includes conciseness and decision format guidance", () => {
+  test("includes conciseness guidance and shared visible APPROVE grammar instructions", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
@@ -61,14 +61,37 @@ describe("buildMentionPrompt", () => {
       customInstructions: undefined,
     });
 
+    const approvalSection = prompt.slice(
+      prompt.indexOf("- If (and only if) the user is asking for a PR review / approval decision"),
+      prompt.indexOf("- If the user is asking for a plan"),
+    );
+
     expect(prompt).toContain("Concise by default");
     expect(prompt).toContain('Do NOT include sections like "What Changed"');
-    expect(prompt).toContain("Decision: APPROVE | NOT APPROVED");
-    expect(prompt).toContain("Issues:");
-    expect(prompt).toContain("Issues: none");
-    expect(prompt).toContain("path/to/file.ts");
     expect(prompt).toContain("Prefix first line with: 'Plan only:'");
     expect(prompt).toContain("Do NOT claim any edits were made");
+
+    expect(approvalSection).toContain("Decision: APPROVE");
+    expect(approvalSection).toContain("Issues: none");
+    expect(approvalSection).toContain("Evidence:");
+    expect(approvalSection).toContain("- <factual evidence>");
+    expect(approvalSection).toContain("1-3 bullets");
+    expect(approvalSection).toContain("Do NOT wrap APPROVE responses in `<details>`");
+    expect(approvalSection).not.toContain("Decision: APPROVE | NOT APPROVED");
+    expect(approvalSection).not.toContain("If APPROVE: keep it to 1-2 lines");
+  });
+
+  test("keeps non-approval mention responses on the existing details wrapper contract", () => {
+    const prompt = buildMentionPrompt({
+      mention: baseMention(),
+      mentionContext: "",
+      userQuestion: "Can you explain this change?",
+    });
+
+    expect(prompt).toContain("ALWAYS wrap your ENTIRE response body in `<details>` tags");
+    expect(prompt).toContain("<details>");
+    expect(prompt).toContain("<summary>kodiai response</summary>");
+    expect(prompt).toContain("Important: include a blank line after `<summary>` and before `</details>`");
   });
 
   test("default (no outputLanguage) does NOT include language instruction", () => {

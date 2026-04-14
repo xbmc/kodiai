@@ -2,11 +2,12 @@ import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
-import {
-  buildReviewOutputMarker,
-  ensureReviewOutputNotPublished,
-} from "../../handlers/review-idempotency.ts";
+import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
+import {
+  createReviewOutputPublicationGate,
+  type ReviewOutputPublicationGate,
+} from "./review-output-publication-gate.ts";
 
 const REVIEW_OUTPUT_MARKER_PREFIX = "kodiai:review-output-key";
 
@@ -20,28 +21,23 @@ export function createInlineReviewServer(
   deliveryId?: string,
   logger?: Logger,
   onPublish?: () => void,
+  publicationGate?: ReviewOutputPublicationGate,
 ) {
-  let outputPublicationState: "unknown" | "allowed" | "already-published" = "unknown";
+  const reviewOutputPublicationGate = publicationGate
+    ?? (
+      reviewOutputKey
+        ? createReviewOutputPublicationGate({ owner, repo, prNumber, reviewOutputKey })
+        : undefined
+    );
 
   async function resolveOutputPublicationState(octokit: Octokit): Promise<"allowed" | "already-published"> {
-    if (!reviewOutputKey) {
+    if (!reviewOutputKey || !reviewOutputPublicationGate) {
       return "allowed";
     }
 
-    if (outputPublicationState !== "unknown") {
-      return outputPublicationState;
-    }
-
-    const idempotencyCheck = await ensureReviewOutputNotPublished({
-      octokit,
-      owner,
-      repo,
-      prNumber,
-      reviewOutputKey,
-    });
+    const idempotencyCheck = await reviewOutputPublicationGate.resolve(octokit);
 
     if (!idempotencyCheck.shouldPublish) {
-      outputPublicationState = "already-published";
       logger?.info(
         {
           deliveryId,
@@ -51,11 +47,10 @@ export function createInlineReviewServer(
         },
         "Skipping inline review publication because output key already exists",
       );
-      return outputPublicationState;
+      return "already-published";
     }
 
-    outputPublicationState = "allowed";
-    return outputPublicationState;
+    return "allowed";
   }
 
   return createSdkMcpServer({

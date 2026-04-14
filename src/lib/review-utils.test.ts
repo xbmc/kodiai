@@ -120,4 +120,148 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Claude Code usage:");
     expect(result).not.toContain("Tokens:");
   });
+
+  it("renders total wall-clock time and the six required phases in stable order", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      phaseTimingSummary: {
+        totalDurationMs: 2500,
+        phases: [
+          { name: "publication", status: "completed", durationMs: 400 },
+          { name: "remote runtime", status: "completed", durationMs: 1200 },
+          { name: "executor handoff", status: "completed", durationMs: 50 },
+          { name: "retrieval/context assembly", status: "completed", durationMs: 300 },
+          { name: "workspace preparation", status: "completed", durationMs: 200 },
+          { name: "queue wait", status: "completed", durationMs: 350 },
+        ],
+      },
+    });
+
+    expect(result).toContain("- Total wall-clock: 2.5s");
+    expect(result).toContain("- Phase timings:");
+
+    const orderedLines = [
+      "queue wait: 350ms",
+      "workspace preparation: 200ms",
+      "retrieval/context assembly: 300ms",
+      "executor handoff: 50ms",
+      "remote runtime: 1.2s",
+      "publication: 400ms",
+    ];
+
+    let lastIndex = -1;
+    for (const line of orderedLines) {
+      const nextIndex = result.indexOf(line);
+      expect(nextIndex).toBeGreaterThan(lastIndex);
+      lastIndex = nextIndex;
+    }
+  });
+
+  it("renders degraded and unavailable wording for malformed or missing phase timings instead of throwing", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      phaseTimingSummary: {
+        totalDurationMs: 3100,
+        phases: [
+          { name: "publication", status: "degraded", durationMs: 120, detail: "captured before publication completed" },
+          { name: "remote runtime", status: "completed", durationMs: 800 },
+          { name: "executor handoff", status: "completed", durationMs: 50 },
+          { name: "workspace preparation", status: "bogus", durationMs: 200 } as never,
+          { name: "queue wait", status: "completed", durationMs: Number.NaN } as never,
+        ],
+      },
+    });
+
+    expect(result).toContain("queue wait: unavailable (invalid phase timing data)");
+    expect(result).toContain("workspace preparation: unavailable (invalid phase timing data)");
+    expect(result).toContain("retrieval/context assembly: unavailable (phase timing unavailable)");
+    expect(result).toContain("executor handoff: 50ms");
+    expect(result).toContain("remote runtime: 800ms");
+    expect(result).toContain("publication: 120ms (degraded: captured before publication completed)");
+  });
+
+  it("renders requested versus effective bounded-review lines without duplicating the old profile line", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewBoundedness: {
+        requestedProfile: {
+          selectedProfile: "strict",
+          source: "keyword",
+          autoBand: null,
+          linesChanged: 100,
+        },
+        effectiveProfile: {
+          selectedProfile: "strict",
+          source: "keyword",
+          autoBand: null,
+          linesChanged: 100,
+        },
+        reasonCodes: [
+          "large-pr-triage",
+          "timeout-auto-reduction-skipped-explicit-profile",
+        ],
+        disclosureRequired: true,
+        disclosureSentence:
+          "Requested strict review; effective review remained strict and covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed).",
+        largePR: {
+          fullCount: 30,
+          abbreviatedCount: 20,
+          reviewedCount: 50,
+          totalFiles: 60,
+          notReviewedCount: 10,
+        },
+        timeout: {
+          riskLevel: "high",
+          dynamicTimeoutSeconds: 900,
+          shouldReduceScope: true,
+          reductionApplied: false,
+          reductionSkippedReason: "explicit-profile",
+        },
+      } as never,
+    });
+
+    expect(result).toContain("- Requested profile: strict (keyword override)");
+    expect(result).toContain("- Effective profile: strict");
+    expect(result).toContain(
+      "- Bounded review: covered 50/60 changed files via large-PR triage (30 full, 20 abbreviated; 10 not reviewed)",
+    );
+    expect(result).toContain("- Timeout auto-reduction: skipped (explicit profile)");
+    expect(result).not.toContain("- Profile: balanced (auto, lines changed: 60)");
+  });
+
+  it("keeps small unbounded reviews quiet by retaining the existing single profile line", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      reviewBoundedness: {
+        requestedProfile: {
+          selectedProfile: "strict",
+          source: "auto",
+          autoBand: "small",
+          linesChanged: 60,
+        },
+        effectiveProfile: {
+          selectedProfile: "strict",
+          source: "auto",
+          autoBand: "small",
+          linesChanged: 60,
+        },
+        reasonCodes: [],
+        disclosureRequired: false,
+        disclosureSentence: null,
+        largePR: null,
+        timeout: {
+          riskLevel: "low",
+          dynamicTimeoutSeconds: 600,
+          shouldReduceScope: false,
+          reductionApplied: false,
+          reductionSkippedReason: null,
+        },
+      } as never,
+    });
+
+    expect(result).toContain("- Profile: balanced (auto, lines changed: 60)");
+    expect(result).not.toContain("- Requested profile:");
+    expect(result).not.toContain("- Effective profile:");
+    expect(result).not.toContain("- Bounded review:");
+  });
 });
