@@ -11047,13 +11047,167 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
     await workspaceFixture.cleanup();
 
     expect(phasesSeenAtExecutor).toEqual([
-      "load-config",
       "workspace-create",
+      "load-config",
       "incremental-diff",
       "prompt-build",
       "executor-dispatch",
     ]);
     expect(phaseTransitions).toContain("publish");
+  });
+
+  test("exposes truthful workspace-create and load-config phases at async boundaries", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const reviewFamilyKey = buildReviewFamilyKey("acme", "repo", 102);
+    await Bun.write(
+      join(workspaceFixture.dir, ".kodiai.yml"),
+      [
+        "review:",
+        "  enabled: true",
+        "  autoApprove: false",
+        "  onSynchronize: true",
+        "  requestUiRereviewTeamOnOpen: false",
+        "  triggers:",
+        "    onOpened: true",
+        "    onReadyForReview: true",
+        "    onReviewRequested: true",
+        "  skipAuthors: []",
+        "  skipPaths: []",
+        "",
+      ].join("\n"),
+    );
+
+    let phaseAtWorkspaceCreate: string | undefined;
+    let phaseAtConfigWarning: string | undefined;
+    const coordinator = createReviewWorkCoordinator({
+      nowFn: (() => {
+        let nowMs = 13_000;
+        return () => ++nowMs;
+      })(),
+    });
+
+    const logger = {
+      info: () => undefined,
+      warn: (_data: Record<string, unknown>, message: string) => {
+        if (message === "Config warning detected") {
+          phaseAtConfigWarning = coordinator.getSnapshot(reviewFamilyKey)?.attempts[0]?.phase;
+        }
+      },
+      error: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+      child: () => logger,
+    } as unknown as Logger;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => {
+        phaseAtWorkspaceCreate = coordinator.getSnapshot(reviewFamilyKey)?.attempts[0]?.phase;
+        return {
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: { id: 1 } }),
+          updateComment: async () => ({ data: {} }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-phase-boundaries",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: coordinator,
+      logger,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+        pull_request: {
+          number: 102,
+          draft: false,
+          title: "Coordinator phase boundary checkpoints",
+          body: "",
+          commits: 0,
+          additions: 20,
+          deletions: 5,
+          user: { login: "octocat" },
+          author_association: "CONTRIBUTOR",
+          base: { ref: "main", sha: "mainsha" },
+          head: {
+            sha: "bcdef1234567890a",
+            ref: "feature/phase-boundaries",
+            repo: {
+              full_name: "acme/repo",
+              name: "repo",
+              owner: { login: "acme" },
+            },
+          },
+          labels: [],
+        },
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    expect(phaseAtWorkspaceCreate).toBe("workspace-create");
+    expect(phaseAtConfigWarning).toBe("load-config");
   });
 });
 

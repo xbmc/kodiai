@@ -6973,6 +6973,170 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("explicit review mentions advance through truthful pre-executor phases", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const prNumber = 103;
+    const reviewFamilyKey = buildReviewFamilyKey("acme", "repo", prNumber);
+    const workspaceFixture = await createWorkspaceFixture(
+      [
+        "mention:",
+        "  enabled: true",
+        "review:",
+        "  enabled: true",
+        "  autoApprove: true",
+        "  onSynchronize: true",
+        "",
+      ].join("\n"),
+    );
+
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const phaseTransitions: string[] = [];
+    let phaseAtWorkspaceCreate: string | undefined;
+    let phaseAtConfigWarning: string | undefined;
+    let phasesSeenAtExecutor: string[] = [];
+    const coordinator = createReviewWorkCoordinator({
+      nowFn: (() => {
+        let nowMs = 21_000;
+        return () => ++nowMs;
+      })(),
+    });
+    const reviewWorkCoordinator = {
+      claim: (claim: Parameters<typeof coordinator.claim>[0]) => coordinator.claim(claim),
+      canPublish: (attemptId: Parameters<typeof coordinator.canPublish>[0]) => coordinator.canPublish(attemptId),
+      setPhase: (
+        attemptId: Parameters<typeof coordinator.setPhase>[0],
+        phase: Parameters<NonNullable<typeof coordinator.setPhase>>[1],
+      ) => {
+        phaseTransitions.push(phase);
+        return coordinator.setPhase(attemptId, phase);
+      },
+      getSnapshot: (familyKey: Parameters<typeof coordinator.getSnapshot>[0]) => coordinator.getSnapshot(familyKey),
+      release: (attemptId: Parameters<typeof coordinator.release>[0]) => coordinator.release(attemptId),
+      complete: (attemptId: Parameters<typeof coordinator.complete>[0]) => coordinator.complete(attemptId),
+    };
+
+    const logger = {
+      info: () => undefined,
+      warn: (_bindings: Record<string, unknown>, message: string) => {
+        if (message === "Config warning detected") {
+          phaseAtConfigWarning = coordinator.getSnapshot(reviewFamilyKey)?.attempts[0]?.phase;
+        }
+      },
+      error: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+      child: () => logger,
+    } as unknown as Logger;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        phaseAtWorkspaceCreate = coordinator.getSnapshot(reviewFamilyKey)?.attempts[0]?.phase;
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              draft: false,
+              labels: [],
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          phasesSeenAtExecutor = [...phaseTransitions];
+          return {
+            conclusion: "success",
+            published: false,
+            resultText: "No issues found.",
+            usedRepoInspectionTools: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-phase-checkpoints",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(phaseAtWorkspaceCreate).toBe("workspace-create");
+    expect(phaseAtConfigWarning).toBe("load-config");
+    expect(phasesSeenAtExecutor).toEqual([
+      "workspace-create",
+      "load-config",
+      "prompt-build",
+      "executor-dispatch",
+    ]);
+
+    await workspaceFixture.cleanup();
+  });
+
   test("explicit PR review mention does not submit approval review without inspection evidence", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");

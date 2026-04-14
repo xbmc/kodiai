@@ -1747,7 +1747,6 @@ export function createReviewHandler(deps: {
 
       let workspace: Workspace | undefined;
       try {
-        setReviewWorkPhase("load-config");
         setReviewWorkPhase("workspace-create");
         workspacePhaseStartedAt = Date.now();
         // Create workspace with depth 50 for diff context
@@ -1773,6 +1772,7 @@ export function createReviewHandler(deps: {
         const fetchRemoteReview = await buildAuthFetchUrl(workspace.dir, workspace.token);
         await $`git -C ${workspace.dir} fetch ${fetchRemoteReview} ${pr.base.ref}:refs/remotes/origin/${pr.base.ref} --depth=1`.quiet();
 
+        setReviewWorkPhase("load-config");
         // Load repo config (.kodiai.yml) with defaults
         const { config, warnings } = await loadRepoConfig(workspace.dir);
         for (const w of warnings) {

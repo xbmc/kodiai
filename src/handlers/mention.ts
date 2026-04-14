@@ -1186,6 +1186,11 @@ export function createMentionHandler(deps: {
       let reviewPublishRightsLost = false;
       let explicitReviewRequest = false;
       let reviewOutputKey: string | undefined;
+      const explicitReviewUsesCanonicalHandle =
+        reviewWorkAttempt !== undefined && (
+          mention.commentBody.toLowerCase().includes(`@${appSlug.toLowerCase()}`)
+          || mention.commentBody.toLowerCase().includes("@kodai")
+        );
 
       function setReviewWorkPhase(phase: ReviewWorkPhase): void {
         if (!reviewWorkAttempt) {
@@ -1433,6 +1438,9 @@ export function createMentionHandler(deps: {
         }
 
         // Clone workspace
+        if (explicitReviewUsesCanonicalHandle) {
+          setReviewWorkPhase("workspace-create");
+        }
         workspace = await workspaceManager.create(event.installationId, {
           owner: cloneOwner,
           repo: cloneRepo,
@@ -1458,6 +1466,9 @@ export function createMentionHandler(deps: {
           }
         }
 
+        if (explicitReviewUsesCanonicalHandle) {
+          setReviewWorkPhase("load-config");
+        }
         // Load repo config
         const { config, warnings } = await loadRepoConfig(workspace.dir);
         for (const w of warnings) {
@@ -2156,6 +2167,7 @@ export function createMentionHandler(deps: {
           }
         }
 
+        setReviewWorkPhase("prompt-build");
         let prompt: string;
         let explicitReviewPromptFileCount: number | undefined;
         if (explicitReviewRequest && mention.prNumber !== undefined) {
