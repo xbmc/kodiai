@@ -528,7 +528,11 @@ async function removeFilteredInlineComments(params: {
 
 
 
-type DiffCollectionStrategy = "triple-dot" | "deepened-triple-dot" | "fallback-two-dot";
+type DiffCollectionStrategy =
+  | "triple-dot"
+  | "deepened-triple-dot"
+  | "fallback-two-dot"
+  | "github-file-list-fallback";
 
 type DiffCollectionResult = {
   changedFiles: string[];
@@ -541,7 +545,17 @@ type DiffCollectionResult = {
   diffRange: string;
 };
 
+type DiffCommandResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+};
+
+type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffCommandResult>;
+
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
+const DIFF_COMMAND_TIMEOUT_MS = 15_000;
 const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
@@ -549,15 +563,137 @@ async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<bool
   return mergeBaseResult.exitCode === 0;
 }
 
-async function collectDiffContext(params: {
+async function runDiffCommandWithTimeout(params: {
+  workspaceDir: string;
+  args: string[];
+  timeoutMs: number;
+}): Promise<DiffCommandResult> {
+  const { workspaceDir, args, timeoutMs } = params;
+  const proc = Bun.spawn(["git", "-C", workspaceDir, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdoutPromise = new Response(proc.stdout).text();
+  const stderrPromise = new Response(proc.stderr).text();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
+  try {
+    const exitCode = timeoutMs > 0 && Number.isFinite(timeoutMs)
+      ? await Promise.race([
+          proc.exited,
+          new Promise<number>((resolve) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              try {
+                proc.kill();
+              } catch {
+                // Ignore kill races; the process may have already exited.
+              }
+              resolve(124);
+            }, timeoutMs);
+          }),
+        ])
+      : await proc.exited;
+
+    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+    return {
+      exitCode,
+      stdout,
+      stderr,
+      timedOut,
+    };
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+async function buildDiffCollectionFallback(params: {
+  fallbackFileProvider?: () => Promise<string[]>;
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  stage: string;
+  reason: string;
+  deepenAttempts: number;
+  unshallowAttempted: boolean;
+  mergeBaseRecovered: boolean;
+  diffRange: string;
+}): Promise<DiffCollectionResult> {
+  const {
+    fallbackFileProvider,
+    logger,
+    baseLog,
+    stage,
+    reason,
+    deepenAttempts,
+    unshallowAttempted,
+    mergeBaseRecovered,
+    diffRange,
+  } = params;
+
+  if (!fallbackFileProvider) {
+    throw new Error(`Diff collection timed out during ${stage} (${reason}) and no fallback provider was configured`);
+  }
+
+  const changedFiles = Array.from(new Set(await fallbackFileProvider()));
+
+  logger.warn(
+    {
+      ...baseLog,
+      gate: "diff-collection",
+      stage,
+      reason,
+      strategy: "github-file-list-fallback",
+      deepenAttempts,
+      unshallowAttempted,
+      mergeBaseRecovered,
+      diffRange,
+      changedFilesCount: changedFiles.length,
+    },
+    "Diff collection degraded to GitHub file-list fallback",
+  );
+
+  return {
+    changedFiles,
+    numstatLines: [],
+    diffContent: undefined,
+    strategy: "github-file-list-fallback",
+    mergeBaseRecovered,
+    deepenAttempts,
+    unshallowAttempted,
+    diffRange: "github-api:file-list",
+  };
+}
+
+export async function collectDiffContext(params: {
   workspaceDir: string;
   baseRef: string;
   maxFilesForFullDiff: number;
   logger: Logger;
   baseLog: Record<string, unknown>;
   token?: string;
+  runGitCommand?: DiffCommandRunner;
+  fallbackFileProvider?: () => Promise<string[]>;
+  commandTimeoutMs?: number;
 }): Promise<DiffCollectionResult> {
-  const { workspaceDir, baseRef, maxFilesForFullDiff, logger, baseLog, token } = params;
+  const {
+    workspaceDir,
+    baseRef,
+    maxFilesForFullDiff,
+    logger,
+    baseLog,
+    token,
+    runGitCommand,
+    fallbackFileProvider,
+    commandTimeoutMs = DIFF_COMMAND_TIMEOUT_MS,
+  } = params;
+
+  const diffCommandRunner = runGitCommand
+    ?? ((args: string[], timeoutMs: number) =>
+      runDiffCommandWithTimeout({ workspaceDir, args, timeoutMs }));
 
   let strategy: DiffCollectionStrategy = "triple-dot";
   let mergeBaseRecovered = false;
@@ -569,11 +705,48 @@ async function collectDiffContext(params: {
 
   let mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
   if (!mergeBaseAvailable) {
+    logger.info(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "merge-base-recovery",
+        baseRef,
+        timeoutMs: commandTimeoutMs,
+      },
+      "Merge base missing before diff collection; attempting history recovery",
+    );
+
     for (const step of DIFF_DEEPEN_STEPS) {
       deepenAttempts += 1;
-      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --deepen=${step}`
-        .quiet()
-        .nothrow();
+      logger.info(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "merge-base-recovery",
+          attempt: deepenAttempts,
+          deepenBy: step,
+          timeoutMs: commandTimeoutMs,
+        },
+        "Attempting diff collection merge-base recovery",
+      );
+
+      const deepenResult = await diffCommandRunner(
+        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, `--deepen=${step}`],
+        commandTimeoutMs,
+      );
+      if (deepenResult.timedOut) {
+        return await buildDiffCollectionFallback({
+          fallbackFileProvider,
+          logger,
+          baseLog,
+          stage: "merge-base-recovery",
+          reason: `fetch-timeout-deepen-${step}`,
+          deepenAttempts,
+          unshallowAttempted,
+          mergeBaseRecovered,
+          diffRange: `origin/${baseRef}...HEAD`,
+        });
+      }
 
       mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
       if (mergeBaseAvailable) {
@@ -585,9 +758,35 @@ async function collectDiffContext(params: {
 
     if (!mergeBaseAvailable) {
       unshallowAttempted = true;
-      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --unshallow`
-        .quiet()
-        .nothrow();
+      logger.info(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "merge-base-recovery",
+          attempt: deepenAttempts + 1,
+          mode: "unshallow",
+          timeoutMs: commandTimeoutMs,
+        },
+        "Attempting diff collection full-history recovery",
+      );
+
+      const unshallowResult = await diffCommandRunner(
+        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, "--unshallow"],
+        commandTimeoutMs,
+      );
+      if (unshallowResult.timedOut) {
+        return await buildDiffCollectionFallback({
+          fallbackFileProvider,
+          logger,
+          baseLog,
+          stage: "merge-base-recovery",
+          reason: "fetch-timeout-unshallow",
+          deepenAttempts,
+          unshallowAttempted,
+          mergeBaseRecovered,
+          diffRange: `origin/${baseRef}...HEAD`,
+        });
+      }
 
       mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
       if (mergeBaseAvailable) {
@@ -602,7 +801,21 @@ async function collectDiffContext(params: {
     strategy = "fallback-two-dot";
   }
 
-  let nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet().nothrow();
+  let nameOnlyResult = await diffCommandRunner(["diff", diffRange, "--name-only"], commandTimeoutMs);
+  if (nameOnlyResult.timedOut) {
+    return await buildDiffCollectionFallback({
+      fallbackFileProvider,
+      logger,
+      baseLog,
+      stage: "name-only",
+      reason: `diff-timeout-${diffRange}-name-only`,
+      deepenAttempts,
+      unshallowAttempted,
+      mergeBaseRecovered,
+      diffRange,
+    });
+  }
+
   if (nameOnlyResult.exitCode !== 0 && diffRange.includes("...")) {
     strategy = "fallback-two-dot";
     diffRange = `origin/${baseRef}..HEAD`;
@@ -615,19 +828,84 @@ async function collectDiffContext(params: {
       },
       "Triple-dot diff failed; retrying with deterministic fallback range",
     );
-    nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet();
+    nameOnlyResult = await diffCommandRunner(["diff", diffRange, "--name-only"], commandTimeoutMs);
+    if (nameOnlyResult.timedOut) {
+      return await buildDiffCollectionFallback({
+        fallbackFileProvider,
+        logger,
+        baseLog,
+        stage: "name-only",
+        reason: `diff-timeout-${diffRange}-name-only`,
+        deepenAttempts,
+        unshallowAttempted,
+        mergeBaseRecovered,
+        diffRange,
+      });
+    }
   } else if (nameOnlyResult.exitCode !== 0) {
     throw new Error(`git diff ${diffRange} --name-only failed with exit code ${nameOnlyResult.exitCode}`);
   }
 
-  const changedFiles = splitGitLines(nameOnlyResult.text());
-  const numstatOutput = await $`git -C ${workspaceDir} diff ${diffRange} --numstat`.quiet();
-  const numstatLines = splitGitLines(numstatOutput.text());
+  const changedFiles = splitGitLines(nameOnlyResult.stdout);
+
+  const numstatOutput = await diffCommandRunner(["diff", diffRange, "--numstat"], commandTimeoutMs);
+  let numstatLines: string[] = [];
+  if (numstatOutput.timedOut) {
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "numstat",
+        diffRange,
+        timeoutMs: commandTimeoutMs,
+      },
+      "Diff numstat collection timed out; continuing without numstat",
+    );
+  } else if (numstatOutput.exitCode !== 0) {
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "numstat",
+        diffRange,
+        exitCode: numstatOutput.exitCode,
+      },
+      "Diff numstat collection failed; continuing without numstat",
+    );
+  } else {
+    numstatLines = splitGitLines(numstatOutput.stdout);
+  }
 
   let diffContent: string | undefined;
   if (changedFiles.length <= maxFilesForFullDiff) {
-    const fullDiff = await $`git -C ${workspaceDir} diff ${diffRange}`.quiet();
-    diffContent = fullDiff.text();
+    const fullDiff = await diffCommandRunner(["diff", diffRange], commandTimeoutMs);
+    if (fullDiff.timedOut) {
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "full-diff",
+          diffRange,
+          changedFilesCount: changedFiles.length,
+          timeoutMs: commandTimeoutMs,
+        },
+        "Full diff collection timed out; continuing without full diff",
+      );
+    } else if (fullDiff.exitCode !== 0) {
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "full-diff",
+          diffRange,
+          changedFilesCount: changedFiles.length,
+          exitCode: fullDiff.exitCode,
+        },
+        "Full diff collection failed; continuing without full diff",
+      );
+    } else {
+      diffContent = fullDiff.stdout;
+    }
   }
 
   logger.info(
@@ -821,6 +1099,8 @@ export function createReviewHandler(deps: {
   sql?: import("../db/client.ts").Sql;
   /** Optional cluster model store for thematic finding scoring (M037/S02). */
   clusterModelStore?: SuggestionClusterStore;
+  /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
+  diffContextCollector?: typeof collectDiffContext;
   logger: Logger;
 }): void {
   const {
@@ -846,6 +1126,7 @@ export function createReviewHandler(deps: {
     reviewGraphQuery,
     sql,
     clusterModelStore,
+    diffContextCollector = collectDiffContext,
     logger,
   } = deps;
 
@@ -1461,13 +1742,22 @@ export function createReviewHandler(deps: {
         }
 
         // Build changed files and diff context, handling shallow-history merge-base gaps.
-        const diffContext = await collectDiffContext({
+        const diffContext = await diffContextCollector({
           workspaceDir: workspace.dir,
           baseRef: pr.base.ref,
           maxFilesForFullDiff: 200,
           logger,
           baseLog,
           token: workspace.token,
+          fallbackFileProvider: async () => {
+            const listFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
+              owner: apiOwner,
+              repo: apiRepo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            return listFilesResponse.data.map((file) => file.filename);
+          },
         });
         const allChangedFiles = diffContext.changedFiles;
 

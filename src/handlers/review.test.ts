@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Logger } from "pino";
-import { createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
+import { collectDiffContext, createReviewHandler, resolveAuthorTierFromSources } from "./review.ts";
 import { buildReviewOutputKey, buildReviewOutputMarker } from "./review-idempotency.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type {
@@ -3074,11 +3074,151 @@ describe("createReviewHandler diff collection resilience", () => {
     expect(capturedPrompt).toContain("Path-Specific Review Instructions");
     expect(capturedPrompt).toContain("Verify auth checks and error handling for API endpoints.");
 
-    const diffCollectionLog = entries.find((entry) => entry.data?.gate === "diff-collection");
+    const diffCollectionLog = entries.find((entry) =>
+      entry.message === "Collected diff context for review"
+    );
     expect(diffCollectionLog).toBeDefined();
     expect(diffCollectionLog?.data?.strategy).toBe("fallback-two-dot");
 
     await workspaceFixture.cleanup();
+  });
+
+  test("degrades to GitHub file list when merge-base recovery times out", async () => {
+    const workspaceFixture = await createNoMergeBaseFixture({ includePhase27Fields: true });
+    const { logger, entries } = createCaptureLogger();
+
+    try {
+      const result = await collectDiffContext({
+        workspaceDir: workspaceFixture.dir,
+        baseRef: "main",
+        maxFilesForFullDiff: 200,
+        logger,
+        baseLog: { deliveryId: "delivery-123", prNumber: 101 },
+        runGitCommand: async () => ({
+          exitCode: 124,
+          stdout: "",
+          stderr: "timed out",
+          timedOut: true,
+        }),
+        fallbackFileProvider: async () => [
+          "src/api/phase27-uat-example.ts",
+          "docs/phase27-note.md",
+        ],
+      });
+
+      expect(result.strategy).toBe("github-file-list-fallback");
+      expect(result.changedFiles).toEqual([
+        "src/api/phase27-uat-example.ts",
+        "docs/phase27-note.md",
+      ]);
+      expect(result.numstatLines).toEqual([]);
+      expect(result.diffContent).toBeUndefined();
+
+      const fallbackLog = entries.find((entry) =>
+        entry.message === "Diff collection degraded to GitHub file-list fallback"
+      );
+      expect(fallbackLog).toBeDefined();
+      expect(fallbackLog?.data?.stage).toBe("merge-base-recovery");
+      expect(fallbackLog?.data?.strategy).toBe("github-file-list-fallback");
+    } finally {
+      await workspaceFixture.cleanup();
+    }
+  });
+
+  test("continues review flow when diff collection degrades to file-list fallback", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    let executeCount = 0;
+    let capturedPrompt = "";
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (context: { prompt: string }) => {
+          executeCount++;
+          capturedPrompt = context.prompt;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-diff-fallback",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      diffContextCollector: async () => ({
+        changedFiles: ["README.md"],
+        numstatLines: [],
+        diffContent: undefined,
+        strategy: "github-file-list-fallback",
+        mergeBaseRecovered: false,
+        deepenAttempts: 1,
+        unshallowAttempted: false,
+        diffRange: "github-api:file-list",
+      }),
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    try {
+      await handler!(
+        buildReviewRequestedEvent({
+          requested_reviewer: { login: "kodiai[bot]" },
+        }),
+      );
+
+      expect(executeCount).toBe(1);
+      expect(capturedPrompt).toContain("README.md");
+    } finally {
+      await workspaceFixture.cleanup();
+    }
   });
 
   test("remains backward compatible when phase 27 review fields are absent", async () => {
