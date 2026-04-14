@@ -83,6 +83,59 @@ If the ingress log is missing for a real delivery, suspect:
 - Signature verification failed (look for `Webhook signature verification failed`)
 - Delivery deduplicated (look for `Duplicate delivery skipped`)
 
+## Queue Lane Model and Explicit Review Stale-Work Signals
+
+The per-installation queue now has three operator-visible lanes. For mention debugging,
+check the queue logs before assuming the worker never ran:
+
+- `interactive-review` — explicit `@kodiai review` requests on a PR. These should enqueue from the mention handler with:
+  - `lane=interactive-review`
+  - `jobType=mention`
+  - `key=<owner>/<repo>#<pr-number>`
+- `review` — automatic PR review jobs (`pull_request.opened`, `pull_request.review_requested`, `pull_request.synchronize`, and related full-review triggers).
+- `sync` — background work that is not the main automatic review lane, including non-review mention requests plus follow-up jobs such as `feedback-sync`, `review-comment-sync`, and similar auxiliary work. These share the installation queue but are not the main review worker.
+
+For any suspected explicit review issue, look at these fields first on `Enqueuing job for installation`, `Job execution started`, and the stale-predecessor telemetry line when it exists:
+
+- `lane`
+- `key`
+- `phase`
+- `predecessorPhase`
+- `predecessorAgeMs`
+
+What those fields mean:
+
+- `lane` tells you whether the request actually went onto the explicit review lane (`interactive-review`) or was routed somewhere else.
+- `key` is the PR-family queue key. For explicit reviews it should be the stable PR key (`owner/repo#pr`), not a comment-specific value.
+- `phase` on the queue logs is the coarse queue lifecycle state:
+  - `queued` on `Enqueuing job for installation`
+  - `running` on `Job execution started`
+- `predecessorPhase` and `predecessorAgeMs` only appear when an explicit review claim discovers an older same-PR review-family attempt.
+  - For explicit mention-review attempts, the review-family phases currently move through `claimed` and `executor-dispatch`; some mention-handler approval/fallback publish paths also promote the attempt to `publish`.
+  - For older automatic review attempts observed as predecessors, `predecessorPhase` can report the finer pre-executor checkpoints that persist across awaits (`workspace-create`, `incremental-diff`) before the executor runs.
+
+### Explicit Review Predecessor Telemetry
+
+When `@kodiai review` successfully claims the interactive-review lane but detects an older same-PR review-family attempt, the mention handler logs:
+
+- `Explicit review claim found a stale predecessor attempt`
+
+Important fields on that log line:
+
+- `reviewFamilyKey`
+- `reviewWorkAttemptId`
+- `predecessorAttemptId`
+- `predecessorPhase`
+- `predecessorAgeMs`
+
+Interpretation:
+
+- `predecessorAttemptId` identifies the older automatic or explicit review-family attempt.
+- `predecessorPhase` tells you the last review-family phase that older attempt reached.
+- `predecessorAgeMs` tells you how long that predecessor had been idle when the explicit claim was made.
+
+This is the main stale-review signal for explicit review mentions: it proves the new same-PR review-family claim was made while an older review-family attempt still existed. It does **not** by itself prove the interactive-review lane started running — use `Enqueuing job for installation` / `Job execution started` for queue acceptance.
+
 ## Evidence Bundle (Write-Mode)
 
 When write-mode is enabled and an `apply:` / `change:` mention creates or reuses a PR, the handler emits a single structured log line:

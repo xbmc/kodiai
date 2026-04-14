@@ -10,6 +10,7 @@ import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createSlackEventRoutes } from "./routes/slack-events.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
+import { createReviewWorkCoordinator } from "./jobs/review-work-coordinator.ts";
 import { createWorkspaceManager, shouldUseGist } from "./jobs/workspace.ts";
 import { createBotUserClient } from "./auth/bot-user.ts";
 import { createForkManager } from "./jobs/fork-manager.ts";
@@ -73,6 +74,7 @@ const gistPublisher = createGistPublisher(botUserClient, logger);
 
 // Job infrastructure
 const jobQueue = createJobQueue(logger);
+const reviewWorkCoordinator = createReviewWorkCoordinator();
 const workspaceManager = createWorkspaceManager(githubApp, logger);
 
 // Defense-in-depth: clean up any stale workspaces from previous runs
@@ -365,6 +367,7 @@ createReviewHandler({
   },
   issueStore,
   sql,
+  reviewWorkCoordinator,
   logger,
 });
 createMentionHandler({
@@ -379,6 +382,7 @@ createMentionHandler({
   forkManager,
   gistPublisher,
   sql,
+  reviewWorkCoordinator,
   logger,
 });
 createFeedbackSyncHandler({

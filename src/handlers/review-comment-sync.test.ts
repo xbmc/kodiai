@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import { createReviewCommentSyncHandler } from "./review-comment-sync.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue } from "../jobs/types.ts";
+import type { JobQueue, JobQueueRunMetadata } from "../jobs/types.ts";
+import { createQueueRunMetadata } from "../jobs/queue.test-helpers.ts";
 import type { ReviewCommentChunk, ReviewCommentStore } from "../knowledge/review-comment-types.ts";
 import type { EmbeddingProvider } from "../knowledge/types.ts";
 
@@ -18,6 +19,7 @@ function createNoopLogger(): Logger {
     child: () => createNoopLogger(),
   } as unknown as Logger;
 }
+
 
 function createMockStore(): ReviewCommentStore & {
   writtenChunks: ReviewCommentChunk[];
@@ -102,17 +104,20 @@ function createImmediateJobQueue(): JobQueue & { enqueuedCount: number } {
     enqueuedCount: 0,
     async enqueue<T>(
       _installationId: number,
-      fn: () => Promise<T>,
+      fn: (metadata: JobQueueRunMetadata) => Promise<T>,
       _context?: Record<string, unknown>,
     ): Promise<T> {
       queue.enqueuedCount++;
-      return fn();
+      return fn(createQueueRunMetadata());
     },
     getQueueSize() {
       return 0;
     },
     getPendingCount() {
       return 0;
+    },
+    getActiveJobs() {
+      return [];
     },
   };
   return queue;
@@ -127,10 +132,10 @@ function createCapturingJobQueue(): JobQueue & { capturedJobs: Array<() => Promi
     capturedJobs: captured,
     async enqueue<T>(
       _installationId: number,
-      fn: () => Promise<T>,
+      fn: (metadata: JobQueueRunMetadata) => Promise<T>,
       _context?: Record<string, unknown>,
     ): Promise<T> {
-      captured.push(fn as () => Promise<unknown>);
+      captured.push(() => fn(createQueueRunMetadata()));
       return undefined as T;
     },
     getQueueSize() {
@@ -138,6 +143,9 @@ function createCapturingJobQueue(): JobQueue & { capturedJobs: Array<() => Promi
     },
     getPendingCount() {
       return 0;
+    },
+    getActiveJobs() {
+      return [];
     },
   };
 }

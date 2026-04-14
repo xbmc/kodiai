@@ -8,6 +8,7 @@ import { $ } from "bun";
 import { createHash } from "node:crypto";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace } from "../jobs/types.ts";
+import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
@@ -27,6 +28,11 @@ import {
 } from "../jobs/workspace.ts";
 import type { ForkManager } from "../jobs/fork-manager.ts";
 import type { GistPublisher } from "../jobs/gist-publisher.ts";
+import {
+  buildReviewFamilyKey,
+  createReviewWorkCoordinator,
+  type ReviewWorkPhase,
+} from "../jobs/review-work-coordinator.ts";
 import {
   type MentionEvent,
   normalizeIssueComment,
@@ -100,6 +106,27 @@ type MentionErrorPostResult = {
 
 const MENTION_RETRIEVAL_MAX_CONTEXT_CHARS = 1200;
 
+function buildMentionQueueKey(owner: string, repo: string, issueOrPrNumber: number): string {
+  return `${owner.trim().toLowerCase()}/${repo.trim().toLowerCase()}#${issueOrPrNumber}`;
+}
+
+function findLatestReviewPredecessor(
+  snapshot: ReturnType<ReviewWorkCoordinator["getSnapshot"]>,
+  currentAttemptId: string,
+) {
+  if (!snapshot) {
+    return null;
+  }
+
+  return snapshot.attempts
+    .filter((attempt) => attempt.attemptId !== currentAttemptId)
+    .sort((left, right) => {
+      if (right.lastProgressAtMs !== left.lastProgressAtMs) {
+        return right.lastProgressAtMs - left.lastProgressAtMs;
+      }
+      return right.claimedAtMs - left.claimedAtMs;
+    })[0] ?? null;
+}
 
 
 
@@ -127,6 +154,8 @@ export function createMentionHandler(deps: {
   gistPublisher?: GistPublisher;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
+  /** Optional in-memory coordinator for same-PR review-family publish rights. */
+  reviewWorkCoordinator?: ReviewWorkCoordinator;
   logger: Logger;
 }): void {
   const {
@@ -140,10 +169,23 @@ export function createMentionHandler(deps: {
     forkManager,
     gistPublisher,
     sql,
+    reviewWorkCoordinator: injectedReviewWorkCoordinator,
     logger,
   } = deps;
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
+  const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();
+  if (!injectedReviewWorkCoordinator) {
+    logger.warn(
+      {
+        gate: "review-family-coordinator",
+        gateResult: "private-fallback",
+        coordinationScope: "handler-local",
+        handler: "mention",
+      },
+      "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
+    );
+  }
 
   // Basic in-memory rate limiter for write-mode requests.
   // Keyed by installation+repo; resets on process restart.
@@ -1074,9 +1116,117 @@ export function createMentionHandler(deps: {
     // No tracking comment. Tracking is via eyes reaction only.
     // The response will be posted as a new comment.
 
-    await jobQueue.enqueue(event.installationId, async () => {
+    const provisionalUserQuestion = stripMention(mention.commentBody, possibleHandles);
+    const reviewPrNumber = mention.prNumber;
+    const isExplicitReviewRequest =
+      reviewPrNumber !== undefined && isReviewRequest(provisionalUserQuestion);
+    const mentionQueueKey = buildMentionQueueKey(
+      mention.owner,
+      mention.repo,
+      reviewPrNumber ?? mention.issueNumber,
+    );
+    const queuedReviewWorkAttempt = reviewPrNumber !== undefined && isExplicitReviewRequest
+      ? reviewWorkCoordinator.claim({
+          familyKey: buildReviewFamilyKey(mention.owner, mention.repo, reviewPrNumber),
+          source: "explicit-review",
+          lane: "interactive-review",
+          deliveryId: event.id,
+          phase: "claimed",
+        })
+      : undefined;
+    if (queuedReviewWorkAttempt) {
+      const predecessor = findLatestReviewPredecessor(
+        reviewWorkCoordinator.getSnapshot(queuedReviewWorkAttempt.familyKey),
+        queuedReviewWorkAttempt.attemptId,
+      );
+      if (predecessor) {
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            prNumber: reviewPrNumber,
+            gate: "review-family-coordinator",
+            gateResult: "claimed-with-predecessor",
+            reviewFamilyKey: queuedReviewWorkAttempt.familyKey,
+            reviewWorkAttemptId: queuedReviewWorkAttempt.attemptId,
+            predecessorAttemptId: predecessor.attemptId,
+            predecessorPhase: predecessor.phase,
+            predecessorAgeMs: Math.max(
+              0,
+              queuedReviewWorkAttempt.claimedAtMs - predecessor.lastProgressAtMs,
+            ),
+          },
+          "Explicit review claim found a stale predecessor attempt",
+        );
+      }
+    }
+    let reviewWorkAttemptCommitted = false;
+    let reviewWorkAttemptFinalized = false;
+
+    function finalizeQueuedReviewWorkAttempt(): void {
+      if (!queuedReviewWorkAttempt || reviewWorkAttemptFinalized) {
+        return;
+      }
+
+      reviewWorkAttemptFinalized = true;
+      if (reviewWorkAttemptCommitted) {
+        reviewWorkCoordinator.complete(queuedReviewWorkAttempt.attemptId);
+        return;
+      }
+
+      reviewWorkCoordinator.release(queuedReviewWorkAttempt.attemptId);
+    }
+
+    try {
+      await jobQueue.enqueue(event.installationId, async () => {
       let workspace: Workspace | undefined;
       let acquiredWriteKey: string | undefined;
+      const reviewWorkAttempt = queuedReviewWorkAttempt;
+      let reviewPublishRightsLost = false;
+      let explicitReviewRequest = false;
+      let reviewOutputKey: string | undefined;
+
+      function setReviewWorkPhase(phase: ReviewWorkPhase): void {
+        if (!reviewWorkAttempt) {
+          return;
+        }
+        reviewWorkAttemptCommitted = true;
+        reviewWorkCoordinator.setPhase(reviewWorkAttempt.attemptId, phase);
+      }
+
+      function canPublishExplicitReviewOutput(outputLabel: string, reviewOutputKey?: string): boolean {
+        if (!reviewWorkAttempt) {
+          return true;
+        }
+        const attempt = reviewWorkAttempt;
+        if (reviewWorkCoordinator.canPublish(attempt.attemptId)) {
+          return true;
+        }
+
+        reviewPublishRightsLost = true;
+        const currentAttempt = reviewWorkCoordinator
+          .getSnapshot(attempt.familyKey)
+          ?.attempts.find((candidateAttempt) => candidateAttempt.attemptId === attempt.attemptId);
+        logger.info(
+          {
+            surface: mention.surface,
+            owner: mention.owner,
+            repo: mention.repo,
+            prNumber: mention.prNumber,
+            gate: "review-family-coordinator",
+            gateResult: "skipped",
+            skipReason: "publish-rights-lost",
+            reviewOutputKey: reviewOutputKey ?? null,
+            reviewFamilyKey: attempt.familyKey,
+            reviewWorkAttemptId: attempt.attemptId,
+            supersededByAttemptId: currentAttempt?.supersededByAttemptId ?? null,
+          },
+          `Skipping ${outputLabel} because publish rights were superseded`,
+        );
+        return false;
+      }
+
       try {
         const octokit = await githubApp.getInstallationOctokit(event.installationId);
 
@@ -1397,7 +1547,7 @@ export function createMentionHandler(deps: {
 
         const isIssueThreadComment = event.name === "issue_comment" && mention.prNumber === undefined;
         const isPrSurface = mention.prNumber !== undefined;
-        const explicitReviewRequest = isPrSurface && isReviewRequest(userQuestion);
+        explicitReviewRequest = isPrSurface && isReviewRequest(userQuestion);
         const parsedWriteIntent = parseWriteIntent(userQuestion);
 
         // Issue surfaces: broad implicit intent detection (existing behavior)
@@ -2133,7 +2283,7 @@ export function createMentionHandler(deps: {
               ? (prDiffContext !== undefined ? 12 : 20)
               : undefined; // undefined → falls through to config.maxTurns
 
-        const reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined
+        reviewOutputKey = explicitReviewRequest && mention.prNumber !== undefined
           ? buildReviewOutputKey({
               installationId: event.installationId,
               owner: mention.owner,
@@ -2146,6 +2296,9 @@ export function createMentionHandler(deps: {
           : undefined;
 
         // Execute via Claude
+        if (reviewWorkAttempt) {
+          setReviewWorkPhase("executor-dispatch");
+        }
         const result = await executor.execute({
           workspace,
           installationId: event.installationId,
@@ -2295,33 +2448,50 @@ export function createMentionHandler(deps: {
                   : null,
               ].filter((line): line is string => Boolean(line));
 
-              await publishOctokit.rest.pulls.createReview({
-                owner: mention.owner,
-                repo: mention.repo,
-                pull_number: mention.prNumber,
-                event: "APPROVE",
-                body: sanitizeOutgoingMentions(
-                  buildApprovedReviewBody({ reviewOutputKey, evidence: approvalEvidence }),
-                  [appSlug, "claude", "kodai"],
-                ),
-              });
-              mentionOutputPublished = true;
-              publishResolution = "approval-bridge";
-              logger.info(
-                {
-                  evidenceType: "review",
-                  outcome: "submitted-approval",
-                  deliveryId: event.id,
-                  installationId: event.installationId,
+              if (!canPublishExplicitReviewOutput("explicit mention review publish", reviewOutputKey)) {
+                logger.info(
+                  {
+                    surface: mention.surface,
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    prNumber: mention.prNumber,
+                    gate: "explicit-review-publish",
+                    gateResult: "skipped",
+                    skipReason: "publish-rights-lost",
+                    reviewOutputKey,
+                  },
+                  "Skipping explicit mention review publish because publish rights were superseded",
+                );
+              } else {
+                setReviewWorkPhase("publish");
+                await publishOctokit.rest.pulls.createReview({
                   owner: mention.owner,
-                  repoName: mention.repo,
-                  repo: `${mention.owner}/${mention.repo}`,
-                  prNumber: mention.prNumber,
-                  reviewOutputKey,
-                  publishAttemptOutcome: "submitted-approval",
-                },
-                "Submitted approval review for explicit mention request",
-              );
+                  repo: mention.repo,
+                  pull_number: mention.prNumber,
+                  event: "APPROVE",
+                  body: sanitizeOutgoingMentions(
+                    buildApprovedReviewBody({ reviewOutputKey, evidence: approvalEvidence }),
+                    [appSlug, "claude", "kodai"],
+                  ),
+                });
+                mentionOutputPublished = true;
+                publishResolution = "approval-bridge";
+                logger.info(
+                  {
+                    evidenceType: "review",
+                    outcome: "submitted-approval",
+                    deliveryId: event.id,
+                    installationId: event.installationId,
+                    owner: mention.owner,
+                    repoName: mention.repo,
+                    repo: `${mention.owner}/${mention.repo}`,
+                    prNumber: mention.prNumber,
+                    reviewOutputKey,
+                    publishAttemptOutcome: "submitted-approval",
+                  },
+                  "Submitted approval review for explicit mention request",
+                );
+              }
             }
           } catch (publishErr) {
             publishFailureCategory = classifyError(publishErr, false);
@@ -2385,30 +2555,48 @@ export function createMentionHandler(deps: {
             }
 
             if (!outputDetectedAfterError) {
-              const fallbackResult = await postMentionError(
-                buildExplicitReviewPublishFailureBody(publishErr),
-              );
-              publishFallbackDelivery = fallbackResult.delivery;
-
-              if (fallbackResult.posted) {
-                mentionOutputPublished = true;
-                publishResolution = "publish-failure-fallback";
-              } else {
-                mentionOutputPublished = false;
-                publishResolution = "publish-failure-comment-failed";
-                logger.warn(
+              if (!canPublishExplicitReviewOutput("explicit mention review fallback comment", reviewOutputKey)) {
+                logger.info(
                   {
-                    deliveryId: event.id,
+                    surface: mention.surface,
                     owner: mention.owner,
                     repo: mention.repo,
                     prNumber: mention.prNumber,
+                    gate: "explicit-review-publish",
+                    gateResult: "skipped",
+                    skipReason: "publish-rights-lost",
                     reviewOutputKey,
-                    publishAttemptOutcome: "fallback-comment-failed",
                     publishFailureCategory,
-                    publishFallbackDelivery,
                   },
-                  "Explicit mention review publish fallback could not be delivered",
+                  "Skipping explicit mention review fallback because publish rights were superseded",
                 );
+              } else {
+                setReviewWorkPhase("publish");
+                const fallbackResult = await postMentionError(
+                  buildExplicitReviewPublishFailureBody(publishErr),
+                );
+                publishFallbackDelivery = fallbackResult.delivery;
+
+                if (fallbackResult.posted) {
+                  mentionOutputPublished = true;
+                  publishResolution = "publish-failure-fallback";
+                } else {
+                  mentionOutputPublished = false;
+                  publishResolution = "publish-failure-comment-failed";
+                  logger.warn(
+                    {
+                      deliveryId: event.id,
+                      owner: mention.owner,
+                      repo: mention.repo,
+                      prNumber: mention.prNumber,
+                      reviewOutputKey,
+                      publishAttemptOutcome: "fallback-comment-failed",
+                      publishFailureCategory,
+                      publishFallbackDelivery,
+                    },
+                    "Explicit mention review publish fallback could not be delivered",
+                  );
+                }
               }
             }
           }
@@ -2483,13 +2671,18 @@ export function createMentionHandler(deps: {
               "Execution cost exceeded warning threshold",
             );
             try {
-              const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
-              await warnOctokit.rest.issues.createComment({
-                owner: mention.owner,
-                repo: mention.repo,
-                issue_number: mention.issueNumber,
-                body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
-              });
+              if (
+                !explicitReviewRequest ||
+                canPublishExplicitReviewOutput("explicit mention review cost warning comment", reviewOutputKey)
+              ) {
+                const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                await warnOctokit.rest.issues.createComment({
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  issue_number: mention.issueNumber,
+                  body: `> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``,
+                });
+              }
             } catch (err) {
               logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
             }
@@ -3235,7 +3428,8 @@ export function createMentionHandler(deps: {
           !writeEnabled &&
           result.conclusion === "success" &&
           !mentionOutputPublished &&
-          publishResolution !== "publish-failure-comment-failed"
+          publishResolution !== "publish-failure-comment-failed" &&
+          !reviewPublishRightsLost
         ) {
           const fallbackLines = explicitReviewRequest
             ? explicitReviewResultFindingLines.length > 0
@@ -3261,27 +3455,32 @@ export function createMentionHandler(deps: {
           );
           const sanitizedFallbackBody = sanitizeOutgoingMentions(fallbackBody, possibleHandles);
 
-          const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
-            await replyOctokit.rest.pulls.createReplyForReviewComment({
-              owner: mention.owner,
-              repo: mention.repo,
-              pull_number: mention.prNumber,
-              comment_id: mention.commentId,
-              body: sanitizedFallbackBody,
-            });
-          } else {
-            await replyOctokit.rest.issues.createComment({
-              owner: mention.owner,
-              repo: mention.repo,
-              issue_number: mention.issueNumber,
-              body: sanitizedFallbackBody,
-            });
+          if (
+            !explicitReviewRequest
+            || canPublishExplicitReviewOutput("explicit mention review fallback reply", reviewOutputKey)
+          ) {
+            const replyOctokit = await githubApp.getInstallationOctokit(event.installationId);
+            if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+              await replyOctokit.rest.pulls.createReplyForReviewComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                pull_number: mention.prNumber,
+                comment_id: mention.commentId,
+                body: sanitizedFallbackBody,
+              });
+            } else {
+              await replyOctokit.rest.issues.createComment({
+                owner: mention.owner,
+                repo: mention.repo,
+                issue_number: mention.issueNumber,
+                body: sanitizedFallbackBody,
+              });
+            }
           }
         }
 
         // If execution errored, post or update error comment with classified message
-        if (result.conclusion === "error") {
+        if (result.conclusion === "error" && !reviewPublishRightsLost) {
           const category = result.isTimeout
             ? "timeout"
             : classifyError(new Error(result.errorMessage ?? "Unknown error"), false);
@@ -3292,13 +3491,18 @@ export function createMentionHandler(deps: {
             ),
             "Kodiai encountered an error",
           );
-          await postMentionError(errorBody);
+          if (
+            !explicitReviewRequest
+            || canPublishExplicitReviewOutput("explicit mention review error fallback", reviewOutputKey)
+          ) {
+            await postMentionError(errorBody);
+          }
         }
 
         // If execution failed without publishing, always post a user-visible fallback.
         // The SDK can return conclusion="failure" with stop reasons other than max_turns,
         // and previously those paths could finish silently.
-        if (result.conclusion === "failure" && !mentionOutputPublished) {
+        if (result.conclusion === "failure" && !mentionOutputPublished && !reviewPublishRightsLost) {
           if (result.stopReason === "max_turns") {
             const turnLimitBody = wrapInDetails(
               [
@@ -3311,7 +3515,12 @@ export function createMentionHandler(deps: {
               "kodiai response",
             );
             try {
-              await postMentionError(turnLimitBody);
+              if (
+                !explicitReviewRequest
+                || canPublishExplicitReviewOutput("explicit mention review failure fallback", reviewOutputKey)
+              ) {
+                await postMentionError(turnLimitBody);
+              }
             } catch (postErr) {
               logger.warn(
                 { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber },
@@ -3334,7 +3543,12 @@ export function createMentionHandler(deps: {
             );
             const failureBody = wrapInDetails(detailLines.join("\n"), "kodiai response");
             try {
-              await postMentionError(failureBody);
+              if (
+                !explicitReviewRequest
+                || canPublishExplicitReviewOutput("explicit mention review failure fallback", reviewOutputKey)
+              ) {
+                await postMentionError(failureBody);
+              }
             } catch (postErr) {
               logger.warn(
                 { err: postErr, surface: mention.surface, issueNumber: mention.issueNumber, stopReason: result.stopReason },
@@ -3355,28 +3569,33 @@ export function createMentionHandler(deps: {
         const errorBody = wrapInDetails(formatErrorComment(category, detail), "Kodiai encountered an error");
         const sanitizedErrorBody = sanitizeOutgoingMentions(errorBody, possibleHandles);
         try {
-          // Prefer in-thread reply for inline review comments.
-          if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
-            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-            await errOctokit.rest.pulls.createReplyForReviewComment({
-              owner: mention.owner,
-              repo: mention.repo,
-              pull_number: mention.prNumber,
-              comment_id: mention.commentId,
-              body: sanitizedErrorBody,
-            });
-          } else {
-            const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-            await postOrUpdateErrorComment(
-              errOctokit,
-              {
+          if (
+            !explicitReviewRequest
+            || canPublishExplicitReviewOutput("explicit mention review handler failure error comment", reviewOutputKey)
+          ) {
+            // Prefer in-thread reply for inline review comments.
+            if (mention.surface === "pr_review_comment" && mention.prNumber !== undefined) {
+              const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+              await errOctokit.rest.pulls.createReplyForReviewComment({
                 owner: mention.owner,
                 repo: mention.repo,
-                issueNumber: mention.issueNumber,
-              },
-              sanitizedErrorBody,
-              logger,
-            );
+                pull_number: mention.prNumber,
+                comment_id: mention.commentId,
+                body: sanitizedErrorBody,
+              });
+            } else {
+              const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
+              await postOrUpdateErrorComment(
+                errOctokit,
+                {
+                  owner: mention.owner,
+                  repo: mention.repo,
+                  issueNumber: mention.issueNumber,
+                },
+                sanitizedErrorBody,
+                logger,
+              );
+            }
           }
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment");
@@ -3393,9 +3612,14 @@ export function createMentionHandler(deps: {
       deliveryId: event.id,
       eventName: event.name,
       action,
+      lane: isExplicitReviewRequest ? "interactive-review" : "sync",
+      key: mentionQueueKey,
       jobType: "mention",
       prNumber: mention.prNumber,
     });
+    } finally {
+      finalizeQueuedReviewWorkAttempt();
+    }
   }
 
   // Register for all three mention-triggering events

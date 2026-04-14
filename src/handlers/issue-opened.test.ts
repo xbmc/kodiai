@@ -6,8 +6,8 @@ import type { EmbeddingProvider, EmbeddingResult } from "../knowledge/types.ts";
 import type { Logger } from "pino";
 import type { Sql } from "../db/client.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { JobQueue } from "../jobs/types.ts";
-import type { WorkspaceManager } from "../jobs/types.ts";
+import type { JobQueue, JobQueueRunMetadata, WorkspaceManager } from "../jobs/types.ts";
+import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 import type { RepoConfig } from "../execution/config.ts";
 
 // ── Test helpers ──────────────────────────────────────────────────────────
@@ -21,6 +21,7 @@ function createMockLogger(): Logger {
     child: () => createMockLogger(),
   } as unknown as Logger;
 }
+
 
 type CapturedHandler = { key: string; handler: EventHandler };
 
@@ -37,9 +38,10 @@ function createMockEventRouter(): EventRouter & { captured: CapturedHandler[] } 
 
 function createMockJobQueue(): JobQueue {
   return {
-    enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+    enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
     getQueueSize: () => 0,
     getPendingCount: () => 0,
+    getActiveJobs: getEmptyActiveJobs,
   };
 }
 

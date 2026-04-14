@@ -10,7 +10,12 @@ import { scanLinesForFabricatedContent } from "../lib/mention-utils.ts";
 import { createRetriever } from "../knowledge/retrieval.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
-import type { JobQueue, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
+import type { JobQueue, JobQueueContext, JobQueueRunMetadata, WorkspaceManager, CloneOptions } from "../jobs/types.ts";
+import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
+import {
+  buildReviewFamilyKey,
+  createReviewWorkCoordinator,
+} from "../jobs/review-work-coordinator.ts";
 
 function createNoopLogger(): Logger {
   const noop = () => undefined;
@@ -24,6 +29,7 @@ function createNoopLogger(): Logger {
     child: () => createNoopLogger(),
   } as unknown as Logger;
 }
+
 
 type LogCall = { bindings: Record<string, unknown>; message: string };
 
@@ -61,6 +67,258 @@ function createMockLoggerWithArrays(
     child: () => createMockLoggerWithArrays(infoCalls, warnCalls, errorCalls),
   } as unknown as Logger;
 }
+
+describe("createMentionHandler coordinator wiring", () => {
+  test("logs when the mention handler falls back to a private coordinator", () => {
+    const { logger, warnCalls } = createMockLogger();
+
+    createMentionHandler({
+      eventRouter: {
+        register: () => undefined,
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async () => {
+          throw new Error("not used");
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => {
+          throw new Error("not used");
+        },
+        cleanupStale: async () => 0,
+      } as unknown as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => {
+          throw new Error("not used");
+        },
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("not used");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const fallbackLog = warnCalls.find(
+      (entry) =>
+        entry.message ===
+        "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
+    );
+
+    expect(fallbackLog?.bindings.gate).toBe("review-family-coordinator");
+    expect(fallbackLog?.bindings.gateResult).toBe("private-fallback");
+    expect(fallbackLog?.bindings.coordinationScope).toBe("handler-local");
+  });
+});
+
+describe("createMentionHandler queued-claim cleanup", () => {
+  test("releases a pre-enqueue explicit-review claim when the request aborts before execution", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n  acceptClaudeAlias: false\n");
+    const coordinator = createReviewWorkCoordinator({
+      nowFn: (() => {
+        let nowMs = 3_000;
+        return () => ++nowMs;
+      })(),
+    });
+    const familyKey = buildReviewFamilyKey("acme", "repo", 104);
+    const olderAutomaticAttempt = coordinator.claim({
+      familyKey,
+      source: "automatic-review",
+      lane: "review",
+      deliveryId: "delivery-auto-older",
+      phase: "claimed",
+    });
+    coordinator.setPhase(olderAutomaticAttempt.attemptId, "executor-dispatch");
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {
+        create: async (_installationId: number, options: CloneOptions) => {
+          await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+          return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+        },
+        cleanupStale: async () => 0,
+      },
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              get: async () => ({
+                data: {
+                  title: "Test PR",
+                  body: "",
+                  user: { login: "octocat" },
+                  head: { ref: "feature" },
+                  base: { ref: "main" },
+                },
+              }),
+            },
+            reactions: {
+              createForIssueComment: async () => ({ data: {} }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("explicit review should have aborted before executor");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: coordinator,
+      logger: createNoopLogger() as never,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber: 104,
+        commentBody: "@claude review",
+      }),
+    );
+
+    expect(coordinator.canPublish(olderAutomaticAttempt.attemptId)).toBeTrue();
+    expect(coordinator.getSnapshot(familyKey)?.attempts.map((attempt) => attempt.attemptId)).toEqual([
+      olderAutomaticAttempt.attemptId,
+    ]);
+
+    await workspaceFixture.cleanup();
+  });
+});
+
+describe("createMentionHandler enqueue routing", () => {
+  test("explicit review mentions enqueue onto the interactive-review lane with a stable PR key", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const enqueuedContexts: Array<{ lane?: string; key?: string }> = [];
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          _fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+          context?: JobQueueContext,
+        ) => {
+          enqueuedContexts.push({ lane: context?.lane, key: context?.key });
+          return undefined as T;
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => {
+          throw new Error("not used");
+        },
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("not used");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger() as never,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber: 102,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(enqueuedContexts).toEqual([
+      { lane: "interactive-review", key: "acme/repo#102" },
+    ]);
+  });
+
+  test("non-review issue mentions enqueue onto the sync lane with a stable issue key", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const enqueuedContexts: Array<{ lane?: string; key?: string }> = [];
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          _fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+          context?: JobQueueContext,
+        ) => {
+          enqueuedContexts.push({ lane: context?.lane, key: context?.key });
+          return undefined as T;
+        },
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => {
+          throw new Error("not used");
+        },
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("not used");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger() as never,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 77,
+        commentBody: "@kodiai what does this do?",
+      }),
+    );
+
+    expect(enqueuedContexts).toEqual([
+      { lane: "sync", key: "acme/repo#77" },
+    ]);
+  });
+});
 
 const noopTelemetryStore = { record: async () => {}, purgeOlderThan: async () => 0, checkpoint: () => {}, close: () => {} } as never;
 
@@ -262,9 +520,10 @@ describe("createMentionHandler fork PR workspace strategy", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -373,9 +632,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -459,9 +719,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -558,9 +819,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -671,9 +933,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -790,9 +1053,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -894,9 +1158,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1018,9 +1283,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1177,9 +1443,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1314,9 +1581,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1431,9 +1699,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1541,9 +1810,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1625,12 +1895,13 @@ describe("createMentionHandler conversational review wiring", () => {
         dispatch: async () => undefined,
       },
       jobQueue: {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => {
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => {
           enqueueCalled = true;
-          return fn();
+          return fn(createQueueRunMetadata());
         },
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       },
       workspaceManager: {
         create: async () => {
@@ -1693,9 +1964,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1817,9 +2089,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -1952,9 +2225,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2098,9 +2372,10 @@ describe("createMentionHandler conversational review wiring", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2210,9 +2485,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2315,9 +2591,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2410,9 +2687,10 @@ describe("createMentionHandler write intent gating", () => {
       };
 
       const jobQueue: JobQueue = {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       };
 
       const workspaceManager: WorkspaceManager = {
@@ -2516,9 +2794,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2606,9 +2885,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2709,9 +2989,10 @@ describe("createMentionHandler write intent gating", () => {
       };
 
       const jobQueue: JobQueue = {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       };
 
       const workspaceManager: WorkspaceManager = {
@@ -2808,9 +3089,10 @@ describe("createMentionHandler write intent gating", () => {
       };
 
       const jobQueue: JobQueue = {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       };
 
       const workspaceManager: WorkspaceManager = {
@@ -2896,9 +3178,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -2987,9 +3270,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3079,9 +3363,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3171,9 +3456,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3269,9 +3555,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3395,9 +3682,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3493,9 +3781,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3600,9 +3889,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3715,9 +4005,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -3820,9 +4111,10 @@ describe("createMentionHandler write intent gating", () => {
       };
 
       const jobQueue: JobQueue = {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       };
 
       const workspaceManager: WorkspaceManager = {
@@ -3927,9 +4219,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4045,9 +4338,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4145,9 +4439,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4257,9 +4552,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4369,9 +4665,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4470,9 +4767,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4570,9 +4868,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4673,9 +4972,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4784,9 +5084,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -4900,9 +5201,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5025,9 +5327,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5150,9 +5453,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5261,9 +5565,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5373,9 +5678,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5489,9 +5795,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5606,9 +5913,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5735,9 +6043,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5853,9 +6162,10 @@ describe("createMentionHandler write intent gating", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -5967,9 +6277,10 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6146,9 +6457,10 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6297,9 +6609,10 @@ describe("createMentionHandler multi-query retrieval context (RET-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6467,9 +6780,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6569,9 +6883,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6680,9 +6995,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6807,9 +7123,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -6946,9 +7263,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7094,9 +7412,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7247,9 +7566,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7385,9 +7705,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7535,9 +7856,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7659,6 +7981,520 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("logs stale predecessor telemetry when an explicit review claim finds an older family attempt", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const { logger, infoCalls } = createMockLogger();
+
+    createMentionHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>() => undefined as T,
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      },
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => {
+          throw new Error("not used");
+        },
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          throw new Error("not used");
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => ({
+          attemptId: "attempt-explicit-claim",
+          familyKey: claim.familyKey as string,
+          source: claim.source as "explicit-review",
+          lane: claim.lane as "interactive-review",
+          deliveryId: claim.deliveryId as string,
+          phase: claim.phase as "claimed",
+          claimedAtMs: 200,
+          lastProgressAtMs: 200,
+        }),
+        canPublish: () => false,
+        setPhase: () => null,
+        getSnapshot: (familyKey: string) => ({
+          familyKey,
+          attempts: [
+            {
+              attemptId: "attempt-automatic-older",
+              familyKey,
+              source: "automatic-review",
+              lane: "review",
+              deliveryId: "delivery-automatic-older",
+              phase: "incremental-diff",
+              claimedAtMs: 100,
+              lastProgressAtMs: 150,
+              supersededByAttemptId: "attempt-explicit-claim",
+            },
+            {
+              attemptId: "attempt-explicit-claim",
+              familyKey,
+              source: "explicit-review",
+              lane: "interactive-review",
+              deliveryId: "delivery-pr-issue-comment-mention",
+              phase: "claimed",
+              claimedAtMs: 200,
+              lastProgressAtMs: 200,
+            },
+          ],
+        }),
+        release: () => undefined,
+        complete: () => undefined,
+      } as never,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber: 104,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    const predecessorLog = infoCalls.find((entry) =>
+      entry.message === "Explicit review claim found a stale predecessor attempt",
+    );
+    expect(predecessorLog).toBeDefined();
+    expect(predecessorLog?.bindings.reviewFamilyKey).toBe("acme/repo#104");
+    expect(predecessorLog?.bindings.reviewWorkAttemptId).toBe("attempt-explicit-claim");
+    expect(predecessorLog?.bindings.predecessorAttemptId).toBe("attempt-automatic-older");
+    expect(predecessorLog?.bindings.predecessorPhase).toBe("incremental-diff");
+    expect(predecessorLog?.bindings.predecessorAgeMs).toBe(50);
+  });
+
+  test("explicit PR review mention suppresses approval bridge when publish rights were superseded", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const prNumber = 104;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const claimedFamilies: Array<Record<string, unknown>> = [];
+    const completedAttemptIds: string[] = [];
+    let createReviewCalls = 0;
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            createReviewCalls++;
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 0,
+          numTurns: 3,
+          durationMs: 1,
+          sessionId: "session-mention-superseded",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          stopReason: "end_turn",
+          toolUseNames: ["Glob", "Read"],
+          usedRepoInspectionTools: true,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => {
+          claimedFamilies.push(claim);
+          return {
+            attemptId: "attempt-explicit-1",
+            familyKey: claim.familyKey,
+            source: claim.source,
+            lane: claim.lane,
+            deliveryId: claim.deliveryId,
+            phase: claim.phase,
+            claimedAtMs: 100,
+            lastProgressAtMs: 100,
+          };
+        },
+        canPublish: () => false,
+        setPhase: () => null,
+        getSnapshot: () => null,
+        release: () => undefined,
+        complete: (attemptId: string) => {
+          completedAttemptIds.push(attemptId);
+        },
+      } as never,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createReviewCalls).toBe(0);
+    expect(issueReplies).toHaveLength(0);
+    expect(claimedFamilies).toEqual([
+      {
+        familyKey: "acme/repo#104",
+        source: "explicit-review",
+        lane: "interactive-review",
+        deliveryId: "delivery-pr-issue-comment-mention",
+        phase: "claimed",
+      },
+    ]);
+    expect(completedAttemptIds).toEqual(["attempt-explicit-1"]);
+
+    const skipLog = infoCalls.find((entry) =>
+      entry.message === "Skipping explicit mention review publish because publish rights were superseded",
+    );
+    expect(skipLog?.bindings.reviewOutputKey).toBeString();
+
+    const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
+    expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.published).toBe(false);
+    expect(completionLog?.bindings.publishResolution).toBe("none");
+
+    await workspaceFixture.cleanup();
+  });
+
+  async function runSupersededExplicitReviewLatePublish(options: {
+    prNumber: number;
+    executorResult?: {
+      conclusion: "success" | "error" | "failure";
+      published: boolean;
+      costUsd: number;
+      numTurns: number;
+      durationMs: number;
+      sessionId: string;
+      model?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      stopReason?: string;
+      toolUseNames?: string[];
+      usedRepoInspectionTools?: boolean;
+      errorMessage?: string;
+      isTimeout?: boolean;
+      resultText?: string;
+    };
+    executorError?: Error;
+  }) {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
+
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${options.prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls, errorCalls } = createMockLogger();
+    const completedAttemptIds: string[] = [];
+    const issueReplies: string[] = [];
+    const reviewThreadReplies: string[] = [];
+    let updateCommentCalls = 0;
+    let createReviewCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async ({ body }: { body: string }) => {
+            reviewThreadReplies.push(body);
+            return { data: {} };
+          },
+          createReview: async () => {
+            createReviewCalls += 1;
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: { id: issueReplies.length } };
+          },
+          updateComment: async () => {
+            updateCommentCalls += 1;
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: options.executorError
+        ? {
+            execute: async () => {
+              throw options.executorError;
+            },
+          } as never
+        : {
+            execute: async () => options.executorResult!,
+          } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => ({
+          attemptId: "attempt-explicit-late-1",
+          familyKey: claim.familyKey as string,
+          source: claim.source as "explicit-review",
+          lane: claim.lane as "interactive-review",
+          deliveryId: claim.deliveryId as string,
+          phase: claim.phase as "claimed",
+          claimedAtMs: 100,
+          lastProgressAtMs: 100,
+        }),
+        canPublish: () => false,
+        setPhase: () => null,
+        getSnapshot: () => null,
+        release: () => undefined,
+        complete: (attemptId: string) => {
+          completedAttemptIds.push(attemptId);
+        },
+      } as never,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber: options.prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    await workspaceFixture.cleanup();
+
+    return {
+      infoCalls,
+      errorCalls,
+      issueReplies,
+      reviewThreadReplies,
+      updateCommentCalls,
+      createReviewCalls,
+      completedAttemptIds,
+    };
+  }
+
+  test("explicit PR review mention suppresses fallback reply when publish rights were superseded", async () => {
+    const result = await runSupersededExplicitReviewLatePublish({
+      prNumber: 106,
+      executorResult: {
+        conclusion: "success",
+        published: false,
+        costUsd: 0,
+        numTurns: 1,
+        durationMs: 1,
+        sessionId: "session-explicit-late-reply",
+        toolUseNames: ["Read"],
+        usedRepoInspectionTools: false,
+        stopReason: "end_turn",
+      },
+    });
+
+    expect(result.createReviewCalls).toBe(0);
+    expect(result.issueReplies).toHaveLength(0);
+    expect(result.reviewThreadReplies).toHaveLength(0);
+    expect(result.updateCommentCalls).toBe(0);
+    expect(result.completedAttemptIds).toEqual(["attempt-explicit-late-1"]);
+    expect(
+      result.infoCalls.some((entry) => entry.message === "Skipping explicit mention review fallback reply because publish rights were superseded"),
+    ).toBeTrue();
+  });
+
+  test("explicit PR review mention suppresses error fallback when publish rights were superseded", async () => {
+    const result = await runSupersededExplicitReviewLatePublish({
+      prNumber: 107,
+      executorResult: {
+        conclusion: "error",
+        published: false,
+        costUsd: 0,
+        numTurns: 1,
+        durationMs: 1,
+        sessionId: "session-explicit-late-error",
+        toolUseNames: ["Read"],
+        usedRepoInspectionTools: false,
+        errorMessage: "review run failed",
+      },
+    });
+
+    expect(result.createReviewCalls).toBe(0);
+    expect(result.issueReplies).toHaveLength(0);
+    expect(result.reviewThreadReplies).toHaveLength(0);
+    expect(result.updateCommentCalls).toBe(0);
+    expect(result.completedAttemptIds).toEqual(["attempt-explicit-late-1"]);
+    expect(
+      result.infoCalls.some((entry) => entry.message === "Skipping explicit mention review error fallback because publish rights were superseded"),
+    ).toBeTrue();
+  });
+
+  test("explicit PR review mention suppresses failure fallback when publish rights were superseded", async () => {
+    const result = await runSupersededExplicitReviewLatePublish({
+      prNumber: 108,
+      executorResult: {
+        conclusion: "failure",
+        published: false,
+        costUsd: 0,
+        numTurns: 1,
+        durationMs: 1,
+        sessionId: "session-explicit-late-failure",
+        toolUseNames: ["Read"],
+        usedRepoInspectionTools: false,
+        errorMessage: "publish fallback failed",
+        stopReason: "end_turn",
+      },
+    });
+
+    expect(result.createReviewCalls).toBe(0);
+    expect(result.issueReplies).toHaveLength(0);
+    expect(result.reviewThreadReplies).toHaveLength(0);
+    expect(result.updateCommentCalls).toBe(0);
+    expect(result.completedAttemptIds).toEqual(["attempt-explicit-late-1"]);
+    expect(
+      result.infoCalls.some((entry) => entry.message === "Skipping explicit mention review failure fallback because publish rights were superseded"),
+    ).toBeTrue();
+  });
+
+  test("explicit PR review mention suppresses handler failure comment when publish rights were superseded", async () => {
+    const result = await runSupersededExplicitReviewLatePublish({
+      prNumber: 109,
+      executorError: new Error("executor exploded"),
+    });
+
+    expect(result.createReviewCalls).toBe(0);
+    expect(result.issueReplies).toHaveLength(0);
+    expect(result.reviewThreadReplies).toHaveLength(0);
+    expect(result.updateCommentCalls).toBe(0);
+    expect(result.completedAttemptIds).toEqual(["attempt-explicit-late-1"]);
+  });
+
   test("explicit PR review mention logs idempotency skip when review output already exists", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
@@ -7691,9 +8527,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7829,9 +8666,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -7971,9 +8809,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8112,9 +8951,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8242,9 +9082,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8351,9 +9192,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8496,9 +9338,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8604,9 +9447,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8712,9 +9556,10 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8819,9 +9664,10 @@ describe("createMentionHandler allowedUsers gating (CONFIG-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -8925,9 +9771,10 @@ describe("createMentionHandler allowedUsers gating (CONFIG-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9031,9 +9878,10 @@ describe("createMentionHandler allowedUsers gating (CONFIG-07)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9143,9 +9991,10 @@ describe("createMentionHandler telemetry opt-out (CONFIG-10)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9244,9 +10093,10 @@ describe("createMentionHandler cost warning (CONFIG-11)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9329,6 +10179,142 @@ describe("createMentionHandler cost warning (CONFIG-11)", () => {
     expect(costWarningBody!).toContain("$1.00");
   });
 
+  test("explicit PR review mention suppresses cost warning comment when publish rights were superseded", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\nreview:\n  autoApprove: true\n",
+    );
+
+    const prNumber = 110;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const { logger, infoCalls } = createMockLogger();
+    const completedAttemptIds: string[] = [];
+    const issueReplies: string[] = [];
+    let createReviewCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => { handlers.set(eventKey, handler); },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listReviewComments: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+          createReview: async () => {
+            createReviewCalls += 1;
+            return { data: {} };
+          },
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: { id: issueReplies.length } };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: false,
+          costUsd: 3.5,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-explicit-cost-warning-superseded",
+          toolUseNames: ["Read"],
+          usedRepoInspectionTools: false,
+          stopReason: "end_turn",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => ({
+          attemptId: "attempt-explicit-cost-warning-1",
+          familyKey: claim.familyKey as string,
+          source: claim.source as "explicit-review",
+          lane: claim.lane as "interactive-review",
+          deliveryId: claim.deliveryId as string,
+          phase: claim.phase as "claimed",
+          claimedAtMs: 100,
+          lastProgressAtMs: 100,
+        }),
+        canPublish: () => false,
+        setPhase: () => null,
+        getSnapshot: () => null,
+        release: () => undefined,
+        complete: (attemptId: string) => {
+          completedAttemptIds.push(attemptId);
+        },
+      } as never,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(createReviewCalls).toBe(0);
+    expect(issueReplies).toHaveLength(0);
+    expect(completedAttemptIds).toEqual(["attempt-explicit-cost-warning-1"]);
+    expect(
+      infoCalls.some((entry) => entry.message === "Skipping explicit mention review cost warning comment because publish rights were superseded"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
   test("no cost warning when telemetry disabled", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
@@ -9356,9 +10342,10 @@ describe("createMentionHandler cost warning (CONFIG-11)", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9495,9 +10482,10 @@ describe("PR surface implicit write intent detection", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9604,9 +10592,10 @@ describe("PR surface implicit write intent detection", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9713,9 +10702,10 @@ describe("PR surface implicit write intent detection", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9822,9 +10812,10 @@ describe("PR surface implicit write intent detection", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
@@ -9931,9 +10922,10 @@ describe("PR surface implicit write intent detection", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {

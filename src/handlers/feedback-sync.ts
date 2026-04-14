@@ -78,6 +78,21 @@ function parseRepoFromEventPayload(event: WebhookEvent): string | undefined {
   return `${owner}/${repo}`;
 }
 
+function parsePullRequestNumberFromEvent(event: WebhookEvent): number | undefined {
+  const payload = event.payload as Record<string, unknown>;
+  if (event.name === "issue_comment") {
+    const issue = payload.issue as { number?: number; pull_request?: unknown } | undefined;
+    return issue?.pull_request ? issue.number : undefined;
+  }
+
+  const pullRequest = payload.pull_request as { number?: number } | undefined;
+  return pullRequest?.number;
+}
+
+function buildSyncQueueKey(repo: string, prNumber: number): string {
+  return `${repo.trim().toLowerCase()}#${prNumber}`;
+}
+
 function eventTargetsPullRequest(event: WebhookEvent): boolean {
   if (event.name === "pull_request") return true;
   if (event.name === "pull_request_review_comment") return true;
@@ -113,6 +128,9 @@ export function createFeedbackSyncHandler(deps: {
 
     const repo = parseRepoFromEventPayload(event);
     if (!repo) return;
+
+    const prNumber = parsePullRequestNumberFromEvent(event);
+    if (prNumber === undefined) return;
 
     await jobQueue.enqueue(event.installationId, async () => {
       const appSlug = githubApp.getAppSlug();
@@ -190,9 +208,10 @@ export function createFeedbackSyncHandler(deps: {
       deliveryId: event.id,
       eventName: event.name,
       action: (event.payload as Record<string, unknown>).action as string | undefined,
+      lane: "sync",
+      key: buildSyncQueueKey(repo, prNumber),
       jobType: "feedback-sync",
-      prNumber: ((event.payload as Record<string, unknown>).pull_request as { number?: number } | undefined)
-        ?.number,
+      prNumber,
     });
   }
 

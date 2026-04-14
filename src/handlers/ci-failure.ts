@@ -53,6 +53,10 @@ export function createCIFailureHandler(deps: {
     }
 
     const fullRepo = `${owner}/${repoName}`;
+    const queueKey = `${fullRepo.trim().toLowerCase()}#${pullRequests
+      .map((pr) => pr.number)
+      .sort((left, right) => left - right)
+      .join(",")}`;
 
     await jobQueue.enqueue(
       event.installationId,
@@ -248,7 +252,10 @@ export function createCIFailureHandler(deps: {
         deliveryId: event.id,
         eventName: "check_suite",
         action: "completed",
+        lane: "sync",
+        key: queueKey,
         jobType: "ci-failure-analysis",
+        prNumber: pullRequests[0]?.number,
       },
     );
   }

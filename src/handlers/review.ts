@@ -7,6 +7,7 @@ import type {
 import type { Logger } from "pino";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
 import type { JobQueue, WorkspaceManager, Workspace, JobQueueWaitMetadata } from "../jobs/types.ts";
+import type { ReviewWorkCoordinator } from "../jobs/review-work-coordinator.ts";
 import type {
   ExecutorPhaseTiming,
   ReviewPhaseName,
@@ -14,7 +15,6 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
-import type { ExecutionResult } from "../execution/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
@@ -89,6 +89,8 @@ import {
   ensureSearchRateLimitDisclosureInSummary,
   extractSearchErrorStatus,
   extractSearchErrorText,
+  isSearchRateLimitError,
+  resolveRateLimitBackoffMs,
   toConfidenceBand,
   fingerprintFindingTitle,
   buildReviewDetailsMarker,
@@ -116,6 +118,11 @@ import {
 import type { CodeSnippetStore } from "../knowledge/code-snippet-types.ts";
 import { $ } from "bun";
 import { fetchAndCheckoutPullRequestHeadRef, buildAuthFetchUrl } from "../jobs/workspace.ts";
+import {
+  buildReviewFamilyKey,
+  createReviewWorkCoordinator,
+  type ReviewWorkPhase,
+} from "../jobs/review-work-coordinator.ts";
 import { classifyAuthor, type AuthorTier } from "../lib/author-classifier.ts";
 import type { ContributorProfileStore, ContributorExpertise } from "../contributor/types.ts";
 import {
@@ -129,6 +136,7 @@ import {
   type ReviewAuthorClassification,
 } from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
+import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -324,7 +332,7 @@ function buildReviewDetailsPhaseTimingSummary(params: {
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorTier | null;
+  cachedTier?: AuthorCacheTier | null;
   fallbackTier: AuthorTier;
 }): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
   const { contributorTier, cachedTier, fallbackTier } = params;
@@ -340,12 +348,98 @@ export function resolveAuthorTierFromSources(params: {
   return { tier: fallbackTier, source: "fallback" };
 }
 
-function shouldRetryTransientAgentExit(result: Pick<ExecutionResult, "conclusion" | "errorMessage" | "isTimeout" | "published">): boolean {
-  if (result.conclusion !== "error") return false;
-  if (result.isTimeout) return false;
-  if (result.published) return false;
+function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
+  if (value === "first-time" || value === "regular" || value === "core") {
+    return value;
+  }
+  return null;
+}
 
-  return /Failed with exit code 143\b/i.test(result.errorMessage ?? "");
+function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
+  if (!entry) {
+    return null;
+  }
+
+  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
+  if (!normalizedTier) {
+    return null;
+  }
+
+  return {
+    ...entry,
+    tier: normalizedTier,
+  };
+}
+
+function normalizeContributorProfileTier(value: string | null | undefined): AuthorTier | null {
+  if (value === "newcomer" || value === "developing" || value === "established" || value === "senior") {
+    return value;
+  }
+  return null;
+}
+
+function hasAssociationFallbackSignal(authorAssociation: string): boolean {
+  return [
+    "MEMBER",
+    "OWNER",
+    "FIRST_TIMER",
+    "FIRST_TIME_CONTRIBUTOR",
+    "COLLABORATOR",
+    "CONTRIBUTOR",
+  ].includes(authorAssociation);
+}
+
+async function executeSearchWithRateLimitRetry(params: {
+  operation: () => Promise<number>;
+  logger: Logger;
+  authorLogin: string;
+}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
+  const { operation, logger, authorLogin } = params;
+
+  try {
+    return {
+      value: await operation(),
+      retryAttempts: 0,
+      degraded: false,
+    };
+  } catch (err) {
+    if (!isSearchRateLimitError(err)) {
+      throw err;
+    }
+
+    const backoffMs = resolveRateLimitBackoffMs(err);
+    logger.warn(
+      { err, authorLogin, backoffMs, retryAttempts: 1 },
+      "Search API rate limit detected; retrying author-tier enrichment once",
+    );
+
+    if (backoffMs > 0) {
+      await Bun.sleep(backoffMs);
+    }
+
+    try {
+      return {
+        value: await operation(),
+        retryAttempts: 1,
+        degraded: false,
+      };
+    } catch (retryErr) {
+      if (!isSearchRateLimitError(retryErr)) {
+        throw retryErr;
+      }
+
+      logger.warn(
+        { err: retryErr, authorLogin, retryAttempts: 1 },
+        "Search API remained rate-limited after one retry; degrading enrichment",
+      );
+
+      return {
+        value: null,
+        retryAttempts: 1,
+        degraded: true,
+      };
+    }
+  }
 }
 
 async function fetchCommitMessages(
@@ -383,6 +477,7 @@ async function upsertReviewDetailsComment(params: {
   reviewOutputKey: string;
   body: string;
   botHandles: string[];
+  recheckCanPublish?: () => boolean;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
   const marker = buildReviewDetailsMarker(reviewOutputKey);
@@ -400,6 +495,10 @@ async function upsertReviewDetailsComment(params: {
   const existingComment = commentsResponse.data.find((comment) =>
     typeof comment.body === "string" && comment.body.includes(marker)
   );
+
+  if (params.recheckCanPublish && !params.recheckCanPublish()) {
+    return;
+  }
 
   if (existingComment) {
     await octokit.rest.issues.updateComment({
@@ -429,6 +528,7 @@ async function appendReviewDetailsToSummary(params: {
   botHandles: string[];
   requireDegradationDisclosure: boolean;
   reviewBoundedness?: ReviewBoundednessContract | null;
+  recheckCanPublish?: () => boolean;
 }): Promise<void> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
@@ -492,6 +592,10 @@ async function appendReviewDetailsToSummary(params: {
     const before = summaryBody.slice(0, lastCloseIdx);
     const after = summaryBody.slice(lastCloseIdx);
     updatedBody = `${before}\n\n${updatedReviewDetails}\n${after}`;
+  }
+
+  if (params.recheckCanPublish && !params.recheckCanPublish()) {
+    return;
   }
 
   await octokit.rest.issues.updateComment({
@@ -1221,6 +1325,8 @@ export function createReviewHandler(deps: {
   }) => Promise<ReviewGraphBlastRadiusResult>;
   /** Optional SQL client for guardrail audit logging (GUARD-06). */
   sql?: import("../db/client.ts").Sql;
+  /** Optional in-memory coordinator for same-PR review-family publish rights. */
+  reviewWorkCoordinator?: ReviewWorkCoordinator;
   /** Optional cluster model store for thematic finding scoring (M037/S02). */
   clusterModelStore?: SuggestionClusterStore;
   /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
@@ -1249,6 +1355,7 @@ export function createReviewHandler(deps: {
     issueStore,
     reviewGraphQuery,
     sql,
+    reviewWorkCoordinator: injectedReviewWorkCoordinator,
     clusterModelStore,
     diffContextCollector = collectDiffContext,
     logger,
@@ -1256,6 +1363,18 @@ export function createReviewHandler(deps: {
 
   const guardrailAuditStore = sql ? createGuardrailAuditStore(sql) : undefined;
   const structuralImpactCache = createStructuralImpactCache();
+  const reviewWorkCoordinator = injectedReviewWorkCoordinator ?? createReviewWorkCoordinator();
+  if (!injectedReviewWorkCoordinator) {
+    logger.warn(
+      {
+        gate: "review-family-coordinator",
+        gateResult: "private-fallback",
+        coordinationScope: "handler-local",
+        handler: "review",
+      },
+      "Review work coordinator not injected; using a private handler-local fallback (cross-handler coordination disabled)",
+    );
+  }
 
   let authorPrCountSearchCache: SearchCache<number> | undefined;
   if (injectedSearchCache) {
@@ -1491,7 +1610,33 @@ export function createReviewHandler(deps: {
       "Review enqueue started",
     );
 
-    await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
+    const reviewFamilyKey = buildReviewFamilyKey(apiOwner, apiRepo, pr.number);
+    const reviewWorkAttempt = reviewWorkCoordinator.claim({
+      familyKey: reviewFamilyKey,
+      source: "automatic-review",
+      lane: "review",
+      deliveryId: event.id,
+      phase: "claimed",
+    });
+    let reviewWorkAttemptCommitted = false;
+    let reviewWorkAttemptFinalized = false;
+
+    function finalizeReviewWorkAttempt(): void {
+      if (reviewWorkAttemptFinalized) {
+        return;
+      }
+
+      reviewWorkAttemptFinalized = true;
+      if (reviewWorkAttemptCommitted) {
+        reviewWorkCoordinator.complete(reviewWorkAttempt.attemptId);
+        return;
+      }
+
+      reviewWorkCoordinator.release(reviewWorkAttempt.attemptId);
+    }
+
+    try {
+      await jobQueue.enqueue(event.installationId, async (queueMetadata) => {
       const reviewPhaseTimings = new Map<ReviewPhaseName, ReviewPhaseTiming>();
       reviewPhaseTimings.set("queue wait", buildQueueWaitPhase(queueMetadata));
       const reviewStartedAt = Date.now();
@@ -1505,6 +1650,52 @@ export function createReviewHandler(deps: {
         "executor phase timings unavailable",
       );
       let executorResult: Awaited<ReturnType<typeof executor.execute>> | undefined;
+
+      function setReviewWorkPhaseForAttempt(
+        attemptId: string,
+        phase: ReviewWorkPhase,
+      ): void {
+        if (attemptId === reviewWorkAttempt.attemptId) {
+          reviewWorkAttemptCommitted = true;
+        }
+        reviewWorkCoordinator.setPhase(attemptId, phase);
+      }
+
+      function setReviewWorkPhase(phase: ReviewWorkPhase): void {
+        setReviewWorkPhaseForAttempt(reviewWorkAttempt.attemptId, phase);
+      }
+
+      function canPublishReviewWorkOutput(
+        attemptId: string,
+        outputLabel: string,
+        deliveryId: string,
+      ): boolean {
+        if (reviewWorkCoordinator.canPublish(attemptId)) {
+          return true;
+        }
+
+        const currentAttempt = reviewWorkCoordinator
+          .getSnapshot(reviewFamilyKey)
+          ?.attempts.find((attempt) => attempt.attemptId === attemptId);
+        logger.info(
+          {
+            ...baseLog,
+            deliveryId,
+            gate: "review-family-coordinator",
+            gateResult: "skipped",
+            skipReason: "publish-rights-lost",
+            reviewFamilyKey,
+            reviewWorkAttemptId: attemptId,
+            supersededByAttemptId: currentAttempt?.supersededByAttemptId ?? null,
+          },
+          `Skipping ${outputLabel} because publish rights were superseded`,
+        );
+        return false;
+      }
+
+      function canPublishVisibleOutput(outputLabel: string): boolean {
+        return canPublishReviewWorkOutput(reviewWorkAttempt.attemptId, outputLabel, event.id);
+      }
 
       // Durable run state idempotency check (REL-01)
       // Check before expensive workspace creation. Uses SHA pair as identity key.
@@ -1556,6 +1747,8 @@ export function createReviewHandler(deps: {
 
       let workspace: Workspace | undefined;
       try {
+        setReviewWorkPhase("load-config");
+        setReviewWorkPhase("workspace-create");
         workspacePhaseStartedAt = Date.now();
         // Create workspace with depth 50 for diff context
         workspace = await workspaceManager.create(event.installationId, {
@@ -1866,6 +2059,7 @@ export function createReviewHandler(deps: {
           }
         }
 
+        setReviewWorkPhase("incremental-diff");
         // Incremental diff computation (REV-01)
         // Determine if this is an incremental re-review based on prior completed reviews.
         // Works for both synchronize and review_requested events (state-driven, not event-driven).
@@ -2122,16 +2316,32 @@ export function createReviewHandler(deps: {
             const commentBody = buildDependsReviewComment(reviewData);
             const inlineComments = buildDependsInlineComments(reviewData, prFilesForDepends);
 
+            // The [depends] fast path can publish before the standard review executor runs.
+            // Promote this review-family attempt before the first publish gate so an
+            // uncontested dependency review can still emit its summary/inline output.
+            setReviewWorkPhase("publish");
+
+            let publishedDependsSummary = false;
+            let publishedDependsInlineComments = false;
+
             // Post top-level summary comment
-            await idempotencyOctokit.rest.issues.createComment({
-              owner: apiOwner,
-              repo: apiRepo,
-              issue_number: pr.number,
-              body: commentBody,
-            });
+            if (canPublishVisibleOutput("[depends] deep review summary comment")) {
+              setReviewWorkPhase("publish");
+              await idempotencyOctokit.rest.issues.createComment({
+                owner: apiOwner,
+                repo: apiRepo,
+                issue_number: pr.number,
+                body: commentBody,
+              });
+              publishedDependsSummary = true;
+            }
 
             // Post inline review comments (if any)
-            if (inlineComments.length > 0) {
+            if (
+              inlineComments.length > 0
+              && canPublishVisibleOutput("[depends] deep review inline comments")
+            ) {
+              setReviewWorkPhase("publish");
               await idempotencyOctokit.rest.pulls.createReview({
                 owner: apiOwner,
                 repo: apiRepo,
@@ -2143,16 +2353,19 @@ export function createReviewHandler(deps: {
                   body: c.body,
                 })),
               });
+              publishedDependsInlineComments = true;
             }
 
-            logger.info({
-              ...baseLog,
-              gate: "depends-review-complete",
-              verdict: verdict.level,
-              packagesCount: dependsBumpInfo.packages.length,
-              inlineCommentCount: inlineComments.length,
-              hasRetrievalContext: !!dependsRetrievalContext,
-            }, "[depends] deep review posted");
+            if (publishedDependsSummary || publishedDependsInlineComments) {
+              logger.info({
+                ...baseLog,
+                gate: "depends-review-complete",
+                verdict: verdict.level,
+                packagesCount: dependsBumpInfo.packages.length,
+                inlineCommentCount: inlineComments.length,
+                hasRetrievalContext: !!dependsRetrievalContext,
+              }, "[depends] deep review posted");
+            }
 
             // 9. Determine if standard Claude review should also run
             const buildConfigPaths = ["tools/depends/", "cmake/modules/", "project/BuildDependencies/", "project/cmake/"];
@@ -2913,6 +3126,7 @@ export function createReviewHandler(deps: {
           }
         }
 
+        setReviewWorkPhase("prompt-build");
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -3011,7 +3225,9 @@ export function createReviewHandler(deps: {
           }),
         );
 
-        const executionInput = {
+        // Execute review via Claude
+        setReviewWorkPhase("executor-dispatch");
+        const result = await executor.execute({
           workspace,
           installationId: event.installationId,
           owner: apiOwner,
@@ -3020,7 +3236,7 @@ export function createReviewHandler(deps: {
           commentId: undefined,
           botHandles: [githubApp.getAppSlug(), "claude"],
           eventType: `pull_request.${payload.action}`,
-          taskType: "review.full" as const,
+          taskType: "review.full",
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
           reviewOutputKey,
@@ -3032,26 +3248,15 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
             ? timeoutEstimate.dynamicTimeoutSeconds
             : undefined,
-        };
-
-        let result = await executor.execute(executionInput);
-
-        if (shouldRetryTransientAgentExit(result)) {
-          logger.warn(
-            {
-              ...baseLog,
-              gate: "transient-agent-exit",
-              gateResult: "retrying",
-              errorMessage: result.errorMessage,
-            },
-            "Transient agent exit detected, retrying review once",
-          );
-
-          result = await executor.execute({
-            ...executionInput,
-            deliveryId: `${event.id}-transient-retry-1`,
-          });
+        });
+        executorResult = result;
+        executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
+          "executor phase timings unavailable",
+        );
+        for (const phase of executorPhaseTimings) {
+          reviewPhaseTimings.set(phase.name, phase);
         }
+        publicationPhaseStartedAt = Date.now();
 
         executorResult = result;
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -3650,24 +3855,49 @@ export function createReviewHandler(deps: {
 
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
-              try {
-                await appendReviewDetailsToSummary({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  reviewDetailsBlock: fullDetailsBody,
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                  reviewBoundedness,
-                });
-              } catch (appendErr) {
-                // Fallback: post standalone if append fails (e.g., summary comment not found yet)
-                logger.warn(
-                  { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
-                  "Failed to append Review Details to summary comment; posting standalone",
-                );
+              if (canPublishVisibleOutput("deterministic Review Details append")) {
+                try {
+                  setReviewWorkPhase("publish");
+                  await appendReviewDetailsToSummary({
+                    octokit: extractionOctokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    reviewDetailsBlock: fullDetailsBody,
+                    botHandles: [githubApp.getAppSlug(), "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("deterministic Review Details append"),
+                  });
+                } catch (appendErr) {
+                  // Fallback: post standalone if append fails (e.g., summary comment not found yet)
+                  logger.warn(
+                    { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
+                    "Failed to append Review Details to summary comment; posting standalone",
+                  );
+                  if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
+                    setReviewWorkPhase("publish");
+                    await upsertReviewDetailsComment({
+                      octokit: extractionOctokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      body: fullDetailsBody,
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("deterministic Review Details standalone comment"),
+                    });
+                  }
+                }
+              }
+            } else {
+              // No summary comment (clean review) -- post standalone Review Details
+              // FORMAT-11 exemption: no summary exists to embed into; standalone preserves metrics visibility
+              if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
+                setReviewWorkPhase("publish");
                 await upsertReviewDetailsComment({
                   octokit: extractionOctokit,
                   owner: apiOwner,
@@ -3676,20 +3906,10 @@ export function createReviewHandler(deps: {
                   reviewOutputKey,
                   body: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
+                  recheckCanPublish: () =>
+                    canPublishVisibleOutput("deterministic Review Details standalone comment"),
                 });
               }
-            } else {
-              // No summary comment (clean review) -- post standalone Review Details
-              // FORMAT-11 exemption: no summary exists to embed into; standalone preserves metrics visibility
-              await upsertReviewDetailsComment({
-                octokit: extractionOctokit,
-                owner: apiOwner,
-                repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                body: fullDetailsBody,
-                botHandles: [githubApp.getAppSlug(), "claude"],
-              });
             }
           } catch (err) {
             logger.warn(
@@ -3751,13 +3971,16 @@ export function createReviewHandler(deps: {
               "Execution cost exceeded warning threshold",
             );
             try {
-              const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
-              await warnOctokit.rest.issues.createComment({
-                owner: apiOwner,
-                repo: apiRepo,
-                issue_number: pr.number,
-                body: sanitizeOutgoingMentions(`> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``, [githubApp.getAppSlug(), "claude"]),
-              });
+              if (canPublishVisibleOutput("cost warning comment")) {
+                setReviewWorkPhase("publish");
+                const warnOctokit = await githubApp.getInstallationOctokit(event.installationId);
+                await warnOctokit.rest.issues.createComment({
+                  owner: apiOwner,
+                  repo: apiRepo,
+                  issue_number: pr.number,
+                  body: sanitizeOutgoingMentions(`> **Kodiai cost warning:** This execution cost \$${result.costUsd.toFixed(4)} USD, exceeding the configured threshold of \$${config.telemetry.costWarningUsd.toFixed(2)} USD.\n>\n> Configure in \`.kodiai.yml\`:\n> \`\`\`yml\n> telemetry:\n>   costWarningUsd: 5.0  # or 0 to disable\n> \`\`\``, [githubApp.getAppSlug(), "claude"]),
+                });
+              }
             } catch (err) {
               logger.warn({ err }, "Failed to post cost warning comment (non-blocking)");
             }
@@ -4047,6 +4270,7 @@ export function createReviewHandler(deps: {
           const complexityInfo = timeoutEstimate?.reasoning ?? "unknown";
 
           let publishedPartialReview = false;
+          let partialCommentId: number | undefined;
 
           if (result.isTimeout) {
             // Step 1: Read checkpoint data
@@ -4088,94 +4312,99 @@ export function createReviewHandler(deps: {
             });
 
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
-            const partialComment = await octokit.rest.issues.createComment({
-              owner: apiOwner,
-              repo: apiRepo,
-              issue_number: pr.number,
-              body: sanitizeOutgoingMentions(partialBody, [githubApp.getAppSlug(), "claude"]),
-            });
-            const partialCommentId = partialComment.data.id;
-
-            // Store partial comment ID in checkpoint for retry to find (best-effort).
-            // Use saveCheckpoint() to ensure a record exists even when the run
-            // timed out before the checkpoint tool was ever called.
-            if (knowledgeStore?.saveCheckpoint) {
-              await knowledgeStore.saveCheckpoint({
-                reviewOutputKey,
-                repo: `${apiOwner}/${apiRepo}`,
-                prNumber: pr.number,
-                filesReviewed: checkpoint?.filesReviewed ?? [],
-                findingCount: checkpoint?.findingCount ?? 0,
-                summaryDraft,
-                totalFiles: changedFiles.length,
-                partialCommentId,
-              });
-            } else {
-              knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
-            }
-
-            publishedPartialReview = true;
-
-            logger.info(
-              {
-                deliveryId: event.id,
-                prNumber: pr.number,
-                partialCommentId,
-                filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
-                findingCount: checkpoint?.findingCount ?? 0,
-                hasPartialResults,
-                isChronicTimeout,
-                recentTimeouts,
-              },
-              "Published partial review on timeout",
-            );
-
-            try {
-              await upsertReviewDetailsComment({
-                octokit,
+            if (canPublishVisibleOutput("timeout partial review")) {
+              setReviewWorkPhase("publish");
+              const partialComment = await octokit.rest.issues.createComment({
                 owner: apiOwner,
                 repo: apiRepo,
-                prNumber: pr.number,
-                reviewOutputKey,
-                body: buildReviewDetailsBody(),
-                botHandles: [githubApp.getAppSlug(), "claude"],
+                issue_number: pr.number,
+                body: sanitizeOutgoingMentions(partialBody, [githubApp.getAppSlug(), "claude"]),
               });
-            } catch (reviewDetailsErr) {
-              logger.warn(
-                {
-                  ...baseLog,
-                  gate: "review-details-output",
-                  gateResult: "timeout-failed",
-                  reviewOutputKey,
-                  err: reviewDetailsErr,
-                },
-                "Failed to publish Review Details for timeout partial output",
-              );
-            }
+              partialCommentId = partialComment.data.id;
 
-            // Structured resilience telemetry (best-effort)
-            if (config.telemetry.enabled) {
-              try {
-                await telemetryStore.recordResilienceEvent?.({
-                  deliveryId: event.id,
+              // Store partial comment ID in checkpoint for retry to find (best-effort).
+              // Use saveCheckpoint() to ensure a record exists even when the run
+              // timed out before the checkpoint tool was ever called.
+              if (knowledgeStore?.saveCheckpoint) {
+                await knowledgeStore.saveCheckpoint({
+                  reviewOutputKey,
                   repo: `${apiOwner}/${apiRepo}`,
                   prNumber: pr.number,
-                  prAuthor: pr.user.login,
-                  eventType: `pull_request.${payload.action}`,
-                  kind: "timeout",
-                  reviewOutputKey,
-                  executionConclusion,
-                  hadInlineOutput: hasPublishedInlines,
-                  checkpointFilesReviewed: checkpoint?.filesReviewed?.length ?? 0,
-                  checkpointFindingCount: checkpoint?.findingCount ?? 0,
-                  checkpointTotalFiles: changedFiles.length,
+                  filesReviewed: checkpoint?.filesReviewed ?? [],
+                  findingCount: checkpoint?.findingCount ?? 0,
+                  summaryDraft,
+                  totalFiles: changedFiles.length,
                   partialCommentId,
-                  recentTimeouts,
-                  chronicTimeout: isChronicTimeout,
-                  retryEnqueued: false,
                 });
-              } catch (err) {
-                logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+              } else {
+                knowledgeStore?.updateCheckpointCommentId?.(reviewOutputKey, partialCommentId);
+              }
+
+              publishedPartialReview = true;
+
+              logger.info(
+                {
+                  deliveryId: event.id,
+                  prNumber: pr.number,
+                  partialCommentId,
+                  filesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                  findingCount: checkpoint?.findingCount ?? 0,
+                  hasPartialResults,
+                  isChronicTimeout,
+                  recentTimeouts,
+                },
+                "Published partial review on timeout",
+              );
+
+              try {
+                if (canPublishVisibleOutput("timeout Review Details comment")) {
+                  await upsertReviewDetailsComment({
+                    octokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    body: buildReviewDetailsBody(),
+                    botHandles: [githubApp.getAppSlug(), "claude"],
+                  });
+                }
+              } catch (reviewDetailsErr) {
+                logger.warn(
+                  {
+                    ...baseLog,
+                    gate: "review-details-output",
+                    gateResult: "timeout-failed",
+                    reviewOutputKey,
+                    err: reviewDetailsErr,
+                  },
+                  "Failed to publish Review Details for timeout partial output",
+                );
+              }
+
+              // Structured resilience telemetry (best-effort)
+              if (config.telemetry.enabled) {
+                try {
+                  await telemetryStore.recordResilienceEvent?.({
+                    deliveryId: event.id,
+                    repo: `${apiOwner}/${apiRepo}`,
+                    prNumber: pr.number,
+                    prAuthor: pr.user.login,
+                    eventType: `pull_request.${payload.action}`,
+                    kind: "timeout",
+                    reviewOutputKey,
+                    executionConclusion,
+                    hadInlineOutput: hasPublishedInlines,
+                    checkpointFilesReviewed: checkpoint?.filesReviewed?.length ?? 0,
+                    checkpointFindingCount: checkpoint?.findingCount ?? 0,
+                    checkpointTotalFiles: changedFiles.length,
+                    partialCommentId,
+                    recentTimeouts,
+                    chronicTimeout: isChronicTimeout,
+                    retryEnqueued: false,
+                  });
+                } catch (err) {
+                  logger.warn({ err }, "Resilience telemetry write failed (non-blocking)");
+                }
               }
             }
 
@@ -4255,10 +4484,23 @@ export function createReviewHandler(deps: {
                   "Enqueueing retry with reduced scope",
                 );
 
-                // Fire-and-forget enqueue -- do not await the retry result
+                const retryDeliveryId = `${event.id}-retry-1`;
+                const retryReviewWorkAttempt = reviewWorkCoordinator.claim({
+                  familyKey: reviewFamilyKey,
+                  source: "automatic-review",
+                  lane: "review",
+                  deliveryId: retryDeliveryId,
+                  phase: "claimed",
+                });
+
+                // Fire-and-forget enqueue -- do not await the retry result.
+                // Claim before queueing so the retry is visible in family diagnostics
+                // and retains its request ordering, but publish rights only become
+                // authoritative when the queued retry actually starts executing.
                 void jobQueue.enqueue(event.installationId, async () => {
                   let retryWorkspace: Workspace | undefined;
                   try {
+                    setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "workspace-create");
                     retryWorkspace = await workspaceManager.create(event.installationId, {
                       owner: cloneOwner,
                       repo: cloneRepo,
@@ -4293,6 +4535,7 @@ export function createReviewHandler(deps: {
                         ? `${config.review.prompt.trim()}\n\n${retryInstruction}`
                         : retryInstruction;
 
+                    setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "prompt-build");
                     const retryPrompt = buildReviewPrompt({
                       owner: apiOwner,
                       repo: apiRepo,
@@ -4365,6 +4608,7 @@ export function createReviewHandler(deps: {
                       structuralImpact: structuralImpactForReview,
                     });
 
+                    setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
                     const retryResult = await executor.execute({
                       workspace: retryWorkspace,
                       installationId: event.installationId,
@@ -4378,7 +4622,7 @@ export function createReviewHandler(deps: {
                       triggerBody: "",
                       prompt: retryPrompt,
                       reviewOutputKey: retryReviewOutputKey,
-                      deliveryId: `${event.id}-retry-1`,
+                      deliveryId: retryDeliveryId,
                       dynamicTimeoutSeconds: retryTimeout,
                       knowledgeStore,
                       totalFiles: changedFiles.length,
@@ -4394,7 +4638,7 @@ export function createReviewHandler(deps: {
                       if (config.telemetry.enabled) {
                         try {
                           await telemetryStore.recordResilienceEvent?.({
-                            deliveryId: `${event.id}-retry-1`,
+                            deliveryId: retryDeliveryId,
                             parentDeliveryId: event.id,
                             repo: `${apiOwner}/${apiRepo}`,
                             prNumber: pr.number,
@@ -4447,36 +4691,44 @@ export function createReviewHandler(deps: {
 
                       if (!commentIdToUpdate) {
                         logger.warn(
-                          { deliveryId: `${event.id}-retry-1`, prNumber: pr.number },
+                          { deliveryId: retryDeliveryId, prNumber: pr.number },
                           "No partial comment ID available for retry update",
                         );
                         return;
                       }
-                      await retryOctokit.rest.issues.updateComment({
-                        owner: apiOwner,
-                        repo: apiRepo,
-                        comment_id: commentIdToUpdate,
-                        body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
-                      });
 
-                      logger.info(
-                        {
-                          deliveryId: `${event.id}-retry-1`,
-                          prNumber: pr.number,
-                          retryConclusion: retryResult.conclusion,
-                          retryFilesReviewed,
-                          partialCommentId,
-                        },
-                        "Retry complete -- updated partial review comment with merged results",
-                      );
+                      if (canPublishReviewWorkOutput(
+                        retryReviewWorkAttempt.attemptId,
+                        "retry partial review merge",
+                        retryDeliveryId,
+                      )) {
+                        setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "publish");
+                        await retryOctokit.rest.issues.updateComment({
+                          owner: apiOwner,
+                          repo: apiRepo,
+                          comment_id: commentIdToUpdate,
+                          body: sanitizeOutgoingMentions(mergedBody, [githubApp.getAppSlug(), "claude"]),
+                        });
 
-                      // Cleanup checkpoint data after successful merge
-                      knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
-                      knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                        logger.info(
+                          {
+                            deliveryId: retryDeliveryId,
+                            prNumber: pr.number,
+                            retryConclusion: retryResult.conclusion,
+                            retryFilesReviewed,
+                            partialCommentId,
+                          },
+                          "Retry complete -- updated partial review comment with merged results",
+                        );
+
+                        // Cleanup checkpoint data after successful merge
+                        knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                        knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                      }
                     } else {
                       logger.info(
                         {
-                          deliveryId: `${event.id}-retry-1`,
+                          deliveryId: retryDeliveryId,
                           prNumber: pr.number,
                           retryConclusion: retryResult.conclusion,
                         },
@@ -4487,7 +4739,7 @@ export function createReviewHandler(deps: {
                     if (config.telemetry.enabled) {
                       try {
                         await telemetryStore.record({
-                          deliveryId: `${event.id}-retry-1`,
+                          deliveryId: retryDeliveryId,
                           repo: `${apiOwner}/${apiRepo}`,
                           prNumber: pr.number,
                           prAuthor: pr.user.login,
@@ -4516,7 +4768,7 @@ export function createReviewHandler(deps: {
                     logger.error(
                       {
                         err: retryErr,
-                        deliveryId: `${event.id}-retry-1`,
+                        deliveryId: retryDeliveryId,
                         prNumber: pr.number,
                       },
                       "Retry failed with error",
@@ -4526,19 +4778,26 @@ export function createReviewHandler(deps: {
                       await retryWorkspace.cleanup();
                     }
 
-                    // Best-effort checkpoint cleanup even on retry failure.
-                    // Retry attempts are capped at 1, so leaving checkpoint rows
-                    // behind provides little value and can accumulate stale state.
-                    knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
-                    knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                    try {
+                      reviewWorkCoordinator.complete(retryReviewWorkAttempt.attemptId);
+                    } finally {
+                      // Best-effort checkpoint cleanup even on retry failure.
+                      // Retry attempts are capped at 1, so leaving checkpoint rows
+                      // behind provides little value and can accumulate stale state.
+                      knowledgeStore?.deleteCheckpoint?.(retryReviewOutputKey);
+                      knowledgeStore?.deleteCheckpoint?.(reviewOutputKey);
+                    }
                   }
                 }, {
-                  deliveryId: `${event.id}-retry-1`,
+                  deliveryId: retryDeliveryId,
                   eventName: event.name,
                   action: `review-retry`,
+                  lane: "review",
+                  key: reviewFamilyKey,
                   jobType: "pull-request-review-retry",
                   prNumber: pr.number,
                 }).catch((err) => {
+                  reviewWorkCoordinator.release(retryReviewWorkAttempt.attemptId);
                   logger.error(
                     { err, deliveryId: event.id, prNumber: pr.number },
                     "Failed to enqueue retry job",
@@ -4572,11 +4831,14 @@ export function createReviewHandler(deps: {
             }
 
             const octokit = await githubApp.getInstallationOctokit(event.installationId);
-            await postOrUpdateErrorComment(octokit, {
-              owner: apiOwner,
-              repo: apiRepo,
-              issueNumber: pr.number,
-            }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+            if (canPublishVisibleOutput("error comment")) {
+              setReviewWorkPhase("publish");
+              await postOrUpdateErrorComment(octokit, {
+                owner: apiOwner,
+                repo: apiRepo,
+                issueNumber: pr.number,
+              }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+            }
           }
         }
 
@@ -4627,6 +4889,11 @@ export function createReviewHandler(deps: {
             }
 
             {
+              if (!canPublishVisibleOutput("auto-approval")) {
+                return;
+              }
+
+              setReviewWorkPhase("publish");
               const approvalEvidence = [
                 `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
               ];
@@ -4715,20 +4982,33 @@ export function createReviewHandler(deps: {
         const errorBody = formatErrorComment(category, detail);
         try {
           const errOctokit = await githubApp.getInstallationOctokit(event.installationId);
-          await postOrUpdateErrorComment(errOctokit, {
-            owner: apiOwner,
-            repo: apiRepo,
-            issueNumber: pr.number,
-          }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
-          reviewPhaseTimings.set(
-            "publication",
-            createReviewPhaseTiming({
-              name: "publication",
-              status: "degraded",
-              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-              detail: "posted error comment after handler failure",
-            }),
-          );
+          if (canPublishVisibleOutput("handler failure error comment")) {
+            setReviewWorkPhase("publish");
+            await postOrUpdateErrorComment(errOctokit, {
+              owner: apiOwner,
+              repo: apiRepo,
+              issueNumber: pr.number,
+            }, sanitizeOutgoingMentions(errorBody, [githubApp.getAppSlug(), "claude"]), logger);
+            reviewPhaseTimings.set(
+              "publication",
+              createReviewPhaseTiming({
+                name: "publication",
+                status: "degraded",
+                durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+                detail: "posted error comment after handler failure",
+              }),
+            );
+          } else {
+            reviewPhaseTimings.set(
+              "publication",
+              createReviewPhaseTiming({
+                name: "publication",
+                status: "degraded",
+                durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+                detail: "suppressed error comment after handler failure because publish rights were lost",
+              }),
+            );
+          }
         } catch (commentErr) {
           logger.error({ err: commentErr }, "Failed to post error comment to PR");
           reviewPhaseTimings.set(
@@ -4801,9 +5081,14 @@ export function createReviewHandler(deps: {
       deliveryId: event.id,
       eventName: event.name,
       action,
+      lane: "review",
+      key: reviewFamilyKey,
       jobType: "pull-request-review",
       prNumber: pr.number,
     });
+    } finally {
+      finalizeReviewWorkAttempt();
+    }
 
     logger.info(
       { ...baseLog, gate: "enqueue", gateResult: "completed" },

@@ -186,6 +186,8 @@ export function createDepBumpMergeHistoryHandler(deps: {
       deliveryId: event.id,
       eventName: event.name,
       action: (payload as unknown as { action?: string }).action,
+      lane: "sync",
+      key: `${owner.trim().toLowerCase()}/${repo.trim().toLowerCase()}#${pr.number}`,
       jobType: "dep-bump-merge-history",
       prNumber: pr.number,
     });

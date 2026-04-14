@@ -33,24 +33,53 @@ export interface JobQueueWaitMetadata {
   waitMs: number;
 }
 
+export type JobLane = "interactive-review" | "review" | "sync";
+
+export interface JobSnapshot {
+  jobId: string;
+  installationId: number;
+  lane: JobLane;
+  key: string;
+  jobType?: string;
+  deliveryId?: string;
+  prNumber?: number;
+  phase: string;
+  queuedAtMs: number;
+  startedAtMs?: number;
+  lastProgressAtMs: number;
+}
+
+export interface JobQueueRunMetadata extends JobQueueWaitMetadata {
+  jobId: string;
+  lane: JobLane;
+  key: string;
+  setPhase(phase: string): void;
+}
+
+export interface JobQueueContext {
+  lane?: JobLane;
+  key?: string;
+  deliveryId?: string;
+  eventName?: string;
+  action?: string;
+  jobType?: string;
+  prNumber?: number;
+}
+
 /** Job queue with per-installation concurrency control */
 export interface JobQueue {
   /** Enqueue a job for an installation. Returns a Promise resolving to the job result. */
   enqueue<T>(
     installationId: number,
-    fn: (metadata?: JobQueueWaitMetadata) => Promise<T>,
-    context?: {
-      deliveryId?: string;
-      eventName?: string;
-      action?: string;
-      jobType?: string;
-      prNumber?: number;
-    },
+    fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+    context?: JobQueueContext,
   ): Promise<T>;
   /** Number of waiting (not yet running) jobs for an installation */
   getQueueSize(installationId: number): number;
   /** Number of currently running jobs for an installation */
   getPendingCount(installationId: number): number;
+  /** Active queued/running jobs for an installation, sorted by queuedAtMs. */
+  getActiveJobs(installationId: number): JobSnapshot[];
 }
 
 /** Workspace manager creates and cleans up ephemeral workspaces */
