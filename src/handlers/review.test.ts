@@ -4339,9 +4339,10 @@ describe("createReviewHandler diff collection resilience", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const workspaceManager: WorkspaceManager = {
