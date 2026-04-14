@@ -669,7 +669,11 @@ function buildFreshnessDiagnostics(
       "A linked but unscored profile would default to newcomer guidance under the current live incremental path.",
     );
   }
-  if (freshnessBand === "stale") {
+  if (daysSinceLatestEvidence !== null && daysSinceLatestEvidence < 0) {
+    findings.push(
+      "Evidence timestamp is in the future relative to reference time, indicating a potential clock or data issue.",
+    );
+  } else if (freshnessBand === "stale") {
     findings.push("The latest checked-in contributor evidence is stale relative to the calibration reference time.");
   } else if (freshnessBand === "aging") {
     findings.push("The latest checked-in contributor evidence is aging and may understate recent activity.");
@@ -792,6 +796,9 @@ function classifyFreshnessBand(
   daysSinceLatestEvidence: number | null,
 ): CalibrationFreshnessBand {
   if (daysSinceLatestEvidence === null) {
+    return "unknown";
+  }
+  if (daysSinceLatestEvidence < 0) {
     return "unknown";
   }
   if (daysSinceLatestEvidence <= 45) {

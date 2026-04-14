@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.28 (2026-04-12)
+
+Explicit Review Publication Recovery.
+
+### Fixed
+
+- Explicit `@kodiai review` requests now run with the full review-class turn budget and tool surface instead of the reduced conversational mention budget, restoring truthful approval publication on large PRs.
+- Clean-database CI runs now bootstrap the `KnowledgeStore` schema in `src/knowledge/store.test.ts`, removing the warm-schema false green that masked missing migrations.
+- Deploys now force a fresh ACA revision when the template would otherwise reuse the existing revision name, preventing "successful deploy, no new revision" ambiguity.
+
+### Changed
+
+- `deploy.sh` now reports the live ACA revision after deploy so operator proof can tie health checks, logs, and publish evidence to the exact running revision.
+- Deployment and review-request runbooks now document the explicit review publication path and its post-deploy proof surfaces.
+
 ## v0.27 (2026-04-06)
 
 Contributor Tier Truthfulness.

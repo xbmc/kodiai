@@ -229,7 +229,7 @@ describe("resolveReviewAuthorClassification", () => {
     expect(result.fallbackPath).toBe("opted-out-stored-profile");
   });
 
-  test("fails open when expertise lookup breaks after a trustworthy stored profile was found", async () => {
+  test("keeps the trustworthy stored profile tier when expertise lookup fails", async () => {
     const result = await resolveReviewAuthorClassification({
       authorLogin: "octocat",
       authorAssociation: "NONE",
@@ -237,7 +237,7 @@ describe("resolveReviewAuthorClassification", () => {
       owner: "acme",
       repoSlug: "acme/repo",
       searchIssuesAndPullRequests: async () => {
-        throw new Error("search should not execute when author cache resolves the fallback");
+        throw new Error("search should not execute when a trustworthy stored profile exists");
       },
       knowledgeStore: {
         getAuthorCache: async () => ({
@@ -256,14 +256,17 @@ describe("resolveReviewAuthorClassification", () => {
       referenceTime: REFERENCE_TIME,
     });
 
-    expect(result.contract.state).toBe("coarse-fallback");
-    expect(result.contract.source).toBe("author-cache");
+    expect(result.contract.state).toBe("profile-backed");
+    expect(result.contract.source).toBe("contributor-profile");
+    expect(result.tier).toBe("established");
+    expect(result.fromCache).toBe(false);
+    expect(result.searchCacheHit).toBe(false);
     expect(result.storedProfileTrust).toMatchObject({
       state: "calibrated",
       trusted: true,
     });
     expect(result.expertise).toBeUndefined();
-    expect(result.fallbackPath).toBe("stored-profile-calibrated->author-cache");
+    expect(result.fallbackPath).toBe("trusted-stored-profile");
   });
 
   test("degrades to generic when a stale stored profile is bypassed and search is rate-limited", async () => {

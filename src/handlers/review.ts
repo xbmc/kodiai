@@ -14,6 +14,7 @@ import type {
 } from "../execution/types.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { createExecutor } from "../execution/executor.ts";
+import type { ExecutionResult } from "../execution/types.ts";
 import type { TelemetryStore } from "../telemetry/types.ts";
 import type { KnowledgeStore, PriorFinding } from "../knowledge/types.ts";
 import type { LearningMemoryStore, EmbeddingProvider, LearningMemoryRecord } from "../knowledge/types.ts";
@@ -88,8 +89,6 @@ import {
   ensureSearchRateLimitDisclosureInSummary,
   extractSearchErrorStatus,
   extractSearchErrorText,
-  isSearchRateLimitError,
-  resolveRateLimitBackoffMs,
   toConfidenceBand,
   fingerprintFindingTitle,
   buildReviewDetailsMarker,
@@ -130,7 +129,6 @@ import {
   type ReviewAuthorClassification,
 } from "../contributor/review-author-resolution.ts";
 import { updateExpertiseIncremental } from "../contributor/expertise-scorer.ts";
-import type { AuthorCacheEntry, AuthorCacheTier } from "../knowledge/types.ts";
 import { suggestIdentityLink } from "./identity-suggest.ts";
 import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
 import {
@@ -326,7 +324,7 @@ function buildReviewDetailsPhaseTimingSummary(params: {
 
 export function resolveAuthorTierFromSources(params: {
   contributorTier?: AuthorTier | null;
-  cachedTier?: AuthorCacheTier | null;
+  cachedTier?: AuthorTier | null;
   fallbackTier: AuthorTier;
 }): { tier: AuthorTier; source: "contributor-profile" | "author-cache" | "fallback" } {
   const { contributorTier, cachedTier, fallbackTier } = params;
@@ -342,98 +340,12 @@ export function resolveAuthorTierFromSources(params: {
   return { tier: fallbackTier, source: "fallback" };
 }
 
-function normalizeAuthorCacheTier(value: string | null | undefined): AuthorCacheTier | null {
-  if (value === "first-time" || value === "regular" || value === "core") {
-    return value;
-  }
-  return null;
-}
+function shouldRetryTransientAgentExit(result: Pick<ExecutionResult, "conclusion" | "errorMessage" | "isTimeout" | "published">): boolean {
+  if (result.conclusion !== "error") return false;
+  if (result.isTimeout) return false;
+  if (result.published) return false;
 
-function normalizeAuthorCacheEntry(entry: AuthorCacheEntry | null | undefined): AuthorCacheEntry | null {
-  if (!entry) {
-    return null;
-  }
-
-  const normalizedTier = normalizeAuthorCacheTier(entry.tier);
-  if (!normalizedTier) {
-    return null;
-  }
-
-  return {
-    ...entry,
-    tier: normalizedTier,
-  };
-}
-
-function normalizeContributorProfileTier(value: string | null | undefined): AuthorTier | null {
-  if (value === "newcomer" || value === "developing" || value === "established" || value === "senior") {
-    return value;
-  }
-  return null;
-}
-
-function hasAssociationFallbackSignal(authorAssociation: string): boolean {
-  return [
-    "MEMBER",
-    "OWNER",
-    "FIRST_TIMER",
-    "FIRST_TIME_CONTRIBUTOR",
-    "COLLABORATOR",
-    "CONTRIBUTOR",
-  ].includes(authorAssociation);
-}
-
-async function executeSearchWithRateLimitRetry(params: {
-  operation: () => Promise<number>;
-  logger: Logger;
-  authorLogin: string;
-}): Promise<{ value: number | null; retryAttempts: number; degraded: boolean }> {
-  const { operation, logger, authorLogin } = params;
-
-  try {
-    return {
-      value: await operation(),
-      retryAttempts: 0,
-      degraded: false,
-    };
-  } catch (err) {
-    if (!isSearchRateLimitError(err)) {
-      throw err;
-    }
-
-    const backoffMs = resolveRateLimitBackoffMs(err);
-    logger.warn(
-      { err, authorLogin, backoffMs, retryAttempts: 1 },
-      "Search API rate limit detected; retrying author-tier enrichment once",
-    );
-
-    if (backoffMs > 0) {
-      await Bun.sleep(backoffMs);
-    }
-
-    try {
-      return {
-        value: await operation(),
-        retryAttempts: 1,
-        degraded: false,
-      };
-    } catch (retryErr) {
-      if (!isSearchRateLimitError(retryErr)) {
-        throw retryErr;
-      }
-
-      logger.warn(
-        { err: retryErr, authorLogin, retryAttempts: 1 },
-        "Search API remained rate-limited after one retry; degrading enrichment",
-      );
-
-      return {
-        value: null,
-        retryAttempts: 1,
-        degraded: true,
-      };
-    }
-  }
+  return /Failed with exit code 143\b/i.test(result.errorMessage ?? "");
 }
 
 async function fetchCommitMessages(
@@ -740,7 +652,11 @@ async function removeFilteredInlineComments(params: {
 
 
 
-type DiffCollectionStrategy = "triple-dot" | "deepened-triple-dot" | "fallback-two-dot";
+type DiffCollectionStrategy =
+  | "triple-dot"
+  | "deepened-triple-dot"
+  | "fallback-two-dot"
+  | "github-file-list-fallback";
 
 type DiffCollectionResult = {
   changedFiles: string[];
@@ -753,7 +669,17 @@ type DiffCollectionResult = {
   diffRange: string;
 };
 
+type DiffCommandResult = {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+};
+
+type DiffCommandRunner = (args: string[], timeoutMs: number) => Promise<DiffCommandResult>;
+
 const DIFF_DEEPEN_STEPS = [50, 150, 300];
+const DIFF_COMMAND_TIMEOUT_MS = 15_000;
 const AUTHOR_PR_COUNT_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 
 async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<boolean> {
@@ -761,15 +687,137 @@ async function hasMergeBase(workspaceDir: string, baseRef: string): Promise<bool
   return mergeBaseResult.exitCode === 0;
 }
 
-async function collectDiffContext(params: {
+async function runDiffCommandWithTimeout(params: {
+  workspaceDir: string;
+  args: string[];
+  timeoutMs: number;
+}): Promise<DiffCommandResult> {
+  const { workspaceDir, args, timeoutMs } = params;
+  const proc = Bun.spawn(["git", "-C", workspaceDir, ...args], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const stdoutPromise = new Response(proc.stdout).text();
+  const stderrPromise = new Response(proc.stderr).text();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+
+  try {
+    const exitCode = timeoutMs > 0 && Number.isFinite(timeoutMs)
+      ? await Promise.race([
+          proc.exited,
+          new Promise<number>((resolve) => {
+            timer = setTimeout(() => {
+              timedOut = true;
+              try {
+                proc.kill();
+              } catch {
+                // Ignore kill races; the process may have already exited.
+              }
+              resolve(124);
+            }, timeoutMs);
+          }),
+        ])
+      : await proc.exited;
+
+    const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise]);
+    return {
+      exitCode,
+      stdout,
+      stderr,
+      timedOut,
+    };
+  } finally {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
+  }
+}
+
+async function buildDiffCollectionFallback(params: {
+  fallbackFileProvider?: () => Promise<string[]>;
+  logger: Logger;
+  baseLog: Record<string, unknown>;
+  stage: string;
+  reason: string;
+  deepenAttempts: number;
+  unshallowAttempted: boolean;
+  mergeBaseRecovered: boolean;
+  diffRange: string;
+}): Promise<DiffCollectionResult> {
+  const {
+    fallbackFileProvider,
+    logger,
+    baseLog,
+    stage,
+    reason,
+    deepenAttempts,
+    unshallowAttempted,
+    mergeBaseRecovered,
+    diffRange,
+  } = params;
+
+  if (!fallbackFileProvider) {
+    throw new Error(`Diff collection timed out during ${stage} (${reason}) and no fallback provider was configured`);
+  }
+
+  const changedFiles = Array.from(new Set(await fallbackFileProvider()));
+
+  logger.warn(
+    {
+      ...baseLog,
+      gate: "diff-collection",
+      stage,
+      reason,
+      strategy: "github-file-list-fallback",
+      deepenAttempts,
+      unshallowAttempted,
+      mergeBaseRecovered,
+      diffRange,
+      changedFilesCount: changedFiles.length,
+    },
+    "Diff collection degraded to GitHub file-list fallback",
+  );
+
+  return {
+    changedFiles,
+    numstatLines: [],
+    diffContent: undefined,
+    strategy: "github-file-list-fallback",
+    mergeBaseRecovered,
+    deepenAttempts,
+    unshallowAttempted,
+    diffRange: "github-api:file-list",
+  };
+}
+
+export async function collectDiffContext(params: {
   workspaceDir: string;
   baseRef: string;
   maxFilesForFullDiff: number;
   logger: Logger;
   baseLog: Record<string, unknown>;
   token?: string;
+  runGitCommand?: DiffCommandRunner;
+  fallbackFileProvider?: () => Promise<string[]>;
+  commandTimeoutMs?: number;
 }): Promise<DiffCollectionResult> {
-  const { workspaceDir, baseRef, maxFilesForFullDiff, logger, baseLog, token } = params;
+  const {
+    workspaceDir,
+    baseRef,
+    maxFilesForFullDiff,
+    logger,
+    baseLog,
+    token,
+    runGitCommand,
+    fallbackFileProvider,
+    commandTimeoutMs = DIFF_COMMAND_TIMEOUT_MS,
+  } = params;
+
+  const diffCommandRunner = runGitCommand
+    ?? ((args: string[], timeoutMs: number) =>
+      runDiffCommandWithTimeout({ workspaceDir, args, timeoutMs }));
 
   let strategy: DiffCollectionStrategy = "triple-dot";
   let mergeBaseRecovered = false;
@@ -781,11 +829,48 @@ async function collectDiffContext(params: {
 
   let mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
   if (!mergeBaseAvailable) {
+    logger.info(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "merge-base-recovery",
+        baseRef,
+        timeoutMs: commandTimeoutMs,
+      },
+      "Merge base missing before diff collection; attempting history recovery",
+    );
+
     for (const step of DIFF_DEEPEN_STEPS) {
       deepenAttempts += 1;
-      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --deepen=${step}`
-        .quiet()
-        .nothrow();
+      logger.info(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "merge-base-recovery",
+          attempt: deepenAttempts,
+          deepenBy: step,
+          timeoutMs: commandTimeoutMs,
+        },
+        "Attempting diff collection merge-base recovery",
+      );
+
+      const deepenResult = await diffCommandRunner(
+        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, `--deepen=${step}`],
+        commandTimeoutMs,
+      );
+      if (deepenResult.timedOut) {
+        return await buildDiffCollectionFallback({
+          fallbackFileProvider,
+          logger,
+          baseLog,
+          stage: "merge-base-recovery",
+          reason: `fetch-timeout-deepen-${step}`,
+          deepenAttempts,
+          unshallowAttempted,
+          mergeBaseRecovered,
+          diffRange: `origin/${baseRef}...HEAD`,
+        });
+      }
 
       mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
       if (mergeBaseAvailable) {
@@ -797,9 +882,35 @@ async function collectDiffContext(params: {
 
     if (!mergeBaseAvailable) {
       unshallowAttempted = true;
-      await $`git -C ${workspaceDir} fetch ${fetchRemote} ${baseRef}:refs/remotes/origin/${baseRef} --unshallow`
-        .quiet()
-        .nothrow();
+      logger.info(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "merge-base-recovery",
+          attempt: deepenAttempts + 1,
+          mode: "unshallow",
+          timeoutMs: commandTimeoutMs,
+        },
+        "Attempting diff collection full-history recovery",
+      );
+
+      const unshallowResult = await diffCommandRunner(
+        ["fetch", fetchRemote, `${baseRef}:refs/remotes/origin/${baseRef}`, "--unshallow"],
+        commandTimeoutMs,
+      );
+      if (unshallowResult.timedOut) {
+        return await buildDiffCollectionFallback({
+          fallbackFileProvider,
+          logger,
+          baseLog,
+          stage: "merge-base-recovery",
+          reason: "fetch-timeout-unshallow",
+          deepenAttempts,
+          unshallowAttempted,
+          mergeBaseRecovered,
+          diffRange: `origin/${baseRef}...HEAD`,
+        });
+      }
 
       mergeBaseAvailable = await hasMergeBase(workspaceDir, baseRef);
       if (mergeBaseAvailable) {
@@ -814,7 +925,21 @@ async function collectDiffContext(params: {
     strategy = "fallback-two-dot";
   }
 
-  let nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet().nothrow();
+  let nameOnlyResult = await diffCommandRunner(["diff", diffRange, "--name-only"], commandTimeoutMs);
+  if (nameOnlyResult.timedOut) {
+    return await buildDiffCollectionFallback({
+      fallbackFileProvider,
+      logger,
+      baseLog,
+      stage: "name-only",
+      reason: `diff-timeout-${diffRange}-name-only`,
+      deepenAttempts,
+      unshallowAttempted,
+      mergeBaseRecovered,
+      diffRange,
+    });
+  }
+
   if (nameOnlyResult.exitCode !== 0 && diffRange.includes("...")) {
     strategy = "fallback-two-dot";
     diffRange = `origin/${baseRef}..HEAD`;
@@ -827,19 +952,84 @@ async function collectDiffContext(params: {
       },
       "Triple-dot diff failed; retrying with deterministic fallback range",
     );
-    nameOnlyResult = await $`git -C ${workspaceDir} diff ${diffRange} --name-only`.quiet();
+    nameOnlyResult = await diffCommandRunner(["diff", diffRange, "--name-only"], commandTimeoutMs);
+    if (nameOnlyResult.timedOut) {
+      return await buildDiffCollectionFallback({
+        fallbackFileProvider,
+        logger,
+        baseLog,
+        stage: "name-only",
+        reason: `diff-timeout-${diffRange}-name-only`,
+        deepenAttempts,
+        unshallowAttempted,
+        mergeBaseRecovered,
+        diffRange,
+      });
+    }
   } else if (nameOnlyResult.exitCode !== 0) {
     throw new Error(`git diff ${diffRange} --name-only failed with exit code ${nameOnlyResult.exitCode}`);
   }
 
-  const changedFiles = splitGitLines(nameOnlyResult.text());
-  const numstatOutput = await $`git -C ${workspaceDir} diff ${diffRange} --numstat`.quiet();
-  const numstatLines = splitGitLines(numstatOutput.text());
+  const changedFiles = splitGitLines(nameOnlyResult.stdout);
+
+  const numstatOutput = await diffCommandRunner(["diff", diffRange, "--numstat"], commandTimeoutMs);
+  let numstatLines: string[] = [];
+  if (numstatOutput.timedOut) {
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "numstat",
+        diffRange,
+        timeoutMs: commandTimeoutMs,
+      },
+      "Diff numstat collection timed out; continuing without numstat",
+    );
+  } else if (numstatOutput.exitCode !== 0) {
+    logger.warn(
+      {
+        ...baseLog,
+        gate: "diff-collection",
+        stage: "numstat",
+        diffRange,
+        exitCode: numstatOutput.exitCode,
+      },
+      "Diff numstat collection failed; continuing without numstat",
+    );
+  } else {
+    numstatLines = splitGitLines(numstatOutput.stdout);
+  }
 
   let diffContent: string | undefined;
   if (changedFiles.length <= maxFilesForFullDiff) {
-    const fullDiff = await $`git -C ${workspaceDir} diff ${diffRange}`.quiet();
-    diffContent = fullDiff.text();
+    const fullDiff = await diffCommandRunner(["diff", diffRange], commandTimeoutMs);
+    if (fullDiff.timedOut) {
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "full-diff",
+          diffRange,
+          changedFilesCount: changedFiles.length,
+          timeoutMs: commandTimeoutMs,
+        },
+        "Full diff collection timed out; continuing without full diff",
+      );
+    } else if (fullDiff.exitCode !== 0) {
+      logger.warn(
+        {
+          ...baseLog,
+          gate: "diff-collection",
+          stage: "full-diff",
+          diffRange,
+          changedFilesCount: changedFiles.length,
+          exitCode: fullDiff.exitCode,
+        },
+        "Full diff collection failed; continuing without full diff",
+      );
+    } else {
+      diffContent = fullDiff.stdout;
+    }
   }
 
   logger.info(
@@ -1033,6 +1223,8 @@ export function createReviewHandler(deps: {
   sql?: import("../db/client.ts").Sql;
   /** Optional cluster model store for thematic finding scoring (M037/S02). */
   clusterModelStore?: SuggestionClusterStore;
+  /** Optional diff context collector for deterministic tests and bounded fallback behavior. */
+  diffContextCollector?: typeof collectDiffContext;
   logger: Logger;
 }): void {
   const {
@@ -1058,6 +1250,7 @@ export function createReviewHandler(deps: {
     reviewGraphQuery,
     sql,
     clusterModelStore,
+    diffContextCollector = collectDiffContext,
     logger,
   } = deps;
 
@@ -1697,13 +1890,22 @@ export function createReviewHandler(deps: {
 
         // Build changed files and diff context, handling shallow-history merge-base gaps.
         retrievalPhaseStartedAt = Date.now();
-        const diffContext = await collectDiffContext({
+        const diffContext = await diffContextCollector({
           workspaceDir: workspace.dir,
           baseRef: pr.base.ref,
           maxFilesForFullDiff: 200,
           logger,
           baseLog,
           token: workspace.token,
+          fallbackFileProvider: async () => {
+            const listFilesResponse = await idempotencyOctokit.rest.pulls.listFiles({
+              owner: apiOwner,
+              repo: apiRepo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            return listFilesResponse.data.map((file) => file.filename);
+          },
         });
         const allChangedFiles = diffContext.changedFiles;
 
@@ -2809,8 +3011,7 @@ export function createReviewHandler(deps: {
           }),
         );
 
-        // Execute review via Claude
-        const result = await executor.execute({
+        const executionInput = {
           workspace,
           installationId: event.installationId,
           owner: apiOwner,
@@ -2819,7 +3020,7 @@ export function createReviewHandler(deps: {
           commentId: undefined,
           botHandles: [githubApp.getAppSlug(), "claude"],
           eventType: `pull_request.${payload.action}`,
-          taskType: "review.full",
+          taskType: "review.full" as const,
           triggerBody: reviewPrompt,
           prompt: reviewPrompt,
           reviewOutputKey,
@@ -2831,7 +3032,27 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
             ? timeoutEstimate.dynamicTimeoutSeconds
             : undefined,
-        });
+        };
+
+        let result = await executor.execute(executionInput);
+
+        if (shouldRetryTransientAgentExit(result)) {
+          logger.warn(
+            {
+              ...baseLog,
+              gate: "transient-agent-exit",
+              gateResult: "retrying",
+              errorMessage: result.errorMessage,
+            },
+            "Transient agent exit detected, retrying review once",
+          );
+
+          result = await executor.execute({
+            ...executionInput,
+            deliveryId: `${event.id}-transient-retry-1`,
+          });
+        }
+
         executorResult = result;
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
           "executor phase timings unavailable",

@@ -277,35 +277,37 @@ export async function resolveReviewAuthorClassification(params: {
         }
 
         if (storedProfileTrust?.trusted && normalizedProfileTier) {
+          let expertise: ContributorExpertise[] | undefined;
           try {
-            const expertise = await contributorProfileStore.getExpertise(profile.id);
-            const contract = projectContributorExperienceContract({
-              source: "contributor-profile",
-              tier: normalizedProfileTier,
-            });
-
-            return {
-              tier: normalizedProfileTier,
-              prCount: null,
-              fromCache: false,
-              searchCacheHit: false,
-              searchEnrichment,
-              contract,
-              expertise,
-              storedProfileTrust,
-              fallbackPath: resolveFallbackPath({
-                contract,
-                storedProfileTrust,
-                hadStoredProfile,
-                optedOut: false,
-              }),
-            };
+            expertise = await contributorProfileStore.getExpertise(profile.id);
           } catch (err) {
             logger.warn(
               { err, authorLogin },
-              "Contributor expertise lookup failed (fail-open)",
+              "Contributor expertise lookup failed (fail-open, proceeding without expertise data)",
             );
           }
+
+          const contract = projectContributorExperienceContract({
+            source: "contributor-profile",
+            tier: normalizedProfileTier,
+          });
+
+          return {
+            tier: normalizedProfileTier,
+            prCount: null,
+            fromCache: false,
+            searchCacheHit: false,
+            searchEnrichment,
+            contract,
+            expertise,
+            storedProfileTrust,
+            fallbackPath: resolveFallbackPath({
+              contract,
+              storedProfileTrust,
+              hadStoredProfile,
+              optedOut: false,
+            }),
+          };
         } else if (profile.overallTier && !normalizedProfileTier) {
           logger.warn(
             { authorLogin, overallTier: profile.overallTier },

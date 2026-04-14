@@ -119,6 +119,16 @@ export function classifyContributorProfileTrust(
     const referenceTime = opts.referenceTime ?? new Date();
     const ageMs = referenceTime.getTime() - lastScoredAt.getTime();
 
+    if (ageMs < 0) {
+      return {
+        state: "malformed",
+        trusted: false,
+        reason: "invalid-last-scored-at",
+        calibrationMarker,
+        calibrationVersion,
+      };
+    }
+
     if (ageMs > STALE_AFTER_MS) {
       return {
         state: "stale",
