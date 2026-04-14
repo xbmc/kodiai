@@ -65,6 +65,10 @@ function commentPayloadToInput(
   };
 }
 
+function buildSyncQueueKey(repo: string, prNumber: number): string {
+  return `${repo.trim().toLowerCase()}#${prNumber}`;
+}
+
 /**
  * Embed chunks using the embedding provider (fail-open: null embeddings are skipped).
  * Returns chunks with embedding data attached for storage.
@@ -157,6 +161,8 @@ export function createReviewCommentSyncHandler(opts: {
       deliveryId: event.id,
       eventName: event.name,
       action: "created",
+      lane: "sync",
+      key: buildSyncQueueKey(fullName, prNumber),
       jobType: "review-comment-sync",
       prNumber,
     });
@@ -211,6 +217,8 @@ export function createReviewCommentSyncHandler(opts: {
       deliveryId: event.id,
       eventName: event.name,
       action: "edited",
+      lane: "sync",
+      key: buildSyncQueueKey(fullName, prNumber),
       jobType: "review-comment-sync",
       prNumber,
     });

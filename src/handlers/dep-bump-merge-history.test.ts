@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { Logger } from "pino";
 import { createDepBumpMergeHistoryHandler } from "./dep-bump-merge-history.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue } from "../jobs/types.ts";
+import type { JobQueue, JobQueueRunMetadata } from "../jobs/types.ts";
+import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 
 function createNoopLogger(): Logger {
@@ -17,6 +18,7 @@ function createNoopLogger(): Logger {
     child: () => createNoopLogger(),
   } as unknown as Logger;
 }
+
 
 function buildPullRequestClosedEvent(params: {
   merged: boolean;
@@ -61,9 +63,10 @@ describe("createDepBumpMergeHistoryHandler", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
       getQueueSize: () => 0,
       getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
     };
 
     const githubApp: GitHubApp = {
@@ -123,9 +126,10 @@ describe("createDepBumpMergeHistoryHandler", () => {
         dispatch: async () => undefined,
       },
       jobQueue: {
-        enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+        enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
         getQueueSize: () => 0,
         getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
       },
       githubApp: {
         initialize: async () => undefined,

@@ -3,7 +3,7 @@
 Use this runbook when a manual Kodiai re-review does not trigger correctly. It covers both operator-visible lanes:
 
 - UI re-request via `pull_request.review_requested`
-- Explicit PR comment trigger via `@kodiai review`
+- Explicit PR-scoped mention trigger via `@kodiai review`
 
 ## UI-based Re-review (Team Request)
 
@@ -15,7 +15,10 @@ Kodiai treats `pull_request.review_requested` for that team as a re-review trigg
 There are two valid manual trigger shapes. Verify the one you actually used:
 
 - **UI re-request:** `pull_request` with action `review_requested`
-- **Explicit comment lane:** `issue_comment` with action `created` on the PR, and the comment body contains `@kodiai review`
+- **Explicit review lane:** one of the PR-scoped mention surfaces that can carry `@kodiai review`:
+  - `issue_comment` with action `created` on the PR top-level thread
+  - `pull_request_review_comment` with action `created` on an inline diff thread
+  - `pull_request_review` with action `submitted` when the review body itself contains the trigger
 
 ```sh
 gh api repos/<owner>/<repo>/hooks --jq '.[].id'
@@ -39,7 +42,7 @@ ContainerAppConsoleLogs_CL
 | order by TimeGenerated asc
 ```
 
-If you need to prove the request stayed on the full-review lane, run the adjacent router query:
+If you need to prove the request stayed on the full-review execution path, use the delivery-linked queue/handler logs first, then use the adjacent router query to confirm there was a nearby `taskType=review.full` executor start in the same time window:
 
 ```sh
 # Azure Log Analytics query: router resolution for taskType=review.full
@@ -51,11 +54,46 @@ ContainerAppConsoleLogs_CL
 | order by TimeGenerated asc
 ```
 
-Expected log chain includes:
+Expected early log chain includes:
 - `Webhook accepted and queued for dispatch`
 - `Router evaluated dispatch keys`
-- `Task router resolved model` with `taskType=review.full` for a real review lane
 - Either `Dispatched to ... handler(s)` or an explicit filtered/no-handler skip reason
+
+If the handler actually proceeds into review execution, a later nearby log should show:
+- `Task router resolved model` with `taskType=review.full`
+
+Note: `taskType=review.full` proves the execution path, not the queue lane, and it is not directly keyed by `deliveryId`. Use the delivery-linked queue logs to establish the time window first, then confirm the executor-start log in that same window. To distinguish `lane=review` from `lane=interactive-review`, use the queue logs described below.
+
+## Lane-State and Stale-Job Triage
+
+The queue is installation-scoped and lane-aware. For review debugging, always compare the
+queue logs before assuming the trigger never reached a worker.
+
+Current operator-visible lanes:
+
+- `review` — automatic PR review jobs, including `pull_request.review_requested`
+- `interactive-review` — explicit PR-scoped mention requests via `@kodiai review`
+- `sync` — non-review mention work plus follow-up jobs such as `feedback-sync`, `review-comment-sync`, and other auxiliary work
+
+For the same installation and PR-family key (`owner/repo#pr`), compare these signals in order:
+
+1. `Enqueuing job for installation`
+   - Confirms the job entered the queue.
+   - Check `lane`, `key`, `jobType`, `phase`, `laneQueueSize`, and `lanePendingCount`.
+2. `Job execution started`
+   - Confirms that lane actually acquired a worker.
+   - If enqueue exists but this log never appears for the same `jobId` / `lane` / `key`, the job is still waiting behind another job on that installation lane.
+3. Latest visible `phase`
+   - Queue logs provide the coarse job lifecycle state:
+     - `phase=queued` on `Enqueuing job for installation`
+     - `phase=running` on `Job execution started`
+   - For an explicit `@kodiai review` that is escaping an older automatic review, use `predecessorPhase` from `Explicit review claim found a stale predecessor attempt` to see the last known review-family checkpoint of that older run.
+   - For completed automatic-review runs on the `review` lane, use `Review phase timing summary` to inspect the higher-level timing phases emitted by the review handler (`queue wait`, `workspace preparation`, `retrieval/context assembly`, `executor handoff`, `remote runtime`, `publication`).
+   - For completed explicit `@kodiai review` runs on the `interactive-review` lane, use `Mention execution completed` together with the publish-resolution / idempotency logs instead; the mention handler does not emit `Review phase timing summary`.
+4. Whether another same-installation job is holding the `review` lane
+   - Automatic review_requested runs serialize on `lane=review`.
+   - If a new automatic review is queued but not started, search the same installation for an older active `lane=review` job with the same or different PR key.
+   - Explicit `@kodiai review` runs should use `lane=interactive-review`; if they are blocked, verify they were not misrouted onto `lane=review` or `lane=sync`.
 
 ## Evidence Bundle (Review)
 
@@ -75,19 +113,43 @@ When review output is published or an approval is submitted, the handler emits a
 
 On a PR comment, `@kodiai review` is handled by the mention handler as an explicit review request. The executor still runs on `taskType=review.full`, but the mention handler owns the GitHub approval publish bridge and the publish-resolution logs.
 
-Use the same delivery ID and search for `reviewOutputKey` / publish-resolution evidence:
+If the explicit review looks like it is escaping a stale automatic review, also search for the stale-predecessor telemetry line:
+
+- `Explicit review claim found a stale predecessor attempt`
+
+Key fields on that log line:
+
+- `predecessorAttemptId`
+- `predecessorPhase`
+- `predecessorAgeMs`
+
+Use them like this:
+
+- `predecessorAttemptId` identifies the older same-PR review-family attempt.
+- `predecessorPhase` tells you the last review-family phase that predecessor reached.
+- `predecessorAgeMs` tells you how long that predecessor had been idle when the explicit interactive-review claim succeeded.
+
+That log proves the same-PR review-family claim happened. It does **not** prove the interactive-review lane actually started running yet — use `Enqueuing job for installation` and `Job execution started` for queue acceptance.
+
+Compare those fields with the queue lane-state signals above. If the predecessor was on the same installation and another `lane=review` job is still active, that older automatic run is the likely reason the manual re-review appeared stale.
+
+Start with the delivery-linked logs to discover the `reviewOutputKey`, then pivot to that key (and the same time window) for the mention publish-resolution / completion logs:
 
 ```sh
 ContainerAppConsoleLogs_CL
 | where TimeGenerated > ago(24h)
-| where Log_s has "<delivery-id>"
-| where Log_s has "reviewOutputKey"
+| where Log_s has "<delivery-id>" or Log_s has "<review-output-key>"
 | project TimeGenerated, Log_s
 | order by TimeGenerated asc
 ```
 
 Expected success and recovery outcomes:
 
+- **Executor already published visible review output**
+  - `Mention execution completed` with:
+    - `explicitReviewRequest=true`
+    - `publishResolution=executor`
+    - `reviewOutputKey=<key>`
 - **Fresh approval publish**
   - `Explicit mention review idempotency check passed`
   - `Submitted approval review for explicit mention request`
@@ -129,14 +191,24 @@ If skip reason is `non-kodiai-reviewer`, confirm the re-request target is the ap
 
 If using team-based UI retrigger, confirm the requested team is `ai-review` or `aireview`.
 
-## 5) Verify queue lifecycle for same delivery
+## 5) Verify queue lifecycle
+
+### Automatic review_requested lane (`lane=review`)
 
 Look for queue logs with the same `deliveryId`:
 - `Review enqueue started`
-- `ACA Job start request prepared`
 - `Job execution started`
 - `Job execution completed` (or `Job execution failed`)
 - `Review enqueue completed`
+
+### Explicit `@kodiai review` lane (`lane=interactive-review`)
+
+Use the mention-handler queue logs instead:
+- `Enqueuing job for installation`
+- `Job execution started`
+- `Mention execution completed` (or explicit publish-failure / fallback logs)
+
+`ACA Job start request prepared` is still a useful adjacent signal, but it does not carry `deliveryId` today. Correlate it by time window plus `workspaceDir` (derived from the delivery identity) rather than expecting an exact delivery-ID match.
 
 If `ACA Job start request rejected` appears, inspect the structured fields on that log line:
 - `specImage`

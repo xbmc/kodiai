@@ -5,7 +5,8 @@ import type { EventRouter, WebhookEvent, EventHandler } from "../webhook/types.t
 import type { Logger } from "pino";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { AppConfig } from "../config.ts";
-import type { WorkspaceManager, JobQueue, Workspace } from "../jobs/types.ts";
+import type { WorkspaceManager, JobQueue, JobQueueRunMetadata, Workspace } from "../jobs/types.ts";
+import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 
 // ── Test helpers ──────────────────────────────────────────────────────────
 
@@ -58,6 +59,7 @@ function createMockLoggerWithArrays(
   };
   return logger as unknown as Logger;
 }
+
 
 type CapturedRegistration = { key: string; handler: EventHandler };
 
@@ -185,10 +187,11 @@ function createMockJobQueue(): {
   const queue: JobQueue = {
     enqueue: async (installationId, fn) => {
       enqueueArgs.push({ installationId });
-      return fn();
+      return fn(createQueueRunMetadata());
     },
     getQueueSize: () => 0,
     getPendingCount: () => 0,
+    getActiveJobs: getEmptyActiveJobs,
   };
   return { queue, enqueueArgs };
 }

@@ -3,7 +3,8 @@ import type { Logger } from "pino";
 import { createFeedbackSyncHandler } from "./feedback-sync.ts";
 import type { GitHubApp } from "../auth/github-app.ts";
 import type { EventRouter, WebhookEvent } from "../webhook/types.ts";
-import type { JobQueue } from "../jobs/types.ts";
+import type { JobQueue, JobQueueRunMetadata } from "../jobs/types.ts";
+import { createQueueRunMetadata, getEmptyActiveJobs } from "../jobs/queue.test-helpers.ts";
 import type { FeedbackReaction, FindingCommentCandidate, KnowledgeStore } from "../knowledge/types.ts";
 
 function createNoopLogger(): Logger {
@@ -18,6 +19,7 @@ function createNoopLogger(): Logger {
     child: () => createNoopLogger(),
   } as unknown as Logger;
 }
+
 
 function buildPullRequestOpenedEvent(): WebhookEvent {
   return {
@@ -118,9 +120,10 @@ function createHarness(opts: {
   };
 
   const jobQueue: JobQueue = {
-    enqueue: async <T>(_installationId: number, fn: () => Promise<T>) => fn(),
+    enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
     getQueueSize: () => 0,
     getPendingCount: () => 0,
+    getActiveJobs: getEmptyActiveJobs,
   };
 
   const githubApp: GitHubApp = {

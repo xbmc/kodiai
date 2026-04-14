@@ -276,6 +276,8 @@ export function createAddonCheckHandler(deps: {
         {
           deliveryId: event.id,
           eventName: "pull_request",
+          lane: "sync",
+          key: `${repo.trim().toLowerCase()}#${prNumber}`,
           jobType: "addon-check",
           prNumber,
         },
