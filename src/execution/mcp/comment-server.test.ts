@@ -182,6 +182,8 @@ describe("createCommentServer", () => {
     expect(createReviewParams).toBeDefined();
     expect(createReviewParams!.event).toBe("APPROVE");
     expect(createReviewParams!.pull_number).toBe(42);
+    expect(createReviewParams!.body).toContain("<details>");
+    expect(createReviewParams!.body).toContain("<summary>kodiai response</summary>");
     expect(createReviewParams!.body).toContain("Decision: APPROVE");
     expect(createReviewParams!.body).toContain("Issues: none");
     expect(createReviewParams!.body).toContain("Evidence:");
@@ -190,6 +192,61 @@ describe("createCommentServer", () => {
     expect(createCommentCalled).toBe(false);
     expect(publishCalled).toBe(true);
   });
+
+  test("visible shared clean approval is normalized into a collapsed APPROVE review", async () => {
+    let createReviewBody: string | undefined;
+    let createCommentCalled = false;
+
+    const octokit = {
+      rest: {
+        issues: {
+          createComment: async () => {
+            createCommentCalled = true;
+            return { data: { id: 1 } };
+          },
+          updateComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          createReview: async (params: { body: string }) => {
+            createReviewBody = params.body;
+            return { data: { id: 100 } };
+          },
+        },
+      },
+    };
+
+    const server = createCommentServer(
+      async () => octokit as never,
+      "acme",
+      "repo",
+      [],
+      undefined,
+      undefined,
+      42,
+    );
+    const { create } = getToolHandlers(server);
+
+    const result = await create({
+      issueNumber: 10,
+      body: [
+        "Decision: APPROVE",
+        "Issues: none",
+        "",
+        "Evidence:",
+        "- Reviewed 2 changed files with no actionable issues.",
+        "- Repository inspection covered all modified paths.",
+      ].join("\n"),
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(createCommentCalled).toBe(false);
+    expect(createReviewBody).toContain("<details>");
+    expect(createReviewBody).toContain("<summary>kodiai response</summary>");
+    expect(createReviewBody).toContain("Decision: APPROVE");
+    expect(createReviewBody).toContain("Issues: none");
+    expect(createReviewBody).toContain("Evidence:");
+  });
+
   test("shared clean approval without prNumber posts as regular comment", async () => {
     let createCommentCalled = false;
     let createReviewCalled = false;
@@ -303,7 +360,7 @@ describe("createCommentServer", () => {
       expectedMessage: "1-3 evidence bullets",
     },
     {
-      name: "legacy wrapped approval body",
+      name: "wrapped approval body missing Evidence header",
       body: [
         "<details>",
         "<summary>kodiai response</summary>",
@@ -313,7 +370,7 @@ describe("createCommentServer", () => {
         "",
         "</details>",
       ].join("\n"),
-      expectedMessage: "visible body format",
+      expectedMessage: "Evidence:",
     },
     {
       name: "extra paragraph after Issues: none",

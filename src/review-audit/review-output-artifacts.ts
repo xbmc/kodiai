@@ -11,7 +11,7 @@ import {
 } from "./recent-review-sample.ts";
 
 const DEFAULT_PER_PAGE = 100;
-const LEGACY_DETAILS_WRAPPER = "<summary>kodiai response</summary>";
+const REQUIRED_DETAILS_WRAPPER = "<summary>kodiai response</summary>";
 
 export type ReviewOutputArtifact = {
   prNumber: number;
@@ -40,7 +40,7 @@ export type ReviewOutputArtifactCollection = {
   artifacts: ReviewOutputArtifact[];
 };
 
-export type VisibleApproveReviewBodyValidation = {
+export type CollapsedApproveReviewBodyValidation = {
   valid: boolean;
   bodyPresent: boolean;
   hasDecisionApprove: boolean;
@@ -49,7 +49,7 @@ export type VisibleApproveReviewBodyValidation = {
   hasOnlyEvidenceBullets: boolean;
   evidenceBulletCount: number;
   hasExactMarker: boolean;
-  hasLegacyDetailsWrapper: boolean;
+  hasDetailsWrapper: boolean;
   issues: string[];
 };
 
@@ -66,7 +66,7 @@ export type ExactReviewOutputProof = {
   ok: boolean;
   status: ExactReviewOutputProofStatus;
   artifact: ReviewOutputArtifact | null;
-  validation: VisibleApproveReviewBodyValidation | null;
+  validation: CollapsedApproveReviewBodyValidation | null;
   issues: string[];
 };
 
@@ -340,10 +340,10 @@ export async function collectReviewOutputArtifacts(params: {
   };
 }
 
-export function validateVisibleApproveReviewBody(params: {
+export function validateCollapsedApproveReviewBody(params: {
   reviewOutputKey: string;
   body: string | null | undefined;
-}): VisibleApproveReviewBodyValidation {
+}): CollapsedApproveReviewBodyValidation {
   const body = typeof params.body === "string" ? params.body : null;
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
 
@@ -357,17 +357,22 @@ export function validateVisibleApproveReviewBody(params: {
       hasOnlyEvidenceBullets: false,
       evidenceBulletCount: 0,
       hasExactMarker: false,
-      hasLegacyDetailsWrapper: false,
+      hasDetailsWrapper: false,
       issues: ["Approval body is missing."],
     };
   }
 
-  const hasLegacyDetailsWrapper = body.includes(LEGACY_DETAILS_WRAPPER)
-    || body.includes("<details>")
-    || body.includes("</details>");
+  const hasDetailsWrapper = body.includes(REQUIRED_DETAILS_WRAPPER)
+    && body.includes("<details>")
+    && body.includes("</details>");
   const hasExactMarker = body.includes(marker);
-  const content = body
-    .split("\n")
+  const lines = body.split("\n");
+  const start = lines.findIndex((line) => line.trim() === "<details>");
+  const end = lines.findIndex((line) => line.trim() === "</details>");
+  const wrappedContent = start !== -1 && end !== -1 && end > start
+    ? lines.slice(start + 1, end)
+    : lines;
+  const content = wrappedContent
     .map((line) => line.trimEnd())
     .filter((line) => line.trim().length > 0)
     .filter((line) => !line.trim().startsWith("<summary>"))
@@ -382,8 +387,8 @@ export function validateVisibleApproveReviewBody(params: {
   const evidenceBulletCount = evidenceLines.filter((line) => line.startsWith("- ")).length;
 
   const issues: string[] = [];
-  if (hasLegacyDetailsWrapper) {
-    issues.push("Approval body must use the visible format without <details> wrapper text.");
+  if (!hasDetailsWrapper) {
+    issues.push("Approval body must use collapsed <details> wrapper text.");
   }
   if (!hasDecisionApprove) {
     issues.push("Approval body must start with 'Decision: APPROVE'.");
@@ -413,7 +418,7 @@ export function validateVisibleApproveReviewBody(params: {
     hasOnlyEvidenceBullets,
     evidenceBulletCount,
     hasExactMarker,
-    hasLegacyDetailsWrapper,
+    hasDetailsWrapper,
     issues,
   };
 }
@@ -467,7 +472,7 @@ export function evaluateExactReviewOutputProof(
       status: "invalid_artifact_metadata",
       artifact,
       validation: artifact.body
-        ? validateVisibleApproveReviewBody({
+        ? validateCollapsedApproveReviewBody({
             reviewOutputKey: collection.requestedReviewOutputKey,
             body: artifact.body,
           })
@@ -500,7 +505,7 @@ export function evaluateExactReviewOutputProof(
     };
   }
 
-  const validation = validateVisibleApproveReviewBody({
+  const validation = validateCollapsedApproveReviewBody({
     reviewOutputKey: collection.requestedReviewOutputKey,
     body: artifact.body,
   });

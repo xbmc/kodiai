@@ -8,13 +8,13 @@ import {
 import {
   collectReviewOutputArtifacts,
   evaluateExactReviewOutputProof,
-  validateVisibleApproveReviewBody,
+  validateCollapsedApproveReviewBody,
   ReviewOutputArtifactCollectionError,
   type ExactReviewOutputProof,
   type ReviewOutputArtifact,
   type ReviewOutputArtifactCollection,
   type ReviewOutputArtifactCounts,
-  type VisibleApproveReviewBodyValidation,
+  type CollapsedApproveReviewBodyValidation,
 } from "../src/review-audit/review-output-artifacts.ts";
 import {
   discoverLogAnalyticsWorkspaceIds,
@@ -96,7 +96,7 @@ export type M049S02Report = {
   };
   artifactCounts: ReviewOutputArtifactCounts;
   artifact: M049S02ReportArtifact | null;
-  bodyContract: VisibleApproveReviewBodyValidation | null;
+  bodyContract: CollapsedApproveReviewBodyValidation | null;
   audit: M049S02Audit;
   issues: string[];
 };
@@ -321,7 +321,7 @@ function createBaseReport(params: {
   azureAccess?: AccessState;
   artifactCounts?: ReviewOutputArtifactCounts;
   artifact?: ReviewOutputArtifact | null;
-  bodyContract?: VisibleApproveReviewBodyValidation | null;
+  bodyContract?: CollapsedApproveReviewBodyValidation | null;
   auditSourceAvailability?: M049S02Audit["sourceAvailability"];
   queryText?: string | null;
   workspaceCount?: number;
@@ -454,12 +454,12 @@ function buildBodyContract(params: {
   reviewOutputKey: string;
   artifact: ReviewOutputArtifact | null;
   proof: ExactReviewOutputProof;
-}): VisibleApproveReviewBodyValidation | null {
+}): CollapsedApproveReviewBodyValidation | null {
   if (!params.artifact) {
     return params.proof.validation ?? null;
   }
 
-  return validateVisibleApproveReviewBody({
+  return validateCollapsedApproveReviewBody({
     reviewOutputKey: params.reviewOutputKey,
     body: params.artifact.body,
   });
@@ -794,7 +794,7 @@ export function renderM049S02Report(report: M049S02Report): string {
 
   if (report.bodyContract) {
     lines.push(
-      `Body contract: valid=${formatBoolean(report.bodyContract.valid)} decision_approve=${formatBoolean(report.bodyContract.hasDecisionApprove)} issues_none=${formatBoolean(report.bodyContract.hasIssuesNone)} evidence_heading=${formatBoolean(report.bodyContract.hasEvidenceHeading)} only_evidence_bullets=${formatBoolean(report.bodyContract.hasOnlyEvidenceBullets)} evidence_bullets=${report.bodyContract.evidenceBulletCount} exact_marker=${formatBoolean(report.bodyContract.hasExactMarker)} legacy_wrapper=${formatBoolean(report.bodyContract.hasLegacyDetailsWrapper)}`,
+      `Body contract: valid=${formatBoolean(report.bodyContract.valid)} decision_approve=${formatBoolean(report.bodyContract.hasDecisionApprove)} issues_none=${formatBoolean(report.bodyContract.hasIssuesNone)} evidence_heading=${formatBoolean(report.bodyContract.hasEvidenceHeading)} only_evidence_bullets=${formatBoolean(report.bodyContract.hasOnlyEvidenceBullets)} evidence_bullets=${report.bodyContract.evidenceBulletCount} exact_marker=${formatBoolean(report.bodyContract.hasExactMarker)} details_wrapper=${formatBoolean(report.bodyContract.hasDetailsWrapper)}`,
     );
   }
 

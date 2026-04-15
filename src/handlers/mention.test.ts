@@ -8108,12 +8108,13 @@ describe("createMentionHandler review command", () => {
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
+    expect(createdReviews[0]?.body).toContain("<details>");
+    expect(createdReviews[0]?.body).toContain("<summary>kodiai response</summary>");
     expect(createdReviews[0]?.body).toContain("Decision: APPROVE");
     expect(createdReviews[0]?.body).toContain("Issues: none");
     expect(createdReviews[0]?.body).toContain("Evidence:");
     expect(createdReviews[0]?.body).toContain("- Review prompt covered 1 changed file.");
     expect(createdReviews[0]?.body).toContain("- Repo inspection tools were used to verify the changed code.");
-    expect(createdReviews[0]?.body).not.toContain("<summary>kodiai response</summary>");
     expect(extractReviewOutputKey(createdReviews[0]?.body)).toBeDefined();
 
     const idempotencyLog = infoCalls.find((entry) =>

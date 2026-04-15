@@ -1,4 +1,5 @@
 import type { Octokit } from "@octokit/rest";
+import { wrapInDetails } from "../lib/formatting.ts";
 
 export type ReviewOutputKeyInput = {
   installationId: number;
@@ -300,16 +301,18 @@ export function buildApprovedReviewBody(params: {
 }): string {
   const marker = buildReviewOutputMarker(params.reviewOutputKey);
   const evidence = buildApprovedReviewEvidence(params);
+  const collapsedBody = wrapInDetails(
+    [
+      "Decision: APPROVE",
+      "Issues: none",
+      "",
+      "Evidence:",
+      ...evidence.map((line) => `- ${line}`),
+    ].join("\n"),
+    "kodiai response",
+  );
 
-  return [
-    "Decision: APPROVE",
-    "Issues: none",
-    "",
-    "Evidence:",
-    ...evidence.map((line) => `- ${line}`),
-    "",
-    marker,
-  ].join("\n");
+  return [collapsedBody, "", marker].join("\n");
 }
 
 export async function ensureReviewOutputNotPublished(deps: {

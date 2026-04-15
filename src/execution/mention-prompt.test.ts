@@ -53,7 +53,7 @@ function expectInOrder(haystack: string, markers: string[]): void {
 }
 
 describe("buildMentionPrompt", () => {
-  test("includes conciseness guidance and shared visible APPROVE grammar instructions", () => {
+  test("includes conciseness guidance and shared collapsed APPROVE grammar instructions", () => {
     const prompt = buildMentionPrompt({
       mention: baseMention(),
       mentionContext: "",
@@ -76,7 +76,8 @@ describe("buildMentionPrompt", () => {
     expect(approvalSection).toContain("Evidence:");
     expect(approvalSection).toContain("- <factual evidence>");
     expect(approvalSection).toContain("1-3 bullets");
-    expect(approvalSection).toContain("Do NOT wrap APPROVE responses in `<details>`");
+    expect(approvalSection).toContain("<summary>kodiai response</summary>");
+    expect(approvalSection).not.toContain("Do NOT wrap APPROVE responses in `<details>`");
     expect(approvalSection).not.toContain("Decision: APPROVE | NOT APPROVED");
     expect(approvalSection).not.toContain("If APPROVE: keep it to 1-2 lines");
   });

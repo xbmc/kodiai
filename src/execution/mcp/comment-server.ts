@@ -4,6 +4,7 @@ import type { Octokit } from "@octokit/rest";
 import type { Logger } from "pino";
 import { buildReviewOutputMarker } from "../../handlers/review-idempotency.ts";
 import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../../lib/sanitizer.ts";
+import { wrapInDetails } from "../../lib/formatting.ts";
 import type { ExecutionPublishEvent } from "../types.ts";
 import {
   createReviewOutputPublicationGate,
@@ -93,11 +94,6 @@ export function createCommentServer(
     }
 
     if (decision === "APPROVE") {
-      if (body.includes("<summary>kodiai response</summary>") || body.includes("<details>") || body.includes("</details>")) {
-        throw new Error(
-          "Invalid kodiai response: APPROVE must use visible body format without <details> wrapper",
-        );
-      }
       if (content[0]?.trim() !== "Decision: APPROVE") {
         throw new Error(
           "Invalid kodiai response: APPROVE must start with 'Decision: APPROVE'",
@@ -125,7 +121,16 @@ export function createCommentServer(
         throw new Error("Invalid kodiai response: APPROVE must include 1-3 evidence bullets");
       }
 
-      return body;
+      return wrapInDetails(
+        [
+          "Decision: APPROVE",
+          "Issues: none",
+          "",
+          "Evidence:",
+          ...evidenceLines,
+        ].join("\n"),
+        "kodiai response",
+      );
     }
 
     // NOT APPROVED: require Issues: header and issue lines.

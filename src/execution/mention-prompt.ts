@@ -288,14 +288,19 @@ export function buildMentionPrompt(params: {
 
   lines.push("- If (and only if) the user is asking for a PR review / approval decision:");
   lines.push(
-    "  - Do NOT wrap APPROVE responses in `<details>`.",
-    "  - Use this exact visible body:",
+    "  - Keep APPROVE responses wrapped in `<details>` so the review stays collapsed in GitHub.",
+    "  - Use this exact APPROVE body:",
     "    ```",
+    "    <details>",
+    '    <summary>kodiai response</summary>',
+    "    ",
     "    Decision: APPROVE",
     "    Issues: none",
     "",
     "    Evidence:",
     "    - <factual evidence>",
+    "    ",
+    "    </details>",
     "    ```",
     "  - Provide 1-3 bullets with short factual evidence derived from already-available counts/confidence summaries.",
     "  - Do NOT add extra headings, paragraphs, HTML comments, or markers; the server adds the review-output marker.",
