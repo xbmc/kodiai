@@ -68,6 +68,7 @@ import {
   buildReviewOutputPublicationLogFields,
   ensureReviewOutputNotPublished,
 } from "./review-idempotency.ts";
+import { collectDiffContext } from "./review.ts";
 
 type MentionRetrievalContext = {
   maxChars?: number;
@@ -902,51 +903,33 @@ export function createMentionHandler(deps: {
     prNumber: number;
     baseRef: string;
     surface: MentionEvent["surface"];
+    token?: string;
+    fallbackFileProvider?: () => Promise<string[]>;
   }): Promise<{
     changedFiles: string[];
     numstatLines: string[];
     diffRange: string;
   }> {
-    let diffRange = `origin/${input.baseRef}...HEAD`;
-    let nameOnlyResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --name-only`
-      .quiet()
-      .nothrow();
-    let numstatResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --numstat`
-      .quiet()
-      .nothrow();
-
-    if (nameOnlyResult.exitCode !== 0 || numstatResult.exitCode !== 0) {
-      diffRange = `origin/${input.baseRef}..HEAD`;
-      nameOnlyResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --name-only`
-        .quiet()
-        .nothrow();
-      numstatResult = await $`git -C ${input.workspaceDir} diff ${diffRange} --numstat`
-        .quiet()
-        .nothrow();
-    }
-
-    if (nameOnlyResult.exitCode === 0 && numstatResult.exitCode === 0) {
-      return {
-        changedFiles: splitGitLines(nameOnlyResult.text()),
-        numstatLines: splitGitLines(numstatResult.text()),
-        diffRange,
-      };
-    }
-
-    logger.warn(
-      {
+    const diffContext = await collectDiffContext({
+      workspaceDir: input.workspaceDir,
+      baseRef: input.baseRef,
+      maxFilesForFullDiff: 0,
+      logger,
+      baseLog: {
         surface: input.surface,
         owner: input.owner,
         repo: input.repo,
         prNumber: input.prNumber,
-        baseRef: input.baseRef,
-        diffRange,
-        nameOnlyExitCode: nameOnlyResult.exitCode,
-        numstatExitCode: numstatResult.exitCode,
       },
-      "Failed to collect diff context for explicit review prompt (fail-open)",
-    );
-    return { changedFiles: [], numstatLines: [], diffRange };
+      token: input.token,
+      fallbackFileProvider: input.fallbackFileProvider,
+    });
+
+    return {
+      changedFiles: diffContext.changedFiles,
+      numstatLines: diffContext.numstatLines,
+      diffRange: diffContext.diffRange,
+    };
   }
 
   function stripIssueIntentWrappers(userQuestion: string): string {
@@ -2171,10 +2154,11 @@ export function createMentionHandler(deps: {
         let prompt: string;
         let explicitReviewPromptFileCount: number | undefined;
         if (explicitReviewRequest && mention.prNumber !== undefined) {
+          const explicitReviewPrNumber = mention.prNumber;
           const { data: explicitReviewPr } = await octokit.rest.pulls.get({
             owner: mention.owner,
             repo: mention.repo,
-            pull_number: mention.prNumber,
+            pull_number: explicitReviewPrNumber,
           });
 
           const promptDiffContext = mention.baseRef
@@ -2182,9 +2166,19 @@ export function createMentionHandler(deps: {
                 workspaceDir: workspace.dir,
                 owner: mention.owner,
                 repo: mention.repo,
-                prNumber: mention.prNumber,
+                prNumber: explicitReviewPrNumber,
                 baseRef: mention.baseRef,
                 surface: mention.surface,
+                token: workspace.token,
+                fallbackFileProvider: async () => {
+                  const listFilesResponse = await octokit.rest.pulls.listFiles({
+                    owner: mention.owner,
+                    repo: mention.repo,
+                    pull_number: explicitReviewPrNumber,
+                    per_page: 100,
+                  });
+                  return listFilesResponse.data.map((file) => file.filename);
+                },
               })
             : { changedFiles: [], numstatLines: [], diffRange: "unknown" };
           const promptChangedFiles = promptDiffContext.changedFiles;

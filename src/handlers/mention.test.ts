@@ -9586,6 +9586,141 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("@kodiai review falls back to GitHub PR files when shallow prompt diff has no merge base", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\n",
+    );
+
+    const prNumber = 104;
+
+    await $`git -C ${workspaceFixture.dir} checkout feature`.quiet();
+    await $`mkdir -p ${join(workspaceFixture.dir, "src")}`.quiet();
+    await Bun.write(join(workspaceFixture.dir, "src", "feature-only.ts"), "export const featureOnly = true;\n");
+    await $`git -C ${workspaceFixture.dir} add src/feature-only.ts`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "feature-only change"`.quiet();
+    await $`git -C ${workspaceFixture.dir} push -f origin feature`.quiet();
+
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    await $`git -C ${workspaceFixture.dir} checkout main`.quiet();
+    await Bun.write(join(workspaceFixture.dir, "src", "base-only.ts"), "export const baseOnly = true;\n");
+    await $`git -C ${workspaceFixture.dir} add src/base-only.ts`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "main-only change"`.quiet();
+    await $`git -C ${workspaceFixture.dir} push -f origin main`.quiet();
+
+    let capturedPrompt: string | undefined;
+    let listFilesCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        const cloneDir = await mkdtemp(join(tmpdir(), "kodiai-mention-shallow-"));
+        await $`git clone --depth=1 --single-branch --branch ${options.ref} file://${workspaceFixture.remoteDir} ${cloneDir}`.quiet();
+        return {
+          dir: cloneDir,
+          cleanup: async () => {
+            await rm(cloneDir, { recursive: true, force: true });
+          },
+        };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+              labels: [],
+              draft: false,
+            },
+          }),
+          list: async () => ({ data: [] }),
+          listFiles: async () => {
+            listFilesCalls++;
+            return {
+              data: [
+                { filename: "README.md" },
+                { filename: "src/feature-only.ts" },
+              ],
+            };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { prompt?: string }) => {
+          capturedPrompt = ctx.prompt;
+          return {
+            conclusion: "success",
+            published: true,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(capturedPrompt).toContain("- src/feature-only.ts");
+    expect(capturedPrompt).not.toContain("src/base-only.ts");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("@kodiai please retry review stays on the explicit review path", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture(
