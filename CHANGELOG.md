@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.29 (2026-04-15)
+
+Explicit Review Lane Hardening.
+
+### Fixed
+
+- Explicit `@kodiai review` requests now run on a dedicated `interactive-review` lane so stale automatic review work on the same installation no longer starves manual review requests.
+- Automatic review diff collection now bounds risky shallow-history recovery and degrades to GitHub PR file-list fallback instead of wedging the review lane on long-running merge-base recovery.
+- Explicit mention-review prompt diff construction now uses bounded PR diff collection instead of the unsafe `origin/<base>..HEAD` fallback, preventing unrelated upstream files from inflating shallow-clone review prompts.
+- Clean approval reviews are collapsed again: APPROVE review bodies now publish inside `<details>` wrappers across the shared approval builder, mention prompt contract, MCP comment server, and audit/verifier surfaces.
+
+### Changed
+
+- `src/execution/mcp/comment-server.ts` now normalizes clean approval bodies into the collapsed contract before publishing, so older visible-body variants do not leak into GitHub reviews.
+- Review-output audit/verifier surfaces now validate the collapsed clean-approval contract (`details_wrapper=true`) instead of the short-lived visible-body exception.
+- README and release history now reflect the explicit review lane, bounded diff fallback, and collapsed approval-body behavior shipped in this release.
+
 ## v0.28 (2026-04-12)
 
 Explicit Review Publication Recovery.

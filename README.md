@@ -2,7 +2,7 @@
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional `.kodiai.yml` file.
 
-28 milestones shipped (v0.1 through v0.28). See [CHANGELOG.md](CHANGELOG.md) for release history.
+29 milestones shipped (v0.1 through v0.29). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
 
@@ -48,7 +48,7 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 ## Features
 
-**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the full review lane, dependency bump deep-review, CI failure recognition, risk-weighted file prioritization for large PRs, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
+**Code Review** — Automatic PR review with inline suggestions, draft-aware tone, incremental re-review on changed hunks, explicit `@kodiai review` requests that publish through the dedicated `interactive-review` lane, dependency bump deep-review, bounded shallow-clone diff fallback for both automatic and explicit review flows, risk-weighted file prioritization for large PRs, collapsed clean approvals, and bounded Structural Impact evidence grounded in graph blast-radius plus canonical current-code retrieval.
 
 **@kodiai Mentions** — Conversational responses to `@kodiai` across issue comments, PR comments, and review threads with context-aware follow-ups.
 
