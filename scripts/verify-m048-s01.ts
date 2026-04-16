@@ -25,6 +25,15 @@ export type M048S01StatusCode =
   | "m048_s01_correlation_mismatch"
   | "m048_s01_invalid_phase_payload";
 
+export type M048S01OutcomeClass = "success" | "timeout" | "timeout_partial" | "failure" | "unknown";
+
+export type M048S01Outcome = {
+  class: M048S01OutcomeClass;
+  conclusion: string | null;
+  published: boolean | null;
+  summary: string;
+};
+
 export type M048S01Report = {
   command: "verify:m048:s01";
   generated_at: string;
@@ -43,6 +52,7 @@ export type M048S01Report = {
     duplicateRowCount: number;
     driftedRowCount: number;
   };
+  outcome: M048S01Outcome;
   evidence: PhaseTimingEvidence | null;
   issues: string[];
 };
@@ -100,6 +110,56 @@ function readOptionValue(args: string[], index: number): { value: string | null;
   return {
     value: candidate,
     consumed: true,
+  };
+}
+
+export function deriveM048S01Outcome(evidence: PhaseTimingEvidence | null | undefined): M048S01Outcome {
+  const conclusion = evidence?.conclusion ?? null;
+  const published = evidence?.published ?? null;
+
+  if (!evidence) {
+    return {
+      class: "unknown",
+      conclusion,
+      published,
+      summary: "no correlated phase evidence available",
+    };
+  }
+
+  if (conclusion === "timeout_partial" || (conclusion === "timeout" && published === true)) {
+    return {
+      class: "timeout_partial",
+      conclusion,
+      published,
+      summary: "timeout_partial (visible partial output published)",
+    };
+  }
+
+  if (conclusion === "timeout") {
+    return {
+      class: "timeout",
+      conclusion,
+      published,
+      summary: "timeout (no visible output published)",
+    };
+  }
+
+  if (conclusion === "success") {
+    return {
+      class: "success",
+      conclusion,
+      published,
+      summary: published === true ? "success (published output)" : "success (no published output)",
+    };
+  }
+
+  return {
+    class: conclusion ? "failure" : "unknown",
+    conclusion,
+    published,
+    summary: conclusion
+      ? `${conclusion} (${published === true ? "published output" : published === false ? "no published output" : "publication unknown"})`
+      : "no correlated phase evidence available",
   };
 }
 
@@ -171,6 +231,8 @@ function createBaseReport(params: {
   evidence?: PhaseTimingEvidence | null;
   issues?: string[];
 }): M048S01Report {
+  const evidence = params.evidence ?? null;
+
   return {
     command: "verify:m048:s01",
     generated_at: params.generatedAt ?? new Date().toISOString(),
@@ -189,7 +251,8 @@ function createBaseReport(params: {
       duplicateRowCount: params.duplicateRowCount ?? 0,
       driftedRowCount: params.driftedRowCount ?? 0,
     },
-    evidence: params.evidence ?? null,
+    outcome: deriveM048S01Outcome(evidence),
+    evidence,
     issues: params.issues ?? [],
   };
 }
@@ -344,6 +407,8 @@ export function renderM048S01Report(report: M048S01Report): string {
     `Delivery id: ${report.delivery_id ?? "unavailable"}`,
     `Azure logs: ${report.sourceAvailability.azureLogs}`,
     `Query: workspaces=${report.query.workspaceCount} matched_rows=${report.query.matchedRowCount} duplicates=${report.query.duplicateRowCount} drift=${report.query.driftedRowCount} timespan=${report.query.timespan}`,
+    `Outcome class: ${report.outcome.class}`,
+    `Outcome detail: ${report.outcome.summary}`,
   ];
 
   if (report.evidence) {

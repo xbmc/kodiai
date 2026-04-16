@@ -121,6 +121,24 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).not.toContain("Tokens:");
   });
 
+  it("renders timeout progress from analyzed evidence instead of generic reviewed totals", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      timeoutProgress: {
+        analyzedFiles: 1,
+        totalFiles: 3,
+        findingCount: 2,
+        retryState: "scheduled reduced-scope retry",
+      },
+    });
+
+    expect(result).toContain("- Analyzed progress before timeout: 1/3 changed files");
+    expect(result).toContain("- Findings captured before timeout: 2 total");
+    expect(result).toContain("- Retry state: scheduled reduced-scope retry");
+    expect(result).not.toContain("- Files reviewed: 3");
+    expect(result).not.toContain("- Findings: 0 critical, 1 major, 2 medium, 0 minor");
+  });
+
   it("renders total wall-clock time and the six required phases in stable order", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,
