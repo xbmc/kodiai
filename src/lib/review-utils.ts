@@ -83,6 +83,13 @@ export type ReviewDetailsPhaseTimingSummary = {
   phases?: ReadonlyArray<ReviewPhaseTiming> | null;
 };
 
+export type TimeoutReviewDetailsProgress = {
+  analyzedFiles: number;
+  totalFiles: number;
+  findingCount: number;
+  retryState: string;
+};
+
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
@@ -378,6 +385,7 @@ export function formatReviewDetailsSummary(params: {
   };
   structuralImpact?: StructuralImpactPayload | null;
   phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
+  timeoutProgress?: TimeoutReviewDetailsProgress | null;
 }): string {
   const {
     reviewOutputKey,
@@ -396,6 +404,7 @@ export function formatReviewDetailsSummary(params: {
     tokenUsage,
     structuralImpact,
     phaseTimingSummary,
+    timeoutProgress,
   } = params;
 
   const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
@@ -421,7 +430,16 @@ export function formatReviewDetailsSummary(params: {
     "<details>",
     "<summary>Review Details</summary>",
     "",
-    `- Files reviewed: ${filesReviewed}`,
+    ...(timeoutProgress
+      ? [
+          `- Analyzed progress before timeout: ${timeoutProgress.analyzedFiles}/${timeoutProgress.totalFiles} changed files`,
+          `- Findings captured before timeout: ${timeoutProgress.findingCount} total`,
+          `- Retry state: ${timeoutProgress.retryState}`,
+        ]
+      : [
+          `- Files reviewed: ${filesReviewed}`,
+          `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
+        ]),
     `- Lines changed: +${linesAdded} -${linesRemoved}`,
     ...(hasBoundedProfileDetails && reviewBoundedness
       ? [
@@ -442,7 +460,6 @@ export function formatReviewDetailsSummary(params: {
         ]
       : [profileLine]),
     `- Contributor experience: ${contributorExperience.text}`,
-    `- Findings: ${findingCounts.critical} critical, ${findingCounts.major} major, ${findingCounts.medium} medium, ${findingCounts.minor} minor`,
     `- Review completed: ${new Date().toISOString()}`,
   ];
 

@@ -46,6 +46,25 @@ ENVIRONMENT="cae-kodiai"
 APP_NAME="ca-kodiai"
 ACR_NAME="kodiairegistry"          # Must be globally unique, alphanumeric only
 IDENTITY_NAME="id-kodiai"
+BUILD_CONTEXT_DIR=$(mktemp -d)
+
+cleanup_build_context() {
+  rm -rf "$BUILD_CONTEXT_DIR"
+}
+trap cleanup_build_context EXIT
+
+prepare_build_context() {
+  mkdir -p "$BUILD_CONTEXT_DIR"
+  rm -rf "$BUILD_CONTEXT_DIR"/*
+
+  cp package.json bun.lock tsconfig.json Dockerfile Dockerfile.agent "$BUILD_CONTEXT_DIR"/
+  mkdir -p "$BUILD_CONTEXT_DIR/src"
+  cp -R src/. "$BUILD_CONTEXT_DIR/src/"
+
+  echo "==> Prepared minimal build context at $BUILD_CONTEXT_DIR"
+}
+
+prepare_build_context
 
 # -- Validate required environment variables ----------------------------------
 missing=()
@@ -174,7 +193,7 @@ APP_IMAGE_DIGEST=$(az acr build \
   --registry "$ACR_NAME" \
   --image kodiai:latest \
   --no-logs \
-  . \
+  "$BUILD_CONTEXT_DIR" \
   --query 'outputImages[0].digest' \
   --output tsv)
 APP_IMAGE="${ACR_NAME}.azurecr.io/kodiai@${APP_IMAGE_DIGEST}"
@@ -243,7 +262,7 @@ ACA_JOB_IMAGE_DIGEST=$(az acr build \
   --image kodiai-agent:latest \
   --file Dockerfile.agent \
   --no-logs \
-  . \
+  "$BUILD_CONTEXT_DIR" \
   --query 'outputImages[0].digest' \
   --output tsv)
 

@@ -3,6 +3,9 @@ import {
   ensureReviewBoundednessDisclosureInSummary,
   resolveReviewBoundedness,
 } from "../src/lib/review-boundedness.ts";
+import { formatPartialReviewComment } from "../src/lib/partial-review-formatter.ts";
+import { formatReviewDetailsSummary } from "../src/lib/review-utils.ts";
+import { projectContributorExperienceContract } from "../src/contributor/experience-contract.ts";
 import { parseReviewOutputKey } from "../src/handlers/review-idempotency.ts";
 import {
   evaluateM048S01,
@@ -28,6 +31,7 @@ export type M048S03StatusCode =
   | "m048_s03_ok"
   | "m048_s03_invalid_arg"
   | "m048_s03_sync_config_drift"
+  | "m048_s03_timeout_surface_failed"
   | "m048_s03_bounded_disclosure_failed"
   | "m048_s03_live_key_mismatch"
   | "m048_s03_live_evidence_unavailable";
@@ -38,6 +42,23 @@ export type M048S03SynchronizeConfigReport = {
   effectiveOnSynchronize: boolean;
   warnings: ConfigWarning[];
   passed: boolean;
+  issues: string[];
+};
+
+export type M048S03TimeoutSurfaceFixtureReport = {
+  name: string;
+  passed: boolean;
+  partialReviewLine: string | null;
+  partialReviewRetryLine: string | null;
+  reviewDetailsProgressLine: string | null;
+  reviewDetailsFindingLine: string | null;
+  reviewDetailsRetryLine: string | null;
+  issues: string[];
+};
+
+export type M048S03TimeoutSurfaceReport = {
+  passed: boolean;
+  fixtures: M048S03TimeoutSurfaceFixtureReport[];
   issues: string[];
 };
 
@@ -74,6 +95,7 @@ export type M048S03Report = {
   status_code: M048S03StatusCode;
   local: {
     synchronizeConfig: M048S03SynchronizeConfigReport;
+    timeoutSurfaces: M048S03TimeoutSurfaceReport;
     boundedDisclosure: M048S03BoundedDisclosureReport;
   };
   live: M048S03LiveReport;
@@ -86,12 +108,91 @@ type ParsedArgs = {
   reviewOutputKey: string | null;
 };
 
+type TimeoutSurfaceFixtureDefinition = {
+  name: string;
+  partialReviewParams: Parameters<typeof formatPartialReviewComment>[0];
+  expectedPartialReviewLine: string;
+  expectedPartialReviewRetryLine?: string | null;
+  reviewDetailsParams: Parameters<typeof formatReviewDetailsSummary>[0];
+  expectedReviewDetailsProgressLine: string;
+  expectedReviewDetailsFindingLine: string;
+  expectedReviewDetailsRetryLine: string;
+};
+
 type BoundedFixtureDefinition = {
   name: string;
   expectedDisclosureRequired: boolean;
   expectedSentence: string | null;
   input: Parameters<typeof resolveReviewBoundedness>[0];
 };
+
+const REVIEW_DETAILS_TIMEOUT_BASE = {
+  reviewOutputKey: "timeout-proof-key",
+  filesReviewed: 5,
+  linesAdded: 24,
+  linesRemoved: 8,
+  findingCounts: { critical: 0, major: 1, medium: 2, minor: 0 },
+  profileSelection: {
+    selectedProfile: "strict" as const,
+    source: "auto" as const,
+    linesChanged: 32,
+    autoBand: "small" as const,
+  },
+  contributorExperience: projectContributorExperienceContract({
+    source: "author-cache",
+    tier: "regular",
+  }).reviewDetails,
+};
+
+const DEFAULT_TIMEOUT_SURFACE_FIXTURES: TimeoutSurfaceFixtureDefinition[] = [
+  {
+    name: "timeout-scheduled-retry",
+    partialReviewParams: {
+      summaryDraft: "Review timed out after partial progress was recorded.",
+      filesReviewed: 2,
+      totalFiles: 5,
+      timedOutAfterSeconds: 600,
+    },
+    expectedPartialReviewLine: "> **Partial review** -- timed out after analyzing 2 of 5 files (600s).",
+    reviewDetailsParams: {
+      ...REVIEW_DETAILS_TIMEOUT_BASE,
+      timeoutProgress: {
+        analyzedFiles: 2,
+        totalFiles: 5,
+        findingCount: 3,
+        retryState: "scheduled reduced-scope retry",
+      },
+    },
+    expectedReviewDetailsProgressLine: "- Analyzed progress before timeout: 2/5 changed files",
+    expectedReviewDetailsFindingLine: "- Findings captured before timeout: 3 total",
+    expectedReviewDetailsRetryLine: "- Retry state: scheduled reduced-scope retry",
+  },
+  {
+    name: "timeout-retry-skipped",
+    partialReviewParams: {
+      summaryDraft: "Review timed out after partial progress was recorded.",
+      filesReviewed: 2,
+      totalFiles: 5,
+      timedOutAfterSeconds: 600,
+      isRetrySkipped: true,
+      retrySkipReason: "Retry skipped -- this repo has timed out frequently for this author.",
+    },
+    expectedPartialReviewLine: "> **Partial review** -- timed out after analyzing 2 of 5 files (600s).",
+    expectedPartialReviewRetryLine: "> Retry skipped -- this repo has timed out frequently for this author.",
+    reviewDetailsParams: {
+      ...REVIEW_DETAILS_TIMEOUT_BASE,
+      timeoutProgress: {
+        analyzedFiles: 2,
+        totalFiles: 5,
+        findingCount: 3,
+        retryState: "skipped (frequent timeouts for this repo/author)",
+      },
+    },
+    expectedReviewDetailsProgressLine: "- Analyzed progress before timeout: 2/5 changed files",
+    expectedReviewDetailsFindingLine: "- Findings captured before timeout: 3 total",
+    expectedReviewDetailsRetryLine: "- Retry state: skipped (frequent timeouts for this repo/author)",
+  },
+];
 
 const DEFAULT_BOUNDED_DISCLOSURE_FIXTURES: BoundedFixtureDefinition[] = [
   {
@@ -249,6 +350,7 @@ function createBaseReport(params: {
   success: boolean;
   statusCode: M048S03StatusCode;
   synchronizeConfig: M048S03SynchronizeConfigReport;
+  timeoutSurfaces: M048S03TimeoutSurfaceReport;
   boundedDisclosure: M048S03BoundedDisclosureReport;
   live: M048S03LiveReport;
   issues?: string[];
@@ -261,6 +363,7 @@ function createBaseReport(params: {
     status_code: params.statusCode,
     local: {
       synchronizeConfig: params.synchronizeConfig,
+      timeoutSurfaces: params.timeoutSurfaces,
       boundedDisclosure: params.boundedDisclosure,
     },
     live: params.live,
@@ -275,6 +378,14 @@ function buildDefaultSynchronizeConfigReport(workspaceDir: string): M048S03Synch
     effectiveOnSynchronize: false,
     warnings: [],
     passed: false,
+    issues: [],
+  };
+}
+
+function buildDefaultTimeoutSurfaceReport(): M048S03TimeoutSurfaceReport {
+  return {
+    passed: false,
+    fixtures: [],
     issues: [],
   };
 }
@@ -348,6 +459,67 @@ function countDisclosureOccurrences(body: string, disclosureSentence: string): n
   return (body.match(new RegExp(escapedSentence, "g")) ?? []).length;
 }
 
+function findMatchingLine(body: string, expectedLine: string): string | null {
+  return body.split("\n").find((line) => line.trim() === expectedLine.trim()) ?? null;
+}
+
+export async function evaluateTimeoutSurfaceFixtures(params?: {
+  fixtures?: TimeoutSurfaceFixtureDefinition[];
+}): Promise<M048S03TimeoutSurfaceReport> {
+  const fixtureReports: M048S03TimeoutSurfaceFixtureReport[] = [];
+
+  for (const fixture of params?.fixtures ?? DEFAULT_TIMEOUT_SURFACE_FIXTURES) {
+    const partialReviewBody = formatPartialReviewComment(fixture.partialReviewParams);
+    const reviewDetailsBody = formatReviewDetailsSummary(fixture.reviewDetailsParams);
+    const issues: string[] = [];
+
+    const partialReviewLine = findMatchingLine(partialReviewBody, fixture.expectedPartialReviewLine);
+    const partialReviewRetryLine = fixture.expectedPartialReviewRetryLine
+      ? findMatchingLine(partialReviewBody, fixture.expectedPartialReviewRetryLine)
+      : null;
+    const reviewDetailsProgressLine = findMatchingLine(reviewDetailsBody, fixture.expectedReviewDetailsProgressLine);
+    const reviewDetailsFindingLine = findMatchingLine(reviewDetailsBody, fixture.expectedReviewDetailsFindingLine);
+    const reviewDetailsRetryLine = findMatchingLine(reviewDetailsBody, fixture.expectedReviewDetailsRetryLine);
+
+    if (!partialReviewLine) {
+      issues.push(`Partial review output drifted from expected analyzed-progress line for fixture ${fixture.name}.`);
+    }
+
+    if (fixture.expectedPartialReviewRetryLine && !partialReviewRetryLine) {
+      issues.push(`Partial review output drifted from expected retry line for fixture ${fixture.name}.`);
+    }
+
+    if (!reviewDetailsProgressLine) {
+      issues.push(`Review Details output drifted from expected analyzed-progress line for fixture ${fixture.name}.`);
+    }
+
+    if (!reviewDetailsFindingLine) {
+      issues.push(`Review Details output drifted from expected finding-count line for fixture ${fixture.name}.`);
+    }
+
+    if (!reviewDetailsRetryLine) {
+      issues.push(`Review Details output drifted from expected retry-state line for fixture ${fixture.name}.`);
+    }
+
+    fixtureReports.push({
+      name: fixture.name,
+      passed: issues.length === 0,
+      partialReviewLine,
+      partialReviewRetryLine,
+      reviewDetailsProgressLine,
+      reviewDetailsFindingLine,
+      reviewDetailsRetryLine,
+      issues,
+    });
+  }
+
+  return {
+    passed: fixtureReports.every((fixture) => fixture.passed),
+    fixtures: fixtureReports,
+    issues: fixtureReports.flatMap((fixture) => fixture.issues),
+  };
+}
+
 export async function evaluateBoundedDisclosureFixtures(params?: {
   fixtures?: BoundedFixtureDefinition[];
 }): Promise<M048S03BoundedDisclosureReport> {
@@ -413,6 +585,7 @@ export async function evaluateM048S03(params?: {
   reviewOutputKey?: string | null;
   generatedAt?: string;
   loadConfig?: typeof loadRepoConfig;
+  evaluateTimeoutSurfaces?: () => Promise<M048S03TimeoutSurfaceReport>;
   evaluateBoundedDisclosure?: () => Promise<M048S03BoundedDisclosureReport>;
   evaluateLivePhaseTiming?: (params: {
     reviewOutputKey: string;
@@ -427,6 +600,7 @@ export async function evaluateM048S03(params?: {
     workspaceDir,
     loadConfig: params?.loadConfig,
   });
+  const timeoutSurfaces = await (params?.evaluateTimeoutSurfaces ?? (() => evaluateTimeoutSurfaceFixtures()))();
   const boundedDisclosure = await (params?.evaluateBoundedDisclosure ?? (() => evaluateBoundedDisclosureFixtures()))();
   const baseLive: M048S03LiveReport = {
     requested: reviewOutputKey !== null,
@@ -437,6 +611,7 @@ export async function evaluateM048S03(params?: {
   };
   const baseIssues = [
     ...synchronizeConfig.issues,
+    ...timeoutSurfaces.issues,
     ...boundedDisclosure.issues,
   ];
 
@@ -447,6 +622,21 @@ export async function evaluateM048S03(params?: {
       success: false,
       statusCode: "m048_s03_sync_config_drift",
       synchronizeConfig,
+      timeoutSurfaces,
+      boundedDisclosure,
+      live: baseLive,
+      issues: baseIssues,
+    });
+  }
+
+  if (!timeoutSurfaces.passed) {
+    return createBaseReport({
+      generatedAt,
+      reviewOutputKey,
+      success: false,
+      statusCode: "m048_s03_timeout_surface_failed",
+      synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: baseLive,
       issues: baseIssues,
@@ -460,6 +650,7 @@ export async function evaluateM048S03(params?: {
       success: false,
       statusCode: "m048_s03_bounded_disclosure_failed",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: baseLive,
       issues: baseIssues,
@@ -473,6 +664,7 @@ export async function evaluateM048S03(params?: {
       success: true,
       statusCode: "m048_s03_ok",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: baseLive,
       issues: baseIssues,
@@ -487,6 +679,7 @@ export async function evaluateM048S03(params?: {
       success: false,
       statusCode: "m048_s03_invalid_arg",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: {
         ...baseLive,
@@ -503,6 +696,7 @@ export async function evaluateM048S03(params?: {
       success: false,
       statusCode: "m048_s03_live_key_mismatch",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: {
         requested: true,
@@ -532,6 +726,7 @@ export async function evaluateM048S03(params?: {
       success: phaseTiming.success,
       statusCode,
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: {
         requested: true,
@@ -550,6 +745,7 @@ export async function evaluateM048S03(params?: {
       success: false,
       statusCode: "m048_s03_live_evidence_unavailable",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: {
         requested: true,
@@ -573,8 +769,29 @@ export function renderM048S03Report(report: M048S03Report): string {
     `- Config path: ${report.local.synchronizeConfig.configPath}`,
     `- Config present: ${report.local.synchronizeConfig.configPresent}`,
     `- Effective review.triggers.onSynchronize: ${report.local.synchronizeConfig.effectiveOnSynchronize}`,
-    `Bounded disclosure fixtures: ${report.local.boundedDisclosure.passed ? "pass" : "fail"}`,
+    `Timeout truth fixtures: ${report.local.timeoutSurfaces.passed ? "pass" : "fail"}`,
   ];
+
+  for (const fixture of report.local.timeoutSurfaces.fixtures) {
+    lines.push(`- ${fixture.name}: ${fixture.passed ? "pass" : "fail"}`);
+    if (fixture.partialReviewLine) {
+      lines.push(`  - Partial review: ${fixture.partialReviewLine}`);
+    }
+    if (fixture.partialReviewRetryLine) {
+      lines.push(`  - Partial review retry: ${fixture.partialReviewRetryLine}`);
+    }
+    if (fixture.reviewDetailsProgressLine) {
+      lines.push(`  - Review Details progress: ${fixture.reviewDetailsProgressLine}`);
+    }
+    if (fixture.reviewDetailsFindingLine) {
+      lines.push(`  - Review Details findings: ${fixture.reviewDetailsFindingLine}`);
+    }
+    if (fixture.reviewDetailsRetryLine) {
+      lines.push(`  - Review Details retry: ${fixture.reviewDetailsRetryLine}`);
+    }
+  }
+
+  lines.push(`Bounded disclosure fixtures: ${report.local.boundedDisclosure.passed ? "pass" : "fail"}`);
 
   for (const fixture of report.local.boundedDisclosure.fixtures) {
     lines.push(
@@ -591,6 +808,8 @@ export function renderM048S03Report(report: M048S03Report): string {
     if (report.live.phaseTiming) {
       lines.push(
         `- Reused phase evidence: ${report.live.phaseTiming.status_code} (azure=${report.live.phaseTiming.sourceAvailability.azureLogs})`,
+        `- Outcome class: ${report.live.phaseTiming.outcome.class}`,
+        `- Outcome detail: ${report.live.phaseTiming.outcome.summary}`,
       );
       if (report.live.phaseTiming.evidence?.conclusion) {
         lines.push(`- Conclusion: ${report.live.phaseTiming.evidence.conclusion}`);
@@ -637,9 +856,11 @@ export async function main(
 
   if (reviewOutputKey && (!parsedKey || parsedKey.action !== "synchronize")) {
     const synchronizeConfig = await evaluateSynchronizeConfigPreflight({ workspaceDir });
+    const timeoutSurfaces = await evaluateTimeoutSurfaceFixtures();
     const boundedDisclosure = await evaluateBoundedDisclosureFixtures();
     const issues = [
       ...synchronizeConfig.issues,
+      ...timeoutSurfaces.issues,
       ...boundedDisclosure.issues,
       parsedKey
         ? `Expected a synchronize reviewOutputKey; received action=${parsedKey.action}.`
@@ -650,6 +871,7 @@ export async function main(
       success: false,
       statusCode: parsedKey ? "m048_s03_live_key_mismatch" : "m048_s03_invalid_arg",
       synchronizeConfig,
+      timeoutSurfaces,
       boundedDisclosure,
       live: {
         requested: true,

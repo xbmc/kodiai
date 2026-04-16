@@ -102,6 +102,8 @@ describe("verify-m048-s01", () => {
     expect(report.success).toBe(true);
     expect(report.status_code).toBe("m048_s01_ok");
     expect(report.sourceAvailability.azureLogs).toBe("present");
+    expect(report.outcome.class).toBe("success");
+    expect(report.outcome.summary).toContain("published output");
     expect(report.evidence?.totalDurationMs).toBe(4_250);
     expect(report.evidence?.phases.map((phase: ReviewPhaseTiming) => phase.name)).toEqual([...REQUIRED_PHASES]);
   });
@@ -211,13 +213,13 @@ describe("verify-m048-s01", () => {
       queryLogs: async () => ({
         query: "phase query",
         rows: [makeRow({
-          conclusion: "timeout",
-          published: false,
+          conclusion: "timeout_partial",
+          published: true,
           phases: makePhases({
             publication: {
-              status: "unavailable",
-              detail: "review timed out before publication",
-              durationMs: undefined,
+              status: "completed",
+              detail: "partial review output published before timeout",
+              durationMs: 625,
             },
           }),
         })],
@@ -227,8 +229,10 @@ describe("verify-m048-s01", () => {
     const human = renderM048S01Report(report);
 
     expect(human).toContain("Status: m048_s01_ok");
-    expect(human).toContain("Conclusion: timeout");
-    expect(human).toContain("publication: unavailable (review timed out before publication)");
+    expect(human).toContain("Outcome class: timeout_partial");
+    expect(human).toContain("Outcome detail: timeout_partial (visible partial output published)");
+    expect(human).toContain("Conclusion: timeout_partial");
+    expect(human).toContain("publication: 625ms");
   });
 
   test("package.json wires verify:m048:s01 to the verifier script", async () => {

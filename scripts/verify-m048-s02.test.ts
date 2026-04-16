@@ -34,6 +34,16 @@ function makeS01Report(params?: {
   issues?: string[];
 }): M048S01Report {
   const phases = params?.phases === null ? null : (params?.phases ?? makePhases());
+  const conclusion = params?.conclusion ?? "success";
+  const published = params?.published ?? true;
+  const outcomeClass = conclusion === "timeout_partial"
+    ? "timeout_partial"
+    : conclusion === "timeout"
+      ? "timeout"
+      : conclusion === "success"
+        ? "success"
+        : "failure";
+
   return {
     command: "verify:m048:s01",
     generated_at: "2026-04-12T18:00:00.000Z",
@@ -52,12 +62,24 @@ function makeS01Report(params?: {
       duplicateRowCount: 0,
       driftedRowCount: 0,
     },
+    outcome: {
+      class: outcomeClass,
+      conclusion,
+      published,
+      summary: conclusion === "timeout_partial"
+        ? "timeout_partial (visible partial output published)"
+        : conclusion === "timeout"
+          ? "timeout (no visible output published)"
+          : conclusion === "success"
+            ? (published ? "success (published output)" : "success (no published output)")
+            : `${conclusion ?? "unknown"} (${published ? "published output" : "no published output"})`,
+    },
     evidence: phases
       ? {
         reviewOutputKey: params?.reviewOutputKey ?? "rok-default",
         deliveryId: params?.deliveryId ?? "delivery-default",
-        conclusion: params?.conclusion ?? "success",
-        published: params?.published ?? true,
+        conclusion,
+        published,
         totalDurationMs: params?.totalDurationMs ?? 21_000,
         timeGenerated: "2026-04-12T17:59:00.000Z",
         revisionName: "ca-kodiai--0000102",
@@ -74,12 +96,14 @@ async function loadModule() {
 }
 
 describe("verify-m048-s02", () => {
-  test("evaluateM048S02 returns an improved compare report with targeted phase deltas and preserved publication continuity", async () => {
+  test("evaluateM048S02 returns an improved compare report with targeted phase deltas, timeout-class retirement, and preserved publication continuity", async () => {
     const { evaluateM048S02 } = await loadModule();
 
     const baseline = makeS01Report({
       reviewOutputKey: "rok-baseline",
       deliveryId: "delivery-baseline",
+      conclusion: "timeout_partial",
+      published: true,
       totalDurationMs: 28_000,
       phases: makePhases({
         "workspace preparation": { durationMs: 7_000 },
@@ -91,6 +115,8 @@ describe("verify-m048-s02", () => {
     const candidate = makeS01Report({
       reviewOutputKey: "rok-candidate",
       deliveryId: "delivery-candidate",
+      conclusion: "success",
+      published: true,
       totalDurationMs: 18_000,
       phases: makePhases({
         "workspace preparation": { durationMs: 3_000 },
@@ -110,6 +136,11 @@ describe("verify-m048-s02", () => {
     expect(report.status_code).toBe("m048_s02_ok");
     expect(report.comparison.outcome).toBe("latency-improved");
     expect(report.comparison.targetedTotal.deltaMs).toBe(-10_000);
+    expect(report.comparison.timeoutClass).toEqual(expect.objectContaining({
+      state: "retired",
+      baselineClass: "timeout_partial",
+      candidateClass: "success",
+    }));
     expect(report.comparison.targetedPhases).toEqual([
       expect.objectContaining({
         name: "workspace preparation",
@@ -162,12 +193,57 @@ describe("verify-m048-s02", () => {
     expect(report.status_code).toBe("m048_s02_no_improvement");
     expect(report.comparison.outcome).toBe("no-improvement");
     expect(report.comparison.targetedTotal.deltaMs).toBe(1_000);
+    expect(report.comparison.timeoutClass.state).toBe("preserved");
     expect(report.comparison.targetedPhases[0]).toEqual(expect.objectContaining({
       name: "workspace preparation",
       direction: "slower",
       deltaMs: 500,
     }));
     expect(report.comparison.publicationContinuity.state).toBe("preserved");
+  });
+
+  test("evaluateM048S02 returns an explicit timeout-class persisted status when the candidate still times out", async () => {
+    const { evaluateM048S02 } = await loadModule();
+
+    const baseline = makeS01Report({
+      reviewOutputKey: "rok-baseline",
+      deliveryId: "delivery-baseline",
+      conclusion: "timeout_partial",
+      published: true,
+      phases: makePhases({
+        "workspace preparation": { durationMs: 7_000 },
+        "executor handoff": { durationMs: 5_000 },
+        "remote runtime": { durationMs: 9_000 },
+      }),
+    });
+    const candidate = makeS01Report({
+      reviewOutputKey: "rok-candidate",
+      deliveryId: "delivery-candidate",
+      conclusion: "timeout_partial",
+      published: true,
+      phases: makePhases({
+        "workspace preparation": { durationMs: 5_000 },
+        "executor handoff": { durationMs: 3_000 },
+        "remote runtime": { durationMs: 8_000 },
+      }),
+    });
+
+    const report = await evaluateM048S02({
+      baseline: { reviewOutputKey: "rok-baseline", deliveryId: "delivery-baseline" },
+      candidate: { reviewOutputKey: "rok-candidate", deliveryId: "delivery-candidate" },
+      evaluate: async ({ reviewOutputKey }) => reviewOutputKey === "rok-baseline" ? baseline : candidate,
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m048_s02_timeout_class_persisted");
+    expect(report.comparison.timeoutClass).toEqual(expect.objectContaining({
+      state: "persisted",
+      baselineClass: "timeout_partial",
+      candidateClass: "timeout_partial",
+    }));
+    expect(report.issues).toContain(
+      "Candidate remained in the small-PR timeout class (timeout_partial) instead of retiring it.",
+    );
   });
 
   test("evaluateM048S02 preserves unavailable evidence as an inconclusive comparison instead of inventing a result", async () => {
@@ -235,9 +311,14 @@ describe("verify-m048-s02", () => {
     });
 
     expect(report.success).toBe(false);
-    expect(report.status_code).toBe("m048_s02_publication_regressed");
+    expect(report.status_code).toBe("m048_s02_timeout_class_regressed");
     expect(report.comparison.outcome).toBe("latency-improved");
     expect(report.comparison.targetedTotal.deltaMs).toBe(-6_500);
+    expect(report.comparison.timeoutClass).toEqual(expect.objectContaining({
+      state: "introduced",
+      baselineClass: "success",
+      candidateClass: "timeout",
+    }));
     expect(report.comparison.publicationContinuity.state).toBe("regressed");
     expect(report.comparison.publicationContinuity.issue).toContain("Candidate lost publication continuity");
     expect(report.comparison.targetedPhases[2]).toEqual(expect.objectContaining({

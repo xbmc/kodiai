@@ -109,6 +109,51 @@ When review output is published or an approval is submitted, the handler emits a
   - `prNumber`
   - `reviewOutputKey`
 
+## M050 Timeout-Truth Verifier Surfaces
+
+Use the M048 verifier family directly when you need a machine-checkable answer for the repaired small-PR timeout class.
+
+### Local deterministic timeout-truth proof
+
+```sh
+bun run verify:m048:s03 -- --json
+```
+
+Interpret these fields:
+- `local.timeoutSurfaces.passed=true` means the timeout partial-review line and timeout `Review Details` block still agree on:
+  - analyzed files vs total changed files
+  - captured finding count
+  - retry state (`scheduled ...` vs `skipped ...`)
+- Fixture names:
+  - `timeout-scheduled-retry` — timeout output stayed truthful when a reduced-scope retry is still eligible
+  - `timeout-retry-skipped` — timeout output stayed truthful when chronic-timeout suppression skips the retry
+
+### Live single-run proof for one review output key
+
+```sh
+bun run verify:m048:s01 -- --review-output-key <review-output-key> --json
+```
+
+Interpret these fields:
+- `outcome.class=success|timeout_partial|timeout|failure|unknown`
+- `outcome.summary` explains whether visible partial output was published
+- `evidence.phases` still shows where latency landed (`executor handoff`, `remote runtime`, `publication`)
+
+### Baseline vs candidate timeout-class compare
+
+```sh
+bun run verify:m048:s02 -- \
+  --baseline-review-output-key <baseline-key> \
+  --candidate-review-output-key <candidate-key> \
+  --json
+```
+
+Interpret these fields:
+- `comparison.timeoutClass.state=retired` is the desired repaired outcome
+- `comparison.timeoutClass.state=persisted` means the candidate still landed in the old timeout class
+- `comparison.timeoutClass.state=introduced` means the candidate regressed into the timeout class
+- `status_code=m048_s02_timeout_class_persisted|m048_s02_timeout_class_regressed` is an operator-visible failure even if targeted latency deltas look better
+
 ## 3) Verify the explicit `@kodiai review` publish bridge
 
 On a PR comment, `@kodiai review` is handled by the mention handler as an explicit review request. The executor still runs on `taskType=review.full`, but the mention handler owns the GitHub approval publish bridge and the publish-resolution logs.

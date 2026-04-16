@@ -4,6 +4,7 @@ import {
   discoverAuditWorkspaceIds,
   evaluateM048S01,
   formatDuration,
+  type M048S01OutcomeClass,
   type M048S01Report,
 } from "./verify-m048-s01.ts";
 
@@ -19,11 +20,14 @@ export type M048S02StatusCode =
   | "m048_s02_invalid_arg"
   | "m048_s02_inconclusive"
   | "m048_s02_no_improvement"
+  | "m048_s02_timeout_class_persisted"
+  | "m048_s02_timeout_class_regressed"
   | "m048_s02_publication_regressed";
 
 export type M048S02ComparisonOutcome = "latency-improved" | "no-improvement" | "inconclusive";
 export type M048S02DeltaDirection = "faster" | "slower" | "unchanged" | "unavailable";
 export type M048S02PublicationContinuityState = "preserved" | "regressed" | "improved" | "unknown";
+export type M048S02TimeoutClassState = "retired" | "persisted" | "introduced" | "preserved" | "unknown";
 
 type CompareTarget = {
   reviewOutputKey: string;
@@ -56,6 +60,13 @@ export type M048S02PublicationContinuity = {
   issue: string | null;
 };
 
+export type M048S02TimeoutClass = {
+  state: M048S02TimeoutClassState;
+  baselineClass: M048S01OutcomeClass;
+  candidateClass: M048S01OutcomeClass;
+  issue: string | null;
+};
+
 export type M048S02Report = {
   command: "verify:m048:s02";
   generated_at: string;
@@ -72,6 +83,7 @@ export type M048S02Report = {
       deltaMs: number | null;
       direction: M048S02DeltaDirection;
     };
+    timeoutClass: M048S02TimeoutClass;
     publicationContinuity: M048S02PublicationContinuity;
   };
   issues: string[];
@@ -271,6 +283,12 @@ function createPlaceholderS01Report(params: {
       duplicateRowCount: 0,
       driftedRowCount: 0,
     },
+    outcome: {
+      class: "unknown",
+      conclusion: null,
+      published: null,
+      summary: "no correlated phase evidence available",
+    },
     evidence: null,
     issues: params.issues ?? [],
   };
@@ -306,6 +324,12 @@ function createBaseReport(params: {
         candidateMs: null,
         deltaMs: null,
         direction: "unavailable",
+      },
+      timeoutClass: {
+        state: "unknown",
+        baselineClass: "unknown",
+        candidateClass: "unknown",
+        issue: null,
       },
       publicationContinuity: {
         state: "unknown",
@@ -376,6 +400,58 @@ function buildTargetedTotal(targetedPhases: M048S02PhaseDelta[]): M048S02Report[
     candidateMs,
     deltaMs,
     direction: toDeltaDirection(deltaMs),
+  };
+}
+
+function isTimeoutClass(outcomeClass: M048S01OutcomeClass): boolean {
+  return outcomeClass === "timeout" || outcomeClass === "timeout_partial";
+}
+
+function buildTimeoutClass(baseline: M048S01Report, candidate: M048S01Report): M048S02TimeoutClass {
+  const baselineClass = baseline.outcome.class;
+  const candidateClass = candidate.outcome.class;
+
+  if (baselineClass === "unknown" || candidateClass === "unknown") {
+    return {
+      state: "unknown",
+      baselineClass,
+      candidateClass,
+      issue: "Timeout-class comparison is unavailable because one side lacks correlated phase evidence.",
+    };
+  }
+
+  if (isTimeoutClass(baselineClass) && !isTimeoutClass(candidateClass)) {
+    return {
+      state: "retired",
+      baselineClass,
+      candidateClass,
+      issue: null,
+    };
+  }
+
+  if (isTimeoutClass(baselineClass) && isTimeoutClass(candidateClass)) {
+    return {
+      state: "persisted",
+      baselineClass,
+      candidateClass,
+      issue: `Candidate remained in the small-PR timeout class (${candidateClass}) instead of retiring it.`,
+    };
+  }
+
+  if (!isTimeoutClass(baselineClass) && isTimeoutClass(candidateClass)) {
+    return {
+      state: "introduced",
+      baselineClass,
+      candidateClass,
+      issue: `Candidate regressed into the small-PR timeout class (${candidateClass}) even though baseline was ${baselineClass}.`,
+    };
+  }
+
+  return {
+    state: "preserved",
+    baselineClass,
+    candidateClass,
+    issue: null,
   };
 }
 
@@ -469,11 +545,13 @@ function buildComparison(baseline: M048S01Report, candidate: M048S01Report): {
 
   const targetedPhases = buildTargetedPhaseDeltas(baseline, candidate);
   const targetedTotal = buildTargetedTotal(targetedPhases);
+  const timeoutClass = buildTimeoutClass(baseline, candidate);
   const publicationContinuity = buildPublicationContinuity(baseline, candidate);
   const comparison: M048S02Report["comparison"] = {
     outcome: "inconclusive",
     targetedPhases,
     targetedTotal,
+    timeoutClass,
     publicationContinuity,
   };
 
@@ -495,6 +573,10 @@ function buildComparison(baseline: M048S01Report, candidate: M048S01Report): {
     };
   }
 
+  if (timeoutClass.issue) {
+    issues.push(timeoutClass.issue);
+  }
+
   if (targetedTotal.deltaMs === null) {
     issues.push("Targeted latency delta is unavailable because one or more targeted phases lack numeric durations.");
     return {
@@ -506,6 +588,30 @@ function buildComparison(baseline: M048S01Report, candidate: M048S01Report): {
   }
 
   comparison.outcome = targetedTotal.deltaMs < 0 ? "latency-improved" : "no-improvement";
+
+  if (timeoutClass.state === "persisted") {
+    if (publicationContinuity.issue) {
+      issues.push(publicationContinuity.issue);
+    }
+    return {
+      success: false,
+      statusCode: "m048_s02_timeout_class_persisted",
+      comparison,
+      issues,
+    };
+  }
+
+  if (timeoutClass.state === "introduced") {
+    if (publicationContinuity.issue) {
+      issues.push(publicationContinuity.issue);
+    }
+    return {
+      success: false,
+      statusCode: "m048_s02_timeout_class_regressed",
+      comparison,
+      issues,
+    };
+  }
 
   if (publicationContinuity.issue) {
     issues.push(publicationContinuity.issue);
@@ -661,6 +767,7 @@ export function renderM048S02Report(report: M048S02Report): string {
     `Baseline: ${report.baseline.review_output_key ?? "unavailable"} (delivery ${report.baseline.delivery_id ?? "unavailable"}) status=${report.baseline.status_code} azure=${report.baseline.sourceAvailability.azureLogs}`,
     `Candidate: ${report.candidate.review_output_key ?? "unavailable"} (delivery ${report.candidate.delivery_id ?? "unavailable"}) status=${report.candidate.status_code} azure=${report.candidate.sourceAvailability.azureLogs}`,
     `Targeted total: baseline=${report.comparison.targetedTotal.baselineMs === null ? "unavailable" : formatDuration(report.comparison.targetedTotal.baselineMs)} candidate=${report.comparison.targetedTotal.candidateMs === null ? "unavailable" : formatDuration(report.comparison.targetedTotal.candidateMs)} ${formatDelta(report.comparison.targetedTotal.deltaMs)} (${report.comparison.targetedTotal.direction})`,
+    `Timeout class: ${report.comparison.timeoutClass.state} (baseline=${report.comparison.timeoutClass.baselineClass}, candidate=${report.comparison.timeoutClass.candidateClass})`,
     `Publication continuity: ${report.comparison.publicationContinuity.state} (baseline published=${report.comparison.publicationContinuity.baselinePublished === null ? "unknown" : String(report.comparison.publicationContinuity.baselinePublished)}, candidate published=${report.comparison.publicationContinuity.candidatePublished === null ? "unknown" : String(report.comparison.publicationContinuity.candidatePublished)})`,
     "",
     "Targeted phase deltas:",

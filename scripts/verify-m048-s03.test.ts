@@ -30,6 +30,12 @@ function makeS01Report(params?: {
       duplicateRowCount: 0,
       driftedRowCount: 0,
     },
+    outcome: {
+      class: "success",
+      conclusion: "success",
+      published: true,
+      summary: "success (published output)",
+    },
     evidence: {
       reviewOutputKey: params?.reviewOutputKey ?? "rok-sync",
       deliveryId: params?.deliveryId ?? "delivery-sync",
@@ -70,7 +76,7 @@ describe("verify-m048-s03", () => {
     expect(result.json).toBe(true);
   });
 
-  test("evaluateM048S03 passes the checked-in synchronize preflight and bounded-disclosure fixtures without live evidence", async () => {
+  test("evaluateM048S03 passes the checked-in synchronize preflight, timeout-surface fixtures, and bounded-disclosure fixtures without live evidence", async () => {
     const { evaluateM048S03 } = await loadModule();
 
     const report = await evaluateM048S03({
@@ -82,6 +88,17 @@ describe("verify-m048-s03", () => {
     expect(report.status_code).toBe("m048_s03_ok");
     expect(report.local.synchronizeConfig.passed).toBe(true);
     expect(report.local.synchronizeConfig.effectiveOnSynchronize).toBe(true);
+    expect(report.local.timeoutSurfaces.passed).toBe(true);
+    expect(report.local.timeoutSurfaces.fixtures).toEqual([
+      expect.objectContaining({
+        name: "timeout-scheduled-retry",
+        passed: true,
+      }),
+      expect.objectContaining({
+        name: "timeout-retry-skipped",
+        passed: true,
+      }),
+    ]);
     expect(report.local.boundedDisclosure.passed).toBe(true);
     expect(report.local.boundedDisclosure.fixtures).toEqual([
       expect.objectContaining({
@@ -125,6 +142,36 @@ describe("verify-m048-s03", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  test("evaluateM048S03 returns a named timeout-surface failure when timeout-proof fixtures drift", async () => {
+    const { evaluateM048S03 } = await loadModule();
+
+    const report = await evaluateM048S03({
+      workspaceDir: process.cwd(),
+      generatedAt: "2026-04-13T05:10:00.000Z",
+      evaluateTimeoutSurfaces: async () => ({
+        passed: false,
+        fixtures: [
+          {
+            name: "timeout-scheduled-retry",
+            passed: false,
+            partialReviewLine: "> **Partial review** -- timed out after analyzing 5 of 5 files (600s).",
+            partialReviewRetryLine: null,
+            reviewDetailsProgressLine: "- Analyzed progress before timeout: 5/5 changed files",
+            reviewDetailsFindingLine: "- Findings captured before timeout: 3 total",
+            reviewDetailsRetryLine: "- Retry state: scheduled reduced-scope retry",
+            issues: ["Timeout progress drifted back to implied full-review counts."],
+          },
+        ],
+        issues: ["Timeout progress drifted back to implied full-review counts."],
+      }),
+    });
+
+    expect(report.success).toBe(false);
+    expect(report.status_code).toBe("m048_s03_timeout_surface_failed");
+    expect(report.local.timeoutSurfaces.passed).toBe(false);
+    expect(report.issues).toContain("Timeout progress drifted back to implied full-review counts.");
   });
 
   test("evaluateM048S03 returns a named bounded-disclosure failure when fixture proof drifts", async () => {
@@ -188,6 +235,9 @@ describe("verify-m048-s03", () => {
       status_code: "m048_s01_ok",
       success: true,
       review_output_key: reviewOutputKey,
+      outcome: expect.objectContaining({
+        class: "success",
+      }),
     }));
   });
 
@@ -212,6 +262,11 @@ describe("verify-m048-s03", () => {
             effectiveOnSynchronize: true,
             warnings: [],
             passed: true,
+            issues: [],
+          },
+          timeoutSurfaces: {
+            passed: true,
+            fixtures: [],
             issues: [],
           },
           boundedDisclosure: {
