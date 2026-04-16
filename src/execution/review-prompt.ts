@@ -146,12 +146,23 @@ function buildSeverityClassificationGuidelines(): string {
     "",
     "**MEDIUM:** Edge case handling gaps, missing input validation (non-security), suboptimal error messages, moderate performance issues.",
     "",
-    "**MINOR:** Unused variables/imports (production code only), duplicate code, magic numbers, missing JSDoc.",
+    "**MINOR:** Unused variables/imports (production code only), duplicate code, magic numbers, missing JSDoc, misleading operator diagnostics that do not change runtime behavior.",
     "",
     "**Path context adjustments:**",
     "- Test files: downgrade findings by one severity level (e.g. MAJOR becomes MEDIUM).",
     "- Config files: only report CRITICAL findings.",
-    "- Documentation files: only report factual errors.",
+    "- Documentation files: only report factual errors, including mismatched commands, verifier names, config keys, or contradictory section labels in the changed text.",
+  ].join("\n");
+}
+
+function buildTruthfulnessDriftChecksSection(): string {
+  return [
+    "## Truthfulness Drift Checks",
+    "",
+    "Flag factual drift in changed docs and runbooks when headers, section labels, commands, verifier names, or config keys contradict each other.",
+    "Flag misleading operator-facing or verifier diagnostics when fallback text contradicts known internal state or implies evidence is missing when a field is merely null or degraded.",
+    "Treat these as non-blocking unless the mismatch would cause operators to take the wrong action or trust the wrong state.",
+    "Default classification: MINOR documentation for docs/runbook factual drift, MINOR correctness for misleading diagnostics.",
   ].join("\n");
 }
 
@@ -1959,6 +1970,7 @@ export function buildReviewPrompt(context: {
   // --- Epistemic boundaries (PROMPT-01) ---
   lines.push("", buildEpistemicBoundarySection());
   lines.push("", buildSecurityPolicySection());
+  lines.push("", buildTruthfulnessDriftChecksSection());
 
   if (context.conventionalType) {
     const typeGuidance: Record<string, string> = {

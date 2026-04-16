@@ -1810,6 +1810,19 @@ describe("buildToneGuidelinesSection (rewritten for epistemic discipline)", () =
   });
 });
 
+describe("truthfulness drift guidance in buildReviewPrompt", () => {
+  test("tells reviewers to flag factual drift in changed docs and runbooks", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("headers, section labels, commands, verifier names, or config keys contradict each other");
+  });
+
+  test("tells reviewers to flag misleading operator-facing diagnostics as non-blocking by default", () => {
+    const prompt = buildReviewPrompt(baseContext());
+    expect(prompt).toContain("misleading operator-facing or verifier diagnostics");
+    expect(prompt).toContain("Treat these as non-blocking unless the mismatch would cause operators to take the wrong action");
+  });
+});
+
 describe("epistemic section placement in buildReviewPrompt", () => {
   test("epistemic section appears BEFORE conventional commit context", () => {
     const prompt = buildReviewPrompt(baseContext({ conventionalType: { type: "feat", isBreaking: false } }));
