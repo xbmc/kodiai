@@ -17,6 +17,9 @@ set -euo pipefail
 #                                Generate with: base64 -w0 < private-key.pem
 #   GITHUB_WEBHOOK_SECRET      - Webhook secret configured in the GitHub App
 #   CLAUDE_CODE_OAUTH_TOKEN    - OAuth token from `claude setup-token`
+#                                If ~/.claude/.credentials.json exists,
+#                                deploy.sh auto-refreshes this value from
+#                                claudeAiOauth.accessToken before validation.
 #   VOYAGE_API_KEY             - VoyageAI API key for embeddings
 #   SLACK_BOT_TOKEN            - Slack bot OAuth token
 #   SLACK_SIGNING_SECRET       - Slack app signing secret
@@ -38,6 +41,58 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
+
+sync_claude_oauth_token_from_machine() {
+  CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}
+
+  if [[ ! -f "$CLAUDE_CREDENTIALS_FILE" ]]; then
+    return 0
+  fi
+
+  local machine_token=""
+  if command -v jq >/dev/null 2>&1; then
+    machine_token=$(jq -r '.claudeAiOauth.accessToken // empty' "$CLAUDE_CREDENTIALS_FILE" 2>/dev/null || true)
+  elif command -v node >/dev/null 2>&1; then
+    machine_token=$(node -e 'const fs = require("node:fs"); try { const raw = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(raw?.claudeAiOauth?.accessToken ?? ""); } catch { process.stdout.write(""); }' "$CLAUDE_CREDENTIALS_FILE" 2>/dev/null || true)
+  fi
+
+  if [[ -z "$machine_token" ]]; then
+    echo "==> WARNING: Could not read Claude OAuth access token from $CLAUDE_CREDENTIALS_FILE; using existing CLAUDE_CODE_OAUTH_TOKEN value if set."
+    return 0
+  fi
+
+  if [[ "${CLAUDE_CODE_OAUTH_TOKEN:-}" == "$machine_token" ]]; then
+    return 0
+  fi
+
+  CLAUDE_CODE_OAUTH_TOKEN="$machine_token"
+  export CLAUDE_CODE_OAUTH_TOKEN
+
+  if [[ -f "$ENV_FILE" && -w "$ENV_FILE" ]]; then
+    local tmp_env
+    tmp_env=$(mktemp)
+    awk -v tok="$machine_token" '
+      BEGIN { replaced = 0 }
+      /^CLAUDE_CODE_OAUTH_TOKEN=/ {
+        print "CLAUDE_CODE_OAUTH_TOKEN=" tok;
+        replaced = 1;
+        next;
+      }
+      { print }
+      END {
+        if (!replaced) {
+          print "CLAUDE_CODE_OAUTH_TOKEN=" tok;
+        }
+      }
+    ' "$ENV_FILE" > "$tmp_env"
+    mv "$tmp_env" "$ENV_FILE"
+    echo "==> Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE into $ENV_FILE"
+  else
+    echo "==> Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE for this deploy run"
+  fi
+}
+
+sync_claude_oauth_token_from_machine
 
 # -- Configuration (customize as needed) --------------------------------------
 RESOURCE_GROUP="rg-kodiai"

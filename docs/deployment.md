@@ -68,6 +68,7 @@ Optional:
 Notes:
 
 - The app runtime expects `GITHUB_PRIVATE_KEY`; the deploy script stores the base64 PEM in an Azure secret and maps it to `GITHUB_PRIVATE_KEY`.
+- If `~/.claude/.credentials.json` exists on the deploy machine, `deploy.sh` treats `claudeAiOauth.accessToken` as the source of truth for `CLAUDE_CODE_OAUTH_TOKEN`, refreshes the in-memory env before validation, and persists the refreshed value back into `ENV_FILE` when writable.
 - Structural-impact output depends on the review-graph and canonical-code substrates being reachable in the deployed environment.
 
 ### Run

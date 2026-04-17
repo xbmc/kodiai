@@ -27,4 +27,25 @@ describe("deploy.sh", () => {
     expect(deployScript).toContain('sort_by(@, &properties.createdTime) | [-1].name');
     expect(deployScript).toContain('ACTIVE_REVISION=${TRAFFIC_ACTIVE_REVISION:-$NEWEST_ACTIVE_REVISION}');
   });
+
+  test("syncs CLAUDE_CODE_OAUTH_TOKEN from machine Claude credentials when available", () => {
+    expect(deployScript).toContain('CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}');
+    expect(deployScript).toContain('claudeAiOauth.accessToken');
+    expect(deployScript).toContain('CLAUDE_CODE_OAUTH_TOKEN="$machine_token"');
+  });
+
+  test("persists the refreshed Claude OAuth token back into ENV_FILE", () => {
+    expect(deployScript).toContain('awk -v tok="$machine_token"');
+    expect(deployScript).toContain('print "CLAUDE_CODE_OAUTH_TOKEN=" tok;');
+    expect(deployScript).toContain('Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE into $ENV_FILE');
+  });
+
+  test("runs Claude OAuth sync before required env validation", () => {
+    const syncIndex = deployScript.indexOf('sync_claude_oauth_token_from_machine');
+    const missingIndex = deployScript.indexOf('missing=()');
+
+    expect(syncIndex).toBeGreaterThan(-1);
+    expect(missingIndex).toBeGreaterThan(-1);
+    expect(syncIndex).toBeLessThan(missingIndex);
+  });
 });
