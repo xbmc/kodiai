@@ -2623,6 +2623,8 @@ export function createMentionHandler(deps: {
             numTurns: result.numTurns,
             durationMs: result.durationMs,
             sessionId: result.sessionId,
+            stopReason: result.stopReason,
+            failureSubtype: result.failureSubtype,
             usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
             toolUseNames: result.toolUseNames ?? [],
             ...(explicitReviewRequest ? { explicitReviewRequest: true } : {}),
@@ -3509,7 +3511,10 @@ export function createMentionHandler(deps: {
         // The SDK can return conclusion="failure" with stop reasons other than max_turns,
         // and previously those paths could finish silently.
         if (result.conclusion === "failure" && !mentionOutputPublished && !reviewPublishRightsLost) {
-          if (result.stopReason === "max_turns") {
+          const exhaustedTurnBudget =
+            result.stopReason === "max_turns"
+            || result.failureSubtype === "error_max_turns";
+          if (exhaustedTurnBudget) {
             const turnLimitBody = wrapInDetails(
               [
                 "I ran out of steps analyzing this and wasn't able to post a complete response.",

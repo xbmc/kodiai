@@ -363,6 +363,9 @@ export async function main(deps?: Partial<EntrypointDeps>): Promise<void> {
       cacheReadTokens: totalCacheRead,
       cacheCreationTokens: totalCacheCreation,
       stopReason: resultMessage.stop_reason ?? undefined,
+      ...(resultMessage.subtype !== "success"
+        ? { failureSubtype: resultMessage.subtype }
+        : {}),
       resultText:
         resultMessage.subtype === "success" ? resultMessage.result : undefined,
       ...(toolUseNames.length > 0

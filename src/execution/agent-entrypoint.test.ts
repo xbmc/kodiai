@@ -75,6 +75,47 @@ function makeResultSuccess(): SDKResultMessage {
   };
 }
 
+/** Build a minimal SDK failure result message */
+function makeResultFailure(params?: {
+  subtype?: "error_during_execution" | "error_max_turns" | "error_max_budget_usd" | "error_max_structured_output_retries";
+  stopReason?: string;
+  numTurns?: number;
+}): SDKResultMessage {
+  return {
+    type: "result",
+    subtype: params?.subtype ?? "error_max_turns",
+    session_id: "sess-failure-1",
+    duration_ms: 2200,
+    duration_api_ms: 2100,
+    is_error: true,
+    num_turns: params?.numTurns ?? 26,
+    stop_reason: params?.stopReason ?? "tool_use",
+    total_cost_usd: 0.12,
+    usage: {
+      input_tokens: 120,
+      output_tokens: 60,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+      server_tool_use: null,
+    } as never,
+    modelUsage: {
+      "claude-sonnet-4-5-20250929": {
+        inputTokens: 120,
+        outputTokens: 60,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        webSearchRequests: 0,
+        costUSD: 0.12,
+        contextWindow: 200_000,
+        maxOutputTokens: 8192,
+      },
+    },
+    permission_denials: [],
+    errors: [],
+    uuid: "uuid-failure-1" as never,
+  } as SDKResultMessage;
+}
+
 /** Build a minimal SDK assistant message with content blocks */
 function makeAssistantMessage(content: object[]): object {
   return {
@@ -352,6 +393,27 @@ describe("happy path", () => {
     expect(result.cacheCreationTokens).toBe(5);
     expect(result.resultText).toBe("Looks good!");
     expect(result.stopReason).toBe("end_turn");
+  });
+
+  test("writes failureSubtype for non-success SDK results without rewriting stopReason", async () => {
+    const written: Record<string, string> = {};
+
+    const deps: Partial<EntrypointDeps> = {
+      readFileFn: async () => VALID_AGENT_CONFIG,
+      writeFileFn: async (path, content) => { written[path] = content; },
+      appendFileFn: async () => undefined,
+      queryFn: () => makeAsyncIterable([makeResultFailure()]),
+    };
+
+    await main(deps);
+
+    const resultJson = written["/tmp/ws/result.json"];
+    expect(resultJson).toBeDefined();
+    const result = JSON.parse(resultJson!) as Record<string, unknown>;
+    expect(result.conclusion).toBe("failure");
+    expect(result.failureSubtype).toBe("error_max_turns");
+    expect(result.stopReason).toBe("tool_use");
+    expect(result.resultText).toBeUndefined();
   });
 
   test("writes CLAUDE.md before invoking SDK", async () => {

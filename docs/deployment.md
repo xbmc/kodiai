@@ -68,6 +68,7 @@ Optional:
 Notes:
 
 - The app runtime expects `GITHUB_PRIVATE_KEY`; the deploy script stores the base64 PEM in an Azure secret and maps it to `GITHUB_PRIVATE_KEY`.
+- `CLAUDE_CODE_OAUTH_TOKEN` must be the 1-year token from `claude setup-token`. Do **not** point it at `~/.claude/.credentials.json` `claudeAiOauth.accessToken`; that rotating login token is rejected by the deployed runtime path.
 - Structural-impact output depends on the review-graph and canonical-code substrates being reachable in the deployed environment.
 
 ### Run

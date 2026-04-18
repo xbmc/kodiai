@@ -27,4 +27,26 @@ describe("deploy.sh", () => {
     expect(deployScript).toContain('sort_by(@, &properties.createdTime) | [-1].name');
     expect(deployScript).toContain('ACTIVE_REVISION=${TRAFFIC_ACTIVE_REVISION:-$NEWEST_ACTIVE_REVISION}');
   });
+
+  test("does not auto-sync CLAUDE_CODE_OAUTH_TOKEN from machine Claude credentials", () => {
+    expect(deployScript).not.toContain('sync_claude_oauth_token_from_machine');
+    expect(deployScript).not.toContain('CLAUDE_CODE_OAUTH_TOKEN="$machine_token"');
+    expect(deployScript).not.toContain('Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE');
+  });
+
+  test("guards against using the rotating Claude login access token for deploy auth", () => {
+    expect(deployScript).toContain('CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}');
+    expect(deployScript).toContain('claudeAiOauth.accessToken');
+    expect(deployScript).toContain('CLAUDE_CODE_OAUTH_TOKEN matches $CLAUDE_CREDENTIALS_FILE accessToken');
+    expect(deployScript).toContain('Use the 1-year token from `claude setup-token`');
+  });
+
+  test("runs Claude OAuth source validation before required env validation", () => {
+    const validationIndex = deployScript.indexOf('validate_claude_oauth_token_source');
+    const missingIndex = deployScript.indexOf('missing=()');
+
+    expect(validationIndex).toBeGreaterThan(-1);
+    expect(missingIndex).toBeGreaterThan(-1);
+    expect(validationIndex).toBeLessThan(missingIndex);
+  });
 });

@@ -6973,6 +6973,117 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("pr top-level review request posts turn-limit fallback for error_max_turns even when stopReason is tool_use", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\n");
+
+    const prNumber = 102;
+    const featureSha = (await $`git -C ${workspaceFixture.dir} rev-parse feature`.quiet())
+      .text()
+      .trim();
+    await $`git --git-dir ${workspaceFixture.remoteDir} update-ref refs/pull/${prNumber}/head ${featureSha}`.quiet();
+
+    const issueReplies: string[] = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForIssueComment: async () => ({ data: {} }),
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+        },
+        pulls: {
+          get: async () => ({
+            data: {
+              title: "Test PR",
+              body: "",
+              user: { login: "octocat" },
+              head: { ref: "feature" },
+              base: { ref: "main" },
+            },
+          }),
+          list: async () => ({ data: [] }),
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async ({ body }: { body: string }) => {
+            issueReplies.push(body);
+            return { data: {} };
+          },
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          failureSubtype: "error_max_turns",
+          stopReason: "tool_use",
+          costUsd: 0,
+          numTurns: 26,
+          durationMs: 1,
+          sessionId: "session-mention-max-turns",
+          model: "claude-sonnet-4-5-20250929",
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          resultText: undefined,
+          errorMessage: undefined,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildPrIssueCommentMentionEvent({
+        prNumber,
+        commentBody: "@kodiai review",
+      }),
+    );
+
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("I ran out of steps analyzing this and wasn't able to post a complete response.");
+    expect(issueReplies[0]).not.toContain("I completed the review run but couldn't publish a GitHub review/comment from it.");
+
+    await workspaceFixture.cleanup();
+  });
+
   test("explicit review mentions advance through truthful pre-executor phases", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const prNumber = 103;

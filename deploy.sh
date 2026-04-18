@@ -16,7 +16,11 @@ set -euo pipefail
 #   GITHUB_PRIVATE_KEY_BASE64  - Base64-encoded PEM private key
 #                                Generate with: base64 -w0 < private-key.pem
 #   GITHUB_WEBHOOK_SECRET      - Webhook secret configured in the GitHub App
-#   CLAUDE_CODE_OAUTH_TOKEN    - OAuth token from `claude setup-token`
+#   CLAUDE_CODE_OAUTH_TOKEN    - 1-year OAuth token from `claude setup-token`
+#                                Do not use ~/.claude/.credentials.json
+#                                claudeAiOauth.accessToken here — it is a
+#                                rotating Claude login token, not the deploy
+#                                token this runtime expects.
 #   VOYAGE_API_KEY             - VoyageAI API key for embeddings
 #   SLACK_BOT_TOKEN            - Slack bot OAuth token
 #   SLACK_SIGNING_SECRET       - Slack app signing secret
@@ -38,6 +42,29 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
+
+validate_claude_oauth_token_source() {
+  CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}
+
+  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || ! -f "$CLAUDE_CREDENTIALS_FILE" ]]; then
+    return 0
+  fi
+
+  local machine_token=""
+  if command -v jq >/dev/null 2>&1; then
+    machine_token=$(jq -r '.claudeAiOauth.accessToken // empty' "$CLAUDE_CREDENTIALS_FILE" 2>/dev/null || true)
+  elif command -v node >/dev/null 2>&1; then
+    machine_token=$(node -e 'const fs = require("node:fs"); try { const raw = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(raw?.claudeAiOauth?.accessToken ?? ""); } catch { process.stdout.write(""); }' "$CLAUDE_CREDENTIALS_FILE" 2>/dev/null || true)
+  fi
+
+  if [[ -n "$machine_token" && "${CLAUDE_CODE_OAUTH_TOKEN:-}" == "$machine_token" ]]; then
+    echo "ERROR: CLAUDE_CODE_OAUTH_TOKEN matches $CLAUDE_CREDENTIALS_FILE accessToken."
+    echo "Use the 1-year token from `claude setup-token`, not the rotating Claude login access token."
+    exit 1
+  fi
+}
+
+validate_claude_oauth_token_source
 
 # -- Configuration (customize as needed) --------------------------------------
 RESOURCE_GROUP="rg-kodiai"
