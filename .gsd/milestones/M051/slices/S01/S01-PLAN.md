@@ -33,7 +33,7 @@ Capture the exact external facts needed for a decision:
   - Files: `docs/runbooks/review-requested-debug.md`, `.kodiai.yml`, `src/handlers/review.ts`, `src/handlers/rereview-team.ts`
   - Verify: Use GitHub API/CLI evidence plus targeted code/doc inspection to show whether the UI team path can actually target Kodiai and where the repo currently claims it can.
 
-- [ ] **T02: Record supported rereview contract decision** `est:1 context window`
+- [x] **T02: Record supported rereview contract decision** `est:1 context window`
   Based on the audit, choose the supported manual rereview contract and record it clearly. If the team path is not actually available, make that explicit as the current unsupported path; if it is available, define the proof that must exist before the docs can keep claiming it.
 
 Record the choice in project decision artifacts and update issue #84 with the current authoritative operator guidance.

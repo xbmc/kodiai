@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-18T23:23:20.304Z",
+  "exported_at": "2026-04-18T23:29:02.017Z",
   "milestones": [
     {
       "id": "M001",
@@ -14622,19 +14622,25 @@
       "milestone_id": "M051",
       "slice_id": "S01",
       "id": "T02",
-      "title": "Record supported rereview contract decision",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Recorded decision D124 to keep `@kodiai review` as the supported manual rereview trigger and updated issue #84 with the same evidence-backed guidance.",
+      "status": "complete",
+      "one_liner": "Recorded decision D124 to keep `@kodiai review` as the supported manual rereview trigger and updated issue #84 with the same evidence-backed guidance.",
+      "narrative": "I used T01’s audit as the evidence boundary rather than reopening the topology investigation. First I reviewed the existing decision register and the live issue #84 thread, then recorded decision D124: `@kodiai review` remains the only supported manual rereview trigger until a fresh human-generated `pull_request.review_requested` delivery proves the `ai-review` / `aireview` UI team path end-to-end. The decision captures the narrower reality T01 established: the old “Kodiai is not on the team” premise is no longer true because `aireview` exists on `xbmc/kodiai` and currently includes `kodiai`, and the repo-side config/handler contract still accepts `ai-review` / `aireview`; the missing piece is operator-path proof, not team topology. I then mirrored that exact contract into issue #84 so the operator-facing guidance now matches the decision register and explicitly classifies the UI team rereview path as wired but unproven instead of supported. During the issue update I also found an environment-specific gotcha: the `github-bot` skill’s token helper exits 127 here because it hardcodes `/Users/joel/.local/bin/secrets`. I documented that fallback rule in `.gsd/KNOWLEDGE.md` and used the already-authenticated `gh api` path to publish the authoritative issue comment without changing the contract itself.",
+      "verification_result": "Verification was state-based because this task’s outputs are a decision record, a live GitHub issue comment, and a future-agent knowledge note. `rg -n 'D124|Supported manual rereview trigger contract|@kodiai review|wired-but-unproven' .gsd/DECISIONS.md` confirmed that D124 was persisted with the expected supported-trigger wording. `gh issue view 84 -R xbmc/kodiai --comments --json comments --jq '.comments[-1] | {url: .url, author: .author.login, hasSupportedTrigger: (.body | contains(\"@kodiai review\")), hasWiredButUnproven: (.body | contains(\"wired but unproven\")), hasUiUnsupported: (.body | contains(\"Not yet a supported operator contract\"))}'` confirmed the latest issue comment reflects the same operator guidance. `rg -n 'GitHub bot token helper is not usable in this environment|/Users/joel/.local/bin/secrets|gh api' .gsd/KNOWLEDGE.md` confirmed the environment-specific GitHub fallback note was recorded for future runs.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-18T23:29:01.982Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Used authenticated `gh api` instead of the `github-bot` skill’s token script because the script depends on `/Users/joel/.local/bin/secrets`, which is absent in this environment. The task output stayed the same: issue #84 was updated successfully.",
+      "known_issues": "No fresh human-generated `pull_request.review_requested` delivery has been captured yet, so the `ai-review` / `aireview` UI rereview path remains wired-but-unproven until S02 either proves it end-to-end or removes it as a supported path.",
+      "key_files": [
+        ".gsd/DECISIONS.md",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Support `@kodiai review` as the only operator-supported manual rereview trigger until fresh human-generated proof exists for the `ai-review` / `aireview` UI path.",
+        "When the `github-bot` skill token helper is unavailable in this environment, use authenticated `gh` CLI commands as the GitHub write fallback."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S01\nmilestone: M051\nkey_files:\n  - .gsd/DECISIONS.md\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Support `@kodiai review` as the only operator-supported manual rereview trigger until fresh human-generated proof exists for the `ai-review` / `aireview` UI path.\n  - When the `github-bot` skill token helper is unavailable in this environment, use authenticated `gh` CLI commands as the GitHub write fallback.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-18T23:29:01.981Z\nblocker_discovered: false\n---\n\n# T02: Recorded decision D124 to keep `@kodiai review` as the supported manual rereview trigger and updated issue #84 with the same evidence-backed guidance.\n\n**Recorded decision D124 to keep `@kodiai review` as the supported manual rereview trigger and updated issue #84 with the same evidence-backed guidance.**\n\n## What Happened\n\nI used T01’s audit as the evidence boundary rather than reopening the topology investigation. First I reviewed the existing decision register and the live issue #84 thread, then recorded decision D124: `@kodiai review` remains the only supported manual rereview trigger until a fresh human-generated `pull_request.review_requested` delivery proves the `ai-review` / `aireview` UI team path end-to-end. The decision captures the narrower reality T01 established: the old “Kodiai is not on the team” premise is no longer true because `aireview` exists on `xbmc/kodiai` and currently includes `kodiai`, and the repo-side config/handler contract still accepts `ai-review` / `aireview`; the missing piece is operator-path proof, not team topology. I then mirrored that exact contract into issue #84 so the operator-facing guidance now matches the decision register and explicitly classifies the UI team rereview path as wired but unproven instead of supported. During the issue update I also found an environment-specific gotcha: the `github-bot` skill’s token helper exits 127 here because it hardcodes `/Users/joel/.local/bin/secrets`. I documented that fallback rule in `.gsd/KNOWLEDGE.md` and used the already-authenticated `gh api` path to publish the authoritative issue comment without changing the contract itself.\n\n## Verification\n\nVerification was state-based because this task’s outputs are a decision record, a live GitHub issue comment, and a future-agent knowledge note. `rg -n 'D124|Supported manual rereview trigger contract|@kodiai review|wired-but-unproven' .gsd/DECISIONS.md` confirmed that D124 was persisted with the expected supported-trigger wording. `gh issue view 84 -R xbmc/kodiai --comments --json comments --jq '.comments[-1] | {url: .url, author: .author.login, hasSupportedTrigger: (.body | contains(\"@kodiai review\")), hasWiredButUnproven: (.body | contains(\"wired but unproven\")), hasUiUnsupported: (.body | contains(\"Not yet a supported operator contract\"))}'` confirmed the latest issue comment reflects the same operator guidance. `rg -n 'GitHub bot token helper is not usable in this environment|/Users/joel/.local/bin/secrets|gh api' .gsd/KNOWLEDGE.md` confirmed the environment-specific GitHub fallback note was recorded for future runs.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `rg -n 'D124|Supported manual rereview trigger contract|@kodiai review|wired-but-unproven' .gsd/DECISIONS.md` | 0 | ✅ pass | 3ms |\n| 2 | `gh issue view 84 -R xbmc/kodiai --comments --json comments --jq '.comments[-1] | {url: .url, author: .author.login, hasSupportedTrigger: (.body | contains(\"@kodiai review\")), hasWiredButUnproven: (.body | contains(\"wired but unproven\")), hasUiUnsupported: (.body | contains(\"Not yet a supported operator contract\"))}'` | 0 | ✅ pass | 818ms |\n| 3 | `rg -n 'GitHub bot token helper is not usable in this environment|/Users/joel/.local/bin/secrets|gh api' .gsd/KNOWLEDGE.md` | 0 | ✅ pass | 3ms |\n\n## Deviations\n\nUsed authenticated `gh api` instead of the `github-bot` skill’s token script because the script depends on `/Users/joel/.local/bin/secrets`, which is absent in this environment. The task output stayed the same: issue #84 was updated successfully.\n\n## Known Issues\n\nNo fresh human-generated `pull_request.review_requested` delivery has been captured yet, so the `ai-review` / `aireview` UI rereview path remains wired-but-unproven until S02 either proves it end-to-end or removes it as a supported path.\n\n## Files Created/Modified\n\n- `.gsd/DECISIONS.md`\n- `.gsd/KNOWLEDGE.md`\n",
       "description": "Based on the audit, choose the supported manual rereview contract and record it clearly. If the team path is not actually available, make that explicit as the current unsupported path; if it is available, define the proof that must exist before the docs can keep claiming it.\n\nRecord the choice in project decision artifacts and update issue #84 with the current authoritative operator guidance.",
       "estimate": "1 context window",
       "files": [
@@ -16167,6 +16173,18 @@
       "decision": "How deploy.sh should package source for ACR remote builds",
       "choice": "Stage a minimal build context with only package.json, bun.lock, tsconfig.json, Dockerfile*, and src/ before invoking az acr build.",
       "rationale": "The full working tree in this agent environment included large .gsd and worktree artifacts that caused repeated ACR 'failed to download context' build failures. The app and agent Dockerfiles only copy those minimal inputs, so staging them removes the failure mode without changing image contents.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 158,
+      "id": "D124",
+      "when_context": "M051/S01/T02",
+      "scope": "operational",
+      "decision": "Supported manual rereview trigger contract while the UI team path lacks fresh operator-path proof",
+      "choice": "Treat `@kodiai review` as the only supported manual rereview trigger for operators until a fresh human-generated `pull_request.review_requested` delivery proves the `ai-review` / `aireview` UI team path end-to-end. Keep the UI team path classified as wired-but-unproven, not a supported operator contract.",
+      "rationale": "T01 proved the original 'Kodiai is not on the rereview team' premise is no longer true: the live GitHub topology shows the `aireview` team exists on the repo and currently includes `kodiai`, and the repo-side handler/config surfaces still accept `ai-review` / `aireview`. But there is still no fresh human-generated webhook delivery proving that a manual remove/re-request of the team reaches Kodiai end-to-end. The open-time auto-requested team event cannot serve as proof either way because app self-events are intentionally filtered. To keep operator guidance truthful, the supported manual trigger must remain `@kodiai review` until that proof exists or the team path is removed.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -21375,6 +21393,39 @@
       "verdict": "✅ pass",
       "duration_ms": 381,
       "created_at": "2026-04-18T23:23:20.275Z"
+    },
+    {
+      "id": 475,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "rg -n 'D124|Supported manual rereview trigger contract|@kodiai review|wired-but-unproven' .gsd/DECISIONS.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3,
+      "created_at": "2026-04-18T23:29:01.982Z"
+    },
+    {
+      "id": 476,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "gh issue view 84 -R xbmc/kodiai --comments --json comments --jq '.comments[-1] | {url: .url, author: .author.login, hasSupportedTrigger: (.body | contains(\"@kodiai review\")), hasWiredButUnproven: (.body | contains(\"wired but unproven\")), hasUiUnsupported: (.body | contains(\"Not yet a supported operator contract\"))}'",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 818,
+      "created_at": "2026-04-18T23:29:01.982Z"
+    },
+    {
+      "id": 477,
+      "task_id": "T02",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "rg -n 'GitHub bot token helper is not usable in this environment|/Users/joel/.local/bin/secrets|gh api' .gsd/KNOWLEDGE.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3,
+      "created_at": "2026-04-18T23:29:01.982Z"
     }
   ]
 }

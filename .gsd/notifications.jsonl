@@ -259,3 +259,10 @@
 {"id":"bdd1e918-dc87-4152-9d36-c5e77a75713f","ts":"2026-04-18T23:16:59.537Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.4)","source":"notify","read":false}
 {"id":"6e97b57f-0680-4e0c-98d0-bb5365f2c751","ts":"2026-04-18T23:16:59.539Z","severity":"info","message":"Pre-flight: 40 milestones queued. All have full context.","source":"notify","read":false}
 {"id":"93ea2d45-252f-4b63-af53-35277b094166","ts":"2026-04-18T23:17:00.490Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 1075m of uncommitted changes","source":"notify","read":false}
+{"id":"cdcccef0-4cdd-4f3d-86ff-c3794f6c15ad","ts":"2026-04-18T23:23:27.749Z","severity":"info","message":"Committed: feat: Audited the rereview topology and proved that `aireview` currentl…","source":"notify","read":false}
+{"id":"8b88fde9-8e4c-4278-9c6a-1cbe99efb27a","ts":"2026-04-18T23:25:41.633Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"cb47e5b0-4f0d-4011-ae8a-26622759de56","ts":"2026-04-18T23:25:41.633Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"e90e36f7-0fe1-437f-90d1-03c52f63c5ac","ts":"2026-04-18T23:26:29.180Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"4e5fbc0c-088a-4ce2-8f88-619d461c3523","ts":"2026-04-18T23:26:29.180Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"36f0baac-9809-4ac3-a54b-25011f338b81","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"952c61e9-ac42-4040-8a1f-aeae641bcc49","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}

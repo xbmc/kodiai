@@ -1038,3 +1038,13 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 Do not treat the open-time auto-request as proof that manual UI rereview is broken: self-generated events from `kodiai` are intentionally filtered by `src/webhook/filters.ts`, so only human re-requests should be used as manual-trigger evidence.
 
 **Established in:** M051/S01/T01.
+
+---
+
+## GitHub bot token helper is not usable in this environment; use `gh` fallback (M051/S01)
+
+**Context:** During M051/S01/T02, `/home/keith/.agents/skills/github-bot/scripts/github-token.sh` exited 127 before any API call because it hardcodes `SECRETS=/Users/joel/.local/bin/secrets`, which is not present in this environment. The repo already had a working authenticated `gh` CLI path (`gh issue view ...`, `gh api ...`) for the same repository.
+
+**Rule:** In this environment, do not assume the `github-bot` skill's token script can mint an installation token. If the helper exits 127 or `/Users/joel/.local/bin/secrets` is absent, fall back to authenticated `gh` commands with explicit `-R xbmc/kodiai` or `gh api` for issue/PR operations instead of repeatedly retrying the bot path.
+
+**Established in:** M051/S01/T02.
