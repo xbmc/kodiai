@@ -40,7 +40,7 @@ Record the choice in project decision artifacts and update issue #84 with the cu
   - Files: `.gsd/DECISIONS.md`, `.gsd/milestones/M051/M051-ROADMAP.md`
   - Verify: The chosen contract is written down with evidence, and issue #84 reflects the same supported operator guidance.
 
-- [ ] **T03: Define S02 implementation and proof scope** `est:1 context window`
+- [x] **T03: Define S02 implementation and proof scope** `est:1 context window`
   Convert the audit and decision into the implementation brief for S02. Identify exactly which code/config/docs/tests will need to change depending on the chosen direction, and define the proof points S02 must satisfy to close R055 without leaving stale trigger claims behind.
   - Files: `src/handlers/review.ts`, `src/handlers/mention.ts`, `docs/runbooks/review-requested-debug.md`, `.kodiai.yml`, `src/handlers/review.test.ts`
   - Verify: The follow-on implementation surface and proof checklist are explicit enough that S02 can execute without re-litigating the trigger contract.

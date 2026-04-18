@@ -266,3 +266,4 @@
 {"id":"4e5fbc0c-088a-4ce2-8f88-619d461c3523","ts":"2026-04-18T23:26:29.180Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
 {"id":"36f0baac-9809-4ac3-a54b-25011f338b81","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
 {"id":"952c61e9-ac42-4040-8a1f-aeae641bcc49","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"7d183033-1344-4429-898b-f9a6e4f9cd53","ts":"2026-04-18T23:29:10.070Z","severity":"info","message":"Committed: feat: Recorded decision D124 to keep `@kodiai review` as the supported…","source":"notify","read":false}

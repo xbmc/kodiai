@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-18T23:29:02.017Z",
+  "exported_at": "2026-04-18T23:38:41.628Z",
   "milestones": [
     {
       "id": "M001",
@@ -6543,11 +6543,11 @@
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Implement the supported manual rereview contract end-to-end.",
-      "success_criteria": "- Supported trigger path is verified end-to-end.\n- Unsupported trigger path, if any, is removed from docs/config/tests and no longer claimed as valid.\n- R055 has proof attached showing operators have one truthful manual rereview path.",
-      "proof_level": "Deterministic coverage plus live/manual trigger proof.",
-      "integration_closure": "`pull_request.review_requested`, explicit mention review, config, and runbooks all agree on the same supported manual trigger story.",
-      "observability_impact": "Accepted/skipped trigger reasons remain explicit in logs and operator docs, so a failed manual rereview is diagnosable instead of mysterious.",
+      "goal": "Remove the unsupported UI-team rereview contract and leave `@kodiai review` as the only documented/tested manual rereview trigger so R055 can close without stale trigger claims.",
+      "success_criteria": "- `ai-review` / `aireview` no longer appear in supported operator docs, repo config, or live config schema/tests.\n- `createReviewHandler` no longer auto-requests or accepts the UI rereview team path; team-only `review_requested` events skip cleanly.\n- `@kodiai review` remains documented and regression-tested as the only supported manual rereview trigger with existing publish/fallback behavior intact.",
+      "proof_level": "This slice proves R055 by removing the unsupported UI-team contract and preserving only the explicit mention manual trigger; it does not depend on fresh human-generated UI-team proof.",
+      "integration_closure": "After S02, S03 can assume the manual trigger contract is settled and can focus only on residual operator/verifier truthfulness debt rather than rereview-path ambiguity.",
+      "observability_impact": "Operators stop seeing docs/smoke/config hints for the unproven rereview-team path, while tests and logs stay anchored on the surviving explicit mention lane.",
       "sequence": 2,
       "replan_triggered_at": null
     },
@@ -14664,19 +14664,28 @@
       "milestone_id": "M051",
       "slice_id": "S01",
       "id": "T03",
-      "title": "Define S02 implementation and proof scope",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Planned M051/S02 to remove the unsupported UI-team rereview contract and keep `@kodiai review` as the only supported manual trigger.",
+      "status": "complete",
+      "one_liner": "Planned M051/S02 to remove the unsupported UI-team rereview contract and keep `@kodiai review` as the only supported manual trigger.",
+      "narrative": "I executed T03 as a real downstream-planning handoff rather than a prose-only note. First I re-read the T03 contract, the S01 slice plan, the T01/T02 summaries, R055, D124, and the current roadmap state to confirm what was already decided versus what still needed to be made executable. That local verification showed S02 had no plan yet, so the durable output for this task needed to be the actual S02 slice plan.\n\nI then inspected the live code/doc/config surfaces that still encode the old rereview-team contract. The key finding was that the cleanup surface is broader than the original five-file hint: besides `src/handlers/review.ts`, `.kodiai.yml`, and the main runbook, the stale contract also lives in the config schema/defaults (`src/execution/config.ts` and `src/execution/config.test.ts`), the optional rereview helper and its tests (`src/handlers/rereview-team.ts` / `.test.ts`), and the older smoke doc `docs/smoke/phase75-live-ops-verification-closure.md`. That matters because leaving any of those behind would let S02 fix the obvious docs while still teaching operators and future agents the wrong trigger contract.\n\nUsing that evidence plus D124, I chose the executable closure branch for S02: remove the unsupported `ai-review` / `aireview` UI-team contract instead of waiting for fresh human-generated proof that auto-mode cannot produce. I rendered that as the canonical `M051/S02` slice plan with three concrete tasks: T01 removes the UI-team code/config surface, T02 retires the stale operator docs/config/smoke claims, and T03 locks the surviving `@kodiai review` proof surface through mention/review regression coverage. After rendering the plan I caught and fixed one real plan defect — the docs-cleanup verification command originally used plain `rg` where zero matches were expected, so I regenerated the slice plan with `! rg ... && rg ...` to make the task literally executable.\n\nFinally, I recorded the downstream planning choice as decision D125 and added a knowledge entry documenting that R055 cleanup must sweep runtime code paths, config schema/defaults/examples, regression tests, and operator smoke/verifier docs — not just the main runbook and review handler. No production code changed in T03 itself; the shipped output is the executable S02 plan, plus the decision/knowledge trail that keeps the next slice from re-litigating the contract.",
+      "verification_result": "I verified the planning output directly from disk. A filesystem check confirmed the rendered S02 artifacts exist (`S02-PLAN.md` plus task plans T01–T03). A targeted `rg` pass over the generated slice/task plans confirmed the implementation brief names the actual downstream surfaces that local inspection proved matter: `src/handlers/review.ts`, `src/execution/config.ts`, `docs/smoke/phase75-live-ops-verification-closure.md`, `src/handlers/mention.test.ts`, the `@kodiai review` contract, and the corrected negative/positive docs verification command. A second `rg` pass confirmed decision D125 and the new R055 knowledge note were both persisted. Because T03 is a planning/proof task, verification was artifact/state-based rather than runtime-code-based.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-18T23:38:41.599Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Expanded the S02 implementation brief beyond the original task-file hint to include `src/execution/config.ts`, `src/execution/config.test.ts`, `src/handlers/rereview-team.ts`, `src/handlers/rereview-team.test.ts`, and `docs/smoke/phase75-live-ops-verification-closure.md` after local repo inspection showed they still encode the stale UI-team contract. Also regenerated the slice plan once to correct the T02 verification command so zero-match assertions use `! rg` instead of failing for the wrong reason.",
+      "known_issues": "The unsupported UI-team rereview contract is still present in the runtime/docs today; T03 only planned its removal. R055 will remain open until S02 executes the rendered tasks and reruns their proof commands.",
+      "key_files": [
+        ".gsd/milestones/M051/slices/S02/S02-PLAN.md",
+        ".gsd/milestones/M051/slices/S02/tasks/T01-PLAN.md",
+        ".gsd/milestones/M051/slices/S02/tasks/T02-PLAN.md",
+        ".gsd/milestones/M051/slices/S02/tasks/T03-PLAN.md",
+        ".gsd/DECISIONS.md",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "D125 — Close R055 in S02 by removing the unsupported `ai-review` / `aireview` UI-team contract and keeping `@kodiai review` as the sole supported manual rereview trigger."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S01\nmilestone: M051\nkey_files:\n  - .gsd/milestones/M051/slices/S02/S02-PLAN.md\n  - .gsd/milestones/M051/slices/S02/tasks/T01-PLAN.md\n  - .gsd/milestones/M051/slices/S02/tasks/T02-PLAN.md\n  - .gsd/milestones/M051/slices/S02/tasks/T03-PLAN.md\n  - .gsd/DECISIONS.md\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D125 — Close R055 in S02 by removing the unsupported `ai-review` / `aireview` UI-team contract and keeping `@kodiai review` as the sole supported manual rereview trigger.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-18T23:38:41.598Z\nblocker_discovered: false\n---\n\n# T03: Planned M051/S02 to remove the unsupported UI-team rereview contract and keep `@kodiai review` as the only supported manual trigger.\n\n**Planned M051/S02 to remove the unsupported UI-team rereview contract and keep `@kodiai review` as the only supported manual trigger.**\n\n## What Happened\n\nI executed T03 as a real downstream-planning handoff rather than a prose-only note. First I re-read the T03 contract, the S01 slice plan, the T01/T02 summaries, R055, D124, and the current roadmap state to confirm what was already decided versus what still needed to be made executable. That local verification showed S02 had no plan yet, so the durable output for this task needed to be the actual S02 slice plan.\n\nI then inspected the live code/doc/config surfaces that still encode the old rereview-team contract. The key finding was that the cleanup surface is broader than the original five-file hint: besides `src/handlers/review.ts`, `.kodiai.yml`, and the main runbook, the stale contract also lives in the config schema/defaults (`src/execution/config.ts` and `src/execution/config.test.ts`), the optional rereview helper and its tests (`src/handlers/rereview-team.ts` / `.test.ts`), and the older smoke doc `docs/smoke/phase75-live-ops-verification-closure.md`. That matters because leaving any of those behind would let S02 fix the obvious docs while still teaching operators and future agents the wrong trigger contract.\n\nUsing that evidence plus D124, I chose the executable closure branch for S02: remove the unsupported `ai-review` / `aireview` UI-team contract instead of waiting for fresh human-generated proof that auto-mode cannot produce. I rendered that as the canonical `M051/S02` slice plan with three concrete tasks: T01 removes the UI-team code/config surface, T02 retires the stale operator docs/config/smoke claims, and T03 locks the surviving `@kodiai review` proof surface through mention/review regression coverage. After rendering the plan I caught and fixed one real plan defect — the docs-cleanup verification command originally used plain `rg` where zero matches were expected, so I regenerated the slice plan with `! rg ... && rg ...` to make the task literally executable.\n\nFinally, I recorded the downstream planning choice as decision D125 and added a knowledge entry documenting that R055 cleanup must sweep runtime code paths, config schema/defaults/examples, regression tests, and operator smoke/verifier docs — not just the main runbook and review handler. No production code changed in T03 itself; the shipped output is the executable S02 plan, plus the decision/knowledge trail that keeps the next slice from re-litigating the contract.\n\n## Verification\n\nI verified the planning output directly from disk. A filesystem check confirmed the rendered S02 artifacts exist (`S02-PLAN.md` plus task plans T01–T03). A targeted `rg` pass over the generated slice/task plans confirmed the implementation brief names the actual downstream surfaces that local inspection proved matter: `src/handlers/review.ts`, `src/execution/config.ts`, `docs/smoke/phase75-live-ops-verification-closure.md`, `src/handlers/mention.test.ts`, the `@kodiai review` contract, and the corrected negative/positive docs verification command. A second `rg` pass confirmed decision D125 and the new R055 knowledge note were both persisted. Because T03 is a planning/proof task, verification was artifact/state-based rather than runtime-code-based.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `find .gsd/milestones/M051/slices/S02 -maxdepth 2 -type f | sort` | 0 | ✅ pass | 3ms |\n| 2 | `rg -n \"Remove the unsupported UI-team rereview contract|src/handlers/review.ts|src/execution/config.ts|docs/smoke/phase75-live-ops-verification-closure.md|src/handlers/mention.test.ts|@kodiai review|! rg -n \\\"uiRereviewTeam\\|requestUiRereviewTeamOnOpen\\|ai-review\\|aireview\\\"\" .gsd/milestones/M051/slices/S02/S02-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T01-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T02-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T03-PLAN.md` | 0 | ✅ pass | 13ms |\n| 3 | `rg -n \"D125|How M051/S02 should close R055 after D124|R055 cleanup reaches beyond the runbook and handler\" .gsd/DECISIONS.md .gsd/KNOWLEDGE.md` | 0 | ✅ pass | 5ms |\n\n## Deviations\n\nExpanded the S02 implementation brief beyond the original task-file hint to include `src/execution/config.ts`, `src/execution/config.test.ts`, `src/handlers/rereview-team.ts`, `src/handlers/rereview-team.test.ts`, and `docs/smoke/phase75-live-ops-verification-closure.md` after local repo inspection showed they still encode the stale UI-team contract. Also regenerated the slice plan once to correct the T02 verification command so zero-match assertions use `! rg` instead of failing for the wrong reason.\n\n## Known Issues\n\nThe unsupported UI-team rereview contract is still present in the runtime/docs today; T03 only planned its removal. R055 will remain open until S02 executes the rendered tasks and reruns their proof commands.\n\n## Files Created/Modified\n\n- `.gsd/milestones/M051/slices/S02/S02-PLAN.md`\n- `.gsd/milestones/M051/slices/S02/tasks/T01-PLAN.md`\n- `.gsd/milestones/M051/slices/S02/tasks/T02-PLAN.md`\n- `.gsd/milestones/M051/slices/S02/tasks/T03-PLAN.md`\n- `.gsd/DECISIONS.md`\n- `.gsd/KNOWLEDGE.md`\n",
       "description": "Convert the audit and decision into the implementation brief for S02. Identify exactly which code/config/docs/tests will need to change depending on the chosen direction, and define the proof points S02 must satisfy to close R055 without leaving stale trigger claims behind.",
       "estimate": "1 context window",
       "files": [
@@ -14696,6 +14705,133 @@
         "Proof checklist for supported manual rereview path"
       ],
       "observability_impact": "Prevents S02 from drifting into partial cleanup by naming the exact proof surfaces that must be retired or verified.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S02",
+      "id": "T01",
+      "title": "Remove the UI-team rereview code and config surface",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Implement the removal branch from D124 instead of leaving the wired-but-unproven team path in place.\n- Remove `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from the repo config/schema/defaults.\n- Stop accepting `requested_team` `ai-review` / `aireview` as an accepted `pull_request.review_requested` trigger in `createReviewHandler`; preserve the existing direct-Kodiai reviewer path and the generic team-only skip path.\n- Remove the best-effort auto-request-on-open behavior and delete `src/handlers/rereview-team.ts` plus its tests if it becomes unused.\n- Update handler/config tests so the post-change contract is explicit: team-only requests skip, no UI rereview team is auto-requested, and the removed config keys are gone.",
+      "estimate": "1 context window",
+      "files": [
+        "src/handlers/review.ts",
+        "src/handlers/review.test.ts",
+        "src/handlers/rereview-team.ts",
+        "src/handlers/rereview-team.test.ts",
+        "src/execution/config.ts",
+        "src/execution/config.test.ts",
+        ".kodiai.yml"
+      ],
+      "verify": "bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts",
+      "inputs": [
+        ".gsd/milestones/M051/slices/S01/tasks/T01-SUMMARY.md",
+        ".gsd/milestones/M051/slices/S01/tasks/T02-SUMMARY.md",
+        ".kodiai.yml",
+        "src/handlers/review.ts",
+        "src/execution/config.ts"
+      ],
+      "expected_output": [
+        "Review handler no longer accepts or auto-requests the `ai-review` / `aireview` team path",
+        "Repo config and config schema no longer expose `uiRereviewTeam` or `requestUiRereviewTeamOnOpen`",
+        "Negative regression coverage for team-only `review_requested` events"
+      ],
+      "observability_impact": "Removes misleading rereview-team acceptance/request logs so operator evidence matches the supported trigger contract.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S02",
+      "id": "T02",
+      "title": "Retire stale operator docs and smoke/config claims",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Rewrite the operator-facing truth surface to match D124 and the removal implementation.\n- Update `docs/runbooks/review-requested-debug.md` so `@kodiai review` is the only supported manual rereview procedure; keep `pull_request.review_requested` content only as a debug surface when still relevant, not as supported operator guidance.\n- Remove `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from `docs/configuration.md`.\n- Update `docs/smoke/phase75-live-ops-verification-closure.md` so accepted rereview-team requests are no longer treated as valid closure evidence.\n- Ensure the checked-in `.kodiai.yml` example no longer advertises the unsupported team path.",
+      "estimate": "1 context window",
+      "files": [
+        "docs/runbooks/review-requested-debug.md",
+        "docs/configuration.md",
+        "docs/smoke/phase75-live-ops-verification-closure.md",
+        ".kodiai.yml"
+      ],
+      "verify": "! rg -n \"uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview\" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n \"@kodiai review\" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md",
+      "inputs": [
+        ".gsd/milestones/M051/slices/S01/tasks/T01-SUMMARY.md",
+        ".gsd/milestones/M051/slices/S01/tasks/T02-SUMMARY.md",
+        "docs/runbooks/review-requested-debug.md",
+        "docs/configuration.md",
+        "docs/smoke/phase75-live-ops-verification-closure.md"
+      ],
+      "expected_output": [
+        "Operator docs no longer instruct humans to use the `ai-review` / `aireview` team path",
+        "Configuration docs/examples no longer advertise removed rereview-team keys",
+        "Smoke preflight language matches the supported manual trigger contract"
+      ],
+      "observability_impact": "Prevents operators from recapturing invalid team-path evidence after the code/config contract is removed.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S02",
+      "id": "T03",
+      "title": "Lock the surviving manual trigger proof surface",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Make the supported-path proof explicit enough to close R055 without re-litigating the trigger contract.\n- Reuse or tighten `src/handlers/mention.test.ts` coverage that proves `@kodiai review` routes to `taskType=review.full` on `lane=interactive-review` and still owns the visible publish/fallback path.\n- Add/update a narrow negative regression in `src/handlers/review.test.ts` proving team-only `review_requested` events are skipped after the removal.\n- Run the slice-level proof bundle so completion can cite one explicit supported trigger and zero stale team-trigger claims.",
+      "estimate": "1 context window",
+      "files": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.test.ts"
+      ],
+      "verify": "bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts",
+      "inputs": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.test.ts",
+        ".gsd/REQUIREMENTS.md"
+      ],
+      "expected_output": [
+        "Regression proof that `@kodiai review` remains the surviving supported manual rereview lane",
+        "Negative coverage proving team-only `review_requested` events no longer count as an accepted manual trigger",
+        "R055 closure evidence bundle for slice completion"
+      ],
+      "observability_impact": "Keeps the publish-resolution and interactive-review evidence surfaces tied to the only surviving manual trigger.",
       "full_plan_md": "",
       "sequence": 0
     }
@@ -16185,6 +16321,18 @@
       "decision": "Supported manual rereview trigger contract while the UI team path lacks fresh operator-path proof",
       "choice": "Treat `@kodiai review` as the only supported manual rereview trigger for operators until a fresh human-generated `pull_request.review_requested` delivery proves the `ai-review` / `aireview` UI team path end-to-end. Keep the UI team path classified as wired-but-unproven, not a supported operator contract.",
       "rationale": "T01 proved the original 'Kodiai is not on the rereview team' premise is no longer true: the live GitHub topology shows the `aireview` team exists on the repo and currently includes `kodiai`, and the repo-side handler/config surfaces still accept `ai-review` / `aireview`. But there is still no fresh human-generated webhook delivery proving that a manual remove/re-request of the team reaches Kodiai end-to-end. The open-time auto-requested team event cannot serve as proof either way because app self-events are intentionally filtered. To keep operator guidance truthful, the supported manual trigger must remain `@kodiai review` until that proof exists or the team path is removed.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 159,
+      "id": "D125",
+      "when_context": "M051/S01/T03",
+      "scope": "roadmap",
+      "decision": "How M051/S02 should close R055 after D124",
+      "choice": "Plan S02 to remove the unsupported `ai-review` / `aireview` UI-team contract from code/config/docs/tests and keep `@kodiai review` as the sole supported manual rereview trigger. Any future UI-team reintroduction must come from a new slice with fresh human-generated proof.",
+      "rationale": "D124 already fixes the operator contract on `@kodiai review` until fresh UI-team proof exists. In this environment, auto-mode cannot generate the required human-triggered `pull_request.review_requested` evidence, while the repo still has stale team-path claims in config schema, smoke docs, and tests beyond the original runbook/handler surfaces. Removing the unsupported contract is therefore the smallest truthful path that can close R055 now without leaving operators or future agents relying on wired-but-unproven behavior.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -21426,6 +21574,39 @@
       "verdict": "✅ pass",
       "duration_ms": 3,
       "created_at": "2026-04-18T23:29:01.982Z"
+    },
+    {
+      "id": 478,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "find .gsd/milestones/M051/slices/S02 -maxdepth 2 -type f | sort",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 3,
+      "created_at": "2026-04-18T23:38:41.599Z"
+    },
+    {
+      "id": 479,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "rg -n \"Remove the unsupported UI-team rereview contract|src/handlers/review.ts|src/execution/config.ts|docs/smoke/phase75-live-ops-verification-closure.md|src/handlers/mention.test.ts|@kodiai review|! rg -n \\\"uiRereviewTeam\\|requestUiRereviewTeamOnOpen\\|ai-review\\|aireview\\\"\" .gsd/milestones/M051/slices/S02/S02-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T01-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T02-PLAN.md .gsd/milestones/M051/slices/S02/tasks/T03-PLAN.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 13,
+      "created_at": "2026-04-18T23:38:41.599Z"
+    },
+    {
+      "id": 480,
+      "task_id": "T03",
+      "slice_id": "S01",
+      "milestone_id": "M051",
+      "command": "rg -n \"D125|How M051/S02 should close R055 after D124|R055 cleanup reaches beyond the runbook and handler\" .gsd/DECISIONS.md .gsd/KNOWLEDGE.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 5,
+      "created_at": "2026-04-18T23:38:41.599Z"
     }
   ]
 }

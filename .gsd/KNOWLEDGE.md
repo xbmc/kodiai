@@ -1048,3 +1048,19 @@ Do not treat the open-time auto-request as proof that manual UI rereview is brok
 **Rule:** In this environment, do not assume the `github-bot` skill's token script can mint an installation token. If the helper exits 127 or `/Users/joel/.local/bin/secrets` is absent, fall back to authenticated `gh` commands with explicit `-R xbmc/kodiai` or `gh api` for issue/PR operations instead of repeatedly retrying the bot path.
 
 **Established in:** M051/S01/T02.
+
+---
+
+## R055 cleanup reaches beyond the runbook and handler (M051/S01)
+
+**Context:** The obvious stale surfaces for the manual rereview contract were `docs/runbooks/review-requested-debug.md` and `src/handlers/review.ts`, but the real drift also lived in the config schema/defaults (`src/execution/config.ts`, `src/execution/config.test.ts`), the optional helper that auto-requested the team (`src/handlers/rereview-team.ts` + tests), the checked-in repo example (`.kodiai.yml`), and an older operator smoke doc (`docs/smoke/phase75-live-ops-verification-closure.md`) that still treated accepted rereview-team requests as valid evidence.
+
+**Rule:** When retiring an unsupported trigger contract like `ai-review` / `aireview`, do not stop after updating the main runbook and handler. Sweep these four surface classes explicitly:
+1. **Runtime code paths** that still accept or auto-request the old trigger.
+2. **Config schema/defaults/examples** that advertise the old knobs.
+3. **Regression tests** that still prove the old trigger as a valid path.
+4. **Operator smoke/verifier docs** that still treat the old trigger as acceptable evidence.
+
+If any of those remain, the repo will keep teaching operators or future agents the wrong contract even after the primary docs are fixed.
+
+**Established in:** M051/S01/T03.
