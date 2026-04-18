@@ -1024,3 +1024,17 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
 
 **Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).
+
+---
+
+## UI rereview topology can be real even when issue assumptions say it is broken (M051/S01)
+
+**Context:** Issue #84 started from the assumption that the documented `ai-review` / `aireview` UI rereview path did not actually target Kodiai. Live GitHub API evidence for `xbmc/kodiai` showed the opposite topology: `gh api repos/xbmc/kodiai/teams` returned the `aireview` team with repo access, and `gh api orgs/xbmc/teams/aireview/members` returned both `keithah` and `kodiai` as team members. The repo-side contract also still accepts `pull_request.review_requested` when `requested_team` is `ai-review` / `aireview` and auto-requests the configured team on PR open.
+
+**Rule:** When auditing manual rereview, verify the live GitHub team topology before assuming the team path is fictional. Separate two questions:
+1. **Topology proof:** team exists, has repo access, and includes `kodiai`.
+2. **Operator-path proof:** a human remove/re-request action produced the expected `pull_request.review_requested` delivery with `requested_team`.
+
+Do not treat the open-time auto-request as proof that manual UI rereview is broken: self-generated events from `kodiai` are intentionally filtered by `src/webhook/filters.ts`, so only human re-requests should be used as manual-trigger evidence.
+
+**Established in:** M051/S01/T01.

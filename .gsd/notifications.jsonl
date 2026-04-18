@@ -255,3 +255,7 @@
 {"id":"62f39cc9-7e25-4747-ba6f-f59383fe4a9a","ts":"2026-04-11T03:26:46.284Z","severity":"info","message":"Auto-mode paused (Escape). Type to interact, or /gsd auto to resume.","source":"notify","read":false}
 {"id":"faf99db9-2732-4fbd-a6ea-3dd9e0ced0b4","ts":"2026-04-11T04:02:53.897Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
 {"id":"1cf10355-427c-4736-8069-cc1c23f73c3e","ts":"2026-04-11T04:02:56.770Z","severity":"info","message":"Resume: applied 3 fix(es) to state.","source":"notify","read":false}
+{"id":"82b7d18a-07ba-47d7-b220-e0522ced70a6","ts":"2026-04-18T23:16:59.534Z","severity":"info","message":"Auto-mode started. Will loop until milestone complete.","source":"notify","read":false}
+{"id":"bdd1e918-dc87-4152-9d36-c5e77a75713f","ts":"2026-04-18T23:16:59.537Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.4)","source":"notify","read":false}
+{"id":"6e97b57f-0680-4e0c-98d0-bb5365f2c751","ts":"2026-04-18T23:16:59.539Z","severity":"info","message":"Pre-flight: 40 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"93ea2d45-252f-4b63-af53-35277b094166","ts":"2026-04-18T23:17:00.490Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 1075m of uncommitted changes","source":"notify","read":false}
