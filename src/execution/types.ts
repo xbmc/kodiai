@@ -111,6 +111,8 @@ export type ExecutionResult = {
   cacheCreationTokens: number | undefined;
   /** SDK stop reason (e.g., "end_turn", "max_tokens") */
   stopReason: string | undefined;
+  /** Non-success SDK result subtype (e.g., "error_max_turns") when present. */
+  failureSubtype?: string;
   /** Final assistant text for successful runs (when provided by SDK). */
   resultText?: string;
   /** Ordered unique tool names observed in assistant tool_use blocks during the run. */

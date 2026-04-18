@@ -28,24 +28,25 @@ describe("deploy.sh", () => {
     expect(deployScript).toContain('ACTIVE_REVISION=${TRAFFIC_ACTIVE_REVISION:-$NEWEST_ACTIVE_REVISION}');
   });
 
-  test("syncs CLAUDE_CODE_OAUTH_TOKEN from machine Claude credentials when available", () => {
+  test("does not auto-sync CLAUDE_CODE_OAUTH_TOKEN from machine Claude credentials", () => {
+    expect(deployScript).not.toContain('sync_claude_oauth_token_from_machine');
+    expect(deployScript).not.toContain('CLAUDE_CODE_OAUTH_TOKEN="$machine_token"');
+    expect(deployScript).not.toContain('Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE');
+  });
+
+  test("guards against using the rotating Claude login access token for deploy auth", () => {
     expect(deployScript).toContain('CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}');
     expect(deployScript).toContain('claudeAiOauth.accessToken');
-    expect(deployScript).toContain('CLAUDE_CODE_OAUTH_TOKEN="$machine_token"');
+    expect(deployScript).toContain('CLAUDE_CODE_OAUTH_TOKEN matches $CLAUDE_CREDENTIALS_FILE accessToken');
+    expect(deployScript).toContain('Use the 1-year token from `claude setup-token`');
   });
 
-  test("persists the refreshed Claude OAuth token back into ENV_FILE", () => {
-    expect(deployScript).toContain('awk -v tok="$machine_token"');
-    expect(deployScript).toContain('print "CLAUDE_CODE_OAUTH_TOKEN=" tok;');
-    expect(deployScript).toContain('Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE into $ENV_FILE');
-  });
-
-  test("runs Claude OAuth sync before required env validation", () => {
-    const syncIndex = deployScript.indexOf('sync_claude_oauth_token_from_machine');
+  test("runs Claude OAuth source validation before required env validation", () => {
+    const validationIndex = deployScript.indexOf('validate_claude_oauth_token_source');
     const missingIndex = deployScript.indexOf('missing=()');
 
-    expect(syncIndex).toBeGreaterThan(-1);
+    expect(validationIndex).toBeGreaterThan(-1);
     expect(missingIndex).toBeGreaterThan(-1);
-    expect(syncIndex).toBeLessThan(missingIndex);
+    expect(validationIndex).toBeLessThan(missingIndex);
   });
 });

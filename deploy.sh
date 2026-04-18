@@ -16,10 +16,11 @@ set -euo pipefail
 #   GITHUB_PRIVATE_KEY_BASE64  - Base64-encoded PEM private key
 #                                Generate with: base64 -w0 < private-key.pem
 #   GITHUB_WEBHOOK_SECRET      - Webhook secret configured in the GitHub App
-#   CLAUDE_CODE_OAUTH_TOKEN    - OAuth token from `claude setup-token`
-#                                If ~/.claude/.credentials.json exists,
-#                                deploy.sh auto-refreshes this value from
-#                                claudeAiOauth.accessToken before validation.
+#   CLAUDE_CODE_OAUTH_TOKEN    - 1-year OAuth token from `claude setup-token`
+#                                Do not use ~/.claude/.credentials.json
+#                                claudeAiOauth.accessToken here — it is a
+#                                rotating Claude login token, not the deploy
+#                                token this runtime expects.
 #   VOYAGE_API_KEY             - VoyageAI API key for embeddings
 #   SLACK_BOT_TOKEN            - Slack bot OAuth token
 #   SLACK_SIGNING_SECRET       - Slack app signing secret
@@ -42,10 +43,10 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-sync_claude_oauth_token_from_machine() {
+validate_claude_oauth_token_source() {
   CLAUDE_CREDENTIALS_FILE=${CLAUDE_CREDENTIALS_FILE:-$HOME/.claude/.credentials.json}
 
-  if [[ ! -f "$CLAUDE_CREDENTIALS_FILE" ]]; then
+  if [[ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" || ! -f "$CLAUDE_CREDENTIALS_FILE" ]]; then
     return 0
   fi
 
@@ -56,43 +57,14 @@ sync_claude_oauth_token_from_machine() {
     machine_token=$(node -e 'const fs = require("node:fs"); try { const raw = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(raw?.claudeAiOauth?.accessToken ?? ""); } catch { process.stdout.write(""); }' "$CLAUDE_CREDENTIALS_FILE" 2>/dev/null || true)
   fi
 
-  if [[ -z "$machine_token" ]]; then
-    echo "==> WARNING: Could not read Claude OAuth access token from $CLAUDE_CREDENTIALS_FILE; using existing CLAUDE_CODE_OAUTH_TOKEN value if set."
-    return 0
-  fi
-
-  if [[ "${CLAUDE_CODE_OAUTH_TOKEN:-}" == "$machine_token" ]]; then
-    return 0
-  fi
-
-  CLAUDE_CODE_OAUTH_TOKEN="$machine_token"
-  export CLAUDE_CODE_OAUTH_TOKEN
-
-  if [[ -f "$ENV_FILE" && -w "$ENV_FILE" ]]; then
-    local tmp_env
-    tmp_env=$(mktemp)
-    awk -v tok="$machine_token" '
-      BEGIN { replaced = 0 }
-      /^CLAUDE_CODE_OAUTH_TOKEN=/ {
-        print "CLAUDE_CODE_OAUTH_TOKEN=" tok;
-        replaced = 1;
-        next;
-      }
-      { print }
-      END {
-        if (!replaced) {
-          print "CLAUDE_CODE_OAUTH_TOKEN=" tok;
-        }
-      }
-    ' "$ENV_FILE" > "$tmp_env"
-    mv "$tmp_env" "$ENV_FILE"
-    echo "==> Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE into $ENV_FILE"
-  else
-    echo "==> Synced CLAUDE_CODE_OAUTH_TOKEN from $CLAUDE_CREDENTIALS_FILE for this deploy run"
+  if [[ -n "$machine_token" && "${CLAUDE_CODE_OAUTH_TOKEN:-}" == "$machine_token" ]]; then
+    echo "ERROR: CLAUDE_CODE_OAUTH_TOKEN matches $CLAUDE_CREDENTIALS_FILE accessToken."
+    echo "Use the 1-year token from `claude setup-token`, not the rotating Claude login access token."
+    exit 1
   fi
 }
 
-sync_claude_oauth_token_from_machine
+validate_claude_oauth_token_source
 
 # -- Configuration (customize as needed) --------------------------------------
 RESOURCE_GROUP="rg-kodiai"
