@@ -204,8 +204,7 @@ describe("createReviewHandler queued-claim cleanup", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: true",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -493,7 +492,7 @@ async function createWorkspaceFixture(options: { autoApprove?: boolean } = {}) {
   await Bun.write(join(dir, "README.md"), "base\n");
   await Bun.write(
     join(dir, ".kodiai.yml"),
-    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
+    `review:\n  enabled: true\n  autoApprove: ${options.autoApprove ? "true" : "false"}\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
   );
 
   await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -530,8 +529,8 @@ async function createNoMergeBaseFixture(options: { includePhase27Fields: boolean
   await $`mkdir -p ${join(dir, "src/api")}`.quiet();
   await $`mkdir -p ${join(dir, "docs")}`.quiet();
 
-  const configWithPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n  profile: strict\n  pathInstructions:\n    - path: src/api/**\n      instructions: Verify auth checks and error handling for API endpoints.\n`;
-  const configWithoutPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`;
+  const configWithPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n  profile: strict\n  pathInstructions:\n    - path: src/api/**\n      instructions: Verify auth checks and error handling for API endpoints.\n`;
+  const configWithoutPhase27 = `review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`;
 
   await Bun.write(
     join(dir, ".kodiai.yml"),
@@ -840,7 +839,7 @@ describe("createReviewHandler review_requested gating", () => {
     expect(enqueueCount).toBe(0);
   });
 
-  test("accepts team-based rereview requests for ai-review", async () => {
+  test("skips team-only review requests for ai-review", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const enqueued: Array<{ installationId: number }> = [];
 
@@ -880,11 +879,10 @@ describe("createReviewHandler review_requested gating", () => {
       }),
     );
 
-    expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]?.installationId).toBe(42);
+    expect(enqueued).toHaveLength(0);
   });
 
-  test("accepts team-based rereview requests for aireview", async () => {
+  test("skips team-only review requests for aireview", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const enqueued: Array<{ installationId: number }> = [];
 
@@ -924,8 +922,7 @@ describe("createReviewHandler review_requested gating", () => {
       }),
     );
 
-    expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]?.installationId).toBe(42);
+    expect(enqueued).toHaveLength(0);
   });
 
   test("skips malformed reviewer payloads without throwing", async () => {
@@ -994,8 +991,7 @@ describe("createReviewHandler auto profile selection", () => {
       "review:",
       "  enabled: true",
       "  autoApprove: false",
-      "  requestUiRereviewTeamOnOpen: false",
-      "  triggers:",
+            "  triggers:",
       "    onOpened: true",
       "    onReadyForReview: true",
       "    onReviewRequested: true",
@@ -1344,7 +1340,7 @@ describe("createReviewHandler auto profile selection", () => {
 
     await Bun.write(
       `${workspaceFixture.dir}/.kodiai.yml`,
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
     );
 
     const eventRouter: EventRouter = {
@@ -1504,8 +1500,8 @@ describe("createReviewHandler auto profile selection", () => {
   });
 });
 
-describe("createReviewHandler UI rereview team request", () => {
-  test("requests uiRereviewTeam on opened when configured", async () => {
+describe("createReviewHandler open-event reviewer requests", () => {
+  test("does not auto-request extra reviewers on opened", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture();
 
@@ -1553,12 +1549,6 @@ describe("createReviewHandler UI rereview team request", () => {
       },
     };
 
-    // Enable ui rereview in repo config
-    await Bun.write(
-      `${workspaceFixture.dir}/.kodiai.yml`,
-      `review:\n  enabled: true\n  autoApprove: false\n  uiRereviewTeam: ai-review\n  requestUiRereviewTeamOnOpen: true\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n`,
-    );
-
     createReviewHandler({
       eventRouter,
       jobQueue,
@@ -1596,7 +1586,7 @@ describe("createReviewHandler UI rereview team request", () => {
       },
     });
 
-    expect(requestedTeams).toEqual(["ai-review"]);
+    expect(requestedTeams).toBeUndefined();
 
     await workspaceFixture.cleanup();
   });
@@ -2863,7 +2853,7 @@ describe("createReviewHandler picomatch skipPaths (CONFIG-04)", () => {
     const skipPathsYaml = skipPaths.map((p) => `    - '${p}'`).join("\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths:\n${skipPathsYaml}\n`,
+      `review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths:\n${skipPathsYaml}\n`,
     );
 
     await Bun.write(join(dir, "README.md"), "base\n");
@@ -3193,7 +3183,7 @@ describe("createReviewHandler retrieval quality telemetry (RET-05)", () => {
 
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      `review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n${telemetrySection}`,
+      `review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n${telemetrySection}`,
     );
 
     await $`git -C ${dir} add src/index.ts .kodiai.yml`.quiet();
@@ -3646,7 +3636,7 @@ describe("createReviewHandler telemetry opt-out (CONFIG-10)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -3731,7 +3721,7 @@ describe("createReviewHandler telemetry opt-out (CONFIG-10)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -3818,7 +3808,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -3908,7 +3898,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n  costWarningUsd: 1.0\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -4016,7 +4006,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -4102,7 +4092,7 @@ describe("createReviewHandler cost warning (CONFIG-11)", () => {
     await Bun.write(join(dir, "README.md"), "base\n");
     await Bun.write(
       join(dir, ".kodiai.yml"),
-      "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n  costWarningUsd: 1.0\n",
+      "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: false\n  costWarningUsd: 1.0\n",
     );
 
     await $`git -C ${dir} add README.md .kodiai.yml`.quiet();
@@ -4647,8 +4637,7 @@ describe("createReviewHandler finding extraction", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -4870,8 +4859,7 @@ describe("createReviewHandler finding extraction", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -5656,8 +5644,7 @@ describe("createReviewHandler global knowledge sharing", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -5800,8 +5787,7 @@ describe("createReviewHandler global knowledge sharing", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -7101,8 +7087,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -7425,8 +7410,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -7602,8 +7586,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -7771,8 +7754,7 @@ describe("createReviewHandler feedback-driven suppression", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -7992,8 +7974,7 @@ describe("createReviewHandler finding prioritization", () => {
       "review:",
       "  enabled: true",
       "  autoApprove: false",
-      "  requestUiRereviewTeamOnOpen: false",
-      "  triggers:",
+            "  triggers:",
       "    onOpened: true",
       "    onReadyForReview: true",
       "    onReviewRequested: true",
@@ -9850,7 +9831,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
     await Bun.write(
       join(workspaceFixture.dir, ".kodiai.yml"),
       params.configYaml
-        ?? "review:\n  enabled: true\n  autoApprove: false\n  requestUiRereviewTeamOnOpen: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n",
+        ?? "review:\n  enabled: true\n  autoApprove: false\n  triggers:\n    onOpened: true\n    onReadyForReview: true\n    onReviewRequested: true\n  skipAuthors: []\n  skipPaths: []\ntelemetry:\n  enabled: true\n",
     );
 
     const octokit = {
@@ -9984,8 +9965,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -10381,8 +10361,7 @@ describe("createReviewHandler author-tier search cache integration", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -10847,8 +10826,7 @@ describe("createReviewHandler synchronize gating", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -10867,8 +10845,7 @@ describe("createReviewHandler synchronize gating", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -10893,8 +10870,7 @@ describe("createReviewHandler synchronize gating", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  onSynchronize: true",
+                "  onSynchronize: true",
         "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
@@ -10935,8 +10911,7 @@ describe("createReviewHandler draft PR behavior", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -11236,8 +11211,7 @@ describe("createReviewHandler coordinator phase checkpoints", () => {
         "  enabled: true",
         "  autoApprove: false",
         "  onSynchronize: true",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -11989,8 +11963,7 @@ describe("createReviewHandler bounded review disclosure", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -12029,8 +12002,7 @@ describe("createReviewHandler bounded review disclosure", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",
@@ -12068,8 +12040,7 @@ describe("createReviewHandler bounded review disclosure", () => {
         "review:",
         "  enabled: true",
         "  autoApprove: false",
-        "  requestUiRereviewTeamOnOpen: false",
-        "  triggers:",
+                "  triggers:",
         "    onOpened: true",
         "    onReadyForReview: true",
         "    onReviewRequested: true",

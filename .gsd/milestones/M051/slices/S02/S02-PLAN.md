@@ -23,7 +23,7 @@ After S02, S03 can assume the manual trigger contract is settled and can focus o
 
 ## Tasks
 
-- [ ] **T01: Remove the UI-team rereview code and config surface** `est:1 context window`
+- [x] **T01: Remove the UI-team rereview code and config surface** `est:1 context window`
   Implement the removal branch from D124 instead of leaving the wired-but-unproven team path in place.
 - Remove `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from the repo config/schema/defaults.
 - Stop accepting `requested_team` `ai-review` / `aireview` as an accepted `pull_request.review_requested` trigger in `createReviewHandler`; preserve the existing direct-Kodiai reviewer path and the generic team-only skip path.

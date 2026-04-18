@@ -14,25 +14,18 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, and M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces.
 
-**M047 is complete and verified.** The contributor-experience rollout now has one truthful persisted-profile trust boundary and one canonical milestone-close proof surface:
+**M051 is now active.** Its focus is manual rereview trigger truthfulness (`R055`): either the documented manual rereview path must be proven live end-to-end, or the repo must stop claiming unsupported triggers work.
 
-- `src/db/migrations/037-contributor-profile-trust.sql` and `src/contributor/profile-trust.ts` established the persisted versioned trust-marker seam so linked-unscored, legacy, stale, malformed, calibrated, and opted-out rows can be distinguished truthfully.
-- `src/contributor/review-author-resolution.ts` is the shared review-time resolver that applies stored-profile trust before falling back to author-cache, GitHub search, or generic/degraded behavior.
-- `src/contributor/profile-surface-resolution.ts` is the canonical Slack/profile continuity seam for persisted profiles; only current trusted calibrated rows stay `profile-backed`, while linked-unscored, legacy, stale, malformed, and fail-open rows collapse to truthful generic continuity.
-- `src/slack/slash-command-handler.ts` routes `/kodiai profile`, `link`, and `profile opt-in` through that stored-profile surface resolver before rendering copy or looking up expertise.
-- `src/handlers/identity-suggest.ts` uses system-view `includeOptedOut: true` lookups so opted-out linked contributors suppress link DMs without re-enabling contributor-specific guidance.
-- `scripts/verify-m047-s01.ts` remains the operator-facing proof surface for runtime stored-profile resolution on the review path.
-- `scripts/verify-m047-s02.ts` is the operator-facing downstream proof surface for Slack/profile output, continuity copy, retrieval hints, and opt-out identity suppression, composed from the embedded S01 runtime report plus a local stored-profile scenario matrix.
-- `scripts/verify-m047.ts` is the canonical milestone-close coherence verifier. It composes `verify:m047:s02`, `verify:m045:s03`, and `verify:m046`, preserves their nested JSON verbatim, reports four stable top-level checks plus five milestone scenarios (`linked-unscored`, `calibrated-retained`, `stale-degraded`, `opt-out`, `coarse-fallback`), treats the M046 `replace` recommendation as data rather than a harness failure, and fails loudly on malformed nested evidence, mapping drift, or leaked forbidden opt-out continuity.
+**M051/S01 is complete and verified.** The slice established the current truth boundary:
 
-Fresh milestone-close verification passed:
+- Live GitHub topology shows `aireview` exists on `xbmc/kodiai`, has repo access, and currently includes `kodiai` as a member.
+- Repo-side code/config/docs still encode the UI-team rereview path in `.kodiai.yml`, `docs/configuration.md`, `docs/runbooks/review-requested-debug.md`, `src/handlers/review.ts`, `src/handlers/rereview-team.ts`, and related tests.
+- That topology proof is **not** operator-path proof. The open-time auto-requested team event cannot prove the manual UI rereview lane because `src/webhook/filters.ts` intentionally drops app self-events.
+- Decision **D124** keeps `@kodiai review` as the only supported manual rereview trigger until fresh human-generated `pull_request.review_requested` proof exists for the UI team path.
+- Decision **D125** turns that finding into the next implementation contract: `M051/S02` should remove the unsupported `ai-review` / `aireview` UI-team contract from code/config/docs/tests and keep `@kodiai review` as the sole supported manual rereview trigger.
+- Issue `#84` now carries the same closeout guidance, including the D125 follow-on direction.
 
-- `bun test ./scripts/verify-m047.test.ts`
-- `bun run verify:m047 -- --json`
-- `bun run verify:m047:s02 -- --json && bun run verify:m045:s03 -- --json && bun run verify:m046 -- --json`
-- `bun run tsc --noEmit`
-
-Requirements `R046` and `R048` are validated, and future contributor-resolution changes should extend `verify:m047` rather than introducing parallel proof paths.
+`R055` remains active until S02 removes the stale team-trigger contract and preserves explicit-mention proof as the only supported manual rereview lane.
 
 ## Architecture / Key Patterns
 
@@ -41,6 +34,8 @@ Requirements `R046` and `R048` are validated, and future contributor-resolution 
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
+- **Manual rereview truth boundary:** treat GitHub reviewer/team topology proof separately from operator-trigger proof. A configured or reachable team is not enough to claim the manual UI rereview path is supported.
+- **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated open-time reviewer/team requests cannot be used as proof for manual rereview behavior.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
 - **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
 - **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
@@ -83,3 +78,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Review-Surface Rollout
   - [x] S02: Retrieval and Slack Surface Rollout
   - [x] S03: End-to-End Coherence Verification
+- [ ] M051: Manual rereview trigger truthfulness
+  - [x] S01: Rereview trigger proof and decision
+  - [ ] S02: Manual rereview contract implementation
+  - [ ] S03: Residual operator truthfulness cleanup

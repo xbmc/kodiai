@@ -267,3 +267,6 @@
 {"id":"36f0baac-9809-4ac3-a54b-25011f338b81","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
 {"id":"952c61e9-ac42-4040-8a1f-aeae641bcc49","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
 {"id":"7d183033-1344-4429-898b-f9a6e4f9cd53","ts":"2026-04-18T23:29:10.070Z","severity":"info","message":"Committed: feat: Recorded decision D124 to keep `@kodiai review` as the supported…","source":"notify","read":false}
+{"id":"c7e81d91-f35f-4cf7-8879-b4357f9f2ce0","ts":"2026-04-18T23:38:49.377Z","severity":"info","message":"Committed: chore: Planned M051/S02 to remove the unsupported UI-team rereview cont…","source":"notify","read":false}
+{"id":"70b4867b-8b8c-48d8-9226-2326eb800565","ts":"2026-04-18T23:53:06.018Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"fc0d3455-de6f-4f8c-a266-5d8e414501c9","ts":"2026-04-18T23:53:06.019Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}

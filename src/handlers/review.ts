@@ -106,7 +106,6 @@ import {
   normalizeReviewerLogin,
   splitDiffByFile,
 } from "../lib/review-utils.ts";
-import { requestRereviewTeamBestEffort } from "./rereview-team.ts";
 import picomatch from "picomatch";
 import {
   parseDiffHunks,
@@ -1282,8 +1281,8 @@ async function embedDiffHunks(params: {
  *
  * Trigger model: initial review events plus explicit re-request only.
  * Re-requested reviews run only when kodiai itself is the requested reviewer.
- * Additionally, a team-based re-request is supported for a special rereview team
- * ("ai-review" / "aireview") to enable UI-only re-review without a comment.
+ * Team-only review requests are skipped so manual rereview stays anchored on the
+ * explicit `@kodiai review` mention path.
  * Clones the repo, builds a review prompt, runs Claude via the executor,
  * and optionally submits a silent approval if no issues were found.
  */
@@ -1392,8 +1391,6 @@ export function createReviewHandler(deps: {
       authorPrCountSearchCache = undefined;
     }
   }
-
-  const rereviewTeamSlugs = new Set(["ai-review", "aireview"]);
 
   async function handleReview(event: WebhookEvent): Promise<void> {
     const payload = event.payload as unknown as
@@ -1508,39 +1505,20 @@ export function createReviewHandler(deps: {
           },
           "Accepted review_requested event for kodiai reviewer",
         );
-      } else if (requestedTeamName) {
-        const normalizedTeamName = requestedTeamName.trim().toLowerCase();
-        const normalizedTeamSlug = (requestedTeamSlug ?? "").trim().toLowerCase();
-        const matchedTeam = rereviewTeamSlugs.has(normalizedTeamSlug) || rereviewTeamSlugs.has(normalizedTeamName);
-
-        if (!matchedTeam) {
-          logger.info(
-            {
-              ...baseLog,
-              gate: "review_requested_reviewer",
-              gateResult: "skipped",
-              skipReason: "team-only-request",
-              requestedReviewer: null,
-              requestedTeam: requestedTeamName,
-              requestedTeamSlug: requestedTeamSlug ?? null,
-            },
-            "Skipping review_requested event because only a non-rereview team was requested",
-          );
-          return;
-        }
-
+      } else if (requestedTeamName || requestedTeamSlug) {
         logger.info(
           {
             ...baseLog,
             gate: "review_requested_reviewer",
-            gateResult: "accepted",
+            gateResult: "skipped",
+            skipReason: "team-only-request",
             requestedReviewer: null,
-            requestedTeam: requestedTeamName,
+            requestedTeam: requestedTeamName ?? null,
             requestedTeamSlug: requestedTeamSlug ?? null,
-            rereviewTeam: true,
           },
-          "Accepted review_requested event for rereview team",
+          "Skipping review_requested event because only a team was requested",
         );
+        return;
       } else {
         logger.warn(
           {
@@ -1789,26 +1767,6 @@ export function createReviewHandler(deps: {
             durationMs: Math.max(0, Date.now() - (workspacePhaseStartedAt ?? Date.now())),
           }),
         );
-
-        // Best-effort: ensure a UI rereview team is requested so it appears under Reviewers.
-        // NOTE: The resulting review_requested event sender will be the app, and our bot filter
-        // drops self-events. This is intentional to avoid loops.
-        if (
-          config.review.requestUiRereviewTeamOnOpen &&
-          config.review.uiRereviewTeam &&
-          (action === "opened" || action === "ready_for_review")
-        ) {
-          const octokit = await githubApp.getInstallationOctokit(event.installationId);
-          await requestRereviewTeamBestEffort({
-            octokit,
-            owner: apiOwner,
-            repo: apiRepo,
-            prNumber: pr.number,
-            configuredTeam: config.review.uiRereviewTeam,
-            fallbackReviewer: githubApp.getAppSlug(),
-            logger,
-          });
-        }
 
         logger.info(
           {

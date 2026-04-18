@@ -29,14 +29,12 @@ test("returns defaults when no .kodiai.yml exists", async () => {
     expect(config.write.minIntervalSeconds).toBe(0);
     expect(config.write.secretScan.enabled).toBe(true);
     expect(config.review.enabled).toBe(true);
-    expect(config.review.uiRereviewTeam).toBeUndefined();
-    expect(config.review.requestUiRereviewTeamOnOpen).toBe(false);
+    expect(config.review).not.toHaveProperty("uiRereviewTeam");
+    expect(config.review).not.toHaveProperty("requestUiRereviewTeamOnOpen");
     expect(config.review.triggers.onOpened).toBe(true);
     expect(config.review.triggers.onReadyForReview).toBe(true);
     expect(config.review.triggers.onReviewRequested).toBe(true);
     expect(config.review.autoApprove).toBe(true);
-    expect(config.review.uiRereviewTeam).toBeUndefined();
-    expect(config.review.requestUiRereviewTeamOnOpen).toBe(false);
     expect(config.review.skipAuthors).toEqual([]);
     expect(config.review.skipPaths).toEqual([]);
     expect(config.review.prompt).toBeUndefined();
@@ -108,6 +106,22 @@ test("reads and validates .kodiai.yml when present", async () => {
     expect(config.mention.acceptClaudeAlias).toBe(true); // default preserved
     expect(config.mention.conversation.maxTurnsPerPr).toBe(10); // default preserved
     expect(config.mention.conversation.contextBudgetChars).toBe(8000); // default preserved
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test("ignores deprecated rereview team keys when loading config", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "kodiai-test-"));
+  try {
+    await writeFile(
+      join(dir, ".kodiai.yml"),
+      "review:\n  uiRereviewTeam: ai-review\n  requestUiRereviewTeamOnOpen: true\n  autoApprove: false\n",
+    );
+    const { config } = await loadRepoConfig(dir);
+    expect(config.review.autoApprove).toBe(false);
+    expect(config.review).not.toHaveProperty("uiRereviewTeam");
+    expect(config.review).not.toHaveProperty("requestUiRereviewTeamOnOpen");
   } finally {
     await rm(dir, { recursive: true });
   }

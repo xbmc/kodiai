@@ -109,14 +109,6 @@ const findingPrioritizationWeightsSchema = z
 const reviewSchema = z
   .object({
     enabled: z.boolean().default(true),
-    /**
-     * Optional team slug/name to use for UI-based re-review.
-     * When configured, Kodiai can ensure the team is requested on PR open so it appears
-     * under Reviewers. Humans can then remove/re-request to retrigger a review.
-     */
-    uiRereviewTeam: z.string().optional(),
-    /** If true, request uiRereviewTeam on opened/ready_for_review events (best-effort). */
-    requestUiRereviewTeamOnOpen: z.boolean().default(false),
     triggers: reviewTriggersSchema,
     autoApprove: z.boolean().default(true),
     prompt: z.string().optional(),
@@ -186,7 +178,6 @@ const reviewSchema = z
       onSynchronize: false,
     },
     autoApprove: true,
-    requestUiRereviewTeamOnOpen: false,
     skipAuthors: [],
     skipPaths: [],
     mode: "standard",
