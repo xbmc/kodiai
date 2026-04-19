@@ -430,22 +430,36 @@ export function createExecutor(deps: {
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType !== "review.full";
+        const gitDiffInspectionAvailable = context.gitDiffInspectionAvailable !== false;
         const baseTools = isReadOnlyPrMention
-          ? [
-              "Read",
-              "Grep",
-              "Bash(git diff:*)",
-              "Bash(git status:*)",
-            ]
-          : [
-              "Read",
-              "Grep",
-              "Glob",
-              "Bash(git diff:*)",
-              "Bash(git log:*)",
-              "Bash(git show:*)",
-              "Bash(git status:*)",
-            ];
+          ? gitDiffInspectionAvailable
+            ? [
+                "Read",
+                "Grep",
+                "Bash(git diff:*)",
+                "Bash(git status:*)",
+              ]
+            : [
+                "Read",
+                "Grep",
+                "Bash(git status:*)",
+              ]
+          : gitDiffInspectionAvailable
+            ? [
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash(git diff:*)",
+                "Bash(git log:*)",
+                "Bash(git show:*)",
+                "Bash(git status:*)",
+              ]
+            : [
+                "Read",
+                "Grep",
+                "Glob",
+                "Bash(git status:*)",
+              ];
 
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         // Compute server names from the same deps (no instance construction yet)

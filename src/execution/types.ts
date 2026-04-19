@@ -70,6 +70,13 @@ export type ExecutionContext = {
   /** Enable review checkpoint MCP tool (save_review_checkpoint). */
   enableCheckpointTool?: boolean;
 
+  /**
+   * False when the local workspace cannot support merge-base diff inspection.
+   * In that mode the agent should stay on changed files surfaced by the handler
+   * instead of spending turns on git diff/log/show reconstruction.
+   */
+  gitDiffInspectionAvailable?: boolean;
+
   /** Optional overrides for MCP tool surfaces (used for retry flows). */
   enableInlineTools?: boolean;
   enableCommentTools?: boolean;
