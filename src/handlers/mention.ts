@@ -2627,7 +2627,13 @@ export function createMentionHandler(deps: {
             failureSubtype: result.failureSubtype,
             usedRepoInspectionTools: result.usedRepoInspectionTools ?? false,
             toolUseNames: result.toolUseNames ?? [],
-            ...(explicitReviewRequest ? { explicitReviewRequest: true } : {}),
+            ...(explicitReviewRequest
+              ? {
+                explicitReviewRequest: true,
+                taskType: "review.full",
+                lane: "interactive-review",
+              }
+              : {}),
             ...(reviewOutputKey ? { reviewOutputKey } : {}),
           },
           "Mention execution completed",

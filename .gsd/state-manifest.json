@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-19T00:01:19.542Z",
+  "exported_at": "2026-04-19T00:09:32.863Z",
   "milestones": [
     {
       "id": "M001",
@@ -14816,19 +14816,26 @@
       "milestone_id": "M051",
       "slice_id": "S02",
       "id": "T03",
-      "title": "Lock the surviving manual trigger proof surface",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Locked the surviving `@kodiai review` proof surface with explicit lane/task-type observability and team-only skip regressions.",
+      "status": "complete",
+      "one_liner": "Locked the surviving `@kodiai review` proof surface with explicit lane/task-type observability and team-only skip regressions.",
+      "narrative": "Started from the existing supported-path coverage in `src/handlers/mention.test.ts` and tightened it into one explicit proof for the only surviving manual rereview path. The updated regression now verifies that `@kodiai review` enqueues onto the `interactive-review` lane, invokes the executor with `taskType=review.full`, produces a visible approval-bridge publish, and leaves matching completion-log evidence on the same execution. That new assertion failed first because the structured `Mention execution completed` log did not carry the lane/task-type pair, so I added those fields on the explicit-review branch in `src/handlers/mention.ts` and reran the bundle to green. I also added a focused negative regression in `src/handlers/review.test.ts` that feeds both `ai-review` and `aireview` team-only `pull_request.review_requested` events through the real handler and proves they are skipped with `skipReason=team-only-request` and zero enqueues. Finally, I recorded decision D126 so downstream work knows the surviving manual rereview proof now lives on the explicit mention publish/log surface rather than any UI-team rereview contract.",
+      "verification_result": "Fresh verification ran after the test-first tightening and the explicit-review log update. `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` passed with 243 tests green, covering the supported `@kodiai review` lane/task-type/publish chain and the negative `ai-review` / `aireview` skip regression. `bun run tsc --noEmit` then exited 0 to confirm the added mention-log fields compile cleanly. LSP diagnostics were unavailable in this workspace, so the compiler check served as the typed-surface verification.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-19T00:09:32.832Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "src/handlers/mention.ts",
+        "src/handlers/mention.test.ts",
+        "src/handlers/review.test.ts",
+        ".gsd/DECISIONS.md"
+      ],
+      "key_decisions": [
+        "D126 — Evidence the surviving manual rereview contract through explicit mention-review completion logs (taskType=review.full, lane=interactive-review) plus skipped team-only review_requested logs for retired ai-review/aireview requests."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S02\nmilestone: M051\nkey_files:\n  - src/handlers/mention.ts\n  - src/handlers/mention.test.ts\n  - src/handlers/review.test.ts\n  - .gsd/DECISIONS.md\nkey_decisions:\n  - D126 — Evidence the surviving manual rereview contract through explicit mention-review completion logs (taskType=review.full, lane=interactive-review) plus skipped team-only review_requested logs for retired ai-review/aireview requests.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-19T00:09:32.831Z\nblocker_discovered: false\n---\n\n# T03: Locked the surviving `@kodiai review` proof surface with explicit lane/task-type observability and team-only skip regressions.\n\n**Locked the surviving `@kodiai review` proof surface with explicit lane/task-type observability and team-only skip regressions.**\n\n## What Happened\n\nStarted from the existing supported-path coverage in `src/handlers/mention.test.ts` and tightened it into one explicit proof for the only surviving manual rereview path. The updated regression now verifies that `@kodiai review` enqueues onto the `interactive-review` lane, invokes the executor with `taskType=review.full`, produces a visible approval-bridge publish, and leaves matching completion-log evidence on the same execution. That new assertion failed first because the structured `Mention execution completed` log did not carry the lane/task-type pair, so I added those fields on the explicit-review branch in `src/handlers/mention.ts` and reran the bundle to green. I also added a focused negative regression in `src/handlers/review.test.ts` that feeds both `ai-review` and `aireview` team-only `pull_request.review_requested` events through the real handler and proves they are skipped with `skipReason=team-only-request` and zero enqueues. Finally, I recorded decision D126 so downstream work knows the surviving manual rereview proof now lives on the explicit mention publish/log surface rather than any UI-team rereview contract.\n\n## Verification\n\nFresh verification ran after the test-first tightening and the explicit-review log update. `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` passed with 243 tests green, covering the supported `@kodiai review` lane/task-type/publish chain and the negative `ai-review` / `aireview` skip regression. `bun run tsc --noEmit` then exited 0 to confirm the added mention-log fields compile cleanly. LSP diagnostics were unavailable in this workspace, so the compiler check served as the typed-surface verification.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 12110ms |\n| 2 | `bun run tsc --noEmit` | 0 | ✅ pass | 9830ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `src/handlers/mention.ts`\n- `src/handlers/mention.test.ts`\n- `src/handlers/review.test.ts`\n- `.gsd/DECISIONS.md`\n",
       "description": "Make the supported-path proof explicit enough to close R055 without re-litigating the trigger contract.\n- Reuse or tighten `src/handlers/mention.test.ts` coverage that proves `@kodiai review` routes to `taskType=review.full` on `lane=interactive-review` and still owns the visible publish/fallback path.\n- Add/update a narrow negative regression in `src/handlers/review.test.ts` proving team-only `review_requested` events are skipped after the removal.\n- Run the slice-level proof bundle so completion can cite one explicit supported trigger and zero stale team-trigger claims.",
       "estimate": "1 context window",
       "files": [
@@ -16350,6 +16357,18 @@
       "decision": "How M051/S02 should close R055 after D124",
       "choice": "Plan S02 to remove the unsupported `ai-review` / `aireview` UI-team contract from code/config/docs/tests and keep `@kodiai review` as the sole supported manual rereview trigger. Any future UI-team reintroduction must come from a new slice with fresh human-generated proof.",
       "rationale": "D124 already fixes the operator contract on `@kodiai review` until fresh UI-team proof exists. In this environment, auto-mode cannot generate the required human-triggered `pull_request.review_requested` evidence, while the repo still has stale team-path claims in config schema, smoke docs, and tests beyond the original runbook/handler surfaces. Removing the unsupported contract is therefore the smallest truthful path that can close R055 now without leaving operators or future agents relying on wired-but-unproven behavior.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 160,
+      "id": "D126",
+      "when_context": "M051/S02/T03",
+      "scope": "observability",
+      "decision": "How the surviving manual rereview trigger is evidenced after removing the UI-team path",
+      "choice": "Emit explicit mention-review completion logs with taskType=review.full and lane=interactive-review, and keep ai-review/aireview review_requested events observable only as skipped team-only requests",
+      "rationale": "This keeps publish-resolution evidence tied to the only supported manual rereview path (@kodiai review) while preserving a stable negative proof surface for the retired team-only trigger without reintroducing it as supported behavior.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -21657,6 +21676,28 @@
       "verdict": "✅ pass",
       "duration_ms": 8,
       "created_at": "2026-04-19T00:01:19.511Z"
+    },
+    {
+      "id": 484,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M051",
+      "command": "bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 12110,
+      "created_at": "2026-04-19T00:09:32.832Z"
+    },
+    {
+      "id": 485,
+      "task_id": "T03",
+      "slice_id": "S02",
+      "milestone_id": "M051",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9830,
+      "created_at": "2026-04-19T00:09:32.832Z"
     }
   ]
 }

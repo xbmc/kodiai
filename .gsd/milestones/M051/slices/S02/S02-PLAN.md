@@ -41,7 +41,7 @@ After S02, S03 can assume the manual trigger contract is settled and can focus o
   - Files: `docs/runbooks/review-requested-debug.md`, `docs/configuration.md`, `docs/smoke/phase75-live-ops-verification-closure.md`, `.kodiai.yml`
   - Verify: ! rg -n "uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n "@kodiai review" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md
 
-- [ ] **T03: Lock the surviving manual trigger proof surface** `est:1 context window`
+- [x] **T03: Lock the surviving manual trigger proof surface** `est:1 context window`
   Make the supported-path proof explicit enough to close R055 without re-litigating the trigger contract.
 - Reuse or tighten `src/handlers/mention.test.ts` coverage that proves `@kodiai review` routes to `taskType=review.full` on `lane=interactive-review` and still owns the visible publish/fallback path.
 - Add/update a narrow negative regression in `src/handlers/review.test.ts` proving team-only `review_requested` events are skipped after the removal.

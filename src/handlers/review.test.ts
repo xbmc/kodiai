@@ -925,6 +925,87 @@ describe("createReviewHandler review_requested gating", () => {
     expect(enqueued).toHaveLength(0);
   });
 
+  test("logs ai-review and aireview team-only review requests as skipped manual triggers", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const { logger, entries } = createCaptureLogger();
+    const enqueued: Array<{ installationId: number }> = [];
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(installationId: number) => {
+        enqueued.push({ installationId });
+        return undefined as T;
+      },
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager: {} as WorkspaceManager,
+      githubApp: { getAppSlug: () => "kodiai" } as GitHubApp,
+      executor: {} as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_team: { name: "ai-review", slug: "ai-review" },
+      }),
+    );
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_team: { name: "aireview", slug: "aireview" },
+      }),
+    );
+
+    expect(enqueued).toHaveLength(0);
+
+    const skipLogs = entries.filter((entry) =>
+      entry.message === "Skipping review_requested event because only a team was requested"
+    );
+
+    expect(skipLogs).toHaveLength(2);
+    expect(skipLogs.map((entry) => ({
+      gate: entry.data?.gate,
+      gateResult: entry.data?.gateResult,
+      skipReason: entry.data?.skipReason,
+      requestedReviewer: entry.data?.requestedReviewer,
+      requestedTeam: entry.data?.requestedTeam,
+      requestedTeamSlug: entry.data?.requestedTeamSlug,
+    }))).toEqual([
+      {
+        gate: "review_requested_reviewer",
+        gateResult: "skipped",
+        skipReason: "team-only-request",
+        requestedReviewer: null,
+        requestedTeam: "ai-review",
+        requestedTeamSlug: "ai-review",
+      },
+      {
+        gate: "review_requested_reviewer",
+        gateResult: "skipped",
+        skipReason: "team-only-request",
+        requestedReviewer: null,
+        requestedTeam: "aireview",
+        requestedTeamSlug: "aireview",
+      },
+    ]);
+  });
+
   test("skips malformed reviewer payloads without throwing", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     let enqueueCount = 0;

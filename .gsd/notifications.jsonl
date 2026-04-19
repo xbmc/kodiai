@@ -273,3 +273,5 @@
 {"id":"127ff869-5138-4f32-80a6-22d99fe111d4","ts":"2026-04-18T23:55:36.866Z","severity":"info","message":"Committed: chore: Removed the unsupported UI-team rereview config and handler path…","source":"notify","read":false}
 {"id":"a97f8ea5-f73b-4cdc-8b6e-facd9e624a3b","ts":"2026-04-18T23:55:41.148Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"929f9ff3-5f9d-4fc2-aac3-442ec7bcbf2d","ts":"2026-04-18T23:55:41.162Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"3097dca0-82ed-41cd-a051-4cfa2a7fb126","ts":"2026-04-19T00:01:26.164Z","severity":"info","message":"Committed: docs: Removed stale operator docs for the retired rereview-team path so…","source":"notify","read":false}
+{"id":"fbecdd7b-d2ad-45da-b71d-d26bc2837083","ts":"2026-04-19T00:01:26.195Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
