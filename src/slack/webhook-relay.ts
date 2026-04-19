@@ -38,13 +38,8 @@ export type WebhookRelayEvaluationResult =
       issues: string[];
     };
 
-function normalizePayloadIssues(payload: unknown): string[] {
-  const result = webhookRelayPayloadSchema.safeParse(payload);
-  if (result.success) {
-    return [];
-  }
-
-  return result.error.issues
+function normalizePayloadIssues(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey> }>): string[] {
+  return issues
     .map((issue) => issue.path.join("."))
     .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index)
     .sort((a, b) => a.localeCompare(b));
@@ -60,7 +55,7 @@ export function evaluateWebhookRelayPayload(input: {
       verdict: "invalid",
       reason: "malformed_payload",
       sourceId: input.source.id,
-      issues: normalizePayloadIssues(input.payload),
+      issues: normalizePayloadIssues(payloadResult.error.issues),
     };
   }
 
