@@ -582,7 +582,10 @@ async function appendReviewDetailsToSummary(params: {
   const reviewDetailsMarker = buildReviewDetailsMarker(reviewOutputKey);
   const reviewDetailsHeader = "<details>\n<summary>Review Details</summary>";
   const existingDetailsStart = summaryBody.indexOf(reviewDetailsHeader);
-  const existingDetailsMarkerIndex = summaryBody.indexOf(reviewDetailsMarker);
+  const existingDetailsMarkerIndex = summaryBody.indexOf(
+    reviewDetailsMarker,
+    Math.max(existingDetailsStart, 0),
+  );
 
   // Insert or replace the Review Details block INSIDE the summary's <details>
   // block (before the last </details> tag) so it renders as a nested
@@ -3779,6 +3782,7 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
+        const reviewCompletedAt = new Date().toISOString();
         const buildReviewDetailsBody = (timeoutProgress?: TimeoutReviewDetailsProgress): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
@@ -3807,6 +3811,7 @@ export function createReviewHandler(deps: {
               totalPhaseStartAt,
             }),
             timeoutProgress,
+            completedAt: reviewCompletedAt,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -3859,6 +3864,7 @@ export function createReviewHandler(deps: {
                 repo: apiRepo,
                 pull_number: pr.number,
                 event: "APPROVE",
+                body: buildReviewOutputMarker(reviewOutputKey),
               });
               await octokit.rest.issues.createComment({
                 owner: apiOwner,
@@ -4006,6 +4012,8 @@ export function createReviewHandler(deps: {
                   botHandles: [githubApp.getAppSlug(), "claude"],
                   requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                   reviewBoundedness,
+                  recheckCanPublish: () =>
+                    canPublishVisibleOutput("finalized Review Details timing update"),
                 });
               } else {
                 setReviewWorkPhase("publish");
@@ -4017,6 +4025,8 @@ export function createReviewHandler(deps: {
                   reviewOutputKey,
                   body: finalizedDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
+                  recheckCanPublish: () =>
+                    canPublishVisibleOutput("finalized Review Details timing update"),
                 });
               }
             }

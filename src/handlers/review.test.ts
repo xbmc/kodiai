@@ -2010,7 +2010,7 @@ describe("createReviewHandler review_requested idempotency", () => {
     const marker = buildReviewOutputMarker(expectedReviewOutputKey);
     const finalIssueBody = issueComments[0]!.body;
 
-    expect(createdReviews[0]?.body ?? "").toBe("");
+    expect(createdReviews[0]?.body).toBe(marker);
     expect(finalIssueBody).toContain("<summary>kodiai response</summary>");
     expect(finalIssueBody).toContain("Decision: APPROVE");
     expect(finalIssueBody).toContain("Issues: none");
@@ -2020,6 +2020,131 @@ describe("createReviewHandler review_requested idempotency", () => {
     expect(finalIssueBody).toContain(marker);
     expect(finalIssueBody).not.toContain("captured before publication completed");
     expect(extractReviewOutputKey(finalIssueBody)).toBe(expectedReviewOutputKey);
+  });
+
+  test("skips duplicate clean approvals when only the approval review marker survived", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture({ autoApprove: true });
+    const { logger, entries } = createCaptureLogger();
+
+    const createdReviews: Array<{ body?: string | null }> = [];
+    let executeCount = 0;
+    let approveCount = 0;
+    let createCommentCalls = 0;
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({
+            data: createdReviews.map((review, index) => ({
+              id: index + 1,
+              body: review.body ?? null,
+            })),
+          }),
+          listCommits: async () => ({ data: [] }),
+          createReview: async ({ body }: { body?: string }) => {
+            approveCount++;
+            createdReviews.push({ body: body ?? null });
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async () => {
+            createCommentCalls += 1;
+            throw new Error("issue comment publication failed");
+          },
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+        initialize: async () => undefined,
+        checkConnectivity: async () => true,
+        getInstallationToken: async () => "token",
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => {
+          executeCount++;
+          return {
+            conclusion: "success",
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-clean-review-marker-only",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    const event = buildReviewRequestedEvent({
+      requested_reviewer: { login: "kodiai[bot]" },
+    });
+
+    await handler!(event);
+    await handler!(event);
+
+    await workspaceFixture.cleanup();
+
+    const expectedReviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+
+    expect(executeCount).toBe(1);
+    expect(approveCount).toBe(1);
+    expect(createCommentCalls).toBeGreaterThanOrEqual(1);
+    expect(createdReviews[0]?.body).toBe(buildReviewOutputMarker(expectedReviewOutputKey));
+    expect(
+      entries.some((entry) =>
+        entry.data?.gate === "review-output-idempotency"
+        && entry.data?.gateResult === "skipped"
+        && entry.data?.skipReason === "already-published"
+        && entry.data?.existingLocation === "review"
+      ),
+    ).toBe(true);
   });
 
   test("auto-approve includes dep-bump merge confidence inside the shared approval comment", async () => {
@@ -2172,7 +2297,19 @@ describe("createReviewHandler review_requested idempotency", () => {
 
     expect(approveCount).toBe(1);
     expect(issueComments).toHaveLength(1);
-    expect(createdReviews[0]?.body ?? "").toBe("");
+    expect(createdReviews[0]?.body).toBe(
+      buildReviewOutputMarker(
+        buildReviewOutputKey({
+          installationId: 42,
+          owner: "acme",
+          repo: "repo",
+          prNumber: 101,
+          action: "review_requested",
+          deliveryId: "delivery-123",
+          headSha: "abcdef1234567890",
+        }),
+      ),
+    );
     expect(issueComments[0]!.body).toContain("Decision: APPROVE");
     expect(issueComments[0]!.body).toContain("Issues: none");
     expect(issueComments[0]!.body).toContain("- Review prompt covered 2 changed files.");
@@ -5008,6 +5145,7 @@ describe("createReviewHandler finding extraction", () => {
     let createCommentCalls = 0;
     let updateCommentCalls = 0;
     let detailsCommentBody: string | undefined;
+    let initialDetailsCommentBody: string | undefined;
     let nextIssueCommentId = 500;
     const issueComments: Array<{ id: number; body: string }> = [];
 
@@ -5121,7 +5259,9 @@ describe("createReviewHandler finding extraction", () => {
             createCommentCalls += 1;
             const comment = { id: nextIssueCommentId++, body: params.body };
             issueComments.push(comment);
+            initialDetailsCommentBody = params.body;
             detailsCommentBody = params.body;
+            await new Promise((resolve) => setTimeout(resolve, 25));
             return { data: comment };
           },
           updateComment: async ({ comment_id, body }: { comment_id: number; body: string }) => {
@@ -5182,6 +5322,7 @@ describe("createReviewHandler finding extraction", () => {
     expect(listCommentsCalls).toBeGreaterThanOrEqual(1);
     expect(createCommentCalls).toBe(1);
     expect(updateCommentCalls).toBe(1);
+    expect(initialDetailsCommentBody).toBeDefined();
     expect(detailsCommentBody).toContain("<summary>Review Details</summary>");
     expect(detailsCommentBody).toContain(reviewDetailsMarker);
     expect(detailsCommentBody).toContain("Files reviewed:");
@@ -5201,6 +5342,11 @@ describe("createReviewHandler finding extraction", () => {
     expect(detailsCommentBody).not.toContain("Suppressions applied:");
     expect(detailsCommentBody).not.toContain("Estimated review time saved:");
     expect(detailsCommentBody).not.toContain("Low Confidence Findings");
+
+    const initialCompletedAt = initialDetailsCommentBody?.match(/- Review completed: (.+)/)?.[1];
+    const finalCompletedAt = detailsCommentBody?.match(/- Review completed: (.+)/)?.[1];
+    expect(initialCompletedAt).toBeDefined();
+    expect(finalCompletedAt).toBe(initialCompletedAt);
 
     const detailsAttemptLog = entries.find((entry) =>
       entry.data?.gate === "review-details-output" && entry.data?.gateResult === "attempt"
@@ -11928,6 +12074,161 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     expect(updatedSummaryBody).toContain("remote runtime: 500ms");
     expect(updatedSummaryBody).toContain("publication:");
     expect(updatedSummaryBody).toContain(buildReviewOutputMarker(reviewOutputKey));
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("rechecks publish rights before the finalized Review Details timing refresh", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+    const { logger, entries } = createCaptureLogger();
+
+    let issueCommentListCalls = 0;
+    let updateCommentCalls = 0;
+    const updatedBodies: string[] = [];
+    const completedAttemptIds: string[] = [];
+
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "acme",
+      repo: "repo",
+      prNumber: 101,
+      action: "review_requested",
+      deliveryId: "delivery-123",
+      headSha: "abcdef1234567890",
+    });
+
+    const summaryBody = [
+      "<details>",
+      "<summary>Review summary</summary>",
+      "",
+      "No inline findings were published.",
+      "",
+      "</details>",
+      "",
+      buildReviewOutputMarker(reviewOutputKey),
+    ].join("\n");
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+      ) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async () => ({
+        dir: workspaceFixture.dir,
+        cleanup: async () => undefined,
+      }),
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        pulls: {
+          listReviewComments: async () => ({ data: [] }),
+          listReviews: async () => ({ data: [] }),
+          listCommits: async () => ({ data: [] }),
+        },
+        issues: {
+          listComments: async () => {
+            issueCommentListCalls += 1;
+            return issueCommentListCalls === 1
+              ? { data: [] }
+              : { data: [{ id: 77, body: updatedBodies.at(-1) ?? summaryBody }] };
+          },
+          createComment: async () => {
+            throw new Error("standalone fallback should not run");
+          },
+          updateComment: async (params: { body: string }) => {
+            updateCommentCalls += 1;
+            updatedBodies.push(params.body);
+            return { data: {} };
+          },
+        },
+        reactions: {
+          createForIssue: async () => ({ data: {} }),
+        },
+        search: {
+          issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+        },
+      },
+    };
+
+    createReviewHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "success",
+          published: true,
+          costUsd: 0,
+          numTurns: 1,
+          durationMs: 1,
+          sessionId: "session-review-details-finalized-recheck",
+          executorPhaseTimings: [
+            { name: "executor handoff", status: "completed", durationMs: 50 },
+            { name: "remote runtime", status: "completed", durationMs: 500 },
+          ],
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      reviewWorkCoordinator: {
+        claim: (claim: Record<string, unknown>) => ({
+          attemptId: "attempt-review-details-finalized-recheck-1",
+          familyKey: claim.familyKey as string,
+          source: claim.source as "automatic-review",
+          lane: claim.lane as "review",
+          deliveryId: claim.deliveryId as string,
+          phase: claim.phase as "claimed",
+          claimedAtMs: 100,
+          lastProgressAtMs: 100,
+        }),
+        canPublish: () => updateCommentCalls === 0,
+        setPhase: () => null,
+        getSnapshot: () => null,
+        release: () => undefined,
+        complete: (attemptId: string) => {
+          completedAttemptIds.push(attemptId);
+        },
+      } as never,
+      logger: logger as never,
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    expect(issueCommentListCalls).toBeGreaterThanOrEqual(1);
+    expect(updateCommentCalls).toBe(1);
+    expect(updatedBodies[0]).toContain("captured before publication completed");
+    expect(
+      entries.some((entry) =>
+        entry.message === "Skipping finalized Review Details timing update because publish rights were superseded"
+      ),
+    ).toBeTrue();
+    expect(completedAttemptIds).toEqual(["attempt-review-details-finalized-recheck-1"]);
 
     await workspaceFixture.cleanup();
   });
