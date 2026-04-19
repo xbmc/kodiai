@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "taskId": "T03",
+  "unitId": "M051/S02/T03",
+  "timestamp": 1776557377576,
+  "passed": true,
+  "discoverySource": "task-plan",
+  "checks": [
+    {
+      "command": "bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts",
+      "exitCode": 0,
+      "durationMs": 9750,
+      "verdict": "pass"
+    }
+  ]
+}

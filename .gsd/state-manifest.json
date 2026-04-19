@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-19T00:09:32.863Z",
+  "exported_at": "2026-04-19T00:40:38.538Z",
   "milestones": [
     {
       "id": "M001",
@@ -6533,14 +6533,14 @@
       "milestone_id": "M051",
       "id": "S02",
       "title": "S02",
-      "status": "pending",
+      "status": "complete",
       "risk": "medium",
       "depends": [],
       "demo": "After this slice, the supported manual rereview path works as documented, and any unsupported path is gone from code/config/docs/tests.",
       "created_at": "2026-04-18T23:13:20.719Z",
-      "completed_at": null,
-      "full_summary_md": "",
-      "full_uat_md": "",
+      "completed_at": "2026-04-19T00:14:07.318Z",
+      "full_summary_md": "---\nid: S02\nparent: M051\nmilestone: M051\nprovides:\n  - A settled manual rereview contract for downstream work: `@kodiai review` is supported; `ai-review` / `aireview` rerequest is retired.\n  - Validated R055 evidence that the repo no longer documents or accepts the unsupported UI-team trigger.\n  - Stable positive and negative observability surfaces for future trigger audits and truthfulness cleanup.\nrequires:\n  - slice: S01\n    provides: D124/D125: proof that UI-team topology can exist while remaining unproven as a supported operator trigger, which justified removing the stale contract instead of documenting it.\naffects:\n  - S03\nkey_files:\n  - src/handlers/review.ts\n  - src/handlers/review.test.ts\n  - src/execution/config.ts\n  - src/execution/config.test.ts\n  - src/handlers/mention.ts\n  - src/handlers/mention.test.ts\n  - docs/runbooks/review-requested-debug.md\n  - docs/configuration.md\n  - docs/smoke/phase75-live-ops-verification-closure.md\n  - .kodiai.yml\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - D125 — close R055 by removing the unsupported UI-team rereview contract instead of leaving a wired-but-unproven path in place.\n  - D126 — prove the surviving manual rereview contract via explicit mention-review completion logs (`taskType=review.full`, `lane=interactive-review`) plus skipped team-only `review_requested` logs for retired `ai-review` / `aireview` requests.\n  - Keep `pull_request.review_requested` documentation only as debug/automatic-review context, not as a supported operator rereview procedure.\npatterns_established:\n  - Retiring an unsupported trigger contract requires a coordinated sweep across runtime code, config schema/defaults/examples, regression tests, and operator docs/smoke artifacts — fixing only the main handler/runbook leaves stale truth surfaces behind.\n  - The surviving manual rereview proof should come from explicit mention completion and publish evidence, not from reviewer-team topology or self-generated open-event requests.\n  - Negative grep proofs on stale trigger strings can false-positive on unrelated `kodiai-reviewer` prose unless the pattern uses word boundaries or the wording avoids that substring trap.\nobservability_surfaces:\n  - `Mention execution completed` logs for explicit review mentions now carry `lane=interactive-review` and `taskType=review.full`, giving operators a positive proof surface for the supported manual rereview path.\n  - Team-only `pull_request.review_requested` deliveries for `ai-review` / `aireview` remain observable as skipped manual triggers with `skipReason=team-only-request`, giving a stable negative proof surface for the retired path.\n  - Operator docs and the Phase 75 smoke doc now align on `@kodiai review` as the only supported manual rerun instruction.\ndrill_down_paths:\n  - .gsd/milestones/M051/slices/S02/tasks/T01-SUMMARY.md\n  - .gsd/milestones/M051/slices/S02/tasks/T02-SUMMARY.md\n  - .gsd/milestones/M051/slices/S02/tasks/T03-SUMMARY.md\nduration: \"\"\nverification_result: passed\ncompleted_at: 2026-04-19T00:14:07.319Z\nblocker_discovered: false\n---\n\n# S02: Manual rereview contract implementation\n\n**Removed the unsupported `ai-review` / `aireview` rereview-team contract from runtime code, config, docs, and tests, leaving `@kodiai review` as the only documented and regression-tested manual rereview trigger.**\n\n## What Happened\n\n## Delivered\n- Removed `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from the checked-in config example, runtime schema/defaults, and config tests.\n- Simplified `createReviewHandler` so only direct Kodiai reviewer requests are accepted; team-only `pull_request.review_requested` deliveries, including `ai-review` / `aireview`, now skip cleanly instead of enqueueing review work.\n- Deleted the now-unused rereview-team helper/runtime branch and its tests, including the open-time best-effort auto-request behavior.\n- Rewrote the operator truth surface so `docs/runbooks/review-requested-debug.md`, `docs/configuration.md`, and `docs/smoke/phase75-live-ops-verification-closure.md` no longer advertise the retired UI-team trigger.\n- Tightened the surviving manual-trigger proof surface so explicit `@kodiai review` runs are evidenced by mention-handler completion logs carrying `lane=interactive-review` and `taskType=review.full`, alongside the existing approval/fallback publish bridge.\n\n## Why this matters\nThis slice closes the removal branch chosen in D125: operators no longer have repo config, runtime behavior, tests, or docs implying that an unproven UI-team rereview path is supported. `R055` can now validate on the truthful contract that remains: explicit PR-scoped `@kodiai review` mentions are supported, while team-only rerequest deliveries are observable only as skipped negatives.\n\n## Operational Readiness\n- **Health signal:** explicit manual rereview is now evidenced by `@kodiai review` tests plus structured mention completion logs showing `lane=interactive-review`, `taskType=review.full`, and the normal approval/fallback publish path.\n- **Failure signal:** any `pull_request.review_requested` delivery that only names `ai-review` / `aireview` should surface as `skipReason=team-only-request`; any reappearance of removed keys or team strings in docs/config is contract drift.\n- **Recovery procedure:** if operators need a manual rerun, use a PR-scoped `@kodiai review` mention. Reintroducing a team-based rereview path would require a new slice with fresh human-generated proof before docs or config are allowed to advertise it again.\n- **Monitoring gaps:** this slice does not add new live human-trigger telemetry beyond the mention completion/publish logs; future truthfulness work can continue auditing those logs and doc/config drift but should not treat UI-team topology alone as proof.\n\n## Verification\n\nFresh slice-level verification passed:\n- `bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts` → 209 pass, 0 fail.\n- `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` → 243 pass, 0 fail.\n- `! rg -n \"uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview\" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n \"@kodiai review\" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md` → exit 0, proving stale UI-team trigger claims are gone while the surviving explicit mention trigger remains documented.\n- `bun run tsc --noEmit` → exit 0.\n\n## Requirements Advanced\n\nNone.\n\n## Requirements Validated\n\n- R055 — Removed `ai-review` / `aireview` support from runtime/config/docs/tests, kept `@kodiai review` as the only documented/tested manual rereview trigger, and passed fresh verification with the review/config tests, mention/review tests, docs grep sweep, and `bun run tsc --noEmit`.\n\n## New Requirements Surfaced\n\nNone.\n\n## Requirements Invalidated or Re-scoped\n\nNone.\n\n## Deviations\n\nNone.\n\n## Known Limitations\n\nThe retired UI-team rereview path is intentionally unsupported after this slice. Any future reintroduction would require fresh human-generated proof before docs, config, or tests can claim it works.\n\n## Follow-ups\n\nS03 can now focus on the remaining operator/verifier truthfulness debt from PR #87 without reopening rereview-path ambiguity.\n\n## Files Created/Modified\n\n- `src/handlers/review.ts` — Removed rereview-team acceptance/auto-request behavior and kept only direct-Kodiai reviewer handling plus team-only skip logging.\n- `src/handlers/review.test.ts` — Locked the negative regressions for `ai-review` / `aireview` team-only `review_requested` events and kept direct reviewer behavior explicit.\n- `src/execution/config.ts` — Removed deprecated rereview-team keys from the runtime config schema/defaults.\n- `src/execution/config.test.ts` — Proved deprecated rereview-team keys are ignored instead of loaded back into config.\n- `src/handlers/mention.ts` — Added lane/task-type completion-log evidence for explicit `@kodiai review` runs.\n- `src/handlers/mention.test.ts` — Proved explicit `@kodiai review` stays on `interactive-review` / `review.full` and publishes through the supported review path.\n- `docs/runbooks/review-requested-debug.md` — Removed stale UI-team trigger guidance and kept `pull_request.review_requested` content only as debug context.\n- `docs/configuration.md` — Removed retired rereview-team config keys from the user-facing configuration reference.\n- `docs/smoke/phase75-live-ops-verification-closure.md` — Stopped treating accepted rereview-team requests as valid smoke-closure evidence.\n- `.kodiai.yml` — Stopped advertising the retired rereview-team settings in the checked-in repo example.\n- `.gsd/KNOWLEDGE.md` — Recorded the grep false-positive gotcha and the surviving manual-trigger proof pattern for future agents.\n- `src/handlers/rereview-team.ts` — Removed the now-dead rereview-team helper runtime file.\n- `src/handlers/rereview-team.test.ts` — Removed the now-dead rereview-team helper test file.\n",
+      "full_uat_md": "# S02: Manual rereview contract implementation — UAT\n\n**Milestone:** M051\n**Written:** 2026-04-19T00:14:07.319Z\n\n# UAT — S02 Manual rereview contract implementation\n\n## Preconditions\n- Repository is checked out at the M051/S02 slice head.\n- Dependencies are installed and `bun` is available.\n- Run all commands from the repo root.\n\n## Test Case 1 — Operator docs/config expose only the supported manual trigger\n1. Run:\n   ```bash\n   ! rg -n \"uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview\" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n \"@kodiai review\" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md\n   ```\n2. Confirm the command exits 0.\n3. Confirm the output contains `@kodiai review` references in the runbook/smoke doc and no `uiRereviewTeam`, `requestUiRereviewTeamOnOpen`, `ai-review`, or `aireview` matches.\n\n**Expected outcome:** the checked-in operator docs and repo config example document only `@kodiai review` as the supported manual rereview path.\n\n## Test Case 2 — Config loading and `review_requested` handling reject the retired team contract\n1. Run:\n   ```bash\n   bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts\n   ```\n2. Confirm the suite finishes with 0 failures.\n3. In the passing output, verify these regressions are present:\n   - `skips team-only review requests for ai-review`\n   - `skips team-only review requests for aireview`\n   - `logs ai-review and aireview team-only review requests as skipped manual triggers`\n   - `does not auto-request extra reviewers on opened`\n   - `ignores deprecated rereview team keys when loading config`\n\n**Expected outcome:** direct Kodiai reviewer requests still work, deprecated UI-team config keys are ignored, and open events no longer auto-request a rereview team.\n\n## Test Case 3 — `@kodiai review` remains the supported manual rereview path\n1. Run:\n   ```bash\n   bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts\n   ```\n2. Confirm the suite finishes with 0 failures.\n3. In the passing output, verify these explicit-manual-trigger checks are present:\n   - `@kodiai review uses review task type and review output key`\n   - `explicit PR review mention stays on interactive-review/review.full and submits approval review when inspection evidence is present`\n   - `@kodiai review triggers executor instead of delegating to aireview team`\n4. Confirm the same run still contains the negative `ai-review` / `aireview` team-only skip regressions from `review.test.ts`.\n\n**Expected outcome:** explicit mention review remains on `lane=interactive-review` with `taskType=review.full`, and team-only rerequest deliveries stay rejected.\n\n## Test Case 4 — Typed surface still compiles after the proof-surface changes\n1. Run:\n   ```bash\n   bun run tsc --noEmit\n   ```\n2. Confirm the command exits 0.\n\n**Expected outcome:** the added mention-log proof fields and removed rereview-team config/runtime surfaces compile cleanly.\n\n## Edge Cases\n- If a local repo config still contains removed UI-team keys, the loader should ignore them rather than error or silently re-enable the path.\n- If a `pull_request.review_requested` webhook contains only `requested_team=ai-review` or `requested_team=aireview`, Kodiai should log a skipped team-only request and perform no review work.\n- If an operator needs to manually rerun review, the supported procedure is a PR-scoped `@kodiai review` mention; team rerequests are no longer supported instructions.\n",
       "goal": "Remove the unsupported UI-team rereview contract and leave `@kodiai review` as the only documented/tested manual rereview trigger so R055 can close without stale trigger claims.",
       "success_criteria": "- `ai-review` / `aireview` no longer appear in supported operator docs, repo config, or live config schema/tests.\n- `createReviewHandler` no longer auto-requests or accepts the UI rereview team path; team-only `review_requested` events skip cleanly.\n- `@kodiai review` remains documented and regression-tested as the only supported manual rereview trigger with existing publish/fallback behavior intact.",
       "proof_level": "This slice proves R055 by removing the unsupported UI-team contract and preserving only the explicit mention manual trigger; it does not depend on fresh human-generated UI-team proof.",
@@ -6552,22 +6552,20 @@
     {
       "milestone_id": "M051",
       "id": "S03",
-      "title": "Residual operator truthfulness cleanup",
+      "title": "S03",
       "status": "pending",
       "risk": "medium",
-      "depends": [
-        "S02"
-      ],
+      "depends": [],
       "demo": "After this slice, the remaining operator/verifier truthfulness debt from PR #87 is either fixed or explicitly deferred with tracked rationale, not stranded in a closed PR review.",
       "created_at": "2026-04-18T23:13:20.719Z",
       "completed_at": null,
       "full_summary_md": "",
       "full_uat_md": "",
-      "goal": "Clean residual operator/verifier truthfulness drift that was surfaced during PR #87 review but not yet carried forward into tracked work.",
-      "success_criteria": "- The review-requested debug runbook header matches the actual verifier family.\n- `verify:m048:s01` no longer reports misleading 'no correlated phase evidence available' wording when evidence exists but key fields are null.\n- Any remaining minor closed-PR review debt is either fixed or explicitly descoped with rationale.",
-      "proof_level": "Targeted tests and docs/verifier review.",
-      "integration_closure": "Runbook/verifier wording and timeout-review surfaces no longer carry the small closed-PR drifts that would otherwise survive into the next milestone.",
-      "observability_impact": "Verifier/report wording distinguishes missing evidence from missing fields, and operator docs use the correct verifier family names.",
+      "goal": "Retire the remaining truthful M048 operator/verifier drift from PR #87 by rejecting incomplete phase-timing payloads, fixing tri-state outcome wording, and aligning the last stale docs/adjacent code surface on main.",
+      "success_criteria": "- `buildPhaseTimingEvidence()` stops reporting `status: \"ok\"` when matched phase-summary rows are missing `conclusion` and/or `published`, while still preserving the matched row, normalized phases, and named payload issues for diagnosis.\n- `deriveM048S01Outcome()` distinguishes `no evidence` from `evidence present but incomplete`, preserves tri-state publication wording (`published`, `not published`, `publication unknown`), and downstream M048 verifier/report tests stay truthful.\n- `docs/runbooks/review-requested-debug.md` no longer advertises an `M050` timeout-truth heading above `verify:m048:*` commands, and the last stranded PR #87 type-shape cleanup in `src/handlers/review.ts` is folded into this slice instead of deferred again.",
+      "proof_level": "integration proof on deterministic parser/verifier fixtures plus operator-doc drift checks; no real runtime or human/UAT required",
+      "integration_closure": "- Upstream surfaces consumed: `src/review-audit/phase-timing-evidence.ts`, `scripts/verify-m048-s01.ts`, `scripts/verify-m048-s03.ts`, `docs/runbooks/review-requested-debug.md`, and `src/lib/review-utils.ts` / `src/handlers/review.ts`.\n- New wiring introduced in this slice: invalid phase-payload issues from the parser now become the trusted source for operator-visible verifier summaries, while the runbook and review handler stop carrying their own stale drift.\n- What remains before the milestone is truly usable end-to-end: nothing for the PR #87 truthfulness debt on `main` once these regressions and docs/code alignments land.",
+      "observability_impact": "- `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts`\n- `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`\n- `! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md`\n- `bun run tsc --noEmit`",
       "sequence": 3,
       "replan_triggered_at": null
     }
@@ -14858,6 +14856,126 @@
       "observability_impact": "Keeps the publish-resolution and interactive-review evidence surfaces tied to the only surviving manual trigger.",
       "full_plan_md": "",
       "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S03",
+      "id": "T01",
+      "title": "Rejected incomplete phase-timing payloads by flagging missing conclusion/published fields and covering the drift with parser regressions.",
+      "status": "complete",
+      "one_liner": "Rejected incomplete phase-timing payloads by flagging missing conclusion/published fields and covering the drift with parser regressions.",
+      "narrative": "Extended `src/review-audit/phase-timing-evidence.test.ts` with red-green regressions for rows missing `conclusion`, missing `published`, and both fields missing while other malformed payload drift is still present. I also updated the fixture helper so tests can omit interpretation fields from the simulated Azure payload instead of defaulting them back in, which let the new regressions reproduce the current false-green behavior precisely.\n\nThen I updated `src/review-audit/phase-timing-evidence.ts` at the parser seam: `buildPhaseTimingEvidence()` now derives `conclusion` and `published` once, appends named payload issues when either field is absent or malformed, and still preserves the selected row identity, correlation data, and normalized phase list in `evidence`. That keeps matched-but-invalid payloads visible for operator diagnosis instead of collapsing them into a false-green `ok` result.",
+      "verification_result": "Red-green verification completed for the parser seam. `bun test ./src/review-audit/phase-timing-evidence.test.ts` failed before the production change with the new missing-field regressions, then passed after the fix. Slice-level verification at the end of T01 shows `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` passing, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` passing, `bun run tsc --noEmit` passing, and the runbook grep still failing because `docs/runbooks/review-requested-debug.md` still contains the stale `## M050 Timeout-Truth Verifier Surfaces` heading that T03 is planned to remove.",
+      "duration": "",
+      "completed_at": "2026-04-19T00:40:38.508Z",
+      "blocker_discovered": false,
+      "deviations": "None.",
+      "known_issues": "`docs/runbooks/review-requested-debug.md` still contains `## M050 Timeout-Truth Verifier Surfaces`, so the slice-level grep command remains red until T03 updates that runbook heading.",
+      "key_files": [
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts"
+      ],
+      "key_decisions": [
+        "Validate missing `conclusion` and `published` at the parser seam so downstream verifiers receive `invalid-phase-payload` instead of a false-green `ok` result."
+      ],
+      "full_summary_md": "---\nid: T01\nparent: S03\nmilestone: M051\nkey_files:\n  - src/review-audit/phase-timing-evidence.ts\n  - src/review-audit/phase-timing-evidence.test.ts\nkey_decisions:\n  - Validate missing `conclusion` and `published` at the parser seam so downstream verifiers receive `invalid-phase-payload` instead of a false-green `ok` result.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-19T00:40:38.507Z\nblocker_discovered: false\n---\n\n# T01: Rejected incomplete phase-timing payloads by flagging missing conclusion/published fields and covering the drift with parser regressions.\n\n**Rejected incomplete phase-timing payloads by flagging missing conclusion/published fields and covering the drift with parser regressions.**\n\n## What Happened\n\nExtended `src/review-audit/phase-timing-evidence.test.ts` with red-green regressions for rows missing `conclusion`, missing `published`, and both fields missing while other malformed payload drift is still present. I also updated the fixture helper so tests can omit interpretation fields from the simulated Azure payload instead of defaulting them back in, which let the new regressions reproduce the current false-green behavior precisely.\n\nThen I updated `src/review-audit/phase-timing-evidence.ts` at the parser seam: `buildPhaseTimingEvidence()` now derives `conclusion` and `published` once, appends named payload issues when either field is absent or malformed, and still preserves the selected row identity, correlation data, and normalized phase list in `evidence`. That keeps matched-but-invalid payloads visible for operator diagnosis instead of collapsing them into a false-green `ok` result.\n\n## Verification\n\nRed-green verification completed for the parser seam. `bun test ./src/review-audit/phase-timing-evidence.test.ts` failed before the production change with the new missing-field regressions, then passed after the fix. Slice-level verification at the end of T01 shows `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` passing, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` passing, `bun run tsc --noEmit` passing, and the runbook grep still failing because `docs/runbooks/review-requested-debug.md` still contains the stale `## M050 Timeout-Truth Verifier Surfaces` heading that T03 is planned to remove.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/review-audit/phase-timing-evidence.test.ts` | 0 | ✅ pass | 15ms |\n| 2 | `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` | 0 | ✅ pass | 97ms |\n| 3 | `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 4780ms |\n| 4 | `! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md` | 1 | ❌ fail | 4ms |\n| 5 | `bun run tsc --noEmit` | 0 | ✅ pass | 8702ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\n`docs/runbooks/review-requested-debug.md` still contains `## M050 Timeout-Truth Verifier Surfaces`, so the slice-level grep command remains red until T03 updates that runbook heading.\n\n## Files Created/Modified\n\n- `src/review-audit/phase-timing-evidence.ts`\n- `src/review-audit/phase-timing-evidence.test.ts`\n",
+      "description": "Why: the root false-green lives at the parser seam, where matched phase-timing rows missing `conclusion` and/or `published` still return `status: \"ok\"`. Do: add failing regressions first, treat both fields as named payload issues, and preserve the matched row plus normalized phases for operator diagnosis instead of dropping the evidence entirely. Done when: incomplete matched rows return `invalid-phase-payload` with specific issues and no longer look clean.",
+      "estimate": "1h",
+      "files": [
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts"
+      ],
+      "verify": "bun test ./src/review-audit/phase-timing-evidence.test.ts",
+      "inputs": [
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts"
+      ],
+      "expected_output": [
+        "src/review-audit/phase-timing-evidence.ts",
+        "src/review-audit/phase-timing-evidence.test.ts"
+      ],
+      "observability_impact": "`invalid-phase-payload` issues become the primary diagnostic surface when Azure phase-summary rows are present but incomplete, so operators can see matched evidence without accepting it as trustworthy.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S03",
+      "id": "T02",
+      "title": "Make the M048 verifier summaries preserve tri-state publication truth",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Why: the S01 verifier currently collapses `evidence present but incomplete` into the same summary as `no evidence`, and it treats `published: null` as if publication definitely failed. Do: add failing summary regressions first, keep the `no correlated phase evidence available` wording only for the real no-evidence case, render `publication unknown` when `published` is null, and pin the downstream S03 report surface so it reuses the repaired wording unchanged. Done when: operator-facing outcome summaries stay truthful for missing conclusion/publication fields and downstream verifier tests keep the shared report contract green.",
+      "estimate": "1h",
+      "files": [
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "scripts/verify-m048-s03.test.ts"
+      ],
+      "verify": "bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts && bun test ./scripts/verify-m048-s02.test.ts",
+      "inputs": [
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "scripts/verify-m048-s02.test.ts",
+        "scripts/verify-m048-s03.ts",
+        "scripts/verify-m048-s03.test.ts"
+      ],
+      "expected_output": [
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "scripts/verify-m048-s03.test.ts"
+      ],
+      "observability_impact": "The human/json verifier summaries in `verify:m048:s01` and the reused live-report line in `verify:m048:s03` become the operator-visible proof that incomplete evidence is reported as unknown rather than silently downgraded to `no evidence` or `not published`.",
+      "full_plan_md": "",
+      "sequence": 0
+    },
+    {
+      "milestone_id": "M051",
+      "slice_id": "S03",
+      "id": "T03",
+      "title": "Align the runbook heading and clear the last stranded PR #87 code cleanup",
+      "status": "pending",
+      "one_liner": "",
+      "narrative": "",
+      "verification_result": "",
+      "duration": "",
+      "completed_at": null,
+      "blocker_discovered": false,
+      "deviations": "",
+      "known_issues": "",
+      "key_files": [],
+      "key_decisions": [],
+      "full_summary_md": "",
+      "description": "Why: after the parser and verifier fixes, the remaining stale operator surface is the `M050` runbook heading above `verify:m048:*` commands, plus the still-duplicated `timeoutProgress` shape in `src/handlers/review.ts`. Do: rename the runbook heading to an M048-correct title and swap the local handler type literal for the exported `TimeoutReviewDetailsProgress` type so the closed PR no longer leaves adjacent cleanup debt behind. Done when: the runbook header matches the verifier family, the inline type literal is gone, and nearby tests/typecheck still pass.",
+      "estimate": "45m",
+      "files": [
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/review.ts",
+        "src/lib/review-utils.ts"
+      ],
+      "verify": "bun test ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts && ! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md && bun run tsc --noEmit",
+      "inputs": [
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/review.ts",
+        "src/lib/review-utils.ts"
+      ],
+      "expected_output": [
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/review.ts"
+      ],
+      "observability_impact": "",
+      "full_plan_md": "",
+      "sequence": 0
     }
   ],
   "decisions": [
@@ -16369,6 +16487,18 @@
       "decision": "How the surviving manual rereview trigger is evidenced after removing the UI-team path",
       "choice": "Emit explicit mention-review completion logs with taskType=review.full and lane=interactive-review, and keep ai-review/aireview review_requested events observable only as skipped team-only requests",
       "rationale": "This keeps publish-resolution evidence tied to the only supported manual rereview path (@kodiai review) while preserving a stable negative proof surface for the retired team-only trigger without reintroducing it as supported behavior.",
+      "revisable": "Yes",
+      "made_by": "agent",
+      "superseded_by": null
+    },
+    {
+      "seq": 161,
+      "id": "D127",
+      "when_context": "M051/S03 planning",
+      "scope": "roadmap",
+      "decision": "How S03 should handle the last non-truthfulness inline comment still stranded on closed PR #87.",
+      "choice": "Fold the remaining `TimeoutReviewDetailsProgress` type-import cleanup from PR #87 into S03 alongside the parser/verifier/doc truthfulness fixes instead of deferring it again.",
+      "rationale": "The import cleanup is an adjacent, type-only edit in `src/handlers/review.ts` that carries minimal runtime risk. Clearing it while S03 is already touching the same truth surfaces retires the last closed-PR inline debt on `main` without expanding the slice into new behavior or a separate follow-up milestone.",
       "revisable": "Yes",
       "made_by": "agent",
       "superseded_by": null
@@ -21698,6 +21828,61 @@
       "verdict": "✅ pass",
       "duration_ms": 9830,
       "created_at": "2026-04-19T00:09:32.832Z"
+    },
+    {
+      "id": 486,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./src/review-audit/phase-timing-evidence.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 15,
+      "created_at": "2026-04-19T00:40:38.508Z"
+    },
+    {
+      "id": 487,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 97,
+      "created_at": "2026-04-19T00:40:38.508Z"
+    },
+    {
+      "id": 488,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4780,
+      "created_at": "2026-04-19T00:40:38.508Z"
+    },
+    {
+      "id": 489,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 4,
+      "created_at": "2026-04-19T00:40:38.508Z"
+    },
+    {
+      "id": 490,
+      "task_id": "T01",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8702,
+      "created_at": "2026-04-19T00:40:38.508Z"
     }
   ]
 }

@@ -269,6 +269,16 @@ export function buildPhaseTimingEvidence(params: {
     issues.push("Missing totalDurationMs on Review phase timing summary payload.");
   }
 
+  const conclusion = typeof parsedLog?.conclusion === "string" ? parsedLog.conclusion : null;
+  if (conclusion === null) {
+    issues.push("Missing conclusion on Review phase timing summary payload.");
+  }
+
+  const published = typeof parsedLog?.published === "boolean" ? parsedLog.published : null;
+  if (published === null) {
+    issues.push("Missing published on Review phase timing summary payload.");
+  }
+
   const phaseNormalization = normalizePhases(parsedLog?.phases);
   issues.push(...phaseNormalization.issues);
 
@@ -288,8 +298,8 @@ export function buildPhaseTimingEvidence(params: {
     evidence: {
       reviewOutputKey: matchedReviewOutputKey,
       deliveryId: matchedDeliveryId,
-      conclusion: typeof parsedLog?.conclusion === "string" ? parsedLog.conclusion : null,
-      published: typeof parsedLog?.published === "boolean" ? parsedLog.published : null,
+      conclusion,
+      published,
       totalDurationMs,
       timeGenerated: selectedRow.timeGenerated,
       revisionName: selectedRow.revisionName,

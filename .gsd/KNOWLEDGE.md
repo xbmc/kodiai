@@ -1078,3 +1078,18 @@ If any of those remain, the repo will keep teaching operators or future agents t
 Otherwise a clean doc update can fail verification even though the unsupported team trigger is actually gone.
 
 **Established in:** M051/S02/T02.
+
+---
+
+## Explicit manual rereview proof now lives on mention completion logs (M051/S02)
+
+**Context:** After S02 removed the `ai-review` / `aireview` team path, the only supported manual rereview trigger is an explicit `@kodiai review` mention. T03 had to extend the structured `Mention execution completed` log to include `taskType=review.full` and `lane=interactive-review` so the surviving trigger could be proven from runtime evidence instead of old team-request assumptions.
+
+**Rule:** Post-S02, prove manual rereview with the explicit mention-review evidence chain:
+1. the mention handler runs on `lane=interactive-review`,
+2. the executor receives `taskType=review.full`, and
+3. the publish path resolves through the normal explicit-review approval/fallback surface.
+
+Treat `ai-review` / `aireview` `pull_request.review_requested` deliveries only as negative evidence (`skipReason=team-only-request`) that the retired team trigger stays unsupported — not as a supported rereview path.
+
+**Established in:** M051/S02/T03.

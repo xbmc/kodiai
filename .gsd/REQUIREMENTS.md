@@ -87,15 +87,6 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: None
 - Notes: Owned by M048 S03 because trigger-shape continuity and verifier failure behavior land there.
 
-### R055 — Documented manual rereview triggers must either work end-to-end or be removed from docs/config/tests so operators never rely on a nonexistent path.
-- Class: functional
-- Status: active
-- Description: Documented manual rereview triggers must either work end-to-end or be removed from docs/config/tests so operators never rely on a nonexistent path.
-- Why it matters: A documented rereview trigger that does not actually target Kodiai is an operator trap and makes review_requested debugging untrustworthy.
-- Source: issue-84
-- Validation: Either the UI team rereview path is proven live end-to-end, or the unsupported team path is removed and `@kodiai review` is documented and tested as the only supported manual rereview trigger.
-- Notes: Covers the ai-review/aireview team path drift tracked in GitHub issue #84.
-
 ## Validated
 
 ### R001 — `bunx tsc --noEmit` produces zero errors across the entire codebase
@@ -555,6 +546,15 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Fresh milestone closeout reran `bun test ./src/lib/timeout-estimator.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/execution/executor.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts && bun run tsc --noEmit` with 209 pass / 0 fail / exit 0. That bundle kept the truthful timeout-surface contract green in `src/handlers/review.test.ts`, `src/lib/review-utils.test.ts`, `scripts/verify-m048-s01.test.ts`, and `scripts/verify-m048-s03.test.ts`, proving analyzed progress, captured findings, retry state, and explicit publication-phase timing stay truthful; S02’s live/operator proof remained green via `verify:m048:s03` on the `xbmc/kodiai#86` synchronize run.
 - Notes: Introduced alongside the urgent small-PR timeout hardening milestone to keep genuine timeout behavior user-visible but accurate.
 
+### R055 — Documented manual rereview triggers must either work end-to-end or be removed from docs/config/tests so operators never rely on a nonexistent path.
+- Class: functional
+- Status: validated
+- Description: Documented manual rereview triggers must either work end-to-end or be removed from docs/config/tests so operators never rely on a nonexistent path.
+- Why it matters: A documented rereview trigger that does not actually target Kodiai is an operator trap and makes review_requested debugging untrustworthy.
+- Source: issue-84
+- Validation: M051/S02 removed the unsupported `ai-review` / `aireview` rereview-team contract from runtime code, config schema/defaults/examples, and operator docs, while preserving `@kodiai review` as the only documented/tested manual rereview trigger. Fresh slice proof passed with `bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts` (209 pass), `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` (243 pass), and `! rg -n "uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n "@kodiai review" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md` (exit 0).
+- Notes: Validated by removal path per D125/D126: team-only `review_requested` events now skip cleanly, and explicit mention-review logs/tests remain the positive proof surface.
+
 ## Deferred
 
 ### R017 — Deep restructuring of review.ts and mention.ts into smaller, composable handler modules
@@ -637,11 +637,11 @@ This file is the explicit capability and coverage contract for the project.
 | R052 | functional | validated | M048/S03 | M048/S01 | Reconfirmed during M048 closeout by fresh passing results from `bun test ./src/jobs/queue.test.ts ./src/jobs/aca-launcher.test.ts ./src/execution/prepare-agent-workspace.test.ts ./src/execution/agent-entrypoint.test.ts ./src/execution/executor.test.ts ./src/execution/config.test.ts ./src/execution/review-prompt.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/lib/review-boundedness.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts`, `bun run tsc --noEmit`, and `REVIEW_OUTPUT_KEY='' bun run verify:m048:s03 -- --review-output-key "$REVIEW_OUTPUT_KEY" --json`. The combined suite preserved the shared bounded-review disclosure contract across prompt generation, handler/publication, Review Details, summary backfill, and verifier fixtures while small unbounded reviews stayed silent. |
 | R053 | non-functional | validated | M050 | none | Fresh milestone closeout reran `bun test ./src/lib/timeout-estimator.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/execution/executor.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts && bun run tsc --noEmit` with 209 pass / 0 fail / exit 0. Live proof from S02 remained the milestone evidence set: `verify:m048:s01` returned `m048_s01_ok` for the opened and synchronize `xbmc/kodiai#86` runs on revision `ca-kodiai--deploy-20260416-143108`, and `verify:m048:s02` reported `latency-improved` with a `-660095ms` targeted delta versus the historical `xbmc/kodi-tv#1240` degraded baseline. |
 | R054 | functional | validated | M050 | none | Fresh milestone closeout reran `bun test ./src/lib/timeout-estimator.test.ts ./src/handlers/review.test.ts ./src/lib/review-utils.test.ts ./src/execution/executor.test.ts ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s02.test.ts ./scripts/verify-m048-s03.test.ts && bun run tsc --noEmit` with 209 pass / 0 fail / exit 0. That bundle kept the truthful timeout-surface contract green in `src/handlers/review.test.ts`, `src/lib/review-utils.test.ts`, `scripts/verify-m048-s01.test.ts`, and `scripts/verify-m048-s03.test.ts`, proving analyzed progress, captured findings, retry state, and explicit publication-phase timing stay truthful; S02’s live/operator proof remained green via `verify:m048:s03` on the `xbmc/kodiai#86` synchronize run. |
-| R055 | functional | active | none | none | Either the UI team rereview path is proven live end-to-end, or the unsupported team path is removed and `@kodiai review` is documented and tested as the only supported manual rereview trigger. |
+| R055 | functional | validated | none | none | M051/S02 removed the unsupported `ai-review` / `aireview` rereview-team contract from runtime code, config schema/defaults/examples, and operator docs, while preserving `@kodiai review` as the only documented/tested manual rereview trigger. Fresh slice proof passed with `bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts` (209 pass), `bun test ./src/handlers/mention.test.ts ./src/handlers/review.test.ts` (243 pass), and `! rg -n "uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n "@kodiai review" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md` (exit 0). |
 
 ## Coverage Summary
 
-- Active requirements: 9
-- Mapped to slices: 9
-- Validated: 44 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054)
+- Active requirements: 8
+- Mapped to slices: 8
+- Validated: 45 (R001, R002, R003, R004, R005, R006, R007, R008, R009, R010, R011, R012, R013, R014, R015, R016, R019, R020, R021, R022, R023, R024, R025, R026, R027, R028, R029, R030, R035, R036, R037, R038, R039, R040, R041, R042, R044, R045, R046, R047, R048, R052, R053, R054, R055)
 - Unmapped active requirements: 0

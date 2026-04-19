@@ -14,18 +14,17 @@ The deployed review stack is in place: webhook ingestion, PR review (full + retr
 
 Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, and M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces.
 
-**M051 is now active.** Its focus is manual rereview trigger truthfulness (`R055`): either the documented manual rereview path must be proven live end-to-end, or the repo must stop claiming unsupported triggers work.
+**M051 is active.** Its focus is manual rereview trigger truthfulness and the remaining operator/verifier truthfulness cleanup around the review flow.
 
-**M051/S01 is complete and verified.** The slice established the current truth boundary:
+**M051/S01 and M051/S02 are complete and verified.** The project now has a settled manual rereview contract:
 
-- Live GitHub topology shows `aireview` exists on `xbmc/kodiai`, has repo access, and currently includes `kodiai` as a member.
-- Repo-side code/config/docs still encode the UI-team rereview path in `.kodiai.yml`, `docs/configuration.md`, `docs/runbooks/review-requested-debug.md`, `src/handlers/review.ts`, `src/handlers/rereview-team.ts`, and related tests.
-- That topology proof is **not** operator-path proof. The open-time auto-requested team event cannot prove the manual UI rereview lane because `src/webhook/filters.ts` intentionally drops app self-events.
-- Decision **D124** keeps `@kodiai review` as the only supported manual rereview trigger until fresh human-generated `pull_request.review_requested` proof exists for the UI team path.
-- Decision **D125** turns that finding into the next implementation contract: `M051/S02` should remove the unsupported `ai-review` / `aireview` UI-team contract from code/config/docs/tests and keep `@kodiai review` as the sole supported manual rereview trigger.
-- Issue `#84` now carries the same closeout guidance, including the D125 follow-on direction.
+- S01 proved the GitHub UI-team topology (`aireview` exists, has repo access, includes `kodiai`) but also proved that topology is not operator-path proof.
+- Decisions **D124** and **D125** established the truthful closure path: keep `@kodiai review` as the supported operator contract unless fresh human-generated `pull_request.review_requested` evidence exists for the UI-team path, otherwise remove the stale contract.
+- S02 executed that removal path: `review.uiRereviewTeam` / `review.requestUiRereviewTeamOnOpen` are gone from runtime config/schema/defaults/examples, the rereview-team helper/runtime path is deleted, team-only `pull_request.review_requested` deliveries now skip cleanly, and operator docs/smoke artifacts no longer advertise `ai-review` / `aireview` as a supported manual trigger.
+- Decision **D126** now defines the surviving proof surface: explicit `@kodiai review` runs are evidenced by mention completion logs carrying `lane=interactive-review` and `taskType=review.full`, while `ai-review` / `aireview` review requests remain observable only as skipped team-only events.
+- **R055 is validated.** The repo no longer claims a nonexistent manual rereview path; `@kodiai review` is the only documented and regression-tested manual rereview trigger.
 
-`R055` remains active until S02 removes the stale team-trigger contract and preserves explicit-mention proof as the only supported manual rereview lane.
+**M051/S03 remains next.** Its scope is the residual operator/verifier truthfulness debt exposed during PR #87 review work, now that manual rereview-path ambiguity is removed.
 
 ## Architecture / Key Patterns
 
@@ -34,8 +33,9 @@ Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit
 - **Agent SDK:** `@anthropic-ai/claude-agent-sdk` via `src/execution/agent-entrypoint.ts`.
 - **MCP:** Per-job bearer tokens with stateless HTTP MCP servers; registry and transport wiring live under `src/execution/mcp/`.
 - **Explicit mention review bridge:** `src/handlers/mention.ts` routes explicit `@kodiai review` requests through `taskType=review.full`, and `src/handlers/review-idempotency.ts` prevents duplicate publication.
-- **Manual rereview truth boundary:** treat GitHub reviewer/team topology proof separately from operator-trigger proof. A configured or reachable team is not enough to claim the manual UI rereview path is supported.
-- **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated open-time reviewer/team requests cannot be used as proof for manual rereview behavior.
+- **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
+- **Manual rereview observability seam:** explicit manual review proof now comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
+- **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated reviewer/team requests cannot be used as proof for human manual rereview behavior.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
 - **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
 - **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
@@ -80,5 +80,5 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S03: End-to-End Coherence Verification
 - [ ] M051: Manual rereview trigger truthfulness
   - [x] S01: Rereview trigger proof and decision
-  - [ ] S02: Manual rereview contract implementation
+  - [x] S02: Manual rereview contract implementation
   - [ ] S03: Residual operator truthfulness cleanup

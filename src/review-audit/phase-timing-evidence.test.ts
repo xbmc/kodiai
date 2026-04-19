@@ -25,8 +25,10 @@ function makeRow(params?: {
   deliveryId?: string;
   totalDurationMs?: number;
   phases?: Array<Record<string, unknown>>;
-  conclusion?: string;
-  published?: boolean;
+  conclusion?: string | null;
+  omitConclusion?: boolean;
+  published?: boolean | null;
+  omitPublished?: boolean;
   timeGenerated?: string;
 }): NormalizedLogAnalyticsRow {
   const payload = {
@@ -34,8 +36,12 @@ function makeRow(params?: {
     reviewOutputKey: params?.reviewOutputKey ?? "rok-123",
     deliveryId: params?.deliveryId ?? "delivery-123",
     totalDurationMs: params && "totalDurationMs" in params ? params.totalDurationMs : 2_100,
-    conclusion: params?.conclusion ?? "success",
-    published: params?.published ?? true,
+    ...(!params?.omitConclusion
+      ? { conclusion: params && "conclusion" in params ? params.conclusion : "success" }
+      : {}),
+    ...(!params?.omitPublished
+      ? { published: params && "published" in params ? params.published : true }
+      : {}),
     phases: params?.phases ?? makePhases(),
   } satisfies Record<string, unknown>;
 
@@ -92,28 +98,73 @@ describe("phase timing evidence normalization", () => {
     expect(result.issues).toContain("No phase timing log rows matched the requested reviewOutputKey + deliveryId correlation.");
   });
 
-  test("rejects malformed phase payloads instead of going false-green", async () => {
+  test("treats rows missing conclusion as invalid payload drift while preserving matched evidence", async () => {
     const { buildPhaseTimingEvidence } = await loadModule();
 
     const result = buildPhaseTimingEvidence({
       reviewOutputKey: "rok-123",
       deliveryId: "delivery-123",
-      rows: [makeRow({
-        totalDurationMs: undefined,
-        phases: [
-          ...makePhases().slice(0, 5),
-          {
-            name: "mystery phase",
-            status: "completed",
-            durationMs: 50,
-          },
-        ],
-      })],
+      rows: [makeRow({ omitConclusion: true })],
     });
 
     expect(result.status).toBe("invalid-phase-payload");
+    expect(result.issues).toContain("Missing conclusion on Review phase timing summary payload.");
+    expect(result.evidence?.reviewOutputKey).toBe("rok-123");
+    expect(result.evidence?.deliveryId).toBe("delivery-123");
+    expect(result.evidence?.conclusion).toBeNull();
+    expect(result.evidence?.published).toBe(true);
+    expect(result.evidence?.phases.map((phase: ReviewPhaseTiming) => phase.name)).toEqual([...REQUIRED_PHASES]);
+  });
+
+  test("treats rows missing published as invalid payload drift while preserving normalized phases", async () => {
+    const { buildPhaseTimingEvidence } = await loadModule();
+
+    const result = buildPhaseTimingEvidence({
+      reviewOutputKey: "rok-123",
+      deliveryId: "delivery-123",
+      rows: [makeRow({ omitPublished: true })],
+    });
+
+    expect(result.status).toBe("invalid-phase-payload");
+    expect(result.issues).toContain("Missing published on Review phase timing summary payload.");
+    expect(result.evidence?.conclusion).toBe("success");
+    expect(result.evidence?.published).toBeNull();
+    expect(result.evidence?.phases.map((phase: ReviewPhaseTiming) => phase.name)).toEqual([...REQUIRED_PHASES]);
+  });
+
+  test("keeps missing interpretation fields visible alongside other malformed payload issues", async () => {
+    const { buildPhaseTimingEvidence } = await loadModule();
+    const row = makeRow({
+      omitConclusion: true,
+      omitPublished: true,
+      totalDurationMs: undefined,
+      phases: [
+        ...makePhases().slice(0, 5),
+        {
+          name: "mystery phase",
+          status: "completed",
+          durationMs: 50,
+        },
+      ],
+    });
+
+    const result = buildPhaseTimingEvidence({
+      reviewOutputKey: "rok-123",
+      deliveryId: "delivery-123",
+      rows: [row, { ...row }],
+    });
+
+    expect(result.status).toBe("invalid-phase-payload");
+    expect(result.correlation.matchedRowCount).toBe(2);
+    expect(result.correlation.duplicateRowCount).toBe(1);
+    expect(result.issues).toContain("Missing conclusion on Review phase timing summary payload.");
+    expect(result.issues).toContain("Missing published on Review phase timing summary payload.");
     expect(result.issues).toContain("Unknown review phase names: mystery phase.");
     expect(result.issues).toContain("Missing totalDurationMs on Review phase timing summary payload.");
+    expect(result.evidence?.reviewOutputKey).toBe("rok-123");
+    expect(result.evidence?.deliveryId).toBe("delivery-123");
+    expect(result.evidence?.conclusion).toBeNull();
+    expect(result.evidence?.published).toBeNull();
     expect(result.evidence?.phases.find((phase: ReviewPhaseTiming) => phase.name === "publication")).toEqual({
       name: "publication",
       status: "unavailable",
