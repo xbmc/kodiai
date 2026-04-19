@@ -12,19 +12,17 @@ High-signal, truthful automated review on every PR. Findings land in GitHub with
 
 The deployed review stack is in place: webhook ingestion, PR review (full + retry + inline), issue triage, Slack assistant flows, write-mode execution, MCP/tool routing, knowledge/wiki workflows, contributor profiling, and multi-model routing.
 
-Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, and M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces.
+Milestones M043, M044, M045, M046, M047, and **M051** are complete. M043 restored explicit `@kodiai review` publication in production, M044 packaged the recent-xbmc audit into the operator-facing `verify:m044` command and runbook, M045 turned contributor experience into one explicit cross-surface product contract, M046 turned contributor-tier calibration into a repeatable proof surface with an explicit replacement contract, M047 shipped that replacement rollout through the live review/runtime, Slack/profile, retrieval, identity, and milestone-close verification surfaces, and M051 closed the manual rereview truthfulness gap plus the remaining M048 operator/verifier proof-surface debt.
 
-**M051 is active.** Its focus is manual rereview trigger truthfulness and the remaining operator/verifier truthfulness cleanup around the review flow.
+**M051 is complete.** The repo now carries one truthful manual rereview contract and one repaired M048 verifier contract:
 
-**M051/S01 and M051/S02 are complete and verified.** The project now has a settled manual rereview contract:
-
-- S01 proved the GitHub UI-team topology (`aireview` exists, has repo access, includes `kodiai`) but also proved that topology is not operator-path proof.
-- Decisions **D124** and **D125** established the truthful closure path: keep `@kodiai review` as the supported operator contract unless fresh human-generated `pull_request.review_requested` evidence exists for the UI-team path, otherwise remove the stale contract.
-- S02 executed that removal path: `review.uiRereviewTeam` / `review.requestUiRereviewTeamOnOpen` are gone from runtime config/schema/defaults/examples, the rereview-team helper/runtime path is deleted, team-only `pull_request.review_requested` deliveries now skip cleanly, and operator docs/smoke artifacts no longer advertise `ai-review` / `aireview` as a supported manual trigger.
-- Decision **D126** now defines the surviving proof surface: explicit `@kodiai review` runs are evidenced by mention completion logs carrying `lane=interactive-review` and `taskType=review.full`, while `ai-review` / `aireview` review requests remain observable only as skipped team-only events.
-- **R055 is validated.** The repo no longer claims a nonexistent manual rereview path; `@kodiai review` is the only documented and regression-tested manual rereview trigger.
-
-**M051/S03 remains next.** Its scope is the residual operator/verifier truthfulness debt exposed during PR #87 review work, now that manual rereview-path ambiguity is removed.
+- **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger.
+- **Retired path:** team-only `pull_request.review_requested` deliveries — including `ai-review` / `aireview` — are no longer a supported operator rereview mechanism and remain only as skipped negative evidence (`skipReason=team-only-request`).
+- **Proof surfaces:** explicit manual rereviews are now evidenced by mention completion and publish-resolution logs carrying `lane=interactive-review` plus `taskType=review.full`.
+- **Config/docs/runtime alignment:** the stale rereview-team config keys, helper/runtime path, checked-in example config, operator runbook, and smoke proof surfaces were all cleaned up together so the repo no longer advertises an unproven UI-team trigger.
+- **Requirement status:** **R055 is validated** on the shipped contract above.
+- **Residual truthfulness debt:** the M048 parser/verifier surfaces now preserve matched-but-invalid correlated phase evidence as `invalid-phase-payload`, use tri-state publication wording (`publication unknown` when appropriate), and keep downstream S03 reporting pinned to the repaired S01 summary string.
+- **Known debt on this axis:** no known PR #87 operator/verifier truthfulness debt remains on `main` after M051.
 
 ## Architecture / Key Patterns
 
@@ -36,6 +34,9 @@ Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit
 - **Manual rereview contract:** `@kodiai review` is the only supported manual rereview trigger. Team-only `pull_request.review_requested` events — including `ai-review` / `aireview` — are retired as operator triggers and should surface only as skipped manual-trigger negatives.
 - **Manual rereview observability seam:** explicit manual review proof now comes from mention completion/publish evidence (`lane=interactive-review`, `taskType=review.full`, approval/fallback publish resolution), not from reviewer-team topology or self-generated open-event requests.
 - **Self-event filter invariant:** `src/webhook/filters.ts` always drops app-originated events, so self-generated reviewer/team requests cannot be used as proof for human manual rereview behavior.
+- **Phase-timing evidence seam:** `src/review-audit/phase-timing-evidence.ts` preserves matched correlated rows even when interpretation fields are missing, marks them as `invalid-phase-payload`, and leaves downstream verifiers enough evidence to diagnose malformed payload drift truthfully.
+- **Shared M048 outcome-summary seam:** `scripts/verify-m048-s01.ts` owns the tri-state phase-timing wording (`published output`, `no published output`, `publication unknown`, and true no-evidence handling), while `verify:m048:s03` reuses that summary verbatim instead of rebuilding its own prose.
+- **Timeout Review Details typing seam:** `TimeoutReviewDetailsProgress` in `src/lib/review-utils.ts` is the single source of truth for timeout progress formatting consumed by `src/handlers/review.ts`.
 - **Contributor-experience contract seam:** `src/contributor/experience-contract.ts` separates contributor-signal provenance/coarseness from surface behavior so review prompt shaping, Review Details, retrieval hints, Slack profile output, and identity-link copy stay truthful and non-contradictory.
 - **Persisted contributor trust seam:** `src/contributor/profile-trust.ts` and migration `037-contributor-profile-trust.sql` establish the versioned trust boundary between stored profile data and user-facing behavior.
 - **Shared runtime review resolver:** `src/contributor/review-author-resolution.ts` centralizes trust-aware review classification and fail-open fallback precedence.
@@ -45,7 +46,7 @@ Milestones M043, M044, M045, M046, and M047 are complete. M043 restored explicit
 - **Calibration evaluator seam:** `src/contributor/calibration-evaluator.ts` compares the modeled live incremental path against the intended full-signal path, preserves retained/excluded cohort truth, and reports fidelity/degradation limits instead of fabricating replay evidence.
 - **Calibration change-contract seam:** `src/contributor/calibration-change-contract.ts` converts calibration recommendations into explicit keep/change/replace mechanisms with evidence, impacted surfaces, and contradiction checks for downstream rollout work.
 - **Composable proof harnesses:** `scripts/verify-m045-s03.ts`, `scripts/verify-m046.ts`, `scripts/verify-m047-s01.ts`, `scripts/verify-m047-s02.ts`, and `scripts/verify-m047.ts` emit stable check IDs/status codes from normalized report objects so downstream slices and milestone validators can consume them mechanically.
-- **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current example is `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift`.
+- **Verifier false-green defense:** milestone verifiers must fail on forbidden evidence reappearing, not just on required evidence disappearing; the current examples are `verify:m047` rejecting leaked opt-out linked continuity with `slack_profile_evidence_drift` and the M048 truthfulness surfaces rejecting incomplete correlated phase rows as invalid payload drift instead of green evidence.
 - **Explicit `not_applicable` handling:** when a scenario has no truthful surface (for example coarse-fallback Slack/profile continuity), the verifier should emit `not_applicable` instead of inventing synthetic passing evidence.
 - **Deploy/runtime proof surfaces:** `deploy.sh` prints the active ACA revision plus `/healthz` and `/readiness` URLs; operator runbooks and verifiers rely on structured publication evidence rather than ad hoc inspection.
 
@@ -78,7 +79,7 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
   - [x] S01: Review-Surface Rollout
   - [x] S02: Retrieval and Slack Surface Rollout
   - [x] S03: End-to-End Coherence Verification
-- [ ] M051: Manual rereview trigger truthfulness
+- [x] M051: Manual rereview trigger truthfulness
   - [x] S01: Rereview trigger proof and decision
   - [x] S02: Manual rereview contract implementation
-  - [ ] S03: Residual operator truthfulness cleanup
+  - [x] S03: Residual operator truthfulness cleanup

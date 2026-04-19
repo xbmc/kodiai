@@ -8,4 +8,4 @@ Retire the gap between the manual rereview path Kodiai documents and the one tha
 |----|-------|------|---------|------|------------|
 | S01 | S01 | high | — | ✅ | After this slice, we have hard evidence for whether `ai-review` / `aireview` is a real Kodiai rereview path or whether the supported manual trigger must remain `@kodiai review`. |
 | S02 | S02 | medium | — | ✅ | After this slice, the supported manual rereview path works as documented, and any unsupported path is gone from code/config/docs/tests. |
-| S03 | S03 | medium | — | ⬜ | After this slice, the remaining operator/verifier truthfulness debt from PR #87 is either fixed or explicitly deferred with tracked rationale, not stranded in a closed PR review. |
+| S03 | S03 | medium | — | ✅ | After this slice, the remaining operator/verifier truthfulness debt from PR #87 is either fixed or explicitly deferred with tracked rationale, not stranded in a closed PR review. |

@@ -1093,3 +1093,37 @@ Otherwise a clean doc update can fail verification even though the unsupported t
 Treat `ai-review` / `aireview` `pull_request.review_requested` deliveries only as negative evidence (`skipReason=team-only-request`) that the retired team trigger stays unsupported — not as a supported rereview path.
 
 **Established in:** M051/S02/T03.
+
+---
+
+## Matched-but-invalid phase timing evidence should stay visible, not collapse into `ok` or `no evidence` (M051/S03)
+
+**Context:** During M051/S03, correlated phase-summary rows could match the target `reviewOutputKey` / `deliveryId` yet still omit interpretation fields like `conclusion` or `published`. The old parser treated those rows as `status: "ok"`, while the downstream verifier sometimes collapsed the same case into `no correlated phase evidence available`. That produced both a false-green parser result and a false-negative operator summary from the same malformed payload.
+
+**Rule:** When a correlated phase row is present but incomplete, preserve the matched row identity and normalized phases in the evidence payload, mark the result as `invalid-phase-payload`, and list the missing interpretation fields explicitly. Reserve `ok` for fully interpretable rows and reserve `no evidence` wording for the true `!evidence` path only.
+
+**Established in:** M051/S03/T01-T02.
+
+---
+
+## Shared verifier/report wording should reuse the upstream truth surface verbatim when possible (M051/S03)
+
+**Context:** `verify:m048:s03` exposes the same phase-timing outcome summary that `verify:m048:s01` derives. Before M051/S03, the downstream report path could drift independently, hiding incomplete evidence or misreporting `published: null` as unpublished. The fix was to repair the S01 summary logic (`publication unknown`, distinct incomplete-evidence wording) and pin the S03 report to the same `outcome.summary` string instead of rebuilding its own prose.
+
+**Rule:** If a downstream operator surface is publishing an upstream verifier's conclusion, reuse the upstream summary string verbatim unless the downstream contract explicitly needs extra context. Keep any new expectations in tests pointed at the shared string so wording drift becomes a direct regression instead of a second truth path.
+
+**Established in:** M051/S03/T02.
+
+---
+
+## Retiring an operator workflow needs both a positive and a negative proof surface (M051)
+
+**Context:** M051 only became easy to audit after the surviving manual rereview path and the retired team path each had their own machine-checkable evidence. S02 added positive proof for the supported `@kodiai review` lane (`lane=interactive-review`, `taskType=review.full`, normal publish resolution) while preserving team-only `pull_request.review_requested` deliveries as explicit skipped negatives (`skipReason=team-only-request`). Without both surfaces, future audits would have to infer contract truth from missing behavior or stale topology.
+
+**Rule:** When retiring one operator trigger in favor of another, preserve two observability surfaces:
+1. a positive, structured signal that the supported path executed on the intended lane, and
+2. a negative, structured signal that the retired path was seen and intentionally refused.
+
+Do not rely on absence of events, documentation text, or topology alone as proof that a retired path stays retired.
+
+**Established in:** M051 closeout.
