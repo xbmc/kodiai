@@ -163,6 +163,7 @@ These are the fastest operator checks after a deploy:
 - `GET /healthz`
 - `GET /readiness`
 - Deploy output showing the exact proof URLs that were just probed
+- `bun run verify:m052` when Slack webhook relay is enabled
 
 ## Operational Runbooks
 

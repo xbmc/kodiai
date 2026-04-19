@@ -482,6 +482,7 @@ export async function buildM029S04ProofHarness(opts?: {
           slackKodiaiChannelId: "unused",
           slackDefaultRepo: "unused",
           slackAssistantModel: "unused",
+          slackWebhookRelaySources: [],
           port: 3000,
           logLevel: "silent",
           botAllowList: [],

@@ -1,0 +1,11 @@
+{
+  "eventType": "build.failed",
+  "title": "Flaky build failure",
+  "summary": "A known flaky test failed in CI.",
+  "url": "https://ci.example.test/builds/124",
+  "text": "Build failed because of a flaky test in the UI suite.",
+  "metadata": {
+    "pipeline": "main",
+    "provider": "buildkite"
+  }
+}

@@ -26,6 +26,7 @@ Troubleshooting and operations guides in [`runbooks/`](runbooks/):
 - **[Review Requested Debug](runbooks/review-requested-debug.md)** — Debug manual re-request flows that don't trigger reviews
 - **[Scale](runbooks/scale.md)** — Handle large PRs, long threads, and timeout issues
 - **[Slack Integration](runbooks/slack-integration.md)** — Deploy and operate Slack integration
+- **[Slack Webhook Relay](runbooks/slack-webhook-relay.md)** — Configure and troubleshoot verified webhook-to-Slack relay sources
 - **[xbmc/xbmc Cutover](runbooks/xbmc-cutover.md)** — Cut over xbmc/xbmc from GitHub Actions to the Kodiai GitHub App
 - **[xbmc/xbmc Ops](runbooks/xbmc-ops.md)** — Day-2 operations for xbmc/xbmc after cutover
 
@@ -38,5 +39,6 @@ Test evidence and verification records in [`smoke/`](smoke/):
 - **[Phase 74: Reliability Regression Gate](smoke/phase74-reliability-regression-gate.md)** — Pre-release reliability gate for issue write-mode
 - **[Phase 75: Live OPS Verification Closure](smoke/phase75-live-ops-verification-closure.md)** — Release candidate OPS closure procedure
 - **[Phase 80: Slack Operator Hardening](smoke/phase80-slack-operator-hardening.md)** — Slack v1 channel gating and operator verification
+- **[Slack Webhook Relay](smoke/slack-webhook-relay.md)** — Accepted, suppressed, and failed-delivery smoke path for webhook relay
 - **[xbmc/kodiai Write Flow](smoke/xbmc-kodiai-write-flow.md)** — End-to-end write-mode smoke test for xbmc/kodiai
 - **[xbmc/xbmc Write Flow](smoke/xbmc-xbmc-write-flow.md)** — End-to-end write-mode smoke test for xbmc/xbmc
