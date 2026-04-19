@@ -1024,3 +1024,106 @@ Then treat `profile.optedOut === true` as a generic contract outcome, not as per
 **Rule:** If a scenario is backed only by cache/search fallback rather than a trustworthy stored contributor profile, downstream Slack/profile continuity evidence should be absent and the verifier should mark that surface `not_applicable`. Do not invent a synthetic passing Slack/profile state just to make a milestone matrix look uniform.
 
 **Established in:** M047 closeout (`scripts/verify-m047.ts`, `.gsd/milestones/M047/M047-SUMMARY.md`).
+
+---
+
+## UI rereview topology can be real even when issue assumptions say it is broken (M051/S01)
+
+**Context:** Issue #84 started from the assumption that the documented `ai-review` / `aireview` UI rereview path did not actually target Kodiai. Live GitHub API evidence for `xbmc/kodiai` showed the opposite topology: `gh api repos/xbmc/kodiai/teams` returned the `aireview` team with repo access, and `gh api orgs/xbmc/teams/aireview/members` returned both `keithah` and `kodiai` as team members. The repo-side contract also still accepts `pull_request.review_requested` when `requested_team` is `ai-review` / `aireview` and auto-requests the configured team on PR open.
+
+**Rule:** When auditing manual rereview, verify the live GitHub team topology before assuming the team path is fictional. Separate two questions:
+1. **Topology proof:** team exists, has repo access, and includes `kodiai`.
+2. **Operator-path proof:** a human remove/re-request action produced the expected `pull_request.review_requested` delivery with `requested_team`.
+
+Do not treat the open-time auto-request as proof that manual UI rereview is broken: self-generated events from `kodiai` are intentionally filtered by `src/webhook/filters.ts`, so only human re-requests should be used as manual-trigger evidence.
+
+**Established in:** M051/S01/T01.
+
+---
+
+## GitHub bot token helper is not usable in this environment; use `gh` fallback (M051/S01)
+
+**Context:** During M051/S01/T02, `/home/keith/.agents/skills/github-bot/scripts/github-token.sh` exited 127 before any API call because it hardcodes `SECRETS=/Users/joel/.local/bin/secrets`, which is not present in this environment. The repo already had a working authenticated `gh` CLI path (`gh issue view ...`, `gh api ...`) for the same repository.
+
+**Rule:** In this environment, do not assume the `github-bot` skill's token script can mint an installation token. If the helper exits 127 or `/Users/joel/.local/bin/secrets` is absent, fall back to authenticated `gh` commands with explicit `-R xbmc/kodiai` or `gh api` for issue/PR operations instead of repeatedly retrying the bot path.
+
+**Established in:** M051/S01/T02.
+
+---
+
+## R055 cleanup reaches beyond the runbook and handler (M051/S01)
+
+**Context:** The obvious stale surfaces for the manual rereview contract were `docs/runbooks/review-requested-debug.md` and `src/handlers/review.ts`, but the real drift also lived in the config schema/defaults (`src/execution/config.ts`, `src/execution/config.test.ts`), the optional helper that auto-requested the team (`src/handlers/rereview-team.ts` + tests), the checked-in repo example (`.kodiai.yml`), and an older operator smoke doc (`docs/smoke/phase75-live-ops-verification-closure.md`) that still treated accepted rereview-team requests as valid evidence.
+
+**Rule:** When retiring an unsupported trigger contract like `ai-review` / `aireview`, do not stop after updating the main runbook and handler. Sweep these four surface classes explicitly:
+1. **Runtime code paths** that still accept or auto-request the old trigger.
+2. **Config schema/defaults/examples** that advertise the old knobs.
+3. **Regression tests** that still prove the old trigger as a valid path.
+4. **Operator smoke/verifier docs** that still treat the old trigger as acceptable evidence.
+
+If any of those remain, the repo will keep teaching operators or future agents the wrong contract even after the primary docs are fixed.
+
+**Established in:** M051/S01/T03.
+
+---
+
+## Plain `rg ai-review` checks can false-positive on `kodiai-reviewer` text (M051/S02)
+
+**Context:** T02's doc-verification command used a negative grep for `ai-review|aireview`. That pattern unexpectedly matched unrelated phrases containing `kodiai-reviewer` because the substring `ai-review` appears inside `kodiai-reviewer`.
+
+**Rule:** When using a negative grep to prove the stale rereview-team strings are gone, either:
+1. use word boundaries like `\b(ai-review|aireview)\b`, or
+2. avoid writing hyphenated `kodiai-reviewer` prose in the checked files.
+
+Otherwise a clean doc update can fail verification even though the unsupported team trigger is actually gone.
+
+**Established in:** M051/S02/T02.
+
+---
+
+## Explicit manual rereview proof now lives on mention completion logs (M051/S02)
+
+**Context:** After S02 removed the `ai-review` / `aireview` team path, the only supported manual rereview trigger is an explicit `@kodiai review` mention. T03 had to extend the structured `Mention execution completed` log to include `taskType=review.full` and `lane=interactive-review` so the surviving trigger could be proven from runtime evidence instead of old team-request assumptions.
+
+**Rule:** Post-S02, prove manual rereview with the explicit mention-review evidence chain:
+1. the mention handler runs on `lane=interactive-review`,
+2. the executor receives `taskType=review.full`, and
+3. the publish path resolves through the normal explicit-review approval/fallback surface.
+
+Treat `ai-review` / `aireview` `pull_request.review_requested` deliveries only as negative evidence (`skipReason=team-only-request`) that the retired team trigger stays unsupported — not as a supported rereview path.
+
+**Established in:** M051/S02/T03.
+
+---
+
+## Matched-but-invalid phase timing evidence should stay visible, not collapse into `ok` or `no evidence` (M051/S03)
+
+**Context:** During M051/S03, correlated phase-summary rows could match the target `reviewOutputKey` / `deliveryId` yet still omit interpretation fields like `conclusion` or `published`. The old parser treated those rows as `status: "ok"`, while the downstream verifier sometimes collapsed the same case into `no correlated phase evidence available`. That produced both a false-green parser result and a false-negative operator summary from the same malformed payload.
+
+**Rule:** When a correlated phase row is present but incomplete, preserve the matched row identity and normalized phases in the evidence payload, mark the result as `invalid-phase-payload`, and list the missing interpretation fields explicitly. Reserve `ok` for fully interpretable rows and reserve `no evidence` wording for the true `!evidence` path only.
+
+**Established in:** M051/S03/T01-T02.
+
+---
+
+## Shared verifier/report wording should reuse the upstream truth surface verbatim when possible (M051/S03)
+
+**Context:** `verify:m048:s03` exposes the same phase-timing outcome summary that `verify:m048:s01` derives. Before M051/S03, the downstream report path could drift independently, hiding incomplete evidence or misreporting `published: null` as unpublished. The fix was to repair the S01 summary logic (`publication unknown`, distinct incomplete-evidence wording) and pin the S03 report to the same `outcome.summary` string instead of rebuilding its own prose.
+
+**Rule:** If a downstream operator surface is publishing an upstream verifier's conclusion, reuse the upstream summary string verbatim unless the downstream contract explicitly needs extra context. Keep any new expectations in tests pointed at the shared string so wording drift becomes a direct regression instead of a second truth path.
+
+**Established in:** M051/S03/T02.
+
+---
+
+## Retiring an operator workflow needs both a positive and a negative proof surface (M051)
+
+**Context:** M051 only became easy to audit after the surviving manual rereview path and the retired team path each had their own machine-checkable evidence. S02 added positive proof for the supported `@kodiai review` lane (`lane=interactive-review`, `taskType=review.full`, normal publish resolution) while preserving team-only `pull_request.review_requested` deliveries as explicit skipped negatives (`skipReason=team-only-request`). Without both surfaces, future audits would have to infer contract truth from missing behavior or stale topology.
+
+**Rule:** When retiring one operator trigger in favor of another, preserve two observability surfaces:
+1. a positive, structured signal that the supported path executed on the intended lane, and
+2. a negative, structured signal that the retired path was seen and intentionally refused.
+
+Do not rely on absence of events, documentation text, or topology alone as proof that a retired path stays retired.
+
+**Established in:** M051 closeout.

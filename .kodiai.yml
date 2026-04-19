@@ -1,8 +1,6 @@
 timeoutSeconds: 1800
 
 review:
-  uiRereviewTeam: aireview
-  requestUiRereviewTeamOnOpen: true
   profile: strict
   minConfidence: 70
   triggers:

@@ -22,12 +22,13 @@ Collect live identities before running the command.
 ### Preflight (blocking)
 
 Before collecting matrix identities, confirm each review lane run is accepted by
-the review_requested gate:
+the review_requested gate. The only supported manual rereview procedure is an
+explicit `@kodiai review` mention; do not use reviewer-team requests when
+capturing closure evidence.
 
-- `requestedReviewer` is `kodiai` or `kodiai[bot]`, or
-- requested team is approved rereview team (`ai-review` / `aireview`).
+- `requestedReviewer` is `kodiai` or `kodiai[bot]`.
 
-If logs show `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request`,
+If logs show a non-Kodiai reviewer target skip or `skipReason=team-only-request`,
 the run is invalid for OPS75 closure and must be re-captured.
 
 1) Cache matrix identities (3 total):

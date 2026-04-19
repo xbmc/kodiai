@@ -1,24 +1,20 @@
 # review_requested Debug Runbook
 
-Use this runbook when a manual Kodiai re-review does not trigger correctly. It covers both operator-visible lanes:
+Use this runbook when Kodiai review triggering needs investigation. The only supported manual re-review procedure is an explicit PR-scoped `@kodiai review` mention. Keep `pull_request.review_requested` in scope here as a debug and automatic-review surface, not as an operator retrigger procedure.
 
-- UI re-request via `pull_request.review_requested`
-- Explicit PR-scoped mention trigger via `@kodiai review`
+## Supported manual re-review procedure
 
-## UI-based Re-review (Team Request)
+If you need to manually retrigger a review, post `@kodiai review` on the PR. Supported mention surfaces are:
 
-If you want a UI-only retrigger (no comment), request review from the team `ai-review` (or `aireview`).
-Kodiai treats `pull_request.review_requested` for that team as a re-review trigger.
+- `issue_comment` with action `created` on the PR top-level thread
+- `pull_request_review_comment` with action `created` on an inline diff thread
+- `pull_request_review` with action `submitted` when the review body itself contains the trigger
+
+Do not use team reviewer requests as a manual re-review mechanism. Team-only `pull_request.review_requested` deliveries should be treated as unsupported debug signals and will skip with `team-only-request`.
 
 ## 1) Confirm the correct GitHub delivery exists
 
-There are two valid manual trigger shapes. Verify the one you actually used:
-
-- **UI re-request:** `pull_request` with action `review_requested`
-- **Explicit review lane:** one of the PR-scoped mention surfaces that can carry `@kodiai review`:
-  - `issue_comment` with action `created` on the PR top-level thread
-  - `pull_request_review_comment` with action `created` on an inline diff thread
-  - `pull_request_review` with action `submitted` when the review body itself contains the trigger
+For manual re-review, verify one of the PR-scoped mention deliveries above exists. If you are debugging the automatic reviewer-request surface instead, the relevant delivery is `pull_request` with action `review_requested`.
 
 ```sh
 gh api repos/<owner>/<repo>/hooks --jq '.[].id'
@@ -109,7 +105,7 @@ When review output is published or an approval is submitted, the handler emits a
   - `prNumber`
   - `reviewOutputKey`
 
-## M050 Timeout-Truth Verifier Surfaces
+## M048 Timeout-Truth Verifier Surfaces
 
 Use the M048 verifier family directly when you need a machine-checkable answer for the repaired small-PR timeout class.
 
@@ -224,17 +220,16 @@ For the same `deliveryId`, check review handler gate logs.
 
 Expected outcomes:
 - Accepted path: `Accepted review_requested event for kodiai reviewer`
-- Accepted path (team-based rereview): `Accepted review_requested event for rereview team` (team `ai-review`)
 - Skip path with reason:
-  - `non-kodiai-reviewer`
+  - non-Kodiai reviewer target
   - `team-only-request`
   - `missing-or-malformed-reviewer-payload`
   - `trigger-disabled`
   - `review-disabled`
 
-If skip reason is `non-kodiai-reviewer`, confirm the re-request target is the app reviewer (`kodiai` or `kodiai[bot]`).
+If the skip reason indicates a non-Kodiai reviewer target, confirm the re-request target is the app reviewer (`kodiai` or `kodiai[bot]`).
 
-If using team-based UI retrigger, confirm the requested team is `ai-review` or `aireview`.
+If skip reason is `team-only-request`, the delivery targeted an unsupported reviewer-team path and cannot be used as manual re-review evidence.
 
 ## 5) Verify queue lifecycle
 
@@ -539,9 +534,9 @@ From application logs for the same matrix capture window, confirm:
 
 - `gate=review_requested_reviewer`
 - `gateResult=accepted`
-- `requestedReviewer` is `kodiai` / `kodiai[bot]` OR accepted rereview team
+- `requestedReviewer` is `kodiai` / `kodiai[bot]`
 
-Any `skipReason=non-kodiai-reviewer` or `skipReason=team-only-request` means
+Any non-Kodiai reviewer target skip or `skipReason=team-only-request` means
 that identity is invalid for closure evidence.
 
 ### OPS75-CACHE-01: Cache matrix sequence (review_requested only)

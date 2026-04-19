@@ -8110,7 +8110,7 @@ describe("createMentionHandler review command", () => {
     await workspaceFixture.cleanup();
   });
 
-  test("explicit PR review mention submits approval review when execution succeeds with inspection evidence", async () => {
+  test("explicit PR review mention stays on interactive-review/review.full and submits approval review when inspection evidence is present", async () => {
     const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
     const workspaceFixture = await createWorkspaceFixture("mention:\n  enabled: true\nreview:\n  autoApprove: true\n");
 
@@ -8122,6 +8122,8 @@ describe("createMentionHandler review command", () => {
 
     const { logger, infoCalls } = createMockLogger();
     const createdReviews: Array<{ event: string; body: string }> = [];
+    let capturedQueueLane: string | undefined;
+    let capturedTaskType: string | undefined;
 
     const eventRouter: EventRouter = {
       register: (eventKey, handler) => {
@@ -8131,7 +8133,14 @@ describe("createMentionHandler review command", () => {
     };
 
     const jobQueue: JobQueue = {
-      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      enqueue: async <T>(
+        _installationId: number,
+        fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        context?: JobQueueContext,
+      ) => {
+        capturedQueueLane = context?.lane;
+        return fn(createQueueRunMetadata());
+      },
       getQueueSize: () => 0,
       getPendingCount: () => 0,
       getActiveJobs: getEmptyActiveJobs,
@@ -8186,22 +8195,25 @@ describe("createMentionHandler review command", () => {
         getInstallationOctokit: async () => octokit as never,
       } as unknown as GitHubApp,
       executor: {
-        execute: async () => ({
-          conclusion: "success",
-          published: false,
-          costUsd: 0,
-          numTurns: 3,
-          durationMs: 1,
-          sessionId: "session-mention-approve",
-          model: "claude-sonnet-4-5-20250929",
-          inputTokens: 1,
-          outputTokens: 1,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          stopReason: "end_turn",
-          toolUseNames: ["Glob", "Read"],
-          usedRepoInspectionTools: true,
-        }),
+        execute: async (context: { taskType?: string }) => {
+          capturedTaskType = context.taskType;
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 3,
+            durationMs: 1,
+            sessionId: "session-mention-approve",
+            model: "claude-sonnet-4-5-20250929",
+            inputTokens: 1,
+            outputTokens: 1,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            stopReason: "end_turn",
+            toolUseNames: ["Glob", "Read"],
+            usedRepoInspectionTools: true,
+          };
+        },
       } as never,
       telemetryStore: noopTelemetryStore,
       logger,
@@ -8216,6 +8228,9 @@ describe("createMentionHandler review command", () => {
         commentBody: "@kodiai review",
       }),
     );
+
+    expect(capturedQueueLane).toBe("interactive-review");
+    expect(capturedTaskType).toBe("review.full");
 
     expect(createdReviews).toHaveLength(1);
     expect(createdReviews[0]?.event).toBe("APPROVE");
@@ -8250,6 +8265,8 @@ describe("createMentionHandler review command", () => {
     const completionLog = infoCalls.find((entry) => entry.message === "Mention execution completed");
     expect(completionLog?.bindings.reviewOutputKey).toBe(idempotencyLog?.bindings.reviewOutputKey);
     expect(completionLog?.bindings.explicitReviewRequest).toBe(true);
+    expect(completionLog?.bindings.taskType).toBe("review.full");
+    expect(completionLog?.bindings.lane).toBe("interactive-review");
     expect(completionLog?.bindings.published).toBe(true);
     expect(completionLog?.bindings.executorPublished).toBe(false);
     expect(completionLog?.bindings.publishResolution).toBe("approval-bridge");

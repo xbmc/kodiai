@@ -255,3 +255,32 @@
 {"id":"62f39cc9-7e25-4747-ba6f-f59383fe4a9a","ts":"2026-04-11T03:26:46.284Z","severity":"info","message":"Auto-mode paused (Escape). Type to interact, or /gsd auto to resume.","source":"notify","read":false}
 {"id":"faf99db9-2732-4fbd-a6ea-3dd9e0ced0b4","ts":"2026-04-11T04:02:53.897Z","severity":"info","message":"Auto-mode resumed.","source":"notify","read":false}
 {"id":"1cf10355-427c-4736-8069-cc1c23f73c3e","ts":"2026-04-11T04:02:56.770Z","severity":"info","message":"Resume: applied 3 fix(es) to state.","source":"notify","read":false}
+{"id":"82b7d18a-07ba-47d7-b220-e0522ced70a6","ts":"2026-04-18T23:16:59.534Z","severity":"info","message":"Auto-mode started. Will loop until milestone complete.","source":"notify","read":false}
+{"id":"bdd1e918-dc87-4152-9d36-c5e77a75713f","ts":"2026-04-18T23:16:59.537Z","severity":"info","message":"Dynamic routing: enabled — simple tasks may use cheaper models (ceiling: openai-codex/gpt-5.4)","source":"notify","read":false}
+{"id":"6e97b57f-0680-4e0c-98d0-bb5365f2c751","ts":"2026-04-18T23:16:59.539Z","severity":"info","message":"Pre-flight: 40 milestones queued. All have full context.","source":"notify","read":false}
+{"id":"93ea2d45-252f-4b63-af53-35277b094166","ts":"2026-04-18T23:17:00.490Z","severity":"info","message":"Pre-dispatch: pre-dispatch: created gsd snapshot after 1075m of uncommitted changes","source":"notify","read":false}
+{"id":"cdcccef0-4cdd-4f3d-86ff-c3794f6c15ad","ts":"2026-04-18T23:23:27.749Z","severity":"info","message":"Committed: feat: Audited the rereview topology and proved that `aireview` currentl…","source":"notify","read":false}
+{"id":"8b88fde9-8e4c-4278-9c6a-1cbe99efb27a","ts":"2026-04-18T23:25:41.633Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"cb47e5b0-4f0d-4011-ae8a-26622759de56","ts":"2026-04-18T23:25:41.633Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"e90e36f7-0fe1-437f-90d1-03c52f63c5ac","ts":"2026-04-18T23:26:29.180Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"4e5fbc0c-088a-4ce2-8f88-619d461c3523","ts":"2026-04-18T23:26:29.180Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"36f0baac-9809-4ac3-a54b-25011f338b81","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"952c61e9-ac42-4040-8a1f-aeae641bcc49","ts":"2026-04-18T23:26:45.971Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"7d183033-1344-4429-898b-f9a6e4f9cd53","ts":"2026-04-18T23:29:10.070Z","severity":"info","message":"Committed: feat: Recorded decision D124 to keep `@kodiai review` as the supported…","source":"notify","read":false}
+{"id":"c7e81d91-f35f-4cf7-8879-b4357f9f2ce0","ts":"2026-04-18T23:38:49.377Z","severity":"info","message":"Committed: chore: Planned M051/S02 to remove the unsupported UI-team rereview cont…","source":"notify","read":false}
+{"id":"70b4867b-8b8c-48d8-9226-2326eb800565","ts":"2026-04-18T23:53:06.018Z","severity":"warning","message":"[safety] destructive command: recursive delete","source":"workflow-logger","read":false}
+{"id":"fc0d3455-de6f-4f8c-a266-5d8e414501c9","ts":"2026-04-18T23:53:06.019Z","severity":"warning","message":"Destructive command detected: recursive delete","source":"notify","read":false}
+{"id":"127ff869-5138-4f32-80a6-22d99fe111d4","ts":"2026-04-18T23:55:36.866Z","severity":"info","message":"Committed: chore: Removed the unsupported UI-team rereview config and handler path…","source":"notify","read":false}
+{"id":"a97f8ea5-f73b-4cdc-8b6e-facd9e624a3b","ts":"2026-04-18T23:55:41.148Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"929f9ff3-5f9d-4fc2-aac3-442ec7bcbf2d","ts":"2026-04-18T23:55:41.162Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
+{"id":"3097dca0-82ed-41cd-a051-4cfa2a7fb126","ts":"2026-04-19T00:01:26.164Z","severity":"info","message":"Committed: docs: Removed stale operator docs for the retired rereview-team path so…","source":"notify","read":false}
+{"id":"fbecdd7b-d2ad-45da-b71d-d26bc2837083","ts":"2026-04-19T00:01:26.195Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"de3f8c6c-ea42-4dec-8625-4132a7954205","ts":"2026-04-19T00:09:37.565Z","severity":"info","message":"Committed: feat: Locked the surviving `@kodiai review` proof surface with explicit…","source":"notify","read":false}
+{"id":"7e20cf04-aea0-4362-b23e-bebb316be9f4","ts":"2026-04-19T00:09:47.336Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"0a166421-041b-4882-b4ff-3fc4f79cfbb4","ts":"2026-04-19T00:40:42.269Z","severity":"info","message":"Committed: feat: Rejected incomplete phase-timing payloads by flagging missing con…","source":"notify","read":false}
+{"id":"2056b150-5100-4e5b-b133-b860a5d50c26","ts":"2026-04-19T00:40:42.311Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"716fd88a-c7fa-47ef-a09f-09dd98c094a0","ts":"2026-04-19T00:47:33.707Z","severity":"info","message":"Committed: feat: Repaired M048 verifier summaries so incomplete evidence and publi…","source":"notify","read":false}
+{"id":"cf71f1c6-7703-4753-82d0-34709523c67a","ts":"2026-04-19T00:47:33.832Z","severity":"info","message":"Verification gate: 2/2 checks passed","source":"notify","read":false}
+{"id":"34e3928e-d05e-4266-8855-31ecc448a162","ts":"2026-04-19T00:50:21.921Z","severity":"info","message":"Committed: feat: Aligned the M048 timeout-truth runbook heading and deduplicated r…","source":"notify","read":false}
+{"id":"ad1cfd83-2ddd-4b09-8806-351a248a3c96","ts":"2026-04-19T00:50:34.884Z","severity":"info","message":"Verification gate: 3/3 checks passed","source":"notify","read":false}
+{"id":"a920dcac-3ce8-4ef8-b372-2e22aef94068","ts":"2026-04-19T00:50:34.892Z","severity":"warning","message":"Post-execution checks passed with warnings","source":"notify","read":false}
