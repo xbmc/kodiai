@@ -62,7 +62,7 @@
   - Do: add failing summary regressions first, keep `no correlated phase evidence available` only for the real no-evidence case, render `publication unknown` when `published` is null, and pin the downstream S03 report surface so it reuses the repaired wording unchanged.
   - Verify: `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts && bun test ./scripts/verify-m048-s02.test.ts`
   - Done when: operator-facing outcome summaries stay truthful for missing conclusion/publication fields, and downstream verifier tests keep the shared report contract green.
-- [ ] **T03: Align the runbook heading and clear the last stranded PR #87 code cleanup** `est:45m`
+- [x] **T03: Align the runbook heading and clear the last stranded PR #87 code cleanup** `est:45m`
   - Why: after the parser and verifier fixes, the remaining stale operator surface is the `M050` runbook heading above `verify:m048:*` commands, plus the still-duplicated `timeoutProgress` shape in `src/handlers/review.ts`.
   - Files: `docs/runbooks/review-requested-debug.md`, `src/handlers/review.ts`, `src/lib/review-utils.ts`
   - Do: rename the runbook heading to an M048-correct title and swap the local handler type literal for the exported `TimeoutReviewDetailsProgress` type so the closed PR no longer leaves adjacent cleanup debt behind.

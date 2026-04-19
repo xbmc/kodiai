@@ -105,7 +105,7 @@ When review output is published or an approval is submitted, the handler emits a
   - `prNumber`
   - `reviewOutputKey`
 
-## M050 Timeout-Truth Verifier Surfaces
+## M048 Timeout-Truth Verifier Surfaces
 
 Use the M048 verifier family directly when you need a machine-checkable answer for the repaired small-PR timeout class.
 

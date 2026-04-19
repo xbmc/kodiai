@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-19T00:47:24.952Z",
+  "exported_at": "2026-04-19T00:50:17.221Z",
   "milestones": [
     {
       "id": "M001",
@@ -14950,19 +14950,24 @@
       "milestone_id": "M051",
       "slice_id": "S03",
       "id": "T03",
-      "title": "Align the runbook heading and clear the last stranded PR #87 code cleanup",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Aligned the M048 timeout-truth runbook heading and deduplicated review timeout progress typing.",
+      "status": "complete",
+      "one_liner": "Aligned the M048 timeout-truth runbook heading and deduplicated review timeout progress typing.",
+      "narrative": "Updated `docs/runbooks/review-requested-debug.md` to rename the stale `M050 Timeout-Truth Verifier Surfaces` heading so it truthfully matches the existing `verify:m048:s01`, `verify:m048:s02`, and `verify:m048:s03` commands already documented below it. In `src/handlers/review.ts`, replaced the local inline `timeoutProgress` object type on `buildReviewDetailsBody()` with the exported `TimeoutReviewDetailsProgress` type from `src/lib/review-utils.ts`, keeping the timeout Review Details shape single-sourced without changing runtime behavior. This stayed within the task’s intended mechanical cleanup scope; no blocker or slice replan was needed.",
+      "verification_result": "Ran the full slice verification set on the final task: `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts`, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, the runbook grep gate that rejects the stale M050 heading while confirming the M048 verifier surfaces, and `bun run tsc --noEmit`. All four checks passed.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-19T00:50:17.192Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "None.",
+      "key_files": [
+        "docs/runbooks/review-requested-debug.md",
+        "src/handlers/review.ts"
+      ],
+      "key_decisions": [
+        "Reused the existing `TimeoutReviewDetailsProgress` export in `src/handlers/review.ts` so the timeout Review Details progress shape remains defined in one place."
+      ],
+      "full_summary_md": "---\nid: T03\nparent: S03\nmilestone: M051\nkey_files:\n  - docs/runbooks/review-requested-debug.md\n  - src/handlers/review.ts\nkey_decisions:\n  - Reused the existing `TimeoutReviewDetailsProgress` export in `src/handlers/review.ts` so the timeout Review Details progress shape remains defined in one place.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-19T00:50:17.191Z\nblocker_discovered: false\n---\n\n# T03: Aligned the M048 timeout-truth runbook heading and deduplicated review timeout progress typing.\n\n**Aligned the M048 timeout-truth runbook heading and deduplicated review timeout progress typing.**\n\n## What Happened\n\nUpdated `docs/runbooks/review-requested-debug.md` to rename the stale `M050 Timeout-Truth Verifier Surfaces` heading so it truthfully matches the existing `verify:m048:s01`, `verify:m048:s02`, and `verify:m048:s03` commands already documented below it. In `src/handlers/review.ts`, replaced the local inline `timeoutProgress` object type on `buildReviewDetailsBody()` with the exported `TimeoutReviewDetailsProgress` type from `src/lib/review-utils.ts`, keeping the timeout Review Details shape single-sourced without changing runtime behavior. This stayed within the task’s intended mechanical cleanup scope; no blocker or slice replan was needed.\n\n## Verification\n\nRan the full slice verification set on the final task: `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts`, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, the runbook grep gate that rejects the stale M050 heading while confirming the M048 verifier surfaces, and `bun run tsc --noEmit`. All four checks passed.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` | 0 | ✅ pass | 78ms |\n| 2 | `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 4469ms |\n| 3 | `! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md` | 0 | ✅ pass | 6ms |\n| 4 | `bun run tsc --noEmit` | 0 | ✅ pass | 9083ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `docs/runbooks/review-requested-debug.md`\n- `src/handlers/review.ts`\n",
       "description": "Why: after the parser and verifier fixes, the remaining stale operator surface is the `M050` runbook heading above `verify:m048:*` commands, plus the still-duplicated `timeoutProgress` shape in `src/handlers/review.ts`. Do: rename the runbook heading to an M048-correct title and swap the local handler type literal for the exported `TimeoutReviewDetailsProgress` type so the closed PR no longer leaves adjacent cleanup debt behind. Done when: the runbook header matches the verifier family, the inline type literal is gone, and nearby tests/typecheck still pass.",
       "estimate": "45m",
       "files": [
@@ -21956,6 +21961,50 @@
       "verdict": "✅ pass",
       "duration_ms": 8400,
       "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 497,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 78,
+      "created_at": "2026-04-19T00:50:17.192Z"
+    },
+    {
+      "id": 498,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4469,
+      "created_at": "2026-04-19T00:50:17.192Z"
+    },
+    {
+      "id": 499,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 6,
+      "created_at": "2026-04-19T00:50:17.192Z"
+    },
+    {
+      "id": 500,
+      "task_id": "T03",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 9083,
+      "created_at": "2026-04-19T00:50:17.192Z"
     }
   ]
 }

@@ -96,6 +96,7 @@ import {
   buildReviewDetailsMarker,
   parseSeverityCountsFromBody,
   formatReviewDetailsSummary,
+  type TimeoutReviewDetailsProgress,
   normalizeSeverity,
   normalizeCategory,
   parseInlineCommentMetadata,
@@ -3758,12 +3759,7 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
-        const buildReviewDetailsBody = (timeoutProgress?: {
-          analyzedFiles: number;
-          totalFiles: number;
-          findingCount: number;
-          retryState: string;
-        }): string => {
+        const buildReviewDetailsBody = (timeoutProgress?: TimeoutReviewDetailsProgress): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,
             filesReviewed: diffAnalysis?.metrics.totalFiles ?? changedFiles.length,
