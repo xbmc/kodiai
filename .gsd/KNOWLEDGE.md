@@ -1064,3 +1064,17 @@ Do not treat the open-time auto-request as proof that manual UI rereview is brok
 If any of those remain, the repo will keep teaching operators or future agents the wrong contract even after the primary docs are fixed.
 
 **Established in:** M051/S01/T03.
+
+---
+
+## Plain `rg ai-review` checks can false-positive on `kodiai-reviewer` text (M051/S02)
+
+**Context:** T02's doc-verification command used a negative grep for `ai-review|aireview`. That pattern unexpectedly matched unrelated phrases containing `kodiai-reviewer` because the substring `ai-review` appears inside `kodiai-reviewer`.
+
+**Rule:** When using a negative grep to prove the stale rereview-team strings are gone, either:
+1. use word boundaries like `\b(ai-review|aireview)\b`, or
+2. avoid writing hyphenated `kodiai-reviewer` prose in the checked files.
+
+Otherwise a clean doc update can fail verification even though the unsupported team trigger is actually gone.
+
+**Established in:** M051/S02/T02.

@@ -32,7 +32,7 @@ After S02, S03 can assume the manual trigger contract is settled and can focus o
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/handlers/rereview-team.ts`, `src/handlers/rereview-team.test.ts`, `src/execution/config.ts`, `src/execution/config.test.ts`, `.kodiai.yml`
   - Verify: bun test ./src/handlers/review.test.ts ./src/execution/config.test.ts
 
-- [ ] **T02: Retire stale operator docs and smoke/config claims** `est:1 context window`
+- [x] **T02: Retire stale operator docs and smoke/config claims** `est:1 context window`
   Rewrite the operator-facing truth surface to match D124 and the removal implementation.
 - Update `docs/runbooks/review-requested-debug.md` so `@kodiai review` is the only supported manual rereview procedure; keep `pull_request.review_requested` content only as a debug surface when still relevant, not as supported operator guidance.
 - Remove `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from `docs/configuration.md`.

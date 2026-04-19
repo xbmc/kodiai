@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-18T23:55:28.408Z",
+  "exported_at": "2026-04-19T00:01:19.542Z",
   "milestones": [
     {
       "id": "M001",
@@ -14766,19 +14766,27 @@
       "milestone_id": "M051",
       "slice_id": "S02",
       "id": "T02",
-      "title": "Retire stale operator docs and smoke/config claims",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Removed stale operator docs for the retired rereview-team path so `@kodiai review` is the only documented manual rereview trigger.",
+      "status": "complete",
+      "one_liner": "Removed stale operator docs for the retired rereview-team path so `@kodiai review` is the only documented manual rereview trigger.",
+      "narrative": "I updated `docs/runbooks/review-requested-debug.md` so the runbook now states that explicit PR-scoped `@kodiai review` mentions are the only supported manual rereview procedure. The surviving `pull_request.review_requested` material stays in the document strictly as debug and automatic-review context, and the old rereview-team guidance was removed from the gate-decision and OPS75 evidence sections.\n\nI removed the retired `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` keys from `docs/configuration.md` and clarified that `review.triggers.onReviewRequested` refers to Kodiai being explicitly requested as a reviewer. I also updated `docs/smoke/phase75-live-ops-verification-closure.md` so OPS75 capture guidance now requires accepted Kodiai reviewer identities and explicitly rejects reviewer-team requests as closure evidence. The checked-in `.kodiai.yml` example was already clean from T01, so I verified that it still contained no stale rereview-team settings instead of changing it again.\n\nWhile wiring the negative grep verification, I found a docs-only gotcha: the literal phrase `kodiai-reviewer` contains the stale `ai-review` substring and can cause false positives. I recorded that in `.gsd/KNOWLEDGE.md` so future cleanup tasks can avoid tripping the regression check for the wrong reason.",
+      "verification_result": "I ran the task’s exact verification command over the targeted runbook, configuration doc, smoke doc, and checked-in `.kodiai.yml` example. It exited 0, proving those surfaces no longer contain `uiRereviewTeam`, `requestUiRereviewTeamOnOpen`, `ai-review`, or `aireview`, while the surviving `@kodiai review` manual trigger remains documented in the operator-facing truth surface.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-19T00:01:19.511Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "Minor local adaptation: `.kodiai.yml` was already clean from T01, so this task verified the example stayed clean instead of modifying it again.",
+      "known_issues": "None.",
+      "key_files": [
+        "docs/runbooks/review-requested-debug.md",
+        "docs/configuration.md",
+        "docs/smoke/phase75-live-ops-verification-closure.md",
+        ".gsd/KNOWLEDGE.md"
+      ],
+      "key_decisions": [
+        "Keep `pull_request.review_requested` documentation only as debug/automatic-review context, not as a supported manual rereview procedure.",
+        "Avoid hyphenated `kodiai-reviewer` prose in the stale-trigger docs because it contains the `ai-review` substring and can trip the negative grep regression check."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S02\nmilestone: M051\nkey_files:\n  - docs/runbooks/review-requested-debug.md\n  - docs/configuration.md\n  - docs/smoke/phase75-live-ops-verification-closure.md\n  - .gsd/KNOWLEDGE.md\nkey_decisions:\n  - Keep `pull_request.review_requested` documentation only as debug/automatic-review context, not as a supported manual rereview procedure.\n  - Avoid hyphenated `kodiai-reviewer` prose in the stale-trigger docs because it contains the `ai-review` substring and can trip the negative grep regression check.\nduration: \nverification_result: passed\ncompleted_at: 2026-04-19T00:01:19.510Z\nblocker_discovered: false\n---\n\n# T02: Removed stale operator docs for the retired rereview-team path so `@kodiai review` is the only documented manual rereview trigger.\n\n**Removed stale operator docs for the retired rereview-team path so `@kodiai review` is the only documented manual rereview trigger.**\n\n## What Happened\n\nI updated `docs/runbooks/review-requested-debug.md` so the runbook now states that explicit PR-scoped `@kodiai review` mentions are the only supported manual rereview procedure. The surviving `pull_request.review_requested` material stays in the document strictly as debug and automatic-review context, and the old rereview-team guidance was removed from the gate-decision and OPS75 evidence sections.\n\nI removed the retired `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` keys from `docs/configuration.md` and clarified that `review.triggers.onReviewRequested` refers to Kodiai being explicitly requested as a reviewer. I also updated `docs/smoke/phase75-live-ops-verification-closure.md` so OPS75 capture guidance now requires accepted Kodiai reviewer identities and explicitly rejects reviewer-team requests as closure evidence. The checked-in `.kodiai.yml` example was already clean from T01, so I verified that it still contained no stale rereview-team settings instead of changing it again.\n\nWhile wiring the negative grep verification, I found a docs-only gotcha: the literal phrase `kodiai-reviewer` contains the stale `ai-review` substring and can cause false positives. I recorded that in `.gsd/KNOWLEDGE.md` so future cleanup tasks can avoid tripping the regression check for the wrong reason.\n\n## Verification\n\nI ran the task’s exact verification command over the targeted runbook, configuration doc, smoke doc, and checked-in `.kodiai.yml` example. It exited 0, proving those surfaces no longer contain `uiRereviewTeam`, `requestUiRereviewTeamOnOpen`, `ai-review`, or `aireview`, while the surviving `@kodiai review` manual trigger remains documented in the operator-facing truth surface.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `! rg -n \"uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview\" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n \"@kodiai review\" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md` | 0 | ✅ pass | 8ms |\n\n## Deviations\n\nMinor local adaptation: `.kodiai.yml` was already clean from T01, so this task verified the example stayed clean instead of modifying it again.\n\n## Known Issues\n\nNone.\n\n## Files Created/Modified\n\n- `docs/runbooks/review-requested-debug.md`\n- `docs/configuration.md`\n- `docs/smoke/phase75-live-ops-verification-closure.md`\n- `.gsd/KNOWLEDGE.md`\n",
       "description": "Rewrite the operator-facing truth surface to match D124 and the removal implementation.\n- Update `docs/runbooks/review-requested-debug.md` so `@kodiai review` is the only supported manual rereview procedure; keep `pull_request.review_requested` content only as a debug surface when still relevant, not as supported operator guidance.\n- Remove `review.uiRereviewTeam` and `review.requestUiRereviewTeamOnOpen` from `docs/configuration.md`.\n- Update `docs/smoke/phase75-live-ops-verification-closure.md` so accepted rereview-team requests are no longer treated as valid closure evidence.\n- Ensure the checked-in `.kodiai.yml` example no longer advertises the unsupported team path.",
       "estimate": "1 context window",
       "files": [
@@ -21638,6 +21646,17 @@
       "verdict": "✅ pass",
       "duration_ms": 5061,
       "created_at": "2026-04-18T23:55:28.378Z"
+    },
+    {
+      "id": 483,
+      "task_id": "T02",
+      "slice_id": "S02",
+      "milestone_id": "M051",
+      "command": "! rg -n \"uiRereviewTeam|requestUiRereviewTeamOnOpen|ai-review|aireview\" docs/runbooks/review-requested-debug.md docs/configuration.md docs/smoke/phase75-live-ops-verification-closure.md .kodiai.yml && rg -n \"@kodiai review\" docs/runbooks/review-requested-debug.md docs/smoke/phase75-live-ops-verification-closure.md",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8,
+      "created_at": "2026-04-19T00:01:19.511Z"
     }
   ]
 }

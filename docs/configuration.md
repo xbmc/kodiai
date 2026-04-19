@@ -151,24 +151,6 @@ Controls PR review behavior. This is the largest configuration section.
 
 Master switch for PR reviews. Set to `false` to disable all automated reviews.
 
-### `review.uiRereviewTeam`
-
-| | |
-|---|---|
-| **Type** | `string` |
-| **Default** | *(none)* |
-
-Optional GitHub team slug for UI-based re-review. When configured, Kodiai ensures this team is requested as a reviewer so it appears under the PR's Reviewers panel. Humans can remove and re-request the team to retrigger a review.
-
-### `review.requestUiRereviewTeamOnOpen`
-
-| | |
-|---|---|
-| **Type** | `boolean` |
-| **Default** | `false` |
-
-If `true`, automatically request `uiRereviewTeam` on PR opened/ready-for-review events (best-effort).
-
 ### `review.triggers`
 
 Controls which GitHub webhook events trigger a review.
@@ -177,7 +159,7 @@ Controls which GitHub webhook events trigger a review.
 |---|---|---|---|
 | `onOpened` | `boolean` | `true` | Review when PR is opened |
 | `onReadyForReview` | `boolean` | `true` | Review when PR moves from draft to ready |
-| `onReviewRequested` | `boolean` | `true` | Review when review is explicitly requested |
+| `onReviewRequested` | `boolean` | `true` | Review when Kodiai is explicitly requested as a reviewer |
 | `onSynchronize` | `boolean` | `false` | Review on new pushes to the PR branch |
 
 ```yaml
