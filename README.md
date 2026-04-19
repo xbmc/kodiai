@@ -4,7 +4,7 @@ Kodiai is an installable GitHub App that delivers AI-powered code review, conver
 
 Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
 
-29 milestones shipped (v0.1 through v0.29). See [CHANGELOG.md](CHANGELOG.md) for release history.
+30 milestones shipped (v0.1 through v0.30). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
 
@@ -57,7 +57,7 @@ For the full architecture walkthrough — components, data flow, retrieval pipel
 
 **Issue Intelligence** — Auto-triage with template validation, label recommendations, duplicate detection, troubleshooting synthesis from resolved issues, and PR creation from issues via `apply:`/`change:` commands.
 
-**Slack Integration** — Thread-based assistant in `#kodiai` with read-only default, explicit write-mode activation, and high-impact confirmation gating.
+**Slack Integration** — Thread-based assistant in `#kodiai` with read-only default, explicit write-mode activation, high-impact confirmation gating, and a verified webhook-to-Slack relay surface with explicit filtering and delivery diagnostics.
 
 **Knowledge System** — 6-corpus hybrid retrieval (code, review comments, wiki, code snippets, issues, canonical current-code) with BM25 + vector search, Reciprocal Rank Fusion merging, and post-RRF neural reranking.
 

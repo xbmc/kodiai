@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## v0.30 (2026-04-19)
+
+Truthful Manual Rereview & Slack Webhook Relay.
+
+### Added
+
+- Verified webhook-to-Slack relay support via `POST /webhooks/slack/relay/:sourceId`, including env-backed `SLACK_WEBHOOK_RELAY_SOURCES` source config, generic payload normalization, optional filtering, explicit suppression/delivery failure outcomes, a dedicated relay runbook, and a fixture-backed `verify:m052` proof command.
+- Operator smoke and rollout guidance for the relay surface, including documented curl flows for accepted, suppressed, and failed-delivery outcomes.
+
+### Fixed
+
+- `@kodiai review` is now the only supported manual rereview trigger; the stale `ai-review` / `aireview` team-trigger contract was removed from runtime behavior, config surfaces, docs, examples, and regression tests.
+- Manual rereview observability now treats team-only `pull_request.review_requested` deliveries as explicit unsupported skip signals instead of implying a supported operator retrigger path.
+- M048 phase-timing evidence handling now marks incomplete correlated phase rows as `invalid-phase-payload` and preserves `publication unknown` wording instead of collapsing partial evidence into false-green summaries.
+
+### Changed
+
+- README and deployment/runbook docs now describe Slack webhook relay as service-level runtime configuration rather than `.kodiai.yml` behavior.
+- Review-request debugging and release-proof docs now point operators at the explicit `interactive-review` / `review.full` surfaces for supported manual rereview evidence.
+
 ## v0.29 (2026-04-15)
 
 Explicit Review Lane Hardening.
