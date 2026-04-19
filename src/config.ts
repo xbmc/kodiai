@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  parseWebhookRelaySourcesEnv,
+  webhookRelaySourceSchema,
+} from "./slack/webhook-relay-config.ts";
 
 const configSchema = z.object({
   githubAppId: z.string().min(1, "GITHUB_APP_ID is required"),
@@ -10,6 +14,7 @@ const configSchema = z.object({
   slackKodiaiChannelId: z.string().min(1, "SLACK_KODIAI_CHANNEL_ID is required"),
   slackDefaultRepo: z.string().default("xbmc/xbmc"),
   slackAssistantModel: z.string().default("claude-3-5-haiku-latest"),
+  slackWebhookRelaySources: z.array(webhookRelaySourceSchema).default([]),
   port: z.coerce.number().default(3000),
   logLevel: z.string().default("info"),
   botAllowList: z
@@ -87,6 +92,16 @@ export async function loadConfig(): Promise<AppConfig> {
     process.exit(1);
   }
 
+  let slackWebhookRelaySources;
+  try {
+    slackWebhookRelaySources = parseWebhookRelaySourcesEnv(process.env.SLACK_WEBHOOK_RELAY_SOURCES);
+  } catch (err) {
+    console.error(
+      `FATAL: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
+
   const result = configSchema.safeParse({
     githubAppId: process.env.GITHUB_APP_ID,
     githubPrivateKey: privateKey,
@@ -97,6 +112,7 @@ export async function loadConfig(): Promise<AppConfig> {
     slackKodiaiChannelId: process.env.SLACK_KODIAI_CHANNEL_ID,
     slackDefaultRepo: process.env.SLACK_DEFAULT_REPO,
     slackAssistantModel: process.env.SLACK_ASSISTANT_MODEL,
+    slackWebhookRelaySources,
     port: process.env.PORT,
     logLevel: process.env.LOG_LEVEL,
     botAllowList: process.env.BOT_ALLOW_LIST,

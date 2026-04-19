@@ -176,6 +176,7 @@ async function main() {
       slackKodiaiChannelId: "unused",
       slackDefaultRepo: repo,
       slackAssistantModel: "unused",
+      slackWebhookRelaySources: [],
       port: 0,
       logLevel: "info",
       botAllowList: [],

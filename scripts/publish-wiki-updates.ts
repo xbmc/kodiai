@@ -154,6 +154,7 @@ async function main() {
       slackKodiaiChannelId: "unused",
       slackDefaultRepo: "xbmc/xbmc",
       slackAssistantModel: "unused",
+      slackWebhookRelaySources: [],
       port: 0,
       logLevel: process.env.LOG_LEVEL ?? "info",
       botAllowList: [],

@@ -163,6 +163,7 @@ These are the fastest operator checks after a deploy:
 - `GET /healthz`
 - `GET /readiness`
 - Deploy output showing the exact proof URLs that were just probed
+- `bun run verify:m052` when Slack webhook relay is enabled
 
 ## Operational Runbooks
 
@@ -196,4 +197,6 @@ Health checks:
 ```bash
 curl -fsS "https://$(az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn -o tsv)/healthz"
 curl -fsS "https://$(az containerapp show --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn -o tsv)/readiness"
+```
+how --name ca-kodiai --resource-group rg-kodiai --query properties.configuration.ingress.fqdn -o tsv)/readiness"
 ```

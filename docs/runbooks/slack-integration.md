@@ -2,6 +2,8 @@
 
 Use this runbook for deploying and operating Slack integration for Kodiai in `#kodiai`.
 
+For the separate inbound webhook-to-Slack relay surface, use [Slack Webhook Relay](./slack-webhook-relay.md). That feature is service-level runtime config (`SLACK_WEBHOOK_RELAY_SOURCES`), not `.kodiai.yml`.
+
 Primary goal: keep Slack behavior deterministic and thread-only while giving responders a fast path from symptom to root cause.
 
 ## Scope and Contract

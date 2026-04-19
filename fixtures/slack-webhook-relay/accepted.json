@@ -1,0 +1,11 @@
+{
+  "eventType": "build.failed",
+  "title": "Build failed on main",
+  "summary": "CI failed for xbmc/xbmc after the latest merge.",
+  "url": "https://ci.example.test/builds/123",
+  "text": "Build failed for xbmc/xbmc on main after merge 09f28d7.",
+  "metadata": {
+    "pipeline": "main",
+    "provider": "buildkite"
+  }
+}

@@ -2,6 +2,8 @@
 
 Kodiai is an installable GitHub App that delivers AI-powered code review, conversational assistance, issue intelligence, and Slack integration. One installation replaces per-repo workflow YAML — configure behavior with an optional `.kodiai.yml` file.
 
+Service-level runtime features like Slack webhook relay are configured through environment variables, not `.kodiai.yml`.
+
 29 milestones shipped (v0.1 through v0.29). See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Quick Start
@@ -35,6 +37,7 @@ The server exposes:
 |---|---|
 | `POST /webhooks/github` | GitHub webhook receiver |
 | `POST /webhooks/slack/events` | Slack events receiver |
+| `POST /webhooks/slack/relay/:sourceId` | Verified webhook-to-Slack relay receiver |
 | `GET /healthz` | Liveness probe |
 | `GET /readiness` | Readiness probe |
 
@@ -94,7 +97,7 @@ Full documentation lives in the `docs/` directory:
 
 Kodiai deploys to Azure Container Apps via ACR remote build with zero-downtime rolling deploys, and the deploy script reports the active revision for post-deploy proof.
 
-See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md).
+See [docs/deployment.md](docs/deployment.md) for details. For diagnosing review-request issues, see [docs/runbooks/review-requested-debug.md](docs/runbooks/review-requested-debug.md). For Slack assistant operations, see [docs/runbooks/slack-integration.md](docs/runbooks/slack-integration.md). For webhook relay setup and troubleshooting, see [docs/runbooks/slack-webhook-relay.md](docs/runbooks/slack-webhook-relay.md).
 
 ## Contributing
 

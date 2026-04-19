@@ -135,6 +135,7 @@ async function main(): Promise<void> {
         slackKodiaiChannelId: "unused",
         slackDefaultRepo: "xbmc/xbmc",
         slackAssistantModel: "unused",
+        slackWebhookRelaySources: [],
         port: 0,
         logLevel: "info",
         botAllowList: [],

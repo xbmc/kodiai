@@ -38,6 +38,7 @@ function createTestConfig(): AppConfig {
     slackKodiaiChannelId: "C123KODIAI",
     slackDefaultRepo: "xbmc/xbmc",
     slackAssistantModel: "claude-3-5-haiku-latest",
+    slackWebhookRelaySources: [],
     port: 3000,
     logLevel: "info",
     botAllowList: [],

@@ -97,6 +97,7 @@ function makeConfig(overrides?: Partial<AppConfig>): AppConfig {
     slackKodiaiChannelId: "C123",
     slackDefaultRepo: "xbmc/xbmc",
     slackAssistantModel: "claude-3-5-haiku-latest",
+    slackWebhookRelaySources: [],
     port: 3000,
     logLevel: "info",
     botAllowList: [],

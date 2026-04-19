@@ -1014,6 +1014,7 @@ function buildGitHubAppConfig(repository: string, privateKey: string) {
     slackKodiaiChannelId: "unused",
     slackDefaultRepo: repository,
     slackAssistantModel: "unused",
+    slackWebhookRelaySources: [],
     port: 0,
     logLevel: "info",
     botAllowList: [],

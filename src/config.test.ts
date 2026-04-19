@@ -22,6 +22,8 @@ beforeEach(() => {
   }
   savedEnv.MCP_INTERNAL_BASE_URL = process.env.MCP_INTERNAL_BASE_URL;
   delete process.env.MCP_INTERNAL_BASE_URL;
+  savedEnv.SLACK_WEBHOOK_RELAY_SOURCES = process.env.SLACK_WEBHOOK_RELAY_SOURCES;
+  delete process.env.SLACK_WEBHOOK_RELAY_SOURCES;
 });
 
 afterEach(() => {
@@ -38,5 +40,44 @@ describe("loadConfig", () => {
   test("defaults MCP internal base URL to the internal ACA app host without the external route suffix or port", async () => {
     const config = await loadConfig();
     expect(config.mcpInternalBaseUrl).toBe("http://ca-kodiai");
+    expect(config.slackWebhookRelaySources).toEqual([]);
+  });
+
+  test("parses Slack webhook relay sources from app config", async () => {
+    process.env.SLACK_WEBHOOK_RELAY_SOURCES = JSON.stringify([
+      {
+        id: "buildkite",
+        targetChannel: "C_BUILD_ALERTS",
+        auth: {
+          type: "header_secret",
+          headerName: "x-relay-secret",
+          secret: "super-secret",
+        },
+        filter: {
+          eventTypes: ["build.failed"],
+          textIncludes: ["failed"],
+          textExcludes: ["flaky"],
+        },
+      },
+    ]);
+
+    const config = await loadConfig();
+
+    expect(config.slackWebhookRelaySources).toEqual([
+      {
+        id: "buildkite",
+        targetChannel: "C_BUILD_ALERTS",
+        auth: {
+          type: "header_secret",
+          headerName: "x-relay-secret",
+          secret: "super-secret",
+        },
+        filter: {
+          eventTypes: ["build.failed"],
+          textIncludes: ["failed"],
+          textExcludes: ["flaky"],
+        },
+      },
+    ]);
   });
 });
