@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "exported_at": "2026-04-19T00:40:38.538Z",
+  "exported_at": "2026-04-19T00:47:24.952Z",
   "milestones": [
     {
       "id": "M001",
@@ -14902,19 +14902,26 @@
       "milestone_id": "M051",
       "slice_id": "S03",
       "id": "T02",
-      "title": "Make the M048 verifier summaries preserve tri-state publication truth",
-      "status": "pending",
-      "one_liner": "",
-      "narrative": "",
-      "verification_result": "",
+      "title": "Repaired M048 verifier summaries so incomplete evidence and publication-unknown states stay truthful across the S01 and S03 report surfaces.",
+      "status": "complete",
+      "one_liner": "Repaired M048 verifier summaries so incomplete evidence and publication-unknown states stay truthful across the S01 and S03 report surfaces.",
+      "narrative": "I followed a red-green cycle for the verifier wording drift. First I extended `scripts/verify-m048-s01.test.ts` with failing regressions for three cases the old implementation collapsed incorrectly: evidence present with `conclusion: null`/`published: null`, `success` with `published: null`, and `timeout` with `published: null`. I also extended `scripts/verify-m048-s03.test.ts` so the live S03 report path pins the reused S01 `outcome.summary` string verbatim.\n\nWith the failures reproduced, I updated `deriveM048S01Outcome()` in `scripts/verify-m048-s01.ts` to reserve `no correlated phase evidence available` for the true `!evidence` path only, keep `timeout_partial` limited to timeout evidence that explicitly published output, and render `publication unknown` whenever `published === null`. The fallback branch now reports `unknown (...)` for incomplete-but-present evidence instead of pretending no evidence existed.\n\nThis keeps the operator-facing summary truthful in both the direct S01 verifier surface and the downstream S03 live report that exposes `report.live.phaseTiming.outcome.summary`.",
+      "verification_result": "Task verification passed: `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` and the downstream guard `bun test ./scripts/verify-m048-s02.test.ts` both succeeded after the fix. Observability impact was verified directly by asserting the repaired S01 `outcome.summary` strings and the unchanged S03 reuse path in tests.\n\nSlice-level verification status for this intermediate task: `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts`, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, and `bun run tsc --noEmit` all passed. The runbook grep check still fails because `docs/runbooks/review-requested-debug.md` still contains the stale `## M050 Timeout-Truth Verifier Surfaces` header, which is the remaining T03 docs work for this slice rather than a regression from T02.",
       "duration": "",
-      "completed_at": null,
+      "completed_at": "2026-04-19T00:47:24.908Z",
       "blocker_discovered": false,
-      "deviations": "",
-      "known_issues": "",
-      "key_files": [],
-      "key_decisions": [],
-      "full_summary_md": "",
+      "deviations": "None.",
+      "known_issues": "Slice-level docs verification is still red until T03 updates `docs/runbooks/review-requested-debug.md` to remove the stale `## M050 Timeout-Truth Verifier Surfaces` header.",
+      "key_files": [
+        "scripts/verify-m048-s01.ts",
+        "scripts/verify-m048-s01.test.ts",
+        "scripts/verify-m048-s03.test.ts"
+      ],
+      "key_decisions": [
+        "Reserve `no correlated phase evidence available` for the true missing-evidence path and treat `published: null` as `publication unknown` in verifier summaries.",
+        "Pin `verify:m048:s03` to the shared S01 `outcome.summary` text so downstream operator wording cannot drift independently."
+      ],
+      "full_summary_md": "---\nid: T02\nparent: S03\nmilestone: M051\nkey_files:\n  - scripts/verify-m048-s01.ts\n  - scripts/verify-m048-s01.test.ts\n  - scripts/verify-m048-s03.test.ts\nkey_decisions:\n  - Reserve `no correlated phase evidence available` for the true missing-evidence path and treat `published: null` as `publication unknown` in verifier summaries.\n  - Pin `verify:m048:s03` to the shared S01 `outcome.summary` text so downstream operator wording cannot drift independently.\nduration: \nverification_result: mixed\ncompleted_at: 2026-04-19T00:47:24.908Z\nblocker_discovered: false\n---\n\n# T02: Repaired M048 verifier summaries so incomplete evidence and publication-unknown states stay truthful across the S01 and S03 report surfaces.\n\n**Repaired M048 verifier summaries so incomplete evidence and publication-unknown states stay truthful across the S01 and S03 report surfaces.**\n\n## What Happened\n\nI followed a red-green cycle for the verifier wording drift. First I extended `scripts/verify-m048-s01.test.ts` with failing regressions for three cases the old implementation collapsed incorrectly: evidence present with `conclusion: null`/`published: null`, `success` with `published: null`, and `timeout` with `published: null`. I also extended `scripts/verify-m048-s03.test.ts` so the live S03 report path pins the reused S01 `outcome.summary` string verbatim.\n\nWith the failures reproduced, I updated `deriveM048S01Outcome()` in `scripts/verify-m048-s01.ts` to reserve `no correlated phase evidence available` for the true `!evidence` path only, keep `timeout_partial` limited to timeout evidence that explicitly published output, and render `publication unknown` whenever `published === null`. The fallback branch now reports `unknown (...)` for incomplete-but-present evidence instead of pretending no evidence existed.\n\nThis keeps the operator-facing summary truthful in both the direct S01 verifier surface and the downstream S03 live report that exposes `report.live.phaseTiming.outcome.summary`.\n\n## Verification\n\nTask verification passed: `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` and the downstream guard `bun test ./scripts/verify-m048-s02.test.ts` both succeeded after the fix. Observability impact was verified directly by asserting the repaired S01 `outcome.summary` strings and the unchanged S03 reuse path in tests.\n\nSlice-level verification status for this intermediate task: `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts`, `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts`, and `bun run tsc --noEmit` all passed. The runbook grep check still fails because `docs/runbooks/review-requested-debug.md` still contains the stale `## M050 Timeout-Truth Verifier Surfaces` header, which is the remaining T03 docs work for this slice rather than a regression from T02.\n\n## Verification Evidence\n\n| # | Command | Exit Code | Verdict | Duration |\n|---|---------|-----------|---------|----------|\n| 1 | `bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` | 0 | ✅ pass | 88ms |\n| 2 | `bun test ./scripts/verify-m048-s02.test.ts` | 0 | ✅ pass | 24ms |\n| 3 | `bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts` | 0 | ✅ pass | 91ms |\n| 4 | `bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts` | 0 | ✅ pass | 4551ms |\n| 5 | `! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md` | 1 | ❌ fail | 3ms |\n| 6 | `bun run tsc --noEmit` | 0 | ✅ pass | 8400ms |\n\n## Deviations\n\nNone.\n\n## Known Issues\n\nSlice-level docs verification is still red until T03 updates `docs/runbooks/review-requested-debug.md` to remove the stale `## M050 Timeout-Truth Verifier Surfaces` header.\n\n## Files Created/Modified\n\n- `scripts/verify-m048-s01.ts`\n- `scripts/verify-m048-s01.test.ts`\n- `scripts/verify-m048-s03.test.ts`\n",
       "description": "Why: the S01 verifier currently collapses `evidence present but incomplete` into the same summary as `no evidence`, and it treats `published: null` as if publication definitely failed. Do: add failing summary regressions first, keep the `no correlated phase evidence available` wording only for the real no-evidence case, render `publication unknown` when `published` is null, and pin the downstream S03 report surface so it reuses the repaired wording unchanged. Done when: operator-facing outcome summaries stay truthful for missing conclusion/publication fields and downstream verifier tests keep the shared report contract green.",
       "estimate": "1h",
       "files": [
@@ -21883,6 +21890,72 @@
       "verdict": "✅ pass",
       "duration_ms": 8702,
       "created_at": "2026-04-19T00:40:38.508Z"
+    },
+    {
+      "id": 491,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 88,
+      "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 492,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./scripts/verify-m048-s02.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 24,
+      "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 493,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./src/review-audit/phase-timing-evidence.test.ts ./scripts/verify-m048-s01.test.ts ./scripts/verify-m048-s03.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 91,
+      "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 494,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun test ./scripts/verify-m048-s02.test.ts ./src/lib/review-utils.test.ts ./src/handlers/review.test.ts",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 4551,
+      "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 495,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "! rg -n \"^## M050 Timeout-Truth Verifier Surfaces$\" docs/runbooks/review-requested-debug.md && rg -n \"^## M048 .*Verifier Surfaces$|verify:m048:s01|verify:m048:s02|verify:m048:s03\" docs/runbooks/review-requested-debug.md",
+      "exit_code": 1,
+      "verdict": "❌ fail",
+      "duration_ms": 3,
+      "created_at": "2026-04-19T00:47:24.909Z"
+    },
+    {
+      "id": 496,
+      "task_id": "T02",
+      "slice_id": "S03",
+      "milestone_id": "M051",
+      "command": "bun run tsc --noEmit",
+      "exit_code": 0,
+      "verdict": "✅ pass",
+      "duration_ms": 8400,
+      "created_at": "2026-04-19T00:47:24.909Z"
     }
   ]
 }

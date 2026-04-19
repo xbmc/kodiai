@@ -56,7 +56,7 @@
   - Do: add failing regressions first, treat both fields as named payload issues, keep the matched row plus normalized phases visible for diagnosis, and preserve existing malformed-phase behavior instead of hiding it behind the new checks.
   - Verify: `bun test ./src/review-audit/phase-timing-evidence.test.ts`
   - Done when: incomplete matched rows return `invalid-phase-payload` with specific issues for missing `conclusion` / `published`, while `evidence` still carries the matched row identity and normalized phases.
-- [ ] **T02: Make the M048 verifier summaries preserve tri-state publication truth** `est:1h`
+- [x] **T02: Make the M048 verifier summaries preserve tri-state publication truth** `est:1h`
   - Why: the S01 verifier currently collapses `evidence present but incomplete` into the same summary as `no evidence`, and it treats `published: null` as if publication definitely failed.
   - Files: `scripts/verify-m048-s01.ts`, `scripts/verify-m048-s01.test.ts`, `scripts/verify-m048-s03.test.ts`
   - Do: add failing summary regressions first, keep `no correlated phase evidence available` only for the real no-evidence case, render `publication unknown` when `published` is null, and pin the downstream S03 report surface so it reuses the repaired wording unchanged.

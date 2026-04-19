@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ReviewPhaseTiming } from "../src/execution/types.ts";
 import type { NormalizedLogAnalyticsRow } from "../src/review-audit/log-analytics.ts";
+import type { PhaseTimingEvidence } from "../src/review-audit/phase-timing-evidence.ts";
 import { buildReviewOutputKey } from "../src/handlers/review-idempotency.ts";
 
 const REQUIRED_PHASES = [
@@ -19,6 +20,27 @@ function makePhases(overrides?: Partial<Record<(typeof REQUIRED_PHASES)[number],
     durationMs: (index + 1) * 125,
     ...(overrides?.[name] ?? {}),
   }));
+}
+
+function makeEvidence(params?: {
+  reviewOutputKey?: string;
+  deliveryId?: string | null;
+  totalDurationMs?: number | null;
+  conclusion?: string | null;
+  published?: boolean | null;
+  phases?: ReviewPhaseTiming[];
+}): PhaseTimingEvidence {
+  return {
+    reviewOutputKey: params?.reviewOutputKey ?? "rok-123",
+    deliveryId: params?.deliveryId ?? "delivery-123",
+    conclusion: params?.conclusion === undefined ? "success" : params.conclusion,
+    published: params?.published === undefined ? true : params.published,
+    totalDurationMs: params?.totalDurationMs ?? 4_250,
+    timeGenerated: "2026-04-12T16:30:00.000Z",
+    revisionName: "ca-kodiai--0000102",
+    containerAppName: "ca-kodiai",
+    phases: params?.phases ?? makePhases(),
+  };
 }
 
 function makeRow(params?: {
@@ -83,6 +105,46 @@ describe("verify-m048-s01", () => {
 
     expect(result.reviewOutputKey).toBeNull();
     expect(result.json).toBe(true);
+  });
+
+  test("deriveM048S01Outcome keeps the no-evidence summary reserved for the true missing-evidence path", async () => {
+    const { deriveM048S01Outcome } = await loadModule();
+
+    expect(deriveM048S01Outcome(null)).toEqual({
+      class: "unknown",
+      conclusion: null,
+      published: null,
+      summary: "no correlated phase evidence available",
+    });
+
+    expect(deriveM048S01Outcome(makeEvidence({ conclusion: null, published: null }))).toEqual({
+      class: "unknown",
+      conclusion: null,
+      published: null,
+      summary: "unknown (publication unknown)",
+    });
+  });
+
+  test("deriveM048S01Outcome renders publication unknown for success evidence with an unknown publication state", async () => {
+    const { deriveM048S01Outcome } = await loadModule();
+
+    expect(deriveM048S01Outcome(makeEvidence({ conclusion: "success", published: null }))).toEqual({
+      class: "success",
+      conclusion: "success",
+      published: null,
+      summary: "success (publication unknown)",
+    });
+  });
+
+  test("deriveM048S01Outcome renders publication unknown for timeout evidence with an unknown publication state", async () => {
+    const { deriveM048S01Outcome } = await loadModule();
+
+    expect(deriveM048S01Outcome(makeEvidence({ conclusion: "timeout", published: null }))).toEqual({
+      class: "timeout",
+      conclusion: "timeout",
+      published: null,
+      summary: "timeout (publication unknown)",
+    });
   });
 
   test("evaluateM048S01 returns a successful report with the required six-phase matrix", async () => {

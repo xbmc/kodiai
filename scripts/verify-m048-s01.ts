@@ -116,6 +116,11 @@ function readOptionValue(args: string[], index: number): { value: string | null;
 export function deriveM048S01Outcome(evidence: PhaseTimingEvidence | null | undefined): M048S01Outcome {
   const conclusion = evidence?.conclusion ?? null;
   const published = evidence?.published ?? null;
+  const publicationSummary = published === true
+    ? "published output"
+    : published === false
+      ? "no published output"
+      : "publication unknown";
 
   if (!evidence) {
     return {
@@ -140,7 +145,7 @@ export function deriveM048S01Outcome(evidence: PhaseTimingEvidence | null | unde
       class: "timeout",
       conclusion,
       published,
-      summary: "timeout (no visible output published)",
+      summary: published === false ? "timeout (no visible output published)" : "timeout (publication unknown)",
     };
   }
 
@@ -149,7 +154,11 @@ export function deriveM048S01Outcome(evidence: PhaseTimingEvidence | null | unde
       class: "success",
       conclusion,
       published,
-      summary: published === true ? "success (published output)" : "success (no published output)",
+      summary: published === true
+        ? "success (published output)"
+        : published === false
+          ? "success (no published output)"
+          : "success (publication unknown)",
     };
   }
 
@@ -157,9 +166,7 @@ export function deriveM048S01Outcome(evidence: PhaseTimingEvidence | null | unde
     class: conclusion ? "failure" : "unknown",
     conclusion,
     published,
-    summary: conclusion
-      ? `${conclusion} (${published === true ? "published output" : published === false ? "no published output" : "publication unknown"})`
-      : "no correlated phase evidence available",
+    summary: `${conclusion ?? "unknown"} (${publicationSummary})`,
   };
 }
 

@@ -11,7 +11,36 @@ function makeS01Report(params?: {
   success?: boolean;
   statusCode?: M048S01Report["status_code"];
   azureLogs?: M048S01Report["sourceAvailability"]["azureLogs"];
+  conclusion?: string | null;
+  published?: boolean | null;
+  outcomeClass?: M048S01Report["outcome"]["class"];
+  outcomeSummary?: string;
 }): M048S01Report {
+  const conclusion = params?.conclusion === undefined ? "success" : params.conclusion;
+  const published = params?.published === undefined ? true : params.published;
+  const outcomeClass = params?.outcomeClass
+    ?? (conclusion === "timeout_partial"
+      ? "timeout_partial"
+      : conclusion === "timeout"
+        ? "timeout"
+        : conclusion === "success"
+          ? "success"
+          : conclusion
+            ? "failure"
+            : "unknown");
+  const outcomeSummary = params?.outcomeSummary
+    ?? (conclusion === "timeout_partial"
+      ? "timeout_partial (visible partial output published)"
+      : conclusion === "timeout"
+        ? (published === true ? "timeout_partial (visible partial output published)" : published === false
+          ? "timeout (no visible output published)"
+          : "timeout (publication unknown)")
+        : conclusion === "success"
+          ? (published === true ? "success (published output)" : published === false
+            ? "success (no published output)"
+            : "success (publication unknown)")
+          : `${conclusion ?? "unknown"} (${published === true ? "published output" : published === false ? "no published output" : "publication unknown"})`);
+
   return {
     command: "verify:m048:s01",
     generated_at: "2026-04-13T05:00:00.000Z",
@@ -31,16 +60,16 @@ function makeS01Report(params?: {
       driftedRowCount: 0,
     },
     outcome: {
-      class: "success",
-      conclusion: "success",
-      published: true,
-      summary: "success (published output)",
+      class: outcomeClass,
+      conclusion,
+      published,
+      summary: outcomeSummary,
     },
     evidence: {
       reviewOutputKey: params?.reviewOutputKey ?? "rok-sync",
       deliveryId: params?.deliveryId ?? "delivery-sync",
-      conclusion: "success",
-      published: true,
+      conclusion,
+      published,
       totalDurationMs: 4_200,
       timeGenerated: "2026-04-13T04:59:00.000Z",
       revisionName: "ca-kodiai--0000102",
@@ -239,6 +268,38 @@ describe("verify-m048-s03", () => {
         class: "success",
       }),
     }));
+  });
+
+  test("renderM048S03Report preserves the reused S01 outcome summary verbatim", async () => {
+    const { evaluateM048S03, renderM048S03Report } = await loadModule();
+    const reviewOutputKey = buildReviewOutputKey({
+      installationId: 42,
+      owner: "xbmc",
+      repo: "kodiai",
+      prNumber: 205,
+      action: "synchronize",
+      deliveryId: "delivery-205",
+      headSha: "abc123",
+    });
+
+    const report = await evaluateM048S03({
+      workspaceDir: process.cwd(),
+      reviewOutputKey,
+      generatedAt: "2026-04-13T05:10:00.000Z",
+      evaluateLivePhaseTiming: async ({ reviewOutputKey: key, deliveryId }) =>
+        makeS01Report({
+          reviewOutputKey: key,
+          deliveryId,
+          conclusion: "timeout",
+          published: null,
+          outcomeSummary: "timeout (publication unknown)",
+        }),
+    });
+
+    const human = renderM048S03Report(report);
+
+    expect(report.live.phaseTiming?.outcome.summary).toBe("timeout (publication unknown)");
+    expect(human).toContain("- Outcome detail: timeout (publication unknown)");
   });
 
   test("main exits zero when --review-output-key is present without a value so local proof stays cheap", async () => {

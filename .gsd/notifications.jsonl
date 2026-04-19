@@ -277,3 +277,5 @@
 {"id":"fbecdd7b-d2ad-45da-b71d-d26bc2837083","ts":"2026-04-19T00:01:26.195Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
 {"id":"de3f8c6c-ea42-4dec-8625-4132a7954205","ts":"2026-04-19T00:09:37.565Z","severity":"info","message":"Committed: feat: Locked the surviving `@kodiai review` proof surface with explicit…","source":"notify","read":false}
 {"id":"7e20cf04-aea0-4362-b23e-bebb316be9f4","ts":"2026-04-19T00:09:47.336Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
+{"id":"0a166421-041b-4882-b4ff-3fc4f79cfbb4","ts":"2026-04-19T00:40:42.269Z","severity":"info","message":"Committed: feat: Rejected incomplete phase-timing payloads by flagging missing con…","source":"notify","read":false}
+{"id":"2056b150-5100-4e5b-b133-b860a5d50c26","ts":"2026-04-19T00:40:42.311Z","severity":"info","message":"Verification gate: 1/1 checks passed","source":"notify","read":false}
