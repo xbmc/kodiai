@@ -1843,6 +1843,19 @@ describe("epistemic section placement in buildReviewPrompt", () => {
   });
 });
 
+describe("degraded diff guidance in buildReviewPrompt", () => {
+  test("does not instruct merge-base git commands when local diff inspection is unavailable", () => {
+    const prompt = buildReviewPrompt(baseContext({
+      gitDiffInspectionAvailable: false,
+    }));
+
+    expect(prompt).toContain("Full local merge-base diff access is unavailable in this run.");
+    expect(prompt).toContain("Do not spend turns trying to reconstruct the diff with git history commands.");
+    expect(prompt).not.toContain("To see the full diff: Bash(git diff origin/main...HEAD)");
+    expect(prompt).not.toContain("To see changed files with stats: Bash(git log origin/main..HEAD --stat)");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Phase 115: Dep-bump rewrites, footnote citations, conventional commit
 // ---------------------------------------------------------------------------

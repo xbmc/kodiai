@@ -386,6 +386,7 @@ export function formatReviewDetailsSummary(params: {
   structuralImpact?: StructuralImpactPayload | null;
   phaseTimingSummary?: ReviewDetailsPhaseTimingSummary | null;
   timeoutProgress?: TimeoutReviewDetailsProgress | null;
+  completedAt?: string;
 }): string {
   const {
     reviewOutputKey,
@@ -405,6 +406,7 @@ export function formatReviewDetailsSummary(params: {
     structuralImpact,
     phaseTimingSummary,
     timeoutProgress,
+    completedAt,
   } = params;
 
   const formatProfileLine = (label: string, profile: ResolvedReviewProfile): string => {
@@ -460,7 +462,7 @@ export function formatReviewDetailsSummary(params: {
         ]
       : [profileLine]),
     `- Contributor experience: ${contributorExperience.text}`,
-    `- Review completed: ${new Date().toISOString()}`,
+    `- Review completed: ${completedAt ?? new Date().toISOString()}`,
   ];
 
   if (phaseTimingSummary) {

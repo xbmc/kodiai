@@ -472,9 +472,14 @@ function createTestableExecutor(deps: {
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType !== "review.full";
+        const gitDiffInspectionAvailable = context.gitDiffInspectionAvailable !== false;
         const baseTools = isReadOnlyPrMention
-          ? ["Read", "Grep", "Bash(git diff:*)", "Bash(git status:*)"]
-          : ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"];
+          ? gitDiffInspectionAvailable
+            ? ["Read", "Grep", "Bash(git diff:*)", "Bash(git status:*)"]
+            : ["Read", "Grep", "Bash(git status:*)"]
+          : gitDiffInspectionAvailable
+            ? ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
+            : ["Read", "Grep", "Glob", "Bash(git status:*)"];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
         const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
@@ -1176,6 +1181,63 @@ test("ACA dispatch: explicit review mention stages a review bundle transport wit
     baseRef: "main",
     originUrl: "https://github.com/xbmc/xbmc.git",
   });
+});
+
+test("ACA dispatch: degraded review lane strips git diff and history tools", async () => {
+  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
+  const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
+  await mkdir(join(sourceRepoDir, "src"), { recursive: true });
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
+  await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
+  await $`git -C ${sourceRepoDir} init`.quiet();
+  await $`git -C ${sourceRepoDir} config user.email test@example.com`.quiet();
+  await $`git -C ${sourceRepoDir} config user.name "Test User"`.quiet();
+  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+  await $`git -C ${sourceRepoDir} add .`.quiet();
+  await $`git -C ${sourceRepoDir} commit -m base`.quiet();
+  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'updated';\n");
+  await $`git -C ${sourceRepoDir} commit -am feature`.quiet();
+  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
+
+  const config = makeConfig();
+  const logger = makeLogger();
+  const registry = createMcpJobRegistry();
+
+  const executor = createTestableExecutor({
+    githubApp: makeGithubApp(),
+    logger,
+    config,
+    mcpJobRegistry: registry,
+    launchFn: async () => ({ executionName: "exec-degraded-review-lane" }),
+    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
+    readResultFn: async () => makeJobResult(),
+    createWorkspaceDirFn: async () => tmpDir!,
+  });
+
+  await executor.execute(
+    makeContext(sourceRepoDir, {
+      eventType: "pull_request.opened",
+      prNumber: 80,
+      taskType: "review.full",
+      gitDiffInspectionAvailable: false,
+    }),
+  );
+
+  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
+  const agentConfig = JSON.parse(rawAgentConfig) as {
+    allowedTools: string[];
+    taskType: string;
+  };
+
+  expect(agentConfig.taskType).toBe("review.full");
+  expect(agentConfig.allowedTools).toContain("Glob");
+  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git show:*)");
 });
 
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {

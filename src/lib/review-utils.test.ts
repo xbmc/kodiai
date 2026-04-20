@@ -82,6 +82,15 @@ describe("formatReviewDetailsSummary", () => {
     }
   });
 
+  it("uses an explicit completedAt timestamp when provided", () => {
+    const result = formatReviewDetailsSummary({
+      ...BASE_PARAMS,
+      completedAt: "2026-04-20T03:21:00.000Z",
+    });
+
+    expect(result).toContain("- Review completed: 2026-04-20T03:21:00.000Z");
+  });
+
   it("renders usage line when usageLimit is present", () => {
     const result = formatReviewDetailsSummary({
       ...BASE_PARAMS,

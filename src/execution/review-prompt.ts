@@ -1695,6 +1695,7 @@ export function buildReviewPrompt(context: {
   structuralImpact?: StructuralImpactPayload | null;
   reviewBoundedness?: ReviewBoundednessContract | null;
   publishToolNames?: string[];
+  gitDiffInspectionAvailable?: boolean;
 }): string {
   const lines: string[] = [];
   const scaleNotes: string[] = [];
@@ -1855,10 +1856,21 @@ export function buildReviewPrompt(context: {
     "",
     "## Reading the code",
     "",
-    `To see the full diff: Bash(git diff origin/${context.baseBranch}...HEAD)`,
-    `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
-    "Read the diff carefully before posting any comments.",
   );
+
+  if (context.gitDiffInspectionAvailable === false) {
+    lines.push(
+      "Full local merge-base diff access is unavailable in this run.",
+      "Do not spend turns trying to reconstruct the diff with git history commands.",
+      "Use the changed file list above plus Read/Grep/Glob on those files to complete the review.",
+    );
+  } else {
+    lines.push(
+      `To see the full diff: Bash(git diff origin/${context.baseBranch}...HEAD)`,
+      `To see changed files with stats: Bash(git log origin/${context.baseBranch}..HEAD --stat)`,
+      "Read the diff carefully before posting any comments.",
+    );
+  }
 
   // --- Review instructions ---
   lines.push(
