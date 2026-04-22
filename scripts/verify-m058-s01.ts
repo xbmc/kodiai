@@ -274,7 +274,7 @@ function findRunStep(ciContent: string, command: string): { index: number } | un
     return { index: exactMatch.index };
   }
 
-  const blockMatch = ciContent.match(/^\s*- run:\s*\|[\s\S]*?(?=^\s*- run:|\Z)/gm);
+  const blockMatch = ciContent.match(/^\s*- run:\s*\|[\s\S]*?(?=^\s*- run:|$)/gm);
   if (!blockMatch) {
     return undefined;
   }

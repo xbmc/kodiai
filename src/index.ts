@@ -8,6 +8,7 @@ import { createBotFilter } from "./webhook/filters.ts";
 import { createEventRouter } from "./webhook/router.ts";
 import { createWebhookRoutes } from "./routes/webhooks.ts";
 import { createSlackEventRoutes } from "./routes/slack-events.ts";
+import { createSlackRelayWebhookRoutes } from "./routes/slack-relay-webhooks.ts";
 import { createHealthRoutes } from "./routes/health.ts";
 import { createJobQueue } from "./jobs/queue.ts";
 import { createReviewWorkCoordinator } from "./jobs/review-work-coordinator.ts";
@@ -685,6 +686,4 @@ logger.info({ port: config.port }, "Kodiai server started");
 export default {
   port: config.port,
   fetch: app.fetch,
-};
-
 };

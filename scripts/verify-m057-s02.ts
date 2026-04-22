@@ -4,8 +4,8 @@ const TEST_COMMANDS = [
   ["bun", "test", "./src/lib/ci-failure-classifier.test.ts"],
 ] as const;
 
-type TestCommand = (typeof TEST_COMMANDS)[number];
-type SpawnSyncFn = (command: TestCommand) => { exitCode: number };
+type TestCommand = readonly string[];
+type SpawnSyncFn = (command: TestCommand) => { exitCode: number | null | undefined };
 type WriteFn = (message: string) => void;
 type ExitFn = (code: number) => never;
 
@@ -13,16 +13,17 @@ function formatCommand(command: TestCommand): string {
   return command.join(" ");
 }
 
+function defaultSpawnSync(command: TestCommand): { exitCode: number | null } {
+  return Bun.spawnSync({
+    cmd: [...command],
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+}
+
 export function runVerifyM057S02(
   commands: readonly TestCommand[] = TEST_COMMANDS,
-  spawnSyncFn: SpawnSyncFn = (command) => {
-    const [cmd, ...args] = command;
-    return Bun.spawnSync({
-      cmd: [cmd, ...args],
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-  },
+  spawnSyncFn: SpawnSyncFn = defaultSpawnSync,
   writeStdout: WriteFn = (message) => process.stdout.write(message),
   writeStderr: WriteFn = (message) => process.stderr.write(message),
   exitFn: ExitFn = (code) => process.exit(code),

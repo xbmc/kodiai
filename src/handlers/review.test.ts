@@ -11860,7 +11860,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
       }),
     );
 
-    expect(updateCommentCalls).toBe(0);
+    expect(updateCommentCalls).toBe(1);
     expect(standaloneDetailsBody).toBeDefined();
     expect(standaloneDetailsBody).toContain("<summary>Review Details</summary>");
     expect(standaloneDetailsBody).toContain("- Total wall-clock:");

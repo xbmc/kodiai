@@ -478,7 +478,7 @@ async function upsertReviewDetailsComment(params: {
   body: string;
   botHandles: string[];
   recheckCanPublish?: () => boolean;
-}): Promise<void> {
+}): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
   const marker = buildReviewDetailsMarker(reviewOutputKey);
   const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
@@ -497,7 +497,7 @@ async function upsertReviewDetailsComment(params: {
   );
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
-    return;
+    return undefined;
   }
 
   if (existingComment) {
@@ -507,15 +507,16 @@ async function upsertReviewDetailsComment(params: {
       comment_id: existingComment.id,
       body: sanitizedBody,
     });
-    return;
+    return existingComment.id;
   }
 
-  await octokit.rest.issues.createComment({
+  const response = await octokit.rest.issues.createComment({
     owner,
     repo,
     issue_number: prNumber,
     body: sanitizedBody,
   });
+  return response.data.id;
 }
 
 async function appendReviewDetailsToSummary(params: {
@@ -529,7 +530,7 @@ async function appendReviewDetailsToSummary(params: {
   requireDegradationDisclosure: boolean;
   reviewBoundedness?: ReviewBoundednessContract | null;
   recheckCanPublish?: () => boolean;
-}): Promise<void> {
+}): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
   const marker = buildReviewOutputMarker(reviewOutputKey);
