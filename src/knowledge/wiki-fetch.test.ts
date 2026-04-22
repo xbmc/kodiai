@@ -17,6 +17,14 @@ describe("buildWikiApiUrl", () => {
       "https://kodi.wiki/api.php?foo=bar&action=parse&page=Foo+Bar",
     );
   });
+
+  test("does not double-append /api.php when the base URL already targets the API path", () => {
+    const params = new URLSearchParams({ action: "query", format: "json" });
+
+    expect(buildWikiApiUrl("https://kodi.wiki/api.php?foo=bar", params)).toBe(
+      "https://kodi.wiki/api.php?foo=bar&action=query&format=json",
+    );
+  });
 });
 
 describe("withWikiHeaders", () => {

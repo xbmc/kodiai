@@ -19,7 +19,7 @@ export function buildWikiApiUrl(
 ): string {
   const url = new URL(baseUrl);
   const pathname = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
-  url.pathname = `${pathname}/api.php`;
+  url.pathname = pathname.endsWith("/api.php") ? pathname : `${pathname}/api.php`;
 
   const mergedParams = new URLSearchParams(url.search);
   for (const [key, value] of params.entries()) {

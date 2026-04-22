@@ -273,7 +273,8 @@ describe("createForkManager", () => {
         forkOwner: "kodiai-bot",
         forkRepo: "xbmc",
         branch: "main",
-        error: expect.any(Error),
+        errorStatus: 409,
+        errorMessage: "Conflict",
       },
       message: "Fork sync hit merge conflict",
     });
@@ -299,7 +300,7 @@ describe("createForkManager", () => {
         forkOwner: "kodiai-bot",
         forkRepo: "xbmc",
         branch: "feature/test",
-        error: expect.any(Error),
+        errorMessage: "network down",
       },
       message: "Failed to delete fork branch (best-effort)",
     });
