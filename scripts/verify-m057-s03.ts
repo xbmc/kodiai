@@ -6,7 +6,7 @@ export const TEST_COMMANDS = [
   ["bun", "test", "./src/handlers/mention.test.ts"],
 ] as const;
 
-type TestCommand = (typeof TEST_COMMANDS)[number];
+type TestCommand = readonly string[];
 
 type SpawnSyncResult = {
   exitCode: number | null;

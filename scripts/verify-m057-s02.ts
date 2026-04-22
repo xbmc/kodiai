@@ -32,9 +32,9 @@ export function runVerifyM057S02(
     writeStdout(`→ ${formatted}\n`);
 
     const result = spawnSyncFn(command);
-    if (result.exitCode !== 0) {
+    if ((result.exitCode ?? 1) !== 0) {
       writeStderr(`${COMMAND_NAME} failed: ${formatted}\n`);
-      exitFn(result.exitCode);
+      exitFn(result.exitCode ?? 1);
       return;
     }
   }

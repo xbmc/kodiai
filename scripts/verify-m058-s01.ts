@@ -150,7 +150,7 @@ export function parseM058S01Args(args: readonly string[]): { json: boolean } {
 }
 
 function buildCiCoverageBreadthCheck(ciContent: string): Check {
-  if (!hasExactRunStep(ciContent, EXPECTED_BROAD_TEST_STEP)) {
+  if (!hasRunStep(ciContent, EXPECTED_BROAD_TEST_STEP)) {
     return failCheck(
       "M058-S01-CI-COVERAGE-BREADTH",
       "ci_coverage_step_missing",
@@ -166,7 +166,7 @@ function buildCiCoverageBreadthCheck(ciContent: string): Check {
 }
 
 function buildCiSplitPreservedCheck(ciContent: string): Check {
-  if (!hasExactRunStep(ciContent, EXPECTED_KNOWLEDGE_TEST_STEP)) {
+  if (!hasRunStep(ciContent, EXPECTED_KNOWLEDGE_TEST_STEP)) {
     return failCheck(
       "M058-S01-CI-SPLIT-PRESERVED",
       "ci_split_step_missing",
@@ -260,16 +260,35 @@ function buildCiOrderingAndRationaleCheck(ciContent: string): Check {
   );
 }
 
-function hasExactRunStep(ciContent: string, command: string): boolean {
-  return runStepMatch(ciContent, command) != null;
+function hasRunStep(ciContent: string, command: string): boolean {
+  return indexOfRunStep(ciContent, command) !== -1;
 }
 
 function indexOfRunStep(ciContent: string, command: string): number {
-  return runStepMatch(ciContent, command)?.index ?? -1;
+  return findRunStep(ciContent, command)?.index ?? -1;
 }
 
-function runStepMatch(ciContent: string, command: string): RegExpMatchArray | null {
-  return ciContent.match(new RegExp(`^\\s*- run: ${escapeForRegex(command)}\\s*$`, "m"));
+function findRunStep(ciContent: string, command: string): { index: number } | undefined {
+  const exactMatch = ciContent.match(new RegExp(`^\\s*- run: ${escapeForRegex(command)}\\s*$`, "m"));
+  if (exactMatch?.index != null) {
+    return { index: exactMatch.index };
+  }
+
+  const blockMatch = ciContent.match(/^\s*- run:\s*\|[\s\S]*?(?=^\s*- run:|\Z)/gm);
+  if (!blockMatch) {
+    return undefined;
+  }
+
+  for (const step of blockMatch) {
+    if (step.includes(command)) {
+      const index = ciContent.indexOf(step);
+      if (index !== -1) {
+        return { index };
+      }
+    }
+  }
+
+  return undefined;
 }
 
 function escapeForRegex(value: string): string {

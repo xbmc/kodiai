@@ -5,30 +5,40 @@ export const VERIFY_COMMANDS = [
   ["bun", "run", "./scripts/check-orphaned-tests.ts", "--json"],
 ] as const;
 
-type VerifyCommand = (typeof VERIFY_COMMANDS)[number];
+type VerifyCommand = readonly string[];
+type SpawnSyncFn = (command: VerifyCommand) => { exitCode: number | null | undefined };
+type WriteFn = (message: string) => void;
+type ExitFn = (code: number) => never;
 
 function formatCommand(command: readonly string[]): string {
   return command.join(" ");
 }
 
-export function runVerifyM057S04(commands: readonly VerifyCommand[] = VERIFY_COMMANDS): void {
-  for (const command of commands) {
-    const formatted = formatCommand(command);
-    process.stdout.write(`→ ${formatted}\n`);
-
-    const result = Bun.spawnSync({
+export function runVerifyM057S04(
+  commands: readonly VerifyCommand[] = VERIFY_COMMANDS,
+  spawnSyncFn: SpawnSyncFn = (command) =>
+    Bun.spawnSync({
       cmd: [...command],
       stdout: "inherit",
       stderr: "inherit",
-    });
+    }),
+  writeStdout: WriteFn = (message) => process.stdout.write(message),
+  writeStderr: WriteFn = (message) => process.stderr.write(message),
+  exitFn: ExitFn = (code) => process.exit(code),
+): void {
+  for (const command of commands) {
+    const formatted = formatCommand(command);
+    writeStdout(`→ ${formatted}\n`);
 
-    if (result.exitCode !== 0) {
-      process.stderr.write(`${COMMAND_NAME} failed: ${formatted}\n`);
-      process.exit(result.exitCode);
+    const result = spawnSyncFn(command);
+    if ((result.exitCode ?? 1) !== 0) {
+      writeStderr(`${COMMAND_NAME} failed: ${formatted}\n`);
+      exitFn(result.exitCode ?? 1);
+      return;
     }
   }
 
-  process.stdout.write(`${COMMAND_NAME} passed\n`);
+  writeStdout(`${COMMAND_NAME} passed\n`);
 }
 
 if (import.meta.main) {

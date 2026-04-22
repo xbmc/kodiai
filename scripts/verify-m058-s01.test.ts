@@ -41,6 +41,27 @@ jobs:
       - run: bunx tsc --noEmit
 `;
 
+const PASSING_CI_MULTILINE = `name: ci
+jobs:
+  test:
+    steps:
+      - run: bun install
+      - run: bun run verify:m056:s03
+      # Bun has been unstable on GitHub runners with one monolithic test process.
+      # Keep DB-backed tests on a low concurrency cap and split the suite into
+      # two shorter invocations to avoid cross-file schema interference and runner crashes.
+      - run: |
+          mapfile -t non_knowledge_tests < <(
+            {
+              find src -maxdepth 1 -type f -name '*.test.ts'
+              find src -maxdepth 1 -mindepth 1 -type d ! -name knowledge
+            } | sort
+          )
+          bun test --max-concurrency=2 scripts "\${non_knowledge_tests[@]}"
+      - run: bun test --max-concurrency=2 src/knowledge
+      - run: bunx tsc --noEmit
+`;
+
 describe("verify m058 s01 proof harness", () => {
   test("exports stable check ids and cli parsing", () => {
     expect(M058_S01_CHECK_IDS).toEqual(EXPECTED_CHECK_IDS);

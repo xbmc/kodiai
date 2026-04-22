@@ -1,25 +1,66 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { COMMAND_NAME, runVerifyM057S04 } from "./verify-m057-s04.ts";
 
-describe("verify m057 s04", () => {
-  test("exports the expected verifier command bundle", async () => {
-    const verifier = await import("./verify-m057-s04.ts");
+describe("runVerifyM057S04", () => {
+  test("runs every command and prints pass output", () => {
+    const calls: readonly string[][] = [];
+    const stdout: string[] = [];
+    const stderr: string[] = [];
 
-    expect(verifier.COMMAND_NAME).toBe("verify:m057:s04");
-    expect(verifier.VERIFY_COMMANDS).toEqual([
-      ["bun", "test", "./scripts/check-orphaned-tests.test.ts"],
-      ["bun", "test", "./src/execution/executor.test.ts"],
-      ["bun", "run", "./scripts/check-orphaned-tests.ts", "--json"],
+    runVerifyM057S04(
+      [
+        ["bun", "test", "./a.test.ts"],
+        ["bun", "run", "./b.ts", "--json"],
+      ],
+      (command) => {
+        (calls as string[][]).push([...command]);
+        return { exitCode: 0 };
+      },
+      (message) => stdout.push(message),
+      (message) => stderr.push(message),
+      (code) => {
+        throw new Error(`unexpected exit(${code})`);
+      },
+    );
+
+    expect(calls).toEqual([
+      ["bun", "test", "./a.test.ts"],
+      ["bun", "run", "./b.ts", "--json"],
+    ]);
+    expect(stderr).toEqual([]);
+    expect(stdout).toEqual([
+      "→ bun test ./a.test.ts\n",
+      "→ bun run ./b.ts --json\n",
+      `${COMMAND_NAME} passed\n`,
     ]);
   });
 
-  test("wires the package verifier command to the local script", () => {
-    const packageJson = JSON.parse(
-      readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-    ) as { scripts?: Record<string, string> };
+  test("writes failure output and defaults null exit codes to 1", () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    let exitCode: number | undefined;
 
-    expect(packageJson.scripts?.["verify:m057:s04"]).toBe(
-      "bun scripts/verify-m057-s04.ts",
-    );
+    expect(() =>
+      runVerifyM057S04(
+        [
+          ["bun", "test", "./a.test.ts"],
+          ["bun", "run", "./b.ts", "--json"],
+        ],
+        (command) => ({ exitCode: command[2] === "./a.test.ts" ? 0 : null as unknown as number }),
+        (message) => stdout.push(message),
+        (message) => stderr.push(message),
+        (code) => {
+          exitCode = code;
+          throw new Error(`exit(${code})`);
+        },
+      ),
+    ).toThrow("exit(1)");
+
+    expect(exitCode).toBe(1);
+    expect(stdout).toEqual([
+      "→ bun test ./a.test.ts\n",
+      "→ bun run ./b.ts --json\n",
+    ]);
+    expect(stderr).toEqual([`${COMMAND_NAME} failed: bun run ./b.ts --json\n`]);
   });
 });

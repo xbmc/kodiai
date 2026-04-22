@@ -34,7 +34,7 @@ export function createSlackRelayWebhookRoutes(deps: SlackRelayWebhookRouteDeps):
 
   app.post("/:sourceId", async (c) => {
     const sourceId = c.req.param("sourceId");
-    const source = config.slackWebhookRelaySources.find((candidate) => candidate.id === sourceId);
+    const source = (config.slackWebhookRelaySources ?? []).find((candidate) => candidate.id === sourceId);
 
     if (!source) {
       logger.warn({ sourceId }, "Slack relay webhook rejected: unknown source");

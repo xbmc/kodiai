@@ -45,6 +45,7 @@ import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
 import { createSlackClient } from "./slack/client.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
+import { deliverWebhookRelayEvent } from "./slack/webhook-relay-delivery.ts";
 import { createRequestTracker } from "./lifecycle/request-tracker.ts";
 import { createShutdownManager } from "./lifecycle/shutdown-manager.ts";
 import { createWebhookQueueStore } from "./lifecycle/webhook-queue-store.ts";
@@ -542,6 +543,16 @@ const app = new Hono();
 
 // Mount routes
 app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter, requestTracker, webhookQueueStore, shutdownManager }));
+app.route("/webhooks/slack/relay", createSlackRelayWebhookRoutes({
+  config,
+  logger,
+  onAcceptedRelay: async (event) => {
+    await deliverWebhookRelayEvent({
+      slackClient,
+      event,
+    });
+  },
+}));
 app.route("/webhooks/slack", createSlackEventRoutes({
   config,
   logger,
@@ -674,4 +685,6 @@ logger.info({ port: config.port }, "Kodiai server started");
 export default {
   port: config.port,
   fetch: app.fetch,
+};
+
 };
