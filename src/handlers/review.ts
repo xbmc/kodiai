@@ -3763,6 +3763,7 @@ export function createReviewHandler(deps: {
           (diffAnalysis?.metrics.totalLinesAdded ?? 0) +
           (diffAnalysis?.metrics.totalLinesRemoved ?? 0);
 
+        const reviewCompletedAt = new Date().toISOString();
         const buildReviewDetailsBody = (timeoutProgress?: TimeoutReviewDetailsProgress): string => {
           const reviewDetailsBody = formatReviewDetailsSummary({
             reviewOutputKey,

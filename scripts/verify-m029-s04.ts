@@ -432,7 +432,7 @@ export async function buildM029S04ProofHarness(opts?: {
   const useJson = opts?.json ?? false;
   const hasInjectedSql = Boolean(opts && Object.prototype.hasOwnProperty.call(opts, "sql"));
   const hasInjectedOctokit = Boolean(opts && Object.prototype.hasOwnProperty.call(opts, "octokit"));
-  const shouldAutoDiscover = !opts || Object.keys(opts).every((key) => key === "json");
+  const shouldAutoDiscover = !hasInjectedSql && !hasInjectedOctokit;
 
   // Try DB connection if not injected
   let sql: unknown = opts?.sql;

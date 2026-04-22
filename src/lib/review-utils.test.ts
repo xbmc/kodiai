@@ -114,6 +114,16 @@ describe("formatReviewDetailsSummary", () => {
     expect(result).toContain("0.0123");
   });
 
+  it("uses a provided completedAt timestamp instead of regenerating wall clock time", () => {
+    const completedAt = "2026-04-22T20:15:00.000Z";
+    const first = formatReviewDetailsSummary({ ...BASE_PARAMS, completedAt });
+    const second = formatReviewDetailsSummary({ ...BASE_PARAMS, completedAt });
+
+    expect(first).toContain(`- Review completed: ${completedAt}`);
+    expect(second).toContain(`- Review completed: ${completedAt}`);
+    expect(first).toBe(second);
+  });
+
   it("omits usage and token lines when fields absent", () => {
     const result = formatReviewDetailsSummary({ ...BASE_PARAMS });
 
