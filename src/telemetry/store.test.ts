@@ -6,7 +6,7 @@ import type { ResilienceEventRecord } from "./types.ts";
 import type { RateLimitEventRecord } from "./types.ts";
 import type { Sql } from "../db/client.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
+const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
 const mockLogger = {
   info: () => {},
@@ -93,16 +93,15 @@ async function truncateAll(): Promise<void> {
     CASCADE`;
 }
 
-beforeAll(async () => {
-  sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
-  store = createTelemetryStore({ sql, logger: mockLogger });
-});
+describe.skipIf(!TEST_DB_URL)("TelemetryStore", () => {
+  beforeAll(async () => {
+    sql = postgres(TEST_DB_URL!, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+    store = createTelemetryStore({ sql, logger: mockLogger });
+  });
 
-afterAll(async () => {
-  await sql.end();
-});
-
-describe("TelemetryStore", () => {
+  afterAll(async () => {
+    await sql.end();
+  });
   beforeEach(async () => {
     await truncateAll();
   });

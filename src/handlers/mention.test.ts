@@ -4308,6 +4308,482 @@ describe("createMentionHandler write intent gating", () => {
     await workspaceFixture.cleanup();
   });
 
+  test("issue write-mode routes single-file fork output to a gist reply", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    const issueReplies: string[] = [];
+    const gistCalls: Array<Record<string, unknown>> = [];
+    const forkCalls: string[] = [];
+    const { logger, infoCalls } = createMockLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            throw new Error("should not create PR when gist routing wins");
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nissue gist path\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-gist",
+          };
+        },
+      } as never,
+      forkManager: {
+        enabled: true,
+        ensureFork: async () => {
+          forkCalls.push("ensureFork");
+          return { forkOwner: "xbmc-bot", forkRepo: "repo" };
+        },
+        syncFork: async () => {
+          forkCalls.push("syncFork");
+        },
+        getBotPat: () => "bot-pat",
+      } as never,
+      gistPublisher: {
+        enabled: true,
+        createPatchGist: async (input: Record<string, unknown>) => {
+          gistCalls.push(input);
+          return { htmlUrl: "https://gist.github.com/kodiai/gist-issue-1", id: "gist-issue-1" };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 80,
+        commentBody: "@kodiai apply: update the README wording",
+      }),
+    );
+
+    expect(forkCalls).toEqual(["ensureFork", "syncFork"]);
+    expect(gistCalls).toHaveLength(1);
+    expect(gistCalls[0]).toMatchObject({
+      owner: "acme",
+      repo: "repo",
+      summary: "update the README wording",
+    });
+    expect(String(gistCalls[0]?.patch)).toContain("issue gist path");
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Patch gist: https://gist.github.com/kodiai/gist-issue-1");
+    expect(issueReplies[0]).toContain("curl -sL https://gist.github.com/kodiai/gist-issue-1.patch | git apply");
+    expect(issueReplies[0]).toContain("Files changed: README.md");
+    expect(
+      infoCalls.some((entry) => entry.message === "Evidence bundle" && entry.bindings.outcome === "created-gist"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue write-mode falls back from fork PR failure to a gist reply", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+    await $`git -C ${workspaceFixture.dir} checkout main`.quiet();
+    await Bun.write(join(workspaceFixture.dir, "CHANGELOG.md"), "seed changelog\n");
+    await Bun.write(join(workspaceFixture.dir, "NOTES.md"), "seed notes\n");
+    await Bun.write(join(workspaceFixture.dir, "TODO.md"), "seed todo\n");
+    await $`git -C ${workspaceFixture.dir} add CHANGELOG.md NOTES.md TODO.md`.quiet();
+    await $`git -C ${workspaceFixture.dir} commit -m "seed tracked files for fork fallback"`.quiet();
+    await $`git -C ${workspaceFixture.dir} push origin main`.quiet();
+
+    const issueReplies: string[] = [];
+    const gistCalls: Array<Record<string, unknown>> = [];
+    const { logger, warnCalls, infoCalls } = createMockLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            throw new Error("should not reach PR creation after origin fork assertion fails");
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nfallback gist readme\n");
+          await Bun.write(join(ctx.workspace.dir, "CHANGELOG.md"), "fallback gist changelog\n");
+          await Bun.write(join(ctx.workspace.dir, "NOTES.md"), "fallback gist notes\n");
+          await Bun.write(join(ctx.workspace.dir, "TODO.md"), "fallback gist todo\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-fallback-gist",
+          };
+        },
+      } as never,
+      forkManager: {
+        enabled: true,
+        ensureFork: async () => ({ forkOwner: "xbmc-bot", forkRepo: "repo" }),
+        syncFork: async () => undefined,
+        getBotPat: () => "bot-pat",
+      } as never,
+      gistPublisher: {
+        enabled: true,
+        createPatchGist: async (input: Record<string, unknown>) => {
+          gistCalls.push(input);
+          return { htmlUrl: "https://gist.github.com/kodiai/fallback-issue-1", id: "fallback-issue-1" };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 81,
+        commentBody: "@kodiai apply: update the repo files",
+      }),
+    );
+
+    expect(gistCalls).toHaveLength(1);
+    expect(String(gistCalls[0]?.patch)).toContain("fallback gist readme");
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("Could not create a PR from the fork, but here is the patch as a gist:");
+    expect(issueReplies[0]).toContain("Patch gist: https://gist.github.com/kodiai/fallback-issue-1");
+    expect(
+      warnCalls.some((entry) => entry.message === "Fork-based PR creation failed; falling back to gist"),
+    ).toBeTrue();
+    expect(
+      infoCalls.some((entry) => entry.message === "Evidence bundle" && entry.bindings.outcome === "fallback-gist"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue write-mode without fork helpers falls back to legacy PR behavior", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    const issueReplies: string[] = [];
+    let createdPrHead: string | undefined;
+    const { logger, warnCalls } = createMockLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async (params: { head: string }) => {
+            createdPrHead = params.head;
+            return { data: { html_url: "https://example.com/pr/legacy-issue-path" } };
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nlegacy path update\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-legacy-path",
+          };
+        },
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 82,
+        commentBody: "@kodiai apply: update the README wording",
+      }),
+    );
+
+    expect(createdPrHead).toBeDefined();
+    expect(createdPrHead).not.toContain(":");
+    expect(issueReplies).toHaveLength(1);
+    expect(issueReplies[0]).toContain("status: success");
+    expect(issueReplies[0]).toContain("pr_url: https://example.com/pr/legacy-issue-path");
+    expect(
+      warnCalls.some((entry) => entry.message === "Write-mode active without BOT_USER_PAT; using legacy direct-push behavior"),
+    ).toBeTrue();
+
+    await workspaceFixture.cleanup();
+  });
+
+  test("issue gist replies are blocked by the canonical outgoing secret scan before publish", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture(
+      "mention:\n  enabled: true\nwrite:\n  enabled: true\n",
+    );
+
+    const blockedToken = `ghp_${"A".repeat(36)}`;
+    const issueReplies: string[] = [];
+    const { logger, warnCalls } = createMockLogger();
+
+    const eventRouter: EventRouter = {
+      register: (eventKey, handler) => {
+        handlers.set(eventKey, handler);
+      },
+      dispatch: async () => undefined,
+    };
+
+    const jobQueue: JobQueue = {
+      enqueue: async <T>(_installationId: number, fn: (metadata: JobQueueRunMetadata) => Promise<T>) => fn(createQueueRunMetadata()),
+      getQueueSize: () => 0,
+      getPendingCount: () => 0,
+      getActiveJobs: getEmptyActiveJobs,
+    };
+
+    const workspaceManager: WorkspaceManager = {
+      create: async (_installationId: number, options: CloneOptions) => {
+        await $`git -C ${workspaceFixture.dir} checkout ${options.ref}`.quiet();
+        return { dir: workspaceFixture.dir, cleanup: async () => undefined };
+      },
+      cleanupStale: async () => 0,
+    };
+
+    const octokit = {
+      rest: {
+        reactions: {
+          createForPullRequestReviewComment: async () => ({ data: {} }),
+          createForIssueComment: async () => ({ data: {} }),
+        },
+        issues: {
+          listComments: async () => ({ data: [] }),
+          createComment: async (params: { body: string }) => {
+            issueReplies.push(params.body);
+            return { data: {} };
+          },
+        },
+        pulls: {
+          list: async () => ({ data: [] }),
+          get: async () => ({ data: {} }),
+          create: async () => {
+            throw new Error("should stay on gist path");
+          },
+          createReplyForReviewComment: async () => ({ data: {} }),
+        },
+      },
+    };
+
+    createMentionHandler({
+      eventRouter,
+      jobQueue,
+      workspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => octokit as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async (ctx: { workspace: { dir: string } }) => {
+          await Bun.write(join(ctx.workspace.dir, "README.md"), "base\nsecret scrub gist path\n");
+          return {
+            conclusion: "success",
+            published: false,
+            costUsd: 0,
+            numTurns: 1,
+            durationMs: 1,
+            sessionId: "session-mention-secret-scan",
+          };
+        },
+      } as never,
+      forkManager: {
+        enabled: true,
+        ensureFork: async () => ({ forkOwner: "xbmc-bot", forkRepo: "repo" }),
+        syncFork: async () => undefined,
+        getBotPat: () => "bot-pat",
+      } as never,
+      gistPublisher: {
+        enabled: true,
+        createPatchGist: async () => ({
+          htmlUrl: `https://gist.github.com/kodiai/${blockedToken}`,
+          id: "gist-secret-block",
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger,
+    });
+
+    const handler = handlers.get("issue_comment.created");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildIssueCommentMentionEvent({
+        issueNumber: 83,
+        commentBody: "@kodiai apply: update the README wording",
+      }),
+    );
+
+    expect(issueReplies).toEqual(["[Response blocked by security policy]"]);
+    expect(issueReplies.join("\n")).not.toContain(blockedToken);
+    expect(warnCalls).toContainEqual({
+      bindings: { matchedPattern: "github-pat" },
+      message: "Outgoing secret scan blocked mention reply publish",
+    });
+
+    await workspaceFixture.cleanup();
+  });
+
   test("success reply without machine-checkable markers is invalid (negative regression)", () => {
     // This test proves that a success reply lacking deterministic status markers
     // would fail contract assertions. If the envelope builder ever regresses to

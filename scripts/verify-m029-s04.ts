@@ -430,10 +430,13 @@ export async function buildM029S04ProofHarness(opts?: {
   const stdout = opts?.stdout ?? process.stdout;
   const stderr = opts?.stderr ?? process.stderr;
   const useJson = opts?.json ?? false;
+  const hasInjectedSql = Boolean(opts && Object.prototype.hasOwnProperty.call(opts, "sql"));
+  const hasInjectedOctokit = Boolean(opts && Object.prototype.hasOwnProperty.call(opts, "octokit"));
+  const shouldAutoDiscover = !opts || Object.keys(opts).every((key) => key === "json");
 
   // Try DB connection if not injected
   let sql: unknown = opts?.sql;
-  if (sql === undefined) {
+  if (shouldAutoDiscover && !hasInjectedSql && sql === undefined) {
     try {
       const dbUrl = process.env.DATABASE_URL;
       if (dbUrl) {
@@ -453,7 +456,7 @@ export async function buildM029S04ProofHarness(opts?: {
 
   // Try GitHub auth if not injected and env vars are present
   let octokit: unknown = opts?.octokit;
-  if (octokit === undefined) {
+  if (shouldAutoDiscover && !hasInjectedOctokit && octokit === undefined) {
     try {
       const appId = process.env.GITHUB_APP_ID;
       const privateKeyEnv = process.env.GITHUB_PRIVATE_KEY ?? process.env.GITHUB_PRIVATE_KEY_BASE64;
@@ -482,7 +485,6 @@ export async function buildM029S04ProofHarness(opts?: {
           slackKodiaiChannelId: "unused",
           slackDefaultRepo: "unused",
           slackAssistantModel: "unused",
-          slackWebhookRelaySources: [],
           port: 3000,
           logLevel: "silent",
           botAllowList: [],

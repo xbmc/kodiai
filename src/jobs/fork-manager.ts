@@ -120,6 +120,7 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
         logger.info({ forkOwner, forkRepo, branch }, "Fork synced with upstream");
       } catch (error: unknown) {
         if (typeof error === "object" && error !== null && "status" in error && error.status === 409) {
+          logger.warn({ forkOwner, forkRepo, branch, error }, "Fork sync hit merge conflict");
           throw new Error(
             `Merge conflict syncing fork ${forkOwner}/${forkRepo} branch ${branch} with upstream. A git-based fallback may be needed.`,
           );

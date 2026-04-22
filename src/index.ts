@@ -42,9 +42,7 @@ import { createDbClient, type Sql } from "./db/client.ts";
 import { runMigrations } from "./db/migrate.ts";
 import { createContributorProfileStore } from "./contributor/index.ts";
 import { createSlackCommandRoutes } from "./routes/slack-commands.ts";
-import { createSlackRelayWebhookRoutes } from "./routes/slack-relay-webhooks.ts";
 import { createSlackClient } from "./slack/client.ts";
-import { deliverWebhookRelayEvent } from "./slack/webhook-relay-delivery.ts";
 import { createSlackAssistantHandler } from "./slack/assistant-handler.ts";
 import { createSlackWriteRunner } from "./slack/write-runner.ts";
 import { createRequestTracker } from "./lifecycle/request-tracker.ts";
@@ -544,16 +542,6 @@ const app = new Hono();
 
 // Mount routes
 app.route("/webhooks", createWebhookRoutes({ config, logger, dedup, githubApp, eventRouter, requestTracker, webhookQueueStore, shutdownManager }));
-app.route("/webhooks/slack/relay", createSlackRelayWebhookRoutes({
-  config,
-  logger,
-  onAcceptedRelay: async (event) => {
-    await deliverWebhookRelayEvent({
-      slackClient,
-      event,
-    });
-  },
-}));
 app.route("/webhooks/slack", createSlackEventRoutes({
   config,
   logger,

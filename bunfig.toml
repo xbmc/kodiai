@@ -1,4 +1,5 @@
 [test]
-# Only scan for tests in the actual codebase.
-# This repo vendors reference code under tmp/ which contains upstream tests.
-root = "src"
+# Scan the repo root so targeted script verifiers can be run by path, but ignore
+# vendored reference code under tmp/ so upstream tests are never discovered.
+root = "."
+pathIgnorePatterns = ["tmp/**"]

@@ -3,9 +3,14 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "packageManager": "bun@1.3.8",
+  "engines": {
+    "bun": "1.3.8"
+  },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
+    "lint": "eslint src scripts",
     "audit:embeddings": "bun scripts/embedding-audit.ts",
     "repair:embeddings": "bun scripts/embedding-repair.ts",
     "repair:wiki-embeddings": "bun scripts/wiki-embedding-repair.ts",
@@ -61,12 +66,36 @@
     "verify:m048:s02": "bun scripts/verify-m048-s02.ts",
     "verify:m048:s03": "bun scripts/verify-m048-s03.ts",
     "verify:m049:s02": "bun scripts/verify-m049-s02.ts",
-    "verify:m052": "bun scripts/verify-m052.ts"
+    "verify:m053": "bun scripts/verify-m053.ts",
+    "verify:m054:s01": "bun scripts/verify-m054-s01.ts",
+    "verify:m055:s01": "bun scripts/verify-m055-s01.ts",
+    "verify:m055:s02": "bun scripts/verify-m055-s02.ts",
+    "verify:m055:s03": "bun scripts/verify-m055-s03.ts",
+    "verify:m056:s01": "bun scripts/verify-m056-s01.ts",
+    "verify:m056:s02": "bun scripts/verify-m056-s02.ts",
+    "verify:m056:s03": "bun scripts/verify-m056-s03.ts",
+    "verify:m057:s02": "bun scripts/verify-m057-s02.ts",
+    "verify:m057:s03": "bun scripts/verify-m057-s03.ts",
+    "verify:m057:s04": "bun scripts/verify-m057-s04.ts",
+    "verify:m058:s01": "bun scripts/verify-m058-s01.ts",
+    "verify:m058:s02": "bun scripts/verify-m058-s02.ts",
+    "verify:m058:s03": "bun scripts/verify-m058-s03.ts",
+    "verify:m059:s01": "bun scripts/verify-m059-s01.ts",
+    "verify:m059:s02": "bun scripts/verify-m059-s02.ts",
+    "verify:m060:s01": "bun scripts/verify-m060-s01.ts",
+    "verify:m060:s02": "bun scripts/verify-m060-s02.ts",
+    "verify:m054:s02": "bun scripts/verify-m054-s02.ts",
+    "verify:m054:s03": "bun scripts/verify-m054-s03.ts",
+    "verify:m054:s04": "bun scripts/verify-m054-s04.ts",
+    "check:migrations-have-downs": "bun scripts/check-migrations-have-downs.ts",
+    "check:orphaned-tests": "bun scripts/check-orphaned-tests.ts"
   },
   "devDependencies": {
     "@octokit/webhooks-types": "^7.6.1",
     "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9"
+    "@types/js-yaml": "^4.0.9",
+    "@typescript-eslint/parser": "^8.46.1",
+    "eslint": "^9.38.0"
   },
   "peerDependencies": {
     "typescript": "^5"

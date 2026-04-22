@@ -55,7 +55,7 @@ import {
   postOrUpdateErrorComment,
 } from "../lib/errors.ts";
 import { wrapInDetails } from "../lib/formatting.ts";
-import { sanitizeOutgoingMentions } from "../lib/sanitizer.ts";
+import { sanitizeOutgoingMentions, scanOutgoingForSecrets } from "../lib/sanitizer.ts";
 import { validateIssue, generateGuidanceComment, generateLabelRecommendation, generateGenericNudge } from "../triage/triage-agent.ts";
 import { runGuardrailPipeline } from "../lib/guardrail/pipeline.ts";
 import { createGuardrailAuditStore } from "../lib/guardrail/audit-store.ts";
@@ -1254,6 +1254,15 @@ export function createMentionHandler(deps: {
             } catch {
               // Guardrail error: fail-open, use original sanitized body
             }
+          }
+
+          const scanResult = scanOutgoingForSecrets(sanitizedBody);
+          if (scanResult.blocked) {
+            logger.warn(
+              { matchedPattern: scanResult.matchedPattern },
+              "Outgoing secret scan blocked mention reply publish",
+            );
+            sanitizedBody = "[Response blocked by security policy]";
           }
 
           // Prefer replying in-thread for inline review comment mentions.

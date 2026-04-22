@@ -48,6 +48,11 @@ export function createClusterScheduler(
 
   return {
     start() {
+      if (startupTimer || intervalTimer) {
+        logger.debug("Cluster scheduler already started, skipping duplicate start");
+        return;
+      }
+
       startupTimer = setTimeout(() => {
         runAll().catch((err) => {
           logger.error({ err }, "Cluster scheduler initial run failed");

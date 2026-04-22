@@ -15,19 +15,15 @@ type CalibrationModule = {
   ) => any;
 };
 
-const importModule = new Function(
-  "specifier",
-  "return import(specifier)",
-) as (specifier: string) => Promise<unknown>;
 
 async function loadSnapshotModule(): Promise<SnapshotModule | null> {
-  return (await importModule("./xbmc-fixture-snapshot.ts").catch(
+  return (await import("./xbmc-fixture-snapshot.ts").catch(
     () => null,
   )) as SnapshotModule | null;
 }
 
 async function loadCalibrationModule(): Promise<CalibrationModule | null> {
-  return (await importModule("./calibration-evaluator.ts").catch(
+  return (await import("./calibration-evaluator.ts").catch(
     () => null,
   )) as CalibrationModule | null;
 }

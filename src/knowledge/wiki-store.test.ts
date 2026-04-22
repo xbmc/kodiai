@@ -4,6 +4,8 @@ import { createDbClient, type Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 import type { WikiPageStore, WikiPageChunk } from "./wiki-types.ts";
 
+const TEST_DB_URL = process.env.TEST_DATABASE_URL;
+
 const mockLogger = {
   info: () => {},
   warn: () => {},
@@ -48,17 +50,13 @@ function makeEmbedding(seed: number = 42): Float32Array {
   return arr;
 }
 
-describe("WikiPageStore (pgvector)", () => {
+describe.skipIf(!TEST_DB_URL)("WikiPageStore (pgvector)", () => {
   let sql: Sql;
   let store: WikiPageStore;
   let close: () => Promise<void>;
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) {
-      console.warn("Skipping WikiPageStore tests: DATABASE_URL not set");
-      return;
-    }
-    const db = createDbClient({ logger: mockLogger });
+    const db = createDbClient({ connectionString: TEST_DB_URL!, logger: mockLogger });
     sql = db.sql;
     close = db.close;
     await runMigrations(sql);
