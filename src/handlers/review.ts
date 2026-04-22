@@ -3835,6 +3835,7 @@ export function createReviewHandler(deps: {
             if (result.published) {
               // Summary comment was posted -- append Review Details to it
               if (canPublishVisibleOutput("deterministic Review Details append")) {
+                let appendedToSummary = false;
                 try {
                   setReviewWorkPhase("publish");
                   await appendReviewDetailsToSummary({
@@ -3850,23 +3851,9 @@ export function createReviewHandler(deps: {
                     recheckCanPublish: () =>
                       canPublishVisibleOutput("deterministic Review Details append"),
                   });
-
-                  finalizePublicationPhaseTiming();
-                  await appendReviewDetailsToSummary({
-                    octokit: extractionOctokit,
-                    owner: apiOwner,
-                    repo: apiRepo,
-                    prNumber: pr.number,
-                    reviewOutputKey,
-                    reviewDetailsBlock: buildReviewDetailsBody(),
-                    botHandles: [githubApp.getAppSlug(), "claude"],
-                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                    reviewBoundedness,
-                    recheckCanPublish: () =>
-                      canPublishVisibleOutput("finalized Review Details append"),
-                  });
+                  appendedToSummary = true;
                 } catch (appendErr) {
-                  // Fallback: post standalone if append fails (e.g., summary comment not found yet)
+                  // Fallback: post standalone if the initial append fails (e.g., summary comment not found yet)
                   logger.warn(
                     { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
                     "Failed to append Review Details to summary comment; posting standalone",
@@ -3900,6 +3887,35 @@ export function createReviewHandler(deps: {
                         ),
                       });
                     }
+                  }
+                }
+
+                if (appendedToSummary) {
+                  finalizePublicationPhaseTiming();
+                  try {
+                    await appendReviewDetailsToSummary({
+                      octokit: extractionOctokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      reviewDetailsBlock: buildReviewDetailsBody(),
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                      reviewBoundedness,
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("finalized Review Details append"),
+                    });
+                  } catch (appendErr) {
+                    logger.warn(
+                      {
+                        ...baseLog,
+                        gate: "review-details-output",
+                        gateResult: "finalized-append-failed",
+                        err: appendErr,
+                      },
+                      "Failed to refresh finalized Review Details timing in summary comment",
+                    );
                   }
                 }
               }
