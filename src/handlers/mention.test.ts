@@ -4778,7 +4778,7 @@ describe("createMentionHandler write intent gating", () => {
     expect(issueReplies.join("\n")).not.toContain(blockedToken);
     expect(warnCalls).toContainEqual({
       bindings: { matchedPattern: "github-pat" },
-      message: "Outgoing secret scan blocked mention reply publish",
+      message: "Outgoing secret scan blocked original mention reply content; publishing placeholder",
     });
 
     await workspaceFixture.cleanup();

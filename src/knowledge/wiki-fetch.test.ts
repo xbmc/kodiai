@@ -10,11 +10,11 @@ describe("buildWikiApiUrl", () => {
     );
   });
 
-  test("appends /api.php even when the base URL already has query params", () => {
+  test("appends /api.php to the pathname and preserves existing query params", () => {
     const params = new URLSearchParams({ action: "parse", page: "Foo Bar" });
 
     expect(buildWikiApiUrl("https://kodi.wiki?foo=bar", params)).toBe(
-      "https://kodi.wiki?foo=bar/api.php?action=parse&page=Foo+Bar",
+      "https://kodi.wiki/api.php?foo=bar&action=parse&page=Foo+Bar",
     );
   });
 });

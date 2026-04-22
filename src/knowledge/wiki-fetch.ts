@@ -17,7 +17,17 @@ export function buildWikiApiUrl(
   baseUrl: string,
   params: URLSearchParams,
 ): string {
-  return `${baseUrl}/api.php?${params.toString()}`;
+  const url = new URL(baseUrl);
+  const pathname = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+  url.pathname = `${pathname}/api.php`;
+
+  const mergedParams = new URLSearchParams(url.search);
+  for (const [key, value] of params.entries()) {
+    mergedParams.set(key, value);
+  }
+  url.search = mergedParams.toString();
+
+  return url.toString();
 }
 
 /**

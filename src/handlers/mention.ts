@@ -1260,7 +1260,7 @@ export function createMentionHandler(deps: {
           if (scanResult.blocked) {
             logger.warn(
               { matchedPattern: scanResult.matchedPattern },
-              "Outgoing secret scan blocked mention reply publish",
+              "Outgoing secret scan blocked original mention reply content; publishing placeholder",
             );
             sanitizedBody = "[Response blocked by security policy]";
           }
