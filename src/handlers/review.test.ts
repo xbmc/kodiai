@@ -5219,6 +5219,7 @@ describe("createReviewHandler finding extraction", () => {
             return { data: { id: 88 } };
           },
           updateComment: async (params: { body: string }) => {
+            updateCommentCalls += 1;
             updatedSummaryBody = params.body;
             return { data: {} };
           },
@@ -11630,6 +11631,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     let updatedSummaryBody: string | undefined;
     let standaloneDetailsBody: string | undefined;
     let createCommentCalls = 0;
+    let updateCommentCalls = 0;
     let issueCommentListCalls = 0;
 
     const reviewOutputKey = buildReviewOutputKey({
@@ -11747,6 +11749,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
     );
 
     expect(createCommentCalls).toBe(0);
+    expect(updatedSummaryBody).toBeDefined();
     expect(standaloneDetailsBody).toBeUndefined();
     expect(updatedSummaryBody).toBeDefined();
     expect(updatedSummaryBody).toContain("<summary>Review Details</summary>");
@@ -11808,7 +11811,7 @@ describe("createReviewHandler Review Details phase timing publication", () => {
             standaloneDetailsBody = params.body;
             return { data: { id: 188 } };
           },
-          updateComment: async () => {
+          updateComment: async (params: { body: string }) => {
             updateCommentCalls += 1;
             return { data: {} };
           },
@@ -12143,3 +12146,98 @@ describe("createReviewHandler bounded review disclosure", () => {
   });
 });
 
+
+
+describe("createReviewHandler failure fallback publication", () => {
+  test("posts a helpful PR error comment when review execution fails without publishing output", async () => {
+    const handlers = new Map<string, (event: WebhookEvent) => Promise<void>>();
+    const workspaceFixture = await createWorkspaceFixture();
+
+    const createdCommentBodies: string[] = [];
+
+    createReviewHandler({
+      eventRouter: {
+        register: (eventKey, handler) => {
+          handlers.set(eventKey, handler);
+        },
+        dispatch: async () => undefined,
+      },
+      jobQueue: {
+        enqueue: async <T>(
+          _installationId: number,
+          fn: (metadata: JobQueueRunMetadata) => Promise<T>,
+        ) => fn(createQueueRunMetadata()),
+        getQueueSize: () => 0,
+        getPendingCount: () => 0,
+        getActiveJobs: getEmptyActiveJobs,
+      } as unknown as JobQueue,
+      workspaceManager: {
+        create: async () => ({
+          dir: workspaceFixture.dir,
+          cleanup: async () => undefined,
+        }),
+        cleanupStale: async () => 0,
+      } as WorkspaceManager,
+      githubApp: {
+        getAppSlug: () => "kodiai",
+        getInstallationOctokit: async () => ({
+          rest: {
+            pulls: {
+              listReviewComments: async () => ({ data: [] }),
+              listReviews: async () => ({ data: [] }),
+              listCommits: async () => ({ data: [] }),
+              createReview: async () => ({ data: {} }),
+            },
+            issues: {
+              listComments: async () => ({ data: [] }),
+              createComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: { id: 501 } };
+              },
+              updateComment: async (params: { body: string }) => {
+                createdCommentBodies.push(params.body);
+                return { data: {} };
+              },
+            },
+            reactions: {
+              createForIssue: async () => ({ data: {} }),
+            },
+            search: {
+              issuesAndPullRequests: async () => ({ data: { total_count: 4 } }),
+            },
+          },
+        }) as never,
+      } as unknown as GitHubApp,
+      executor: {
+        execute: async () => ({
+          conclusion: "failure",
+          published: false,
+          stopReason: "max_turns",
+          failureSubtype: "error_max_turns",
+          durationMs: 1,
+          numTurns: 25,
+          sessionId: "session-failure-fallback",
+          costUsd: 0,
+        }),
+      } as never,
+      telemetryStore: noopTelemetryStore,
+      logger: createNoopLogger(),
+    });
+
+    const handler = handlers.get("pull_request.review_requested");
+    expect(handler).toBeDefined();
+
+    await handler!(
+      buildReviewRequestedEvent({
+        requested_reviewer: { login: "kodiai[bot]" },
+      }),
+    );
+
+    const failureComment = createdCommentBodies.find((body) => body.includes("Kodiai ran out of steps while reviewing this PR"));
+    expect(failureComment).toBeDefined();
+    expect(failureComment).toContain("Stop reason: max_turns");
+    expect(failureComment).toContain("Failure subtype: error_max_turns");
+
+    await workspaceFixture.cleanup();
+  });
+});
