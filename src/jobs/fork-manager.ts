@@ -24,6 +24,7 @@ function summarizeError(error: unknown): Record<string, unknown> {
 
   const record = error as Record<string, unknown>;
   return {
+    ...(typeof record.name === "string" ? { errorName: record.name } : {}),
     ...(typeof record.status === "number" ? { errorStatus: record.status } : {}),
     ...(typeof record.code === "string" || typeof record.code === "number" ? { errorCode: record.code } : {}),
     ...(typeof record.message === "string" ? { errorMessage: record.message } : {}),
