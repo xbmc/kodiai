@@ -466,14 +466,16 @@ function createTestableExecutor(deps: {
           enableCommentTools,
         });
 
+        const hasGitTools = await $`git -C ${context.workspace.dir} rev-parse --is-inside-work-tree`.quiet().nothrow()
+          .then((result) => result.exitCode === 0 && result.stdout.toString().trim() === "true");
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType !== "review.full";
         const baseTools = isReadOnlyPrMention
-          ? ["Read", "Grep", "Bash(git diff:*)", "Bash(git status:*)"]
-          : ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"];
+          ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
+          : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
         const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
@@ -1212,11 +1214,11 @@ test("ACA dispatch: conversational PR mention keeps reduced toolset", async () =
   expect(agentConfig.allowedTools).not.toContain("Glob");
   expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).not.toContain("Bash(git show:*)");
-  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
-  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git status:*)");
 });
 
-test("createExecutor signature: accepts config and mcpJobRegistry", () => {
+test("ACA dispatch: explicit review mention keeps review tools when git workspace exists", async () => {
   // Type-level test: createExecutor must accept these deps without TS error.
   // This is validated by tsc --noEmit, but also checked at runtime here.
   const config = makeConfig();

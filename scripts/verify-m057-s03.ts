@@ -44,6 +44,7 @@ export function runVerifyM057S03(
     if (result.exitCode !== 0) {
       stderrWrite(`${COMMAND_NAME} failed: ${formatted}\n`);
       exitFn(result.exitCode ?? 1);
+      return;
     }
   }
 

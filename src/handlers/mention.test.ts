@@ -4777,7 +4777,7 @@ describe("createMentionHandler write intent gating", () => {
     expect(issueReplies).toEqual(["[Response blocked by security policy]"]);
     expect(issueReplies.join("\n")).not.toContain(blockedToken);
     expect(warnCalls).toContainEqual({
-      bindings: { matchedPattern: "github-pat" },
+      bindings: { secretScanRuleId: "github-pat" },
       message: "Outgoing secret scan blocked original mention reply content; publishing placeholder",
     });
 

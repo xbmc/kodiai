@@ -28,6 +28,7 @@ function summarizeError(error: unknown): Record<string, unknown> {
     ...(typeof record.status === "number" ? { errorStatus: record.status } : {}),
     ...(typeof record.code === "string" || typeof record.code === "number" ? { errorCode: record.code } : {}),
     ...(typeof record.message === "string" ? { errorMessage: record.message } : {}),
+    ...(typeof record.stack === "string" ? { errorStack: record.stack } : {}),
   };
 }
 

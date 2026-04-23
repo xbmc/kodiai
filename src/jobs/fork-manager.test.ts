@@ -276,6 +276,7 @@ describe("createForkManager", () => {
         errorName: "Error",
         errorStatus: 409,
         errorMessage: "Conflict",
+        errorStack: expect.stringContaining("Error: Conflict"),
       },
       message: "Fork sync hit merge conflict",
     });
@@ -303,6 +304,7 @@ describe("createForkManager", () => {
         branch: "feature/test",
         errorName: "Error",
         errorMessage: "network down",
+        errorStack: expect.stringContaining("Error: network down"),
       },
       message: "Failed to delete fork branch (best-effort)",
     });

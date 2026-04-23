@@ -1259,7 +1259,7 @@ export function createMentionHandler(deps: {
           const scanResult = scanOutgoingForSecrets(sanitizedBody);
           if (scanResult.blocked) {
             logger.warn(
-              { matchedPattern: scanResult.matchedPattern },
+              { secretScanRuleId: scanResult.matchedPattern },
               "Outgoing secret scan blocked original mention reply content; publishing placeholder",
             );
             sanitizedBody = "[Response blocked by security policy]";

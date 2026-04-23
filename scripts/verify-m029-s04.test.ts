@@ -256,6 +256,17 @@ describe("NO-REASONING-IN-DB check", () => {
     expect(check.skipped).toBe(true);
     expect(check.status_code).toBe("db_unavailable");
   });
+
+  test("keeps DB autodiscovery independent when octokit is injected but sql is not", async () => {
+    const report = await evaluateM029S04({
+      octokit: makeOctokitStub([]),
+      stdout: () => undefined,
+      stderr: () => undefined,
+    });
+    const check = getCheck(report, "M029-S04-NO-REASONING-IN-DB");
+    expect(check.skipped).toBe(true);
+    expect(check.status_code).toBe("db_unavailable");
+  });
 });
 
 // ── Group: LIVE-PUBLISHED check ───────────────────────────────────────────
