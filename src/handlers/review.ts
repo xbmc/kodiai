@@ -3839,7 +3839,7 @@ export function createReviewHandler(deps: {
                 let appendedToSummary = false;
                 try {
                   setReviewWorkPhase("publish");
-                  await appendReviewDetailsToSummary({
+                  const appendedCommentId = await appendReviewDetailsToSummary({
                     octokit: extractionOctokit,
                     owner: apiOwner,
                     repo: apiRepo,
@@ -3852,7 +3852,7 @@ export function createReviewHandler(deps: {
                     recheckCanPublish: () =>
                       canPublishVisibleOutput("deterministic Review Details append"),
                   });
-                  appendedToSummary = true;
+                  appendedToSummary = appendedCommentId !== undefined;
                 } catch (appendErr) {
                   // Fallback: post standalone if the initial append fails (e.g., summary comment not found yet)
                   logger.warn(

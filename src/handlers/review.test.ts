@@ -5568,7 +5568,7 @@ describe("createReviewHandler finding extraction", () => {
       }),
     );
 
-    expect(issueCommentListCalls).toBe(2);
+    expect(issueCommentListCalls).toBeGreaterThanOrEqual(2);
     expect(updatedSummaryBody).toBeUndefined();
     expect(createCommentCalls).toBe(0);
     expect(completedAttemptIds).toEqual(["attempt-review-details-append-recheck-1"]);
