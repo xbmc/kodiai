@@ -34,6 +34,7 @@ describe("check orphaned tests", () => {
     expect(EXPLICIT_TEST_TARGET_MAP).toEqual({
       "scripts/deploy.test.ts": "deploy.sh",
       "scripts/deploy-timeout-alignment.test.ts": "deploy.sh",
+      "src/execution/prepare-agent-workspace.test.ts": "src/execution/executor.ts",
       "src/slack/v1-safety-contract.test.ts": "src/slack/safety-rails.ts",
     });
     expect(parseCheckOrphanedTestsArgs([])).toEqual({ json: false });
@@ -51,6 +52,7 @@ describe("check orphaned tests", () => {
         "scripts/deploy-timeout-alignment.test.ts",
         "src/execution/executor.test.ts",
         "src/execution/executor.ts",
+        "src/execution/prepare-agent-workspace.test.ts",
         "src/knowledge/retrieval.e2e.test.ts",
         "src/knowledge/retrieval.ts",
         "src/slack/safety-rails.ts",
@@ -106,6 +108,8 @@ describe("check orphaned tests", () => {
         "scripts/check-orphaned-tests.ts",
         "scripts/deploy.test.ts",
         "scripts/deploy-timeout-alignment.test.ts",
+        "src/execution/executor.ts",
+        "src/execution/prepare-agent-workspace.test.ts",
         "src/execution/missing-owner.test.ts",
         "src/slack/safety-rails.ts",
         "src/slack/v1-safety-contract.test.ts",
@@ -163,6 +167,7 @@ describe("check orphaned tests", () => {
       }),
     );
     expect(report.checks[1]?.detail).toContain("scripts/deploy-timeout-alignment.test.ts -> deploy.sh");
+    expect(report.checks[1]?.detail).toContain("src/execution/prepare-agent-workspace.test.ts -> src/execution/executor.ts");
     expect(report.checks[1]?.detail).toContain("src/slack/v1-safety-contract.test.ts -> src/slack/safety-rails.ts");
     expect(report.checks[2]).toEqual(
       expect.objectContaining({

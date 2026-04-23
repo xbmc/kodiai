@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { readFileSync } from "node:fs";
 import type { CheckSuiteCompletedEvent } from "@octokit/webhooks-types";
 import type { Logger } from "pino";
 import { createCIFailureHandler } from "./ci-failure.ts";
@@ -93,9 +92,23 @@ function createSqlMock(options: Pick<HarnessOptions, "flakinessRows"> = {}) {
 }
 
 function loadFixture(): CheckSuiteCompletedEvent {
-  return JSON.parse(
-    readFileSync("fixtures/webhooks/check_suite/completed-basic.json", "utf8"),
-  ) as unknown as CheckSuiteCompletedEvent;
+  return {
+    action: "completed",
+    installation: { id: 42 } as CheckSuiteCompletedEvent["installation"],
+    repository: {
+      owner: { login: "octo-org" },
+      name: "widget",
+    } as CheckSuiteCompletedEvent["repository"],
+    check_suite: {
+      head_sha: "1111111111111111111111111111111111111111",
+      pull_requests: [
+        {
+          number: 17,
+          base: { ref: "main" },
+        },
+      ],
+    } as CheckSuiteCompletedEvent["check_suite"],
+  } as CheckSuiteCompletedEvent;
 }
 
 function clonePayload(): CheckSuiteCompletedEvent {

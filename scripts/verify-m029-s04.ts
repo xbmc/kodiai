@@ -457,7 +457,7 @@ export async function buildM029S04ProofHarness(opts?: {
 
   // Try GitHub auth if not injected and env vars are present
   let octokit: unknown = opts?.octokit;
-  if (shouldAutoDiscover && !hasInjectedOctokit && octokit === undefined) {
+  if (shouldAutoDiscoverOctokit && octokit === undefined) {
     try {
       const appId = process.env.GITHUB_APP_ID;
       const privateKeyEnv = process.env.GITHUB_PRIVATE_KEY ?? process.env.GITHUB_PRIVATE_KEY_BASE64;
