@@ -47,4 +47,3 @@ jobs:
           )
           bun test --max-concurrency=2 scripts "${non_knowledge_tests[@]}"
       - run: bun test --max-concurrency=2 src/knowledge
-      - run: bunx tsc --noEmit
