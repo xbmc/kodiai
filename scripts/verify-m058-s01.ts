@@ -150,18 +150,18 @@ export function parseM058S01Args(args: readonly string[]): { json: boolean } {
 }
 
 function buildCiCoverageBreadthCheck(ciContent: string): Check {
-  if (!hasRunStep(ciContent, EXPECTED_BROAD_TEST_STEP)) {
+  if (!hasBroadCoverageStep(ciContent)) {
     return failCheck(
       "M058-S01-CI-COVERAGE-BREADTH",
       "ci_coverage_step_missing",
-      `.github/workflows/ci.yml must include ${EXPECTED_BROAD_TEST_STEP} so the full src tree, including src/webhook, is exercised.`,
+      ".github/workflows/ci.yml must include either a direct bun test --max-concurrency=2 scripts src step or the multiline non-knowledge src split block so the full src tree, including src/webhook, is exercised.",
     );
   }
 
   return passCheck(
     "M058-S01-CI-COVERAGE-BREADTH",
     "ci_coverage_breadth_ok",
-    `.github/workflows/ci.yml includes ${EXPECTED_BROAD_TEST_STEP}.`,
+    ".github/workflows/ci.yml includes the broadened non-knowledge src coverage step.",
   );
 }
 
@@ -223,7 +223,9 @@ function buildCiOrderingAndRationaleCheck(ciContent: string): Check {
     );
   }
 
-  const broadStepIndex = indexOfRunStep(ciContent, EXPECTED_BROAD_TEST_STEP);
+  const broadStepIndex = hasBroadCoverageStep(ciContent)
+    ? findRunStep(ciContent, EXPECTED_BROAD_TEST_STEP)?.index ?? findBroadCoverageBlockIndex(ciContent) ?? -1
+    : -1;
   const knowledgeStepIndex = indexOfRunStep(ciContent, EXPECTED_KNOWLEDGE_TEST_STEP);
 
   if (broadStepIndex !== -1 && verifyStepIndex > broadStepIndex) {
@@ -260,6 +262,11 @@ function buildCiOrderingAndRationaleCheck(ciContent: string): Check {
   );
 }
 
+function hasBroadCoverageStep(ciContent: string): boolean {
+  return findRunStep(ciContent, EXPECTED_BROAD_TEST_STEP) !== undefined
+    || findBroadCoverageBlockIndex(ciContent) !== undefined;
+}
+
 function hasRunStep(ciContent: string, command: string): boolean {
   return indexOfRunStep(ciContent, command) !== -1;
 }
@@ -268,27 +275,70 @@ function indexOfRunStep(ciContent: string, command: string): number {
   return findRunStep(ciContent, command)?.index ?? -1;
 }
 
-function findRunStep(ciContent: string, command: string): { index: number } | undefined {
-  const exactMatch = ciContent.match(new RegExp(`^\\s*- run: ${escapeForRegex(command)}\\s*$`, "m"));
-  if (exactMatch?.index != null) {
-    return { index: exactMatch.index };
-  }
-
-  const blockMatch = ciContent.match(/^\s*- run:\s*\|[\s\S]*?(?=^\s*- run:|$)/gm);
-  if (!blockMatch) {
-    return undefined;
-  }
-
-  for (const step of blockMatch) {
-    if (step.includes(command)) {
-      const index = ciContent.indexOf(step);
-      if (index !== -1) {
-        return { index };
-      }
+function findBroadCoverageBlockIndex(ciContent: string): number | undefined {
+  for (const step of extractRunSteps(ciContent)) {
+    if (
+      step.text.includes("bun test --max-concurrency=2 scripts")
+      && step.text.includes("find src -maxdepth 1")
+      && step.text.includes("! -name knowledge")
+      && step.text.includes("non_knowledge_tests")
+    ) {
+      return step.index;
     }
   }
 
   return undefined;
+}
+
+function findRunStep(ciContent: string, command: string): { index: number } | undefined {
+  for (const step of extractRunSteps(ciContent)) {
+    if (step.text.includes(command)) {
+      return { index: step.index };
+    }
+  }
+
+  return undefined;
+}
+
+function extractRunSteps(ciContent: string): Array<{ index: number; text: string }> {
+  const lines = ciContent.split(/\r?\n/);
+  const steps: Array<{ index: number; text: string }> = [];
+  let offset = 0;
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    const runBlockMatch = line.match(/^([ 	]*)- run:\s*\|\s*$/);
+    if (runBlockMatch) {
+      const blockIndent = runBlockMatch[1] ?? "";
+      const stepStart = offset;
+      const collected = [line];
+      let innerOffset = offset + line.length + 1;
+      let j = i + 1;
+      for (; j < lines.length; j += 1) {
+        const nextLine = lines[j] ?? "";
+        const trimmed = nextLine.trim();
+        const indent = nextLine.match(/^[ 	]*/)?.[0] ?? "";
+        if (trimmed && indent.length <= blockIndent.length) {
+          break;
+        }
+        collected.push(nextLine);
+        innerOffset += nextLine.length + 1;
+      }
+      steps.push({ index: stepStart, text: collected.join("\n") });
+      i = j - 1;
+      offset = innerOffset;
+      continue;
+    }
+
+    const singleRunMatch = line.match(/^[ 	]*- run:\s+(.+)$/);
+    if (singleRunMatch) {
+      steps.push({ index: offset, text: line });
+    }
+
+    offset += line.length + 1;
+  }
+
+  return steps;
 }
 
 function escapeForRegex(value: string): string {

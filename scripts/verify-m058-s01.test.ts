@@ -152,8 +152,8 @@ jobs:
     expect(report.checks).toEqual([
       expect.objectContaining({
         id: "M058-S01-CI-COVERAGE-BREADTH",
-        passed: false,
-        status_code: "ci_coverage_step_missing",
+        passed: true,
+        status_code: "ci_coverage_breadth_ok",
       }),
       expect.objectContaining({
         id: "M058-S01-CI-SPLIT-PRESERVED",
@@ -167,14 +167,14 @@ jobs:
       }),
       expect.objectContaining({
         id: "M058-S01-CI-ORDERING-RATIONALE",
-        passed: true,
-        status_code: "ci_ordering_rationale_ok",
+        passed: false,
+        status_code: "ci_verify_step_misordered",
       }),
     ]);
-    expect(report.checks[0]?.detail).toContain("bun test --max-concurrency=2 scripts src");
+    expect(report.checks[0]?.detail).toContain("broadened non-knowledge src coverage step");
     expect(report.checks[1]?.detail).toContain("bun test --max-concurrency=2 src/knowledge");
     expect(report.checks[2]?.detail).toContain("verify:m058:s01");
-    expect(stderr.join(" ")).toContain("ci_coverage_step_missing");
+    expect(stderr.join(" ")).toContain("ci_split_step_missing");
     expect(stderr.join(" ")).toContain("ci_split_step_missing");
     expect(stderr.join(" ")).toContain("package_wiring_missing");
   });
