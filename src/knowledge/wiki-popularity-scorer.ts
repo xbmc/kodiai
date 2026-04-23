@@ -237,6 +237,11 @@ export function createWikiPopularityScorer(
 
   return {
     start() {
+      if (startupHandle || intervalHandle) {
+        logger.debug("Wiki popularity scorer already started, skipping duplicate start");
+        return;
+      }
+
       const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
       const delayMs = opts.startupDelayMs ?? DEFAULT_STARTUP_DELAY_MS;
       logger.info({ intervalMs, startupDelayMs: delayMs }, "Wiki popularity scorer starting");

@@ -17,6 +17,21 @@ export interface ForkManager {
 const FORK_POLL_INTERVAL_MS = 2_000;
 const FORK_POLL_TIMEOUT_MS = 30_000;
 
+function summarizeError(error: unknown): Record<string, unknown> {
+  if (typeof error !== "object" || error === null) {
+    return {};
+  }
+
+  const record = error as Record<string, unknown>;
+  return {
+    ...(typeof record.name === "string" ? { errorName: record.name } : {}),
+    ...(typeof record.status === "number" ? { errorStatus: record.status } : {}),
+    ...(typeof record.code === "string" || typeof record.code === "number" ? { errorCode: record.code } : {}),
+    ...(typeof record.message === "string" ? { errorMessage: record.message } : {}),
+    ...(typeof record.stack === "string" ? { errorStack: record.stack } : {}),
+  };
+}
+
 export function createForkManager(botClient: BotUserClient, logger: Logger, botPat?: string): ForkManager {
   if (!botClient.enabled) {
     return {
@@ -120,6 +135,7 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
         logger.info({ forkOwner, forkRepo, branch }, "Fork synced with upstream");
       } catch (error: unknown) {
         if (typeof error === "object" && error !== null && "status" in error && error.status === 409) {
+          logger.warn({ forkOwner, forkRepo, branch, ...summarizeError(error) }, "Fork sync hit merge conflict");
           throw new Error(
             `Merge conflict syncing fork ${forkOwner}/${forkRepo} branch ${branch} with upstream. A git-based fallback may be needed.`,
           );
@@ -137,7 +153,10 @@ export function createForkManager(botClient: BotUserClient, logger: Logger, botP
         });
         logger.info({ forkOwner, forkRepo, branch }, "Deleted fork branch");
       } catch (error) {
-        logger.warn({ forkOwner, forkRepo, branch, error }, "Failed to delete fork branch (best-effort)");
+        logger.warn(
+          { forkOwner, forkRepo, branch, ...summarizeError(error) },
+          "Failed to delete fork branch (best-effort)",
+        );
       }
     },
 

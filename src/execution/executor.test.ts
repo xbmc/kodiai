@@ -1,6 +1,6 @@
 import { $ } from "bun";
 import { test, expect, afterEach, mock, beforeEach } from "bun:test";
-import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile, mkdir, lstat, symlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildSecurityClaudeMd, createExecutor, prepareAgentWorkspace } from "./executor.ts";
@@ -97,7 +97,6 @@ function makeConfig(overrides?: Partial<AppConfig>): AppConfig {
     slackKodiaiChannelId: "C123",
     slackDefaultRepo: "xbmc/xbmc",
     slackAssistantModel: "claude-3-5-haiku-latest",
-    slackWebhookRelaySources: [],
     port: 3000,
     logLevel: "info",
     botAllowList: [],
@@ -467,19 +466,16 @@ function createTestableExecutor(deps: {
           enableCommentTools,
         });
 
+        const hasGitTools = await $`git -C ${context.workspace.dir} rev-parse --is-inside-work-tree`.quiet().nothrow()
+          .then((result) => result.exitCode === 0 && result.stdout.toString().trim() === "true");
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType !== "review.full";
-        const gitDiffInspectionAvailable = context.gitDiffInspectionAvailable !== false;
         const baseTools = isReadOnlyPrMention
-          ? gitDiffInspectionAvailable
-            ? ["Read", "Grep", "Bash(git diff:*)", "Bash(git status:*)"]
-            : ["Read", "Grep", "Bash(git status:*)"]
-          : gitDiffInspectionAvailable
-            ? ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
-            : ["Read", "Grep", "Glob", "Bash(git status:*)"];
+          ? ["Read", "Grep", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : [])]
+          : ["Read", "Grep", "Glob", ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"] : [])];
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         const mcpTools = buildAllowedMcpTools(Object.keys(mcpServers));
         const allowedTools = [...baseTools, ...writeTools, ...mcpTools];
@@ -1183,63 +1179,6 @@ test("ACA dispatch: explicit review mention stages a review bundle transport wit
   });
 });
 
-test("ACA dispatch: degraded review lane strips git diff and history tools", async () => {
-  tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
-  const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
-  await mkdir(join(sourceRepoDir, "src"), { recursive: true });
-  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
-  await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
-
-  await $`git -C ${sourceRepoDir} init`.quiet();
-  await $`git -C ${sourceRepoDir} config user.email test@example.com`.quiet();
-  await $`git -C ${sourceRepoDir} config user.name "Test User"`.quiet();
-  await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
-  await $`git -C ${sourceRepoDir} add .`.quiet();
-  await $`git -C ${sourceRepoDir} commit -m base`.quiet();
-  await $`git -C ${sourceRepoDir} branch -M main`.quiet();
-  await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
-  await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = 'updated';\n");
-  await $`git -C ${sourceRepoDir} commit -am feature`.quiet();
-  await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
-
-  const config = makeConfig();
-  const logger = makeLogger();
-  const registry = createMcpJobRegistry();
-
-  const executor = createTestableExecutor({
-    githubApp: makeGithubApp(),
-    logger,
-    config,
-    mcpJobRegistry: registry,
-    launchFn: async () => ({ executionName: "exec-degraded-review-lane" }),
-    pollFn: async () => ({ status: "succeeded", durationMs: 1000 }),
-    readResultFn: async () => makeJobResult(),
-    createWorkspaceDirFn: async () => tmpDir!,
-  });
-
-  await executor.execute(
-    makeContext(sourceRepoDir, {
-      eventType: "pull_request.opened",
-      prNumber: 80,
-      taskType: "review.full",
-      gitDiffInspectionAvailable: false,
-    }),
-  );
-
-  const rawAgentConfig = await readFile(join(tmpDir!, "agent-config.json"), "utf-8");
-  const agentConfig = JSON.parse(rawAgentConfig) as {
-    allowedTools: string[];
-    taskType: string;
-  };
-
-  expect(agentConfig.taskType).toBe("review.full");
-  expect(agentConfig.allowedTools).toContain("Glob");
-  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
-  expect(agentConfig.allowedTools).not.toContain("Bash(git diff:*)");
-  expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
-  expect(agentConfig.allowedTools).not.toContain("Bash(git show:*)");
-});
-
 test("ACA dispatch: conversational PR mention keeps reduced toolset", async () => {
   tmpDir = await mkdtemp(join(tmpdir(), "kodiai-executor-test-"));
   const config = makeConfig();
@@ -1275,11 +1214,11 @@ test("ACA dispatch: conversational PR mention keeps reduced toolset", async () =
   expect(agentConfig.allowedTools).not.toContain("Glob");
   expect(agentConfig.allowedTools).not.toContain("Bash(git log:*)");
   expect(agentConfig.allowedTools).not.toContain("Bash(git show:*)");
-  expect(agentConfig.allowedTools).toContain("Bash(git diff:*)");
-  expect(agentConfig.allowedTools).toContain("Bash(git status:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git diff:*)");
+  expect(agentConfig.allowedTools).not.toContain("Bash(git status:*)");
 });
 
-test("createExecutor signature: accepts config and mcpJobRegistry", () => {
+test("ACA dispatch: explicit review mention keeps review tools when git workspace exists", async () => {
   // Type-level test: createExecutor must accept these deps without TS error.
   // This is validated by tsc --noEmit, but also checked at runtime here.
   const config = makeConfig();
@@ -1407,4 +1346,199 @@ test("ACA dispatch: malformed remote timing payload falls back to locally measur
       durationMs: 4321,
     },
   ]);
+});
+
+test("prepareAgentWorkspace copies the repo and writes agent-config with repoCwd", async () => {
+  const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-repo-"));
+  const workspaceDir = await mkdtemp(join(tmpdir(), "kodiai-agent-workspace-"));
+  const cleanupDirs = [sourceRepoDir, workspaceDir];
+
+  try {
+    await mkdir(join(sourceRepoDir, "src"), { recursive: true });
+    await writeFile(join(sourceRepoDir, "src", "feature.ts"), "export const feature = true;\n");
+    await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+
+    const { repoCwd } = await prepareAgentWorkspace({
+      sourceRepoDir,
+      workspaceDir,
+      prompt: "Review this PR",
+      model: "claude-sonnet-4-5-20250929",
+      maxTurns: 25,
+      allowedTools: ["Read", "Grep", "Glob"],
+      taskType: "review.full",
+      mcpServerNames: ["github_comment"],
+    });
+
+    expect(repoCwd).toBe(join(workspaceDir, "repo"));
+    const repoDir = repoCwd!;
+    expect(await readFile(join(repoDir, "src", "feature.ts"), "utf-8")).toContain("feature = true");
+    expect(await readFile(join(repoDir, ".kodiai.yml"), "utf-8")).toContain("review:");
+    expect(await readFile(join(workspaceDir, "prompt.txt"), "utf-8")).toBe("Review this PR");
+
+    const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+    const agentConfig = JSON.parse(rawAgentConfig) as {
+      prompt: string;
+      model: string;
+      maxTurns: number;
+      allowedTools: string[];
+      taskType: string;
+      repoCwd?: string;
+      mcpServerNames?: string[];
+    };
+
+    expect(agentConfig.prompt).toBe("Review this PR");
+    expect(agentConfig.model).toBe("claude-sonnet-4-5-20250929");
+    expect(agentConfig.maxTurns).toBe(25);
+    expect(agentConfig.allowedTools).toEqual(["Read", "Grep", "Glob"]);
+    expect(agentConfig.taskType).toBe("review.full");
+    expect(agentConfig.repoCwd).toBe(repoCwd);
+    expect(agentConfig.mcpServerNames).toEqual(["github_comment"]);
+  } finally {
+    await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  }
+});
+
+test("prepareAgentWorkspace writes a review bundle transport for repos with tracked symlinks", async () => {
+  const sourceRepoDir = await mkdtemp(join(tmpdir(), "kodiai-source-symlink-repo-"));
+  const workspaceDir = await mkdtemp(join(tmpdir(), "kodiai-agent-symlink-workspace-"));
+  const cleanupDirs = [sourceRepoDir, workspaceDir];
+
+  try {
+    await mkdir(join(sourceRepoDir, "system", "settings"), { recursive: true });
+    await writeFile(join(sourceRepoDir, ".kodiai.yml"), "review:\n  enabled: true\n");
+    await writeFile(join(sourceRepoDir, "system", "settings", "linux.xml"), "<settings />\n");
+
+    await $`git -C ${sourceRepoDir} init`.quiet();
+    await $`git -C ${sourceRepoDir} config user.email t@example.com`.quiet();
+    await $`git -C ${sourceRepoDir} config user.name T`.quiet();
+    await $`git -C ${sourceRepoDir} remote add origin https://github.com/xbmc/xbmc.git`.quiet();
+    await symlink("linux.xml", join(sourceRepoDir, "system", "settings", "freebsd.xml"));
+    await $`git -C ${sourceRepoDir} add .`.quiet();
+    await $`git -C ${sourceRepoDir} commit -m init`.quiet();
+    await $`git -C ${sourceRepoDir} branch -M main`.quiet();
+    await $`git -C ${sourceRepoDir} checkout -b pr-mention`.quiet();
+    await writeFile(join(sourceRepoDir, "feature.ts"), "export const enabled = true;\n");
+    await $`git -C ${sourceRepoDir} add .`.quiet();
+    await $`git -C ${sourceRepoDir} commit -m feature`.quiet();
+    await $`git -C ${sourceRepoDir} update-ref refs/remotes/origin/main $(git -C ${sourceRepoDir} rev-parse main)`.quiet();
+
+    const result = await prepareAgentWorkspace({
+      sourceRepoDir,
+      workspaceDir,
+      prompt: "Review this PR",
+      model: "claude-sonnet-4-5-20250929",
+      maxTurns: 25,
+      allowedTools: ["Read", "Grep", "Glob"],
+      taskType: "review.full",
+      mcpServerNames: ["github_comment"],
+    }) as { repoCwd?: string; repoBundlePath?: string };
+
+    expect(result.repoCwd).toBeUndefined();
+    expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+    expect((await lstat(join(workspaceDir, "repo.bundle"))).isFile()).toBe(true);
+    await expect(stat(join(workspaceDir, "repo"))).rejects.toThrow();
+
+    const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+    const agentConfig = JSON.parse(rawAgentConfig) as {
+      repoCwd?: string;
+      repoTransport?: {
+        kind?: string;
+        bundlePath?: string;
+        headRef?: string;
+        baseRef?: string;
+        originUrl?: string;
+      };
+    };
+
+    expect(agentConfig.repoCwd).toBeUndefined();
+    expect(agentConfig.repoTransport).toEqual({
+      kind: "review-bundle",
+      bundlePath: join(workspaceDir, "repo.bundle"),
+      headRef: "pr-mention",
+      baseRef: "main",
+      originUrl: "https://github.com/xbmc/xbmc.git",
+    });
+
+    const cloneCheckDir = await mkdtemp(join(tmpdir(), "kodiai-bundle-clone-check-"));
+    cleanupDirs.push(cloneCheckDir);
+    await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+    expect((await lstat(join(cloneCheckDir, "system", "settings", "freebsd.xml"))).isSymbolicLink()).toBe(true);
+    expect((await $`git -C ${cloneCheckDir} status --porcelain`.quiet()).text()).toBe("");
+    expect((await $`git -C ${cloneCheckDir} diff origin/main...HEAD --stat`.quiet()).text()).toContain("feature.ts");
+  } finally {
+    await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  }
+});
+
+test("prepareAgentWorkspace unshallows PR workspaces before writing a review bundle transport", async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), "kodiai-shallow-bundle-"));
+  const bareRepoDir = join(tempRoot, "origin.git");
+  const seedRepoDir = join(tempRoot, "seed");
+  const shallowRepoDir = join(tempRoot, "shallow");
+  const workspaceDir = await mkdtemp(join(tmpdir(), "kodiai-agent-shallow-workspace-"));
+  const cloneCheckDir = await mkdtemp(join(tmpdir(), "kodiai-bundle-clone-check-"));
+  const cleanupDirs = [tempRoot, workspaceDir, cloneCheckDir];
+
+  try {
+    await $`git init --bare ${bareRepoDir}`.quiet();
+    await $`git clone file://${bareRepoDir} ${seedRepoDir}`.quiet();
+    await $`git -C ${seedRepoDir} config user.email t@example.com`.quiet();
+    await $`git -C ${seedRepoDir} config user.name T`.quiet();
+    await writeFile(join(seedRepoDir, "feature.txt"), "one\n");
+    await $`git -C ${seedRepoDir} add feature.txt`.quiet();
+    await $`git -C ${seedRepoDir} commit -m one`.quiet();
+    await $`git -C ${seedRepoDir} branch -M master`.quiet();
+    await $`git -C ${seedRepoDir} push origin master`.quiet();
+    await writeFile(join(seedRepoDir, "feature.txt"), "one\ntwo\n");
+    await $`git -C ${seedRepoDir} commit -am two`.quiet();
+    await $`git -C ${seedRepoDir} push origin master`.quiet();
+    await $`git -C ${seedRepoDir} checkout -b pr-mention`.quiet();
+    await writeFile(join(seedRepoDir, "feature.txt"), "one\ntwo\npr\n");
+    await $`git -C ${seedRepoDir} commit -am pr`.quiet();
+    await $`git -C ${seedRepoDir} push origin pr-mention`.quiet();
+
+    await $`git clone --depth=1 --single-branch --branch master file://${bareRepoDir} ${shallowRepoDir}`.quiet();
+    await $`git -C ${shallowRepoDir} fetch file://${bareRepoDir} pr-mention:pr-mention`.quiet();
+    await $`git -C ${shallowRepoDir} checkout pr-mention`.quiet();
+    await $`git -C ${shallowRepoDir} fetch origin master:refs/remotes/origin/master --depth=1`.quiet();
+    expect((await $`git -C ${shallowRepoDir} rev-parse --is-shallow-repository`.quiet().text()).trim()).toBe("true");
+
+    const result = await prepareAgentWorkspace({
+      sourceRepoDir: shallowRepoDir,
+      workspaceDir,
+      prompt: "Review this PR",
+      model: "claude-sonnet-4-5-20250929",
+      maxTurns: 25,
+      allowedTools: ["Read", "Grep", "Glob"],
+      taskType: "review.full",
+      mcpServerNames: ["github_comment"],
+    }) as { repoCwd?: string; repoBundlePath?: string };
+
+    expect(result.repoCwd).toBeUndefined();
+    expect(result.repoBundlePath).toBe(join(workspaceDir, "repo.bundle"));
+
+    const rawAgentConfig = await readFile(join(workspaceDir, "agent-config.json"), "utf-8");
+    const agentConfig = JSON.parse(rawAgentConfig) as {
+      repoTransport?: {
+        kind?: string;
+        bundlePath?: string;
+        headRef?: string;
+        baseRef?: string;
+        originUrl?: string;
+      };
+    };
+
+    expect(agentConfig.repoTransport).toEqual({
+      kind: "review-bundle",
+      bundlePath: join(workspaceDir, "repo.bundle"),
+      headRef: "pr-mention",
+      baseRef: "master",
+      originUrl: "file://" + bareRepoDir,
+    });
+
+    await $`git clone -b pr-mention ${join(workspaceDir, "repo.bundle")} ${cloneCheckDir}`.quiet();
+    expect((await $`git -C ${cloneCheckDir} diff origin/master...HEAD --stat`.quiet().text())).toContain("feature.txt");
+  } finally {
+    await Promise.all(cleanupDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  }
 });

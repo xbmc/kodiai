@@ -5,7 +5,7 @@ import type { KnowledgeStore } from "./types.ts";
 import type { Sql } from "../db/client.ts";
 import { runMigrations } from "../db/migrate.ts";
 
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://kodiai:kodiai@localhost:5432/kodiai";
+const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 
 const mockLogger = {
   info: () => {},
@@ -36,17 +36,16 @@ async function truncateAll(): Promise<void> {
     CASCADE`;
 }
 
-beforeAll(async () => {
-  sql = postgres(DATABASE_URL, { max: 5, idle_timeout: 20, connect_timeout: 10 });
-  await runMigrations(sql);
-  store = createKnowledgeStore({ sql, logger: mockLogger });
-});
+describe.skipIf(!TEST_DB_URL)("KnowledgeStore", () => {
+  beforeAll(async () => {
+    sql = postgres(TEST_DB_URL!, { max: 5, idle_timeout: 20, connect_timeout: 10 });
+    await runMigrations(sql);
+    store = createKnowledgeStore({ sql, logger: mockLogger });
+  });
 
-afterAll(async () => {
-  await sql.end();
-});
-
-describe("KnowledgeStore", () => {
+  afterAll(async () => {
+    await sql.end();
+  });
   beforeEach(async () => {
     await truncateAll();
   });

@@ -53,7 +53,7 @@ describe("verify-m052", () => {
       scripts?: Record<string, string>;
     };
 
-    expect(packageJson.scripts?.["verify:m052"]).toBe("bun scripts/verify-m052.ts");
+    expect(packageJson.scripts?.["verify:m052"]).toBeUndefined();
   });
 
   test("main prints JSON when --json is passed", async () => {

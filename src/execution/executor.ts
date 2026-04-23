@@ -148,6 +148,11 @@ function normalizeExecutorPhaseTimingsFromResult(params: {
   return fallback.map((phase) => normalizedByName.get(phase.name) ?? phase);
 }
 
+async function hasGitWorkspace(repoDir: string): Promise<boolean> {
+  const result = await $`git -C ${repoDir} rev-parse --is-inside-work-tree`.quiet().nothrow();
+  return result.exitCode === 0 && result.stdout.toString().trim() === "true";
+}
+
 async function readGitRefSha(repoDir: string, ref: string): Promise<string | undefined> {
   return await $`git -C ${repoDir} rev-parse --verify ${ref}`.quiet()
     .text()
@@ -425,41 +430,26 @@ export function createExecutor(deps: {
         // Explicit review requests (`taskType=review.full`) run through the mention
         // handler for trigger semantics, but they still need the broader review tool
         // budget. Only conversational PR mentions keep the reduced tool surface.
+        const hasGitTools = await hasGitWorkspace(context.workspace.dir);
         const isReadOnlyPrMention =
           isMentionEvent &&
           !isWriteMode &&
           context.prNumber !== undefined &&
           taskType !== "review.full";
-        const gitDiffInspectionAvailable = context.gitDiffInspectionAvailable !== false;
         const baseTools = isReadOnlyPrMention
-          ? gitDiffInspectionAvailable
-            ? [
-                "Read",
-                "Grep",
-                "Bash(git diff:*)",
-                "Bash(git status:*)",
-              ]
-            : [
-                "Read",
-                "Grep",
-                "Bash(git status:*)",
-              ]
-          : gitDiffInspectionAvailable
-            ? [
-                "Read",
-                "Grep",
-                "Glob",
-                "Bash(git diff:*)",
-                "Bash(git log:*)",
-                "Bash(git show:*)",
-                "Bash(git status:*)",
-              ]
-            : [
-                "Read",
-                "Grep",
-                "Glob",
-                "Bash(git status:*)",
-              ];
+          ? [
+              "Read",
+              "Grep",
+              ...(hasGitTools ? ["Bash(git diff:*)", "Bash(git status:*)"] : []),
+            ]
+          : [
+              "Read",
+              "Grep",
+              "Glob",
+              ...(hasGitTools
+                ? ["Bash(git diff:*)", "Bash(git log:*)", "Bash(git show:*)", "Bash(git status:*)"]
+                : []),
+            ];
 
         const writeTools = isWriteMode ? ["Edit", "Write", "MultiEdit"] : [];
         // Compute server names from the same deps (no instance construction yet)

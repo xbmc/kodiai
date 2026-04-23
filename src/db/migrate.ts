@@ -4,6 +4,10 @@ import type { Sql } from "./client.ts";
 
 const MIGRATIONS_DIR = join(import.meta.dir, "migrations");
 
+// This module is an operator-facing CLI surface. Direct console output is
+// intentional here so migration/apply/rollback progress is visible in local
+// runs and CI logs; eslint.config.mjs documents the file-level exception.
+
 /**
  * Apply all pending migrations in order.
  *

@@ -47,7 +47,8 @@ const configSchema = z.object({
   acaJobName: z.string().default("caj-kodiai-agent"),
 });
 
-export type AppConfig = z.infer<typeof configSchema>;
+export type AppConfigInput = z.input<typeof configSchema>;
+export type AppConfig = z.output<typeof configSchema>;
 
 async function loadPrivateKey(): Promise<string> {
   const keyEnv = process.env.GITHUB_PRIVATE_KEY ?? process.env.GITHUB_PRIVATE_KEY_BASE64;

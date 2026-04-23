@@ -7,15 +7,11 @@ type RefreshModule = {
   refreshXbmcFixtureSnapshot?: (options?: Record<string, unknown>) => Promise<any>;
 };
 
-const importModule = new Function(
-  "specifier",
-  "return import(specifier)",
-) as (specifier: string) => Promise<unknown>;
 
 const tempDirs: string[] = [];
 
 async function loadRefreshModule(): Promise<RefreshModule | null> {
-  return (await importModule("./xbmc-fixture-refresh.ts").catch(
+  return (await import("./xbmc-fixture-refresh.ts").catch(
     () => null,
   )) as RefreshModule | null;
 }

@@ -12,15 +12,11 @@ type SnapshotModule = {
   inspectXbmcFixtureSnapshot?: (value: unknown) => any;
 };
 
-const importModule = new Function(
-  "specifier",
-  "return import(specifier)",
-) as (specifier: string) => Promise<unknown>;
 
 const tempDirs: string[] = [];
 
 async function loadSnapshotModule(): Promise<SnapshotModule | null> {
-  return (await importModule("./xbmc-fixture-snapshot.ts").catch(
+  return (await import("./xbmc-fixture-snapshot.ts").catch(
     () => null,
   )) as SnapshotModule | null;
 }

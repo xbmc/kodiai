@@ -478,7 +478,7 @@ async function upsertReviewDetailsComment(params: {
   body: string;
   botHandles: string[];
   recheckCanPublish?: () => boolean;
-}): Promise<boolean> {
+}): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, body, botHandles } = params;
   const marker = buildReviewDetailsMarker(reviewOutputKey);
   const sanitizedBody = sanitizeOutgoingMentions(body, botHandles);
@@ -497,7 +497,7 @@ async function upsertReviewDetailsComment(params: {
   );
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
-    return false;
+    return undefined;
   }
 
   if (existingComment) {
@@ -507,16 +507,16 @@ async function upsertReviewDetailsComment(params: {
       comment_id: existingComment.id,
       body: sanitizedBody,
     });
-    return true;
+    return existingComment.id;
   }
 
-  await octokit.rest.issues.createComment({
+  const response = await octokit.rest.issues.createComment({
     owner,
     repo,
     issue_number: prNumber,
     body: sanitizedBody,
   });
-  return true;
+  return response.data.id;
 }
 
 async function appendReviewDetailsToSummary(params: {
@@ -530,7 +530,7 @@ async function appendReviewDetailsToSummary(params: {
   requireDegradationDisclosure: boolean;
   reviewBoundedness?: ReviewBoundednessContract | null;
   recheckCanPublish?: () => boolean;
-}): Promise<boolean> {
+}): Promise<number | undefined> {
   const { octokit, owner, repo, prNumber, reviewOutputKey, botHandles } = params;
   let updatedReviewDetails = params.reviewDetailsBlock;
   const marker = buildReviewOutputMarker(reviewOutputKey);
@@ -579,42 +579,26 @@ async function appendReviewDetailsToSummary(params: {
     );
   }
 
-  const reviewDetailsMarker = buildReviewDetailsMarker(reviewOutputKey);
-  const reviewDetailsHeader = "<details>\n<summary>Review Details</summary>";
-  const existingDetailsStart = summaryBody.indexOf(reviewDetailsHeader);
-  const existingDetailsMarkerIndex = summaryBody.indexOf(
-    reviewDetailsMarker,
-    Math.max(existingDetailsStart, 0),
-  );
-
-  // Insert or replace the Review Details block INSIDE the summary's <details>
-  // block (before the last </details> tag) so it renders as a nested
-  // collapsible. The review output marker that follows the summary's </details>
-  // stays outside both blocks.
+  // Insert review details block INSIDE the summary's <details> block (before
+  // the last </details> tag) so it renders as a nested collapsible. If a
+  // Review Details block already exists, replace it so the helper remains safe
+  // to call again after final publication timing is known.
+  const closingTag = '</details>';
+  const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
   let updatedBody: string;
-  if (
-    existingDetailsStart !== -1 &&
-    existingDetailsMarkerIndex !== -1 &&
-    existingDetailsStart < existingDetailsMarkerIndex
-  ) {
-    const before = summaryBody.slice(0, existingDetailsStart).replace(/\s*$/, "");
-    const after = summaryBody.slice(existingDetailsMarkerIndex + reviewDetailsMarker.length).replace(/^\s*/, "");
-    updatedBody = `${before}\n\n${updatedReviewDetails}\n\n${after}`;
+  if (lastCloseIdx === -1) {
+    // Fallback: append as before if structure is unexpected
+    updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
   } else {
-    const closingTag = '</details>';
-    const lastCloseIdx = summaryBody.lastIndexOf(closingTag);
-    if (lastCloseIdx === -1) {
-      // Fallback: append as before if structure is unexpected
-      updatedBody = `${summaryBody}\n\n${updatedReviewDetails}`;
-    } else {
-      const before = summaryBody.slice(0, lastCloseIdx);
-      const after = summaryBody.slice(lastCloseIdx);
-      updatedBody = `${before}\n\n${updatedReviewDetails}\n${after}`;
-    }
+    const before = summaryBody.slice(0, lastCloseIdx);
+    const after = summaryBody.slice(lastCloseIdx);
+    const existingReviewDetailsPattern = /\n?<details>\s*\n?<summary>Review Details<\/summary>[\s\S]*?<\/details>\n?/;
+    const beforeWithoutExistingDetails = before.replace(existingReviewDetailsPattern, "\n").trimEnd();
+    updatedBody = `${beforeWithoutExistingDetails}\n\n${updatedReviewDetails}\n${after}`;
   }
 
   if (params.recheckCanPublish && !params.recheckCanPublish()) {
-    return false;
+    return undefined;
   }
 
   await octokit.rest.issues.updateComment({
@@ -623,7 +607,7 @@ async function appendReviewDetailsToSummary(params: {
     comment_id: summaryComment.id,
     body: sanitizeOutgoingMentions(updatedBody, botHandles),
   });
-  return true;
+  return summaryComment.id;
 }
 
 async function resolveAuthorTier(params: {
@@ -3106,7 +3090,6 @@ export function createReviewHandler(deps: {
         }
 
         setReviewWorkPhase("prompt-build");
-        const gitDiffInspectionAvailable = diffContext.strategy !== "github-file-list-fallback";
         // Build review prompt
         const reviewPrompt = buildReviewPrompt({
           owner: apiOwner,
@@ -3195,7 +3178,6 @@ export function createReviewHandler(deps: {
           graphBlastRadius: graphBlastRadius ?? undefined,
           structuralImpact: structuralImpactForReview,
           reviewBoundedness,
-          gitDiffInspectionAvailable,
         });
         reviewPhaseTimings.set(
           "retrieval/context assembly",
@@ -3229,7 +3211,6 @@ export function createReviewHandler(deps: {
           dynamicTimeoutSeconds: config.timeout.dynamicScaling !== false
             ? timeoutEstimate.dynamicTimeoutSeconds
             : undefined,
-          gitDiffInspectionAvailable,
         });
         executorResult = result;
         executorPhaseTimings = result.executorPhaseTimings ?? buildExecutorUnavailablePhases(
@@ -3811,7 +3792,6 @@ export function createReviewHandler(deps: {
               totalPhaseStartAt,
             }),
             timeoutProgress,
-            completedAt: reviewCompletedAt,
           });
 
           const suppressedSection = formatSuppressedFindingsSection(filterResult.filtered);
@@ -3820,93 +3800,20 @@ export function createReviewHandler(deps: {
             : reviewDetailsBody;
         };
 
-        let cleanApprovalSummaryPublished = false;
-
-        if (config.review.autoApprove && result.conclusion === "success" && !(result.published ?? false)) {
-          try {
-            const octokit = await githubApp.getInstallationOctokit(event.installationId);
-            const appSlug = githubApp.getAppSlug();
-
-            // Double-check via a scan for the review output marker. This provides
-            // defense-in-depth if the executor didn't report published=true.
-            const idempotencyCheck = await ensureReviewOutputNotPublished({
-              octokit,
-              owner: apiOwner,
-              repo: apiRepo,
-              prNumber: pr.number,
-              reviewOutputKey,
-            });
-
-            if (!idempotencyCheck.shouldPublish) {
-              logger.info(
-                {
-                  prNumber: pr.number,
-                  gate: "auto-approve",
-                  gateResult: "skipped",
-                  skipReason: "output-marker-present",
-                  existingLocation: idempotencyCheck.existingLocation,
-                },
-                "Skipping auto-approval because review output marker was published",
-              );
-            } else if (!canPublishVisibleOutput("auto-approval")) {
-              // publish-rights helper already logged the skip reason
-            } else {
-              setReviewWorkPhase("publish");
-              const approvalEvidence = [
-                `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
-              ];
-              const approvalConfidence = depBumpContext?.mergeConfidence
-                ? renderApprovalConfidence(depBumpContext.mergeConfidence)
-                : null;
-
-              await octokit.rest.pulls.createReview({
-                owner: apiOwner,
-                repo: apiRepo,
-                pull_number: pr.number,
-                event: "APPROVE",
-                body: buildReviewOutputMarker(reviewOutputKey),
-              });
-              await octokit.rest.issues.createComment({
-                owner: apiOwner,
-                repo: apiRepo,
-                issue_number: pr.number,
-                body: sanitizeOutgoingMentions(
-                  buildApprovedReviewBody({
-                    reviewOutputKey,
-                    evidence: approvalEvidence,
-                    approvalConfidence,
-                  }),
-                  [appSlug, "claude"],
-                ),
-              });
-              cleanApprovalSummaryPublished = true;
-
-              logger.info(
-                {
-                  evidenceType: "review",
-                  outcome: "submitted-approval",
-                  deliveryId: event.id,
-                  installationId: event.installationId,
-                  owner: apiOwner,
-                  repoName: apiRepo,
-                  repo: `${apiOwner}/${apiRepo}`,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                },
-                "Evidence bundle",
-              );
-              logger.info(
-                { prNumber: pr.number, reviewOutputKey },
-                "Submitted silent approval (no issues found)",
-              );
-            }
-          } catch (err) {
-            logger.error(
-              { err, prNumber: pr.number },
-              "Failed to submit approval",
-            );
+        const finalizePublicationPhaseTiming = (): void => {
+          if (publicationPhaseStartedAt === undefined) {
+            return;
           }
-        }
+
+          reviewPhaseTimings.set(
+            "publication",
+            createReviewPhaseTiming({
+              name: "publication",
+              status: "completed",
+              durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
+            }),
+          );
+        };
 
         if (shouldProcessReviewOutput) {
           logger.info(
@@ -3924,110 +3831,127 @@ export function createReviewHandler(deps: {
           );
 
           try {
-            const publishReviewDetails = async (detailsBody: string): Promise<"append" | "standalone" | null> => {
-              if (result.published || cleanApprovalSummaryPublished) {
-                if (canPublishVisibleOutput("deterministic Review Details append")) {
-                  try {
+            const fullDetailsBody = buildReviewDetailsBody();
+
+            if (result.published) {
+              // Summary comment was posted -- append Review Details to it
+              if (canPublishVisibleOutput("deterministic Review Details append")) {
+                let appendedToSummary = false;
+                try {
+                  setReviewWorkPhase("publish");
+                  const appendedCommentId = await appendReviewDetailsToSummary({
+                    octokit: extractionOctokit,
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    prNumber: pr.number,
+                    reviewOutputKey,
+                    reviewDetailsBlock: fullDetailsBody,
+                    botHandles: [githubApp.getAppSlug(), "claude"],
+                    requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
+                    reviewBoundedness,
+                    recheckCanPublish: () =>
+                      canPublishVisibleOutput("deterministic Review Details append"),
+                  });
+                  appendedToSummary = appendedCommentId !== undefined;
+                } catch (appendErr) {
+                  // Fallback: post standalone if the initial append fails (e.g., summary comment not found yet)
+                  logger.warn(
+                    { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
+                    "Failed to append Review Details to summary comment; posting standalone",
+                  );
+                  if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
                     setReviewWorkPhase("publish");
-                    const appended = await appendReviewDetailsToSummary({
+                    const reviewDetailsCommentId = await upsertReviewDetailsComment({
                       octokit: extractionOctokit,
                       owner: apiOwner,
                       repo: apiRepo,
                       prNumber: pr.number,
                       reviewOutputKey,
-                      reviewDetailsBlock: detailsBody,
+                      body: fullDetailsBody,
+                      botHandles: [githubApp.getAppSlug(), "claude"],
+                      recheckCanPublish: () =>
+                        canPublishVisibleOutput("deterministic Review Details standalone comment"),
+                    });
+
+                    finalizePublicationPhaseTiming();
+                    if (
+                      reviewDetailsCommentId !== undefined &&
+                      canPublishVisibleOutput("finalized Review Details standalone comment")
+                    ) {
+                      await extractionOctokit.rest.issues.updateComment({
+                        owner: apiOwner,
+                        repo: apiRepo,
+                        comment_id: reviewDetailsCommentId,
+                        body: sanitizeOutgoingMentions(
+                          buildReviewDetailsBody(),
+                          [githubApp.getAppSlug(), "claude"],
+                        ),
+                      });
+                    }
+                  }
+                }
+
+                if (appendedToSummary) {
+                  finalizePublicationPhaseTiming();
+                  try {
+                    await appendReviewDetailsToSummary({
+                      octokit: extractionOctokit,
+                      owner: apiOwner,
+                      repo: apiRepo,
+                      prNumber: pr.number,
+                      reviewOutputKey,
+                      reviewDetailsBlock: buildReviewDetailsBody(),
                       botHandles: [githubApp.getAppSlug(), "claude"],
                       requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
                       reviewBoundedness,
                       recheckCanPublish: () =>
-                        canPublishVisibleOutput("deterministic Review Details append"),
+                        canPublishVisibleOutput("finalized Review Details append"),
                     });
-                    return appended ? "append" : null;
                   } catch (appendErr) {
                     logger.warn(
-                      { ...baseLog, gate: "review-details-output", gateResult: "append-fallback", err: appendErr },
-                      "Failed to append Review Details to summary comment; posting standalone",
+                      {
+                        ...baseLog,
+                        gate: "review-details-output",
+                        gateResult: "finalized-append-failed",
+                        err: appendErr,
+                      },
+                      "Failed to refresh finalized Review Details timing in summary comment",
                     );
-                    if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
-                      setReviewWorkPhase("publish");
-                      const publishedStandalone = await upsertReviewDetailsComment({
-                        octokit: extractionOctokit,
-                        owner: apiOwner,
-                        repo: apiRepo,
-                        prNumber: pr.number,
-                        reviewOutputKey,
-                        body: detailsBody,
-                        botHandles: [githubApp.getAppSlug(), "claude"],
-                        recheckCanPublish: () =>
-                          canPublishVisibleOutput("deterministic Review Details standalone comment"),
-                      });
-                      return publishedStandalone ? "standalone" : null;
-                    }
                   }
                 }
-                return null;
               }
-
+            } else {
+              // No summary comment (clean review) -- post standalone Review Details
+              // FORMAT-11 exemption: no summary exists to embed into; standalone preserves metrics visibility
               if (canPublishVisibleOutput("deterministic Review Details standalone comment")) {
                 setReviewWorkPhase("publish");
-                const publishedStandalone = await upsertReviewDetailsComment({
+                const reviewDetailsCommentId = await upsertReviewDetailsComment({
                   octokit: extractionOctokit,
                   owner: apiOwner,
                   repo: apiRepo,
                   prNumber: pr.number,
                   reviewOutputKey,
-                  body: detailsBody,
+                  body: fullDetailsBody,
                   botHandles: [githubApp.getAppSlug(), "claude"],
                   recheckCanPublish: () =>
                     canPublishVisibleOutput("deterministic Review Details standalone comment"),
                 });
-                return publishedStandalone ? "standalone" : null;
-              }
 
-              return null;
-            };
-
-            const publicationMode = await publishReviewDetails(buildReviewDetailsBody());
-
-            if (publicationMode && publicationPhaseStartedAt !== undefined) {
-              reviewPhaseTimings.set(
-                "publication",
-                createReviewPhaseTiming({
-                  name: "publication",
-                  status: "completed",
-                  durationMs: Math.max(0, Date.now() - publicationPhaseStartedAt),
-                }),
-              );
-
-              const finalizedDetailsBody = buildReviewDetailsBody();
-              if (publicationMode === "append") {
-                setReviewWorkPhase("publish");
-                await appendReviewDetailsToSummary({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  reviewDetailsBlock: finalizedDetailsBody,
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  requireDegradationDisclosure: authorClassification.searchEnrichment.degraded,
-                  reviewBoundedness,
-                  recheckCanPublish: () =>
-                    canPublishVisibleOutput("finalized Review Details timing update"),
-                });
-              } else {
-                setReviewWorkPhase("publish");
-                await upsertReviewDetailsComment({
-                  octokit: extractionOctokit,
-                  owner: apiOwner,
-                  repo: apiRepo,
-                  prNumber: pr.number,
-                  reviewOutputKey,
-                  body: finalizedDetailsBody,
-                  botHandles: [githubApp.getAppSlug(), "claude"],
-                  recheckCanPublish: () =>
-                    canPublishVisibleOutput("finalized Review Details timing update"),
-                });
+                finalizePublicationPhaseTiming();
+                if (
+                  reviewDetailsCommentId !== undefined &&
+                  canPublishVisibleOutput("finalized Review Details timing update")
+                ) {
+                  await extractionOctokit.rest.issues.updateComment({
+                    owner: apiOwner,
+                    repo: apiRepo,
+                    comment_id: reviewDetailsCommentId,
+                    body: sanitizeOutgoingMentions(
+                      buildReviewDetailsBody(),
+                      [githubApp.getAppSlug(), "claude"],
+                    ),
+                  });
+                }
               }
             }
           } catch (err) {
@@ -4791,7 +4715,6 @@ export function createReviewHandler(deps: {
                       // PR-issue linking (PRLINK-03) — reuse from initial review
                       linkedIssues: linkedIssueResult,
                       structuralImpact: structuralImpactForReview,
-                      gitDiffInspectionAvailable,
                     });
 
                     setReviewWorkPhaseForAttempt(retryReviewWorkAttempt.attemptId, "executor-dispatch");
@@ -4814,7 +4737,6 @@ export function createReviewHandler(deps: {
                       totalFiles: timeoutTotalFiles,
                       enableCheckpointTool: retryCheckpointEnabled,
                       enableCommentTools: false,
-                      gitDiffInspectionAvailable,
                     });
 
                       const retryCheckpoint = (await knowledgeStore?.getCheckpoint?.(retryReviewOutputKey)) ?? null;
@@ -5056,14 +4978,117 @@ export function createReviewHandler(deps: {
           const octokit = await githubApp.getInstallationOctokit(event.installationId);
           if (canPublishVisibleOutput("failure fallback comment")) {
             setReviewWorkPhase("publish");
-            await postOrUpdateErrorComment(octokit, {
-              owner: apiOwner,
-              repo: apiRepo,
-              issueNumber: pr.number,
-            }, sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]), logger);
+            await postOrUpdateErrorComment(
+              octokit,
+              {
+                owner: apiOwner,
+                repo: apiRepo,
+                issueNumber: pr.number,
+              },
+              sanitizeOutgoingMentions(failureBody, [githubApp.getAppSlug(), "claude"]),
+              logger,
+            );
           }
         }
 
+        // Auto-approval: only when autoApprove is enabled AND execution succeeded AND
+        // the model produced zero GitHub-visible output (no summary comment, no inline comments).
+        if (config.review.autoApprove && result.conclusion === "success") {
+          try {
+            // If the review execution published any output (summary comment, inline comments, etc.),
+            // do NOT auto-approve. Auto-approval is only valid when the bot produced zero output.
+            if (result.published) {
+              logger.info(
+                {
+                  prNumber: pr.number,
+                  gate: "auto-approve",
+                  gateResult: "skipped",
+                  skipReason: "output-published",
+                },
+                "Skipping auto-approval because review output was published",
+              );
+              return;
+            }
+
+            const octokit = await githubApp.getInstallationOctokit(event.installationId);
+            const appSlug = githubApp.getAppSlug();
+
+            // Double-check via a scan for the review output marker. This provides
+            // defense-in-depth if the executor didn't report published=true.
+            const idempotencyCheck = await ensureReviewOutputNotPublished({
+              octokit,
+              owner: apiOwner,
+              repo: apiRepo,
+              prNumber: pr.number,
+              reviewOutputKey,
+            });
+
+            if (!idempotencyCheck.shouldPublish) {
+              logger.info(
+                {
+                  prNumber: pr.number,
+                  gate: "auto-approve",
+                  gateResult: "skipped",
+                  skipReason: "output-marker-present",
+                  existingLocation: idempotencyCheck.existingLocation,
+                },
+                "Skipping auto-approval because review output marker was published",
+              );
+              return;
+            }
+
+            if (!canPublishVisibleOutput("auto-approval")) {
+              return;
+            }
+
+            setReviewWorkPhase("publish");
+            const approvalEvidence = [
+              `Review prompt covered ${promptFiles.length} changed file${promptFiles.length === 1 ? "" : "s"}.`,
+            ];
+            const approvalConfidence = depBumpContext?.mergeConfidence
+              ? renderApprovalConfidence(depBumpContext.mergeConfidence)
+              : null;
+
+            await octokit.rest.pulls.createReview({
+              owner: apiOwner,
+              repo: apiRepo,
+              pull_number: pr.number,
+              event: "APPROVE",
+              body: sanitizeOutgoingMentions(
+                buildApprovedReviewBody({
+                  reviewOutputKey,
+                  evidence: approvalEvidence,
+                  approvalConfidence,
+                }),
+                [appSlug, "claude"],
+              ),
+            });
+
+            logger.info(
+              {
+                evidenceType: "review",
+                outcome: "submitted-approval",
+                deliveryId: event.id,
+                installationId: event.installationId,
+                owner: apiOwner,
+                repoName: apiRepo,
+                repo: `${apiOwner}/${apiRepo}`,
+                prNumber: pr.number,
+                reviewOutputKey,
+              },
+              "Evidence bundle",
+            );
+            logger.info(
+              { prNumber: pr.number, reviewOutputKey },
+              "Submitted silent approval (no issues found)",
+            );
+          } catch (err) {
+            logger.error(
+              { err, prNumber: pr.number },
+              "Failed to submit approval",
+            );
+          }
+        }
       } catch (err) {
         if (!reviewPhaseTimings.has("workspace preparation") && workspacePhaseStartedAt !== undefined) {
           reviewPhaseTimings.set(
@@ -5208,19 +5233,19 @@ export function createReviewHandler(deps: {
       jobType: "pull-request-review",
       prNumber: pr.number,
     });
-    } finally {
-      finalizeReviewWorkAttempt();
-    }
-
-    logger.info(
-      { ...baseLog, gate: "enqueue", gateResult: "completed" },
-      "Review enqueue completed",
-    );
+  } finally {
+    finalizeReviewWorkAttempt();
   }
 
-  // Register for review trigger events
-  eventRouter.register("pull_request.opened", handleReview);
-  eventRouter.register("pull_request.ready_for_review", handleReview);
-  eventRouter.register("pull_request.review_requested", handleReview);
-  eventRouter.register("pull_request.synchronize", handleReview);
+  logger.info(
+    { ...baseLog, gate: "enqueue", gateResult: "completed" },
+    "Review enqueue completed",
+  );
+}
+
+// Register for review trigger events
+eventRouter.register("pull_request.opened", handleReview);
+eventRouter.register("pull_request.ready_for_review", handleReview);
+eventRouter.register("pull_request.review_requested", handleReview);
+eventRouter.register("pull_request.synchronize", handleReview);
 }

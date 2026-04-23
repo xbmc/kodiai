@@ -1,10 +1,35 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import type { Logger } from "pino";
 import {
   createSlackAssistantHandler,
   type SlackAssistantAddressedPayload,
   type SlackAssistantExecutorInput,
 } from "./assistant-handler.ts";
 import { SLACK_WRITE_CONFIRMATION_TIMEOUT_MS } from "./write-intent.ts";
+
+type LogCall = { bindings: Record<string, unknown>; message: string };
+
+function createMockLogger() {
+  const warnCalls: LogCall[] = [];
+  return {
+    logger: createMockLoggerWithArrays(warnCalls),
+    warnCalls,
+  };
+}
+
+function createMockLoggerWithArrays(warnCalls: LogCall[]): Logger {
+  return {
+    warn: (bindings: Record<string, unknown>, message: string) => {
+      warnCalls.push({ bindings, message });
+    },
+    debug: mock(() => undefined),
+    info: mock(() => undefined),
+    error: mock(() => undefined),
+    trace: mock(() => undefined),
+    fatal: mock(() => undefined),
+    child: () => createMockLoggerWithArrays(warnCalls),
+  } as unknown as Logger;
+}
 
 function createAddressedPayload(text: string): SlackAssistantAddressedPayload {
   return {
@@ -378,6 +403,63 @@ describe("createSlackAssistantHandler", () => {
       "Milestone: running write execution and preparing PR output.",
       "Write request refused.\nReason: write-policy-not-allowed\nRetry command: apply: update src/slack/assistant-handler.ts",
     ]);
+  });
+
+  test("blocks secret-matching write reply text and replaces it with the security policy message", async () => {
+    const published: string[] = [];
+    const { logger, warnCalls } = createMockLogger();
+    const blockedToken = `ghp_${"A".repeat(36)}`;
+
+    const handler = createSlackAssistantHandler({
+      createWorkspace: async () => ({
+        dir: "/tmp/workspace",
+        cleanup: async () => undefined,
+      }),
+      execute: async () => ({ answerText: "should not run" }),
+      runWrite: async () => ({
+        outcome: "success",
+        prUrl: "https://github.com/xbmc/xbmc/pull/125",
+        responseText: "ignored by formatter",
+        retryCommand: "apply: print deployment summary",
+        mirrors: [
+          {
+            url: "https://github.com/xbmc/xbmc/issues/1#issuecomment-11",
+            excerpt: `Leaked token ${blockedToken}`,
+          },
+        ],
+      }),
+      publishInThread: async ({ text }) => {
+        published.push(text);
+      },
+      logger,
+      defaultRepo: "xbmc/xbmc",
+    });
+
+    const result = await handler.handle(createAddressedPayload("apply: print deployment summary"));
+
+    expect(result).toEqual({
+      outcome: "answered",
+      route: "write",
+      repo: "xbmc/xbmc",
+      publishedText:
+        "Write run complete.\n"
+        + "- Changed: print deployment summary\n"
+        + "- Where: xbmc/xbmc\n"
+        + "PR: https://github.com/xbmc/xbmc/pull/125\n\n"
+        + "Mirrored GitHub comments:\n"
+        + "- https://github.com/xbmc/xbmc/issues/1#issuecomment-11\n"
+        + `  Leaked token ${blockedToken}`,
+    });
+    expect(published).toEqual([
+      "Write run started for xbmc/xbmc.",
+      "Milestone: running write execution and preparing PR output.",
+      "[Response blocked by security policy]",
+    ]);
+    expect(published.join("\n")).not.toContain(blockedToken);
+    expect(warnCalls).toContainEqual({
+      bindings: { matchedPattern: "github-pat" },
+      message: "Outgoing secret scan blocked Slack publish",
+    });
   });
 
   test("ambiguous conversational write intent stays read-only and publishes exact rerun command", async () => {

@@ -40,10 +40,9 @@ describe("loadConfig", () => {
   test("defaults MCP internal base URL to the internal ACA app host without the external route suffix or port", async () => {
     const config = await loadConfig();
     expect(config.mcpInternalBaseUrl).toBe("http://ca-kodiai");
-    expect(config.slackWebhookRelaySources).toEqual([]);
   });
 
-  test("parses Slack webhook relay sources from app config", async () => {
+  test("parses slack webhook relay sources from env", async () => {
     process.env.SLACK_WEBHOOK_RELAY_SOURCES = JSON.stringify([
       {
         id: "buildkite",
@@ -62,7 +61,6 @@ describe("loadConfig", () => {
     ]);
 
     const config = await loadConfig();
-
     expect(config.slackWebhookRelaySources).toEqual([
       {
         id: "buildkite",
