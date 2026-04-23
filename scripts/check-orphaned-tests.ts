@@ -36,6 +36,7 @@ export type OrphanedTestCheckerReport = {
 export const EXPLICIT_TEST_TARGET_MAP = {
   "scripts/deploy.test.ts": "deploy.sh",
   "scripts/deploy-timeout-alignment.test.ts": "deploy.sh",
+  "src/execution/prepare-agent-workspace.test.ts": "src/execution/executor.ts",
   "src/slack/v1-safety-contract.test.ts": "src/slack/safety-rails.ts",
 } as const satisfies Record<string, string>;
 

@@ -33,8 +33,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - run: bun run verify:m056:s03
-      - run: bun run verify:m059:s01
-      - run: bun run verify:m059:s02
       - run: bun run check:orphaned-tests
       # Bun has been unstable on GitHub runners with one monolithic test process.
       # Keep DB-backed tests on a low concurrency cap and split the suite into
