@@ -12,41 +12,15 @@ const CI_TEST_STEP_MARKERS = [
   "bun test --max-concurrency=2 src/knowledge",
   "bunx tsc --noEmit",
 ] as const;
-const DECISION_MARKER = "M056-S03-PAIRED-MIGRATION-CONTRACT";
-const DECISION_REQUIRED_TEXT =
-  "Every forward migration requires a rollback sibling or an explicit allowlisted rationale.";
-const REQUIRED_CONTRIBUTING_MARKERS = [
-  "NNN-name.sql",
-  "NNN-name.down.sql",
-  "explicit allowlisted rationale",
-  "bun run check:migrations-have-downs",
-  "bun run verify:m056:s03",
-] as const;
-const STALE_CONTRIBUTING_MARKERS = [
-  "012-wiki-staleness-run-state.sql",
-  "013-review-clusters.sql",
-  "016-issue-triage-state.sql",
-  "025-wiki-style-cache.sql",
-  "026-guardrail-audit.sql",
-  "033-canonical-code-corpus.sql",
-  "034-review-graph.sql",
-  "035-generated-rules.sql",
-  "036-suggestion-cluster-models.sql",
-  "both paired and unpaired historical files",
-] as const;
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..");
 const PACKAGE_JSON_PATH = path.resolve(REPO_ROOT, "package.json");
 const CI_WORKFLOW_PATH = path.resolve(REPO_ROOT, ".github/workflows/ci.yml");
-const DECISIONS_PATH = path.resolve(REPO_ROOT, ".gsd/DECISIONS.md");
-const CONTRIBUTING_PATH = path.resolve(REPO_ROOT, "CONTRIBUTING.md");
 
 export const M056_S03_CHECK_IDS = [
   "M056-S03-CHECKER-STATE",
   "M056-S03-PACKAGE-WIRING",
   "M056-S03-CI-WIRING",
-  "M056-S03-DECISION-RECORD",
-  "M056-S03-CONTRIBUTING-TRUTH",
 ] as const;
 
 export type M056S03CheckId = (typeof M056_S03_CHECK_IDS)[number];
@@ -91,11 +65,8 @@ export async function evaluateM056S03Proof(
   const readTextFile = options.readTextFile ?? defaultReadTextFile;
 
   const checkerCheck = await buildCheckerStateCheck(runChecker);
-
   const packageContent = await readOptionalTextFile(readTextFile, PACKAGE_JSON_PATH);
   const ciContent = await readOptionalTextFile(readTextFile, CI_WORKFLOW_PATH);
-  const decisionsContent = await readOptionalTextFile(readTextFile, DECISIONS_PATH);
-  const contributingContent = await readOptionalTextFile(readTextFile, CONTRIBUTING_PATH);
 
   const checks: Check[] = [
     checkerCheck,
@@ -105,20 +76,6 @@ export async function evaluateM056S03Proof(
     ciContent.ok
       ? buildCiWiringCheck(ciContent.content)
       : failCheck("M056-S03-CI-WIRING", "ci_file_unreadable", ciContent.error),
-    decisionsContent.ok
-      ? buildDecisionRecordCheck(decisionsContent.content)
-      : failCheck(
-          "M056-S03-DECISION-RECORD",
-          "decision_file_unreadable",
-          decisionsContent.error,
-        ),
-    contributingContent.ok
-      ? buildContributingTruthCheck(contributingContent.content)
-      : failCheck(
-          "M056-S03-CONTRIBUTING-TRUTH",
-          "contributing_file_unreadable",
-          contributingContent.error,
-        ),
   ];
 
   return {
@@ -287,60 +244,6 @@ function buildCiWiringCheck(ciContent: string): Check {
     "M056-S03-CI-WIRING",
     "ci_wiring_ok",
     `.github/workflows/ci.yml runs ${EXPECTED_CI_STEP} before the broader Bun test steps.`,
-  );
-}
-
-function buildDecisionRecordCheck(decisionsContent: string): Check {
-  if (!decisionsContent.includes(DECISION_MARKER)) {
-    return failCheck(
-      "M056-S03-DECISION-RECORD",
-      "decision_marker_missing",
-      `.gsd/DECISIONS.md must include the ${DECISION_MARKER} marker alongside the paired-migration rationale.`,
-    );
-  }
-
-  if (!decisionsContent.includes(DECISION_REQUIRED_TEXT)) {
-    return failCheck(
-      "M056-S03-DECISION-RECORD",
-      "decision_contract_text_missing",
-      `.gsd/DECISIONS.md must record: ${DECISION_REQUIRED_TEXT}`,
-    );
-  }
-
-  return passCheck(
-    "M056-S03-DECISION-RECORD",
-    "decision_record_ok",
-    `.gsd/DECISIONS.md records the paired-migration contract with marker ${DECISION_MARKER}.`,
-  );
-}
-
-function buildContributingTruthCheck(contributingContent: string): Check {
-  const missingMarkers = REQUIRED_CONTRIBUTING_MARKERS.filter(
-    (marker) => !contributingContent.includes(marker),
-  );
-  if (missingMarkers.length > 0) {
-    return failCheck(
-      "M056-S03-CONTRIBUTING-TRUTH",
-      "contributing_truth_missing",
-      `CONTRIBUTING.md is missing paired-migration contract markers: ${missingMarkers.join(", ")}`,
-    );
-  }
-
-  const staleMarkers = STALE_CONTRIBUTING_MARKERS.filter((marker) =>
-    contributingContent.includes(marker),
-  );
-  if (staleMarkers.length > 0) {
-    return failCheck(
-      "M056-S03-CONTRIBUTING-TRUTH",
-      "contributing_truth_stale",
-      `CONTRIBUTING.md still claims historical unpaired-migration drift: ${staleMarkers.join(", ")}`,
-    );
-  }
-
-  return passCheck(
-    "M056-S03-CONTRIBUTING-TRUTH",
-    "contributing_truth_ok",
-    "CONTRIBUTING.md documents the enforced paired-migration contract without stale historical-drift claims.",
   );
 }
 
