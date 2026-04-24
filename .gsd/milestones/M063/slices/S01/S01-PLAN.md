@@ -103,7 +103,7 @@ Steps:
   - Files: `src/handlers/review.ts`, `src/handlers/review.test.ts`, `src/lib/review-continuation-lifecycle.ts`, `src/lib/partial-review-formatter.ts`, `src/jobs/review-work-coordinator.ts`, `src/knowledge/types.ts`
   - Verify: bun test src/handlers/review.test.ts --filter "continuation"
 
-- [ ] **T03: Add a deterministic verifier for the automatic continuation lifecycle contract** `est:45m`
+- [x] **T03: Add a deterministic verifier for the automatic continuation lifecycle contract** `est:45m`
   Package the shipped S01 behavior into a machine-checkable verifier so later slices can build on a stable lifecycle proof instead of rediscovering it from `review.test.ts`. The verifier should exercise the real continuation seam and report whether bounded first-pass output automatically produces a continuation plan, whether merge/no-delta settlement decisions are explicit, and whether stale continuation loses authority before updating visible state.
 
 ## Failure Modes
